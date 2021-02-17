@@ -1,0 +1,185 @@
+# Python CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-python/ for more details
+#
+# Adopted from
+# https://github.com/facebookresearch/detectron2/blob/master/.circleci/config.yml
+
+version: 2
+
+# -------------------------------------------------------------------------------------
+# Environments to run the jobs in
+# -------------------------------------------------------------------------------------
+cpu_py38: &cpu_py38
+  docker:
+    - image: circleci/python:3.8
+  resource_class: medium
+
+gpu: &gpu
+  environment:
+    CUDA_VERSION: "10.1"
+  machine:
+    image: ubuntu-1604-cuda-10.1:201909-23
+  resource_class: gpu.large
+
+# -------------------------------------------------------------------------------------
+# Re-usable commands
+# -------------------------------------------------------------------------------------
+setup_venv: &setup_venv
+  - run:
+      name: Setup Virtual Env
+      working_directory: ~/
+      command: |
+        python -m venv ~/venv
+        echo ". ~/venv/bin/activate" >> $BASH_ENV
+        . ~/venv/bin/activate
+        python --version
+        which python
+        which pip
+        pip install --upgrade pip
+
+install_dep_171: &install_dep_171
+  - run:
+      name: Install Dependencies with torch 1.7.1
+      command: |
+        pip install --progress-bar off torch==1.7.1+cu101 -f https://download.pytorch.org/whl/torch_stable.html
+        pip install --progress-bar off -r requirements-test.txt
+        python -c 'import torch; print("Torch version:", torch.__version__)'
+        python -c 'import torch; assert torch.__version__.split(".")[:2] == ["1", "7"], "wrong torch version"'
+        python -m torch.utils.collect_env
+
+
+install_repo_cpu: &install_repo_cpu
+  - run:
+      name: Install Repository
+      command: |
+        pip install .
+        # Test import.
+        python -c 'import sys; sys.path = sys.path[1:]; import xformers'
+
+install_repo_gpu: &install_repo_gpu
+  - run:
+      name: Install Repository
+      command: |
+        export CUDA_HOME=/usr/local/cuda-10.1
+        pip install -e .
+
+
+run_isort: &run_isort
+   - run:
+       name: Run Linter (isort)
+       command: |
+         isort . --check --profile black
+
+run_black: &run_black
+   - run:
+       name: Run Linter (black)
+       command: |
+         black --check .
+
+run_mypy: &run_mypy
+   - run:
+       name: Run type-checking (mypy)
+       command: |
+         mypy --ignore-missing-imports --scripts-are-modules --pretty .
+
+run_flake8: &run_flake8
+  - run:
+      name: Run Linter (flake8)
+      command: |
+        flake8 --show-source --statistics
+
+
+run_coverage: &run_coverage
+  - run:
+      name: Run Unit Tests With Coverage
+      command: |
+        pytest --junitxml=test-results/junit.xml --verbose --timeout 60 --cov-report=xml --cov=./
+        #Uploading test coverage for Python code
+        bash <(curl -s https://codecov.io/bash) -f coverage.xml -cF Python
+
+run_unittests: &run_unittests
+  - run:
+      name: Run Unit Tests
+      command: |
+        pytest --junitxml=test-results/junit.xml --verbose --timeout 60
+
+
+# -------------------------------------------------------------------------------------
+# Jobs to run
+# -------------------------------------------------------------------------------------
+
+jobs:
+  cpu_tests_py38:
+    <<: *cpu_py38
+
+    working_directory: ~/xformers
+
+    steps:
+      - checkout
+      - <<: *setup_venv
+
+      # Cache the venv directory that contains dependencies
+      - restore_cache:
+          keys:
+            - cache-key-cpu-py38-171-{{ checksum "requirements-test.txt"}}
+
+      - <<: *install_dep_171
+
+      - save_cache:
+          paths:
+            - ~/venv
+          key: cache-key-cpu-py38-171-{{ checksum "requirements-test.txt"}}
+
+      - <<: *install_repo_cpu
+
+      - <<: *run_isort
+      - <<: *run_black
+      - <<: *run_mypy
+      - <<: *run_flake8
+      - <<: *run_unittests
+
+      - store_test_results:
+          path: test-results
+
+
+  gpu_tests_171:
+    <<: *gpu
+
+    working_directory: ~/xformers
+
+    steps:
+      - checkout
+
+      - run: nvidia-smi
+
+      - run: pyenv global 3.7.0
+
+      - <<: *setup_venv
+
+      # Cache the venv directory that contains dependencies
+      - restore_cache:
+          keys:
+            - cache-key-gpu-171-{{ checksum "requirements-test.txt"}}
+
+      - <<: *install_dep_171
+
+      - save_cache:
+          paths:
+            - ~/venv
+          key: cache-key-gpu-171-{{ checksum "requirements-test.txt"}}
+
+      - <<: *install_repo_gpu
+
+      - <<: *run_coverage
+
+      - store_test_results:
+          path: test-results
+
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - cpu_tests_py38
+      - gpu_tests_171

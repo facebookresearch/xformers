@@ -65,7 +65,7 @@ mypy --ignore-missing-imports --scripts-are-modules --pretty .
 ```
 pytest
 # single test
-python -m pytest tests/nn/data_parallel/test_oss_ddp.py::test_on_cpu
+python -m pytest tests/hierarchy/single_test::test_target
 ```
 
 ### Check test coverage

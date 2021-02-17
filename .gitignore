@@ -1,0 +1,28 @@
+*~
+*.swp
+
+*.pyc
+*.pyo
+
+.mypy_cache/
+*.egg-info/
+
+build/
+dist/
+
+# Pytest verbose output
+test-results/
+
+# Coverage reports
+.coverage
+.coverage.*
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.vscode/*
