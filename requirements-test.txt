@@ -1,0 +1,15 @@
+# Get core deps.
+-r requirements.txt
+
+# Tools for static checking.
+black == 19.10b0
+flake8 == 3.7.9
+isort == 5.6.4
+mypy == 0.790
+
+# Tools for unit tests & coverage.
+pytest == 5.4.1
+pytest-cov == 2.10.0
+pytest-mpi == 0.4
+pytest-timeout == 1.4.2
+mpi4py == 3.0.3

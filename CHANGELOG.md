@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [next rel] - TBD
 ### Fixed
+- This very important bug is fixed (#xxx this is the PR number)
 
 ### Added
+- This awesome feature has been added (#xxx this is the PR number)
 

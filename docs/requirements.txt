@@ -1,0 +1,6 @@
+recommonmark==0.5.0
+sphinx==3.2.1
+sphinx_rtd_theme==0.4.3
+sphinxcontrib-programoutput==0.16
+git+https://github.com/pytorch/pytorch_sphinx_theme.git#egg=pytorch_sphinx_theme
+torch>=1.6.0

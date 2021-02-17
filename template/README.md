@@ -1,0 +1,1 @@
+typically all the library code (here named `template`) would be placed here
