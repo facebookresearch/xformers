@@ -13,7 +13,7 @@ from xformers.components.attention import ATTENTION_REGISTRY
 from xformers.components.feedforward import FEEDFORWARD_REGISTRY, Activations
 
 BATCH = 20
-SEQ = 512
+SEQ = 1920
 MODEL = 384
 LATENT = 128
 DROPOUT = 0.5
@@ -44,6 +44,7 @@ def test_xformer_block(
         "attention_dropout": attn_dropout,
         "residual_dropout": residual_dropout,
         "causal": causal,
+        "window_size": SEQ // 10,
     }
 
     feedforward_config = {

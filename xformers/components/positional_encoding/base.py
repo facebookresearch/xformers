@@ -22,5 +22,4 @@ class PositionEncoding(nn.Module, metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def from_config(cls, config: PositionEncodingConfig) -> "PositionEncoding":
-        # Could be that this handles the construction of the children, TBD
-        pass
+        raise NotImplementedError

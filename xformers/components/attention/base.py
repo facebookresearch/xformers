@@ -1,19 +1,17 @@
 from abc import ABCMeta, abstractmethod
-from dataclasses import dataclass
 from typing import Optional
 
 import torch
 import torch.nn as nn
+from attrdict import AttrDict
 
 
-@dataclass
-class AttentionConfig(dict):
+class AttentionConfig(AttrDict):
     name: str
     n_heads: int
     dim_in: int
     dim_out: int
     attention_dropout: float
-    residual_dropout: float
     causal: bool
 
 
@@ -25,7 +23,6 @@ class Attention(nn.Module, metaclass=ABCMeta):
         dim_in: Optional[int] = None,
         dim_out: Optional[int] = None,
         attention_dropout: Optional[float] = None,
-        residual_dropout: Optional[float] = None,
         n_heads: Optional[int] = None,
         causal: Optional[bool] = None,
         *args,
@@ -35,14 +32,8 @@ class Attention(nn.Module, metaclass=ABCMeta):
 
     @classmethod
     def from_config(cls, config: AttentionConfig) -> "Attention":
-        return cls(
-            config.dim_in,
-            config.dim_out,
-            config.attention_dropout,
-            config.residual_dropout,
-            config.n_heads,
-            config.causal,
-        )
+        # NOTE: This will make sure that default values set in the constructor are used
+        return cls(**config)
 
     @staticmethod
     def generate_mask(size: int):

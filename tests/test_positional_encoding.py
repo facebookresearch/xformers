@@ -11,9 +11,7 @@ BATCH = 20
 SEQ = 512
 MODEL = 384
 
-assert (
-    POSITION_ENCODING_REGISTRY.keys()
-), "Positional encoding layers should have been registered"
+assert POSITION_ENCODING_REGISTRY.keys(), "Positional encoding layers should have been registered"
 
 
 @pytest.mark.parametrize("encoding_name", POSITION_ENCODING_REGISTRY.keys())

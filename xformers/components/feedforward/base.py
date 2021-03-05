@@ -36,6 +36,4 @@ class Feedforward(nn.Module, metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def from_config(cls, config: FeedforwardConfig) -> "Feedforward":
-        # The Feedforward blocks are expected to differ significantly
-        # For now this method needs to be overridden
-        pass
+        raise NotImplementedError

@@ -11,8 +11,6 @@ from xformers.components.positional_encoding import (
 # Credits: A Joulin
 # https://github.com/fairinternal/ajoulin/blob/master/transformer/model.py
 
-# FIXME: placeholder
-
 
 @register_positional_encoding("sine")
 class SinePositionEncoding(PositionEncoding):

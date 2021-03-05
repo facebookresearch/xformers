@@ -16,3 +16,7 @@ def import_all_modules(root: str, base_module: str) -> List[str]:
                 modules.append(module_name)
 
     return modules
+
+
+def to(t):
+    return {"device": t.device, "dtype": t.dtype}

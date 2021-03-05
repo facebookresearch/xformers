@@ -1,11 +1,19 @@
 import math
 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from xformers.components.attention.base import Attention
+from xformers.components.attention import Attention, AttentionConfig
 
 from . import register_attention
+
+
+class MultiHeadAttentionConfig(AttentionConfig):
+    residual_dropout: float
+
+
+# TODO: @lefaudeux Change that to be a wrapper for different attention mechanisms
 
 
 @register_attention("multi_head_attention")
@@ -60,7 +68,7 @@ class MultiHeadAttention(Attention):
 
         self.n_heads = n_heads
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # TODO: handle channels
         if len(x.shape) == 2:
             x = x.unsqueeze(-1)

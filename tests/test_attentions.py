@@ -9,7 +9,7 @@ from xformers.components.attention import (
 )
 
 BATCH = 20
-SEQ = 2048
+SEQ = 1920
 MODEL = 384
 
 assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
@@ -35,6 +35,7 @@ def test_order_invariance(
         "attention_dropout": attn_dropout,
         "residual_dropout": residual_dropout,
         "causal": causal,
+        "window_size": SEQ // 10,
     }
 
     attention = build_attention(AttentionConfig(**test_config))
@@ -50,5 +51,4 @@ def test_order_invariance(
     torch.allclose(results[:, shuffle, :], results_shuffled)
 
 
-# TODO: test loading from config
 # TODO: way more unit tests..
