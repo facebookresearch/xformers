@@ -3,7 +3,14 @@ import torch.nn as nn
 
 from xformers.components.feedforward import Activations, Feedforward, FeedforwardConfig
 
+from . import register_feedforward
 
+
+class MlpConfig(FeedforwardConfig):
+    hidden_layer_multiplier: int
+
+
+@register_feedforward("MLP")
 class MLP(Feedforward):
     def __init__(
         self,
@@ -11,6 +18,8 @@ class MLP(Feedforward):
         dropout: float,
         activation: Activations,
         hidden_layer_multiplier: int,
+        *args,
+        **kwargs
     ):
         super().__init__()
 
@@ -29,6 +38,10 @@ class MLP(Feedforward):
         return self.mlp(inputs)
 
     @classmethod
-    def from_config(self, config: FeedforwardConfig) -> "MLP":
-        # TODO: @lefaudeux
-        pass
+    def from_config(cls, config: MlpConfig) -> "MLP":
+        return cls(
+            config.dim_latent,
+            config.dropout,
+            config.activation,
+            config.hidden_layer_multiplier,
+        )

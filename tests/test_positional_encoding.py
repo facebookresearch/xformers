@@ -1,22 +1,27 @@
 import pytest
 import torch
 
-from xformers.components.positional_encoding import PositionEncoding
-from xformers.components.positional_encoding.sine import SinePositionEncoding
+from xformers.components.positional_encoding import (
+    POSITION_ENCODING_REGISTRY,
+    PositionEncodingConfig,
+    build_positional_encoding,
+)
 
 BATCH = 20
 SEQ = 512
-EMBD = 16
+MODEL = 384
 
-encodings = [SinePositionEncoding]  # TODO: list these automatically
+assert (
+    POSITION_ENCODING_REGISTRY.keys()
+), "Positional encoding layers should have been registered"
 
 
-@pytest.mark.parametrize("encoding_class", encodings)
-def test_construction(encoding_class: PositionEncoding):
-    test_config = {"dim_embd": EMBD, "seq_len": SEQ}
+@pytest.mark.parametrize("encoding_name", POSITION_ENCODING_REGISTRY.keys())
+def test_construction(encoding_name: str):
+    test_config = {"name": encoding_name, "dim_model": MODEL, "seq_len": SEQ}
 
     # dummy, just check construction and dimensions in the FW pass
-    encoding = encoding_class(**test_config)
+    encoding = build_positional_encoding(PositionEncodingConfig(**test_config))
 
-    inputs = torch.rand(BATCH, SEQ, EMBD)
+    inputs = torch.rand(BATCH, SEQ, MODEL)
     _ = encoding(inputs)

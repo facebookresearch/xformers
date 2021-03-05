@@ -1,8 +1,12 @@
 import pytest
 import torch
 
-from xformers.components.feedforward import Activations, Feedforward
-from xformers.components.feedforward.mlp import MLP
+from xformers.components.feedforward import (
+    FEEDFORWARD_REGISTRY,
+    Activations,
+    FeedforwardConfig,
+    build_feedforward,
+)
 
 BATCH = 20
 SEQ = 512
@@ -10,13 +14,15 @@ EMBD = 16
 LATENT = 128
 DROPOUT = 0.5
 
-feedforwards = [MLP]  # TODO: list these automatically
+
+assert FEEDFORWARD_REGISTRY.keys(), "Feedforward layers should have been registered"
 
 
-@pytest.mark.parametrize("feedforward_class", feedforwards)
+@pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
 @pytest.mark.parametrize("activation", [a.value for a in Activations])
-def test_feedforward(feedforward_class: Feedforward, activation: Activations):
+def test_feedforward(feedforward_name: str, activation: Activations):
     test_config = {
+        "name": feedforward_name,
         "dim_latent": LATENT,
         "dropout": DROPOUT,
         "activation": activation,
@@ -24,7 +30,7 @@ def test_feedforward(feedforward_class: Feedforward, activation: Activations):
     }
 
     # dummy, just check construction and dimensions in the FW pass
-    ffw = feedforward_class(**test_config)
+    ffw = build_feedforward(FeedforwardConfig(**test_config))
 
     inputs = torch.rand(BATCH, SEQ, LATENT)
     _ = ffw(inputs)

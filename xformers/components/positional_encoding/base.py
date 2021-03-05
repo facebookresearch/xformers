@@ -7,14 +7,15 @@ import torch.nn as nn
 
 @dataclass
 class PositionEncodingConfig:
-    dim_embd: int
+    name: str
+    dim_model: int
     seq_len: int
 
 
 class PositionEncoding(nn.Module, metaclass=ABCMeta):
     @abstractmethod
     def __init__(
-        self, dim_embd: Optional[int] = None, seq_len: Optional[int] = None
+        self, dim_model: Optional[int] = None, seq_len: Optional[int] = None
     ) -> None:
         super().__init__()
 

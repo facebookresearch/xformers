@@ -8,7 +8,7 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
 # TODOs:
 ## CI
 
-    [ ] Auto load new variants in tests
+    [x] Auto load new variants in tests
     [ ] waay more tests
     [ ] Benchmark: add at least something basic, measure throughput and memory
 

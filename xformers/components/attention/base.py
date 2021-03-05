@@ -8,10 +8,10 @@ import torch.nn as nn
 
 @dataclass
 class AttentionConfig(dict):
+    name: str
     n_heads: int
-    dim_embd: int
-    dim_key: int
-    dim_value: int
+    dim_in: int
+    dim_out: int
     attention_dropout: float
     residual_dropout: float
     causal: bool
@@ -22,13 +22,12 @@ class Attention(nn.Module, metaclass=ABCMeta):
     @abstractmethod
     def __init__(
         self,
-        dim_embd: Optional[int] = None,
+        dim_in: Optional[int] = None,
+        dim_out: Optional[int] = None,
         attention_dropout: Optional[float] = None,
         residual_dropout: Optional[float] = None,
         n_heads: Optional[int] = None,
         causal: Optional[bool] = None,
-        dim_key: Optional[int] = None,
-        dim_value: Optional[int] = None,
         *args,
         **kwargs
     ):
@@ -37,13 +36,12 @@ class Attention(nn.Module, metaclass=ABCMeta):
     @classmethod
     def from_config(cls, config: AttentionConfig) -> "Attention":
         return cls(
-            config.dim_embd,
+            config.dim_in,
+            config.dim_out,
             config.attention_dropout,
             config.residual_dropout,
             config.n_heads,
             config.causal,
-            config.dim_key,
-            config.dim_value,
         )
 
     @staticmethod

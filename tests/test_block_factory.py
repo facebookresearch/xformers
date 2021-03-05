@@ -1,7 +1,6 @@
 import pytest
 
-from xformers.components.feedforward import Activations
-from xformers.factory import (
+from xformers.block_factory import (
     AttentionConfig,
     FeedforwardConfig,
     PositionEncodingConfig,
@@ -9,9 +8,13 @@ from xformers.factory import (
     xFormerConfig,
 )
 
+# Automatically fetch all registered attentions and Feedforwards
+from xformers.components.attention import ATTENTION_REGISTRY
+from xformers.components.feedforward import FEEDFORWARD_REGISTRY, Activations
+
 BATCH = 20
 SEQ = 512
-EMBD = 384
+MODEL = 384
 LATENT = 128
 DROPOUT = 0.5
 
@@ -21,7 +24,11 @@ DROPOUT = 0.5
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 3])
 @pytest.mark.parametrize("activation", [a.value for a in Activations])
+@pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
+@pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
 def test_xformer_block(
+    attention_name: str,
+    feedforward_name: str,
     heads: int,
     attn_dropout: float,
     residual_dropout: float,
@@ -30,26 +37,27 @@ def test_xformer_block(
 ):
 
     attention_config = {
+        "name": attention_name,
         "n_heads": heads,
-        "dim_embd": EMBD,
-        "dim_key": 64,
-        "dim_value": 64,
+        "dim_in": MODEL,
+        "dim_out": MODEL,
         "attention_dropout": attn_dropout,
         "residual_dropout": residual_dropout,
         "causal": causal,
     }
 
     feedforward_config = {
+        "name": feedforward_name,
         "dim_latent": LATENT,
         "dropout": DROPOUT,
         "activation": activation,
         "hidden_layer_multiplier": 4,
     }
 
-    position_encoding_config = {"dim_embd": EMBD, "seq_len": SEQ}
+    position_encoding_config = {"name": "sine", "dim_model": MODEL, "seq_len": SEQ}
 
     block_config = xFormerConfig(
-        EMBD,
+        MODEL,
         AttentionConfig(**attention_config),
         FeedforwardConfig(**feedforward_config),
         PositionEncodingConfig(**position_encoding_config),

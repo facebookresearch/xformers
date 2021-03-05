@@ -3,9 +3,12 @@ import math
 import torch.nn as nn
 import torch.nn.functional as F
 
-from xformers.components.attention import Attention
+from xformers.components.attention.base import Attention
+
+from . import register_attention
 
 
+@register_attention("multi_head_attention")
 class MultiHeadAttention(Attention):
     """
     A vanilla multi-head masked self-attention layer with a projection at the end.
@@ -21,7 +24,8 @@ class MultiHeadAttention(Attention):
 
     def __init__(
         self,
-        dim_embd: int,
+        dim_in: int,
+        dim_out: int,
         attention_dropout: float,
         residual_dropout: float,
         n_heads: int,
@@ -32,25 +36,27 @@ class MultiHeadAttention(Attention):
         super().__init__()
 
         assert (
-            dim_embd % n_heads == 0
+            dim_out % n_heads == 0
         )  # static preset for now, each head works on 1/d the embeddings, could be relaxed
         assert n_heads > 0
 
+        self.dim_k = dim_out // n_heads
+
         # key, query, value projections for all heads
-        self.key = nn.Linear(dim_embd, dim_embd)
-        self.query = nn.Linear(dim_embd, dim_embd)
-        self.value = nn.Linear(dim_embd, dim_embd)
+        self.key = nn.Linear(dim_in, dim_in)
+        self.query = nn.Linear(dim_in, dim_in)
+        self.value = nn.Linear(dim_in, dim_in)
 
         # Regularization
         self.attn_drop = nn.Dropout(attention_dropout, inplace=True)
         self.resid_drop = nn.Dropout(residual_dropout, inplace=True)
 
         # Output projection
-        self.proj = nn.Linear(dim_embd, dim_embd)
+        self.proj = nn.Linear(dim_in, dim_in)
 
         # Optional causal mask to ensure that attention is only applied to the left in the input sequence
         if causal:
-            self.register_buffer("mask", self.generate_mask(dim_embd))
+            self.register_buffer("mask", self.generate_mask(dim_in))
 
         self.n_heads = n_heads
 
@@ -63,13 +69,13 @@ class MultiHeadAttention(Attention):
 
         # Calculate query, key, values for all heads in batch and move head forward to be the batch dim
         k = (
-            self.key(x).view(B, S, self.n_heads, E // self.n_heads).transpose(1, 2)
+            self.key(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
         )  # (B, nh, S, hs)
         q = (
-            self.query(x).view(B, S, self.n_heads, E // self.n_heads).transpose(1, 2)
+            self.query(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
         )  # (B, nh, S, hs)
         v = (
-            self.value(x).view(B, S, self.n_heads, E // self.n_heads).transpose(1, 2)
+            self.value(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
         )  # (B, nh, S, hs)
 
         # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
@@ -78,7 +84,7 @@ class MultiHeadAttention(Attention):
         # Optional masking
         if hasattr(self, "mask"):
             pass
-            # FIXME
+            # FIXME @lefaudeux
             # att = att.masked_fill(self.mask[:, :S, :S] == 0, float("-inf"))
 
         # Softmax to get the attention probabilities, then dropout
