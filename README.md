@@ -9,12 +9,13 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
 ## CI
 
     [x] Auto load new variants in tests
-    [ ] waay more tests
+    [ ] Waay more tests
     [ ] Benchmark: add at least something basic, measure throughput and memory
+    [ ] Remove the AttrDict dependency
 
 ## Variants, at least first ones to add
 
     [ ] Performer
-    [ ] Local attention
+    [x] Local attention
     [ ] Big Bird
     [ ] ...

@@ -8,9 +8,6 @@ from attrdict import AttrDict
 
 class AttentionConfig(AttrDict):
     name: str
-    n_heads: int
-    dim_in: int
-    dim_out: int
     attention_dropout: float
     causal: bool
 
@@ -20,10 +17,7 @@ class Attention(nn.Module, metaclass=ABCMeta):
     @abstractmethod
     def __init__(
         self,
-        dim_in: Optional[int] = None,
-        dim_out: Optional[int] = None,
         attention_dropout: Optional[float] = None,
-        n_heads: Optional[int] = None,
         causal: Optional[bool] = None,
         *args,
         **kwargs
@@ -32,11 +26,11 @@ class Attention(nn.Module, metaclass=ABCMeta):
 
     @classmethod
     def from_config(cls, config: AttentionConfig) -> "Attention":
-        # NOTE: This will make sure that default values set in the constructor are used
+        # NOTE: This will make sure that default values set in the constructors are used
         return cls(**config)
 
     @staticmethod
-    def generate_mask(size: int):
+    def generate_mask(size: int) -> torch.Tensor:
         # FIXME
         mask = (torch.triu(torch.ones(size, size)) == 1).transpose(0, 1)
         mask = (

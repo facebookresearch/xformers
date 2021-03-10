@@ -13,7 +13,7 @@ version: 2
 cpu_py38: &cpu_py38
   docker:
     - image: circleci/python:3.8
-  resource_class: medium
+  resource_class: large
 
 gpu: &gpu
   environment:
@@ -94,7 +94,7 @@ run_coverage: &run_coverage
   - run:
       name: Run Unit Tests With Coverage
       command: |
-        pytest --junitxml=test-results/junit.xml --verbose --timeout 60 --cov-report=xml --cov=./
+        pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./
         #Uploading test coverage for Python code
         bash <(curl -s https://codecov.io/bash) -f coverage.xml -cF Python
 
@@ -102,7 +102,7 @@ run_unittests: &run_unittests
   - run:
       name: Run Unit Tests
       command: |
-        pytest --junitxml=test-results/junit.xml --verbose --timeout 60
+        pytest --junitxml=test-results/junit.xml --verbose --timeout 600
 
 
 # -------------------------------------------------------------------------------------

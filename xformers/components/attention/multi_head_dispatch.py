@@ -1,43 +1,39 @@
-import math
+from typing import Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from attrdict import AttrDict
 
-from xformers.components.attention import Attention, AttentionConfig
-
-from . import register_attention
+from xformers.components.attention import Attention
 
 
-class MultiHeadAttentionConfig(AttentionConfig):
+class MultiHeadDispatchConfig(AttrDict):
     residual_dropout: float
+    dim_in: int
+    dim_out: int
+    n_heads: int
+    attention: Optional[Attention]
 
 
-# TODO: @lefaudeux Change that to be a wrapper for different attention mechanisms
-
-
-@register_attention("multi_head_attention")
-class MultiHeadAttention(Attention):
+class MultiHeadDispatch(nn.Module):
     """
-    A vanilla multi-head masked self-attention layer with a projection at the end.
+    A vanilla multi-head masked self-attention dispatch mechanism, with a projection at the end,
+    following the architecture proposed in
+    "Attention is all you need", Vaswani et al. https://arxiv.org/abs/1706.03762v5
+
+    The actual attention mechanism can vary, be it scaled dot product, local or other
+
     credits A. Karpathy
     https://github.com/karpathy/minGPT/blob/master/mingpt/model.py
-
-    See "Attention is all you need", Vaswani et al. https://arxiv.org/abs/1706.03762v5
-    FIXME: @lefaudeux placeholder, to be improved
-
-    # TODO: expose different head computation splits
-    # TODO: expose different dimensions key/query ?
     """
 
     def __init__(
         self,
         dim_in: int,
         dim_out: int,
-        attention_dropout: float,
         residual_dropout: float,
         n_heads: int,
-        causal: bool,
+        attention: nn.Module,
         *args,
         **kwargs
     ):
@@ -49,6 +45,7 @@ class MultiHeadAttention(Attention):
         assert n_heads > 0
 
         self.dim_k = dim_out // n_heads
+        self.attention = attention
 
         # key, query, value projections for all heads
         self.key = nn.Linear(dim_in, dim_in)
@@ -56,23 +53,14 @@ class MultiHeadAttention(Attention):
         self.value = nn.Linear(dim_in, dim_in)
 
         # Regularization
-        self.attn_drop = nn.Dropout(attention_dropout, inplace=True)
         self.resid_drop = nn.Dropout(residual_dropout, inplace=True)
 
         # Output projection
         self.proj = nn.Linear(dim_in, dim_in)
 
-        # Optional causal mask to ensure that attention is only applied to the left in the input sequence
-        if causal:
-            self.register_buffer("mask", self.generate_mask(dim_in))
-
         self.n_heads = n_heads
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # TODO: handle channels
-        if len(x.shape) == 2:
-            x = x.unsqueeze(-1)
-
         B, S, E = x.size()  # Batch x Sequence x Embedding
 
         # Calculate query, key, values for all heads in batch and move head forward to be the batch dim
@@ -87,20 +75,7 @@ class MultiHeadAttention(Attention):
         )  # (B, nh, S, hs)
 
         # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-
-        # Optional masking
-        if hasattr(self, "mask"):
-            pass
-            # FIXME @lefaudeux
-            # att = att.masked_fill(self.mask[:, :S, :S] == 0, float("-inf"))
-
-        # Softmax to get the attention probabilities, then dropout
-        att = F.softmax(att, dim=-1)
-        att = self.attn_drop(att)
-
-        # Get to the predicted values, for all heads
-        y = att @ v  # (B, nh, S, S) x (B, nh, S, hs) -> (B, nh, S, hs)
+        y = self.attention(k, q, v)
         y = (
             y.transpose(1, 2).contiguous().view(B, S, E)
         )  # re-assemble all head outputs side by side
@@ -108,3 +83,7 @@ class MultiHeadAttention(Attention):
         # Output projection
         y = self.resid_drop(self.proj(y))
         return y
+
+    @classmethod
+    def from_config(cls, config: MultiHeadDispatchConfig):
+        return cls(**config)

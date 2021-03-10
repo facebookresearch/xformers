@@ -12,11 +12,10 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.positional_encoding.relative_positional import (
     RelativePositionalEncoding,
 )
-
-from . import Attention, AttentionConfig, register_attention
 
 TOKEN_SELF_ATTN_VALUE = -5e4  # carefully set for half precision to work
 
@@ -73,7 +72,7 @@ class LocalAttentionConfig(AttentionConfig):
     look_forward: int
 
 
-@register_attention("local_attention")
+@register_attention("local")
 class LocalAttention(Attention):
     def __init__(
         self,
@@ -114,16 +113,10 @@ class LocalAttention(Attention):
     def forward(
         self,
         q: torch.Tensor,
-        k: Optional[torch.Tensor] = None,
-        v: Optional[torch.Tensor] = None,
+        k: torch.Tensor,
+        v: torch.Tensor,
         input_mask: Optional[torch.Tensor] = None,
     ):
-
-        # FIXME: This is wrong, just for unit testing
-        if not k:
-            k = q
-        if not v:
-            v = q
 
         shape = q.shape
 

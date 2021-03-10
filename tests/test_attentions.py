@@ -5,6 +5,7 @@ import torch
 from xformers.components.attention import (
     ATTENTION_REGISTRY,
     AttentionConfig,
+    MultiHeadDispatch,
     build_attention,
 )
 
@@ -29,24 +30,29 @@ def test_order_invariance(
 ):
     test_config = {
         "name": attention_name,
-        "n_heads": heads,
-        "dim_in": MODEL,
-        "dim_out": MODEL,
         "attention_dropout": attn_dropout,
-        "residual_dropout": residual_dropout,
         "causal": causal,
         "window_size": SEQ // 10,
     }
 
     attention = build_attention(AttentionConfig(**test_config))
 
+    # build a multi head dispatch to test this attention mechanism
+    multi_head = MultiHeadDispatch(
+        dim_in=MODEL,
+        dim_out=MODEL,
+        residual_dropout=residual_dropout,
+        n_heads=heads,
+        attention=attention,
+    )
+
     # Check that a shuffled input produces the same results
     inputs = torch.rand(BATCH, SEQ, MODEL)
     shuffle = torch.randperm(inputs.shape[1])
     inputs_shuffled = inputs[:, shuffle, :]
 
-    results = attention(inputs)
-    results_shuffled = attention(inputs_shuffled)
+    results = multi_head(inputs)
+    results_shuffled = multi_head(inputs_shuffled)
 
     torch.allclose(results[:, shuffle, :], results_shuffled)
 

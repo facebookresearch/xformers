@@ -3,6 +3,7 @@ import pytest
 from xformers.block_factory import (
     AttentionConfig,
     FeedforwardConfig,
+    MultiHeadDispatchConfig,
     PositionEncodingConfig,
     xFormerBlock,
     xFormerConfig,
@@ -38,13 +39,16 @@ def test_xformer_block(
 
     attention_config = {
         "name": attention_name,
+        "attention_dropout": attn_dropout,
+        "causal": causal,
+        "window_size": SEQ // 10,
+    }
+
+    multi_head_config = {
         "n_heads": heads,
         "dim_in": MODEL,
         "dim_out": MODEL,
-        "attention_dropout": attn_dropout,
         "residual_dropout": residual_dropout,
-        "causal": causal,
-        "window_size": SEQ // 10,
     }
 
     feedforward_config = {
@@ -60,6 +64,7 @@ def test_xformer_block(
     block_config = xFormerConfig(
         MODEL,
         AttentionConfig(**attention_config),
+        MultiHeadDispatchConfig(**multi_head_config),
         FeedforwardConfig(**feedforward_config),
         PositionEncodingConfig(**position_encoding_config),
     )

@@ -4,7 +4,6 @@ import torch
 
 from xformers.components.positional_encoding import (
     PositionEncoding,
-    PositionEncodingConfig,
     register_positional_encoding,
 )
 
@@ -14,7 +13,7 @@ from xformers.components.positional_encoding import (
 
 @register_positional_encoding("sine")
 class SinePositionEncoding(PositionEncoding):
-    def __init__(self, dim_model: int, seq_len: int):
+    def __init__(self, dim_model: int, seq_len: int, *args, **kwargs):
         super().__init__()
 
         pos = torch.arange(0.0, seq_len).unsqueeze(1).repeat(1, dim_model)
@@ -27,7 +26,3 @@ class SinePositionEncoding(PositionEncoding):
 
     def forward(self, x):
         return x + self.pe[:, : x.size(1), :]
-
-    @classmethod
-    def from_config(cls, config: PositionEncodingConfig) -> "SinePositionEncoding":
-        return cls(config.dim_model, config.seq_len)

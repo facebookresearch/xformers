@@ -2,7 +2,11 @@ from dataclasses import dataclass
 
 import torch.nn as nn
 
-from xformers.components.attention import AttentionConfig, build_attention  # noqa
+from xformers.components.attention import (  # noqa
+    AttentionConfig,
+    MultiHeadDispatchConfig,
+    build_multi_head_attention,
+)
 from xformers.components.feedforward import FeedforwardConfig, build_feedforward
 from xformers.components.positional_encoding import PositionEncodingConfig
 
@@ -11,6 +15,7 @@ from xformers.components.positional_encoding import PositionEncodingConfig
 class xFormerConfig:
     dim_model: int
     attention_config: AttentionConfig
+    multi_head_config: MultiHeadDispatchConfig
     feedforward_config: FeedforwardConfig
     position_encoding_config: PositionEncodingConfig
 
@@ -23,7 +28,9 @@ class xFormerBlock(nn.Module):
         self.ln1 = nn.LayerNorm(config.dim_model)
         self.ln2 = nn.LayerNorm(config.dim_model)
 
-        self.attn = build_attention(config.attention_config)
+        self.attn = build_multi_head_attention(
+            config.attention_config, config.multi_head_config
+        )
         self.ff = build_feedforward(config.feedforward_config)
 
     @classmethod
