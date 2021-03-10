@@ -1,4 +1,5 @@
 import pytest
+import torch
 
 from xformers.block_factory import (
     AttentionConfig,
@@ -16,7 +17,6 @@ from xformers.components.feedforward import FEEDFORWARD_REGISTRY, Activations
 BATCH = 20
 SEQ = 1920
 MODEL = 384
-LATENT = 128
 DROPOUT = 0.5
 
 
@@ -46,14 +46,14 @@ def test_xformer_block(
 
     multi_head_config = {
         "n_heads": heads,
-        "dim_in": MODEL,
-        "dim_out": MODEL,
+        "dim_seq": SEQ,
+        "dim_model": MODEL,
         "residual_dropout": residual_dropout,
     }
 
     feedforward_config = {
         "name": feedforward_name,
-        "dim_latent": LATENT,
+        "dim_latent": MODEL,
         "dropout": DROPOUT,
         "activation": activation,
         "hidden_layer_multiplier": 4,
@@ -69,4 +69,9 @@ def test_xformer_block(
         PositionEncodingConfig(**position_encoding_config),
     )
 
-    _ = xFormerBlock.from_config(block_config)
+    # Test that the whole block can be instantiated
+    block = xFormerBlock.from_config(block_config)
+
+    # Check that the dimensions make sense, to a FW pass
+    inputs = torch.rand(BATCH, SEQ, MODEL)
+    _ = block(inputs)

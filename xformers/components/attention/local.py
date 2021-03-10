@@ -1,18 +1,17 @@
-# Credits : https://github.com/lucidrains/local-attention
 # see https://arxiv.org/pdf/2003.05997.pdf
-# and https://arxiv.org/pdf/2004.05150.pdf
+# and
 # FIXME: proper credits
 
 import math
 from functools import reduce
 from operator import mul
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-from xformers.components.attention import Attention, AttentionConfig, register_attention
+from xformers.components.attention import Attention, AttentionConfig
 from xformers.components.positional_encoding.relative_positional import (
     RelativePositionalEncoding,
 )
@@ -68,23 +67,31 @@ class LocalAttentionConfig(AttentionConfig):
     autopad: bool
     shared_qk: bool
     exact_window_size: bool
-    look_backward: int
-    look_forward: int
+    look_backward: int = 1
+    look_forward: int = 0
+    rel_pos_emb_config: Optional[Tuple[int, int]] = None
 
 
-@register_attention("local")
+# @register_attention("local")
 class LocalAttention(Attention):
+    r"""
+    An implementation of a sliding window attention, as proposed in LongFormers
+    https://arxiv.org/pdf/2004.05150.pdf
+
+    # Credits : https://github.com/lucidrains/local-attention
+    """
+
     def __init__(
         self,
-        window_size,
-        causal=False,
-        look_backward=1,
-        look_forward=None,
-        dropout=0.0,
-        shared_qk=False,
-        rel_pos_emb_config=None,
-        autopad=False,
-        exact_window_size=False,
+        window_size: int,
+        causal: bool = False,
+        look_backward: int = 1,
+        look_forward: int = 0,
+        dropout: float = 0.0,
+        shared_qk: bool = False,
+        rel_pos_emb_config: Optional[Tuple[int, int]] = None,
+        autopad: bool = False,
+        exact_window_size: bool = False,
         *args,
         **kwargs,
     ):
@@ -128,38 +135,33 @@ class LocalAttention(Attention):
                 lambda t: pad_to_multiple(t, self.window_size, dim=-2), (q, k, v)
             )
 
-        window_size, causal, look_backward, look_forward, shared_qk = (
-            self.window_size,
-            self.causal,
-            self.look_backward,
-            self.look_forward,
-            self.shared_qk,
-        )
-
-        b, s, e = q.shape  # batch x sequence x embedding
+        B, S, E = q.size()  # batch x sequence x embedding
         device, dtype = q.device, q.dtype
         assert (
-            s % window_size
-        ) == 0, f"sequence length {s} must be divisible by window size {window_size} for local attention"
+            S % self.window_size
+        ) == 0, f"sequence length {S} must be divisible by window size {self.window_size} for local attention"
 
-        windows = s // window_size
+        windows = S // self.window_size
 
-        if shared_qk:
+        if self.shared_qk:
             k = F.normalize(k, 2, dim=-1).type_as(q)
 
-        ticker = torch.arange(s, device=device, dtype=dtype)[None, :]
-        b_t = ticker.reshape(1, windows, window_size)
+        ticker = torch.arange(S, device=device, dtype=dtype)[None, :]
+        b_t = ticker.reshape(1, windows, self.window_size)
 
-        bq, bk, bv = map(lambda t: t.reshape(b, windows, window_size, -1), (q, k, v))  # type: ignore
+        bq, bk, bv = map(lambda t: t.reshape(B, windows, self.window_size, -1), (q, k, v))  # type: ignore
 
-        look_around_kwargs = {"backward": look_backward, "forward": look_forward}
+        look_around_kwargs = {
+            "backward": self.look_backward,
+            "forward": self.look_forward,
+        }
         bk = look_around(bk, **look_around_kwargs)
         bv = look_around(bv, **look_around_kwargs)
 
         bq_t = b_t
         bq_k = look_around(b_t, **look_around_kwargs)
 
-        dots = torch.einsum("bhie,bhje->bhij", bq, bk) * (e ** -0.5)
+        dots = torch.einsum("bhie,bhje->bhij", bq, bk) * (E ** -0.5)
 
         if self.rel_pos is not None:
             rel_attn = self.rel_pos(bq.view(-1, self.heads, *bq.shape[1:])).reshape_as(
@@ -169,12 +171,12 @@ class LocalAttention(Attention):
 
         mask_value = max_neg_value(dots)
 
-        if shared_qk:
+        if self.shared_qk:
             mask = bq_t[:, :, :, None] == bq_k[:, :, None, :]
             dots.masked_fill_(mask, TOKEN_SELF_ATTN_VALUE)
             del mask
 
-        if causal:
+        if self.causal:
             mask = bq_t[:, :, :, None] < bq_k[:, :, None, :]
 
             if self.exact_window_size:
@@ -191,12 +193,12 @@ class LocalAttention(Attention):
         del mask
 
         if input_mask is not None:
-            h = b // input_mask.shape[0]
+            h = B // input_mask.shape[0]
             if self.autopad:
                 input_mask = pad_to_multiple(
-                    input_mask, window_size, dim=-1, value=False
+                    input_mask, self.window_size, dim=-1, value=False
                 )
-            input_mask = input_mask.reshape(-1, windows, window_size)  # type: ignore
+            input_mask = input_mask.reshape(-1, windows, self.window_size)  # type: ignore    # Mypy is drunk
             mq = mk = input_mask
             mk = look_around(mk, pad_value=False, **look_around_kwargs)
             mask = mq[:, :, :, None] * mk[:, :, None, :]
@@ -208,7 +210,7 @@ class LocalAttention(Attention):
         attn = self.dropout(attn)
 
         out = torch.einsum("bhij,bhje->bhie", attn, bv)
-        out = out.reshape(-1, s, e)  # type: ignore
+        out = out.reshape(-1, S, E)
 
         if self.autopad:
             out = out[:, :orig_t, :]

@@ -29,39 +29,58 @@ class MultiHeadDispatch(nn.Module):
 
     def __init__(
         self,
-        dim_in: int,
-        dim_out: int,
+        dim_model: int,
         residual_dropout: float,
         n_heads: int,
-        attention: nn.Module,
+        attention: Attention,
+        causal: bool = False,
+        dim_seq: Optional[int] = None,
+        dim_key: Optional[int] = None,
+        dim_value: Optional[int] = None,
         *args,
         **kwargs
     ):
         super().__init__()
 
         assert (
-            dim_out % n_heads == 0
+            dim_model % n_heads == 0
         )  # static preset for now, each head works on 1/d the embeddings, could be relaxed
         assert n_heads > 0
 
-        self.dim_k = dim_out // n_heads
+        # Popular default is that all latent dimensions are the same
+        dim_seq, dim_key, dim_value = map(
+            lambda x: x if x else dim_model, (dim_seq, dim_key, dim_value)
+        )
+
+        self.n_heads = n_heads
+        self.dim_k = dim_key // n_heads
+        self.dim_value = dim_value
+        self.dim_model = dim_model
         self.attention = attention
 
         # key, query, value projections for all heads
-        self.key = nn.Linear(dim_in, dim_in)
-        self.query = nn.Linear(dim_in, dim_in)
-        self.value = nn.Linear(dim_in, dim_in)
+        self.key = nn.Linear(dim_model, dim_key, bias=False)  # NOTE: optional bias ?
+        self.query = nn.Linear(dim_model, dim_key, bias=False)
+        self.value = nn.Linear(dim_model, dim_value, bias=False)
 
         # Regularization
         self.resid_drop = nn.Dropout(residual_dropout, inplace=True)
 
         # Output projection
-        self.proj = nn.Linear(dim_in, dim_in)
+        self.proj = nn.Linear(dim_model, dim_model, bias=False)
 
-        self.n_heads = n_heads
+        # Optional masking
+        if causal:
+            mask = torch.tril(torch.ones(dim_seq, dim_seq), diagonal=0)
+            mask[mask == 1] = -float("inf")
+
+            # add the batch dimension and register the buffer in this nn.Module
+            self.register_buffer("mask", mask.unsqueeze(0))
+        else:
+            self.mask = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, S, E = x.size()  # Batch x Sequence x Embedding
+        B, S, E = x.size()  # Batch x Sequence x Embedding (latent)
 
         # Calculate query, key, values for all heads in batch and move head forward to be the batch dim
         k = (
@@ -75,7 +94,7 @@ class MultiHeadDispatch(nn.Module):
         )  # (B, nh, S, hs)
 
         # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
-        y = self.attention(k, q, v)
+        y = self.attention(k, q, v, input_mask=self.mask)
         y = (
             y.transpose(1, 2).contiguous().view(B, S, E)
         )  # re-assemble all head outputs side by side

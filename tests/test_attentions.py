@@ -9,7 +9,7 @@ from xformers.components.attention import (
     build_attention,
 )
 
-BATCH = 20
+BATCH = 5
 SEQ = 1920
 MODEL = 384
 
@@ -32,18 +32,19 @@ def test_order_invariance(
         "name": attention_name,
         "dropout": attn_dropout,
         "causal": causal,
-        "window_size": SEQ // 10,
+        "window_size": MODEL // 4,
     }
 
     attention = build_attention(AttentionConfig(**test_config))
 
     # build a multi head dispatch to test this attention mechanism
     multi_head = MultiHeadDispatch(
-        dim_in=MODEL,
-        dim_out=MODEL,
+        dim_seq=SEQ,
+        dim_model=MODEL,
         residual_dropout=residual_dropout,
         n_heads=heads,
         attention=attention,
+        causal=causal,
     )
 
     # Check that a shuffled input produces the same results

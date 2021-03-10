@@ -17,12 +17,14 @@ class ScaledDotProduct(Attention):
 
     def __init__(
         self,
-        dropout=0.0,
+        dropout: float = 0.0,
+        causal=False,
         *args,
         **kwargs,
     ):
         super().__init__()
         self.attn_drop = nn.Dropout(dropout, inplace=True)
+        self.causal = causal
 
     def forward(
         self,
@@ -35,13 +37,8 @@ class ScaledDotProduct(Attention):
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
 
         # Optional masking
-        if input_mask:
-            # att = att.masked_fill(input_mask[:, :S, :S] == 0, float("-inf"))
-            pass
-        elif hasattr(self, "mask"):
-            pass
-            # FIXME @lefaudeux
-            # att = att.masked_fill(self.mask[:, :S, :S] == 0, float("-inf"))
+        if input_mask is not None:
+            att += input_mask.unsqueeze(0)
 
         # Softmax to get the attention probabilities, then optional dropout
         att = F.softmax(att, dim=-1)

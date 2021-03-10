@@ -40,14 +40,3 @@ class Attention(nn.Module, metaclass=ABCMeta):
         input_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         raise NotImplementedError
-
-    @staticmethod
-    def generate_mask(size: int) -> torch.Tensor:
-        # FIXME
-        mask = (torch.triu(torch.ones(size, size)) == 1).transpose(0, 1)
-        mask = (
-            mask.float()
-            .masked_fill(mask == 0, float("-inf"))
-            .masked_fill(mask == 1, float(0.0))
-        )
-        return mask
