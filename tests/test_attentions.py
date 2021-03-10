@@ -30,7 +30,7 @@ def test_order_invariance(
 ):
     test_config = {
         "name": attention_name,
-        "attention_dropout": attn_dropout,
+        "dropout": attn_dropout,
         "causal": causal,
         "window_size": SEQ // 10,
     }

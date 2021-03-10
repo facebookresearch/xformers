@@ -10,14 +10,19 @@ from xformers.components.attention import Attention, register_attention
 
 @register_attention("scaled_dot_product")
 class ScaledDotProduct(Attention):
+    r"""
+    Implementing the Scaled Dot-Product attention proposed in
+    "Attention is all you need", Vaswani et al. https://arxiv.org/abs/1706.03762v5
+    """
+
     def __init__(
         self,
-        attention_dropout=0.0,
+        dropout=0.0,
         *args,
         **kwargs,
     ):
         super().__init__()
-        self.attn_drop = nn.Dropout(attention_dropout, inplace=True)
+        self.attn_drop = nn.Dropout(dropout, inplace=True)
 
     def forward(
         self,

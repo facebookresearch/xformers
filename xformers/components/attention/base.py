@@ -8,16 +8,18 @@ from attrdict import AttrDict
 
 class AttentionConfig(AttrDict):
     name: str
-    attention_dropout: float
+    dropout: float
     causal: bool
 
 
 # Define the common interface, every attention block needs to derive from it
 class Attention(nn.Module, metaclass=ABCMeta):
+    r"""The base Attention mechanism, which is typically a sub-part of the multi-head attention"""
+
     @abstractmethod
     def __init__(
         self,
-        attention_dropout: Optional[float] = None,
+        dropout: Optional[float] = None,
         causal: Optional[bool] = None,
         *args,
         **kwargs
@@ -28,6 +30,16 @@ class Attention(nn.Module, metaclass=ABCMeta):
     def from_config(cls, config: AttentionConfig) -> "Attention":
         # NOTE: This will make sure that default values set in the constructors are used
         return cls(**config)
+
+    @abstractmethod
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        input_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        raise NotImplementedError
 
     @staticmethod
     def generate_mask(size: int) -> torch.Tensor:

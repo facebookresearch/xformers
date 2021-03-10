@@ -80,7 +80,7 @@ class LocalAttention(Attention):
         causal=False,
         look_backward=1,
         look_forward=None,
-        attention_dropout=0.0,
+        dropout=0.0,
         shared_qk=False,
         rel_pos_emb_config=None,
         autopad=False,
@@ -99,7 +99,7 @@ class LocalAttention(Attention):
         self.exact_window_size = exact_window_size
         self.autopad = autopad
 
-        self.dropout = nn.Dropout(attention_dropout)
+        self.dropout = nn.Dropout(dropout)
 
         self.shared_qk = shared_qk
 
@@ -116,7 +116,7 @@ class LocalAttention(Attention):
         k: torch.Tensor,
         v: torch.Tensor,
         input_mask: Optional[torch.Tensor] = None,
-    ):
+    ) -> torch.Tensor:
 
         shape = q.shape
 
