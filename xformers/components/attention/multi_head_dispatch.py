@@ -42,6 +42,8 @@ class MultiHeadDispatch(nn.Module):
     ):
         super().__init__()
 
+        # TODO: Handle max sequence size / mask instead of fixed size
+
         assert (
             dim_model % n_heads == 0
         )  # static preset for now, each head works on 1/d the embeddings, could be relaxed
@@ -83,15 +85,10 @@ class MultiHeadDispatch(nn.Module):
         B, S, E = x.size()  # Batch x Sequence x Embedding (latent)
 
         # Calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        k = (
-            self.key(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
-        )  # (B, nh, S, hs)
-        q = (
-            self.query(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
-        )  # (B, nh, S, hs)
-        v = (
-            self.value(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
-        )  # (B, nh, S, hs)
+        # dimensions become (B, nh, S, hs)
+        k = self.key(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
+        q = self.query(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
+        v = self.value(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
 
         # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
         y = self.attention(k, q, v, input_mask=self.mask)
@@ -99,7 +96,7 @@ class MultiHeadDispatch(nn.Module):
             y.transpose(1, 2).contiguous().view(B, S, E)
         )  # re-assemble all head outputs side by side
 
-        # Output projection
+        # Output projection, dropout and good to go
         y = self.resid_drop(self.proj(y))
         return y
 

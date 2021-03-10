@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from xformers.components.attention import Attention, AttentionConfig
+from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.positional_encoding.relative_positional import (
     RelativePositionalEncoding,
 )
@@ -72,7 +72,7 @@ class LocalAttentionConfig(AttentionConfig):
     rel_pos_emb_config: Optional[Tuple[int, int]] = None
 
 
-# @register_attention("local")
+@register_attention("local")
 class LocalAttention(Attention):
     r"""
     An implementation of a sliding window attention, as proposed in LongFormers
@@ -127,9 +127,12 @@ class LocalAttention(Attention):
 
         shape = q.shape
 
-        q, k, v = map(lambda t: t.reshape(-1, *t.shape[-2:]), (q, k, v))
+        # Flatten the head dimension
+        # was [Batch x Heads x Sequence x HeadSize]
+        q, k, v = map(lambda t: t.transpose(1, 2).flatten(start_dim=2), (q, k, v))
 
         if self.autopad:
+            # FIXME: This is probably broken
             orig_t = q.shape[1]
             q, k, v = map(
                 lambda t: pad_to_multiple(t, self.window_size, dim=-2), (q, k, v)
@@ -193,18 +196,18 @@ class LocalAttention(Attention):
         del mask
 
         if input_mask is not None:
-            h = B // input_mask.shape[0]
-            if self.autopad:
-                input_mask = pad_to_multiple(
-                    input_mask, self.window_size, dim=-1, value=False
-                )
-            input_mask = input_mask.reshape(-1, windows, self.window_size)  # type: ignore    # Mypy is drunk
-            mq = mk = input_mask
-            mk = look_around(mk, pad_value=False, **look_around_kwargs)
-            mask = mq[:, :, :, None] * mk[:, :, None, :]
-            mask = merge_dims(0, 1, expand_dim(mask, 1, h))
-            dots.masked_fill_(~mask, mask_value)
-            del mask
+            pass
+            # FIXME
+            # h = B // input_mask.shape[0]
+            # if self.autopad:
+            #     input_mask = pad_to_multiple(input_mask, self.window_size, dim=-1, value=False)
+            # input_mask = input_mask.reshape(-1, windows, self.window_size)  # type: ignore    # Mypy is drunk
+            # mq = mk = input_mask
+            # mk = look_around(mk, pad_value=False, **look_around_kwargs)
+            # mask = mq[:, :, :, None] * mk[:, :, None, :]
+            # mask = merge_dims(0, 1, expand_dim(mask, 1, h))
+            # dots.masked_fill_(~mask, mask_value)
+            # del mask
 
         attn = dots.softmax(dim=-1)
         attn = self.dropout(attn)

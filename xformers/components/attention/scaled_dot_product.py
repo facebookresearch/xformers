@@ -18,13 +18,11 @@ class ScaledDotProduct(Attention):
     def __init__(
         self,
         dropout: float = 0.0,
-        causal=False,
         *args,
         **kwargs,
     ):
         super().__init__()
         self.attn_drop = nn.Dropout(dropout, inplace=True)
-        self.causal = causal
 
     def forward(
         self,
