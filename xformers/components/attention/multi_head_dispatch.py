@@ -38,11 +38,13 @@ class MultiHeadDispatch(nn.Module):
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
         *args,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
 
         # TODO: Handle max sequence size / mask instead of fixed size
+        # TODO: Expose the projection method,
+        # see https://github.com/pytorch/text/blob/torchtext/nn/modules/multiheadattention.py#L5-L36, very clean
 
         assert (
             dim_model % n_heads == 0
@@ -81,14 +83,26 @@ class MultiHeadDispatch(nn.Module):
         else:
             self.mask = None
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, S, E = x.size()  # Batch x Sequence x Embedding (latent)
+    def forward(
+        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+    ) -> torch.Tensor:
+        def _check(t, name):
+            assert (
+                t.shape[2] % self.dim_k == 0
+            ), f"the {name} embeddings need to be divisible by the number of heads"
+
+        # Check the dimensions properly
+        _check(query, "query")
+        _check(value, "value")
+        _check(key, "key")
+
+        B, S, E = query.size()  # Batch x Sequence x Embedding (latent)
 
         # Calculate query, key, values for all heads in batch and move head forward to be the batch dim
         # dimensions become (B, nh, S, hs)
-        k = self.key(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
-        q = self.query(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
-        v = self.value(x).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
+        k = self.key(key).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
+        q = self.query(query).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
+        v = self.value(value).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
 
         # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
         y = self.attention(k, q, v, input_mask=self.mask)

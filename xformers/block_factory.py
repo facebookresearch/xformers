@@ -61,7 +61,7 @@ class xFormerEncoderBlock(nn.Module):
         if self.pose_encoding:
             x = self.pose_encoding(x)
 
-        x = self.ln1(x + self.attn(x))
+        x = self.ln1(x + self.attn(x, x, x))
         x = self.ln2(x + self.ff(x))
         return x
 
@@ -105,8 +105,7 @@ class xFormerDecoderBlock(nn.Module):
         x = self.ln1(target + self.attn1(target))
 
         # Include the memory/Encoder results
-        # FIXME: Expose direct K,V,Q in the MHA
-        x = self.ln2(x + self.attn2(torch.cat([memory, memory, target])))
+        x = self.ln2(x + self.attn2(key=memory, value=memory, query=x))
 
         # FF
         x = self.ln3(x + self.ff(x))

@@ -52,8 +52,8 @@ def test_order_invariance(
     shuffle = torch.randperm(inputs.shape[1])
     inputs_shuffled = inputs[:, shuffle, :]
 
-    results = multi_head(inputs)
-    results_shuffled = multi_head(inputs_shuffled)
+    results = multi_head(inputs, inputs, inputs)
+    results_shuffled = multi_head(inputs_shuffled, inputs_shuffled, inputs_shuffled)
 
     torch.allclose(results[:, shuffle, :], results_shuffled)
 
