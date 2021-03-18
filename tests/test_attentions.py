@@ -1,11 +1,12 @@
 import pytest
 import torch
 
+from xformers.components import MultiHeadDispatch
+
 # Automatically test all the registered attentions
 from xformers.components.attention import (
     ATTENTION_REGISTRY,
     AttentionConfig,
-    MultiHeadDispatch,
     build_attention,
 )
 

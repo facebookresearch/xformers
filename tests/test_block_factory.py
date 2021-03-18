@@ -86,7 +86,7 @@ def test_xformer_encoder_block(
 @pytest.mark.parametrize("activation", [a.value for a in Activations])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
-def _test_xformer_decoder_block(
+def test_xformer_decoder_block(
     attention_name: str,
     feedforward_name: str,
     heads: int,

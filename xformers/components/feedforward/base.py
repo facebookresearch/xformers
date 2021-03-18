@@ -1,9 +1,9 @@
 from abc import ABCMeta, abstractmethod
-from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
 import torch.nn as nn
+from attrdict import AttrDict
 
 
 class Activations(str, Enum):
@@ -11,8 +11,7 @@ class Activations(str, Enum):
     ReLU = "relu"
 
 
-@dataclass
-class FeedforwardConfig:
+class FeedforwardConfig(AttrDict):
     name: str
     dim_latent: int
     dropout: float
