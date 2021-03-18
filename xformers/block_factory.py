@@ -4,11 +4,8 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 
-from xformers.components.attention import (  # noqa
-    AttentionConfig,
-    MultiHeadDispatchConfig,
-    build_multi_head_attention,
-)
+from xformers.components import MultiHeadDispatchConfig, build_multi_head_attention
+from xformers.components.attention import AttentionConfig  # noqa
 from xformers.components.feedforward import FeedforwardConfig, build_feedforward
 from xformers.components.positional_encoding import (
     PositionEncodingConfig,
@@ -102,7 +99,7 @@ class xFormerDecoderBlock(nn.Module):
             target = self.pose_encoding(target)
 
         # Masked multi head attention
-        x = self.ln1(target + self.attn1(target))
+        x = self.ln1(target + self.attn1(target, target, target))
 
         # Include the memory/Encoder results
         x = self.ln2(x + self.attn2(key=memory, value=memory, query=x))

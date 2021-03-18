@@ -23,13 +23,14 @@ class MLP(Feedforward):
     ):
         super().__init__()
 
-        activation = {Activations.ReLU: nn.ReLU, Activations.GeLU: nn.GELU}[
-            activation
-        ]()
+        activation_layer: nn.Module = {
+            Activations.ReLU: nn.ReLU,
+            Activations.GeLU: nn.GELU,
+        }[activation]()
 
         self.mlp = nn.Sequential(
             nn.Linear(dim_latent, hidden_layer_multiplier * dim_latent),
-            activation,
+            activation_layer,
             nn.Linear(hidden_layer_multiplier * dim_latent, dim_latent),
             nn.Dropout(dropout),
         )
