@@ -134,6 +134,7 @@ def instantiate_xformer(
         "dropout": attn_dropout,
         "causal": causal,
         "window_size": sequence_length // 8,
+        "dim_seq": sequence_length,
     }
 
     multi_head_config = {

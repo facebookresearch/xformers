@@ -8,6 +8,7 @@ from attrdict import AttrDict
 
 class AttentionConfig(AttrDict):
     name: str
+    dim_seq: int
     dropout: float
     causal: bool
 
@@ -21,6 +22,7 @@ class Attention(nn.Module, metaclass=ABCMeta):
         self,
         dropout: Optional[float] = None,
         causal: Optional[bool] = None,
+        dim_seq: Optional[int] = None,
         *args,
         **kwargs
     ):
