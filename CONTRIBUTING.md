@@ -64,14 +64,16 @@ mypy --ignore-missing-imports --scripts-are-modules --pretty .
 
 ```
 pytest
-# single test
-python -m pytest tests/hierarchy/single_test::test_target
+```
+or
+```
+python -m pytest
 ```
 
 ### Check test coverage
 
 ```
-python -m pytest --cov-report term --cov=template  tests/my_test_implementation::test_target
+python -m pytest --cov-report term --cov=template  tests
 ```
 
 ### CircleCI status
@@ -119,6 +121,14 @@ Must be one of the following:
 * **chore**: Changes to the build process or auxiliary tools and libraries such as documentation
 generation
 * **docs**: Documentation only changes
+
+## Benchmarking
+Eventually we'll probably have a launcher for a full benchmark suite.
+
+For now, thanks to Sean Naren, you can start with
+```
+python3 benchmarks/benchmark_attention.py
+```
 
 ## License
 By contributing to *template*, you agree that your contributions will be licensed
