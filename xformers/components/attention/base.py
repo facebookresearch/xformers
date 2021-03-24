@@ -28,7 +28,6 @@ class Attention(nn.Module, metaclass=ABCMeta):
 
     @classmethod
     def from_config(cls, config: AttentionConfig) -> "Attention":
-        # NOTE: This will make sure that default values set in the constructors are used
         return cls(**config)
 
     @abstractmethod

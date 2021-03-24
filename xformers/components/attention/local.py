@@ -67,9 +67,9 @@ class LocalAttentionConfig(AttentionConfig):
     autopad: bool
     shared_qk: bool
     exact_window_size: bool
-    look_backward: int = 1
-    look_forward: int = 0
-    rel_pos_emb_config: Optional[Tuple[int, int]] = None
+    look_backward: int
+    look_forward: int
+    rel_pos_emb_config: Optional[Tuple[int, int]]
 
 
 @register_attention("local")
@@ -83,11 +83,11 @@ class LocalAttention(Attention):
 
     def __init__(
         self,
+        dropout: float,
+        causal: bool,
         window_size: int,
-        causal: bool = False,
         look_backward: int = 1,
         look_forward: int = 0,
-        dropout: float = 0.0,
         shared_qk: bool = False,
         rel_pos_emb_config: Optional[Tuple[int, int]] = None,
         autopad: bool = False,

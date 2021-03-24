@@ -33,6 +33,5 @@ class Feedforward(nn.Module, metaclass=ABCMeta):
         super().__init__()
 
     @classmethod
-    @abstractmethod
     def from_config(cls, config: FeedforwardConfig) -> "Feedforward":
-        raise NotImplementedError
+        return cls(**config)
