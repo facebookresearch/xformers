@@ -33,7 +33,6 @@ class MultiHeadDispatch(nn.Module):
         residual_dropout: float,
         n_heads: int,
         attention: Attention,
-        causal: bool = False,
         dim_seq: Optional[int] = None,
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
@@ -73,16 +72,6 @@ class MultiHeadDispatch(nn.Module):
         # Output projection
         self.proj = nn.Linear(dim_model, dim_model, bias=False)
 
-        # Optional masking
-        if causal:
-            mask = torch.tril(torch.ones(dim_seq, dim_seq), diagonal=0)
-            mask[mask == 1] = -float("inf")
-
-            # add the batch dimension and register the buffer in this nn.Module
-            self.register_buffer("mask", mask.unsqueeze(0))
-        else:
-            self.mask = None
-
     def forward(
         self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
     ) -> torch.Tensor:
@@ -105,7 +94,7 @@ class MultiHeadDispatch(nn.Module):
         v = self.value(value).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
 
         # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
-        y = self.attention(k, q, v, input_mask=self.mask)
+        y = self.attention(k, q, v)
         y = (
             y.transpose(1, 2).contiguous().view(B, S, E)
         )  # re-assemble all head outputs side by side

@@ -11,7 +11,7 @@ from xformers.components.attention import (
 )
 
 BATCH = 5
-SEQ = 1920
+SEQ = 1024
 MODEL = 384
 
 assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
@@ -33,7 +33,9 @@ def test_order_invariance(
         "name": attention_name,
         "dropout": attn_dropout,
         "causal": causal,
-        "window_size": MODEL // 4,
+        "window_size": SEQ // 4,
+        "dim_seq": SEQ,
+        "causal": causal,
     }
 
     attention = build_attention(AttentionConfig(**test_config))
@@ -45,7 +47,6 @@ def test_order_invariance(
         residual_dropout=residual_dropout,
         n_heads=heads,
         attention=attention,
-        causal=causal,
     )
 
     # Check that a shuffled input produces the same results

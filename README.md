@@ -44,13 +44,14 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
 ## Repo features
     [ ] Decent "bibliography" section
     [ ] Decent full model presets (matching bibliography ideally)
+    [ ] Autogenerate benchmark curves on github io or similar
 
 ## Variants, at least first ones to add
 
     [ ] Performer
     [x] Local attention
     [ ] Big Bird
-    [ ] Linformer
+    [x] Linformer
     [ ]...
 
 
@@ -64,6 +65,7 @@ Here are a couple of guidelines which should make it easier to add a new block v
 * Please follow the CONTRIBUTING guide to make sure that formatting and linting is checked
 * `@register` your new block variant with a unique and hopefully descriptive name
 * just define the (pure pytorch) constructor and forward call typically, no need to handle enything specific to this repo (except for inheritance)
+* keep `*args` and `**kwargs` in your constructor, this is important for the config composition
 * No need to change unit tests, the new variant will be automatically picked up
 * No need to change benchmarks, the new variant will be automatically picked up
 
@@ -75,6 +77,9 @@ DRAFT, needs a proper citation format, ..
 
 ### Attention is all you need
     https://papers.nips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf
+
+### Linformer
+    https://arxiv.org/pdf/2006.04768.pdf
 
 ### BigBird
     https://github.com/google-research/bigbird

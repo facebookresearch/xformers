@@ -18,11 +18,23 @@ class ScaledDotProduct(Attention):
     def __init__(
         self,
         dropout: float = 0.0,
+        causal: bool = False,
+        dim_seq: Optional[int] = None,
         *args,
         **kwargs,
     ):
         super().__init__()
         self.attn_drop = nn.Dropout(dropout, inplace=True)
+        self.causal = causal
+
+        if causal and dim_seq is not None:
+            mask = torch.tril(torch.ones(dim_seq, dim_seq), diagonal=0)
+            mask[mask == 1] = -float("inf")
+
+            # add the batch dimension and register the buffer in this nn.Module
+            self.register_buffer("mask", mask.unsqueeze(0))
+        else:
+            self.mask = None
 
     def forward(
         self,
@@ -37,6 +49,9 @@ class ScaledDotProduct(Attention):
         # Optional masking
         if input_mask is not None:
             att += input_mask.unsqueeze(0)
+
+        if self.mask is not None:
+            att += self.mask
 
         # Softmax to get the attention probabilities, then optional dropout
         att = F.softmax(att, dim=-1)
