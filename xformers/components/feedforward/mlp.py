@@ -37,12 +37,3 @@ class MLP(Feedforward):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.mlp(inputs)
-
-    @classmethod
-    def from_config(cls, config: MlpConfig) -> "MLP":
-        return cls(
-            config.dim_latent,
-            config.dropout,
-            config.activation,
-            config.hidden_layer_multiplier,
-        )
