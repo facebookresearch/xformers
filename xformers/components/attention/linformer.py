@@ -19,7 +19,7 @@ class LinformerAttention(Attention):
         self,
         dropout: float,
         causal: bool,
-        dim_seq: int,
+        from_seq_dim: int,
         k: Optional[int] = None,
         *args,
         **kwargs
@@ -36,14 +36,14 @@ class LinformerAttention(Attention):
         super().__init__()
 
         if k is None:
-            k = dim_seq // 4
+            k = from_seq_dim // 4
 
-        self.E = nn.Linear(dim_seq, k, bias=False)
-        self.F = nn.Linear(dim_seq, k, bias=False)
+        self.E = nn.Linear(from_seq_dim, k, bias=False)
+        self.F = nn.Linear(from_seq_dim, k, bias=False)
         self.attn_drop = nn.Dropout(dropout, inplace=True)
 
         if causal:
-            mask = torch.tril(torch.ones(dim_seq, k), diagonal=0)
+            mask = torch.tril(torch.ones(from_seq_dim, k), diagonal=0)
             mask[mask == 1] = -float("inf")
 
             # add the batch dimension and register the buffer in this nn.Module
@@ -57,6 +57,7 @@ class LinformerAttention(Attention):
         k: torch.Tensor,
         v: torch.Tensor,
         input_mask: Optional[torch.Tensor] = None,
+        *args,
         **kwargs
     ):
 

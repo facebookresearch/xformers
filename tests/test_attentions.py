@@ -34,7 +34,7 @@ def test_order_invariance(
         "dropout": attn_dropout,
         "causal": causal,
         "window_size": SEQ // 4,
-        "dim_seq": SEQ,
+        "from_seq_dim": SEQ,
         "causal": causal,
     }
 
@@ -42,7 +42,7 @@ def test_order_invariance(
 
     # build a multi head dispatch to test this attention mechanism
     multi_head = MultiHeadDispatch(
-        dim_seq=SEQ,
+        from_seq_dim=SEQ,
         dim_model=MODEL,
         residual_dropout=residual_dropout,
         n_heads=heads,
