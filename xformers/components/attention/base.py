@@ -7,10 +7,11 @@ from attrdict import AttrDict
 
 
 class AttentionConfig(AttrDict):
-    name: str
-    dim_seq: int
-    dropout: float
-    causal: bool
+    name: str  # the registered name for this attention mechanism
+    from_seq_dim: int  # the dimension of the input sequence
+    to_seq_dim: Optional[int]  # the (optional) dimension of the output sequence
+    dropout: float  # dropout probability
+    causal: bool  # apply a causal mask
 
 
 # Define the common interface, every attention block needs to derive from it
@@ -22,7 +23,8 @@ class Attention(nn.Module, metaclass=ABCMeta):
         self,
         dropout: Optional[float] = None,
         causal: Optional[bool] = None,
-        dim_seq: Optional[int] = None,
+        from_seq_dim: Optional[int] = None,
+        to_seq_dim: Optional[int] = None,
         *args,
         **kwargs
     ):

@@ -134,12 +134,12 @@ def instantiate_xformer(
         "dropout": attn_dropout,
         "causal": causal,
         "window_size": sequence_length // 8,
-        "dim_seq": sequence_length,
+        "from_seq_dim": sequence_length,
     }
 
     multi_head_config = {
         "n_heads": heads,
-        "dim_seq": sequence_length,
+        "from_seq_dim": sequence_length,
         "dim_model": embed_dim,
         "residual_dropout": residual_dropout,
     }

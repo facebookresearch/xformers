@@ -44,12 +44,12 @@ def test_xformer_encoder_block(
         "dropout": attn_dropout,
         "causal": causal,
         "window_size": SEQ // 8,
-        "dim_seq": SEQ,
+        "from_seq_dim": SEQ,
     }
 
     multi_head_config = {
         "n_heads": heads,
-        "dim_seq": SEQ,
+        "from_seq_dim": SEQ,
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
     }
@@ -102,12 +102,12 @@ def test_xformer_decoder_block(
         "dropout": attn_dropout,
         "causal": causal,
         "window_size": SEQ // 8,
-        "dim_seq": SEQ,
+        "from_seq_dim": SEQ,
     }
 
     multi_head_config = {
         "n_heads": heads,
-        "dim_seq": SEQ,
+        "from_seq_dim": SEQ,
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
     }

@@ -19,7 +19,8 @@ class ScaledDotProduct(Attention):
         self,
         dropout: float = 0.0,
         causal: bool = False,
-        dim_seq: Optional[int] = None,
+        from_seq_dim: Optional[int] = None,
+        to_seq_dim: Optional[int] = None,
         *args,
         **kwargs,
     ):
@@ -27,8 +28,10 @@ class ScaledDotProduct(Attention):
         self.attn_drop = nn.Dropout(dropout, inplace=True)
         self.causal = causal
 
-        if causal and dim_seq is not None:
-            mask = torch.tril(torch.ones(dim_seq, dim_seq), diagonal=0)
+        if causal and from_seq_dim is not None:
+            if to_seq_dim is None:
+                to_seq_dim = from_seq_dim
+            mask = torch.tril(torch.ones(from_seq_dim, to_seq_dim), diagonal=0)
             mask[mask == 1] = -float("inf")
 
             # add the batch dimension and register the buffer in this nn.Module
@@ -36,13 +39,17 @@ class ScaledDotProduct(Attention):
         else:
             self.mask = None
 
+    # DEBUG
+
     def forward(
         self,
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
         input_mask: Optional[torch.Tensor] = None,
-    ):
+        *args,
+        **kwargs,
+    ) -> torch.Tensor:
         # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
 

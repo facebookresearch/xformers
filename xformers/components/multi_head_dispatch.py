@@ -33,7 +33,7 @@ class MultiHeadDispatch(nn.Module):
         residual_dropout: float,
         n_heads: int,
         attention: Attention,
-        dim_seq: Optional[int] = None,
+        from_seq_dim: Optional[int] = None,
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
         *args,
@@ -51,8 +51,8 @@ class MultiHeadDispatch(nn.Module):
         assert n_heads > 0
 
         # Popular default is that all latent dimensions are the same
-        dim_seq, dim_key, dim_value = map(
-            lambda x: x if x else dim_model, (dim_seq, dim_key, dim_value)
+        from_seq_dim, dim_key, dim_value = map(
+            lambda x: x if x else dim_model, (from_seq_dim, dim_key, dim_value)
         )
 
         self.n_heads = n_heads

@@ -123,6 +123,8 @@ class LocalAttention(Attention):
         k: torch.Tensor,
         v: torch.Tensor,
         input_mask: Optional[torch.Tensor] = None,
+        *args,
+        **kwargs,
     ) -> torch.Tensor:
 
         shape = q.shape
@@ -197,7 +199,7 @@ class LocalAttention(Attention):
 
         if input_mask is not None:
             pass
-            # FIXME
+            # FIXME @lefaudeux
             # h = B // input_mask.shape[0]
             # if self.autopad:
             #     input_mask = pad_to_multiple(input_mask, self.window_size, dim=-1, value=False)
