@@ -1,8 +1,8 @@
-from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
+from dataclasses import dataclass
 
 from xformers.components import MultiHeadDispatchConfig, build_multi_head_attention
 from xformers.components.attention import AttentionConfig  # noqa

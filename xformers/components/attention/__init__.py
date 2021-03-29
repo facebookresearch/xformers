@@ -61,17 +61,20 @@ def register_attention(name):
     return register_attention_cls
 
 
+from .linformer import LinformerAttention  # noqa
 from .local import LocalAttention  # noqa
+from .random import RandomAttention  # noqa
 from .scaled_dot_product import ScaledDotProduct  # noqa
 
 __all__ = [
     "ScaledDotProduct",
     "LocalAttention",
+    "LinformerAttention",
+    "RandomAttention",
     "Attention",
     "build_attention",
     "register_attention",
 ]
-
 
 # automatically import any Python files in the directory
 import_all_modules(str(Path(__file__).parent), "xformers.components.attention")
