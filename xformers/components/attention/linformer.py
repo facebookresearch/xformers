@@ -77,7 +77,7 @@ class LinformerAttention(Attention):
                 and input_mask.shape[-1] == att.shape[-1]
             ), (
                 "Linformer uses a projected sequence, the input mask needs to be adapted in consequence."
-                + "Please use the `causal` constructor argument if this is the intended effect"
+                + " Please use the `causal` constructor argument if this is the intended effect"
             )
             att += input_mask.unsqueeze(0)
 
