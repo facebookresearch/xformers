@@ -43,11 +43,8 @@ class LinformerAttention(Attention):
         self.attn_drop = nn.Dropout(dropout, inplace=True)
 
         if causal:
-            mask = torch.tril(torch.ones(from_seq_dim, k), diagonal=0)
-            mask[mask == 1] = -float("inf")
-
-            # add the batch dimension and register the buffer in this nn.Module
-            self.register_buffer("mask", mask.unsqueeze(0))
+            mask = self._get_causal_mask(from_seq_dim, k)
+            self.register_buffer("mask", mask)
         else:
             self.mask = None
 

@@ -29,13 +29,10 @@ class ScaledDotProduct(Attention):
         self.causal = causal
 
         if causal and from_seq_dim is not None:
-            if to_seq_dim is None:
-                to_seq_dim = from_seq_dim
-            mask = torch.tril(torch.ones(from_seq_dim, to_seq_dim), diagonal=0)
-            mask[mask == 1] = -float("inf")
-
-            # add the batch dimension and register the buffer in this nn.Module
-            self.register_buffer("mask", mask.unsqueeze(0))
+            mask = self._get_causal_mask(
+                from_seq_dim, to_seq_dim if to_seq_dim else from_seq_dim
+            )
+            self.register_buffer("mask", mask)
         else:
             self.mask = None
 
