@@ -1,9 +1,10 @@
 from pathlib import Path
 from typing import Any, Dict
 
+from xformers.components import Activation  # noqa
 from xformers.utils import import_all_modules
 
-from .base import Activations, Feedforward, FeedforwardConfig  # noqa
+from .base import Feedforward, FeedforwardConfig  # noqa
 
 # Credits: Classy Vision registry mechanism
 

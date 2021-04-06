@@ -7,18 +7,15 @@ import torch.nn.functional as F
 from sklearn.model_selection import ParameterGrid
 from tqdm import tqdm
 
-from xformers.block_factory import xFormerEncoderBlock, xFormerEncoderConfig
 from xformers.components import (
     ATTENTION_REGISTRY,
+    Activation,
     AttentionConfig,
     MultiHeadDispatchConfig,
 )
-from xformers.components.feedforward import (
-    FEEDFORWARD_REGISTRY,
-    Activations,
-    FeedforwardConfig,
-)
+from xformers.components.feedforward import FEEDFORWARD_REGISTRY, FeedforwardConfig
 from xformers.components.positional_encoding import PositionEncodingConfig
+from xformers.factory.block_factory import xFormerEncoderBlock, xFormerEncoderConfig
 
 # Credits: Sean Naren
 
@@ -78,7 +75,7 @@ def test_xformer_encoder_block(
     attn_dropout: float,
     residual_dropout: float,
     causal: bool,
-    activation: Activations,
+    activation: Activation,
     autocast: bool,
     batch_size: int,
     sequence_length: int,
@@ -117,7 +114,7 @@ def test_xformer_encoder_block(
 
 
 def instantiate_xformer(
-    activation: Activations,
+    activation: Activation,
     attention_name: str,
     attn_dropout: float,
     causal: bool,
@@ -159,11 +156,11 @@ def instantiate_xformer(
     }
 
     block_config = xFormerEncoderConfig(
-        embed_dim,
-        AttentionConfig(**attention_config),
-        MultiHeadDispatchConfig(**multi_head_config),
-        FeedforwardConfig(**feedforward_config),
-        PositionEncodingConfig(**position_encoding_config),
+        dim_model=embed_dim,
+        attention_config=AttentionConfig(**attention_config),
+        multi_head_config=MultiHeadDispatchConfig(**multi_head_config),
+        feedforward_config=FeedforwardConfig(**feedforward_config),
+        position_encoding_config=PositionEncodingConfig(**position_encoding_config),
     )
 
     block = xFormerEncoderBlock.from_config(block_config)
@@ -184,7 +181,7 @@ if __name__ == "__main__":
         "autocast": [False, True],
         "causal": [False, True],
         "heads": [8, 16],
-        "activation": [a.value for a in Activations],
+        "activation": [a.value for a in Activation],
         "attention_name": ATTENTION_REGISTRY.keys(),
         "feedforward_name": FEEDFORWARD_REGISTRY.keys(),
         "sequence_length": [128, 512, 768],

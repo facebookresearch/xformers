@@ -1,13 +1,13 @@
 from pathlib import Path
 
+from xformers.components.attention import AttentionConfig  # noqa
 from xformers.utils import import_all_modules
 
+from .activations import Activation
 from .attention import ATTENTION_REGISTRY, AttentionConfig  # noqa
 from .multi_head_dispatch import MultiHeadDispatch, MultiHeadDispatchConfig  # noqa
 
-__all__ = [
-    "MultiHeadDispatch",
-]
+__all__ = ["MultiHeadDispatch", "Activation"]
 
 # automatically import any Python files in the directory
 import_all_modules(str(Path(__file__).parent), "xformers.components")

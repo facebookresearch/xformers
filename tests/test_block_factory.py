@@ -1,7 +1,11 @@
 import pytest
 import torch
 
-from xformers.block_factory import (
+# Automatically fetch all registered attentions and Feedforwards
+from xformers.components import Activation
+from xformers.components.attention import ATTENTION_REGISTRY
+from xformers.components.feedforward import FEEDFORWARD_REGISTRY
+from xformers.factory import (
     AttentionConfig,
     FeedforwardConfig,
     MultiHeadDispatchConfig,
@@ -11,10 +15,6 @@ from xformers.block_factory import (
     xFormerEncoderBlock,
     xFormerEncoderConfig,
 )
-
-# Automatically fetch all registered attentions and Feedforwards
-from xformers.components.attention import ATTENTION_REGISTRY
-from xformers.components.feedforward import FEEDFORWARD_REGISTRY, Activations
 
 BATCH = 20
 SEQ = 512
@@ -26,7 +26,7 @@ DROPOUT = 0.5
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 3])
-@pytest.mark.parametrize("activation", [a.value for a in Activations])
+@pytest.mark.parametrize("activation", [a.value for a in Activation])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
 def test_xformer_encoder_block(
@@ -36,7 +36,7 @@ def test_xformer_encoder_block(
     attn_dropout: float,
     residual_dropout: float,
     causal: bool,
-    activation: Activations,
+    activation: Activation,
 ):
 
     attention_config = {
@@ -84,7 +84,7 @@ def test_xformer_encoder_block(
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 3])
-@pytest.mark.parametrize("activation", [a.value for a in Activations])
+@pytest.mark.parametrize("activation", [a.value for a in Activation])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
 def test_xformer_decoder_block(
@@ -94,7 +94,7 @@ def test_xformer_decoder_block(
     attn_dropout: float,
     residual_dropout: float,
     causal: bool,
-    activation: Activations,
+    activation: Activation,
 ):
 
     attention_config = {
@@ -123,19 +123,25 @@ def test_xformer_decoder_block(
     position_encoding_config = {"name": "sine", "dim_model": MODEL, "seq_len": SEQ}
 
     encoder_block_config = xFormerEncoderConfig(
-        MODEL,
-        AttentionConfig(**attention_config),
-        MultiHeadDispatchConfig(**multi_head_config),
-        FeedforwardConfig(**feedforward_config),
-        PositionEncodingConfig(**position_encoding_config),
+        dim_model=MODEL,
+        attention_config=AttentionConfig(**attention_config),
+        multi_head_config=MultiHeadDispatchConfig(**multi_head_config),
+        feedforward_config=FeedforwardConfig(**feedforward_config),
+        position_encoding_config=PositionEncodingConfig(**position_encoding_config),
     )
 
     decoder_block_config = xFormerDecoderConfig(
-        MODEL,
-        (AttentionConfig(**attention_config),) * 2,
-        (MultiHeadDispatchConfig(**multi_head_config),) * 2,
-        FeedforwardConfig(**feedforward_config),
-        PositionEncodingConfig(**position_encoding_config),
+        dim_model=MODEL,
+        attention_configs=(
+            AttentionConfig(**attention_config),
+            AttentionConfig(**attention_config),
+        ),
+        multi_head_configs=(
+            MultiHeadDispatchConfig(**multi_head_config),
+            MultiHeadDispatchConfig(**multi_head_config),
+        ),
+        feedforward_config=FeedforwardConfig(**feedforward_config),
+        position_encoding_config=PositionEncodingConfig(**position_encoding_config),
     )
 
     # Test that the whole block can be instantiated

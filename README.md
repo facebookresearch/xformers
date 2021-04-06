@@ -57,20 +57,24 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
 
 ## Adding new variants
 Here are a couple of guidelines which should make it easier to add a new block variant to this repo:
+* Blocks live in `xformers/components`
 * Make sure that the block and its config inherit from the ones defined in the base file
 * Default values need to be defined in the class constructor, not in the config.
   * Using the config objects is optional, people should feel free to cherry pick the blocks as is
   * Prevent duplication or colliding definitions
   * Make sure that the configurations are composable, in that a subset of the configs is enough to instantiate all the blocks with reasonable settings.
+* Fields which have default values in the block constructor should be typed as `Optional[Type]`
 * Please follow the CONTRIBUTING guide to make sure that formatting and linting is checked
 * `@register` your new block variant with a unique and hopefully descriptive name
-* just define the (pure pytorch) constructor and forward call typically, no need to handle enything specific to this repo (except for inheritance)
+* Just define the (pure pytorch) constructor and forward call typically, no need to handle enything specific to this repo (except for inheritance)
 * keep `*args` and `**kwargs` in your constructor, this is important for the config composition
-* No need to change unit tests, the new variant will be automatically picked up
-* No need to change benchmarks, the new variant will be automatically picked up
+* No need to change unit tests or benchmarks, the new variant will be automatically picked up
 
 That's it. Rest assured that the community will be thankful for your contribution !
 
+
+## Adding new models
+Models live in `xformers/models`. As a general rule, one should try to write them using the blocks present in `xformers/components` (or upstream PyTorch), so that ulterior improvements are propagated to each implementation.
 
 ## Bibliography
 DRAFT, needs a proper citation format, ..

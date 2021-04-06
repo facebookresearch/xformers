@@ -3,7 +3,8 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from xformers.components.feedforward import Activations, Feedforward, FeedforwardConfig
+from xformers.components import Activation
+from xformers.components.feedforward import Feedforward, FeedforwardConfig
 
 from . import register_feedforward
 
@@ -19,7 +20,7 @@ class MLP(Feedforward):
         self,
         dim_latent: int,
         dropout: float,
-        activation: Activations,
+        activation: Activation,
         hidden_layer_multiplier: int,
         *args,
         **kwargs
@@ -27,8 +28,8 @@ class MLP(Feedforward):
         super().__init__()
 
         activation_layer: nn.Module = {
-            Activations.ReLU: nn.ReLU,
-            Activations.GeLU: nn.GELU,
+            Activation.ReLU: nn.ReLU,
+            Activation.GeLU: nn.GELU,
         }[activation]()
 
         self.mlp = nn.Sequential(
