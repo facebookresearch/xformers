@@ -1,9 +1,11 @@
 from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
 import torch.nn as nn
-from attrdict import AttrDict
+
+from xformers.utils import ExtensibleConfig
 
 
 class Activations(str, Enum):
@@ -11,7 +13,8 @@ class Activations(str, Enum):
     ReLU = "relu"
 
 
-class FeedforwardConfig(AttrDict):
+@dataclass(init=False)
+class FeedforwardConfig(ExtensibleConfig):
     name: str
     dim_latent: int
     dropout: float
@@ -34,4 +37,4 @@ class Feedforward(nn.Module, metaclass=ABCMeta):
 
     @classmethod
     def from_config(cls, config: FeedforwardConfig) -> "Feedforward":
-        return cls(**config)
+        return cls(**FeedforwardConfig.as_patchy_dict(config))

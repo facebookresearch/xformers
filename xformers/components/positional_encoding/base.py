@@ -1,11 +1,14 @@
 from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass
 from typing import Optional
 
 import torch.nn as nn
-from attrdict import AttrDict
+
+from xformers.utils import ExtensibleConfig
 
 
-class PositionEncodingConfig(AttrDict):
+@dataclass(init=False)
+class PositionEncodingConfig(ExtensibleConfig):
     name: str
     dim_model: int
     seq_len: int
@@ -24,4 +27,4 @@ class PositionEncoding(nn.Module, metaclass=ABCMeta):
 
     @classmethod
     def from_config(cls, config: PositionEncodingConfig) -> "PositionEncoding":
-        return cls(**config)
+        return cls(**PositionEncodingConfig.as_patchy_dict(config))

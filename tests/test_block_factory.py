@@ -65,11 +65,11 @@ def test_xformer_encoder_block(
     position_encoding_config = {"name": "sine", "dim_model": MODEL, "seq_len": SEQ}
 
     block_config = xFormerEncoderConfig(
-        MODEL,
-        AttentionConfig(**attention_config),
-        MultiHeadDispatchConfig(**multi_head_config),
-        FeedforwardConfig(**feedforward_config),
-        PositionEncodingConfig(**position_encoding_config),
+        dim_model=MODEL,
+        attention_config=AttentionConfig(**attention_config),
+        multi_head_config=MultiHeadDispatchConfig(**multi_head_config),
+        feedforward_config=FeedforwardConfig(**feedforward_config),
+        position_encoding_config=PositionEncodingConfig(**position_encoding_config),
     )
 
     # Test that the whole block can be instantiated

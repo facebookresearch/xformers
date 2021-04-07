@@ -1,18 +1,22 @@
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
 import torch.nn as nn
-from attrdict import AttrDict
 
 from xformers.components.attention import Attention
+from xformers.utils import ExtensibleConfig
 
 
-class MultiHeadDispatchConfig(AttrDict):
+@dataclass(init=False)
+class MultiHeadDispatchConfig(ExtensibleConfig):
+    dim_model: int
     residual_dropout: float
-    dim_in: int
-    dim_out: int
     n_heads: int
-    attention: Optional[Attention]
+    attention: Attention
+    from_seq_dim: Optional[int]
+    dim_key: Optional[int]
+    dim_value: Optional[int]
 
 
 class MultiHeadDispatch(nn.Module):
@@ -105,4 +109,4 @@ class MultiHeadDispatch(nn.Module):
 
     @classmethod
     def from_config(cls, config: MultiHeadDispatchConfig):
-        return cls(**config)
+        return cls(**MultiHeadDispatchConfig.as_patchy_dict(config))

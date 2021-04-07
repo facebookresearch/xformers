@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import torch
 import torch.nn as nn
 
@@ -6,6 +8,7 @@ from xformers.components.feedforward import Activations, Feedforward, Feedforwar
 from . import register_feedforward
 
 
+@dataclass(init=False)
 class MlpConfig(FeedforwardConfig):
     hidden_layer_multiplier: int
 

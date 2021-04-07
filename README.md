@@ -36,7 +36,7 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
             [ ] autogenerate curves
 
 ## Architecture, code
-    [ ] Remove the AttrDict dependency
+    [x] Remove the AttrDict dependency
     [x] Handle encoder/decoder builds
     [ ] MHA: expose the projection, possibly make it swappable
     [ ] MHA: expose "max sequence size" intead of fixed size
