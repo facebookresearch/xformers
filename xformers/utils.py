@@ -1,7 +1,8 @@
 import importlib
 import os
 import sys
-from typing import List
+from dataclasses import dataclass, fields
+from typing import Any, Dict, List
 
 
 # credit: snippet used in ClassyVision (and probably other places)
@@ -20,3 +21,32 @@ def import_all_modules(root: str, base_module: str) -> List[str]:
 
 def to(t):
     return {"device": t.device, "dtype": t.dtype}
+
+
+@dataclass(init=False)
+class ExtensibleConfig:
+    def __init__(self, *_, **kwargs):
+        """ Accept any extra keyword at construction time, and store them """
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+    @classmethod
+    def from_other(cls, config: "ExtensibleConfig"):
+        """Given another config -could be subtyped and not completely compatible-
+        try to fill in the compatible fields"""
+
+        names = set([f.name for f in fields(cls)])
+        kwargs = {
+            n: getattr(config, n) for n in filter(lambda x: hasattr(config, x), names)
+        }
+        return cls(**kwargs)
+
+    @classmethod
+    def as_patchy_dict(cls, config: "ExtensibleConfig") -> Dict[str, Any]:
+        """Return a dict which covers all the set fields in this class.
+        .. warning: Note that this could be incomplete given the config definition"""
+
+        names = set([f.name for f in fields(cls)])
+        return {
+            n: getattr(config, n) for n in filter(lambda x: hasattr(config, x), names)
+        }

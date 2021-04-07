@@ -3,6 +3,7 @@
 # FIXME: proper credits
 
 import math
+from dataclasses import dataclass
 from functools import reduce
 from operator import mul
 from typing import Optional, Tuple
@@ -62,13 +63,14 @@ def look_around(x, backward=1, forward=0, pad_value=-1, dim=2):
     return torch.cat(tensors, dim=dim)
 
 
+@dataclass(init=False)
 class LocalAttentionConfig(AttentionConfig):
     window_size: int
-    autopad: bool
-    shared_qk: bool
-    exact_window_size: bool
-    look_backward: int
-    look_forward: int
+    autopad: Optional[bool]
+    shared_qk: Optional[bool]
+    exact_window_size: Optional[bool]
+    look_backward: Optional[int]
+    look_forward: Optional[int]
     rel_pos_emb_config: Optional[Tuple[int, int]]
 
 
@@ -221,3 +223,7 @@ class LocalAttention(Attention):
             out = out[:, :orig_t, :]
 
         return out.reshape(*shape)
+
+    @classmethod
+    def from_config(cls, config: AttentionConfig) -> "Attention":
+        return cls(**LocalAttentionConfig.as_patchy_dict(config))

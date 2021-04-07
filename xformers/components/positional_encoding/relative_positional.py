@@ -1,4 +1,6 @@
 # credits https://github.com/lucidrains/local-attention
+from dataclasses import dataclass
+
 import torch
 import torch.nn as nn
 
@@ -20,6 +22,7 @@ def _shift(x):
     return shifted[..., :i, i - 1 :]
 
 
+@dataclass(init=False)
 class RelativePositionalEncodingConfig(PositionEncodingConfig):
     n_heads: int
 
@@ -37,3 +40,7 @@ class RelativePositionalEncoding(PositionEncoding):
             torch.einsum("bhnid,jhd->bhnij", q, self.weights.type(q.dtype)) * self.scale
         )
         return _shift(emb)
+
+    @classmethod
+    def from_config(cls, config: PositionEncodingConfig) -> "PositionEncoding":
+        return cls(**RelativePositionalEncodingConfig.as_patchy_dict(config))
