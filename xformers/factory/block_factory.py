@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Optional, Tuple
 
 import torch
@@ -13,22 +14,59 @@ from xformers.components.positional_encoding import (
 )
 
 
+class BlockType(str, Enum):
+    Encoder = "encoder"
+    Decoder = "decoder"
+
+
 @dataclass
-class xFormerEncoderConfig:
+class _xFormerBlockConfig:
     dim_model: int
+    feedforward_config: FeedforwardConfig
+    position_encoding_config: Optional[PositionEncodingConfig]
+
+    def __post_init__(self):
+        self.feedforward_config = FeedforwardConfig(**self.feedforward_config)
+        if self.position_encoding_config:
+            self.position_encoding_config = PositionEncodingConfig(
+                **self.position_encoding_config
+            )
+
+
+@dataclass
+class xFormerEncoderConfig(_xFormerBlockConfig):
     attention_config: AttentionConfig
     multi_head_config: MultiHeadDispatchConfig
-    feedforward_config: FeedforwardConfig
-    position_encoding_config: Optional[PositionEncodingConfig]
+    block_type: BlockType = field(default_factory=lambda: BlockType("encoder"))
+
+    def __post_init__(self):
+        try:
+            super().__post_init__()
+            self.attention_config = AttentionConfig(**self.attention_config)
+            self.multi_head_config = MultiHeadDispatchConfig(**self.multi_head_config)
+            self.block_type = BlockType(self.block_type)
+        except TypeError:
+            pass
 
 
 @dataclass
-class xFormerDecoderConfig:
-    dim_model: int
-    attention_configs: Tuple[AttentionConfig, ...]
-    multi_head_configs: Tuple[MultiHeadDispatchConfig, ...]
-    feedforward_config: FeedforwardConfig
-    position_encoding_config: Optional[PositionEncodingConfig]
+class xFormerDecoderConfig(_xFormerBlockConfig):
+    attention_configs: Tuple[AttentionConfig, AttentionConfig]
+    multi_head_configs: Tuple[MultiHeadDispatchConfig, MultiHeadDispatchConfig]
+    block_type: BlockType = field(default_factory=lambda: BlockType("decoder"))
+
+    def __post_init__(self):
+        try:
+            super().__post_init__()
+            self.attention_configs = tuple(
+                AttentionConfig(**c) for c in self.attention_configs
+            )
+            self.multi_head_configs = tuple(
+                MultiHeadDispatchConfig(**c) for c in self.multi_head_configs
+            )
+            self.block_type = BlockType(self.block_type)
+        except TypeError:
+            pass
 
 
 class xFormerEncoderBlock(nn.Module):
@@ -46,7 +84,8 @@ class xFormerEncoderBlock(nn.Module):
         )
 
         self.attn = build_multi_head_attention(
-            config.attention_config, config.multi_head_config
+            config.attention_config,
+            config.multi_head_config,
         )
         self.ff = build_feedforward(config.feedforward_config)
 

@@ -1,9 +1,9 @@
 import pytest
 import torch
 
+from xformers.components import Activation
 from xformers.components.feedforward import (
     FEEDFORWARD_REGISTRY,
-    Activations,
     FeedforwardConfig,
     build_feedforward,
 )
@@ -19,8 +19,8 @@ assert FEEDFORWARD_REGISTRY.keys(), "Feedforward layers should have been registe
 
 
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
-@pytest.mark.parametrize("activation", [a.value for a in Activations])
-def test_feedforward(feedforward_name: str, activation: Activations):
+@pytest.mark.parametrize("activation", [a.value for a in Activation])
+def test_feedforward(feedforward_name: str, activation: Activation):
     test_config = {
         "name": feedforward_name,
         "dim_latent": LATENT,
