@@ -1,3 +1,4 @@
+import argparse
 import json
 import time
 from typing import Dict, Optional
@@ -58,7 +59,7 @@ def _train_for_several_steps(
     max_memory = torch.cuda.max_memory_allocated() / 2 ** 20
     run_time = time.time() - start_time
 
-    return {"run_time": run_time, "max_memory": max_memory}
+    return {"run_time": run_time, "max_memory": round(max_memory, 1)}
 
 
 def benchmark_model(num_warmup: int, num_steps: int, **kwargs) -> Dict[str, float]:
@@ -168,6 +169,32 @@ def instantiate_xformer(
 
 
 if __name__ == "__main__":
+    # Get the user requests
+    parser = argparse.ArgumentParser(
+        "Benchmark different attention mechanisms on various sequence lengths"
+    )
+    parser.add_argument(
+        "-a", "--attentions", nargs="+", default=list(ATTENTION_REGISTRY.keys())
+    )
+    parser.add_argument(
+        "-act", "--activations", nargs="+", default=[a.value for a in Activation]
+    )
+    parser.add_argument(
+        "-emb", "--embedding_dim", nargs="+", default=[64, 128, 512], type=int
+    )
+    parser.add_argument(
+        "-sl", "--sequence_length", nargs="+", default=[128, 512, 768], type=int
+    )
+    parser.add_argument("-bs", "--batch_size", nargs="+", default=[8, 16, 32], type=int)
+
+    parser.add_argument(
+        "-fp16", "--pytorch_amp", action="store", default=None, type=bool
+    )
+    parser.add_argument("-causal", "--causal", action="store", default=None, type=bool)
+
+    args = parser.parse_args()
+
+    # Setup the test configs
     constants = {
         "device": torch.device("cuda"),
         "num_warmup": 5,
@@ -178,16 +205,23 @@ if __name__ == "__main__":
     }
 
     param_grid = {
-        "autocast": [False, True],
-        "causal": [False, True],
+        "autocast": [args.pytorch_amp]
+        if args.pytorch_amp is not None
+        else [False, True],
+        "causal": [args.causal] if args.causal is not None else [False, True],
         "heads": [8, 16],
-        "activation": [a.value for a in Activation],
-        "attention_name": ATTENTION_REGISTRY.keys(),
-        "feedforward_name": FEEDFORWARD_REGISTRY.keys(),
-        "sequence_length": [128, 512, 768],
-        "embed_dim": [64, 128, 512],
-        "batch_size": [8, 16, 32],
+        "activation": args.activations,
+        "attention_name": args.attentions,
+        "feedforward_name": list(FEEDFORWARD_REGISTRY.keys()),
+        "sequence_length": args.sequence_length,
+        "embed_dim": args.embedding_dim,
+        "batch_size": args.batch_size,
     }
+
+    print(
+        "Testing the following parameters: \n",
+        json.dumps(param_grid, sort_keys=True, indent=4),
+    )
 
     grid = ParameterGrid(param_grid)
 
@@ -198,4 +232,4 @@ if __name__ == "__main__":
         results = {**outputs, **params}
         grid_outputs.append(results)
 
-    print(json.dumps(grid_outputs))
+    print(json.dumps(grid_outputs, sort_keys=True, indent=4))
