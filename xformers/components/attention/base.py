@@ -10,18 +10,12 @@ from xformers.utils import ExtensibleConfig
 
 @dataclass(init=False)
 class AttentionConfig(ExtensibleConfig):
+    """Parameters required for all Attentions.
+    Can accept and store extra parameters.
+    """
+
     name: str  # the registered name for this attention mechanism
-    from_seq_dim: int  # the dimension of the input sequence
     dropout: float  # dropout probability
-    causal: bool  # apply a causal mask
-    to_seq_dim: Optional[int]  # the (optional) dimension of the output sequence
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # If to_seq_dim is not specified, we assume that the dimensions are kept
-        if not hasattr(self, "to_seq_dim"):
-            self.to_seq_dim = self.from_seq_dim
 
 
 # Define the common interface, every attention block needs to derive from it
@@ -31,15 +25,7 @@ class Attention(nn.Module, metaclass=ABCMeta):
     _causal_mask: Optional[torch.Tensor] = None
 
     @abstractmethod
-    def __init__(
-        self,
-        dropout: Optional[float] = None,
-        causal: Optional[bool] = None,
-        from_seq_dim: Optional[int] = None,
-        to_seq_dim: Optional[int] = None,
-        *args,
-        **kwargs
-    ):
+    def __init__(self, dropout: Optional[float] = None, *args, **kwargs):
         super().__init__()
 
     @classmethod

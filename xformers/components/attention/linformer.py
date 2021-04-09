@@ -1,5 +1,5 @@
-import logging
 import math
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
@@ -9,8 +9,10 @@ import torch.nn.functional as F
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 
 
+@dataclass(init=False)
 class LinformerSelfAttentionConfig(AttentionConfig):
-    k: int  # dimension of the internal space
+    from_seq_dim: int  # dimension of the input sequence
+    k: Optional[int]  # dimension of the internal space
 
 
 @register_attention("linformer")
@@ -18,7 +20,6 @@ class LinformerAttention(Attention):
     def __init__(
         self,
         dropout: float,
-        causal: bool,
         from_seq_dim: int,
         k: Optional[int] = None,
         *args,
@@ -41,12 +42,6 @@ class LinformerAttention(Attention):
         self.E = nn.Linear(from_seq_dim, k, bias=False)
         self.F = nn.Linear(from_seq_dim, k, bias=False)
         self.attn_drop = nn.Dropout(dropout, inplace=True)
-
-        if causal:
-            mask = self._get_causal_mask(from_seq_dim, k)
-            self.register_buffer("mask", mask)
-        else:
-            self.mask = None
 
     def forward(
         self,
@@ -76,14 +71,7 @@ class LinformerAttention(Attention):
                 "Linformer uses a projected sequence, the input mask needs to be adapted in consequence."
                 + " Please use the `causal` constructor argument if this is the intended effect"
             )
-            att += input_mask.unsqueeze(0)
-
-        if self.mask is not None:
-            att += self.mask.unsqueeze(0)
-        if input_mask is not None and self.mask is not None:
-            logging.warning(
-                "Getting both a mask and a positive causal setting, is that expected ?"
-            )
+            att += input_mask
 
         # Softmax to get the attention probabilities, then optional dropout
         att = F.softmax(att, dim=-1)
@@ -92,3 +80,7 @@ class LinformerAttention(Attention):
         # Get to the predicted values, for all heads
         y = att @ v_projected  # (B, nh, S, S) x (B, nh, S, hs) -> (B, nh, S, hs)
         return y
+
+    @classmethod
+    def from_config(cls, config: AttentionConfig) -> "Attention":
+        return cls(**LinformerSelfAttentionConfig.as_patchy_dict(config))
