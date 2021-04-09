@@ -1,5 +1,5 @@
-import logging
 import math
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
@@ -9,9 +9,12 @@ import torch.nn.functional as F
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 
 
+@dataclass(init=False)
 class RandomAttentionConfig(AttentionConfig):
     r: float  # the ratio of keys that the query can attend to. 1.0 means dense attention
     constant_masking: bool  # whether the randomness is per query or defined at construction time
+    from_seq_dim: int
+    to_seq_dim: Optional[int] = None
 
 
 @register_attention("random")
@@ -19,7 +22,6 @@ class RandomAttention(Attention):
     def __init__(
         self,
         dropout: float,
-        causal: bool,
         from_seq_dim: int,
         to_seq_dim: Optional[int] = None,
         r: float = 0.5,
@@ -51,12 +53,6 @@ class RandomAttention(Attention):
 
         self.attn_drop = nn.Dropout(dropout, inplace=True)
 
-        if causal:
-            mask = self._get_causal_mask(from_seq_dim, to_seq_dim)
-            self.register_buffer("mask", mask)
-        else:
-            self.mask = None
-
         self.r = r
         self.rand_mask = self._get_rand_mask()
         self.constant_masking = constant_masking
@@ -85,15 +81,7 @@ class RandomAttention(Attention):
 
         # Optional masking
         if input_mask is not None:
-            att += input_mask.unsqueeze(0)
-
-        # Self (causal) masking
-        if self.mask is not None:
-            att += self.mask.unsqueeze(0)
-        if input_mask is not None and self.mask is not None:
-            logging.warning(
-                "Getting both a mask and a positive causal setting, is that expected ?"
-            )
+            att += input_mask
 
         # Softmax to get the attention probabilities, then optional dropout
         att = F.softmax(att, dim=-1)
@@ -102,3 +90,7 @@ class RandomAttention(Attention):
         # Get to the predicted values, for all heads
         y = att @ v  # (B, nh, S, S) x (B, nh, S, hs) -> (B, nh, S, hs)
         return y
+
+    @classmethod
+    def from_config(cls, config: AttentionConfig) -> "Attention":
+        return cls(**RandomAttentionConfig.as_patchy_dict(config))

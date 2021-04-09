@@ -65,6 +65,7 @@ def look_around(x, backward=1, forward=0, pad_value=-1, dim=2):
 
 @dataclass(init=False)
 class LocalAttentionConfig(AttentionConfig):
+    causal: bool
     window_size: int
     autopad: Optional[bool]
     shared_qk: Optional[bool]
@@ -101,8 +102,8 @@ class LocalAttention(Attention):
         look_forward = default(look_forward, 0 if causal else 1)
         assert not (causal and look_forward > 0), "you cannot look forward if causal"
 
-        self.window_size = window_size
         self.causal = causal
+        self.window_size = window_size
         self.look_backward = look_backward
         self.look_forward = look_forward
         self.exact_window_size = exact_window_size
