@@ -1,8 +1,11 @@
 import argparse
 import json
 import time
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 import torch
 import torch.nn.functional as F
 from sklearn.model_selection import ParameterGrid
@@ -20,6 +23,8 @@ from xformers.factory.block_factory import xFormerEncoderBlock, xFormerEncoderCo
 
 # Credits: Sean Naren
 
+_use_cuda = torch.cuda.is_available()
+
 
 def _train_for_several_steps(
     block: xFormerEncoderBlock,
@@ -36,8 +41,9 @@ def _train_for_several_steps(
     # and this makes it bad for tests
     optim = torch.optim.SGD(block.parameters(), lr=lr, momentum=0.9)
 
-    torch.cuda.reset_peak_memory_stats()
-    torch.cuda.synchronize()
+    if _use_cuda:
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.synchronize()
 
     start_time = time.time()
     for _ in range(num_steps):
@@ -55,8 +61,11 @@ def _train_for_several_steps(
             torch.nn.utils.clip_grad_norm_(block.parameters(), clip_norm, norm_type)
         optim.step()
 
-    torch.cuda.synchronize()
-    max_memory = torch.cuda.max_memory_allocated() / 2 ** 20
+    if _use_cuda:
+        torch.cuda.synchronize()
+        max_memory = torch.cuda.max_memory_allocated() / 2 ** 20
+    else:
+        max_memory = -1
     run_time = time.time() - start_time
 
     return {"run_time": run_time, "max_memory": round(max_memory, 1)}
@@ -98,9 +107,7 @@ def test_xformer_encoder_block(
         sequence_length=sequence_length,
         embed_dim=embed_dim,
         dropout=dropout,
-    )
-
-    block.to(device)
+    ).to(device)
 
     return benchmark_model(
         num_steps=num_steps,
@@ -168,6 +175,43 @@ def instantiate_xformer(
     return block
 
 
+def plot(args, results: List[Dict[str, Any]]):
+    df = pd.DataFrame(results)
+
+    HEADS = args.heads[-1]
+    AMP = [args.pytorch_amp] if args.pytorch_amp is not None else True
+    EMB = args.embedding_dim[-1]
+    CAUSAL = args.causal if args.causal is not None else True
+    BATCH_SIZE = args.batch_size[-1]
+    ACTIVATION = args.activations[-1]
+
+    df_filtered = df[
+        (df["activation"] == ACTIVATION)
+        & (df["heads"] == HEADS)
+        & (df["autocast"] == AMP)
+        & (df["embed_dim"] == EMB)
+        & (df["causal"] == CAUSAL)
+        & (df["batch_size"] == BATCH_SIZE)
+    ]
+
+    sns.barplot(
+        x="sequence_length", y="max_memory", hue="attention_name", data=df_filtered
+    )
+    plt.xlabel("Sequence length")
+    plt.ylabel("Max memory being used")
+    plt.title("Memory use")
+    plt.savefig("memory_vs_attention.png")
+    plt.clf()
+
+    sns.barplot(
+        x="sequence_length", y="run_time", hue="attention_name", data=df_filtered
+    )
+    plt.xlabel("Sequence length")
+    plt.ylabel("Average epoch time")
+    plt.title("Runtime")
+    plt.savefig("runtime_vs_attention.png")
+
+
 if __name__ == "__main__":
     # Get the user requests
     parser = argparse.ArgumentParser(
@@ -186,17 +230,19 @@ if __name__ == "__main__":
         "-sl", "--sequence_length", nargs="+", default=[128, 512, 768], type=int
     )
     parser.add_argument("-bs", "--batch_size", nargs="+", default=[8, 16, 32], type=int)
+    parser.add_argument("-hd", "--heads", nargs="+", default=[8, 16], type=int)
 
     parser.add_argument(
         "-fp16", "--pytorch_amp", action="store", default=None, type=bool
     )
     parser.add_argument("-causal", "--causal", action="store", default=None, type=bool)
+    parser.add_argument("-plot", "--plot", action="store_true", default=False)
 
     args = parser.parse_args()
 
     # Setup the test configs
     constants = {
-        "device": torch.device("cuda"),
+        "device": torch.device("cuda") if _use_cuda else torch.device("cpu"),
         "num_warmup": 5,
         "num_steps": 10,
         "dropout": 0.0,
@@ -209,7 +255,7 @@ if __name__ == "__main__":
         if args.pytorch_amp is not None
         else [False, True],
         "causal": [args.causal] if args.causal is not None else [False, True],
-        "heads": [8, 16],
+        "heads": args.heads,
         "activation": args.activations,
         "attention_name": args.attentions,
         "feedforward_name": list(FEEDFORWARD_REGISTRY.keys()),
@@ -233,3 +279,7 @@ if __name__ == "__main__":
         grid_outputs.append(results)
 
     print(json.dumps(grid_outputs, sort_keys=True, indent=4))
+
+    # Optional plots
+    if args.plot:
+        plot(args, grid_outputs)
