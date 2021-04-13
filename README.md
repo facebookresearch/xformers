@@ -30,10 +30,10 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
         [ ] Waay more tests, find more invariants depending on the blocks
 
     [ ] Benchmark:
-        [ ] add at least something basic to check training
-        [ ] measure throughput and memory
+        [x] add at least something basic to check training
+        [x] measure throughput and memory
             [ ] autogenerate text report
-            [ ] autogenerate curves
+            [x] autogenerate curves
 
 ## Architecture, code
     [x] Remove the AttrDict dependency
@@ -79,6 +79,14 @@ Models live in `xformers/models`. As a general rule, one should try to write the
 ## Micro-Benchmark tools
 These live in `xformers/benchmarks`. Sweeping over different attention settings to log max memory use and runtime can for instance be done by invoking
 `python3 benchmarks/benchmark_attention.py`. Specifying a subset to test is done through command line arguments, for instance `python3 benchmarks/benchmark_attention.py --causal True --attentions random --activations gelu -fp16 True`.
+
+Some examples, generated on CPU:
+
+![](docs/plots/memory_vs_attention.png)
+
+![](docs/plots/runtime_vs_attention.png)
+
+
 
 ## Bibliography
 DRAFT, needs a proper citation format, ..

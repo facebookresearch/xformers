@@ -1,5 +1,7 @@
 # Get core deps.
 -r requirements.txt
+-r requirements-benchmark.txt
+
 
 # Tools for static checking.
 black == 20.8b1
