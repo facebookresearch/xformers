@@ -47,7 +47,6 @@ install_dep_181: &install_dep_181
         if [ -f /home/circleci/venv/check_version.py ]; then python /home/circleci/venv/check_version.py torch eq 1.8 && exit 0; fi
         # start installing
         pip install --progress-bar off torch==1.8.1+cu111 torchvision==0.9.1+cu111 -f https://download.pytorch.org/whl/torch_stable.html
-        pip install --progress-bar off -r requirements-test.txt
         pip install --progress-bar off -r requirements-benchmark.txt
         python -c 'import torch; print("Torch version:", torch.__version__)'
         python -c 'import torch; assert torch.__version__.split(".")[:2] == ["1", "8"], "wrong torch version"'
@@ -113,7 +112,7 @@ run_benchmarks: &run_benchmarks
   - run:
       name: Run Benchmarks
       command: |
-        python3 benchmarks/benchmark_attention.py
+        CUDA_LAUNCH_BLOCKING=1 python3 benchmarks/benchmark_attention.py
 
 # -------------------------------------------------------------------------------------
 # Jobs to run
@@ -183,7 +182,9 @@ jobs:
 
       - <<: *run_coverage
 
-      - <<: *run_benchmarks
+      # See https://github.com/pytorch/pytorch/issues/54975
+      # Broken CUDA / torch 1.8 combination, awaiting an update
+      # - <<: *run_benchmarks
 
       - store_test_results:
           path: test-results

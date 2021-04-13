@@ -1,6 +1,5 @@
 # Get core deps.
 -r requirements.txt
--r requirements-benchmark.txt
 
 
 # Tools for static checking.
