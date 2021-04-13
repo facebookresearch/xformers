@@ -80,7 +80,7 @@ Models live in `xformers/models`. As a general rule, one should try to write the
 These live in `xformers/benchmarks`. Sweeping over different attention settings to log max memory use and runtime can for instance be done by invoking
 `python3 benchmarks/benchmark_attention.py`. Specifying a subset to test is done through command line arguments, for instance `python3 benchmarks/benchmark_attention.py --causal True --attentions random --activations gelu -fp16 True`.
 
-Some examples, generated on CPU:
+Some examples:
 
 ![](docs/plots/memory_vs_attention.png)
 
