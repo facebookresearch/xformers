@@ -17,9 +17,10 @@ cpu_py38: &cpu_py38
 
 gpu: &gpu
   environment:
-    CUDA_VERSION: "10.1"
+    CUDA_VERSION: "11.1"
+    CUDA_HOME: /usr/local/cuda-11.1
   machine:
-    image: ubuntu-1604-cuda-10.1:201909-23
+    image: ubuntu-1604-cuda-11.1:202012-01
   resource_class: gpu.large
 
 # -------------------------------------------------------------------------------------
@@ -38,17 +39,20 @@ setup_venv: &setup_venv
         which pip
         pip install --upgrade pip
 
-install_dep_171: &install_dep_171
+install_dep_181: &install_dep_181
   - run:
-      name: Install Dependencies with torch 1.7.1
+      name: Install Dependencies with torch 1.8.1
       command: |
-        pip install --progress-bar off torch==1.7.1+cu101 -f https://download.pytorch.org/whl/torch_stable.html
+        # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
+        if [ -f /home/circleci/venv/check_version.py ]; then python /home/circleci/venv/check_version.py torch eq 1.8 && exit 0; fi
+        # start installing
+        pip install --progress-bar off torch==1.8.1+cu111 torchvision==0.9.1+cu111 -f https://download.pytorch.org/whl/torch_stable.html
         pip install --progress-bar off -r requirements-test.txt
         pip install --progress-bar off -r requirements-benchmark.txt
         python -c 'import torch; print("Torch version:", torch.__version__)'
-        python -c 'import torch; assert torch.__version__.split(".")[:2] == ["1", "7"], "wrong torch version"'
+        python -c 'import torch; assert torch.__version__.split(".")[:2] == ["1", "8"], "wrong torch version"'
         python -m torch.utils.collect_env
-
+        wget -O /home/circleci/venv/check_version.py https://raw.githubusercontent.com/min-xu-ai/check_verion/main/check_version.py
 
 install_repo_cpu: &install_repo_cpu
   - run:
@@ -128,14 +132,14 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-cpu-py38-171-{{ checksum "requirements-test.txt"}}
+            - cache-key-cpu-py38-181-{{ checksum "requirements-test.txt"}}
 
-      - <<: *install_dep_171
+      - <<: *install_dep_181
 
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-cpu-py38-171-{{ checksum "requirements-test.txt"}}
+          key: cache-key-cpu-py38-181-{{ checksum "requirements-test.txt"}}
 
       - <<: *install_repo_cpu
 
@@ -149,7 +153,7 @@ jobs:
           path: test-results
 
 
-  gpu_tests_171:
+  gpu_tests_181:
     <<: *gpu
 
     working_directory: ~/xformers
@@ -159,21 +163,21 @@ jobs:
 
       - run: nvidia-smi
 
-      - run: pyenv global 3.7.0
+      - run: pyenv global 3.8.6
 
       - <<: *setup_venv
 
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-171-{{ checksum "requirements-test.txt"}}
+            - cache-key-gpu-181-{{ checksum "requirements-test.txt"}}
 
-      - <<: *install_dep_171
+      - <<: *install_dep_181
 
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-gpu-171-{{ checksum "requirements-test.txt"}}
+          key: cache-key-gpu-181-{{ checksum "requirements-test.txt"}}
 
       - <<: *install_repo_gpu
 
@@ -190,4 +194,4 @@ workflows:
   build:
     jobs:
       - cpu_tests_py38
-      - gpu_tests_171
+      - gpu_tests_181
