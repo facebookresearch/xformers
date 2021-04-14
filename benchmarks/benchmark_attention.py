@@ -179,9 +179,9 @@ def plot(args, results: List[Dict[str, Any]]):
     df = pd.DataFrame(results)
 
     HEADS = args.heads[-1]
-    AMP = [args.pytorch_amp] if args.pytorch_amp is not None else True
+    AMP = args.pytorch_amp[-1]
     EMB = args.embedding_dim[-1]
-    CAUSAL = args.causal if args.causal is not None else True
+    CAUSAL = args.causal[-1]
     BATCH_SIZE = args.batch_size[-1]
     ACTIVATION = args.activations[-1]
 
@@ -230,12 +230,10 @@ if __name__ == "__main__":
         "-sl", "--sequence_length", nargs="+", default=[128, 512, 768], type=int
     )
     parser.add_argument("-bs", "--batch_size", nargs="+", default=[8, 16, 32], type=int)
-    parser.add_argument("-hd", "--heads", nargs="+", default=[8, 16], type=int)
+    parser.add_argument("-heads", "--heads", nargs="+", default=[8, 16], type=int)
 
-    parser.add_argument(
-        "-fp16", "--pytorch_amp", action="store", default=None, type=bool
-    )
-    parser.add_argument("-causal", "--causal", action="store", default=None, type=bool)
+    parser.add_argument("-fp16", "--pytorch_amp", nargs="+", default=[False], type=bool)
+    parser.add_argument("-causal", "--causal", nargs="+", default=[False], type=bool)
     parser.add_argument("-plot", "--plot", action="store_true", default=False)
 
     args = parser.parse_args()
@@ -251,10 +249,8 @@ if __name__ == "__main__":
     }
 
     param_grid = {
-        "autocast": [args.pytorch_amp]
-        if args.pytorch_amp is not None
-        else [False, True],
-        "causal": [args.causal] if args.causal is not None else [False, True],
+        "autocast": args.pytorch_amp,
+        "causal": args.causal,
         "heads": args.heads,
         "activation": args.activations,
         "attention_name": args.attentions,
