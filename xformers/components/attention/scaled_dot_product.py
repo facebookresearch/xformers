@@ -36,8 +36,6 @@ class ScaledDotProduct(Attention):
         else:
             self.mask = None
 
-    # DEBUG
-
     def forward(
         self,
         q: torch.Tensor,
