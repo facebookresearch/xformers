@@ -125,7 +125,7 @@ class LocalAttention(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        input_mask: Optional[torch.Tensor] = None,
+        att_mask: Optional[torch.Tensor] = None,
         *args,
         **kwargs,
     ) -> torch.Tensor:
@@ -200,14 +200,14 @@ class LocalAttention(Attention):
         dots.masked_fill_(mask, mask_value)
         del mask
 
-        if input_mask is not None:
+        if att_mask is not None:
             pass
             # FIXME @lefaudeux
-            # h = B // input_mask.shape[0]
+            # h = B // att_mask.shape[0]
             # if self.autopad:
-            #     input_mask = pad_to_multiple(input_mask, self.window_size, dim=-1, value=False)
-            # input_mask = input_mask.reshape(-1, windows, self.window_size)  # type: ignore    # Mypy is drunk
-            # mq = mk = input_mask
+            #     att_mask = pad_to_multiple(att_mask, self.window_size, dim=-1, value=False)
+            # att_mask = att_mask.reshape(-1, windows, self.window_size)  # type: ignore    # Mypy is drunk
+            # mq = mk = att_mask
             # mk = look_around(mk, pad_value=False, **look_around_kwargs)
             # mask = mq[:, :, :, None] * mk[:, :, None, :]
             # mask = merge_dims(0, 1, expand_dim(mask, 1, h))

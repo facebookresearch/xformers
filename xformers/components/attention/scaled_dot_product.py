@@ -1,11 +1,10 @@
-import math
 from typing import Optional
 
 import torch
-import torch.nn.functional as F
 from torch import nn
 
 from xformers.components.attention import Attention, register_attention
+from xformers.components.attention.core import scaled_dot_product_attention
 
 
 @register_attention("scaled_dot_product")
@@ -41,24 +40,10 @@ class ScaledDotProduct(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        input_mask: Optional[torch.Tensor] = None,
+        att_mask: Optional[torch.Tensor] = None,
         *args,
         **kwargs,
     ) -> torch.Tensor:
         # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-
-        # Optional masking
-        if input_mask is not None:
-            att += input_mask.unsqueeze(0)
-
-        if self.mask is not None:
-            att += self.mask
-
-        # Softmax to get the attention probabilities, then optional dropout
-        att = F.softmax(att, dim=-1)
-        att = self.attn_drop(att)
-
-        # Get to the predicted values, for all heads
-        y = att @ v  # (B, nh, S, S) x (B, nh, S, hs) -> (B, nh, S, hs)
+        y = scaled_dot_product_attention(q, k, v, att_mask, dropout=self.attn_drop)
         return y

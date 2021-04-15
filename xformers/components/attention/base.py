@@ -38,7 +38,7 @@ class Attention(nn.Module, metaclass=ABCMeta):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        input_mask: Optional[torch.Tensor] = None,
+        att_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         raise NotImplementedError
 

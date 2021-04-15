@@ -58,7 +58,7 @@ class RandomAttention(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        input_mask: Optional[torch.Tensor] = None,
+        att_mask: Optional[torch.Tensor] = None,
         *args,
         **kwargs
     ):
@@ -72,7 +72,7 @@ class RandomAttention(Attention):
             self.rand_mask = self._get_rand_mask(q.shape).to(q.device)
 
         # Mask-aware attention
-        mask = self.rand_mask if input_mask is None else self.rand_mask & input_mask
+        mask = self.rand_mask if att_mask is None else self.rand_mask & att_mask
 
         return scaled_dot_product_attention(q, k, v, mask, dropout=self.attn_drop)
 

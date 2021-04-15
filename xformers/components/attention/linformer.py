@@ -48,7 +48,7 @@ class LinformerAttention(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        input_mask: Optional[torch.Tensor] = None,
+        att_mask: Optional[torch.Tensor] = None,
         *args,
         **kwargs
     ):
@@ -63,15 +63,15 @@ class LinformerAttention(Attention):
         )
 
         # Optional masking
-        if input_mask is not None:
+        if att_mask is not None:
             assert (
-                input_mask.shape[-2] == att.shape[-2]
-                and input_mask.shape[-1] == att.shape[-1]
+                att_mask.shape[-2] == att.shape[-2]
+                and att_mask.shape[-1] == att.shape[-1]
             ), (
                 "Linformer uses a projected sequence, the input mask needs to be adapted in consequence."
                 + " Please use the `causal` constructor argument if this is the intended effect"
             )
-            att += input_mask
+            att += att_mask
 
         # Softmax to get the attention probabilities, then optional dropout
         att = F.softmax(att, dim=-1)
