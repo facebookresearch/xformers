@@ -28,13 +28,14 @@ def _matmul_with_sparse_mask(
 
 
 def _matmul_with_mask(
-    a: torch.Tensor, b: torch.Tensor, mask: torch.Tensor
+    a: torch.Tensor, b: torch.Tensor, mask: Optional[torch.Tensor]
 ) -> torch.Tensor:
-    if mask.is_sparse:
+    if mask is not None and mask.is_sparse:
         return _matmul_with_sparse_mask(a, b, mask)
 
     res = a @ b
-    res[~mask] = float("-inf")
+    if mask is not None:
+        res[~mask] = float("-inf")
     return res
 
 
@@ -63,7 +64,7 @@ def scaled_dot_product_attention(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
-    att_mask: torch.Tensor,
+    att_mask: Optional[torch.Tensor],
     dropout: Optional[torch.nn.Module] = None,
 ) -> torch.Tensor:
     # TODO assume we have (N, S, hs) instead of (B, nh, S, hs), with N = B x nh
