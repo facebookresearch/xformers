@@ -4,7 +4,12 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from xformers.components.attention import Attention, AttentionConfig, register_attention
+from xformers.components.attention import (
+    _SPARSITY_THRESHOLD,
+    Attention,
+    AttentionConfig,
+    register_attention,
+)
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
@@ -19,7 +24,7 @@ class RandomAttention(Attention):
     def __init__(
         self,
         dropout: float,
-        r: float = 0.5,
+        r: float = 0.01,
         constant_masking: bool = True,
         *args,
         **kwargs
@@ -47,8 +52,8 @@ class RandomAttention(Attention):
     def _get_rand_mask(self, shape: torch.Size) -> torch.Tensor:
         mask = torch.FloatTensor(shape[0], shape[1], shape[1]).uniform_() < self.r
 
-        # Sparsity threshold, below 5% having a sparse matrix is more efficient in that case
-        if self.r < 0.05:
+        # Sparsity threshold, below that having a sparse matrix is more efficient
+        if self.r < _SPARSITY_THRESHOLD:
             mask = mask.to_sparse()
 
         return mask
@@ -62,10 +67,6 @@ class RandomAttention(Attention):
         *args,
         **kwargs
     ):
-
-        # Flatten the head dimension
-        # was [Batch x Heads x Sequence x HeadSize]
-        q, k, v = map(lambda t: t.transpose(1, 2).flatten(start_dim=2), (q, k, v))
 
         # Rand masking
         if not self.constant_masking or self.rand_mask is None:
