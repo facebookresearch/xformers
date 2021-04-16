@@ -53,6 +53,9 @@ def scaled_dot_product_attention(
 
     #  Optional dropout, could be part of the masking in the future
     if dropout is not None:
+        # Dropout chokes on sparse tensors
+        if att.is_sparse:
+            att = att.to_dense()
         att = dropout(att)
 
     # Get to the predicted values, for all heads
