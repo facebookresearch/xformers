@@ -19,6 +19,11 @@ class MultiHeadDispatchConfig(ExtensibleConfig):
     dim_value: Optional[int]
 
 
+# Move head forward and fold into batch dim. dimensions become (B * nh, S, hs)
+def _fold_heads(t: torch.Tensor, B: int, S: int, H: int, Hs: int):
+    return t.view(B, S, H, Hs).transpose(1, 2).flatten(start_dim=0, end_dim=1)
+
+
 class MultiHeadDispatch(nn.Module):
     """
     A vanilla multi-head masked self-attention dispatch mechanism, with a projection at the end,
@@ -66,9 +71,11 @@ class MultiHeadDispatch(nn.Module):
         self.attention = attention
 
         # key, query, value projections for all heads
-        self.key = nn.Linear(dim_model, dim_key, bias=False)  # NOTE: optional bias ?
-        self.query = nn.Linear(dim_model, dim_key, bias=False)
-        self.value = nn.Linear(dim_model, dim_value, bias=False)
+        self.project_key = nn.Linear(
+            dim_model, dim_key, bias=False
+        )  # NOTE: optional bias ?
+        self.project_query = nn.Linear(dim_model, dim_key, bias=False)
+        self.project_value = nn.Linear(dim_model, dim_value, bias=False)
 
         # Regularization
         self.resid_drop = nn.Dropout(residual_dropout, inplace=True)
@@ -77,7 +84,11 @@ class MultiHeadDispatch(nn.Module):
         self.proj = nn.Linear(dim_model, dim_model, bias=False)
 
     def forward(
-        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        att_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         def _check(t, name):
             assert (
@@ -89,19 +100,33 @@ class MultiHeadDispatch(nn.Module):
         _check(value, "value")
         _check(key, "key")
 
-        B, S, E = query.size()  # Batch x Sequence x Embedding (latent)
+        B, S, _ = query.size()  # Batch x Sequence x Embedding (latent)
 
-        # Calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        # dimensions become (B, nh, S, hs)
-        k = self.key(key).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
-        q = self.query(query).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
-        v = self.value(value).view(B, S, self.n_heads, self.dim_k).transpose(1, 2)
+        # Check the attention mask
+        assert att_mask is None or (
+            att_mask.shape[0] == att_mask.shape[1] == S
+        ), "The mask is expected to be applied onto the attention map"
 
-        # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
-        y = self.attention(k, q, v)
+        # Calculate query, key, values for all heads in batch
+        k, q, v = (
+            self.project_key(key),
+            self.project_query(query),
+            self.project_value(value),
+        )
+
+        k = _fold_heads(k, B, S, self.n_heads, self.dim_k)
+        q = _fold_heads(q, B, S, self.n_heads, self.dim_k)
+        v = _fold_heads(v, B, S, self.n_heads, self.dim_k)
+
+        # Self-attend
+        y = self.attention(k, q, v, att_mask=att_mask)
+
+        # Re-assemble all head outputs side by side
         y = (
-            y.transpose(1, 2).contiguous().view(B, S, E)
-        )  # re-assemble all head outputs side by side
+            y.view(B, self.n_heads, S, self.dim_k)
+            .transpose(1, 2)
+            .flatten(start_dim=2, end_dim=3)
+        )
 
         # Output projection, dropout and good to go
         y = self.resid_drop(self.proj(y))

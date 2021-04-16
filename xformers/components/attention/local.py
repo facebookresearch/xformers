@@ -132,10 +132,6 @@ class LocalAttention(Attention):
 
         shape = q.shape
 
-        # Flatten the head dimension
-        # was [Batch x Heads x Sequence x HeadSize]
-        q, k, v = map(lambda t: t.transpose(1, 2).flatten(start_dim=2), (q, k, v))
-
         if self.autopad:
             # FIXME: This is probably broken
             orig_t = q.shape[1]
