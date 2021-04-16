@@ -4,39 +4,12 @@ from typing import Optional
 import torch
 
 
-def _matmul_with_sparse_mask(
-    a: torch.Tensor, b: torch.Tensor, mask: torch.Tensor
-) -> torch.Tensor:
-    # TODO implement this in C++ / CUDA
-    # to save a bit more memory as we don't need to materialize some temporaries
-    assert a.ndim == b.ndim
-    assert mask.ndim == a.ndim
-    assert a.shape[-1] == b.shape[-2]
-    assert a.shape[-2] == mask.shape[-2], f"{a.shape}, {mask.shape}"
-    assert b.shape[-1] == mask.shape[-1], f"{b.shape}, {mask.shape}"
-    assert a.shape[:-2] == b.shape[:-2], f"{a.shape}, {b.shape}"
-    assert a.shape[:-2] == mask.shape[:-2], f"{a.shape}, {mask.shape}"
-    idxs = mask.indices().unbind()
-    b = b.transpose(-2, -1)
-
-    # compute matmul for elements within the mask
-    val = (a[idxs[:-2] + (idxs[-2], slice(None))] * b[idxs[:-2] + (idxs[-1], slice(None))]).sum(-1)  # type: ignore
-
-    out_shape = a.shape[:-1] + (b.shape[-2],)
-    res = torch.sparse_coo_tensor(torch.stack(idxs), val, out_shape)
-    return res
-
-
 def _matmul_with_mask(
     a: torch.Tensor, b: torch.Tensor, mask: Optional[torch.Tensor]
 ) -> torch.Tensor:
-    if mask is not None and mask.is_sparse:
-        return _matmul_with_sparse_mask(a, b, mask)
-
-    res = a @ b
-    if mask is not None:
-        res[~mask] = float("-inf")
-    return res
+    if mask is None:
+        return a @ b
+    return torch.ops.xformers.matmul_with_mask(a, b, mask)
 
 
 def _softmax(a: torch.Tensor) -> torch.Tensor:

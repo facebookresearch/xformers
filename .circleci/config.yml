@@ -57,7 +57,7 @@ install_repo_cpu: &install_repo_cpu
   - run:
       name: Install Repository
       command: |
-        pip install .
+        pip install -e .
         # Test import.
         python -c 'import sys; sys.path = sys.path[1:]; import xformers'
 
@@ -65,7 +65,6 @@ install_repo_gpu: &install_repo_gpu
   - run:
       name: Install Repository
       command: |
-        export CUDA_HOME=/usr/local/cuda-10.1
         pip install -e .
 
 
@@ -85,7 +84,7 @@ run_mypy: &run_mypy
    - run:
        name: Run type-checking (mypy)
        command: |
-         mypy --ignore-missing-imports --scripts-are-modules --pretty .
+         mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ .
 
 run_flake8: &run_flake8
   - run:

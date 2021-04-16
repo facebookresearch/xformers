@@ -5,10 +5,21 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import distutils.command.clean
+import glob
 import os
 import re
+import shutil
+import sys
 
 import setuptools
+import torch
+from torch.utils.cpp_extension import (
+    CUDA_HOME,
+    BuildExtension,
+    CppExtension,
+    CUDAExtension,
+)
 
 this_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -30,6 +41,75 @@ def find_version(version_file_path):
         raise RuntimeError("Unable to find version string.")
 
 
+def get_extensions():
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    extensions_dir = os.path.join(
+        this_dir, "xformers", "components", "attention", "csrc"
+    )
+
+    main_file = glob.glob(os.path.join(extensions_dir, "*.cpp"))
+
+    source_cpu = glob.glob(os.path.join(extensions_dir, "cpu", "*.cpp")) + glob.glob(
+        os.path.join(extensions_dir, "autograd", "*.cpp")
+    )
+
+    sources = main_file + source_cpu
+    source_cuda = glob.glob(os.path.join(extensions_dir, "cuda", "*.cu"))
+
+    extension = CppExtension
+
+    define_macros = []
+
+    extra_compile_args = {"cxx": ["-O3"]}
+    if sys.platform == "win32":
+        define_macros += [("xformers_EXPORTS", None)]
+        extra_compile_args["cxx"].append("/MP")
+    elif "OpenMP not found" not in torch.__config__.parallel_info():
+        extra_compile_args["cxx"].append("-fopenmp")
+
+    if (torch.cuda.is_available() and ((CUDA_HOME is not None))) or os.getenv(
+        "FORCE_CUDA", "0"
+    ) == "1":
+        extension = CUDAExtension
+        sources += source_cuda
+        nvcc_flags = os.getenv("NVCC_FLAGS", "")
+        if nvcc_flags == "":
+            nvcc_flags = []
+        else:
+            nvcc_flags = nvcc_flags.split(" ")
+        extra_compile_args["nvcc"] = nvcc_flags
+
+    sources = [os.path.join(extensions_dir, s) for s in sources]
+    include_dirs = [extensions_dir]
+
+    ext_modules = [
+        extension(
+            "xformers._C",
+            sorted(sources),
+            include_dirs=include_dirs,
+            define_macros=define_macros,
+            extra_compile_args=extra_compile_args,
+        )
+    ]
+
+    return ext_modules
+
+
+class clean(distutils.command.clean.clean):  # type: ignore
+    def run(self):
+        with open(".gitignore", "r") as f:
+            ignores = f.read()
+            for wildcard in filter(None, ignores.split("\n")):
+                for filename in glob.glob(wildcard):
+                    try:
+                        os.remove(filename)
+                    except OSError:
+                        shutil.rmtree(filename, ignore_errors=True)
+
+        # It's an old-style class in Python 2.7...
+        distutils.command.clean.clean.run(self)
+
+
 if __name__ == "__main__":
     setuptools.setup(
         name="xformers",
@@ -37,10 +117,12 @@ if __name__ == "__main__":
         version=find_version("xformers/__init__.py"),
         setup_requires=[],
         install_requires=fetch_requirements(),
-        include_package_data=True,
         packages=setuptools.find_packages(exclude=("tests", "tests.*")),
-        ext_modules=[],
-        cmdclass={},
+        ext_modules=get_extensions(),
+        cmdclass={
+            "build_ext": BuildExtension.with_options(no_python_abi_suffix=True),
+            "clean": clean,
+        },
         python_requires=">=3.6",
         author="Facebook AI Research",
         author_email="lefaudeux@fb.com",
@@ -56,4 +138,5 @@ if __name__ == "__main__":
             "Topic :: Scientific/Engineering :: Artificial Intelligence",
             "Operating System :: OS Independent",
         ],
+        zip_safe=False,
     )
