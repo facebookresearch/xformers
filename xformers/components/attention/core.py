@@ -19,12 +19,33 @@ def _softmax(a: torch.Tensor) -> torch.Tensor:
 
 
 def _sparse_bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    # need to use torch.sparse.mm to get gradients wrt sparse matrix a
-    # TODO implement this in C++ / CUDA as this is slow!
-    out = []
-    for ai, bi in zip(a, b):
-        out.append(torch.sparse.mm(ai, bi))
-    return torch.stack(out, dim=0)
+    """
+    Batch matrix multiply between a sparse matrix and a dense matrix
+    """
+    # approach: convert a batch of 2d sparse matrices A, B, C, ... into
+    # a large 2d block-diagonal matrix composed of A, B, C, ...
+    # as follows
+    #                A  0  0
+    # [A, B, C] - >  0  B  0
+    #                0  0  C
+    # and multiply it by the dense matrix flattened over first 2 dimensions
+    # reshaping the result back to the original format
+    assert a.ndim == b.ndim == 3
+    assert a.shape[0] == b.shape[0]
+    assert a.shape[2] == b.shape[1]
+    B, M, N = a.shape
+    K = b.shape[-1]
+    a = a.coalesce()
+    idxs = a.indices()
+    # create indices corresponding to the larger 2d matrix
+    i = idxs[1] + idxs[0] * M
+    j = idxs[2] + idxs[0] * N
+    new_idxs = torch.stack([i, j], dim=0)
+    aa = torch.sparse_coo_tensor(new_idxs, a.values(), size=(B * M, B * N))
+    bb = b.flatten(0, 1)
+    res = torch.sparse.mm(aa, bb)
+    res = res.reshape(B, M, K)
+    return res
 
 
 def bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
