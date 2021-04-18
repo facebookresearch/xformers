@@ -1,8 +1,8 @@
-#include <cmath>
-#include <vector>
 #include <ATen/ATen.h>
 #include <ATen/Parallel.h>
 #include <torch/library.h>
+#include <cmath>
+#include <vector>
 
 namespace {
 
@@ -14,16 +14,16 @@ void matmul_with_sparse_mask_kernel(
     at::TensorAccessor<int64_t, 2> idxs) {
   int64_t nnz = output.size(0);
   int64_t K = a.size(2);
-  int64_t grain_size = 128;  // TODO: tune this
+  int64_t grain_size = 128; // TODO: tune this
   at::parallel_for(0, nnz, grain_size, [&](int64_t start, int64_t end) {
-    for(int64_t i = start; i < end; i++) {
+    for (int64_t i = start; i < end; i++) {
       auto i1 = idxs[0][i];
       auto i2 = idxs[1][i];
       auto i3 = idxs[2][i];
       auto aar = a[i1][i2];
       auto bar = b[i1][i3];
       scalar_t r = 0;
-      for(int64_t k=0; k<K; k++) {
+      for (int64_t k = 0; k < K; k++) {
         r += aar[k] * bar[k];
       }
       output[i] = r;
@@ -31,7 +31,10 @@ void matmul_with_sparse_mask_kernel(
   });
 }
 
-at::Tensor matmul_with_sparse_mask(const at::Tensor& a, const at::Tensor& b, const at::Tensor& mask) {
+at::Tensor matmul_with_sparse_mask(
+    const at::Tensor& a,
+    const at::Tensor& b,
+    const at::Tensor& mask) {
   TORCH_CHECK(a.dim() == b.dim());
   TORCH_CHECK(a.dim() == mask.dim());
   TORCH_CHECK(a.dim() == 3);
@@ -60,22 +63,24 @@ at::Tensor matmul_with_sparse_mask(const at::Tensor& a, const at::Tensor& b, con
 
   at::Tensor res = at::empty({nnz}, a.options());
 
-  AT_DISPATCH_FLOATING_TYPES(a.scalar_type(), "matmul_with_sparse_mask_kernel", [&] {
-    matmul_with_sparse_mask_kernel<scalar_t>(
-      res.accessor<scalar_t, 1>(),
-      a.accessor<scalar_t, 3>(),
-      bt.accessor<scalar_t, 3>(),
-      idxs.accessor<int64_t, 2>()
-    );
-  });
+  AT_DISPATCH_FLOATING_TYPES(
+      a.scalar_type(), "matmul_with_sparse_mask_kernel", [&] {
+        matmul_with_sparse_mask_kernel<scalar_t>(
+            res.accessor<scalar_t, 1>(),
+            a.accessor<scalar_t, 3>(),
+            bt.accessor<scalar_t, 3>(),
+            idxs.accessor<int64_t, 2>());
+      });
 
   auto out = at::sparse_coo_tensor(idxs, res, {B, M, N});
 
   return out;
 }
 
-}  // namespace
+} // namespace
 
 TORCH_LIBRARY_IMPL(xformers, SparseCPU, m) {
-  m.impl(TORCH_SELECTIVE_NAME("xformers::matmul_with_mask"), TORCH_FN(matmul_with_sparse_mask));
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::matmul_with_mask"),
+      TORCH_FN(matmul_with_sparse_mask));
 }

@@ -92,6 +92,14 @@ run_flake8: &run_flake8
       command: |
         flake8 --show-source --statistics
 
+run_clang_format: &run_clang_format
+  - run:
+      name: Run Linter (clang-format)
+      command: |
+        curl https://oss-clang-format.s3.us-east-2.amazonaws.com/linux64/clang-format-linux64 -o clang-format
+        chmod +x clang-format
+        sudo mv clang-format /opt/clang-format
+        ./.circleci/run-clang-format.py -r xformers/components/attention/csrc --clang-format-executable /opt/clang-format
 
 run_coverage: &run_coverage
   - run:
@@ -145,6 +153,7 @@ jobs:
       - <<: *run_black
       - <<: *run_mypy
       - <<: *run_flake8
+      - <<: *run_clang_format
       - <<: *run_unittests
 
       - store_test_results:

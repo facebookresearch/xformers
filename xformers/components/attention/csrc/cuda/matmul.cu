@@ -10,10 +10,9 @@ namespace {
   for (int i = (blockIdx.x * blockDim.x) + threadIdx.x; i < (n); \
        i += (blockDim.x * gridDim.x))
 
-
 template <typename integer>
 constexpr __host__ __device__ inline integer ceil_div(integer n, integer m) {
-    return (n + m - 1) / m;
+  return (n + m - 1) / m;
 }
 
 template <typename scalar_t>
@@ -22,24 +21,26 @@ __global__ void matmul_with_sparse_mask_kernel(
     at::PackedTensorAccessor<scalar_t, 3> a,
     at::PackedTensorAccessor<scalar_t, 3> b,
     at::PackedTensorAccessor<int64_t, 2> idxs) {
-    
-    int64_t nnz = output.size(0);
-    int64_t K = a.size(2);
-    CUDA_1D_KERNEL_LOOP(i, nnz) {
-      auto i1 = idxs[0][i];
-      auto i2 = idxs[1][i];
-      auto i3 = idxs[2][i];
-      auto aar = a[i1][i2];
-      auto bar = b[i1][i3];
-      scalar_t r = 0;
-      for(int64_t k=0; k<K; k++) {
-        r += aar[k] * bar[k];
-      }
-      output[i] = r;
+  int64_t nnz = output.size(0);
+  int64_t K = a.size(2);
+  CUDA_1D_KERNEL_LOOP(i, nnz) {
+    auto i1 = idxs[0][i];
+    auto i2 = idxs[1][i];
+    auto i3 = idxs[2][i];
+    auto aar = a[i1][i2];
+    auto bar = b[i1][i3];
+    scalar_t r = 0;
+    for (int64_t k = 0; k < K; k++) {
+      r += aar[k] * bar[k];
     }
+    output[i] = r;
+  }
 }
 
-at::Tensor matmul_with_sparse_mask(const at::Tensor& a, const at::Tensor& b, const at::Tensor& mask) {
+at::Tensor matmul_with_sparse_mask(
+    const at::Tensor& a,
+    const at::Tensor& b,
+    const at::Tensor& mask) {
   TORCH_CHECK(a.dim() == b.dim());
   TORCH_CHECK(a.dim() == mask.dim());
   TORCH_CHECK(a.dim() == 3);
@@ -58,7 +59,8 @@ at::Tensor matmul_with_sparse_mask(const at::Tensor& a, const at::Tensor& b, con
   TORCH_CHECK(mask.is_sparse(), "mask must be a sparse tensor");
 
   TORCH_CHECK(a.device() == b.device(), "a should be in the same device as b");
-  TORCH_CHECK(a.device() == mask.device(), "a should be in the same device as mask");
+  TORCH_CHECK(
+      a.device() == mask.device(), "a should be in the same device as mask");
 
   at::cuda::CUDAGuard device_guard(a.device());
 
@@ -80,14 +82,14 @@ at::Tensor matmul_with_sparse_mask(const at::Tensor& a, const at::Tensor& b, con
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-  AT_DISPATCH_FLOATING_TYPES_AND_HALF(a.scalar_type(), "matmul_with_sparse_mask_kernel", [&] {
-    matmul_with_sparse_mask_kernel<scalar_t><<<grid, block, 0, stream>>>(
-      res.packed_accessor<scalar_t, 1>(),
-      a.packed_accessor<scalar_t, 3>(),
-      bt.packed_accessor<scalar_t, 3>(),
-      idxs.packed_accessor<int64_t, 2>()
-    );
-  });
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      a.scalar_type(), "matmul_with_sparse_mask_kernel", [&] {
+        matmul_with_sparse_mask_kernel<scalar_t><<<grid, block, 0, stream>>>(
+            res.packed_accessor<scalar_t, 1>(),
+            a.packed_accessor<scalar_t, 3>(),
+            bt.packed_accessor<scalar_t, 3>(),
+            idxs.packed_accessor<int64_t, 2>());
+      });
 
   AT_CUDA_CHECK(cudaGetLastError());
   auto out = at::sparse_coo_tensor(idxs, res, {B, M, N});

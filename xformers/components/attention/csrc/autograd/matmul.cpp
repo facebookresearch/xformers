@@ -1,7 +1,7 @@
-#include <torch/autograd.h>
-#include <ATen/ATen.h>
-#include <torch/types.h>
 #include "../matmul.h"
+#include <ATen/ATen.h>
+#include <torch/autograd.h>
+#include <torch/types.h>
 
 namespace {
 
@@ -13,7 +13,7 @@ class MatmulWithMask : public torch::autograd::Function<MatmulWithMask> {
       const torch::autograd::Variable& b,
       const torch::autograd::Variable& mask) {
     // optimization: only need to save the mask if it's dense
-    if(mask.is_sparse())
+    if (mask.is_sparse())
       ctx->save_for_backward({a, b});
     else
       ctx->save_for_backward({a, b, mask});
@@ -31,7 +31,7 @@ class MatmulWithMask : public torch::autograd::Function<MatmulWithMask> {
     auto b = saved[1];
 
     auto grad_o = grad_output[0];
-    if(saved.size() == 3) {
+    if (saved.size() == 3) {
       // mask is dense, need to mask manually
       auto mask = saved[2];
       grad_o = grad_o.masked_fill(mask.logical_not(), 0.);
@@ -39,10 +39,7 @@ class MatmulWithMask : public torch::autograd::Function<MatmulWithMask> {
     // TODO: compute grad only if they require grad
     auto grad_a = grad_o.bmm(b.transpose(-2, -1));
     auto grad_b = grad_o.transpose(-2, -1).bmm(a).transpose(-2, -1);
-    return {
-        grad_a,
-        grad_b,
-        torch::autograd::Variable()};
+    return {grad_a, grad_b, torch::autograd::Variable()};
   }
 };
 
@@ -50,13 +47,10 @@ at::Tensor matmul_with_mask_autograd(
     const at::Tensor& a,
     const at::Tensor& b,
     const at::Tensor& mask) {
-  return MatmulWithMask::apply(
-      a,
-      b,
-      mask)[0];
+  return MatmulWithMask::apply(a, b, mask)[0];
 }
 
-}  // namespace
+} // namespace
 
 TORCH_LIBRARY_IMPL(xformers, Autograd, m) {
   m.impl(
