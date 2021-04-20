@@ -39,7 +39,6 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
     [x] Remove the AttrDict dependency
     [x] Handle encoder/decoder builds
     [ ] MHA: expose the projection, possibly make it swappable
-    [ ] MHA: expose "max sequence size" intead of fixed size
 
 ## Repo features
     [ ] Decent "bibliography" section
@@ -50,7 +49,7 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
 
     [ ] Performer
     [x] Local attention
-    [ ] Big Bird
+    [x] Big Bird
     [x] Linformer
     [ ]...
 
@@ -76,17 +75,61 @@ That's it. Rest assured that the community will be thankful for your contributio
 ## Adding new models
 Models live in `xformers/models`. As a general rule, one should try to write them using the blocks present in `xformers/components` (or upstream PyTorch), so that ulterior improvements are propagated to each implementation.
 
-## Micro-Benchmark tools
-These live in `xformers/benchmarks`. Sweeping over different attention settings to log max memory use and runtime can for instance be done by invoking
+## Some benchmark tools
+These live in `xformers/benchmarks`. 
+
+### Benchmark a full encoder block
+Sweeping over different attention settings to log max memory use and runtime can for instance be done by invoking
 `python3 benchmarks/benchmark_encoder.py`. Specifying a subset to test is done through command line arguments, for instance `python3 benchmarks/benchmark_encoder.py --causal True --attentions random --activations gelu -fp16 True`.
 
-Some examples:
+*These numbers are preliminary, this is work in progress and we expect to get a significant speed uplift in the future*
 
+Some examples:
 ![](docs/plots/memory_vs_attention.png)
 
 ![](docs/plots/runtime_vs_attention.png)
 
+### Benchmark the core sparse attention mechanisms
+`python3 benchmarks/benchmark_core.py` will measure the speed of the core sparse attention mechanism. The current numbers are as follows, with the caveat, as above, that we expect these numbers to improve quickly over time
 
+```
+[------------------------- matmul_with_mask ------------------------]
+                          |  B=8, M=256, K=128  |  B=8, M=1024, K=256
+1 threads: ----------------------------------------------------------
+      dense               |         30.9        |         507.6      
+      dense with masking  |         50.6        |         753.6      
+      sparsity: 0.50      |        293.4        |        5719.6      
+      sparsity: 0.80      |        245.2        |        4208.5      
+      sparsity: 0.90      |        149.2        |        2868.4      
+      sparsity: 0.95      |        105.5        |        1792.5      
+      sparsity: 0.99      |        108.3        |         603.3      
+
+Times are in microseconds (us).
+
+[--------------------------- softmax ---------------------------]
+                      |  B=8, M=256, K=128  |  B=8, M=1024, K=256
+1 threads: ------------------------------------------------------
+      dense           |           8.5       |         141.8      
+      sparsity: 0.50  |        1080.4       |        8107.9      
+      sparsity: 0.80  |         508.9       |        3460.5      
+      sparsity: 0.90  |         328.8       |        1907.9      
+      sparsity: 0.95  |         236.4       |        1042.0      
+      sparsity: 0.99  |         188.0       |         288.5      
+
+Times are in microseconds (us).
+
+[----------------------------- bmm -----------------------------]
+                      |  B=8, M=256, K=128  |  B=8, M=1024, K=256
+1 threads: ------------------------------------------------------
+      dense           |          31.3       |         585.5      
+      sparsity: 0.50  |        1505.2       |       32624.1      
+      sparsity: 0.80  |         731.5       |       12868.2      
+      sparsity: 0.90  |         519.4       |        6296.3      
+      sparsity: 0.95  |         454.4       |        3827.6      
+      sparsity: 0.99  |         400.8       |        1005.7      
+
+Times are in microseconds (us).
+```
 
 ## Bibliography
 DRAFT, needs a proper citation format, ..
