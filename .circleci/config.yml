@@ -119,7 +119,7 @@ run_benchmarks: &run_benchmarks
   - run:
       name: Run Benchmarks
       command: |
-        CUDA_LAUNCH_BLOCKING=1 python3 benchmarks/benchmark_attention.py
+        CUDA_LAUNCH_BLOCKING=1 python3 benchmarks/benchmark_encoder.py
 
 # -------------------------------------------------------------------------------------
 # Jobs to run

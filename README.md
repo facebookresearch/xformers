@@ -78,7 +78,7 @@ Models live in `xformers/models`. As a general rule, one should try to write the
 
 ## Micro-Benchmark tools
 These live in `xformers/benchmarks`. Sweeping over different attention settings to log max memory use and runtime can for instance be done by invoking
-`python3 benchmarks/benchmark_attention.py`. Specifying a subset to test is done through command line arguments, for instance `python3 benchmarks/benchmark_attention.py --causal True --attentions random --activations gelu -fp16 True`.
+`python3 benchmarks/benchmark_encoder.py`. Specifying a subset to test is done through command line arguments, for instance `python3 benchmarks/benchmark_encoder.py --causal True --attentions random --activations gelu -fp16 True`.
 
 Some examples:
 

@@ -138,7 +138,6 @@ def instantiate_xformer(
         "name": attention_name,
         "dropout": attn_dropout,
         "causal": causal,
-        "window_size": sequence_length // 8 + 1,
         "from_seq_dim": sequence_length,
     }
 

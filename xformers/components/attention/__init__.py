@@ -12,7 +12,7 @@ ATTENTION_CLASS_NAMES = set()
 
 # Arbitrary threshold for now,
 # in between dense and sparse matrix algorithms for the attention mechanism
-_SPARSITY_THRESHOLD = 0.05  # noqa
+_DENSITY_THRESHOLD = 0.05  # noqa
 
 
 def build_attention(config: AttentionConfig):

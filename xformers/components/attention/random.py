@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from xformers.components.attention import (
-    _SPARSITY_THRESHOLD,
+    _DENSITY_THRESHOLD,
     Attention,
     AttentionConfig,
     register_attention,
@@ -56,7 +56,7 @@ class RandomAttention(Attention):
         )  # duplicate the mask over the batch dimension
 
         # Sparsity threshold, below that having a sparse matrix is more efficient
-        if self.r < _SPARSITY_THRESHOLD:
+        if self.r < _DENSITY_THRESHOLD:
             mask = mask.to_sparse()
 
         return mask
