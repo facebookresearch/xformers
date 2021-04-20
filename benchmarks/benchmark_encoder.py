@@ -17,6 +17,7 @@ from xformers.components import (
     AttentionConfig,
     MultiHeadDispatchConfig,
 )
+from xformers.components.attention import _DENSITY_THRESHOLD
 from xformers.components.feedforward import FEEDFORWARD_REGISTRY, FeedforwardConfig
 from xformers.components.positional_encoding import PositionEncodingConfig
 from xformers.factory.block_factory import xFormerEncoderBlock, xFormerEncoderConfig
@@ -24,6 +25,17 @@ from xformers.factory.block_factory import xFormerEncoderBlock, xFormerEncoderCo
 # Credits: Sean Naren
 
 _use_cuda = torch.cuda.is_available()
+GLOBAL_ATTENTION_RATIO = (
+    _DENSITY_THRESHOLD * 0.5
+)  # Make sure that we test the sparse implementation, no matter the threshold
+
+
+def _get_attention_query_mask(sequence_length: int, ratio: float):
+    mask = torch.rand((sequence_length, 1)) < ratio
+    while torch.count_nonzero(mask) / float(mask.numel()) > ratio:
+        mask = torch.rand((sequence_length, 1)) < ratio
+
+    return mask
 
 
 def _train_for_several_steps(
@@ -139,6 +151,9 @@ def instantiate_xformer(
         "dropout": attn_dropout,
         "causal": causal,
         "from_seq_dim": sequence_length,
+        "attention_query_mask": _get_attention_query_mask(
+            sequence_length, GLOBAL_ATTENTION_RATIO
+        ),
     }
 
     multi_head_config = {

@@ -65,6 +65,7 @@ def register_attention(name):
     return register_attention_cls
 
 
+from .global_tokens import GlobalAttention  # noqa
 from .linformer import LinformerAttention  # noqa
 from .local import LocalAttention  # noqa
 from .random import RandomAttention  # noqa
@@ -75,6 +76,7 @@ __all__ = [
     "LocalAttention",
     "LinformerAttention",
     "RandomAttention",
+    "GlobalAttention",
     "Attention",
     "build_attention",
     "register_attention",

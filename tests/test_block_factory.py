@@ -20,6 +20,7 @@ BATCH = 20
 SEQ = 512
 MODEL = 384
 DROPOUT = 0.5
+GLOBAL_ATTENTION_RATIO = 0.1  # 10% of the tokens have a global view
 
 
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
@@ -45,6 +46,7 @@ def test_xformer_encoder_block(
         "causal": causal,
         "window_size": SEQ // 8 + 1,
         "from_seq_dim": SEQ,
+        "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
     }
 
     multi_head_config = {
@@ -103,6 +105,7 @@ def test_xformer_decoder_block(
         "causal": causal,
         "window_size": SEQ // 8 + 1,
         "from_seq_dim": SEQ,
+        "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
     }
 
     multi_head_config = {

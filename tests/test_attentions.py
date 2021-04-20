@@ -5,6 +5,7 @@ from xformers.components import MultiHeadDispatch
 
 # Automatically test all the registered attentions
 from xformers.components.attention import (
+    _SPARSITY_THRESHOLD,
     ATTENTION_REGISTRY,
     AttentionConfig,
     build_attention,
@@ -13,6 +14,9 @@ from xformers.components.attention import (
 BATCH = 5
 SEQ = 1024
 MODEL = 384
+GLOBAL_ATTENTION_RATIO = (
+    _SPARSITY_THRESHOLD * 0.9
+)  # Make sure that we test the sparse implementation, no matter the threshold
 
 assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
 
@@ -29,12 +33,14 @@ def test_order_invariance(
     residual_dropout: float,
     causal: bool,
 ):
+
     test_config = {
         "name": attention_name,
         "dropout": attn_dropout,
         "causal": causal,
         "from_seq_dim": SEQ,
         "window_size": SEQ // 8 + 1,
+        "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
     }
 
     attention = build_attention(AttentionConfig(**test_config))

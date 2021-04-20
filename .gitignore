@@ -3,6 +3,7 @@
 
 *.pyc
 *.pyo
+*.so
 
 .mypy_cache/
 *.egg-info/
