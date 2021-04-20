@@ -33,9 +33,8 @@ def test_order_invariance(
         "name": attention_name,
         "dropout": attn_dropout,
         "causal": causal,
-        "window_size": SEQ // 4,
         "from_seq_dim": SEQ,
-        "causal": causal,
+        "window_size": SEQ // 8 + 1,
     }
 
     attention = build_attention(AttentionConfig(**test_config))

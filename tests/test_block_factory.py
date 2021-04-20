@@ -43,7 +43,7 @@ def test_xformer_encoder_block(
         "name": attention_name,
         "dropout": attn_dropout,
         "causal": causal,
-        "window_size": SEQ // 8,
+        "window_size": SEQ // 8 + 1,
         "from_seq_dim": SEQ,
     }
 
@@ -101,7 +101,7 @@ def test_xformer_decoder_block(
         "name": attention_name,
         "dropout": attn_dropout,
         "causal": causal,
-        "window_size": SEQ // 8,
+        "window_size": SEQ // 8 + 1,
         "from_seq_dim": SEQ,
     }
 
