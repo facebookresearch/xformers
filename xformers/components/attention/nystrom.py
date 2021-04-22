@@ -61,7 +61,7 @@ class NystromAttention(Attention):
         self.use_conv = conv_kernel_size is not None
         self.attn_drop = nn.Dropout(dropout)
 
-        if self.use_conv:
+        if conv_kernel_size is not None:
             self.conv = nn.Conv2d(
                 in_channels=self.num_heads,
                 out_channels=self.num_heads,
