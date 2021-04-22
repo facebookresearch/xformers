@@ -5,9 +5,11 @@ from xformers.components.attention import NystromAttention, ScaledDotProduct
 
 def test_nystrom_attention():
     b, s, d = 8, 900, 384
+    seed = 42
+    torch.random.manual_seed(seed)
 
     def test_close_to_sdp():
-        # Make sure that Nystrom and Normal attention get the same result
+        # Make sure that Nystrom and Normal attention are not too far off.
         a = torch.rand(b, s, d)
         nystrom_config = {
             "name": "nystrom",
@@ -27,6 +29,6 @@ def test_nystrom_attention():
         r_nystrom = nystrom_attention(a, a, a)
         r_sdp = sdp_attention(a, a, a)
 
-        torch.allclose(r_nystrom, r_sdp)
+        assert torch.allclose(r_nystrom, r_sdp, rtol=0.005, atol=1e-2)
 
     test_close_to_sdp()
