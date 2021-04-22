@@ -1,3 +1,5 @@
+from typing import Optional
+
 import pytest
 import torch
 
@@ -25,6 +27,8 @@ assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 3])
+@pytest.mark.parametrize("pinverse_original_init", [True, False])
+@pytest.mark.parametrize("conv_kernel_size", [None, 33])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 def test_order_invariance(
     attention_name: str,
@@ -32,6 +36,8 @@ def test_order_invariance(
     attn_dropout: float,
     residual_dropout: float,
     causal: bool,
+    pinverse_original_init: bool,
+    conv_kernel_size: Optional[int],
 ):
 
     test_config = {
@@ -42,6 +48,8 @@ def test_order_invariance(
         "window_size": SEQ // 8 + 1,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
+        "pinverse_original_init": pinverse_original_init,
+        "conv_kernel_size": conv_kernel_size,
     }
 
     attention = build_attention(AttentionConfig(**test_config))
