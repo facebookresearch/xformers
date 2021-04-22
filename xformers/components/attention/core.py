@@ -112,12 +112,10 @@ def bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return a @ b
 
 
-def scaled_dot_product_attention(
+def scaled_query_key_softmax(
     q: torch.Tensor,
     k: torch.Tensor,
-    v: torch.Tensor,
     att_mask: Optional[torch.Tensor],
-    dropout: Optional[torch.nn.Module] = None,
 ) -> torch.Tensor:
     # TODO assume we have (N, S, hs) instead of (B, nh, S, hs), with N = B x nh
     # this is needed due to limitations in sparse_bmm for now
@@ -129,6 +127,17 @@ def scaled_dot_product_attention(
 
     # Softmax to get the attention probabilities
     att = _softmax(att)
+    return att
+
+
+def scaled_dot_product_attention(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    att_mask: Optional[torch.Tensor],
+    dropout: Optional[torch.nn.Module] = None,
+) -> torch.Tensor:
+    att = scaled_query_key_softmax(q, k, att_mask)
 
     #  Optional dropout, could be part of the masking in the future
     if dropout is not None:
