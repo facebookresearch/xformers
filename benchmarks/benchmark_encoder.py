@@ -193,6 +193,7 @@ def instantiate_xformer(
         "attention_query_mask": _get_attention_query_mask(
             sequence_length, GLOBAL_ATTENTION_RATIO
         ),
+        "num_heads": heads,
     }
 
     multi_head_config = {
