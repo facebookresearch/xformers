@@ -1,8 +1,8 @@
 import itertools
+from typing import Callable
 
 import torch
 from torch.utils import benchmark
-from typing import Callable
 
 from xformers.components.attention.core import (
     SparseCS,
@@ -186,7 +186,8 @@ def bench_bmm():
     compare = benchmark.Compare(results)
     compare.print()
 
-def bench_inverse(inverse_fn: Callable[[torch.Tensor],torch.Tensor]):
+
+def bench_inverse(inverse_fn: Callable[[torch.Tensor], torch.Tensor]):
     min_run_time = MIN_RUN_TIME
     prob = 0.9
     device = torch.device("cuda")
@@ -229,6 +230,7 @@ def bench_inverse(inverse_fn: Callable[[torch.Tensor],torch.Tensor]):
 
     compare = benchmark.Compare(results)
     compare.print()
+
 
 bench_matmul_with_mask()
 bench_softmax()

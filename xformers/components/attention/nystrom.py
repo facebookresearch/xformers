@@ -6,9 +6,9 @@ import torch.nn as nn
 
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.attention.core import (
+    iterative_inv,
     scaled_dot_product_attention,
     scaled_query_key_softmax,
-    iterative_inv,
 )
 
 
