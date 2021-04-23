@@ -8,6 +8,7 @@ from xformers.components.attention import Attention, AttentionConfig, register_a
 from xformers.components.attention.core import (
     scaled_dot_product_attention,
     scaled_query_key_softmax,
+    iterative_inv,
 )
 
 
@@ -41,7 +42,7 @@ class NystromAttention(Attention):
         inv_iterations: int = 6,  # recommended default in paper was 6.
         conv_kernel_size: Optional[int] = None,
         *args,
-        **kwargs
+        **kwargs,
     ):
         """
         Nystrom attention mechanism, from
@@ -79,7 +80,7 @@ class NystromAttention(Attention):
         v: torch.Tensor,
         att_mask: Optional[torch.Tensor] = None,
         *args,
-        **kwargs
+        **kwargs,
     ):
 
         head_dim = k.size(-1)
@@ -115,7 +116,10 @@ class NystromAttention(Attention):
 
             x = torch.matmul(
                 torch.matmul(
-                    kernel_1, self._iterative_inv(kernel_2, self.inv_iterations)
+                    kernel_1,
+                    iterative_inv(
+                        kernel_2, self.inv_iterations, self.pinverse_original_init
+                    ),
                 ),
                 kernel_3,
             )
@@ -127,37 +131,6 @@ class NystromAttention(Attention):
             x += v_conv.reshape(-1, v_conv.size(-2), v_conv.size(-1))
         x = self.attn_drop(x)
         return x
-
-    def _iterative_inv(self, mat: torch.Tensor, n_iter=6):
-        """
-        Computing the Moore-Penrose inverse.
-        Use an iterative method from (Razavi et al. 2014) to approximate the Moore-Penrose inverse via efficient
-        matrix-matrix multiplications.
-        """
-
-        i = torch.eye(mat.size(-1), device=mat.device, dtype=mat.dtype)
-        k = mat
-
-        # The entries of K are positive and ||K||_{\infty} = 1 due to softmax
-        if self.pinverse_original_init:
-            # This original implementation is more conservative to compute coefficient of Z_0.
-            v = 1 / torch.max(torch.sum(k, dim=-2)) * k.transpose(-1, -2)
-        else:
-            # This is the exact coefficient computation, 1 / ||K||_1, of initialization of Z_0, leading to faster
-            # convergence.
-            v = (
-                1
-                / torch.max(torch.sum(k, dim=-2), dim=-1).values[:, None, None]
-                * k.transpose(-1, -2)
-            )
-
-        for _ in range(n_iter):
-            kv = torch.matmul(k, v)
-            v = torch.matmul(
-                0.25 * v,
-                13 * i - torch.matmul(kv, 15 * i - torch.matmul(kv, 7 * i - kv)),
-            )
-        return v
 
     @classmethod
     def from_config(cls, config: AttentionConfig) -> "Attention":

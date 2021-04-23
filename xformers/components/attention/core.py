@@ -165,3 +165,35 @@ def scaled_dot_product_attention(
     # y = att @ v  # (N, S, S) x (N, S, hs) -> (N, S, hs)
     y = bmm(att, v)
     return y
+
+
+def iterative_inv(a: torch.Tensor, n_iter=6, pinverse_original_init=False):
+    """
+    Computing the Moore-Penrose inverse.
+    Use an iterative method from (Razavi et al. 2014) to approximate the Moore-Penrose inverse via efficient
+    matrix-matrix multiplications.
+    """
+
+    i = torch.eye(a.size(-1), device=a.device, dtype=a.dtype)
+    k = a
+
+    # The entries of K are positive and ||K||_{\infty} = 1 due to softmax
+    if pinverse_original_init:
+        # This original implementation is more conservative to compute coefficient of Z_0.
+        v = 1 / torch.max(torch.sum(k, dim=-2)) * k.transpose(-1, -2)
+    else:
+        # This is the exact coefficient computation, 1 / ||K||_1, of initialization of Z_0, leading to faster
+        # convergence.
+        v = (
+            1
+            / torch.max(torch.sum(k, dim=-2), dim=-1).values[:, None, None]
+            * k.transpose(-1, -2)
+        )
+
+    for _ in range(n_iter):
+        kv = torch.matmul(k, v)
+        v = torch.matmul(
+            0.25 * v,
+            13 * i - torch.matmul(kv, 15 * i - torch.matmul(kv, 7 * i - kv)),
+        )
+    return v
