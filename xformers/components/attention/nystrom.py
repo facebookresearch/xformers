@@ -58,8 +58,9 @@ class NystromAttention(Attention):
         # TODO: should be able to not have to pass in num_heads
         self.num_heads = num_heads
         self.pinverse_original_init = pinverse_original_init
-        self.use_conv = conv_kernel_size is not None
+        self.inv_iterations = inv_iterations
         self.attn_drop = nn.Dropout(dropout)
+        self.conv = None
 
         if conv_kernel_size is not None:
             self.conv = nn.Conv2d(
@@ -83,6 +84,11 @@ class NystromAttention(Attention):
 
         head_dim = k.size(-1)
         seq_len = k.size(-2)
+
+        assert (
+            seq_len % self.num_landmarks == 0
+        ), "the sequence length needs to be divisible by the number of landmarks"
+
         # TODO: apply attention mask to q and k. Mask dimensions SxS or BxS?
 
         if self.num_landmarks == seq_len:
@@ -108,10 +114,13 @@ class NystromAttention(Attention):
             kernel_3 = scaled_dot_product_attention(q_landmarks, k, v, None)
 
             x = torch.matmul(
-                torch.matmul(kernel_1, self._iterative_inv(kernel_2)), kernel_3
+                torch.matmul(
+                    kernel_1, self._iterative_inv(kernel_2, self.inv_iterations)
+                ),
+                kernel_3,
             )
 
-        if self.use_conv:
+        if self.conv:
             # TODO: apply attention mask to v.
             # Assumption here is that v is 3D.
             v_conv = self.conv(v.reshape(-1, self.num_heads, v.size(-2), v.size(-1)))
@@ -126,7 +135,7 @@ class NystromAttention(Attention):
         matrix-matrix multiplications.
         """
 
-        i = torch.eye(mat.size(-1), device=mat.device)
+        i = torch.eye(mat.size(-1), device=mat.device, dtype=mat.dtype)
         k = mat
 
         # The entries of K are positive and ||K||_{\infty} = 1 due to softmax
