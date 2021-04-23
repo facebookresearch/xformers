@@ -1,6 +1,7 @@
 import argparse
 import json
 import time
+from contextlib import suppress
 from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
@@ -38,6 +39,13 @@ def _get_attention_query_mask(sequence_length: int, ratio: float):
     return mask
 
 
+def _get_trace_handler(name: str):
+    def trace_handler(prof):
+        prof.export_chrome_trace(f"profile_{name}.json")
+
+    return trace_handler
+
+
 def _train_for_several_steps(
     block: xFormerEncoderBlock,
     num_steps: int,
@@ -48,6 +56,8 @@ def _train_for_several_steps(
     device: torch.device,
     lr: float = 0.01,
     norm_type: Optional[float] = None,
+    profile: bool = False,
+    att_name: str = "",
 ) -> Dict[str, float]:
     # use SGD with momentum instead of Adam, since Adam is scale invariant
     # and this makes it bad for tests
@@ -58,20 +68,44 @@ def _train_for_several_steps(
         torch.cuda.synchronize()
 
     start_time = time.time()
-    for _ in range(num_steps):
-        optim.zero_grad()
-        with torch.cuda.amp.autocast(enabled=autocast):
-            input = torch.rand(batch_size, sequence_length, embed_dim)
-            input = input.to(device)
-            output = block(input)
-            loss = F.mse_loss(input, output, reduction="sum")
 
-        loss.backward()
+    # Optional profiler, requires a context and some setup
+    profiler = (
+        torch.profiler.profile(  # type: ignore
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,  # type: ignore
+                torch.profiler.ProfilerActivity.CUDA,  # type: ignore
+            ],
+            schedule=torch.profiler.schedule(wait=1, warmup=1, active=1),  # type: ignore
+            on_trace_ready=_get_trace_handler(
+                f"{att_name}_batch_{batch_size}_seq_{sequence_length}_embed_dim_{embed_dim}"
+            ),
+            profile_memory=True,
+        )
+        if profile
+        else suppress()
+    )
 
-        if norm_type is not None:
-            clip_norm = 0.3
-            torch.nn.utils.clip_grad_norm_(block.parameters(), clip_norm, norm_type)
-        optim.step()
+    # Actual vanilla training loop
+    with profiler as p:
+        for _ in range(num_steps):
+            optim.zero_grad()
+
+            with torch.cuda.amp.autocast(enabled=autocast):
+                input = torch.rand(batch_size, sequence_length, embed_dim)
+                input = input.to(device)
+                output = block(input)
+                loss = F.mse_loss(input, output, reduction="sum")
+
+            loss.backward()
+
+            if norm_type is not None:
+                clip_norm = 0.3
+                torch.nn.utils.clip_grad_norm_(block.parameters(), clip_norm, norm_type)
+            optim.step()
+
+            if p:
+                p.step()
 
     if _use_cuda:
         torch.cuda.synchronize()
@@ -85,7 +119,9 @@ def _train_for_several_steps(
 
 def benchmark_model(num_warmup: int, num_steps: int, **kwargs) -> Dict[str, float]:
     # Run warm-up first
-    _train_for_several_steps(num_steps=num_warmup, **kwargs)
+    warm_up_args = {**kwargs}
+    warm_up_args["profile"] = False
+    _train_for_several_steps(num_steps=num_warmup, **warm_up_args)
 
     return _train_for_several_steps(num_steps=num_steps, **kwargs)
 
@@ -106,6 +142,7 @@ def test_xformer_encoder_block(
     num_steps: int,
     num_warmup: int,
     device: torch.device,
+    profile: bool,
 ) -> Dict[str, float]:
 
     block = instantiate_xformer(
@@ -130,6 +167,8 @@ def test_xformer_encoder_block(
         embed_dim=embed_dim,
         autocast=autocast,
         device=device,
+        profile=profile,
+        att_name=attention_name,
     )
 
 
@@ -249,6 +288,13 @@ if __name__ == "__main__":
     parser.add_argument("-fp16", "--pytorch_amp", nargs="+", default=[False], type=bool)
     parser.add_argument("-causal", "--causal", nargs="+", default=[False], type=bool)
     parser.add_argument("-plot", "--plot", action="store_true", default=False)
+    parser.add_argument(
+        "-profile",
+        "--profile",
+        help="Pofile the runtime and memory",
+        action="store_true",
+        default=False,
+    )
 
     args = parser.parse_args()
 
@@ -260,6 +306,7 @@ if __name__ == "__main__":
         "dropout": 0.0,
         "attn_dropout": 0.0,
         "residual_dropout": 0.0,
+        "profile": args.profile,
     }
 
     param_grid = {
