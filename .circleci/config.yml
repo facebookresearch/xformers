@@ -53,19 +53,13 @@ install_dep_181: &install_dep_181
         python -m torch.utils.collect_env
         wget -O /home/circleci/venv/check_version.py https://raw.githubusercontent.com/min-xu-ai/check_verion/main/check_version.py
 
-install_repo_cpu: &install_repo_cpu
+install_repo: &install_repo
   - run:
       name: Install Repository
       command: |
-        pip install -e .
+        python3 -m pip install -e .
         # Test import.
         python -c 'import sys; sys.path = sys.path[1:]; import xformers'
-
-install_repo_gpu: &install_repo_gpu
-  - run:
-      name: Install Repository
-      command: |
-        pip install -e .
 
 
 run_isort: &run_isort
@@ -133,21 +127,22 @@ jobs:
 
     steps:
       - checkout
+
       - <<: *setup_venv
 
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-cpu-py38-181-{{ checksum "requirements-test.txt"}}
+            - cache-key-cpu-py38-181-386-{{ checksum "requirements-test.txt"}}
 
       - <<: *install_dep_181
 
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-cpu-py38-181-{{ checksum "requirements-test.txt"}}
+          key: cache-key-cpu-py38-181-386-{{ checksum "requirements-test.txt"}}
 
-      - <<: *install_repo_cpu
+      - <<: *install_repo
 
       - <<: *run_isort
       - <<: *run_black
@@ -177,21 +172,20 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-181-{{ checksum "requirements-test.txt"}}
+            - cache-key-gpu-181-386-{{ checksum "requirements-test.txt"}}
 
       - <<: *install_dep_181
 
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-gpu-181-{{ checksum "requirements-test.txt"}}
+          key: cache-key-gpu-181-386-{ checksum "requirements-test.txt"}}
 
-      - <<: *install_repo_gpu
+      - <<: *install_repo
 
       - <<: *run_coverage
 
-      # See https://github.com/pytorch/pytorch/issues/54975
-      # Broken CUDA / torch 1.8 combination, awaiting an update
+      # FIXME: Benjamin
       # - <<: *run_benchmarks
 
       - store_test_results:
