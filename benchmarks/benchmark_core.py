@@ -1,7 +1,15 @@
+import itertools
+
 import torch
 from torch.utils import benchmark
 
-from xformers.components.attention.core import _matmul_with_mask, _softmax, bmm
+from xformers.components.attention.core import (
+    SparseCS,
+    _create_random_sparsity,
+    _matmul_with_mask,
+    _softmax,
+    bmm,
+)
 
 MIN_RUN_TIME = 1
 SHAPES = [[8, 8], [256, 1024], [128, 256]]
@@ -47,19 +55,29 @@ def bench_matmul_with_mask():
                 ).blocked_autorange(min_run_time=min_run_time),
             ]
         )
-        for prob in SPARSITIES:
-            mask = (torch.rand(B, M, M, device=device) > prob).to_sparse()
+        for sputnik, prob in itertools.product([False, True], SPARSITIES):
+            mask = _create_random_sparsity(
+                torch.ones(B, M, M, dtype=torch.bool, device=device), prob
+            )
+            aa = a
+            bb = b
+            if sputnik:
+                mask = SparseCS(mask, device)
+                aa = a
+                bb = b.transpose(-2, -1).contiguous().transpose(-2, -1)
+            else:
+                mask = mask.to_sparse()
             results.append(
                 benchmark.Timer(
                     stmt="_matmul_with_mask(a, b, mask)",
                     globals={
-                        "a": a,
-                        "b": b,
+                        "a": aa,
+                        "b": bb,
                         "mask": mask,
                         "_matmul_with_mask": _matmul_with_mask,
                     },
                     label="matmul_with_mask",
-                    sub_label=f"sparsity: {prob:0.2f}",
+                    sub_label=f"sparsity {'sputnik' if sputnik else 'pytorch'}: {prob:0.2f}",
                     description=f"B={B}, M={M}, K={K}",
                 ).blocked_autorange(min_run_time=min_run_time)
             )
@@ -92,10 +110,12 @@ def bench_softmax():
                 ).blocked_autorange(min_run_time=min_run_time),
             ]
         )
-        for prob in SPARSITIES:
-            a = torch.rand(B, M, M, device=device)
-            a[a < prob] = 0
-            a = a.to_sparse()
+        for sputnik, prob in itertools.product([False, True], SPARSITIES):
+            a = _create_random_sparsity(torch.rand(B, M, M, device=device), prob)
+            if sputnik:
+                a = SparseCS(a, device)
+            else:
+                a = a.to_sparse()
             results.append(
                 benchmark.Timer(
                     stmt="_softmax(a)",
@@ -104,7 +124,7 @@ def bench_softmax():
                         "_softmax": _softmax,
                     },
                     label="softmax",
-                    sub_label=f"sparsity: {prob:0.2f}",
+                    sub_label=f"sparsity {'sputnik' if sputnik else 'pytorch'}: {prob:0.2f}",
                     description=f"B={B}, M={M}, K={K}",
                 ).blocked_autorange(min_run_time=min_run_time)
             )
@@ -139,20 +159,24 @@ def bench_bmm():
                 ).blocked_autorange(min_run_time=min_run_time),
             ]
         )
-        for prob in SPARSITIES:
-            a = torch.rand(B, M, M, device=device)
-            a[a < prob] = 0
-            a = a.to_sparse()
+        for sputnik, prob in itertools.product([False, True], SPARSITIES):
+            a = _create_random_sparsity(torch.rand(B, M, M, device=device), prob)
+            bb = b
+            if sputnik:
+                a = SparseCS(a, device)
+                bb = b
+            else:
+                a = a.to_sparse()
             results.append(
                 benchmark.Timer(
                     stmt="bmm(a, b)",
                     globals={
                         "a": a,
-                        "b": b,
+                        "b": bb,
                         "bmm": bmm,
                     },
                     label="bmm",
-                    sub_label=f"sparsity: {prob:0.2f}",
+                    sub_label=f"sparsity {'sputnik' if sputnik else 'pytorch'}: {prob:0.2f}",
                     description=f"B={B}, M={M}, K={K}",
                 ).blocked_autorange(min_run_time=min_run_time)
             )

@@ -3,16 +3,36 @@ from typing import Optional
 
 import torch
 
+from ._sputnik_sparse import SparseCS
+
+
+def _create_random_sparsity(matrix, sparsity):
+    assert matrix.ndim == 3
+    keep = torch.rand_like(matrix[0], dtype=torch.float32) > sparsity
+    nonzero = torch.nonzero(keep)
+    nnz = nonzero.shape[0]
+    # NOTE: need to make it a multiple of 4 for sputnik
+    nonzero = nonzero[: (nnz - nnz % 4)]
+    i, j = nonzero.unbind(1)
+    output = torch.zeros_like(matrix)
+    bdim = torch.arange(matrix.shape[0], device=matrix.device)[:, None]
+    output[bdim, i, j] = matrix[bdim, i, j]
+    return output
+
 
 def _matmul_with_mask(
     a: torch.Tensor, b: torch.Tensor, mask: Optional[torch.Tensor]
 ) -> torch.Tensor:
     if mask is None:
         return a @ b
+    if isinstance(mask, SparseCS):
+        return mask.matmul_with_mask(a, b)
     return torch.ops.xformers.matmul_with_mask(a, b, mask)
 
 
 def _softmax(a: torch.Tensor) -> torch.Tensor:
+    if isinstance(a, SparseCS):
+        return a.softmax()
     if a.is_sparse:
         return torch.sparse.softmax(a, dim=a.ndim - 1)
     return torch.softmax(a, dim=a.ndim - 1)
@@ -54,6 +74,8 @@ def _sparse_bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 
 
 def bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    if isinstance(a, SparseCS):
+        return a.spmm(b)
     if a.is_sparse:
         return _sparse_bmm(a, b)
     return a @ b
@@ -80,7 +102,13 @@ def scaled_dot_product_attention(
     #  Optional dropout, could be part of the masking in the future
     if dropout is not None:
         # Dropout chokes on sparse tensors
-        if att.is_sparse:
+        if isinstance(att, SparseCS):
+            values = att.values.clone()
+            values = dropout(values)
+            att = SparseCS.wrap(
+                att.shape, values, att.row_indices, att.row_offsets, att.column_indices
+            )
+        elif att.is_sparse:
             att = att.coalesce()
             values = att.values().clone()  # protect against in-place droupout
             values = dropout(values)

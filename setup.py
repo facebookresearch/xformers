@@ -56,6 +56,16 @@ def get_extensions():
     sources = main_file + source_cpu
     source_cuda = glob.glob(os.path.join(extensions_dir, "cuda", "*.cu"))
 
+    sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
+    # NOTE: these files were renamed from .cu.cc to .cu so that
+    # CUDAExtension can pick them properly
+    sputnik_files = [
+        os.path.join("sddmm", "cuda_sddmm.cu"),
+        os.path.join("spmm", "cuda_spmm.cu"),
+        os.path.join("softmax", "sparse_softmax.cu"),
+    ]
+    sputnik_files = [os.path.join(sputnik_dir, "sputnik", s) for s in sputnik_files]
+
     extension = CppExtension
 
     define_macros = []
@@ -67,11 +77,15 @@ def get_extensions():
     elif "OpenMP not found" not in torch.__config__.parallel_info():
         extra_compile_args["cxx"].append("-fopenmp")
 
+    include_dirs = [extensions_dir]
+
     if (torch.cuda.is_available() and ((CUDA_HOME is not None))) or os.getenv(
         "FORCE_CUDA", "0"
     ) == "1":
         extension = CUDAExtension
         sources += source_cuda
+        sources += sputnik_files
+        include_dirs += [sputnik_dir]
         nvcc_flags = os.getenv("NVCC_FLAGS", "")
         if nvcc_flags == "":
             nvcc_flags = []
@@ -80,7 +94,6 @@ def get_extensions():
         extra_compile_args["nvcc"] = nvcc_flags
 
     sources = [os.path.join(extensions_dir, s) for s in sources]
-    include_dirs = [extensions_dir]
 
     ext_modules = [
         extension(

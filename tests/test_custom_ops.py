@@ -3,8 +3,10 @@ import torch
 
 # needed to register custom ops
 import xformers  # noqa: F401
-from xformers.components.attention.core import _sparse_bmm
+import xformers.components.attention.core
+from xformers.components.attention.core import _create_random_sparsity, _sparse_bmm
 
+cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
@@ -117,6 +119,190 @@ def test_matmul_with_mask_backward(device, contiguous, is_sparse):
     compute_grads(fn_gt)
     assert torch.allclose(grad_a, a.grad)
     assert torch.allclose(grad_b, b.grad)
+
+
+@cuda_only
+def test_sddmm_sputnik():
+    B, L, M, K = 8, 30, 16, 32
+    prob = 0.5
+    device = torch.device("cuda")
+    a = torch.rand(B, L, K, device=device)
+    b = torch.rand(B, M, K, device=device).transpose(-2, -1)
+    mask = _create_random_sparsity(
+        torch.ones(B, L, M, dtype=torch.bool, device=device), prob
+    )
+
+    mask_csr = xformers.components.attention.core.SparseCS(mask, device)
+
+    fn = xformers.components.attention.core._matmul_with_mask
+
+    mask = mask.to_sparse()
+
+    res = fn(a, b, mask_csr)
+    res_gt = fn(a, b, mask)
+
+    res = res.to_dense()
+    res_gt = res_gt.to_dense()
+
+    assert res.dtype == res_gt.dtype
+    assert torch.allclose(res, res_gt)
+
+
+@cuda_only
+def test_sddmm_sputnik_backward():
+    device = torch.device("cuda")
+    contiguous = True
+
+    B, L, M, K = 8, 10, 16, 32
+    prob = 0.5
+    a = torch.rand(B, L, K, device=device, requires_grad=True)
+    b = torch.rand(B, K, M, device=device, requires_grad=True)
+    if not contiguous:
+        a = a.detach().transpose(-2, -1).contiguous().transpose(-2, -1).requires_grad_()
+        b = b.detach().transpose(-2, -1).contiguous().transpose(-2, -1).requires_grad_()
+    mask = _create_random_sparsity(
+        torch.ones(B, L, M, dtype=torch.bool, device=device), prob
+    )
+
+    mask_csr = xformers.components.attention.core.SparseCS(mask, device)
+
+    fn = xformers.components.attention.core._matmul_with_mask
+
+    mask = mask.to_sparse()
+
+    out_csr = fn(a, b, mask_csr)
+    out_csr.values.sum().backward()
+    grad_a = a.grad.clone()
+    grad_b = b.grad.clone()
+    a.grad = None
+    b.grad = None
+    # fn(a[None], b[None], mask).coalesce().values().sum().backward()  # TODO check why this fails
+    fn(a, b, mask).to_dense().sum().backward()
+    assert torch.allclose(grad_a, a.grad, atol=1e-7)
+    assert torch.allclose(grad_b, b.grad, atol=1e-7)
+
+
+@cuda_only
+def test_sparse_softmax_sputnik():
+    B, L = 8, 30
+    prob = 0.5
+    device = torch.device("cuda")
+    a = _create_random_sparsity(torch.rand(B, L, L, device=device), prob)
+
+    a_csr = xformers.components.attention.core.SparseCS(a, device)
+
+    fn = xformers.components.attention.core._softmax
+
+    a = a.to_sparse()
+
+    res = fn(a_csr)
+    res_gt = fn(a)
+
+    res = res.to_dense()
+    res_gt = res_gt.to_dense()
+
+    assert res.dtype == res_gt.dtype
+    assert torch.allclose(res, res_gt)
+
+
+@cuda_only
+def test_sparse_softmax_sputnik_backward():
+    B, L = 8, 30
+    prob = 0.5
+    device = torch.device("cuda")
+    a = _create_random_sparsity(torch.rand(B, L, L, device=device), prob)
+
+    a_csr = xformers.components.attention.core.SparseCS(a, device)
+
+    fn = xformers.components.attention.core._softmax
+
+    a = a.to_sparse()
+
+    a_csr.values.requires_grad_(True)
+    fn(a_csr).values.sum().backward()
+    grad_a = a_csr.values.grad.clone()
+    a.requires_grad_(True)
+    fn(a).coalesce().values().sum().backward()
+    assert torch.allclose(
+        grad_a, a.grad.coalesce().values().reshape_as(grad_a), atol=1e-7
+    )
+
+
+@cuda_only
+def test_spmm_sputnik():
+    B, L, K = 8, 30, 32
+    prob = 0.5
+    device = torch.device("cuda")
+
+    a = _create_random_sparsity(torch.rand(B, L, L, device=device), prob)
+
+    b = torch.rand(B, L, K, device=device)
+
+    a_csr = xformers.components.attention.core.SparseCS(a, device)
+
+    fn = xformers.components.attention.core.bmm
+
+    a = a.to_sparse()
+
+    res = fn(a_csr, b)
+    res_gt = fn(a, b)
+
+    res = res
+    res_gt = res_gt
+
+    assert res.dtype == res_gt.dtype
+    assert torch.allclose(res, res_gt)
+
+
+@cuda_only
+def test_spmm_sputnik_backward():
+    device = torch.device("cuda")
+
+    B, M, L, K = 8, 16, 30, 32
+    prob = 0.5
+    device = torch.device("cuda")
+
+    a = _create_random_sparsity(torch.rand(B, M, L, device=device), prob)
+
+    b = torch.rand(B, L, K, device=device)
+    b.requires_grad_(True)
+
+    a_csr = xformers.components.attention.core.SparseCS(a, device)
+
+    fn = xformers.components.attention.core.bmm
+
+    a = a.to_sparse()
+    a.requires_grad_(True)
+    a_csr.values.requires_grad_(True)
+
+    fn(a_csr, b).sum().backward()
+    grad_a = a_csr.values.grad.clone()
+    grad_b = b.grad.clone()
+
+    b.grad = None
+    fn(a, b).sum().backward()
+
+    assert torch.allclose(
+        grad_a, a.grad.coalesce().values().reshape_as(grad_a), atol=1e-7
+    )
+    assert torch.allclose(grad_b, b.grad, atol=1e-7)
+
+
+@cuda_only
+def test_csr_transpose():
+    B, L, K = 8, 30, 40
+    prob = 0.5
+    device = torch.device("cuda")
+
+    a = _create_random_sparsity(torch.rand(B, L, K, device=device), prob)
+
+    a_csr = xformers.components.attention.core.SparseCS(a, device)
+
+    res = a_csr.transpose()
+    res2 = res.transpose()
+
+    assert torch.allclose(res.to_dense(), a.transpose(-2, -1))
+    assert torch.allclose(res2.to_dense(), a)
 
 
 @pytest.mark.parametrize("contiguous", [True, False])
