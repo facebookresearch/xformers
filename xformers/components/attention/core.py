@@ -106,7 +106,12 @@ def scaled_dot_product_attention(
             values = att.values.clone()
             values = dropout(values)
             att = SparseCS.wrap(
-                att.shape, values, att.row_indices, att.row_offsets, att.column_indices
+                att.shape,
+                values,
+                att.row_indices,
+                att.row_offsets,
+                att.column_indices,
+                att._transp_info,
             )
         elif att.is_sparse:
             att = att.coalesce()
