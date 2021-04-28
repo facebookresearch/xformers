@@ -10,6 +10,7 @@ from xformers.components.attention import (
     AttentionConfig,
     register_attention,
 )
+from xformers.components.attention.attention_patterns import global_token_pattern
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
@@ -50,10 +51,7 @@ class GlobalAttention(Attention):
         ), "A N x 1 query mask is expected"
 
         self.attn_drop = nn.Dropout(dropout, inplace=False)
-        self.attention_mask = attention_query_mask | attention_query_mask.transpose(
-            1, 0
-        )
-
+        self.attention_mask = global_token_pattern(attention_query_mask[:, 0])
         # Sparsity threshold, below which having a sparse matrix is more efficient
         if (
             torch.count_nonzero(self.attention_mask) / self.attention_mask.numel()

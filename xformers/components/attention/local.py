@@ -10,6 +10,10 @@ from xformers.components.attention import (
     AttentionConfig,
     register_attention,
 )
+from xformers.components.attention.attention_patterns import (
+    causal_1d_pattern,
+    local_1d_pattern,
+)
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
@@ -65,19 +69,11 @@ class LocalAttention(Attention):
         self.mask: Optional[torch.Tensor] = None
 
     def _get_local_mask(self, shape: torch.Size) -> torch.Tensor:
+        window_size = self.window_size * 2 + 1 if self.causal else self.window_size
+        mask = local_1d_pattern(shape[1], window_size)
+
         if self.causal:
-            mask = torch.tril(torch.ones(shape[1], shape[1])).to(dtype=torch.bool)
-            mask &= ~torch.tril(
-                torch.ones(shape[1], shape[1]), diagonal=-self.window_size - 1
-            ).to(dtype=torch.bool)
-        else:
-            h_win_size = self.window_size // 2
-            mask = torch.tril(torch.ones(shape[1], shape[1]), diagonal=h_win_size).to(
-                dtype=torch.bool
-            )
-            mask &= ~torch.tril(
-                torch.ones(shape[1], shape[1]), diagonal=-(h_win_size + 1)
-            ).to(dtype=torch.bool)
+            mask &= causal_1d_pattern(shape[1])
 
         # Take the batch dimension into account
         # FIXME: not needed with https://github.com/fairinternal/xformers/issues/42
