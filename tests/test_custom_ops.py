@@ -4,7 +4,11 @@ import torch
 # needed to register custom ops
 import xformers  # noqa: F401
 import xformers.components.attention.core
-from xformers.components.attention.core import _create_random_sparsity, _sparse_bmm
+from xformers.components.attention.core import (
+    _broadcast_batch,
+    _create_random_sparsity,
+    _sparse_bmm,
+)
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
@@ -358,3 +362,19 @@ def test_sparse_bmm_backward(device, contiguous):
     assert torch.allclose(grad_a.indices(), new_grad_a.indices())
     assert torch.allclose(grad_a.values(), new_grad_a.values())
     assert torch.allclose(grad_b, b.grad)
+
+
+@pytest.mark.parametrize("device", _devices)
+def test_sparse_coo_broadcast(device):
+    B, L, K = 8, 10, 16
+    prob = 0.5
+    a = torch.rand(L, K, device=device)
+    a[a < prob] = 0
+
+    a_sparse = a.to_sparse()
+
+    res = _broadcast_batch(a_sparse, B)
+
+    res_gt = a[None, :, :].expand(B, L, K)
+
+    assert torch.allclose(res.to_dense(), res_gt)

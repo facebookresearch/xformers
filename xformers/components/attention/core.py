@@ -20,6 +20,32 @@ def _create_random_sparsity(matrix, sparsity):
     return output
 
 
+def _broadcast_batch(mask, batch_size):
+    if mask.ndim == 3:
+        return mask
+    assert mask.ndim == 2
+
+    mask = mask.coalesce()
+    values = mask.values()
+    indices = mask.indices()
+    nnz = len(values)
+    # strategy: repeat the indices and append the extra batch dimension to the indices
+    indices = indices.repeat(1, batch_size)
+    # now create the batch indices
+    batch_indices = torch.arange(batch_size, device=indices.device)
+    batch_indices = batch_indices[:, None].expand(batch_size, nnz).flatten()
+
+    # put them together
+    indices = torch.cat([batch_indices[None, :], indices], dim=0)
+
+    # now repeat the values
+    values = values.repeat(batch_size)
+
+    size = (batch_size,) + mask.shape
+
+    return torch.sparse_coo_tensor(indices, values, size)
+
+
 def _matmul_with_mask(
     a: torch.Tensor, b: torch.Tensor, mask: Optional[torch.Tensor]
 ) -> torch.Tensor:
@@ -27,6 +53,9 @@ def _matmul_with_mask(
         return a @ b
     if isinstance(mask, SparseCS):
         return mask.matmul_with_mask(a, b)
+    if mask.is_sparse:
+        # perform broadcasting if needed
+        mask = _broadcast_batch(mask, a.shape)
     return torch.ops.xformers.matmul_with_mask(a, b, mask)
 
 
