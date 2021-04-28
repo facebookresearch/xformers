@@ -57,14 +57,6 @@ def get_extensions():
     source_cuda = glob.glob(os.path.join(extensions_dir, "cuda", "*.cu"))
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
-    # NOTE: these files were renamed from .cu.cc to .cu so that
-    # CUDAExtension can pick them properly
-    sputnik_files = [
-        os.path.join("sddmm", "cuda_sddmm.cu"),
-        os.path.join("spmm", "cuda_spmm.cu"),
-        os.path.join("softmax", "sparse_softmax.cu"),
-    ]
-    sputnik_files = [os.path.join(sputnik_dir, "sputnik", s) for s in sputnik_files]
 
     extension = CppExtension
 
@@ -84,7 +76,6 @@ def get_extensions():
     ) == "1":
         extension = CUDAExtension
         sources += source_cuda
-        sources += sputnik_files
         include_dirs += [sputnik_dir]
         nvcc_flags = os.getenv("NVCC_FLAGS", "")
         if nvcc_flags == "":
