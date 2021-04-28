@@ -10,7 +10,7 @@ from xformers.components.attention.core import (
     _matmul_with_mask,
     _softmax,
     bmm,
-    iterative_pinv
+    iterative_pinv,
 )
 
 MIN_RUN_TIME = 1
@@ -196,6 +196,7 @@ def bench_inverse(inverse_fn: Callable[[torch.Tensor], torch.Tensor]):
     for B, M, K in zip(*SHAPES):
         a = torch.rand(B, M, M, device=device)
         a[a < prob] = 0
+        a = _softmax(a)
 
         results.extend(
             [
@@ -235,5 +236,5 @@ def bench_inverse(inverse_fn: Callable[[torch.Tensor], torch.Tensor]):
 bench_matmul_with_mask()
 bench_softmax()
 bench_bmm()
-bench_inverse(iterative_inv)
-bench_inverse(torch.linalg.inv)
+bench_inverse(iterative_pinv)
+bench_inverse(torch.linalg.pinv)

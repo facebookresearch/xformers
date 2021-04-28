@@ -6,7 +6,7 @@ import torch.nn as nn
 
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.attention.core import (
-    iterative_inv,
+    iterative_pinv,
     scaled_dot_product_attention,
     scaled_query_key_softmax,
 )
@@ -117,7 +117,7 @@ class NystromAttention(Attention):
             x = torch.matmul(
                 torch.matmul(
                     kernel_1,
-                    iterative_inv(
+                    iterative_pinv(
                         kernel_2, self.inv_iterations, self.pinverse_original_init
                     ),
                 ),

@@ -167,15 +167,18 @@ def scaled_dot_product_attention(
     return y
 
 
-def iterative_inv(a: torch.Tensor, n_iter=6, pinverse_original_init=False):
+# Assumes that matrix passed in has had softmax applied to it.
+def iterative_pinv(softmax_mat: torch.Tensor, n_iter=6, pinverse_original_init=False):
     """
     Computing the Moore-Penrose inverse.
     Use an iterative method from (Razavi et al. 2014) to approximate the Moore-Penrose inverse via efficient
     matrix-matrix multiplications.
     """
 
-    i = torch.eye(a.size(-1), device=a.device, dtype=a.dtype)
-    k = a
+    i = torch.eye(
+        softmax_mat.size(-1), device=softmax_mat.device, dtype=softmax_mat.dtype
+    )
+    k = softmax_mat
 
     # The entries of K are positive and ||K||_{\infty} = 1 due to softmax
     if pinverse_original_init:
