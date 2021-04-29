@@ -800,11 +800,6 @@ at::Tensor spmm_sputnik(
   return output;
 }
 
-TORCH_LIBRARY_FRAGMENT(xformers, m) {
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::spmm_sputnik(Tensor b, Tensor row_indices, Tensor values, Tensor row_offsets, Tensor column_indices, int m) -> Tensor"));
-}
-
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::spmm_sputnik"), TORCH_FN(spmm_sputnik));

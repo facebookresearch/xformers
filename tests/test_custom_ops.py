@@ -125,11 +125,10 @@ def test_matmul_with_mask_backward(device, contiguous, is_sparse):
     assert torch.allclose(grad_b, b.grad)
 
 
-@cuda_only
-def test_sddmm_sputnik():
+@pytest.mark.parametrize("device", _devices)
+def test_sddmm_sputnik(device):
     B, L, M, K = 8, 30, 16, 32
     prob = 0.5
-    device = torch.device("cuda")
     a = torch.rand(B, L, K, device=device)
     b = torch.rand(B, M, K, device=device).transpose(-2, -1)
     mask = _create_random_sparsity(
@@ -152,9 +151,8 @@ def test_sddmm_sputnik():
     assert torch.allclose(res, res_gt)
 
 
-@cuda_only
-def test_sddmm_sputnik_backward():
-    device = torch.device("cuda")
+@pytest.mark.parametrize("device", _devices)
+def test_sddmm_sputnik_backward(device):
     contiguous = True
 
     B, L, M, K = 8, 10, 16, 32
@@ -186,11 +184,10 @@ def test_sddmm_sputnik_backward():
     assert torch.allclose(grad_b, b.grad, atol=1e-7)
 
 
-@cuda_only
-def test_sparse_softmax_sputnik():
+@pytest.mark.parametrize("device", _devices)
+def test_sparse_softmax_sputnik(device):
     B, L = 8, 30
     prob = 0.5
-    device = torch.device("cuda")
     a = _create_random_sparsity(torch.rand(B, L, L, device=device), prob)
 
     a_csr = xformers.components.attention.core.SparseCS(a, device)
@@ -209,11 +206,10 @@ def test_sparse_softmax_sputnik():
     assert torch.allclose(res, res_gt)
 
 
-@cuda_only
-def test_sparse_softmax_sputnik_backward():
+@pytest.mark.parametrize("device", _devices)
+def test_sparse_softmax_sputnik_backward(device):
     B, L = 8, 30
     prob = 0.5
-    device = torch.device("cuda")
     a = _create_random_sparsity(torch.rand(B, L, L, device=device), prob)
 
     a_csr = xformers.components.attention.core.SparseCS(a, device)
@@ -232,11 +228,10 @@ def test_sparse_softmax_sputnik_backward():
     )
 
 
-@cuda_only
-def test_spmm_sputnik():
+@pytest.mark.parametrize("device", _devices)
+def test_spmm_sputnik(device):
     B, L, K = 8, 30, 32
     prob = 0.5
-    device = torch.device("cuda")
 
     a = _create_random_sparsity(torch.rand(B, L, L, device=device), prob)
 
@@ -258,13 +253,10 @@ def test_spmm_sputnik():
     assert torch.allclose(res, res_gt)
 
 
-@cuda_only
-def test_spmm_sputnik_backward():
-    device = torch.device("cuda")
-
+@pytest.mark.parametrize("device", _devices)
+def test_spmm_sputnik_backward(device):
     B, M, L, K = 8, 16, 30, 32
     prob = 0.5
-    device = torch.device("cuda")
 
     a = _create_random_sparsity(torch.rand(B, M, L, device=device), prob)
 
