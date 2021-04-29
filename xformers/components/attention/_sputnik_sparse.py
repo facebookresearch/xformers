@@ -121,9 +121,13 @@ class _spmm(torch.autograd.Function):
 
 
 class SparseCS:
-    def __init__(self, matrix, device):
+    def __init__(self, matrix, device=None):
+        if device is None:
+            device = torch.device("cpu")
         if isinstance(matrix, torch.Tensor):
             matrix = matrix.cpu().numpy()
+        if matrix.ndim == 2:
+            matrix = matrix[None]
         assert matrix.ndim == 3
         (
             self.values,
@@ -140,6 +144,10 @@ class SparseCS:
         self._transp_info = _get_transpose_info(
             m, n, self.row_indices, self.row_offsets, self.column_indices
         )
+
+    @property
+    def device(self):
+        return self.values.device
 
     @classmethod
     def wrap(

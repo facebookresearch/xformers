@@ -1,8 +1,11 @@
 from pathlib import Path
 from typing import Any, Dict
 
+import torch
+
 from xformers.utils import import_all_modules
 
+from ._sputnik_sparse import SparseCS
 from .base import Attention, AttentionConfig  # noqa
 
 # Credits: Classy Vision registry mechanism
@@ -13,6 +16,7 @@ ATTENTION_CLASS_NAMES = set()
 # Arbitrary threshold for now,
 # in between dense and sparse matrix algorithms for the attention mechanism
 _DENSITY_THRESHOLD = 0.05  # noqa
+_USE_SPUTNIK = True
 
 
 def build_attention(config: AttentionConfig):
@@ -63,6 +67,15 @@ def register_attention(name):
         return cls
 
     return register_attention_cls
+
+
+def maybe_sparsify(matrix):
+    # Sparsify if that makes sense
+    if torch.count_nonzero(matrix).item() / matrix.numel() > _DENSITY_THRESHOLD:
+        return matrix
+    if _USE_SPUTNIK:
+        return SparseCS(matrix)
+    return matrix.to_sparse()
 
 
 from .global_tokens import GlobalAttention  # noqa

@@ -5,9 +5,9 @@ import torch
 import torch.nn as nn
 
 from xformers.components.attention import (
-    _DENSITY_THRESHOLD,
     Attention,
     AttentionConfig,
+    maybe_sparsify,
     register_attention,
 )
 from xformers.components.attention.attention_patterns import (
@@ -75,9 +75,7 @@ class LocalAttention(Attention):
         if self.causal:
             mask &= causal_1d_pattern(shape[1])
 
-        # Sparsify if that makes sense
-        if torch.count_nonzero(mask).item() / mask.numel() < _DENSITY_THRESHOLD:
-            mask = mask.to_sparse()
+        mask = maybe_sparsify(mask)
 
         return mask
 

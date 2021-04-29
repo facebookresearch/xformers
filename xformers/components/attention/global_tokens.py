@@ -5,9 +5,9 @@ import torch
 import torch.nn as nn
 
 from xformers.components.attention import (
-    _DENSITY_THRESHOLD,
     Attention,
     AttentionConfig,
+    maybe_sparsify,
     register_attention,
 )
 from xformers.components.attention.attention_patterns import global_token_pattern
@@ -52,12 +52,7 @@ class GlobalAttention(Attention):
 
         self.attn_drop = nn.Dropout(dropout, inplace=False)
         self.attention_mask = global_token_pattern(attention_query_mask[:, 0])
-        # Sparsity threshold, below which having a sparse matrix is more efficient
-        if (
-            torch.count_nonzero(self.attention_mask) / self.attention_mask.numel()
-            < _DENSITY_THRESHOLD
-        ):
-            self.attention_mask = self.attention_mask.to_sparse()
+        self.attention_mask = maybe_sparsify(self.attention_mask)
 
     def _adapt_mask_to_batch(self, q: torch.Tensor):
         # Make sure that the mask is on the right device, and has the right dimensions
