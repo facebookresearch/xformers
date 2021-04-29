@@ -75,10 +75,6 @@ class LocalAttention(Attention):
         if self.causal:
             mask &= causal_1d_pattern(shape[1])
 
-        # Take the batch dimension into account
-        # FIXME: not needed with https://github.com/fairinternal/xformers/issues/42
-        mask = mask.expand(shape[0], shape[1], shape[1])
-
         # Sparsify if that makes sense
         if torch.count_nonzero(mask).item() / mask.numel() < _DENSITY_THRESHOLD:
             mask = mask.to_sparse()

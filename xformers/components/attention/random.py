@@ -53,9 +53,6 @@ class RandomAttention(Attention):
     def _get_rand_mask(self, shape: torch.Size) -> torch.Tensor:
         sparsity = 1 - self.r
         mask = random_pattern(shape[1], sparsity=sparsity)
-        mask = mask.unsqueeze(0).expand(
-            shape[0], -1, -1
-        )  # duplicate the mask over the batch dimension
 
         # Sparsity threshold, below that having a sparse matrix is more efficient
         if self.r < _DENSITY_THRESHOLD:

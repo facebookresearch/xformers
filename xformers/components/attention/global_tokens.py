@@ -64,14 +64,6 @@ class GlobalAttention(Attention):
         if self.attention_mask.device != q.device:
             self.attention_mask = self.attention_mask.to(q.device)
 
-        # Handle the batch dimension without duplicating memory.
-        # Only needed in the sparse case for now,the dense case broadcasts
-        if self.attention_mask.ndim != q.ndim and self.attention_mask.is_sparse:
-            # FIXME: @lefaudeux this takes space in memory and is not really useful all things considered
-            self.attention_mask = (
-                self.attention_mask.to_dense().expand(q.shape[0], -1, -1).to_sparse()
-            )
-
     def forward(
         self,
         q: torch.Tensor,
