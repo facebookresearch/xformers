@@ -6,10 +6,10 @@ import torch.nn as nn
 
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.attention.core import (
-    iterative_pinv,
     scaled_dot_product_attention,
     scaled_query_key_softmax,
 )
+from xformers.components.attention.utils import iterative_pinv
 
 
 @dataclass(init=False)
@@ -39,11 +39,12 @@ class NystromSelfAttentionConfig(AttentionConfig):
     inv_iterations: Optional[int]
     v_skip_connection: Optional[nn.Module]
     conv_kernel_size: Optional[int]
-    use_razavi_inverse: Optional[bool]
+    use_razavi_pinverse: Optional[bool]
 
 
 @register_attention("nystrom")
 class NystromAttention(Attention):
+    # TODO: update defaults for use_razavi_pinverse and inv_iterations
     def __init__(
         self,
         dropout: float,
@@ -104,8 +105,6 @@ class NystromAttention(Attention):
             seq_len % self.num_landmarks == 0
         ), "the sequence length needs to be divisible by the number of landmarks"
 
-        # TODO: apply attention mask to q and k. Mask dimensions SxS or BxS?
-
         if self.num_landmarks == seq_len:
             x = scaled_dot_product_attention(q, k, v, att_mask)
 
@@ -125,7 +124,6 @@ class NystromAttention(Attention):
 
             kernel_1 = scaled_query_key_softmax(q, k_landmarks, None)
             kernel_2 = scaled_query_key_softmax(q_landmarks, k_landmarks, None)
-            # TODO: apply attention mask
             kernel_3 = scaled_dot_product_attention(q_landmarks, k, v, None)
 
             kernel_2_inv = (
@@ -145,7 +143,6 @@ class NystromAttention(Attention):
             )
 
         if self.skip_connection:
-            # TODO: apply attention mask to v.
             # Assumption here is that v is 3D.
             v_conv = self.skip_connection(
                 v.reshape(-1, self.num_heads, v.size(-2), v.size(-1))
