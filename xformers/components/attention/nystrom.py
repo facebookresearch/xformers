@@ -21,13 +21,20 @@ class NystromSelfAttentionConfig(AttentionConfig):
     pinverse_original_init  True if using original initialization when calculating Moore-Penrose pseudo inverse.
                             False if using exact coefficient computation (leads to faster convergence).
     inv_iterations          Number of iterations for calculating the Moore-Penrose pseudo inverse.
+    v_skip_connection       A module that will take V as input and will be added as a skip connection to the
+                            softmax approximation. A skip connection is added in the paper to help with training.
     conv_kernel_size        Kernel size for convolution optionally added to help in training.
+                            If v_skip_connection is not specified, this will be used to define the default
+                            depth wise convolution used as a skip connection.
+                            If both conv_kernel_size and v_skip_connection are None, no skip connection will
+                            be added.
     """
 
     num_heads: int
     num_landmarks: Optional[int]
     pinverse_original_init: Optional[bool]
     inv_iterations: Optional[int]
+    v_skip_connection: Optional[nn.Module]
     conv_kernel_size: Optional[int]
 
 
@@ -40,6 +47,7 @@ class NystromAttention(Attention):
         num_landmarks: int = 64,
         pinverse_original_init: bool = False,
         inv_iterations: int = 6,  # recommended default in paper was 6.
+        v_skip_connection: Optional[nn.Module] = None,
         conv_kernel_size: Optional[int] = None,
         *args,
         **kwargs,
@@ -61,10 +69,10 @@ class NystromAttention(Attention):
         self.pinverse_original_init = pinverse_original_init
         self.inv_iterations = inv_iterations
         self.attn_drop = nn.Dropout(dropout)
-        self.conv = None
+        self.skip_connection = v_skip_connection
 
-        if conv_kernel_size is not None:
-            self.conv = nn.Conv2d(
+        if self.skip_connection is None and conv_kernel_size is not None:
+            self.skip_connection = nn.Conv2d(
                 in_channels=self.num_heads,
                 out_channels=self.num_heads,
                 kernel_size=(conv_kernel_size, 1),
@@ -124,10 +132,12 @@ class NystromAttention(Attention):
                 kernel_3,
             )
 
-        if self.conv:
+        if self.skip_connection:
             # TODO: apply attention mask to v.
             # Assumption here is that v is 3D.
-            v_conv = self.conv(v.reshape(-1, self.num_heads, v.size(-2), v.size(-1)))
+            v_conv = self.skip_connection(
+                v.reshape(-1, self.num_heads, v.size(-2), v.size(-1))
+            )
             x += v_conv.reshape(-1, v_conv.size(-2), v_conv.size(-1))
         x = self.attn_drop(x)
         return x
