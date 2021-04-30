@@ -278,10 +278,10 @@ if __name__ == "__main__":
         "-act", "--activations", nargs="+", default=[a.value for a in Activation]
     )
     parser.add_argument(
-        "-emb", "--embedding_dim", nargs="+", default=[64, 128, 512], type=int
+        "-emb", "--embedding_dim", nargs="+", default=[64, 128, 256], type=int
     )
     parser.add_argument(
-        "-sl", "--sequence_length", nargs="+", default=[128, 512, 768], type=int
+        "-sl", "--sequence_length", nargs="+", default=[512, 768, 1024], type=int
     )
     parser.add_argument("-bs", "--batch_size", nargs="+", default=[8, 16, 32], type=int)
     parser.add_argument("-heads", "--heads", nargs="+", default=[8, 16], type=int)
