@@ -47,6 +47,7 @@ def test_xformer_encoder_block(
         "window_size": SEQ // 8 + 1,
         "from_seq_dim": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
+        "num_heads": heads,
     }
 
     multi_head_config = {
@@ -106,6 +107,7 @@ def test_xformer_decoder_block(
         "window_size": SEQ // 8 + 1,
         "from_seq_dim": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
+        "num_heads": heads,
     }
 
     multi_head_config = {

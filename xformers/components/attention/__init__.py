@@ -81,6 +81,7 @@ def maybe_sparsify(matrix):
 from .global_tokens import GlobalAttention  # noqa
 from .linformer import LinformerAttention  # noqa
 from .local import LocalAttention  # noqa
+from .nystrom import NystromAttention  # noqa
 from .random import RandomAttention  # noqa
 from .scaled_dot_product import ScaledDotProduct  # noqa
 
@@ -88,6 +89,7 @@ __all__ = [
     "ScaledDotProduct",
     "LocalAttention",
     "LinformerAttention",
+    "NystromAttention",
     "RandomAttention",
     "GlobalAttention",
     "Attention",

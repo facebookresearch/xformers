@@ -35,7 +35,7 @@ class ExtensibleConfig:
         """Given another config -could be subtyped and not completely compatible-
         try to fill in the compatible fields"""
 
-        names = set([f.name for f in fields(cls)])
+        names = {f.name for f in fields(cls)}
         kwargs = {
             n: getattr(config, n) for n in filter(lambda x: hasattr(config, x), names)
         }
@@ -46,7 +46,7 @@ class ExtensibleConfig:
         """Return a dict which covers all the set fields in this class.
         .. warning: Note that this could be incomplete given the config definition"""
 
-        names = set([f.name for f in fields(cls)])
+        names = {f.name for f in fields(cls)}
         return {
             n: getattr(config, n) for n in filter(lambda x: hasattr(config, x), names)
         }
