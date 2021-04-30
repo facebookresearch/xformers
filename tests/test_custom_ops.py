@@ -158,7 +158,7 @@ def test_sddmm_sputnik_backward(device):
     B, L, M, K = 8, 10, 16, 32
     prob = 0.5
     a = torch.rand(B, L, K, device=device, requires_grad=True)
-    b = torch.rand(B, K, M, device=device, requires_grad=True)
+    b = torch.rand(B, M, K, device=device).transpose(-2, -1).requires_grad_(True)
     if not contiguous:
         a = a.detach().transpose(-2, -1).contiguous().transpose(-2, -1).requires_grad_()
         b = b.detach().transpose(-2, -1).contiguous().transpose(-2, -1).requires_grad_()

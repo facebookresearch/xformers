@@ -103,7 +103,7 @@ class _spmm(torch.autograd.Function):
         grad = grad.contiguous()
 
         grad_sparse = torch.ops.xformers.sddmm_sputnik(
-            grad, b.T, row_indices, row_offsets, column_indices
+            grad, b, row_indices, row_offsets, column_indices
         )
 
         (
@@ -174,6 +174,8 @@ class SparseCS:
         )
 
     def matmul_with_mask(self, a, b):
+        assert self.shape[0] == a.shape[1]
+        assert self.shape[1] == b.shape[2]
         row_indices = self.row_indices
         row_offsets = self.row_offsets
         column_indices = self.column_indices
