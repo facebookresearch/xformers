@@ -10,6 +10,9 @@ import seaborn as sns
 import torch
 import torch.nn.functional as F
 from sklearn.model_selection import ParameterGrid
+
+# Credits: Sean Naren
+from torch.autograd.profiler import record_function
 from tqdm import tqdm
 
 from xformers.components import (
@@ -22,8 +25,6 @@ from xformers.components.attention import _DENSITY_THRESHOLD
 from xformers.components.feedforward import FEEDFORWARD_REGISTRY, FeedforwardConfig
 from xformers.components.positional_encoding import PositionEncodingConfig
 from xformers.factory.block_factory import xFormerEncoderBlock, xFormerEncoderConfig
-
-# Credits: Sean Naren
 
 _use_cuda = torch.cuda.is_available()
 GLOBAL_ATTENTION_RATIO = (
@@ -87,17 +88,22 @@ def _train_for_several_steps(
     )
 
     # Actual vanilla training loop
+    # - nonsensical data, but remove that from the compute time
+    inputs = torch.rand(batch_size, sequence_length, embed_dim).to(device)
+
     with profiler as p:
         for _ in range(num_steps):
             optim.zero_grad()
 
             with torch.cuda.amp.autocast(enabled=autocast):
-                input = torch.rand(batch_size, sequence_length, embed_dim)
-                input = input.to(device)
-                output = block(input)
-                loss = F.mse_loss(input, output, reduction="sum")
+                with record_function("attention_forward"):
+                    output = block(inputs)
 
-            loss.backward()
+                with record_function("loss"):
+                    loss = F.mse_loss(inputs, output, reduction="sum")
+
+            with record_function("backward"):
+                loss.backward()
 
             if norm_type is not None:
                 clip_norm = 0.3
