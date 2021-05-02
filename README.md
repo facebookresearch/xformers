@@ -21,6 +21,9 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
 
 - **Crowd Sourced**. This is probably the single most important part. All of the above should make it possible for people interested to contribute: contributing on a small block is easier than on a full model, unit tests and common interfaces should help, the ability to extend the library locally and test the relevance prior to a PR should also help. PRs are really welcome.
 
+# Using xFormers
+Below you will find a set of notebooks that will show you how you can use xFormers in your project
+- [Creating complex sparsity patterns with xformers](docs/source/2d_attention_patterns.ipynb)
 
 
 # (Known) TODOs:
@@ -92,43 +95,58 @@ Some examples:
 ![](docs/plots/runtime_vs_attention.png)
 
 ### Benchmark the core sparse attention mechanisms
-`python3 benchmarks/benchmark_core.py` will measure the speed of the core sparse attention mechanism. The current numbers are as follows, with the caveat, as above, that we expect these numbers to improve quickly over time
+`python3 benchmarks/benchmark_core.py` will measure the speed of the core sparse attention mechanism. The current numbers are as follows:
 
 ```
-[------------------------- matmul_with_mask ------------------------]
-                          |  B=8, M=256, K=128  |  B=8, M=1024, K=256
-1 threads: ----------------------------------------------------------
-      dense               |         30.9        |         507.6
-      dense with masking  |         50.6        |         753.6
-      sparsity: 0.50      |        293.4        |        5719.6
-      sparsity: 0.80      |        245.2        |        4208.5
-      sparsity: 0.90      |        149.2        |        2868.4
-      sparsity: 0.95      |        105.5        |        1792.5
-      sparsity: 0.99      |        108.3        |         603.3
+[--------------------------- matmul_with_mask --------------------------]
+                              |  B=8, M=256, K=128  |  B=8, M=1024, K=256
+1 threads: --------------------------------------------------------------
+      dense                   |         62.3        |         510.3
+      dense with masking      |         84.2        |         805.3
+      sparsity pytorch: 0.50  |        392.4        |        6197.4
+      sparsity pytorch: 0.80  |        336.2        |        4437.3
+      sparsity pytorch: 0.90  |        244.1        |        3017.4
+      sparsity pytorch: 0.95  |        193.2        |        1899.5
+      sparsity pytorch: 0.99  |        195.6        |         695.0
+      sparsity sputnik: 0.50  |         77.9        |        1695.9
+      sparsity sputnik: 0.80  |         43.8        |         793.0
+      sparsity sputnik: 0.90  |         43.6        |         435.5
+      sparsity sputnik: 0.95  |         43.2        |         258.6
+      sparsity sputnik: 0.99  |         43.5        |         145.4
 
 Times are in microseconds (us).
 
-[--------------------------- softmax ---------------------------]
-                      |  B=8, M=256, K=128  |  B=8, M=1024, K=256
-1 threads: ------------------------------------------------------
-      dense           |           8.5       |         141.8
-      sparsity: 0.50  |        1080.4       |        8107.9
-      sparsity: 0.80  |         508.9       |        3460.5
-      sparsity: 0.90  |         328.8       |        1907.9
-      sparsity: 0.95  |         236.4       |        1042.0
-      sparsity: 0.99  |         188.0       |         288.5
+[------------------------------- softmax -------------------------------]
+                              |  B=8, M=256, K=128  |  B=8, M=1024, K=256
+1 threads: --------------------------------------------------------------
+      dense                   |          12.8       |         141.9
+      sparsity pytorch: 0.50  |        1140.9       |        8081.4
+      sparsity pytorch: 0.80  |         515.0       |        3494.8
+      sparsity pytorch: 0.90  |         367.3       |        1932.6
+      sparsity pytorch: 0.95  |         293.6       |        1078.9
+      sparsity pytorch: 0.99  |         252.1       |         342.4
+      sparsity sputnik: 0.50  |          32.8       |         164.7
+      sparsity sputnik: 0.80  |          32.9       |          50.8
+      sparsity sputnik: 0.90  |          33.0       |          33.5
+      sparsity sputnik: 0.95  |          32.5       |          32.7
+      sparsity sputnik: 0.99  |          33.2       |          32.7
 
 Times are in microseconds (us).
 
-[----------------------------- bmm -----------------------------]
-                      |  B=8, M=256, K=128  |  B=8, M=1024, K=256
-1 threads: ------------------------------------------------------
-      dense           |          31.3       |         585.5
-      sparsity: 0.50  |        1505.2       |       32624.1
-      sparsity: 0.80  |         731.5       |       12868.2
-      sparsity: 0.90  |         519.4       |        6296.3
-      sparsity: 0.95  |         454.4       |        3827.6
-      sparsity: 0.99  |         400.8       |        1005.7
+[--------------------------------- bmm ---------------------------------]
+                              |  B=8, M=256, K=128  |  B=8, M=1024, K=256
+1 threads: --------------------------------------------------------------
+      dense                   |         31.0        |         590.7
+      sparsity pytorch: 0.50  |        577.0        |       13830.2
+      sparsity pytorch: 0.80  |        254.4        |        5944.0
+      sparsity pytorch: 0.90  |        162.0        |        3063.0
+      sparsity pytorch: 0.95  |        161.6        |        1692.3
+      sparsity pytorch: 0.99  |        161.9        |         433.4
+      sparsity sputnik: 0.50  |         64.6        |        1640.5
+      sparsity sputnik: 0.80  |         39.6        |         703.3
+      sparsity sputnik: 0.90  |         39.6        |         391.4
+      sparsity sputnik: 0.95  |         39.7        |         223.6
+      sparsity sputnik: 0.99  |         39.7        |          77.4
 
 Times are in microseconds (us).
 ```
