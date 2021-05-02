@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 
 
@@ -65,8 +66,8 @@ def local_2d_distance(H, W, p=2.0):
 
 
 def local_2d_gausian_distribution(H, W, sigma=1):
-    d = local_2d_distance(H, W, p=2.0)
-    d = torch.exp(-0.5 * sigma ** (-0.5) * d)
+    d = local_2d_distance(H, W, p=2.0) ** 2
+    d = torch.exp(-0.5 * sigma ** (-2.0) * d)
     return d
 
 
@@ -83,6 +84,20 @@ def axial_2d_pattern(H, W):
 
 def random_pattern_from_probability_matrix(dist_matrix, nnz):
     att = torch.zeros_like(dist_matrix, dtype=torch.bool)
-    idxs = torch.multinomial(dist_matrix.flatten(), nnz, replacement=False)
+    # PyTorch multinomial wrongly doesn't support sampling when number of categories
+    # is > 2^24, arguing that it's because it's the max representable consecutive element
+    # in fp32 and that the kernels use float32. This is actually not true, and the kernels
+    # should work fine if double tensor is passed on CPU. This is a bug that was introduced
+    # in https://github.com/pytorch/pytorch/commit/bf04c2ca2f591d98ce57816f0ef0cd20a21bbf66
+    # when unifying the checks between CPU and CUDA. For now, just fall-back to numpy
+    if dist_matrix.numel() > 2 ** 24:
+        dist_matrix = dist_matrix.double()
+        dist_matrix /= dist_matrix.sum()
+        idxs = np.random.choice(
+            dist_matrix.numel(), nnz, p=dist_matrix.flatten(), replace=False
+        )
+        idxs = torch.as_tensor(idxs)
+    else:
+        idxs = torch.multinomial(dist_matrix.flatten(), nnz, replacement=False)
     att.view(-1)[idxs] = True
     return att
