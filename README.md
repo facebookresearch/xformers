@@ -22,6 +22,7 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
 # Using xFormers
 Below you will find a set of notebooks that will show you how you can use xFormers in your project
 - [Creating complex sparsity patterns with xformers](docs/source/2d_attention_patterns.ipynb)
+- [Changing ViT to use sparse attention, benchmarking the effects](docs/source/vision_transformers.ipynb)
 
 
 ## Adding new variants
