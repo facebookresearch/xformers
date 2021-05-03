@@ -10,7 +10,10 @@ from xformers.components.attention import (
     maybe_sparsify,
     register_attention,
 )
-from xformers.components.attention.attention_patterns import global_token_pattern
+from xformers.components.attention.attention_patterns import (
+    causal_1d_pattern,
+    global_token_pattern,
+)
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
@@ -22,7 +25,12 @@ class GlobalAttentionConfig(AttentionConfig):
 @register_attention("global")
 class GlobalAttention(Attention):
     def __init__(
-        self, dropout: float, attention_query_mask: torch.Tensor, *args, **kwargs
+        self,
+        dropout: float,
+        attention_query_mask: torch.Tensor,
+        causal: bool = False,
+        *args,
+        **kwargs
     ):
         """
         "Global" attention, as proposed for instance in _BigBird or _Longformer.
@@ -52,12 +60,11 @@ class GlobalAttention(Attention):
 
         self.attn_drop = nn.Dropout(dropout, inplace=False)
         self.attention_mask = global_token_pattern(attention_query_mask[:, 0])
-        self.attention_mask = maybe_sparsify(self.attention_mask)
 
-    def _adapt_mask_to_batch(self, q: torch.Tensor):
-        # Make sure that the mask is on the right device, and has the right dimensions
-        if self.attention_mask.device != q.device:
-            self.attention_mask = self.attention_mask.to(q.device)
+        if causal:
+            self.attention_mask &= causal_1d_pattern(attention_query_mask.shape[1])
+
+        self.attention_mask = maybe_sparsify(self.attention_mask)
 
     def forward(
         self,
@@ -68,7 +75,9 @@ class GlobalAttention(Attention):
         *args,
         **kwargs
     ):
-        self._adapt_mask_to_batch(q)
+        # Make sure that the mask is on the right device
+        if self.attention_mask.device != q.device:
+            self.attention_mask = self.attention_mask.to(q.device)
 
         # Mask-aware attention
         mask = (

@@ -44,6 +44,10 @@ class ScaledDotProduct(Attention):
         *args,
         **kwargs,
     ) -> torch.Tensor:
+        # Mask-aware attention
+        if self.mask is not None:
+            att_mask = self.mask if att_mask is None else self.mask & att_mask
+
         # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
         y = scaled_dot_product_attention(q, k, v, att_mask, dropout=self.attn_drop)
         return y

@@ -10,7 +10,10 @@ from xformers.components.attention import (
     maybe_sparsify,
     register_attention,
 )
-from xformers.components.attention.attention_patterns import random_pattern
+from xformers.components.attention.attention_patterns import (
+    causal_1d_pattern,
+    random_pattern,
+)
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
@@ -25,6 +28,7 @@ class RandomAttention(Attention):
     def __init__(
         self,
         dropout: float,
+        causal: bool = False,
         r: float = 0.01,
         constant_masking: bool = True,
         *args,
@@ -45,7 +49,7 @@ class RandomAttention(Attention):
         super().__init__()
 
         self.attn_drop = nn.Dropout(dropout, inplace=True)
-
+        self.causal = causal
         self.r = r
         self.rand_mask: Optional[torch.Tensor] = None
         self.constant_masking = constant_masking
@@ -53,6 +57,10 @@ class RandomAttention(Attention):
     def _get_rand_mask(self, shape: torch.Size) -> torch.Tensor:
         sparsity = 1 - self.r
         mask = random_pattern(shape[1], sparsity=sparsity)
+
+        if self.causal:
+            mask &= causal_1d_pattern(shape[1])
+
         mask = maybe_sparsify(mask)
 
         return mask
