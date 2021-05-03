@@ -18,6 +18,7 @@ class NystromSelfAttentionConfig(AttentionConfig):
     num_heads               Number of heads.
     num_landmarks           Number of landmarks to use for softmax approximation. 64 often sufficient for a good
                             approximation according to https://arxiv.org/pdf/2102.03902.pdf.
+    causal                  Apply a causal mask, in that the attention cannot be applied to the future.
     use_razavi_pinverse     If true, use iterative method from (Razavi et al. 2014) to approximate the Moore-Penrose
                             inverse, otherwise use standard torch inverse.
     pinverse_original_init  True if using original initialization when calculating Moore-Penrose pseudo inverse using
@@ -35,6 +36,7 @@ class NystromSelfAttentionConfig(AttentionConfig):
 
     num_heads: int
     num_landmarks: Optional[int]
+    causal: Optional[bool]
     pinverse_original_init: Optional[bool]
     inv_iterations: Optional[int]
     v_skip_connection: Optional[nn.Module]
@@ -50,6 +52,7 @@ class NystromAttention(Attention):
         dropout: float,
         num_heads: int,
         num_landmarks: int = 64,
+        causal: bool = False,
         use_razavi_pinverse: bool = True,
         pinverse_original_init: bool = False,
         inv_iterations: int = 6,  # recommended default in paper was 6.
@@ -77,6 +80,7 @@ class NystromAttention(Attention):
         self.inv_iterations = inv_iterations
         self.attn_drop = nn.Dropout(dropout)
         self.skip_connection = v_skip_connection
+        self.causal = causal
 
         if self.skip_connection is None and conv_kernel_size is not None:
             self.skip_connection = nn.Conv2d(
@@ -88,16 +92,21 @@ class NystromAttention(Attention):
                 groups=self.num_heads,
             )
 
+        # Optional lower triangular masks for causal attention
+        self.causal_mask_1: Optional[torch.Tensor] = None
+        self.causal_mask_2: Optional[torch.Tensor] = None
+        self.causal_mask_3: Optional[torch.Tensor] = None
+
     def forward(
         self,
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
         *args,
         **kwargs,
     ):
 
+        batched_dim = k.size(0)
         head_dim = k.size(-1)
         seq_len = k.size(-2)
 
@@ -106,7 +115,10 @@ class NystromAttention(Attention):
         ), "the sequence length needs to be divisible by the number of landmarks"
 
         if self.num_landmarks == seq_len:
-            x = scaled_dot_product_attention(q, k, v, att_mask)
+            mask = None
+            if self.causal:
+                mask = self._tril_mask(batched_dim, seq_len, seq_len)
+            x = scaled_dot_product_attention(q, k, v, mask)
 
         else:
             q_landmarks = q.reshape(
@@ -122,9 +134,24 @@ class NystromAttention(Attention):
                 head_dim,
             ).mean(dim=-2)
 
-            kernel_1 = scaled_query_key_softmax(q, k_landmarks, None)
-            kernel_2 = scaled_query_key_softmax(q_landmarks, k_landmarks, None)
-            kernel_3 = scaled_dot_product_attention(q_landmarks, k, v, None)
+            if self.causal and self.causal_mask_1 is None:
+                self.causal_mask_1 = self._tril_mask(
+                    batched_dim, seq_len, self.num_landmarks
+                ).to(q.device)
+                self.causal_mask_2 = self._tril_mask(
+                    batched_dim, self.num_landmarks, self.num_landmarks
+                ).to(q.device)
+                self.causal_mask_3 = self._tril_mask(
+                    batched_dim, self.num_landmarks, seq_len
+                ).to(q.device)
+
+            kernel_1 = scaled_query_key_softmax(q, k_landmarks, self.causal_mask_1)
+            kernel_2 = scaled_query_key_softmax(
+                q_landmarks, k_landmarks, self.causal_mask_2
+            )
+            kernel_3 = scaled_dot_product_attention(
+                q_landmarks, k, v, self.causal_mask_3
+            )
 
             kernel_2_inv = (
                 iterative_pinv(
@@ -150,6 +177,9 @@ class NystromAttention(Attention):
             x += v_conv.reshape(-1, v_conv.size(-2), v_conv.size(-1))
         x = self.attn_drop(x)
         return x
+
+    def _tril_mask(self, dim_1: int, dim_2: int, dim_3: int):
+        return torch.tril(torch.ones(dim_1, dim_2, dim_3, dtype=torch.bool), diagonal=0)
 
     @classmethod
     def from_config(cls, config: AttentionConfig) -> "Attention":
