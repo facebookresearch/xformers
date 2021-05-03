@@ -3,8 +3,6 @@
 # xFormers
 Flexible Transformers, defined by interoperable and optimized building blocks that you can trust.
 
-(all of this is inspirational for now..)
-
 # Key concepts
 - **Field agnostic**. This repo is not focused on NLP, speech or vision, by design. The focus is on making sure that building transformers is a shared building block in between
 - **Composable**. There are basically two obvious takes to the Transformer ecosystem:
@@ -24,37 +22,6 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
 # Using xFormers
 Below you will find a set of notebooks that will show you how you can use xFormers in your project
 - [Creating complex sparsity patterns with xformers](docs/source/2d_attention_patterns.ipynb)
-
-
-# (Known) TODOs:
-## CI
-    [ ] Tests
-        [x] Auto load new variants in tests
-        [ ] Waay more tests, find more invariants depending on the blocks
-
-    [ ] Benchmark:
-        [x] add at least something basic to check training
-        [x] measure throughput and memory
-            [ ] autogenerate text report
-            [x] autogenerate curves
-
-## Architecture, code
-    [x] Remove the AttrDict dependency
-    [x] Handle encoder/decoder builds
-    [ ] MHA: expose the projection, possibly make it swappable
-
-## Repo features
-    [ ] Decent "bibliography" section
-    [ ] Decent full model presets (matching bibliography ideally)
-    [ ] Autogenerate benchmark curves on github io or similar
-
-## Variants, at least first ones to add
-
-    [ ] Performer
-    [x] Local attention
-    [x] Big Bird
-    [x] Linformer
-    [ ]...
 
 
 ## Adding new variants
@@ -85,8 +52,9 @@ These live in `xformers/benchmarks`.
 Sweeping over different attention settings to log max memory use and runtime can for instance be done by invoking
 `python3 benchmarks/benchmark_encoder.py`. Specifying a subset to test is done through command line arguments, for instance `python3 benchmarks/benchmark_encoder.py --causal True --attentions random --activations gelu -fp16 True`.
 
-*These numbers are preliminary, this is work in progress and we expect to get a significant speed uplift in the future*
-
+Please note that:
+- These numbers are dependent of hyperparameters (dimensions chosen for Linformer, sparsity of the pattern), they are mostly an illustration
+- The sparse attention patterns tested here are just presets, as explained in the linked notebook generating any new sparse attention pattern should be relatively easy, while keeping the benefits of optimized computations.
 
 Some examples:
 
@@ -152,7 +120,7 @@ Times are in microseconds (us).
 ```
 
 ## Bibliography
-DRAFT, needs a proper citation format, ..
+Some references or paper used in the repo
 
 ### Attention is all you need
     https://papers.nips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf
@@ -179,3 +147,4 @@ DRAFT, needs a proper citation format, ..
 
 ### Adaptive Attention Span
     https://www.aclweb.org/anthology/P19-1032.pdf
+
