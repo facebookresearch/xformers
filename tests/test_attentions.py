@@ -11,6 +11,10 @@ from xformers.components.attention import (
     build_attention,
 )
 
+DEVICES = (
+    [torch.device("cpu")] if not torch.cuda.is_available() else [torch.device("cuda")]
+)
+
 BATCH = 5
 SEQ = 1024
 MODEL = 384
@@ -26,12 +30,14 @@ assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 3])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
+@pytest.mark.parametrize("device", DEVICES)
 def test_order_invariance(
     attention_name: str,
     heads: int,
     attn_dropout: float,
     residual_dropout: float,
     causal: bool,
+    device: torch.device,
 ):
 
     test_config = {
@@ -53,10 +59,10 @@ def test_order_invariance(
         residual_dropout=residual_dropout,
         n_heads=heads,
         attention=attention,
-    )
+    ).to(device)
 
     # Check that a shuffled input produces the same results
-    inputs = torch.rand(BATCH, SEQ, MODEL)
+    inputs = torch.rand(BATCH, SEQ, MODEL, device=device)
     shuffle = torch.randperm(inputs.shape[1])
     inputs_shuffled = inputs[:, shuffle, :]
 
