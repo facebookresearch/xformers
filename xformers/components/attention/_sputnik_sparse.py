@@ -1,6 +1,17 @@
 import torch
 
 
+def _sddmm_func(a, b, row_indices, row_offsets, column_indices):
+    sparsity = 1 - column_indices.shape[0] / (a.shape[1] * b.shape[1])
+    if sparsity > 0.99 and a.is_cuda:
+        return torch.ops.xformers.csr_sddmm(
+            a, b, row_indices, row_offsets, column_indices
+        )
+    return torch.ops.xformers.sddmm_sputnik(
+        a, b, row_indices, row_offsets, column_indices
+    )
+
+
 class _SparseSoftmax(torch.autograd.Function):
     @staticmethod
     def forward(ctx, m, n, row_indices, values, row_offsets, column_indices):
@@ -29,9 +40,7 @@ class _SparseSoftmax(torch.autograd.Function):
 class _sddmm(torch.autograd.Function):
     @staticmethod
     def forward(ctx, a, b, row_indices, row_offsets, column_indices, _transp_info):
-        out = torch.ops.xformers.sddmm_sputnik(
-            a, b, row_indices, row_offsets, column_indices
-        )
+        out = _sddmm_func(a, b, row_indices, row_offsets, column_indices)
 
         ctx.save_for_backward(
             a, b, row_indices, row_offsets, column_indices, *_transp_info
@@ -102,9 +111,7 @@ class _spmm(torch.autograd.Function):
         # gradients w.r.t. values
         grad = grad.contiguous()
 
-        grad_sparse = torch.ops.xformers.sddmm_sputnik(
-            grad, b, row_indices, row_offsets, column_indices
-        )
+        grad_sparse = _sddmm_func(grad, b, row_indices, row_offsets, column_indices)
 
         (
             row_indices_t,

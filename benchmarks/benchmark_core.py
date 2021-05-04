@@ -16,6 +16,68 @@ SHAPES = [[8, 8], [256, 1024], [128, 256]]
 SPARSITIES = [0.5, 0.8, 0.9, 0.95, 0.99]
 
 
+def bench_sddmm():
+    min_run_time = MIN_RUN_TIME
+    SPARSITIES = [0.95, 0.98, 0.99, 0.995, 0.999]
+
+    device = torch.device("cuda")
+    results = []
+
+    for B, M, K in zip(*SHAPES):
+        a = torch.rand(B, M, K, device=device)
+        b = torch.rand(B, M, K, device=device)
+
+        for backend, prob in itertools.product(
+            ["coo_pytorch", "csr_sputnik", "csr_ge"], SPARSITIES
+        ):
+            mask = _create_random_sparsity(torch.ones(B, M, M, dtype=torch.bool), prob)
+            aa = a
+            bb = b
+            if "csr" in backend:
+                mask = SparseCS(mask, device)
+                aa = a
+                bb = b
+                row_indices = mask.row_indices
+                row_offsets = mask.row_offsets
+                column_indices = mask.column_indices
+                if "_ge" in backend:
+                    fn = torch.ops.xformers.csr_sddmm
+                else:
+                    fn = torch.ops.xformers.sddmm_sputnik
+                fn_str = "fn(a, b, row_indices, row_offsets, column_indices)"
+            else:
+                mask = mask.to_sparse().to(device)
+                _, row_offsets, column_indices = mask.indices().int().unbind()
+                row_offsets = row_offsets.contiguous()
+                column_indices = column_indices.contiguous()
+                row_indices = row_offsets
+
+                bb = b.transpose(-2, -1)
+                fn = _matmul_with_mask
+                fn_str = "fn(a, b, mask)"
+
+            results.append(
+                benchmark.Timer(
+                    stmt=fn_str,
+                    globals={
+                        "a": aa,
+                        "b": bb,
+                        "mask": mask,
+                        "row_indices": row_indices,
+                        "row_offsets": row_offsets,
+                        "column_indices": column_indices,
+                        "fn": fn,
+                    },
+                    label="sddmm",
+                    sub_label=f"sparsity {backend}: {prob:0.4f}",
+                    description=f"B={B}, M={M}, K={K}",
+                ).blocked_autorange(min_run_time=min_run_time)
+            )
+
+    compare = benchmark.Compare(results)
+    compare.print()
+
+
 def bench_matmul_with_mask():
     min_run_time = MIN_RUN_TIME
     prob = 0.9
@@ -185,6 +247,7 @@ def bench_bmm():
     compare.print()
 
 
+bench_sddmm()
 bench_matmul_with_mask()
 bench_softmax()
 bench_bmm()
