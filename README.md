@@ -121,31 +121,13 @@ Times are in microseconds (us).
 ```
 
 ## Bibliography
-Some references or paper used in the repo
-
-### Attention is all you need
-    https://papers.nips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf
-
-### Linformer
-    https://arxiv.org/pdf/2006.04768.pdf
-
-### BigBird
-    https://github.com/google-research/bigbird
-    https://papers.nips.cc/paper/2020/file/c8512d142a2d849725f31a9a7a361ab9-Paper.pdf
-
-### Nystromformer
-    https://arxiv.org/abs/2102.03902
-
-### Performer
-    https://arxiv.org/abs/2009.14794v1
-
-### Reformer
-    https://arxiv.org/abs/2001.04451
-
-### Longformer
-    https://github.com/lucidrains/local-attention
-    https://arxiv.org/pdf/2004.05150.pdf
-
-### Adaptive Attention Span
-    https://www.aclweb.org/anthology/P19-1032.pdf
+Some references or papers used in the repo
+- [Attention is all you need, Vaswani et al., 2017](https://papers.nips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf)
+- [Linformer, self-attention with linear complexity, Wang et al., 2020](https://arxiv.org/pdf/2006.04768.pdf)
+- [BigBird, Transformer for longer sequences, Zaheer et al., 2020](https://papers.nips.cc/paper/2020/file/c8512d142a2d849725f31a9a7a361ab9-Paper.pdf)
+- [Nyströmformer: A Nyström-Based Algorithm for Approximating Self-Attention, Xiong et al., 2021](https://arxiv.org/abs/2102.03902)
+- [Rethinking Attention with Performers, Choromanski et al., 2020](https://arxiv.org/abs/2009.14794v1)
+- [Reformer: The Efficient Transformer, Kitaev et al., 2020](https://arxiv.org/abs/2001.04451)
+- [Longformer: The Long-Document Transformer, Beltagy et al., 2020](https://arxiv.org/pdf/2004.05150.pdf)
+- [Long Range Arena: a benchmark for efficient Transformers, Tay et al., 2020](https://arxiv.org/abs/2011.04006)
 
