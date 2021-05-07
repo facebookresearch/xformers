@@ -27,3 +27,4 @@ ENV/
 env.bak/
 venv.bak/
 .vscode/*
+benchmarks/LRA/datasets

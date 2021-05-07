@@ -78,6 +78,7 @@ def maybe_sparsify(matrix):
     return matrix.to_sparse()
 
 
+from .favor import FavorAttention  # noqa
 from .global_tokens import GlobalAttention  # noqa
 from .linformer import LinformerAttention  # noqa
 from .local import LocalAttention  # noqa
@@ -92,6 +93,7 @@ __all__ = [
     "NystromAttention",
     "RandomAttention",
     "GlobalAttention",
+    "FavorAttention",
     "Attention",
     "build_attention",
     "register_attention",
