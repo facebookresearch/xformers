@@ -15,7 +15,7 @@ ATTENTION_CLASS_NAMES = set()
 
 # Arbitrary threshold for now,
 # in between dense and sparse matrix algorithms for the attention mechanism
-_DENSITY_THRESHOLD = 0.05  # noqa
+_DENSITY_THRESHOLD = 0.30  # noqa # from the sputnik paper, vs.
 _USE_SPUTNIK = True
 
 
@@ -73,6 +73,11 @@ def maybe_sparsify(matrix):
     # Sparsify if that makes sense
     if torch.count_nonzero(matrix).item() / matrix.numel() > _DENSITY_THRESHOLD:
         return matrix
+
+    return sparsify(matrix)
+
+
+def sparsify(matrix):
     if _USE_SPUTNIK:
         return SparseCS(matrix)
     return matrix.to_sparse()

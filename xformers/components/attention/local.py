@@ -9,6 +9,7 @@ from xformers.components.attention import (
     AttentionConfig,
     maybe_sparsify,
     register_attention,
+    sparsify,
 )
 from xformers.components.attention.attention_patterns import (
     causal_1d_pattern,
@@ -21,6 +22,7 @@ from xformers.components.attention.core import scaled_dot_product_attention
 class LocalAttentionConfig(AttentionConfig):
     causal: bool
     window_size: int
+    force_sparsity: bool
 
 
 @register_attention("local")
@@ -30,6 +32,7 @@ class LocalAttention(Attention):
         dropout: float = 0.0,
         causal: bool = False,
         window_size: int = 5,
+        force_sparsity: bool = False,
         *args,
         **kwargs,
     ):
@@ -59,6 +62,7 @@ class LocalAttention(Attention):
 
         self.attn_drop = nn.Dropout(dropout, inplace=True)
         self.causal = causal
+        self.force_sparsity = force_sparsity
 
         if not self.causal:
             assert (
@@ -75,7 +79,7 @@ class LocalAttention(Attention):
         if self.causal:
             mask &= causal_1d_pattern(shape[1])
 
-        mask = maybe_sparsify(mask)
+        mask = sparsify(mask) if self.force_sparsity else maybe_sparsify(mask)
 
         return mask
 

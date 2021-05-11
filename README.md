@@ -57,7 +57,7 @@ Please note that:
 - These numbers are dependent of hyperparameters (dimensions chosen for Linformer, sparsity of the pattern), they are mostly an illustration
 - The sparse attention patterns tested here are just presets, as explained in the linked notebook generating any new sparse attention pattern should be relatively easy, while keeping the benefits of optimized computations.
 
-Some examples:
+Some examples, generated with `python3 benchmarks/benchmark_encoder.py --activations gelu --plot -emb 256 -bs 32 -heads 16`
 
 ![](docs/plots/memory_vs_attention.png)
 
@@ -130,4 +130,3 @@ Some references or papers used in the repo
 - [Reformer: The Efficient Transformer, Kitaev et al., 2020](https://arxiv.org/abs/2001.04451)
 - [Longformer: The Long-Document Transformer, Beltagy et al., 2020](https://arxiv.org/pdf/2004.05150.pdf)
 - [Long Range Arena: a benchmark for efficient Transformers, Tay et al., 2020](https://arxiv.org/abs/2011.04006)
-

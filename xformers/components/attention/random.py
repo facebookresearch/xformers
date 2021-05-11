@@ -9,6 +9,7 @@ from xformers.components.attention import (
     AttentionConfig,
     maybe_sparsify,
     register_attention,
+    sparsify,
 )
 from xformers.components.attention.attention_patterns import (
     causal_1d_pattern,
@@ -21,6 +22,7 @@ from xformers.components.attention.core import scaled_dot_product_attention
 class RandomAttentionConfig(AttentionConfig):
     r: float  # the ratio of keys that the query can attend to. 1.0 means dense attention
     constant_masking: bool  # whether the randomness is per query or defined at construction time
+    force_sparsity: bool  # use sparsity in any case (potentially slower)
 
 
 @register_attention("random")
@@ -31,6 +33,7 @@ class RandomAttention(Attention):
         causal: bool = False,
         r: float = 0.01,
         constant_masking: bool = True,
+        force_sparsity: bool = False,
         *args,
         **kwargs
     ):
@@ -53,6 +56,7 @@ class RandomAttention(Attention):
         self.r = r
         self.rand_mask: Optional[torch.Tensor] = None
         self.constant_masking = constant_masking
+        self.force_sparsity = force_sparsity
 
     def _get_rand_mask(self, shape: torch.Size) -> torch.Tensor:
         sparsity = 1 - self.r
@@ -61,7 +65,7 @@ class RandomAttention(Attention):
         if self.causal:
             mask &= causal_1d_pattern(shape[1])
 
-        mask = maybe_sparsify(mask)
+        mask = sparsify(mask) if self.force_sparsity else maybe_sparsify(mask)
 
         return mask
 

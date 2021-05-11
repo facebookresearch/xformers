@@ -9,6 +9,7 @@ from xformers.components.attention import (
     AttentionConfig,
     maybe_sparsify,
     register_attention,
+    sparsify,
 )
 from xformers.components.attention.attention_patterns import (
     causal_1d_pattern,
@@ -19,7 +20,9 @@ from xformers.components.attention.core import scaled_dot_product_attention
 
 @dataclass(init=False)
 class GlobalAttentionConfig(AttentionConfig):
+    causal: bool
     attention_query_mask: torch.Tensor  # Mark the queries which have global attention
+    force_sparsity: bool
 
 
 @register_attention("global")
@@ -29,6 +32,7 @@ class GlobalAttention(Attention):
         dropout: float,
         attention_query_mask: torch.Tensor,
         causal: bool = False,
+        force_sparsity: bool = False,
         *args,
         **kwargs
     ):
@@ -60,11 +64,16 @@ class GlobalAttention(Attention):
 
         self.attn_drop = nn.Dropout(dropout, inplace=False)
         self.attention_mask = global_token_pattern(attention_query_mask[:, 0])
+        self.force_sparsity = force_sparsity
 
         if causal:
             self.attention_mask &= causal_1d_pattern(attention_query_mask.shape[1])
 
-        self.attention_mask = maybe_sparsify(self.attention_mask)
+        self.attention_mask = (
+            sparsify(self.attention_mask)
+            if self.force_sparsity
+            else maybe_sparsify(self.attention_mask)
+        )
 
     def forward(
         self,
