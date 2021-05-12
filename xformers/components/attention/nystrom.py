@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -110,10 +110,6 @@ class NystromAttention(Attention):
         head_dim = k.size(-1)
         seq_len = k.size(-2)
 
-        assert (
-            seq_len % self.num_landmarks == 0
-        ), "the sequence length needs to be divisible by the number of landmarks"
-
         if self.num_landmarks == seq_len:
             mask = None
             if self.causal:
@@ -121,18 +117,7 @@ class NystromAttention(Attention):
             x = scaled_dot_product_attention(q, k, v, mask)
 
         else:
-            q_landmarks = q.reshape(
-                -1,
-                self.num_landmarks,
-                seq_len // self.num_landmarks,
-                head_dim,
-            ).mean(dim=-2)
-            k_landmarks = k.reshape(
-                -1,
-                self.num_landmarks,
-                seq_len // self.num_landmarks,
-                head_dim,
-            ).mean(dim=-2)
+            q_landmarks, k_landmarks = self._compute_landmarks(seq_len, head_dim, k, q)
 
             if self.causal and self.causal_mask_1 is None:
                 self.causal_mask_1 = self._tril_mask(
@@ -177,6 +162,56 @@ class NystromAttention(Attention):
             x += v_conv.reshape(-1, v_conv.size(-2), v_conv.size(-1))
         x = self.attn_drop(x)
         return x
+
+    def _compute_landmarks(
+        self, seq_len: int, head_dim: int, k: torch.Tensor, q: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if seq_len % self.num_landmarks == 0:
+            q_landmarks = q.reshape(
+                -1,
+                self.num_landmarks,
+                seq_len // self.num_landmarks,
+                head_dim,
+            ).mean(dim=-2)
+            k_landmarks = k.reshape(
+                -1,
+                self.num_landmarks,
+                seq_len // self.num_landmarks,
+                head_dim,
+            ).mean(dim=-2)
+        else:
+            segs = seq_len // self.num_landmarks
+            num_landmarks_begin = self.num_landmarks - seq_len % self.num_landmarks
+
+            k_landmarks_begin = (
+                k[:, : num_landmarks_begin * segs, :]
+                .reshape(-1, num_landmarks_begin, segs, head_dim)
+                .mean(dim=-2)
+            )
+            k_landmarks_end = (
+                k[:, num_landmarks_begin * segs :, :]
+                .reshape(
+                    -1, self.num_landmarks - num_landmarks_begin, segs + 1, head_dim
+                )
+                .mean(dim=-2)
+            )
+            k_landmarks = torch.cat((k_landmarks_begin, k_landmarks_end), dim=-2)
+
+            q_landmarks_begin = (
+                q[:, : num_landmarks_begin * segs, :]
+                .reshape(-1, num_landmarks_begin, segs, head_dim)
+                .mean(dim=-2)
+            )
+            q_landmarks_end = (
+                q[:, num_landmarks_begin * segs :, :]
+                .reshape(
+                    -1, self.num_landmarks - num_landmarks_begin, segs + 1, head_dim
+                )
+                .mean(dim=-2)
+            )
+            q_landmarks = torch.cat((q_landmarks_begin, q_landmarks_end), dim=-2)
+
+        return q_landmarks, k_landmarks
 
     def _tril_mask(self, dim_1: int, dim_2: int, dim_3: int):
         return torch.tril(torch.ones(dim_1, dim_2, dim_3, dtype=torch.bool), diagonal=0)
