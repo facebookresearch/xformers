@@ -16,8 +16,8 @@ DEVICES = (
 )
 
 BATCH = 5
-SEQ = 1024
-MODEL = 384
+SEQ = 128
+MODEL = 96
 GLOBAL_ATTENTION_RATIO = (
     _DENSITY_THRESHOLD * 0.9
 )  # Make sure that we test the sparse implementation, no matter the threshold
