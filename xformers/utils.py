@@ -19,10 +19,6 @@ def import_all_modules(root: str, base_module: str) -> List[str]:
     return modules
 
 
-def to(t):
-    return {"device": t.device, "dtype": t.dtype}
-
-
 @dataclass(init=False)
 class ExtensibleConfig:
     def __init__(self, *_, **kwargs):

@@ -22,7 +22,7 @@ from xformers.components import (
     MultiHeadDispatchConfig,
 )
 from xformers.components.feedforward import FEEDFORWARD_REGISTRY, FeedforwardConfig
-from xformers.components.positional_encoding import PositionEncodingConfig
+from xformers.components.positional_embedding import PositionEmbeddingConfig
 from xformers.factory.block_factory import xFormerEncoderBlock, xFormerEncoderConfig
 
 _use_cuda = torch.cuda.is_available()
@@ -86,7 +86,7 @@ def _train_for_several_steps(
 
     # Actual vanilla training loop
     # - nonsensical data, but remove that from the compute time
-    inputs = torch.rand(batch_size, sequence_length, embed_dim).to(device)
+    inputs = torch.rand(batch_size, sequence_length).to(device)
 
     with profiler as p:
         for _ in range(num_steps):
@@ -97,7 +97,11 @@ def _train_for_several_steps(
                     output = block(inputs)
 
                 with record_function("loss"):
-                    loss = F.mse_loss(inputs, output, reduction="sum")
+                    loss = F.mse_loss(
+                        inputs.unsqueeze(-1).repeat(1, 1, output.shape[-1]),
+                        output,
+                        reduction="sum",
+                    )
 
             with record_function("backward"):
                 loss.backward()
@@ -225,7 +229,7 @@ def instantiate_xformer(
         attention_config=AttentionConfig(**attention_config),
         multi_head_config=MultiHeadDispatchConfig(**multi_head_config),
         feedforward_config=FeedforwardConfig(**feedforward_config),
-        position_encoding_config=PositionEncodingConfig(**position_encoding_config),
+        position_encoding_config=PositionEmbeddingConfig(**position_encoding_config),
     )
 
     block = xFormerEncoderBlock.from_config(block_config)

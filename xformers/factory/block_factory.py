@@ -8,9 +8,9 @@ import torch.nn as nn
 from xformers.components import MultiHeadDispatchConfig, build_multi_head_attention
 from xformers.components.attention import AttentionConfig  # noqa
 from xformers.components.feedforward import FeedforwardConfig, build_feedforward
-from xformers.components.positional_encoding import (
-    PositionEncodingConfig,
-    build_positional_encoding,
+from xformers.components.positional_embedding import (
+    PositionEmbeddingConfig,
+    build_positional_embedding,
 )
 
 
@@ -23,12 +23,12 @@ class BlockType(str, Enum):
 class _xFormerBlockConfig:
     dim_model: int
     feedforward_config: FeedforwardConfig
-    position_encoding_config: Optional[PositionEncodingConfig]
+    position_encoding_config: Optional[PositionEmbeddingConfig]
 
     def __post_init__(self):
         self.feedforward_config = FeedforwardConfig(**self.feedforward_config)
         if self.position_encoding_config:
-            self.position_encoding_config = PositionEncodingConfig(
+            self.position_encoding_config = PositionEmbeddingConfig(
                 **self.position_encoding_config
             )
 
@@ -78,7 +78,7 @@ class xFormerEncoderBlock(nn.Module):
         self.ln2 = nn.LayerNorm(config.dim_model)
 
         self.pose_encoding = (
-            build_positional_encoding(config.position_encoding_config)
+            build_positional_embedding(config.position_encoding_config)
             if config.position_encoding_config
             else None
         )
@@ -115,7 +115,7 @@ class xFormerDecoderBlock(nn.Module):
         self.ln3 = nn.LayerNorm(config.dim_model)
 
         self.pose_encoding = (
-            build_positional_encoding(config.position_encoding_config)
+            build_positional_embedding(config.position_encoding_config)
             if config.position_encoding_config
             else None
         )

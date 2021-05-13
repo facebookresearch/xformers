@@ -9,7 +9,7 @@ from xformers.factory import (
     AttentionConfig,
     FeedforwardConfig,
     MultiHeadDispatchConfig,
-    PositionEncodingConfig,
+    PositionEmbeddingConfig,
     xFormerDecoderBlock,
     xFormerDecoderConfig,
     xFormerEncoderBlock,
@@ -28,6 +28,7 @@ DEVICES = (
         torch.device("cuda")
     ]  # save a bit on CI for now, we have seperate cpu and gpu jobs
 )
+VOCAB_SIZE = 32
 
 
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
@@ -74,21 +75,26 @@ def test_xformer_encoder_block(
         "hidden_layer_multiplier": 4,
     }
 
-    position_encoding_config = {"name": "sine", "dim_model": MODEL, "seq_len": SEQ}
+    position_encoding_config = {
+        "name": "sine",
+        "dim_model": MODEL,
+        "max_sequence_len": SEQ,
+        "vocab_size": VOCAB_SIZE,
+    }
 
     block_config = xFormerEncoderConfig(
         dim_model=MODEL,
         attention_config=AttentionConfig(**attention_config),
         multi_head_config=MultiHeadDispatchConfig(**multi_head_config),
         feedforward_config=FeedforwardConfig(**feedforward_config),
-        position_encoding_config=PositionEncodingConfig(**position_encoding_config),
+        position_encoding_config=PositionEmbeddingConfig(**position_encoding_config),
     )
 
     # Test that the whole block can be instantiated
     block = xFormerEncoderBlock.from_config(block_config).to(device)
 
     # Check that the dimensions make sense, to a FW pass
-    inputs = torch.rand(BATCH, SEQ, MODEL, device=device)
+    inputs = torch.rand(BATCH, SEQ, device=device)
     _ = block(inputs)
 
 
@@ -136,14 +142,19 @@ def test_xformer_decoder_block(
         "hidden_layer_multiplier": 4,
     }
 
-    position_encoding_config = {"name": "sine", "dim_model": MODEL, "seq_len": SEQ}
+    position_encoding_config = {
+        "name": "sine",
+        "dim_model": MODEL,
+        "max_sequence_len": SEQ,
+        "vocab_size": VOCAB_SIZE,
+    }
 
     encoder_block_config = xFormerEncoderConfig(
         dim_model=MODEL,
         attention_config=AttentionConfig(**attention_config),
         multi_head_config=MultiHeadDispatchConfig(**multi_head_config),
         feedforward_config=FeedforwardConfig(**feedforward_config),
-        position_encoding_config=PositionEncodingConfig(**position_encoding_config),
+        position_encoding_config=PositionEmbeddingConfig(**position_encoding_config),
     )
 
     decoder_block_config = xFormerDecoderConfig(
@@ -157,7 +168,7 @@ def test_xformer_decoder_block(
             MultiHeadDispatchConfig(**multi_head_config),
         ),
         feedforward_config=FeedforwardConfig(**feedforward_config),
-        position_encoding_config=PositionEncodingConfig(**position_encoding_config),
+        position_encoding_config=PositionEmbeddingConfig(**position_encoding_config),
     )
 
     # Test that the whole block can be instantiated
@@ -165,7 +176,7 @@ def test_xformer_decoder_block(
     decoder_block = xFormerDecoderBlock.from_config(decoder_block_config).to(device)
 
     # Check that the dimensions make sense, to a FW pass
-    inputs = torch.rand(BATCH, SEQ, MODEL, device=device)
+    inputs = torch.rand(BATCH, SEQ, device=device)
     encoded = encoder_block(inputs)
     _ = decoder_block(
         inputs, encoded
