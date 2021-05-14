@@ -238,7 +238,6 @@ def instantiate_xformer(
 
 def plot(args, results: List[Dict[str, Any]]):
     df = pd.DataFrame(results)
-
     HEADS = args.heads[-1]
     AMP = args.pytorch_amp[-1]
     EMB = args.embedding_dim[-1]
@@ -255,6 +254,9 @@ def plot(args, results: List[Dict[str, Any]]):
         & (df["batch_size"] == BATCH_SIZE)
     ]
 
+    df_filtered.sort_values(
+        by=["sequence_length", "max_memory"], ascending=[False, True], inplace=True
+    )
     sns.barplot(
         x="sequence_length", y="max_memory", hue="attention_name", data=df_filtered
     )
@@ -264,6 +266,9 @@ def plot(args, results: List[Dict[str, Any]]):
     plt.savefig("memory_vs_attention.png")
     plt.clf()
 
+    df_filtered.sort_values(
+        by=["sequence_length", "run_time"], ascending=[False, True], inplace=True
+    )
     sns.barplot(
         x="sequence_length", y="run_time", hue="attention_name", data=df_filtered
     )
