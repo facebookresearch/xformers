@@ -156,6 +156,10 @@ class SparseCS:
     def device(self):
         return self.values.device
 
+    @property
+    def is_sparse(self):
+        return True
+
     @classmethod
     def wrap(
         cls, shape, values, row_indices, row_offsets, column_indices, _transp_info
@@ -263,9 +267,19 @@ class SparseCS:
         idxs = torch.arange(self.shape[0], device=self.values.device)
         r_idxs = torch.repeat_interleave(idxs, sizes)
         for i, v in enumerate(self.values):
-            matrix[i, r_idxs, self.column_indices.long()] = v
+            matrix[i, r_idxs, self.column_indices.long()] = v[
+                : self.column_indices.numel()
+            ]
             # matrix[r_idxs, self.column_indices.long()] = self.values
         return matrix
+
+    def logical_and(self, other: torch.Tensor):
+        assert not isinstance(other, SparseCS)
+        # FIXME: This is unecessarily slow, we should just walk through the intersect of the indices
+        return SparseCS(self.to_dense() & other, device=self.device)
+
+    def __and__(self, other):
+        return self.logical_and(other)
 
 
 def _diffsort(a):
