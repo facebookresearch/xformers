@@ -46,11 +46,14 @@ class xFormer(torch.nn.Module):
         for config in block_configs:
             if type(config) is xFormerEncoderConfig:
                 config = cast(xFormerEncoderConfig, config)
-                encoders.append(xFormerEncoderBlock.from_config(config))
+                for _ in range(config.num_layers):
+                    encoders.append(xFormerEncoderBlock.from_config(config))
 
             elif type(config) is xFormerDecoderConfig:
                 config = cast(xFormerDecoderConfig, config)
-                decoders.append(xFormerDecoderBlock.from_config(config))
+                for _ in range(config.num_layers):
+                    decoders.append(xFormerDecoderBlock.from_config(config))
+
             else:
                 raise NotImplementedError(f"{config} is not supported")
 

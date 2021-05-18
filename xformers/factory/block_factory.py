@@ -12,6 +12,7 @@ from xformers.components.positional_embedding import (
     PositionEmbeddingConfig,
     build_positional_embedding,
 )
+from xformers.utils import ExtensibleConfig
 
 
 class BlockType(str, Enum):
@@ -20,7 +21,7 @@ class BlockType(str, Enum):
 
 
 @dataclass
-class _xFormerBlockConfig:
+class _xFormerBlockConfig(ExtensibleConfig):
     dim_model: int
     feedforward_config: FeedforwardConfig
     position_encoding_config: Optional[PositionEmbeddingConfig]
@@ -38,6 +39,7 @@ class xFormerEncoderConfig(_xFormerBlockConfig):
     attention_config: AttentionConfig
     multi_head_config: MultiHeadDispatchConfig
     block_type: BlockType = field(default_factory=lambda: BlockType("encoder"))
+    num_layers: int = 1
 
     def __post_init__(self):
         try:
@@ -54,6 +56,7 @@ class xFormerDecoderConfig(_xFormerBlockConfig):
     attention_configs: Tuple[AttentionConfig, AttentionConfig]
     multi_head_configs: Tuple[MultiHeadDispatchConfig, MultiHeadDispatchConfig]
     block_type: BlockType = field(default_factory=lambda: BlockType("decoder"))
+    num_layers: int = 1
 
     def __post_init__(self):
         try:

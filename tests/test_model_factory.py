@@ -14,6 +14,7 @@ test_configs = [
                 "block_type": "encoder",
                 "dim_model": 384,
                 "position_encoding_config": None,
+                "num_layers": 3,
                 "attention_config": {
                     "name": "linformer",
                     "dropout": 0,
@@ -38,6 +39,7 @@ test_configs = [
                 "block_type": "decoder",
                 "dim_model": 384,
                 "position_encoding_config": None,
+                "num_layers": 2,
                 "attention_configs": [
                     {
                         "name": "linformer",
