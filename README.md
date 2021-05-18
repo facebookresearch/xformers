@@ -130,3 +130,4 @@ Some references or papers used in the repo
 - [Reformer: The Efficient Transformer, Kitaev et al., 2020](https://arxiv.org/abs/2001.04451)
 - [Longformer: The Long-Document Transformer, Beltagy et al., 2020](https://arxiv.org/pdf/2004.05150.pdf)
 - [Long Range Arena: a benchmark for efficient Transformers, Tay et al., 2020](https://arxiv.org/abs/2011.04006)
+- [FNet: Mixing tokens with Fourier transform, Lee-Thorp et al., 2021](https://arxiv.org/pdf/2105.03824v1.pdf)
