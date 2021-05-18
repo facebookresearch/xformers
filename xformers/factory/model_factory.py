@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Union, cast
+from typing import List, Optional, Union, cast
 
 import torch
 
@@ -41,7 +41,7 @@ class xFormer(torch.nn.Module):
         super().__init__()
 
         encoders: List[torch.nn.Module] = []
-        self.decoders: List[torch.nn.Module] = []
+        decoders: List[torch.nn.Module] = []
 
         for config in block_configs:
             if type(config) is xFormerEncoderConfig:
@@ -50,25 +50,37 @@ class xFormer(torch.nn.Module):
 
             elif type(config) is xFormerDecoderConfig:
                 config = cast(xFormerDecoderConfig, config)
-                self.decoders.append(xFormerDecoderBlock.from_config(config))
+                decoders.append(xFormerDecoderBlock.from_config(config))
             else:
                 raise NotImplementedError(f"{config} is not supported")
 
-        self.encoders = torch.nn.Sequential(*encoders) if encoders else None
+        self.encoders = torch.nn.ModuleList(encoders)
+        self.decoders = torch.nn.ModuleList(decoders)
 
     @classmethod
     def from_config(cls, config: xFormerConfig):
         return cls(config.block_configs)
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        inputs: torch.Tensor,
+        encoder_attn_mask: Optional[torch.Tensor] = None,
+        decoder_attn_mask: Optional[torch.Tensor] = None,
+    ) -> Optional[torch.Tensor]:
         # Encode to latent space if encoder is present
-        latent = self.encoders(inputs) if self.encoders else None
+        latent = inputs
+
+        if self.encoders:
+            for encoder in self.encoders:
+                latent = encoder(latent, encoder_attn_mask)
 
         # If decoder: either use the encoder ouput, or just decode, both options are possible
         if self.decoders:
             for decoder in self.decoders:
                 inputs = decoder(
-                    target=inputs, memory=latent if latent is not None else inputs
+                    target=inputs,
+                    memory=latent,
+                    attn_mask=decoder_attn_mask,
                 )
 
             return inputs

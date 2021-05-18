@@ -97,6 +97,10 @@ def test_xformer_encoder_block(
     inputs = torch.rand(BATCH, SEQ, device=device)
     _ = block(inputs)
 
+    # Check that we support masking, at least interface wise (do not check correctness yet)
+    mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
+    _ = block(inputs, mask)
+
 
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
@@ -181,3 +185,9 @@ def test_xformer_decoder_block(
     _ = decoder_block(
         inputs, encoded
     )  # FIXME: does not make a lot of sense, just checking dimensions
+
+    # Check that we support masking, at least interface wise (do not check correctness yet)
+    mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
+
+    encoded = encoder_block(inputs)
+    _ = decoder_block(inputs, encoded, mask)

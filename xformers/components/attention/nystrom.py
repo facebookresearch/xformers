@@ -98,14 +98,8 @@ class NystromAttention(Attention):
         self.causal_mask_3: Optional[torch.Tensor] = None
 
     def forward(
-        self,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        v: torch.Tensor,
-        *args,
-        **kwargs,
+        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs
     ):
-
         batched_dim = k.size(0)
         head_dim = k.size(-1)
         seq_len = k.size(-2)

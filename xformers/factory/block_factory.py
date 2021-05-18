@@ -93,11 +93,11 @@ class xFormerEncoderBlock(nn.Module):
     def from_config(cls, config: xFormerEncoderConfig):
         return cls(config)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None):
         if self.pose_encoding:
             x = self.pose_encoding(x)
 
-        x = self.ln1(x + self.attn(x, x, x))
+        x = self.ln1(x + self.attn(x, x, x, attn_mask))
         x = self.ln2(x + self.ff(x))
         return x
 
@@ -133,12 +133,17 @@ class xFormerDecoderBlock(nn.Module):
     def from_config(cls, config: xFormerDecoderConfig):
         return cls(config)
 
-    def forward(self, target: torch.Tensor, memory: torch.Tensor):
+    def forward(
+        self,
+        target: torch.Tensor,
+        memory: torch.Tensor,
+        attn_mask: Optional[torch.Tensor] = None,
+    ):
         if self.pose_encoding:
             target = self.pose_encoding(target)
 
         # Masked multi head attention
-        x = self.ln1(target + self.attn1(target, target, target))
+        x = self.ln1(target + self.attn1(target, target, target, attn_mask))
 
         # Include the memory/Encoder results
         x = self.ln2(x + self.attn2(key=memory, value=memory, query=x))

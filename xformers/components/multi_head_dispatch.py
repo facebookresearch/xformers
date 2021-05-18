@@ -102,11 +102,6 @@ class MultiHeadDispatch(nn.Module):
 
         B, S, _ = query.size()  # Batch x Sequence x Embedding (latent)
 
-        # Check the attention mask
-        assert att_mask is None or (
-            att_mask.shape[0] == att_mask.shape[1] == S
-        ), "The mask is expected to be applied onto the attention map"
-
         # Calculate query, key, values for all heads in batch
         k, q, v = (
             self.project_key(key),

@@ -70,7 +70,7 @@ class LocalAttention(Attention):
             ), "The window size is assumed to be odd (counts self-attention + 2 wings)"
 
         self.window_size = window_size
-        self.mask: Optional[torch.Tensor] = None
+        self.attention_mask: Optional[torch.Tensor] = None
 
     def _get_local_mask(self, shape: torch.Size) -> torch.Tensor:
         window_size = self.window_size * 2 + 1 if self.causal else self.window_size
@@ -93,11 +93,13 @@ class LocalAttention(Attention):
         **kwargs,
     ):
         # Local window attention masking
-        if self.mask is None or self.mask.shape[1] != q.shape[1]:
-            self.mask = self._get_local_mask(q.shape).to(q.device)
+        if self.attention_mask is None or self.attention_mask.shape[1] != q.shape[1]:
+            self.attention_mask = self._get_local_mask(q.shape).to(q.device)
 
         # Take into account the optional user mask
-        mask = self.mask if att_mask is None else self.mask & att_mask
+        mask = (
+            self.attention_mask if att_mask is None else self.attention_mask & att_mask
+        )
 
         return scaled_dot_product_attention(q, k, v, mask, dropout=self.attn_drop)
 

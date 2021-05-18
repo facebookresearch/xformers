@@ -38,27 +38,19 @@ class LinformerAttention(Attention):
         if k is None:
             k = from_seq_dim // 4
 
+        self.k = k
         self.E = nn.Linear(from_seq_dim, k, bias=False)
         self.F = nn.Linear(from_seq_dim, k, bias=False)
         self.attn_drop = nn.Dropout(dropout, inplace=True)
 
     def forward(
-        self,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        v: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
-        *args,
-        **kwargs
+        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs
     ):
-
-        # Project K and V, over the sequence length axis
         k_projected = self.E(k.transpose(-2, -1)).transpose(-2, -1)
         v_projected = self.F(v.transpose(-2, -1)).transpose(-2, -1)
 
-        # Optimized, sparse-aware self-attend: (B x nh, S, hs) -> (B x nh, S, hs)
         y = scaled_dot_product_attention(
-            q, k_projected, v_projected, att_mask=att_mask, dropout=self.attn_drop
+            q, k_projected, v_projected, att_mask=None, dropout=self.attn_drop
         )
         return y
 

@@ -34,11 +34,7 @@ class Attention(nn.Module, metaclass=ABCMeta):
 
     @abstractmethod
     def forward(
-        self,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        v: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
+        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs
     ) -> torch.Tensor:
         raise NotImplementedError
 
