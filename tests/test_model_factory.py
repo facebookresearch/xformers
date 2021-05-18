@@ -13,7 +13,12 @@ test_configs = [
             {
                 "block_type": "encoder",
                 "dim_model": 384,
-                "position_encoding_config": None,
+                "position_encoding_config": {
+                    "name": "vocab",
+                    "dim_model": 384,
+                    "max_sequence_len": SEQ,
+                    "vocab_size": 64,
+                },
                 "num_layers": 3,
                 "attention_config": {
                     "name": "linformer",
@@ -38,7 +43,12 @@ test_configs = [
             {
                 "block_type": "decoder",
                 "dim_model": 384,
-                "position_encoding_config": None,
+                "position_encoding_config": {
+                    "name": "vocab",
+                    "dim_model": 384,
+                    "max_sequence_len": SEQ,
+                    "vocab_size": 64,
+                },
                 "num_layers": 2,
                 "attention_configs": [
                     {
@@ -90,5 +100,5 @@ def test_presets(config):
     model = xFormer.from_config(xFormerConfig(**config))
 
     # Dummy inputs, test a forward
-    inputs = torch.rand(BATCH, SEQ, config["block_configs"][0]["dim_model"])
+    inputs = (torch.rand(BATCH, SEQ) * 10).abs().to(torch.int)
     _ = model(inputs)

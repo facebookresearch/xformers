@@ -46,12 +46,16 @@ class xFormer(torch.nn.Module):
         for config in block_configs:
             if type(config) is xFormerEncoderConfig:
                 config = cast(xFormerEncoderConfig, config)
-                for _ in range(config.num_layers):
+                for i in range(config.num_layers):
+                    if i > 0:
+                        config.position_encoding_config = None
                     encoders.append(xFormerEncoderBlock.from_config(config))
 
             elif type(config) is xFormerDecoderConfig:
                 config = cast(xFormerDecoderConfig, config)
-                for _ in range(config.num_layers):
+                for i in range(config.num_layers):
+                    if i > 0:
+                        config.position_encoding_config = None
                     decoders.append(xFormerDecoderBlock.from_config(config))
 
             else:
