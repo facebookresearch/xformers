@@ -12,7 +12,7 @@ from xformers.utils import ExtensibleConfig
 class MultiHeadDispatchConfig(ExtensibleConfig):
     dim_model: int
     residual_dropout: float
-    n_heads: int
+    num_heads: int
     attention: Attention
     dim_key: Optional[int]
     dim_value: Optional[int]
@@ -36,7 +36,7 @@ class MultiHeadDispatch(nn.Module):
         self,
         dim_model: int,
         residual_dropout: float,
-        n_heads: int,
+        num_heads: int,
         attention: Attention,
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
@@ -49,15 +49,15 @@ class MultiHeadDispatch(nn.Module):
         # see https://github.com/pytorch/text/blob/torchtext/nn/modules/multiheadattention.py#L5-L36, very clean
 
         assert (
-            dim_model % n_heads == 0
+            dim_model % num_heads == 0
         )  # static preset for now, each head works on 1/d the embeddings, could be relaxed
-        assert n_heads > 0
+        assert num_heads > 0
 
         # Popular default is that all latent dimensions are the same
         dim_key, dim_value = map(lambda x: x if x else dim_model, (dim_key, dim_value))
 
-        self.n_heads = n_heads
-        self.dim_k = dim_key // n_heads
+        self.num_heads = num_heads
+        self.dim_k = dim_key // num_heads
         self.dim_value = dim_value
         self.dim_model = dim_model
         self.attention = attention
@@ -102,16 +102,16 @@ class MultiHeadDispatch(nn.Module):
             self.project_value(value),
         )
 
-        k = _fold_heads(k, B, S, self.n_heads, self.dim_k)
-        q = _fold_heads(q, B, S, self.n_heads, self.dim_k)
-        v = _fold_heads(v, B, S, self.n_heads, self.dim_k)
+        k = _fold_heads(k, B, S, self.num_heads, self.dim_k)
+        q = _fold_heads(q, B, S, self.num_heads, self.dim_k)
+        v = _fold_heads(v, B, S, self.num_heads, self.dim_k)
 
         # Self-attend
         y = self.attention(k, q, v, att_mask=att_mask)
 
         # Re-assemble all head outputs side by side
         y = (
-            y.view(B, self.n_heads, S, self.dim_k)
+            y.view(B, self.num_heads, S, self.dim_k)
             .transpose(1, 2)
             .flatten(start_dim=2, end_dim=3)
         )

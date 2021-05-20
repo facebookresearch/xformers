@@ -27,7 +27,7 @@ test_configs = [
                     "seq_len": 512,
                 },
                 "multi_head_config": {
-                    "n_heads": 4,
+                    "num_heads": 4,
                     "dim_model": 384,
                     "residual_dropout": 0,
                 },
@@ -65,12 +65,12 @@ test_configs = [
                 ],
                 "multi_head_configs": [
                     {
-                        "n_heads": 4,
+                        "num_heads": 4,
                         "dim_model": 384,
                         "residual_dropout": 0,
                     },
                     {
-                        "n_heads": 4,
+                        "num_heads": 4,
                         "dim_model": 384,
                         "residual_dropout": 0,
                     },

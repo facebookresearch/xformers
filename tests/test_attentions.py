@@ -57,7 +57,7 @@ def test_order_invariance(
         seq_len=SEQ,
         dim_model=MODEL,
         residual_dropout=residual_dropout,
-        n_heads=heads,
+        num_heads=heads,
         attention=attention,
     ).to(device)
 

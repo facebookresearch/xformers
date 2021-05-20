@@ -25,7 +25,7 @@ class LinformerEncoderLayer(torch.nn.Module):
 
     def __init__(
         self,
-        n_heads: int,
+        num_heads: int,
         dim_sequence: int,  # FIXME: should not be needed, make this dynamic
         dim_embedding: int,
         dim_feedforward: int,
@@ -53,7 +53,7 @@ class LinformerEncoderLayer(torch.nn.Module):
         )
         self.multihead = MultiHeadDispatch(
             dim_model=dim_embedding,
-            n_heads=n_heads,
+            num_heads=num_heads,
             residual_dropout=attention_dropout,
             attention=self.attention,
         )
@@ -92,7 +92,7 @@ class LinformerDecoderLayer(torch.nn.Module):
 
     def __init__(
         self,
-        n_heads: int,
+        num_heads: int,
         dim_sequence: int,  # FIXME: should not be needed, make this dynamic
         dim_embedding: int,
         dim_feedforward: int,
@@ -117,7 +117,7 @@ class LinformerDecoderLayer(torch.nn.Module):
 
         self.multihead1 = MultiHeadDispatch(
             dim_model=dim_embedding,
-            n_heads=n_heads,
+            num_heads=num_heads,
             residual_dropout=attention_dropout,
             attention=LinformerAttention(
                 dropout=attention_dropout, causal=True, seq_len=dim_sequence, k=k
@@ -126,7 +126,7 @@ class LinformerDecoderLayer(torch.nn.Module):
 
         self.multihead2 = MultiHeadDispatch(
             dim_model=dim_embedding,
-            n_heads=n_heads,
+            num_heads=num_heads,
             residual_dropout=attention_dropout,
             attention=LinformerAttention(
                 dropout=attention_dropout, causal=False, seq_len=dim_sequence, k=k
@@ -165,7 +165,7 @@ class LinformerDecoderLayer(torch.nn.Module):
 class LinFormer(torch.nn.Module):
     def __init__(
         self,
-        n_heads: int,
+        num_heads: int,
         dim_sequence: int,  # FIXME: should not be needed, make this dynamic
         dim_embedding: int,
         dim_feedforward: int,
@@ -181,7 +181,7 @@ class LinFormer(torch.nn.Module):
 
         encoders = [
             LinformerEncoderLayer(
-                n_heads,
+                num_heads,
                 dim_sequence,
                 dim_embedding,
                 dim_feedforward,
@@ -199,7 +199,7 @@ class LinFormer(torch.nn.Module):
         self.decoders = nn.ModuleList(
             [
                 LinformerDecoderLayer(
-                    n_heads,
+                    num_heads,
                     dim_sequence,
                     dim_embedding,
                     dim_feedforward,

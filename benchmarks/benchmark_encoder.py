@@ -204,7 +204,7 @@ def instantiate_xformer(
     }
 
     multi_head_config = {
-        "n_heads": heads,
+        "num_heads": heads,
         "dim_model": embed_dim,
         "residual_dropout": residual_dropout,
     }

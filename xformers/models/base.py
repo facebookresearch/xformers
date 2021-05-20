@@ -7,7 +7,7 @@ from xformers.utils import ExtensibleConfig
 
 @dataclass
 class ModelConfig(ExtensibleConfig):
-    n_heads: int
+    num_heads: int
     dim_sequence: int
     dim_embedding: int
     dim_feedforward: int

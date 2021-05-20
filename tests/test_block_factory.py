@@ -61,7 +61,7 @@ def test_xformer_encoder_block(
     }
 
     multi_head_config = {
-        "n_heads": heads,
+        "num_heads": heads,
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
     }
@@ -131,7 +131,7 @@ def test_xformer_decoder_block(
     }
 
     multi_head_config = {
-        "n_heads": heads,
+        "num_heads": heads,
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
     }
