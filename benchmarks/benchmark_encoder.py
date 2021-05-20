@@ -196,7 +196,7 @@ def instantiate_xformer(
         "name": attention_name,
         "dropout": attn_dropout,
         "causal": causal,
-        "from_seq_dim": sequence_length,
+        "max_seq_len": sequence_length,
         "attention_query_mask": _get_attention_query_mask(
             sequence_length, _GLOBAL_ATTENTION_RATIO
         ),
@@ -205,7 +205,7 @@ def instantiate_xformer(
 
     multi_head_config = {
         "n_heads": heads,
-        "from_seq_dim": sequence_length,
+        "max_seq_len": sequence_length,
         "dim_model": embed_dim,
         "residual_dropout": residual_dropout,
     }

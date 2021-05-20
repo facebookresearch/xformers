@@ -38,15 +38,15 @@ class Attention(nn.Module, metaclass=ABCMeta):
     ) -> torch.Tensor:
         raise NotImplementedError
 
-    def _get_causal_mask(self, from_seq_dim: int, to_seq_dim: int) -> torch.Tensor:
+    def _get_causal_mask(self, max_seq_len: int, to_seq_dim: int) -> torch.Tensor:
         # Cache a mask so that multiple instances would reuse the same
         if (
             not self._causal_mask
-            or self._causal_mask.shape[0] != from_seq_dim
+            or self._causal_mask.shape[0] != max_seq_len
             or self._causal_mask.shape[1] != to_seq_dim
         ):
             self._causal_mask = torch.tril(
-                torch.ones(from_seq_dim, to_seq_dim), diagonal=0
+                torch.ones(max_seq_len, to_seq_dim), diagonal=0
             )
             self._causal_mask[self._causal_mask == 1] = -float("inf")
             self._causal_mask.unsqueeze_(0)  # batch dimension

@@ -49,7 +49,7 @@ class LinformerEncoderLayer(torch.nn.Module):
             final_dropout = 0.0
 
         self.attention = LinformerAttention(
-            dropout=attention_dropout, causal=False, from_seq_dim=dim_sequence, k=k
+            dropout=attention_dropout, causal=False, max_seq_len=dim_sequence, k=k
         )
         self.multihead = MultiHeadDispatch(
             dim_model=dim_embedding,
@@ -120,7 +120,7 @@ class LinformerDecoderLayer(torch.nn.Module):
             n_heads=n_heads,
             residual_dropout=attention_dropout,
             attention=LinformerAttention(
-                dropout=attention_dropout, causal=True, from_seq_dim=dim_sequence, k=k
+                dropout=attention_dropout, causal=True, max_seq_len=dim_sequence, k=k
             ),
         )
 
@@ -129,7 +129,7 @@ class LinformerDecoderLayer(torch.nn.Module):
             n_heads=n_heads,
             residual_dropout=attention_dropout,
             attention=LinformerAttention(
-                dropout=attention_dropout, causal=False, from_seq_dim=dim_sequence, k=k
+                dropout=attention_dropout, causal=False, max_seq_len=dim_sequence, k=k
             ),
         )
 

@@ -14,7 +14,7 @@ class MultiHeadDispatchConfig(ExtensibleConfig):
     residual_dropout: float
     n_heads: int
     attention: Attention
-    from_seq_dim: Optional[int]
+    max_seq_len: Optional[int]
     dim_key: Optional[int]
     dim_value: Optional[int]
 
@@ -31,9 +31,6 @@ class MultiHeadDispatch(nn.Module):
     "Attention is all you need", Vaswani et al. https://arxiv.org/abs/1706.03762v5
 
     The actual attention mechanism can vary, be it scaled dot product, local or other
-
-    credits A. Karpathy
-    https://github.com/karpathy/minGPT/blob/master/mingpt/model.py
     """
 
     def __init__(
@@ -42,7 +39,7 @@ class MultiHeadDispatch(nn.Module):
         residual_dropout: float,
         n_heads: int,
         attention: Attention,
-        from_seq_dim: Optional[int] = None,
+        max_seq_len: Optional[int] = None,
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
         *args,
@@ -60,8 +57,8 @@ class MultiHeadDispatch(nn.Module):
         assert n_heads > 0
 
         # Popular default is that all latent dimensions are the same
-        from_seq_dim, dim_key, dim_value = map(
-            lambda x: x if x else dim_model, (from_seq_dim, dim_key, dim_value)
+        max_seq_len, dim_key, dim_value = map(
+            lambda x: x if x else dim_model, (max_seq_len, dim_key, dim_value)
         )
 
         self.n_heads = n_heads

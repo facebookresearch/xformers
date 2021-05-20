@@ -13,7 +13,7 @@ def test_global_attention():
             "name": "global",
             "dropout": 0.0,
             "causal": False,
-            "from_seq_dim": s,
+            "max_seq_len": s,
             "attention_query_mask": torch.rand((s, 1)) < global_attention_ratio,
         }
 

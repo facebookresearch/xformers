@@ -44,7 +44,7 @@ def test_order_invariance(
         "name": attention_name,
         "dropout": attn_dropout,
         "causal": causal,
-        "from_seq_dim": SEQ,
+        "max_seq_len": SEQ,
         "window_size": SEQ // 8 + 1,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
@@ -54,7 +54,7 @@ def test_order_invariance(
 
     # build a multi head dispatch to test this attention mechanism
     multi_head = MultiHeadDispatch(
-        from_seq_dim=SEQ,
+        max_seq_len=SEQ,
         dim_model=MODEL,
         residual_dropout=residual_dropout,
         n_heads=heads,

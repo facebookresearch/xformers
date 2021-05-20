@@ -55,14 +55,14 @@ def test_xformer_encoder_block(
         "dropout": attn_dropout,
         "causal": causal,
         "window_size": SEQ // 8 + 1,
-        "from_seq_dim": SEQ,
+        "max_seq_len": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
     }
 
     multi_head_config = {
         "n_heads": heads,
-        "from_seq_dim": SEQ,
+        "max_seq_len": SEQ,
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
     }
@@ -126,14 +126,14 @@ def test_xformer_decoder_block(
         "dropout": attn_dropout,
         "causal": causal,
         "window_size": SEQ // 8 + 1,
-        "from_seq_dim": SEQ,
+        "max_seq_len": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
     }
 
     multi_head_config = {
         "n_heads": heads,
-        "from_seq_dim": SEQ,
+        "max_seq_len": SEQ,
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
     }
