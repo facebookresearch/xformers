@@ -22,7 +22,7 @@ class VocabEmbedding(PositionEmbedding):
     def __init__(
         self,
         dim_model: int,
-        max_sequence_len: int,
+        seq_len: int,
         vocab_size: int,
         dropout: float = 0.0,
         *args,
@@ -35,7 +35,7 @@ class VocabEmbedding(PositionEmbedding):
 
         self.dropout = torch.nn.Dropout(p=dropout)
 
-        self.position_embeddings = nn.Embedding(max_sequence_len, self.dim_model)
+        self.position_embeddings = nn.Embedding(seq_len, self.dim_model)
         torch.nn.init.normal_(self.position_embeddings.weight, std=0.02)
 
         self.position_ids: Optional[torch.Tensor] = None

@@ -14,7 +14,6 @@ class MultiHeadDispatchConfig(ExtensibleConfig):
     residual_dropout: float
     n_heads: int
     attention: Attention
-    max_seq_len: Optional[int]
     dim_key: Optional[int]
     dim_value: Optional[int]
 
@@ -39,7 +38,6 @@ class MultiHeadDispatch(nn.Module):
         residual_dropout: float,
         n_heads: int,
         attention: Attention,
-        max_seq_len: Optional[int] = None,
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
         *args,
@@ -47,7 +45,6 @@ class MultiHeadDispatch(nn.Module):
     ):
         super().__init__()
 
-        # TODO: Handle max sequence size / mask instead of fixed size
         # TODO: Expose the projection method,
         # see https://github.com/pytorch/text/blob/torchtext/nn/modules/multiheadattention.py#L5-L36, very clean
 
@@ -57,9 +54,7 @@ class MultiHeadDispatch(nn.Module):
         assert n_heads > 0
 
         # Popular default is that all latent dimensions are the same
-        max_seq_len, dim_key, dim_value = map(
-            lambda x: x if x else dim_model, (max_seq_len, dim_key, dim_value)
-        )
+        dim_key, dim_value = map(lambda x: x if x else dim_model, (dim_key, dim_value))
 
         self.n_heads = n_heads
         self.dim_k = dim_key // n_heads
@@ -80,6 +75,11 @@ class MultiHeadDispatch(nn.Module):
         # Output projection
         self.proj = nn.Linear(dim_model, dim_model, bias=False)
 
+    def _check(self, t, name):
+        assert (
+            t.shape[2] % self.dim_k == 0
+        ), f"the {name} embeddings need to be divisible by the number of heads"
+
     def forward(
         self,
         query: torch.Tensor,
@@ -87,15 +87,11 @@ class MultiHeadDispatch(nn.Module):
         value: torch.Tensor,
         att_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        def _check(t, name):
-            assert (
-                t.shape[2] % self.dim_k == 0
-            ), f"the {name} embeddings need to be divisible by the number of heads"
 
         # Check the dimensions properly
-        _check(query, "query")
-        _check(value, "value")
-        _check(key, "key")
+        self._check(query, "query")
+        self._check(value, "value")
+        self._check(key, "key")
 
         B, S, _ = query.size()  # Batch x Sequence x Embedding (latent)
 
@@ -122,6 +118,8 @@ class MultiHeadDispatch(nn.Module):
 
         # Output projection, dropout and good to go
         y = self.resid_drop(self.proj(y))
+
+        # Return the same sequence size as the input
         return y
 
     @classmethod

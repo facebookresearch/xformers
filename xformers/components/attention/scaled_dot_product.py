@@ -18,19 +18,18 @@ class ScaledDotProduct(Attention):
         self,
         dropout: float = 0.0,
         causal: bool = False,
-        max_seq_len: Optional[int] = None,
-        to_seq_dim: Optional[int] = None,
+        seq_len: Optional[int] = None,
+        to_seq_len: Optional[int] = None,
         *args,
         **kwargs,
     ):
         super().__init__()
         self.attn_drop = nn.Dropout(dropout, inplace=True)
         self.causal = causal
+        self.seq_len = seq_len
 
-        if causal and max_seq_len is not None:
-            mask = self._get_causal_mask(
-                max_seq_len, to_seq_dim if to_seq_dim else max_seq_len
-            )
+        if causal and seq_len is not None:
+            mask = self._get_causal_mask(seq_len, to_seq_len if to_seq_len else seq_len)
             self.register_buffer("mask", mask)
         else:
             self.mask = None

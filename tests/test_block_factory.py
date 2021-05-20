@@ -55,14 +55,13 @@ def test_xformer_encoder_block(
         "dropout": attn_dropout,
         "causal": causal,
         "window_size": SEQ // 8 + 1,
-        "max_seq_len": SEQ,
+        "seq_len": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
     }
 
     multi_head_config = {
         "n_heads": heads,
-        "max_seq_len": SEQ,
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
     }
@@ -78,7 +77,7 @@ def test_xformer_encoder_block(
     position_encoding_config = {
         "name": "sine",
         "dim_model": MODEL,
-        "max_sequence_len": SEQ,
+        "seq_len": SEQ,
         "vocab_size": VOCAB_SIZE,
     }
 
@@ -126,14 +125,13 @@ def test_xformer_decoder_block(
         "dropout": attn_dropout,
         "causal": causal,
         "window_size": SEQ // 8 + 1,
-        "max_seq_len": SEQ,
+        "seq_len": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
     }
 
     multi_head_config = {
         "n_heads": heads,
-        "max_seq_len": SEQ,
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
     }
@@ -149,7 +147,7 @@ def test_xformer_decoder_block(
     position_encoding_config = {
         "name": "sine",
         "dim_model": MODEL,
-        "max_sequence_len": SEQ,
+        "seq_len": SEQ,
         "vocab_size": VOCAB_SIZE,
     }
 

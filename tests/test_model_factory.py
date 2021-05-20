@@ -16,7 +16,7 @@ test_configs = [
                 "position_encoding_config": {
                     "name": "vocab",
                     "dim_model": 384,
-                    "max_sequence_len": SEQ,
+                    "seq_len": SEQ,
                     "vocab_size": 64,
                 },
                 "num_layers": 3,
@@ -24,11 +24,10 @@ test_configs = [
                     "name": "linformer",
                     "dropout": 0,
                     "causal": True,
-                    "max_seq_len": 512,
+                    "seq_len": 512,
                 },
                 "multi_head_config": {
                     "n_heads": 4,
-                    "max_seq_len": 512,
                     "dim_model": 384,
                     "residual_dropout": 0,
                 },
@@ -46,7 +45,7 @@ test_configs = [
                 "position_encoding_config": {
                     "name": "vocab",
                     "dim_model": 384,
-                    "max_sequence_len": SEQ,
+                    "seq_len": SEQ,
                     "vocab_size": 64,
                 },
                 "num_layers": 2,
@@ -55,25 +54,23 @@ test_configs = [
                         "name": "linformer",
                         "dropout": 0,
                         "causal": True,
-                        "max_seq_len": 512,
+                        "seq_len": 512,
                     },
                     {
                         "name": "linformer",
                         "dropout": 0,
                         "causal": False,
-                        "max_seq_len": 512,
+                        "seq_len": 512,
                     },
                 ],
                 "multi_head_configs": [
                     {
                         "n_heads": 4,
-                        "max_seq_len": 512,
                         "dim_model": 384,
                         "residual_dropout": 0,
                     },
                     {
                         "n_heads": 4,
-                        "max_seq_len": 512,
                         "dim_model": 384,
                         "residual_dropout": 0,
                     },

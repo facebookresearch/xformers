@@ -23,7 +23,7 @@ def test_dimensions(encoding_name: str, dropout: float):
         "dim_model": 384,
         "vocab_size": 32,
         "dropout": dropout,
-        "max_sequence_len": SEQ,
+        "seq_len": SEQ,
     }
 
     # dummy, just check construction and dimensions in the FW pass

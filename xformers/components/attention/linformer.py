@@ -10,14 +10,14 @@ from xformers.components.attention.core import scaled_dot_product_attention
 
 @dataclass(init=False)
 class LinformerSelfAttentionConfig(AttentionConfig):
-    max_seq_len: int  # dimension of the input sequence
+    seq_len: int  # dimension of the input sequence
     k: Optional[int]  # dimension of the internal space
 
 
 @register_attention("linformer")
 class LinformerAttention(Attention):
     def __init__(
-        self, dropout: float, max_seq_len: int, k: Optional[int] = None, *args, **kwargs
+        self, dropout: float, seq_len: int, k: Optional[int] = None, *args, **kwargs
     ):
         """
         Linformer attention mechanism, from
@@ -31,12 +31,13 @@ class LinformerAttention(Attention):
         super().__init__()
 
         if k is None:
-            k = max_seq_len // 4
+            k = seq_len // 4
 
         self.k = k
-        self.E = nn.Linear(max_seq_len, k, bias=False)
-        self.F = nn.Linear(max_seq_len, k, bias=False)
+        self.E = nn.Linear(seq_len, k, bias=False)
+        self.F = nn.Linear(seq_len, k, bias=False)
         self.attn_drop = nn.Dropout(dropout, inplace=True)
+        self.seq_len = seq_len
 
     def forward(
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs

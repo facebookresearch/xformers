@@ -10,7 +10,7 @@ from xformers.utils import ExtensibleConfig
 class PositionEmbeddingConfig(ExtensibleConfig):
     name: str
     dim_model: int
-    max_sequence_len: int
+    seq_len: int
 
 
 class PositionEmbedding(nn.Module, metaclass=ABCMeta):
