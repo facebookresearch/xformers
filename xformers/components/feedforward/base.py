@@ -11,10 +11,9 @@ from xformers.utils import ExtensibleConfig
 @dataclass(init=False)
 class FeedforwardConfig(ExtensibleConfig):
     name: str
-    dim_latent: int
+    dim_model: int
     dropout: float
     activation: Activation
-    hidden_layer_multiplier: int
 
 
 # Define the common interface, every feedforward block needs to derive from it
@@ -22,11 +21,11 @@ class Feedforward(nn.Module, metaclass=ABCMeta):
     @abstractmethod
     def __init__(
         self,
-        dim_latent: Optional[int] = None,
+        dim_model: Optional[int] = None,
         dropout: Optional[float] = None,
         activation: Optional[Activation] = None,
         *args,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
 

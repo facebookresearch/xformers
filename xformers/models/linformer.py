@@ -61,7 +61,7 @@ class LinformerEncoderLayer(torch.nn.Module):
         self.norm1 = torch.nn.LayerNorm(dim_embedding)
 
         self.feedforward = MLP(
-            dim_latent=dim_feedforward,
+            dim_model=dim_feedforward,
             dropout=ff_dropout,
             activation=activation,
             hidden_layer_multiplier=4,
@@ -134,7 +134,7 @@ class LinformerDecoderLayer(torch.nn.Module):
         )
 
         self.feedforward = MLP(
-            dim_latent=dim_feedforward,
+            dim_model=dim_feedforward,
             dropout=ff_dropout,
             activation=activation,
             hidden_layer_multiplier=4,

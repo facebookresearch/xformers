@@ -18,7 +18,7 @@ class MlpConfig(FeedforwardConfig):
 class MLP(Feedforward):
     def __init__(
         self,
-        dim_latent: int,
+        dim_model: int,
         dropout: float,
         activation: Activation,
         hidden_layer_multiplier: int,
@@ -33,11 +33,15 @@ class MLP(Feedforward):
         }[activation]()
 
         self.mlp = nn.Sequential(
-            nn.Linear(dim_latent, hidden_layer_multiplier * dim_latent),
+            nn.Linear(dim_model, hidden_layer_multiplier * dim_model),
             activation_layer,
-            nn.Linear(hidden_layer_multiplier * dim_latent, dim_latent),
+            nn.Linear(hidden_layer_multiplier * dim_model, dim_model),
             nn.Dropout(dropout),
         )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.mlp(inputs)
+
+    @classmethod
+    def from_config(cls, config: FeedforwardConfig) -> "Feedforward":
+        return cls(**MlpConfig.as_patchy_dict(config))

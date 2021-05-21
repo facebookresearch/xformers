@@ -211,7 +211,7 @@ def instantiate_xformer(
 
     feedforward_config = {
         "name": feedforward_name,
-        "dim_latent": embed_dim,
+        "dim_model": embed_dim,
         "dropout": dropout,
         "activation": activation,
         "hidden_layer_multiplier": 4,

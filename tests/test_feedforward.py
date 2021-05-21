@@ -23,7 +23,7 @@ assert FEEDFORWARD_REGISTRY.keys(), "Feedforward layers should have been registe
 def test_feedforward(feedforward_name: str, activation: Activation):
     test_config = {
         "name": feedforward_name,
-        "dim_latent": LATENT,
+        "dim_model": LATENT,
         "dropout": DROPOUT,
         "activation": activation,
         "hidden_layer_multiplier": 4,

@@ -118,8 +118,8 @@ class xFormerDecoderBlock(nn.Module):
 
     def __init__(self, config: xFormerDecoderConfig):
         super().__init__()
-        self.linear1 = nn.Linear(config.dim_model, config.feedforward_config.dim_latent)
-        self.linear2 = nn.Linear(config.dim_model, config.feedforward_config.dim_latent)
+        self.linear1 = nn.Linear(config.dim_model, config.feedforward_config.dim_model)
+        self.linear2 = nn.Linear(config.dim_model, config.feedforward_config.dim_model)
 
         self.ln1 = nn.LayerNorm(config.dim_model)
         self.ln2 = nn.LayerNorm(config.dim_model)

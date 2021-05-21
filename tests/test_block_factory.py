@@ -68,7 +68,7 @@ def test_xformer_encoder_block(
 
     feedforward_config = {
         "name": feedforward_name,
-        "dim_latent": MODEL,
+        "dim_model": MODEL,
         "dropout": DROPOUT,
         "activation": activation,
         "hidden_layer_multiplier": 4,
@@ -143,7 +143,7 @@ def test_xformer_decoder_block(
 
     feedforward_config = {
         "name": feedforward_name,
-        "dim_latent": MODEL,
+        "dim_model": MODEL,
         "dropout": DROPOUT,
         "activation": activation,
         "hidden_layer_multiplier": 4,

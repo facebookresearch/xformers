@@ -39,7 +39,7 @@ test_configs = [
                 },
                 "feedforward_config": {
                     "name": "MLP",
-                    "dim_latent": 384,
+                    "dim_model": 384,
                     "dropout": 0,
                     "activation": "relu",
                     "hidden_layer_multiplier": 4,
@@ -83,7 +83,7 @@ test_configs = [
                 ],
                 "feedforward_config": {
                     "name": "MLP",
-                    "dim_latent": 384,
+                    "dim_model": 384,
                     "dropout": 0,
                     "activation": "relu",
                     "hidden_layer_multiplier": 4,
