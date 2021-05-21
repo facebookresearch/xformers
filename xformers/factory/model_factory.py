@@ -71,15 +71,15 @@ class xFormer(torch.nn.Module):
     def forward(
         self,
         inputs: torch.Tensor,
-        encoder_attn_mask: Optional[torch.Tensor] = None,
-        decoder_attn_mask: Optional[torch.Tensor] = None,
+        encoder_input_mask: Optional[torch.Tensor] = None,
+        decoder_input_mask: Optional[torch.Tensor] = None,
     ) -> Optional[torch.Tensor]:
         # Encode to latent space if encoder is present
         latent = inputs
 
         if self.encoders:
             for encoder in self.encoders:
-                latent = encoder(latent, encoder_attn_mask)
+                latent = encoder(latent, input_mask=encoder_input_mask)
 
         # If decoder: either use the encoder ouput, or just decode, both options are possible
         if self.decoders:
@@ -87,7 +87,7 @@ class xFormer(torch.nn.Module):
                 inputs = decoder(
                     target=inputs,
                     memory=latent,
-                    att_mask=decoder_attn_mask,
+                    input_mask=decoder_input_mask,
                 )
 
             return inputs

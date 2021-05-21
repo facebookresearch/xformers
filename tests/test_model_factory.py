@@ -5,7 +5,13 @@ from xformers.factory.model_factory import xFormer, xFormerConfig
 
 BATCH = 20
 SEQ = 512
-
+DEVICES = (
+    [torch.device("cpu")]
+    if not torch.cuda.is_available()
+    else [
+        torch.device("cuda")
+    ]  # save a bit on CI for now, we have seperate cpu and gpu jobs
+)
 
 test_configs = [
     {
@@ -92,10 +98,14 @@ test_configs = [
 
 
 @pytest.mark.parametrize("config", test_configs)
-def test_presets(config):
+@pytest.mark.parametrize("device", DEVICES)
+def test_presets(config, device):
     # Build the model
-    model = xFormer.from_config(xFormerConfig(**config))
+    model = xFormer.from_config(xFormerConfig(**config)).to(device)
 
     # Dummy inputs, test a forward
-    inputs = (torch.rand(BATCH, SEQ) * 10).abs().to(torch.int)
-    _ = model(inputs)
+    inputs = (torch.rand(BATCH, SEQ, device=device) * 10).abs().to(torch.int)
+
+    input_mask = torch.randn(SEQ, dtype=torch.float, device=device)
+    input_mask[input_mask < 0.0] = -float("inf")
+    _ = model(inputs, encoder_input_mask=input_mask, decoder_input_mask=input_mask)
