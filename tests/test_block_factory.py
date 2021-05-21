@@ -96,9 +96,14 @@ def test_xformer_encoder_block(
     inputs = torch.rand(BATCH, SEQ, device=device)
     _ = block(inputs)
 
-    # Check that we support masking, at least interface wise (do not check correctness yet)
-    mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
-    _ = block(inputs, mask)
+    # Check that we support attention masking, at least interface wise (do not check correctness yet)
+    att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
+    _ = block(inputs, att_mask=att_mask)
+
+    # Check that we support input masking, at least interface wise (do not check correctness yet)
+    input_mask = torch.randn(SEQ, dtype=torch.float, device=device)
+    input_mask[input_mask < 0.0] = -float("inf")
+    _ = block(inputs, input_mask=input_mask)
 
 
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
@@ -185,7 +190,9 @@ def test_xformer_decoder_block(
     )  # FIXME: does not make a lot of sense, just checking dimensions
 
     # Check that we support masking, at least interface wise (do not check correctness yet)
-    mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
+    att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
+    input_mask = torch.randn(SEQ, dtype=torch.float, device=device)
+    input_mask[input_mask < 0.0] = -float("inf")
 
     encoded = encoder_block(inputs)
-    _ = decoder_block(inputs, encoded, mask)
+    _ = decoder_block(inputs, encoded, att_mask=att_mask, input_mask=input_mask)

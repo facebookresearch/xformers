@@ -87,7 +87,7 @@ class xFormer(torch.nn.Module):
                 inputs = decoder(
                     target=inputs,
                     memory=latent,
-                    attn_mask=decoder_attn_mask,
+                    att_mask=decoder_attn_mask,
                 )
 
             return inputs
