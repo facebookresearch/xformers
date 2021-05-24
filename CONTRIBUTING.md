@@ -127,7 +127,7 @@ Eventually we'll probably have a launcher for a full benchmark suite.
 
 For now, thanks to Sean Naren, you can start with
 ```
-python3 benchmarks/benchmark_attention.py
+python3 benchmarks/benchmark_encoder.py
 ```
 
 ## License
