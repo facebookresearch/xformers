@@ -20,6 +20,11 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
 - **Crowd Sourced**. This is probably the single most important part. All of the above should make it possible for people interested to contribute: contributing on a small block is easier than on a full model, unit tests and common interfaces should help, the ability to extend the library locally and test the relevance prior to a PR should also help. PRs are really welcome.
 
 # Using xFormers
+## Installing the repo
+It is recommended to use a dedicated virtual environment, as often with python, through python-virtualenv or conda for instance.
+`pip install -e .` is all you need to install in dev mode (you can change the repo code and the installation will follow suit), if you just want to install from source and not change it afterwards `pip install .` is what you'll need.
+
+## Sparse attention
 Below you will find a set of notebooks that will show you how you can use xFormers in your project
 - [Creating complex sparsity patterns with xformers](docs/source/2d_attention_patterns.ipynb)
 - [Changing ViT to use sparse attention, benchmarking the effects](docs/source/vision_transformers.ipynb)
