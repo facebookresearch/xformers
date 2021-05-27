@@ -51,7 +51,7 @@ class RandomAttention(Attention):
         """
         super().__init__()
 
-        self.attn_drop = nn.Dropout(dropout, inplace=True)
+        self.attn_drop = nn.Dropout(dropout, inplace=False)
         self.causal = causal
         self.r = r
         self.rand_attention_mask: Optional[torch.Tensor] = None

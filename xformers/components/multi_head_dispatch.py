@@ -70,7 +70,7 @@ class MultiHeadDispatch(nn.Module):
         self.project_value = nn.Linear(dim_model, dim_value, bias=False)
 
         # Regularization
-        self.resid_drop = nn.Dropout(residual_dropout, inplace=True)
+        self.resid_drop = nn.Dropout(residual_dropout, inplace=False)
 
         # Output projection
         self.proj = nn.Linear(dim_model, dim_model, bias=False)

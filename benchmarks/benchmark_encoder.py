@@ -315,9 +315,9 @@ if __name__ == "__main__":
         "device": torch.device("cuda") if _use_cuda else torch.device("cpu"),
         "num_warmup": 5,
         "num_steps": 10,
-        "dropout": 0.0,
-        "attn_dropout": 0.0,
-        "residual_dropout": 0.0,
+        "dropout": 0.1,
+        "attn_dropout": 0.1,
+        "residual_dropout": 0.1,
         "profile": args.profile,
     }
 

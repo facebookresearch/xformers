@@ -36,7 +36,7 @@ class LinformerAttention(Attention):
         self.k = k
         self.E = nn.Linear(seq_len, k, bias=False)
         self.F = nn.Linear(seq_len, k, bias=False)
-        self.attn_drop = nn.Dropout(dropout, inplace=True)
+        self.attn_drop = nn.Dropout(dropout, inplace=False)
         self.seq_len = seq_len
 
     def forward(

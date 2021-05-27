@@ -60,7 +60,7 @@ class LocalAttention(Attention):
         """
         super().__init__()
 
-        self.attn_drop = nn.Dropout(dropout, inplace=True)
+        self.attn_drop = nn.Dropout(dropout, inplace=False)
         self.causal = causal
         self.force_sparsity = force_sparsity
 

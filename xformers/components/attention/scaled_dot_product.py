@@ -24,7 +24,7 @@ class ScaledDotProduct(Attention):
         **kwargs,
     ):
         super().__init__()
-        self.attn_drop = nn.Dropout(dropout, inplace=True)
+        self.attn_drop = nn.Dropout(dropout, inplace=False)
         self.causal = causal
         self.seq_len = seq_len
 
