@@ -195,4 +195,4 @@ def test_xformer_decoder_block(
     input_mask[input_mask < 0.0] = -float("inf")
 
     encoded = encoder_block(inputs)
-    _ = decoder_block(inputs, encoded, att_mask=att_mask, input_mask=input_mask)
+    _ = decoder_block(inputs, encoded, encoder_att_mask=att_mask, input_mask=input_mask)

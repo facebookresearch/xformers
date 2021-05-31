@@ -20,6 +20,16 @@ class BlockType(str, Enum):
     Decoder = "decoder"
 
 
+class LayerNormStyle(str, Enum):
+    """Support different layer norm styles.
+    See "On Layer Normalization in the Transformer Architecture",
+    Xiong et al., https://arxiv.org/pdf/2002.04745v1.pdf
+    """
+
+    Pre = "pre"
+    Post = "post"
+
+
 @dataclass
 class _xFormerBlockConfig(ExtensibleConfig):
     dim_model: int
@@ -40,6 +50,7 @@ class xFormerEncoderConfig(_xFormerBlockConfig):
     multi_head_config: MultiHeadDispatchConfig
     block_type: BlockType = field(default_factory=lambda: BlockType("encoder"))
     num_layers: int = 1
+    layer_norm_style: LayerNormStyle = LayerNormStyle.Post
 
     def __post_init__(self):
         try:
@@ -57,6 +68,7 @@ class xFormerDecoderConfig(_xFormerBlockConfig):
     multi_head_configs: Tuple[MultiHeadDispatchConfig, MultiHeadDispatchConfig]
     block_type: BlockType = field(default_factory=lambda: BlockType("decoder"))
     num_layers: int = 1
+    layer_norm_style: LayerNormStyle = LayerNormStyle.Post
 
     def __post_init__(self):
         try:
@@ -91,6 +103,7 @@ class xFormerEncoderBlock(nn.Module):
             config.multi_head_config,
         )
         self.ff = build_feedforward(config.feedforward_config)
+        self.layer_norm_style = config.layer_norm_style
 
     @classmethod
     def from_config(cls, config: xFormerEncoderConfig):
@@ -108,8 +121,14 @@ class xFormerEncoderBlock(nn.Module):
         if input_mask is not None:
             x *= input_mask.unsqueeze(-1)
 
-        x = self.ln1(x + self.attn(x, x, x, att_mask))
-        x = self.ln2(x + self.ff(x))
+        if self.layer_norm_style == LayerNormStyle.Post:
+            x = self.ln1(x + self.attn(x, x, x, att_mask))
+            x = self.ln2(x + self.ff(x))
+
+        else:
+            x_norm = self.ln1(x)
+            x = x + self.attn(x_norm, x_norm, x_norm, att_mask)
+            x = x + self.ff(self.ln2(x))
         return x
 
 
@@ -139,6 +158,7 @@ class xFormerDecoderBlock(nn.Module):
         )
 
         self.ff = build_feedforward(config.feedforward_config)
+        self.layer_norm_style = config.layer_norm_style
 
     @classmethod
     def from_config(cls, config: xFormerDecoderConfig):
@@ -148,7 +168,8 @@ class xFormerDecoderBlock(nn.Module):
         self,
         target: torch.Tensor,
         memory: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
+        encoder_att_mask: Optional[torch.Tensor] = None,
+        decoder_att_mask: Optional[torch.Tensor] = None,
         input_mask: Optional[torch.Tensor] = None,
     ):
         if self.pose_encoding:
@@ -157,12 +178,35 @@ class xFormerDecoderBlock(nn.Module):
         if input_mask is not None:
             target *= input_mask.unsqueeze(-1)
 
-        # Masked multi head attention
-        x = self.ln1(target + self.attn1(target, target, target, att_mask))
+        if self.layer_norm_style == LayerNormStyle.Post:
+            # Masked multi head attention
+            x = self.ln1(
+                target + self.attn1(target, target, target, att_mask=decoder_att_mask)
+            )
 
-        # Include the memory/Encoder results
-        x = self.ln2(x + self.attn2(key=memory, value=memory, query=x))
+            # Include the memory/Encoder results
+            x = self.ln2(
+                x
+                + self.attn2(
+                    key=memory, value=memory, query=x, att_mask=encoder_att_mask
+                )
+            )
 
-        # FF
-        x = self.ln3(x + self.ff(x))
+            # FF
+            x = self.ln3(x + self.ff(x))
+        else:
+            # Masked multi head attention
+            target_norm = self.ln1(target)
+            x = target + self.attn1(
+                target_norm, target_norm, target_norm, att_mask=decoder_att_mask
+            )
+
+            # Include the memory/Encoder results
+            x = x + self.attn2(
+                key=memory, value=memory, query=self.ln2(x), att_mask=encoder_att_mask
+            )
+
+            # FF
+            x = x + self.ff(self.ln3(x))
+
         return x
