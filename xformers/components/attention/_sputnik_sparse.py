@@ -131,8 +131,6 @@ class SparseCS:
     def __init__(self, matrix, device=None):
         if device is None:
             device = torch.device("cpu")
-        if isinstance(matrix, torch.Tensor):
-            matrix = matrix.cpu().numpy()
         if matrix.ndim == 2:
             matrix = matrix[None]
         assert matrix.ndim == 3
@@ -141,11 +139,7 @@ class SparseCS:
             self.row_indices,
             self.row_offsets,
             self.column_indices,
-        ) = _dense_to_sparse(matrix[0], device)
-        matrix = torch.as_tensor(matrix, device=device)
-        self.values = matrix[(matrix[0] != 0).expand_as(matrix)].reshape(
-            matrix.shape[0], -1
-        )
+        ) = _dense3d_to_sparse(matrix, device)
         self.shape = matrix.shape[1:]
         m, n = self.shape
         self._transp_info = _get_transpose_info(
@@ -267,10 +261,7 @@ class SparseCS:
         idxs = torch.arange(self.shape[0], device=self.values.device)
         r_idxs = torch.repeat_interleave(idxs, sizes)
         for i, v in enumerate(self.values):
-            matrix[i, r_idxs, self.column_indices.long()] = v[
-                : self.column_indices.numel()
-            ]
-            # matrix[r_idxs, self.column_indices.long()] = self.values
+            matrix[i, r_idxs, self.column_indices.long()] = v
         return matrix
 
     def logical_and(self, other: torch.Tensor):
@@ -334,41 +325,66 @@ def _transpose(m, n, row_indices, values, row_offsets, column_indices):
     return _transpose_with_info(values, _transpose_info)
 
 
-def _dense_to_sparse(matrix, device):
-    import numpy as np
+def _nonzero_mask_to_sparse_csr_indices(mask, device):
+    """Converts dense 2d matrix to a csr sparse matrix."""
 
-    """Converts dense numpy matrix to a csr sparse matrix."""
-    assert len(matrix.shape) == 2
-
-    if True:
-        nonzero = np.nonzero(matrix != 0)
-        nnz = nonzero[0].shape[0]
-        # NOTE: need to make it a multiple of 4 for sputnik
-        nonzero = tuple(n[: (nnz - nnz % 4)] for n in nonzero)
-        nm = np.zeros_like(matrix)
-        nm[nonzero] = matrix[nonzero]
-        matrix = nm
-
-    # Extract the nonzero values.
-    values = matrix.compress((matrix != 0).flatten())
+    assert len(mask.shape) == 2
+    index_dtype = torch.int32
 
     # Calculate the offset of each row.
-    mask = (matrix != 0).astype(np.int32)
-    row_offsets = np.concatenate(([0], np.cumsum(np.add.reduce(mask, axis=1))), axis=0)
+    row_offsets = mask.sum(dim=-1, dtype=index_dtype).cumsum(dim=-1, dtype=index_dtype)
+    row_offsets = torch.nn.functional.pad(row_offsets, (1, 0))
 
     # Create the row indices and sort them.
-    row_indices = np.argsort(-1 * np.diff(row_offsets))
+    row_indices = _diffsort(row_offsets).to(index_dtype)
 
     # Extract the column indices for the nonzero values.
-    x = mask * (np.arange(matrix.shape[1]) + 1)
-    column_indices = x.compress((x != 0).flatten())
-    column_indices = column_indices - 1
+    column_indices = torch.where(mask)[1].to(index_dtype).contiguous()
 
-    # Cast the desired precision.
-    values = torch.as_tensor(values.astype(np.float32), device=device)
-    row_indices, row_offsets, column_indices = [
-        # x.astype(np.uint32) for x in
-        torch.as_tensor(x.astype(np.int32), device=device)
-        for x in [row_indices, row_offsets, column_indices]
-    ]
+    row_indices = row_indices.to(device)
+    row_offsets = row_offsets.to(device)
+    column_indices = column_indices.to(device)
+    return row_indices, row_offsets, column_indices
+
+
+def _dense_to_sparse(matrix, device):
+    """Converts dense 2d matrix to a csr sparse matrix."""
+
+    assert len(matrix.shape) == 2
+    value_dtype = torch.float32
+
+    # Extract the nonzero values.
+    mask = matrix != 0
+    values = matrix[mask].to(dtype=value_dtype, device=device)
+
+    row_indices, row_offsets, column_indices = _nonzero_mask_to_sparse_csr_indices(
+        mask, device
+    )
+    return values, row_indices, row_offsets, column_indices
+
+
+def _round_nnz(mask, divisible_by=4):
+    nonzero = torch.where(mask)
+    nnz = nonzero[0].shape[0]
+    nonzero = tuple(n[: (nnz - nnz % divisible_by)] for n in nonzero)
+    nm = torch.zeros_like(mask)
+    nm[nonzero] = True
+    return nm
+
+
+def _dense3d_to_sparse(matrix, device):
+    assert len(matrix.shape) == 3
+    mask = matrix != 0
+    if not torch.all(mask == mask[0]):
+        raise ValueError("Expected the same sparsity pattern over the batch dimension")
+
+    # for now, our kernels assume that we have the number of
+    # nnz to be divisible by 4
+    mask = _round_nnz(mask[0], divisible_by=4)
+    mask = mask[None].expand(matrix.shape)
+
+    values = matrix[mask].reshape(matrix.shape[0], -1).to(device)
+    row_indices, row_offsets, column_indices = _nonzero_mask_to_sparse_csr_indices(
+        mask[0], device
+    )
     return values, row_indices, row_offsets, column_indices
