@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -32,10 +32,12 @@ class NystromSelfAttentionConfig(AttentionConfig):
                             depth wise convolution used as a skip connection.
                             If both conv_kernel_size and v_skip_connection are None, no skip connection will
                             be added.
+    landmark_pooling        Which module to use when computing landmarks. Default is AdaptiveAvgPool2d.
     """
 
     num_heads: int
     num_landmarks: Optional[int]
+    landmark_pooling: Optional[nn.Module]
     causal: Optional[bool]
     pinverse_original_init: Optional[bool]
     inv_iterations: Optional[int]
@@ -52,6 +54,7 @@ class NystromAttention(Attention):
         dropout: float,
         num_heads: int,
         num_landmarks: int = 64,
+        landmark_pooling: Optional[nn.Module] = None,
         causal: bool = False,
         use_razavi_pinverse: bool = True,
         pinverse_original_init: bool = False,
@@ -92,6 +95,13 @@ class NystromAttention(Attention):
                 groups=self.num_heads,
             )
 
+        if landmark_pooling is not None:
+            self.landmark_pooling = landmark_pooling
+        else:
+            self.landmark_pooling = torch.nn.AdaptiveAvgPool2d(
+                (self.num_landmarks, None)
+            )
+
         # Optional lower triangular masks for causal attention
         self.causal_mask_1: Optional[torch.Tensor] = None
         self.causal_mask_2: Optional[torch.Tensor] = None
@@ -101,7 +111,6 @@ class NystromAttention(Attention):
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs
     ):
         batched_dim = k.size(0)
-        head_dim = k.size(-1)
         seq_len = k.size(-2)
 
         if self.num_landmarks == seq_len:
@@ -111,7 +120,8 @@ class NystromAttention(Attention):
             x = scaled_dot_product_attention(q, k, v, mask)
 
         else:
-            q_landmarks, k_landmarks = self._compute_landmarks(seq_len, head_dim, k, q)
+            q_landmarks = self.landmark_pooling(q)
+            k_landmarks = self.landmark_pooling(k)
 
             if self.causal and self.causal_mask_1 is None:
                 self.causal_mask_1 = self._tril_mask(
@@ -156,56 +166,6 @@ class NystromAttention(Attention):
             x += v_conv.reshape(-1, v_conv.size(-2), v_conv.size(-1))
         x = self.attn_drop(x)
         return x
-
-    def _compute_landmarks(
-        self, seq_len: int, head_dim: int, k: torch.Tensor, q: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if seq_len % self.num_landmarks == 0:
-            q_landmarks = q.reshape(
-                -1,
-                self.num_landmarks,
-                seq_len // self.num_landmarks,
-                head_dim,
-            ).mean(dim=-2)
-            k_landmarks = k.reshape(
-                -1,
-                self.num_landmarks,
-                seq_len // self.num_landmarks,
-                head_dim,
-            ).mean(dim=-2)
-        else:
-            segs = seq_len // self.num_landmarks
-            num_landmarks_begin = self.num_landmarks - seq_len % self.num_landmarks
-
-            k_landmarks_begin = (
-                k[:, : num_landmarks_begin * segs, :]
-                .reshape(-1, num_landmarks_begin, segs, head_dim)
-                .mean(dim=-2)
-            )
-            k_landmarks_end = (
-                k[:, num_landmarks_begin * segs :, :]
-                .reshape(
-                    -1, self.num_landmarks - num_landmarks_begin, segs + 1, head_dim
-                )
-                .mean(dim=-2)
-            )
-            k_landmarks = torch.cat((k_landmarks_begin, k_landmarks_end), dim=-2)
-
-            q_landmarks_begin = (
-                q[:, : num_landmarks_begin * segs, :]
-                .reshape(-1, num_landmarks_begin, segs, head_dim)
-                .mean(dim=-2)
-            )
-            q_landmarks_end = (
-                q[:, num_landmarks_begin * segs :, :]
-                .reshape(
-                    -1, self.num_landmarks - num_landmarks_begin, segs + 1, head_dim
-                )
-                .mean(dim=-2)
-            )
-            q_landmarks = torch.cat((q_landmarks_begin, q_landmarks_end), dim=-2)
-
-        return q_landmarks, k_landmarks
 
     def _tril_mask(self, dim_1: int, dim_2: int, dim_3: int):
         return torch.tril(torch.ones(dim_1, dim_2, dim_3, dtype=torch.bool), diagonal=0)
