@@ -8,6 +8,7 @@ import torch.nn as nn
 
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.attention.feature_maps import (
+    FeatureMap,
     FeatureMapType,
     SMHyperbolic,
     SMOrf,
@@ -18,6 +19,9 @@ from xformers.components.attention.feature_maps import (
 @dataclass(init=False)
 class FavorAttentionConfig(AttentionConfig):
     dim_features: Optional[int]  # The dimensions of the random features
+    dim_head: Optional[
+        int
+    ]  # The embedding dimension of the inputs. Only useful to get a dim_features estimate
     iter_before_redraw: Optional[
         int
     ]  # The number of iterations before the random features are re-drawn from scratch
@@ -31,6 +35,7 @@ class FavorAttention(Attention):
         causal: bool = False,
         dropout: float = 0.0,
         dim_features: Optional[int] = None,
+        dim_head: Optional[int] = None,
         iter_before_redraw: Optional[int] = None,
         feature_map_type: FeatureMapType = FeatureMapType.SMReg,
         normalize_inputs: bool = False,
@@ -54,41 +59,39 @@ class FavorAttention(Attention):
         super().__init__()
 
         self.causal = causal
-        self.dim_features = dim_features
         self.iter_before_redraw = iter_before_redraw
         self.normalize_inputs = normalize_inputs
-        self.feature_map_query: Optional[torch.nn.Module] = None
-        self.feature_map_key: Optional[torch.nn.Module] = None
         self.feature_map_type = feature_map_type
         self.attn_drop = nn.Dropout(dropout, inplace=True)
 
-    def _maybe_setup(self, x: torch.Tensor):
         # Setup dimension-dependent variables
-        if self.dim_features is None:
-            # Reasonable dimension default
-            self.dim_features = math.ceil(x.shape[-1] * (1 + math.log2(x.shape[-1])))
+        # Reasonable dimension default
+        if dim_features is None:
+            assert dim_head is not None, "dim_features or dim_head needs to be passed"
+            self.dim_features = math.ceil(dim_head * (1 + math.log2(dim_head)))
             self.dim_features = 2 * (
                 self.dim_features // 2
             )  # needs to be even for some variants
             logging.info(
-                f"FAVOR: Automatically setting the random mapping dimension to {self.dim_features} from {x.shape[-1]}"
+                f"FAVOR: Automatically setting the random mapping dimension to {self.dim_features} from {dim_head}"
             )
+        else:
+            self.dim_features = dim_features
 
-        if self.feature_map_query is None or self.feature_map_key is None:
-            feature_map_constructor = {
-                FeatureMapType.SMHyp: SMHyperbolic,
-                FeatureMapType.SMReg: SMReg,
-                FeatureMapType.SMOrf: SMOrf,
-            }[self.feature_map_type]
+        feature_map_constructor = {
+            FeatureMapType.SMHyp: SMHyperbolic,
+            FeatureMapType.SMReg: SMReg,
+            FeatureMapType.SMOrf: SMOrf,
+        }[self.feature_map_type]
 
-            feature_settings = {
-                "dim_features": self.dim_features,
-                "iter_before_redraw": self.iter_before_redraw,
-                "normalize_inputs": self.normalize_inputs,
-            }
+        feature_settings = {
+            "dim_features": self.dim_features,
+            "iter_before_redraw": self.iter_before_redraw,
+            "normalize_inputs": self.normalize_inputs,
+        }
 
-            self.feature_map_query = feature_map_constructor(**feature_settings)  # type: ignore
-            self.feature_map_key = feature_map_constructor(**feature_settings)  # type: ignore
+        self.feature_map_query: FeatureMap = feature_map_constructor(**feature_settings)  # type: ignore
+        self.feature_map_key: FeatureMap = feature_map_constructor(**feature_settings)  # type: ignore
 
     @staticmethod
     def _causal_attention(
@@ -122,10 +125,6 @@ class FavorAttention(Attention):
         *args,
         **kwargs,
     ):
-        # Handle a possible delayed initialization
-        self._maybe_setup(q)
-        assert self.feature_map_key is not None and self.feature_map_query is not None
-
         # Project key and queries onto the feature map space
         k_prime = self.feature_map_key(k)
         q_prime = self.feature_map_query(q)

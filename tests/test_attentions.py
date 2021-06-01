@@ -48,6 +48,7 @@ def test_order_invariance(
         "window_size": SEQ // 8 + 1,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
+        "dim_head": MODEL / heads,
     }
 
     attention = build_attention(AttentionConfig(**test_config))

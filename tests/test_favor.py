@@ -130,6 +130,7 @@ def test_approximation_accuracy(feature, causal, normalize_inputs):
     approx_attention = FavorAttention(
         dropout=0.0,
         causal=causal,
+        dim_head=10,
         feature_map_type=FeatureMapType(feature),
         normalize_inputs=normalize_inputs,
     )

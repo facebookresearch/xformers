@@ -45,9 +45,13 @@ class SoftMaxPositiveEstimators(FeatureMap):
         with record_function("feature_map::pre_scale"):
             # Re-draw counting logic
             if (
-                self.iter_before_redraw is not None
-                and self._iter_counter > self.iter_before_redraw
-            ) or self.features is None:
+                (
+                    self.iter_before_redraw is not None
+                    and self._iter_counter > self.iter_before_redraw
+                )
+                or self.features is None
+                or self.features.device != x.device
+            ):
                 # The feature map is actually using half the dimension, we'll concatenate + and - features
                 self._iter_counter = 1
                 self.features = self._get_feature_map(

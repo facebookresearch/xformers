@@ -58,6 +58,7 @@ def test_xformer_encoder_block(
         "seq_len": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
+        "dim_head": MODEL / heads,
     }
 
     multi_head_config = {
@@ -133,6 +134,7 @@ def test_xformer_decoder_block(
         "seq_len": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
+        "dim_head": MODEL / heads,
     }
 
     multi_head_config = {

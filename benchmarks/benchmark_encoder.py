@@ -201,6 +201,7 @@ def instantiate_xformer(
             sequence_length, _GLOBAL_ATTENTION_RATIO
         ),
         "num_heads": heads,
+        "dim_head": embed_dim / heads,
     }
 
     multi_head_config = {
