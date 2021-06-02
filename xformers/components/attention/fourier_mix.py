@@ -1,9 +1,9 @@
 import torch
 
-from xformers.components.attention import Attention, register_attention
+from xformers.components.attention import Attention, AttentionConfig, register_attention
 
 
-@register_attention("fourier_mix")
+@register_attention("fourier_mix", AttentionConfig)
 class FourierMix(Attention):
     def __init__(self, *args, **kwargs):
         """

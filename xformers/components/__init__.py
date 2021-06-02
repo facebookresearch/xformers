@@ -23,5 +23,7 @@ def build_multi_head_attention(
     "foo": "bar"}` will find a class that was registered as "my_attention"
     (see :func:`register_attention`) and call .from_config on it."""
 
-    multi_head_config.attention = ATTENTION_REGISTRY[config.name].from_config(config)
+    multi_head_config.attention = ATTENTION_REGISTRY[
+        config.name
+    ].constructor.from_config(config)
     return MultiHeadDispatch.from_config(multi_head_config)

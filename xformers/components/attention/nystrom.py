@@ -46,7 +46,7 @@ class NystromSelfAttentionConfig(AttentionConfig):
     use_razavi_pinverse: Optional[bool]
 
 
-@register_attention("nystrom")
+@register_attention("nystrom", NystromSelfAttentionConfig)
 class NystromAttention(Attention):
     # TODO: update defaults for use_razavi_pinverse and inv_iterations
     def __init__(

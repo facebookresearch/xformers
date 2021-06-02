@@ -28,3 +28,4 @@ env.bak/
 venv.bak/
 .vscode/*
 benchmarks/LRA/datasets
+benchmarks/LRA/logs

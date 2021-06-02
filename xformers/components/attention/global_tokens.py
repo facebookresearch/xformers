@@ -25,7 +25,7 @@ class GlobalAttentionConfig(AttentionConfig):
     force_sparsity: bool
 
 
-@register_attention("global")
+@register_attention("global", GlobalAttentionConfig)
 class GlobalAttention(Attention):
     def __init__(
         self,
@@ -34,7 +34,7 @@ class GlobalAttention(Attention):
         causal: bool = False,
         force_sparsity: bool = False,
         *args,
-        **kwargs
+        **kwargs,
     ):
         """
         "Global" attention, as proposed for instance in _BigBird or _Longformer.
@@ -82,7 +82,7 @@ class GlobalAttention(Attention):
         v: torch.Tensor,
         att_mask: Optional[torch.Tensor] = None,
         *args,
-        **kwargs
+        **kwargs,
     ):
         # Make sure that the mask is on the right device
         if self.attention_mask.device != q.device:

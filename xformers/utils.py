@@ -1,8 +1,11 @@
 import importlib
 import os
 import sys
+from collections import namedtuple
 from dataclasses import dataclass, fields
 from typing import Any, Callable, Dict, List
+
+Item = namedtuple("Item", ["constructor", "config"])
 
 
 # credit: snippet used in ClassyVision (and probably other places)
@@ -20,9 +23,9 @@ def import_all_modules(root: str, base_module: str) -> List[str]:
 
 
 def get_registry_decorator(
-    class_registry, name_registry, reference_class
-) -> Callable[[str], Callable[[Any], Any]]:
-    def register_item(name):
+    class_registry, name_registry, reference_class, default_config
+) -> Callable[[str, Any], Callable[[Any], Any]]:
+    def register_item(name: str, config: Any = default_config):
         """Registers a subclass.
 
         This decorator allows xFormers to instantiate a given subclass
@@ -45,7 +48,7 @@ def get_registry_decorator(
                     )
                 )
 
-            class_registry[name] = cls
+            class_registry[name] = Item(constructor=cls, config=config)
             name_registry.add(cls.__name__)
             return cls
 

@@ -19,7 +19,7 @@ def build_feedforward(config: FeedforwardConfig):
     "foo": "bar"}` will find a class that was registered as "my_feedforward"
     (see :func:`register_feedforward`) and call .from_config on it."""
 
-    return FEEDFORWARD_REGISTRY[config.name].from_config(config)
+    return FEEDFORWARD_REGISTRY[config.name].constructor.from_config(config)
 
 
 """Registers a Feedforward subclass.
@@ -30,14 +30,19 @@ def build_feedforward(config: FeedforwardConfig):
     subclass, like this:
 
     .. code-block:: python
+        @dataclass
+        class MyConfig:
+            ...
 
-        @register_feedforward('my_ff')
+        @register_feedforward('my_ff', MyConfig)
         class MyFeedforward(Feedforward):
             ...
 
     To instantiate a feedforward from a configuration file, see :func:`build_feedforward`."""
-register_feedforward: Callable[[str], Callable[[Any], Any]] = get_registry_decorator(
-    FEEDFORWARD_REGISTRY, FEEDFORWARD_CLASS_NAMES, Feedforward
+register_feedforward: Callable[
+    [str, Any], Callable[[Any], Any]
+] = get_registry_decorator(
+    FEEDFORWARD_REGISTRY, FEEDFORWARD_CLASS_NAMES, Feedforward, FeedforwardConfig
 )
 
 from .mlp import MLP  # noqa

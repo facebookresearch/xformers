@@ -19,7 +19,7 @@ def build_positional_embedding(config: PositionEmbeddingConfig):
     "foo": "bar"}` will find a class that was registered as "my_position_encoding"
     (see :func:`register_positional_embedding`) and call .from_config on it."""
 
-    return POSITION_EMBEDDING_REGISTRY[config.name].from_config(config)
+    return POSITION_EMBEDDING_REGISTRY[config.name].constructor.from_config(config)
 
 
 """Registers a PositionEncoding subclass.
@@ -30,16 +30,22 @@ def build_positional_embedding(config: PositionEmbeddingConfig):
     subclass, like this:
 
     .. code-block:: python
+        @dataclass
+        class MyConfig:
+            ...
 
-        @register_positional_embedding('my_encoding')
+        @register_positional_embedding('my_encoding', MyConfig)
         class MyEncoding(PositionEncoding):
             ...
 
     To instantiate a position encoding from a configuration file, see :func:`build_positional_embedding`."""
 register_positional_embedding: Callable[
-    [str], Callable[[Any], Any]
+    [str, Any], Callable[[Any], Any]
 ] = get_registry_decorator(
-    POSITION_EMBEDDING_REGISTRY, POSITION_EMBEDDING_CLASS_NAMES, PositionEmbedding
+    POSITION_EMBEDDING_REGISTRY,
+    POSITION_EMBEDDING_CLASS_NAMES,
+    PositionEmbedding,
+    PositionEmbeddingConfig,
 )
 
 

@@ -14,7 +14,7 @@ class LinformerSelfAttentionConfig(AttentionConfig):
     k: Optional[int]  # dimension of the internal space
 
 
-@register_attention("linformer")
+@register_attention("linformer", LinformerSelfAttentionConfig)
 class LinformerAttention(Attention):
     def __init__(
         self, dropout: float, seq_len: int, k: Optional[int] = None, *args, **kwargs

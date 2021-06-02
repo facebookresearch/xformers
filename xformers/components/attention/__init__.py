@@ -27,7 +27,7 @@ def build_attention(config: AttentionConfig):
     "foo": "bar"}` will find a class that was registered as "my_attention"
     (see :func:`register_attention`) and call .from_config on it."""
 
-    return ATTENTION_REGISTRY[config.name].from_config(config)
+    return ATTENTION_REGISTRY[config.name].constructor.from_config(config)
 
 
 """Registers an Attention subclass.
@@ -38,14 +38,17 @@ def build_attention(config: AttentionConfig):
     subclass, like this:
 
     .. code-block:: python
+        @dataclass
+        class MyConfig:
+            ...
 
-        @register_attention('my_attention')
+        @register_attention('my_attention', MyConfig)
         class MyAttention(Attention):
             ...
 
     To instantiate an attention from a configuration file, see :func:`build_attention`."""
-register_attention: Callable[[str], Callable[[Any], Any]] = get_registry_decorator(
-    ATTENTION_REGISTRY, ATTENTION_CLASS_NAMES, Attention
+register_attention: Callable[[str, Any], Callable[[Any], Any]] = get_registry_decorator(
+    ATTENTION_REGISTRY, ATTENTION_CLASS_NAMES, Attention, AttentionConfig
 )
 
 

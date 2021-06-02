@@ -14,7 +14,7 @@ class MlpConfig(FeedforwardConfig):
     hidden_layer_multiplier: int
 
 
-@register_feedforward("MLP")
+@register_feedforward("MLP", MlpConfig)
 class MLP(Feedforward):
     def __init__(
         self,

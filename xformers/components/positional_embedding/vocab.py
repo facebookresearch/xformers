@@ -17,7 +17,7 @@ class VocabEmbeddingConfig(PositionEmbeddingConfig):
     dropout: float
 
 
-@register_positional_embedding("vocab")
+@register_positional_embedding("vocab", VocabEmbeddingConfig)
 class VocabEmbedding(PositionEmbedding):
     def __init__(
         self,

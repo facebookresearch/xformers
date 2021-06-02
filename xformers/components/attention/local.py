@@ -25,7 +25,7 @@ class LocalAttentionConfig(AttentionConfig):
     force_sparsity: bool
 
 
-@register_attention("local")
+@register_attention("local", LocalAttentionConfig)
 class LocalAttention(Attention):
     def __init__(
         self,

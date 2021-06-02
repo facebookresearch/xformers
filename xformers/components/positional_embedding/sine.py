@@ -4,11 +4,12 @@ import torch
 
 from xformers.components.positional_embedding import (
     PositionEmbedding,
+    PositionEmbeddingConfig,
     register_positional_embedding,
 )
 
 
-@register_positional_embedding("sine")
+@register_positional_embedding("sine", PositionEmbeddingConfig)
 class SinePositionalEmbedding(PositionEmbedding):
     def __init__(self, dim_model: int, *args, **kwargs):
         super().__init__()

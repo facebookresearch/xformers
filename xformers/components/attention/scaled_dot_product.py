@@ -3,11 +3,11 @@ from typing import Optional
 import torch
 from torch import nn
 
-from xformers.components.attention import Attention, register_attention
+from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
-@register_attention("scaled_dot_product")
+@register_attention("scaled_dot_product", AttentionConfig)
 class ScaledDotProduct(Attention):
     r"""
     Implementing the Scaled Dot-Product attention proposed in

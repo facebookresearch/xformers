@@ -28,7 +28,7 @@ class FavorAttentionConfig(AttentionConfig):
     feature_map: Optional[FeatureMapType]
 
 
-@register_attention("favor")
+@register_attention("favor", FavorAttentionConfig)
 class FavorAttention(Attention):
     def __init__(
         self,

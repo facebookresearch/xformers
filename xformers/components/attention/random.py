@@ -25,7 +25,7 @@ class RandomAttentionConfig(AttentionConfig):
     force_sparsity: bool  # use sparsity in any case (potentially slower)
 
 
-@register_attention("random")
+@register_attention("random", RandomAttentionConfig)
 class RandomAttention(Attention):
     def __init__(
         self,
