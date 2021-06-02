@@ -1,9 +1,9 @@
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Set
 
 import torch
 
-from xformers.utils import import_all_modules
+from xformers.utils import get_registry_decorator, import_all_modules
 
 from ._sputnik_sparse import SparseCS
 from .base import Attention, AttentionConfig  # noqa
@@ -11,7 +11,7 @@ from .base import Attention, AttentionConfig  # noqa
 # Credits: Classy Vision registry mechanism
 
 ATTENTION_REGISTRY: Dict[str, Any] = {}
-ATTENTION_CLASS_NAMES = set()
+ATTENTION_CLASS_NAMES: Set[str] = set()
 
 # Arbitrary threshold for now,
 # in between dense and sparse matrix algorithms for the attention mechanism
@@ -30,8 +30,7 @@ def build_attention(config: AttentionConfig):
     return ATTENTION_REGISTRY[config.name].from_config(config)
 
 
-def register_attention(name):
-    """Registers an Attention subclass.
+"""Registers an Attention subclass.
 
     This decorator allows xFormers to instantiate a subclass of Attention
     from a configuration file, even if the class itself is not part of the
@@ -45,28 +44,9 @@ def register_attention(name):
             ...
 
     To instantiate an attention from a configuration file, see :func:`build_attention`."""
-
-    def register_attention_cls(cls):
-        if name in ATTENTION_REGISTRY:
-            raise ValueError("Cannot register duplicate attention ({})".format(name))
-        if not issubclass(cls, Attention):
-            raise ValueError(
-                "Attention ({}: {}) must extend the base Attention class".format(
-                    name, cls.__name__
-                )
-            )
-        if cls.__name__ in ATTENTION_CLASS_NAMES:
-            raise ValueError(
-                "Cannot register attention with duplicate class name ({})".format(
-                    cls.__name__
-                )
-            )
-
-        ATTENTION_REGISTRY[name] = cls
-        ATTENTION_CLASS_NAMES.add(cls.__name__)
-        return cls
-
-    return register_attention_cls
+register_attention: Callable[[str], Callable[[Any], Any]] = get_registry_decorator(
+    ATTENTION_REGISTRY, ATTENTION_CLASS_NAMES, Attention
+)
 
 
 def maybe_sparsify(matrix):

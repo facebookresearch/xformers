@@ -1,15 +1,14 @@
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Set
 
-from xformers.components import Activation  # noqa
-from xformers.utils import import_all_modules
+from xformers.utils import get_registry_decorator, import_all_modules
 
 from .base import Feedforward, FeedforwardConfig  # noqa
 
 # Credits: Classy Vision registry mechanism
 
 FEEDFORWARD_REGISTRY: Dict[str, Any] = {}
-FEEDFORWARD_CLASS_NAMES = set()
+FEEDFORWARD_CLASS_NAMES: Set[str] = set()
 
 
 def build_feedforward(config: FeedforwardConfig):
@@ -23,8 +22,7 @@ def build_feedforward(config: FeedforwardConfig):
     return FEEDFORWARD_REGISTRY[config.name].from_config(config)
 
 
-def register_feedforward(name):
-    """Registers a Feedforward subclass.
+"""Registers a Feedforward subclass.
 
     This decorator allows xFormers to instantiate a subclass of Feedforward
     from a configuration file, even if the class itself is not part of the
@@ -38,31 +36,9 @@ def register_feedforward(name):
             ...
 
     To instantiate a feedforward from a configuration file, see :func:`build_feedforward`."""
-
-    def register_feedforward_cls(cls):
-        if name in FEEDFORWARD_REGISTRY:
-            raise ValueError("Cannot register duplicate attention ({})".format(name))
-
-        if not issubclass(cls, Feedforward):
-            raise ValueError(
-                "Feedforward ({}: {}) must extend the base Feedforward class".format(
-                    name, cls.__name__
-                )
-            )
-
-        if cls.__name__ in FEEDFORWARD_CLASS_NAMES:
-            raise ValueError(
-                "Cannot register attention with duplicate class name ({})".format(
-                    cls.__name__
-                )
-            )
-
-        FEEDFORWARD_REGISTRY[name] = cls
-        FEEDFORWARD_CLASS_NAMES.add(cls.__name__)
-        return cls
-
-    return register_feedforward_cls
-
+register_feedforward: Callable[[str], Callable[[Any], Any]] = get_registry_decorator(
+    FEEDFORWARD_REGISTRY, FEEDFORWARD_CLASS_NAMES, Feedforward
+)
 
 from .mlp import MLP  # noqa
 

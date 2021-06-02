@@ -1,14 +1,14 @@
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Set
 
-from xformers.utils import import_all_modules
+from xformers.utils import get_registry_decorator, import_all_modules
 
 from .base import PositionEmbedding, PositionEmbeddingConfig  # noqa
 
 # Credits: Classy Vision registry mechanism
 
 POSITION_EMBEDDING_REGISTRY: Dict[str, Any] = {}
-POSITION_EMBEDDING_CLASS_NAMES = set()
+POSITION_EMBEDDING_CLASS_NAMES: Set[str] = set()
 
 
 def build_positional_embedding(config: PositionEmbeddingConfig):
@@ -22,8 +22,7 @@ def build_positional_embedding(config: PositionEmbeddingConfig):
     return POSITION_EMBEDDING_REGISTRY[config.name].from_config(config)
 
 
-def register_positional_embedding(name):
-    """Registers a PositionEncoding subclass.
+"""Registers a PositionEncoding subclass.
 
     This decorator allows xFormers to instantiate a subclass of PositionEncoding
     from a configuration file, even if the class itself is not part of the
@@ -37,30 +36,11 @@ def register_positional_embedding(name):
             ...
 
     To instantiate a position encoding from a configuration file, see :func:`build_positional_embedding`."""
-
-    def register_positional_embedding_cls(cls):
-        if name in POSITION_EMBEDDING_REGISTRY:
-            raise ValueError("Cannot register duplicate attention ({})".format(name))
-
-        if not issubclass(cls, PositionEmbedding):
-            raise ValueError(
-                "Feedforward ({}: {}) must extend the base Feedforward class".format(
-                    name, cls.__name__
-                )
-            )
-
-        if cls.__name__ in POSITION_EMBEDDING_CLASS_NAMES:
-            raise ValueError(
-                "Cannot register attention with duplicate class name ({})".format(
-                    cls.__name__
-                )
-            )
-
-        POSITION_EMBEDDING_REGISTRY[name] = cls
-        POSITION_EMBEDDING_CLASS_NAMES.add(cls.__name__)
-        return cls
-
-    return register_positional_embedding_cls
+register_positional_embedding: Callable[
+    [str], Callable[[Any], Any]
+] = get_registry_decorator(
+    POSITION_EMBEDDING_REGISTRY, POSITION_EMBEDDING_CLASS_NAMES, PositionEmbedding
+)
 
 
 from .sine import SinePositionalEmbedding  # noqa
