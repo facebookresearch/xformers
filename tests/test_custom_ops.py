@@ -4,6 +4,7 @@ import torch
 # needed to register custom ops
 import xformers  # noqa: F401
 import xformers.components.attention.core
+from xformers.components.attention._sputnik_sparse import _csr_to_coo
 from xformers.components.attention.core import (
     _broadcast_batch,
     _create_random_sparsity,
@@ -175,6 +176,39 @@ def test_sddmm_csr(L, M, K):
     fn_gt = torch.ops.xformers.sddmm_sputnik
 
     res = fn(a, b, row_indices, row_offsets, column_indices)
+    res_gt = fn_gt(a, b, row_indices, row_offsets, column_indices)
+
+    assert res.dtype == res_gt.dtype
+    assert torch.allclose(res, res_gt, atol=1e-6)
+
+
+@cuda_only
+@pytest.mark.parametrize("K", [32, 17])
+@pytest.mark.parametrize("M", [30, 17])
+@pytest.mark.parametrize("L", [30, 17])
+def test_sddmm_coo(L, M, K):
+    device = torch.device("cuda")
+    # TODO add more checks for different nnz
+    B = 8
+    prob = 0.5
+    a = torch.rand(B, L, K, device=device)
+    b = torch.rand(B, M, K, device=device)
+    mask = _create_random_sparsity(
+        torch.ones(B, L, M, dtype=torch.bool, device=device), prob
+    )
+
+    mask_csr = xformers.components.attention.core.SparseCS(mask, device)
+    row_indices = mask_csr.row_indices
+    row_offsets = mask_csr.row_offsets
+    column_indices = mask_csr.column_indices
+
+    fn = torch.ops.xformers.coo_sddmm
+    fn_gt = torch.ops.xformers.sddmm_sputnik
+
+    # convert from csr to coo
+    row_coo, _ = _csr_to_coo(L, M, row_offsets, column_indices)
+
+    res = fn(a, b, row_indices, row_coo, column_indices)
     res_gt = fn_gt(a, b, row_indices, row_offsets, column_indices)
 
     assert res.dtype == res_gt.dtype

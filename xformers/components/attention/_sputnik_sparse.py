@@ -1,6 +1,14 @@
 import torch
 
 
+def _csr_to_coo(m, n, row_offsets, column_indices):
+    # convert from compressed rows to uncompressed
+    indices = torch.arange(m, dtype=row_offsets.dtype, device=row_offsets.device)
+    row_sizes = torch.diff(row_offsets)
+    row_coo = torch.repeat_interleave(indices, row_sizes.long())
+    return row_coo, column_indices
+
+
 def _sddmm_func(a, b, row_indices, row_offsets, column_indices):
     sparsity = 1 - column_indices.shape[0] / (a.shape[1] * b.shape[1])
     if sparsity > 0.99 and a.is_cuda:
