@@ -1,3 +1,5 @@
+import itertools
+
 import pytest
 import torch
 
@@ -96,3 +98,47 @@ def test_local_2d_gaussian_distribution(H, W, sigma):
     d = AP.local_2d_gausian_distribution(H, W, sigma=sigma)
     d_ref = _local_2d_gaussian_distribution(H, W, sigma=sigma)
     assert torch.allclose(d, d_ref)
+
+
+@pytest.mark.parametrize("window_size", [2, 4])
+@pytest.mark.parametrize("W", [8, 16])
+@pytest.mark.parametrize("H", [8, 16])
+def test_swin_attention_pattern(H, W, window_size):
+    # test non-shifted case
+    d = AP.swin_attention_pattern(H, W, window_size, shift_size=0)
+
+    # partition the self-attention into regions of window_size
+    # similar to the window_partition function from the original paper
+    h = H // window_size
+    w = W // window_size
+    d = d.reshape(h, window_size, w, window_size, h, window_size, w, window_size)
+
+    for y, x in itertools.product(range(h), range(w)):
+        # every region should fully attend to itself
+        assert torch.all(d[y, :, x, :, y, :, x, :])
+        for y2, x2 in itertools.product(range(h), range(w)):
+            if y == y2 or x == x2:
+                continue
+            # different regions shouldn't attend between each other
+            assert torch.all(~d[y, :, x, :, y2, :, x2, :])
+
+    # test shifted case
+    # in the shifted case, the self-attention should be the same
+    # as in the non-shifted case, when we pad the inputs, apply the operations and then
+    # remove the padding from the result
+    d_shifted = AP.swin_attention_pattern(
+        H, W, window_size, shift_size=window_size // 2
+    )
+
+    # add padding and remove shift
+    h = H + window_size
+    w = W + window_size
+    d_padded = AP.swin_attention_pattern(h, w, window_size, shift_size=0)
+    d_padded = d_padded.reshape(h, w, h, w)
+
+    # remove padding elements
+    half_size = window_size // 2
+    s = slice(half_size, -half_size)
+    d_padded = d_padded[s, s, s, s].reshape(H * W, H * W)
+
+    assert torch.all(d_padded == d_shifted)
