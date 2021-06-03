@@ -6,13 +6,13 @@ import torch
 from ._sputnik_sparse import SparseCS
 
 
-def _create_random_sparsity(matrix, sparsity):
+def _create_random_sparsity(matrix, sparsity, divisible_by=4):
     assert matrix.ndim == 3
     keep = torch.rand_like(matrix[0], dtype=torch.float32) > sparsity
     nonzero = torch.nonzero(keep)
     nnz = nonzero.shape[0]
     # NOTE: need to make it a multiple of 4 for sputnik
-    nonzero = nonzero[: (nnz - nnz % 4)]
+    nonzero = nonzero[: (nnz - nnz % divisible_by)]
     i, j = nonzero.unbind(1)
     output = torch.zeros_like(matrix)
     bdim = torch.arange(matrix.shape[0], device=matrix.device)[:, None]
