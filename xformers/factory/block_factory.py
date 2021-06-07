@@ -168,7 +168,9 @@ class xFormerDecoderBlock(nn.Module):
         self.ln3 = nn.LayerNorm(config.dim_model)
 
         self.pose_encoding = (
-            build_positional_embedding(config.position_encoding_config) if config.position_encoding_config else None
+            build_positional_embedding(config.position_encoding_config)
+            if config.position_encoding_config
+            else None
         )
 
         self.attn1 = build_multi_head_attention(config.multi_head_config_pre_encoder)
@@ -197,20 +199,31 @@ class xFormerDecoderBlock(nn.Module):
 
         if self.layer_norm_style == LayerNormStyle.Post:
             # Masked multi head attention
-            x = self.ln1(target + self.attn1(target, target, target, att_mask=decoder_att_mask))
+            x = self.ln1(
+                target + self.attn1(target, target, target, att_mask=decoder_att_mask)
+            )
 
             # Include the memory/Encoder results
-            x = self.ln2(x + self.attn2(key=memory, value=memory, query=x, att_mask=encoder_att_mask))
+            x = self.ln2(
+                x
+                + self.attn2(
+                    key=memory, value=memory, query=x, att_mask=encoder_att_mask
+                )
+            )
 
             # FF
             x = self.ln3(x + self.ff(x))
         else:
             # Masked multi head attention
             target_norm = self.ln1(target)
-            x = target + self.attn1(target_norm, target_norm, target_norm, att_mask=decoder_att_mask)
+            x = target + self.attn1(
+                target_norm, target_norm, target_norm, att_mask=decoder_att_mask
+            )
 
             # Include the memory/Encoder results
-            x = x + self.attn2(key=memory, value=memory, query=self.ln2(x), att_mask=encoder_att_mask)
+            x = x + self.attn2(
+                key=memory, value=memory, query=self.ln2(x), att_mask=encoder_att_mask
+            )
 
             # FF
             x = x + self.ff(self.ln3(x))
