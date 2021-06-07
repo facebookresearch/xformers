@@ -6,10 +6,6 @@ from xformers.components import Activation
 from xformers.components.attention import ATTENTION_REGISTRY
 from xformers.components.feedforward import FEEDFORWARD_REGISTRY
 from xformers.factory import (
-    AttentionConfig,
-    FeedforwardConfig,
-    MultiHeadDispatchConfig,
-    PositionEmbeddingConfig,
     xFormerDecoderBlock,
     xFormerDecoderConfig,
     xFormerEncoderBlock,
@@ -65,6 +61,7 @@ def test_xformer_encoder_block(
         "num_heads": heads,
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
+        "attention": attention_config,
     }
 
     feedforward_config = {
@@ -84,10 +81,9 @@ def test_xformer_encoder_block(
 
     block_config = xFormerEncoderConfig(
         dim_model=MODEL,
-        attention_config=AttentionConfig(**attention_config),
-        multi_head_config=MultiHeadDispatchConfig(**multi_head_config),
-        feedforward_config=FeedforwardConfig(**feedforward_config),
-        position_encoding_config=PositionEmbeddingConfig(**position_encoding_config),
+        multi_head_config=multi_head_config,
+        feedforward_config=feedforward_config,
+        position_encoding_config=position_encoding_config,
     )
 
     # Test that the whole block can be instantiated
@@ -141,6 +137,7 @@ def test_xformer_decoder_block(
         "num_heads": heads,
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
+        "attention": attention_config,
     }
 
     feedforward_config = {
@@ -160,24 +157,17 @@ def test_xformer_decoder_block(
 
     encoder_block_config = xFormerEncoderConfig(
         dim_model=MODEL,
-        attention_config=AttentionConfig(**attention_config),
-        multi_head_config=MultiHeadDispatchConfig(**multi_head_config),
-        feedforward_config=FeedforwardConfig(**feedforward_config),
-        position_encoding_config=PositionEmbeddingConfig(**position_encoding_config),
+        multi_head_config=multi_head_config,
+        feedforward_config=feedforward_config,
+        position_encoding_config=position_encoding_config,
     )
 
     decoder_block_config = xFormerDecoderConfig(
         dim_model=MODEL,
-        attention_configs=(
-            AttentionConfig(**attention_config),
-            AttentionConfig(**attention_config),
-        ),
-        multi_head_configs=(
-            MultiHeadDispatchConfig(**multi_head_config),
-            MultiHeadDispatchConfig(**multi_head_config),
-        ),
-        feedforward_config=FeedforwardConfig(**feedforward_config),
-        position_encoding_config=PositionEmbeddingConfig(**position_encoding_config),
+        multi_head_config_pre_encoder=multi_head_config,
+        multi_head_config_post_encoder=multi_head_config,
+        feedforward_config=feedforward_config,
+        position_encoding_config=position_encoding_config,
     )
 
     # Test that the whole block can be instantiated

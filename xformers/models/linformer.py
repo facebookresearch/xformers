@@ -10,7 +10,7 @@ from xformers.components.feedforward import MLP
 from xformers.models.base import ModelConfig
 
 
-@dataclass(init=False)
+@dataclass
 class LinformerConfig(ModelConfig):
     k: int  # The dimension of the space on which the key and values are projected
 

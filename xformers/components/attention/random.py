@@ -18,11 +18,15 @@ from xformers.components.attention.attention_patterns import (
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
-@dataclass(init=False)
+@dataclass
 class RandomAttentionConfig(AttentionConfig):
-    r: float  # the ratio of keys that the query can attend to. 1.0 means dense attention
-    constant_masking: bool  # whether the randomness is per query or defined at construction time
-    force_sparsity: bool  # use sparsity in any case (potentially slower)
+    r: Optional[
+        float
+    ]  # the ratio of keys that the query can attend to. 1.0 means dense attention
+    constant_masking: Optional[
+        bool
+    ]  # whether the randomness is per query or defined at construction time
+    force_sparsity: Optional[bool]  # use sparsity in any case (potentially slower)
 
 
 @register_attention("random", RandomAttentionConfig)
@@ -35,7 +39,7 @@ class RandomAttention(Attention):
         constant_masking: bool = True,
         force_sparsity: bool = False,
         *args,
-        **kwargs
+        **kwargs,
     ):
         """
         "Random" attention, as proposed for instance in _BigBird.
@@ -76,7 +80,7 @@ class RandomAttention(Attention):
         v: torch.Tensor,
         att_mask: Optional[torch.Tensor] = None,
         *args,
-        **kwargs
+        **kwargs,
     ):
         # Rand masking
         if not self.constant_masking or self.rand_attention_mask is None:
@@ -90,7 +94,3 @@ class RandomAttention(Attention):
         )
 
         return scaled_dot_product_attention(q, k, v, mask, dropout=self.attn_drop)
-
-    @classmethod
-    def from_config(cls, config: AttentionConfig) -> "Attention":
-        return cls(**RandomAttentionConfig.as_patchy_dict(config))

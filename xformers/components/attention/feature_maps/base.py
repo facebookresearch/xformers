@@ -1,19 +1,21 @@
 from abc import abstractmethod
+from dataclasses import asdict, dataclass
 from typing import Optional
 
 import torch
-
-from xformers.utils import ExtensibleConfig
 
 """
 Feature maps allow for a given query or key to be encoded in a different space.
 """
 
 
-class FeatureMapConfig(ExtensibleConfig):
+@dataclass
+class FeatureMapConfig:
     name: str
     dim_features: int
     iter_before_redraw: Optional[int]
+    normalize_inputs: Optional[bool]
+    epsilon: Optional[float]
 
 
 class FeatureMap(torch.nn.Module):
@@ -42,4 +44,10 @@ class FeatureMap(torch.nn.Module):
 
     @classmethod
     def from_config(cls, config: FeatureMapConfig) -> "FeatureMap":
-        return cls(**FeatureMapConfig.as_patchy_dict(config))
+        # Generate the class inputs from the config
+        fields = asdict(config)
+
+        # Skip all Nones so that default values are used
+        fields = {k: v for k, v in fields.items() if v is not None}
+
+        return cls(**fields)

@@ -1,15 +1,13 @@
 from abc import ABCMeta, abstractmethod
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Optional
 
 import torch
 import torch.nn as nn
 
-from xformers.utils import ExtensibleConfig
 
-
-@dataclass(init=False)
-class AttentionConfig(ExtensibleConfig):
+@dataclass
+class AttentionConfig:
     """Parameters required for all Attentions.
     Can accept and store extra parameters.
     """
@@ -30,7 +28,13 @@ class Attention(nn.Module, metaclass=ABCMeta):
 
     @classmethod
     def from_config(cls, config: AttentionConfig) -> "Attention":
-        return cls(**AttentionConfig.as_patchy_dict(config))
+        # Generate the class inputs from the config
+        fields = asdict(config)
+
+        # Skip all Nones so that default values are used
+        fields = {k: v for k, v in fields.items() if v is not None}
+
+        return cls(**fields)
 
     @abstractmethod
     def forward(

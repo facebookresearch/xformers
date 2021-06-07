@@ -18,11 +18,11 @@ from xformers.components.attention.attention_patterns import (
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
-@dataclass(init=False)
+@dataclass
 class GlobalAttentionConfig(AttentionConfig):
-    causal: bool
     attention_query_mask: torch.Tensor  # Mark the queries which have global attention
-    force_sparsity: bool
+    causal: Optional[bool]
+    force_sparsity: Optional[bool]
 
 
 @register_attention("global", GlobalAttentionConfig)
@@ -33,8 +33,8 @@ class GlobalAttention(Attention):
         attention_query_mask: torch.Tensor,
         causal: bool = False,
         force_sparsity: bool = False,
-        *args,
-        **kwargs,
+        *_,
+        **__,
     ):
         """
         "Global" attention, as proposed for instance in _BigBird or _Longformer.
@@ -81,8 +81,8 @@ class GlobalAttention(Attention):
         k: torch.Tensor,
         v: torch.Tensor,
         att_mask: Optional[torch.Tensor] = None,
-        *args,
-        **kwargs,
+        *_,
+        **__,
     ):
         # Make sure that the mask is on the right device
         if self.attention_mask.device != q.device:
@@ -96,7 +96,3 @@ class GlobalAttention(Attention):
         return scaled_dot_product_attention(
             q, k, v, att_mask=mask, dropout=self.attn_drop
         )
-
-    @classmethod
-    def from_config(cls, config: AttentionConfig) -> "Attention":
-        return cls(**GlobalAttentionConfig.as_patchy_dict(config))

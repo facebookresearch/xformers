@@ -1,15 +1,14 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Optional
 
 import torch
 import torch.nn as nn
 
-from xformers.components.attention import Attention
-from xformers.utils import ExtensibleConfig
+from xformers.components.attention import Attention  # , build_attention
 
 
-@dataclass(init=False)
-class MultiHeadDispatchConfig(ExtensibleConfig):
+@dataclass
+class MultiHeadDispatchConfig:
     dim_model: int
     residual_dropout: float
     num_heads: int
@@ -124,4 +123,10 @@ class MultiHeadDispatch(nn.Module):
 
     @classmethod
     def from_config(cls, config: MultiHeadDispatchConfig):
-        return cls(**MultiHeadDispatchConfig.as_patchy_dict(config))
+        # Generate the class inputs from the config
+        fields = asdict(config)
+
+        # Skip all Nones so that default values are used
+        fields = {k: v for k, v in fields.items() if v is not None}
+
+        return cls(**fields)

@@ -2,7 +2,7 @@ import importlib
 import os
 import sys
 from collections import namedtuple
-from dataclasses import dataclass, fields
+from dataclasses import fields
 from typing import Any, Callable, Dict, List
 
 Item = namedtuple("Item", ["constructor", "config"])
@@ -57,30 +57,17 @@ def get_registry_decorator(
     return register_item
 
 
-@dataclass(init=False)
-class ExtensibleConfig:
-    def __init__(self, *_, **kwargs):
-        """ Accept any extra keyword at construction time, and store them """
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+def generate_matching_config(superset: Dict[str, Any], config_class: Any) -> Any:
+    """Given a superset of the inputs and a reference config class,
+    return exactly the needed config"""
 
-    @classmethod
-    def from_other(cls, config: "ExtensibleConfig"):
-        """Given another config -could be subtyped and not completely compatible-
-        try to fill in the compatible fields"""
+    # Extract the required fields
+    field_names = list(map(lambda x: x.name, fields(config_class)))
+    subset = {k: v for k, v in superset.items() if k in field_names}
 
-        names = {f.name for f in fields(cls)}
-        kwargs = {
-            n: getattr(config, n) for n in filter(lambda x: hasattr(config, x), names)
-        }
-        return cls(**kwargs)
+    # The missing fields get Noned
+    for k in field_names:
+        if k not in subset.keys():
+            subset[k] = None
 
-    @classmethod
-    def as_patchy_dict(cls, config: "ExtensibleConfig") -> Dict[str, Any]:
-        """Return a dict which covers all the set fields in this class.
-        .. warning: Note that this could be incomplete given the config definition"""
-
-        names = {f.name for f in fields(cls)}
-        return {
-            n: getattr(config, n) for n in filter(lambda x: hasattr(config, x), names)
-        }
+    return config_class(**subset)

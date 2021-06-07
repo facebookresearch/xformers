@@ -11,7 +11,7 @@ from xformers.components.positional_embedding import (
 )
 
 
-@dataclass(init=False)
+@dataclass
 class VocabEmbeddingConfig(PositionEmbeddingConfig):
     vocab_size: int
     dropout: float
@@ -55,7 +55,3 @@ class VocabEmbedding(PositionEmbedding):
         X = self.dropout(X)
 
         return X
-
-    @classmethod
-    def from_config(cls, config: PositionEmbeddingConfig) -> "PositionEmbedding":
-        return cls(**VocabEmbeddingConfig.as_patchy_dict(config))

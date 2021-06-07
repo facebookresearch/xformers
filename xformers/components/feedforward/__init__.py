@@ -1,7 +1,11 @@
 from pathlib import Path
-from typing import Any, Callable, Dict, Set
+from typing import Any, Callable, Dict, Set, Union
 
-from xformers.utils import get_registry_decorator, import_all_modules
+from xformers.utils import (
+    generate_matching_config,
+    get_registry_decorator,
+    import_all_modules,
+)
 
 from .base import Feedforward, FeedforwardConfig  # noqa
 
@@ -11,7 +15,7 @@ FEEDFORWARD_REGISTRY: Dict[str, Any] = {}
 FEEDFORWARD_CLASS_NAMES: Set[str] = set()
 
 
-def build_feedforward(config: FeedforwardConfig):
+def build_feedforward(config: Union[Dict[str, Any], FeedforwardConfig]):
     """Builds a feedforward from a config.
 
     This assumes a 'name' key in the config which is used to determine what
@@ -19,7 +23,16 @@ def build_feedforward(config: FeedforwardConfig):
     "foo": "bar"}` will find a class that was registered as "my_feedforward"
     (see :func:`register_feedforward`) and call .from_config on it."""
 
-    return FEEDFORWARD_REGISTRY[config.name].constructor.from_config(config)
+    if not isinstance(config, FeedforwardConfig):
+        config_instance = generate_matching_config(
+            config, FEEDFORWARD_REGISTRY[config["name"]].config
+        )
+    else:
+        config_instance = config
+
+    return FEEDFORWARD_REGISTRY[config_instance.name].constructor.from_config(
+        config_instance
+    )
 
 
 """Registers a Feedforward subclass.

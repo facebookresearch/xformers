@@ -15,14 +15,9 @@ from sklearn.model_selection import ParameterGrid
 from torch.autograd.profiler import record_function
 from tqdm import tqdm
 
-from xformers.components import (
-    ATTENTION_REGISTRY,
-    Activation,
-    AttentionConfig,
-    MultiHeadDispatchConfig,
-)
-from xformers.components.feedforward import FEEDFORWARD_REGISTRY, FeedforwardConfig
-from xformers.components.positional_embedding import PositionEmbeddingConfig
+from xformers.components import Activation
+from xformers.components.attention import ATTENTION_REGISTRY
+from xformers.components.feedforward import FEEDFORWARD_REGISTRY
 from xformers.factory.block_factory import xFormerEncoderBlock, xFormerEncoderConfig
 
 _use_cuda = torch.cuda.is_available()
@@ -208,6 +203,7 @@ def instantiate_xformer(
         "num_heads": heads,
         "dim_model": embed_dim,
         "residual_dropout": residual_dropout,
+        "attention": attention_config,
     }
 
     feedforward_config = {
@@ -218,7 +214,7 @@ def instantiate_xformer(
         "hidden_layer_multiplier": 4,
     }
 
-    position_encoding_config = {
+    position_embedding_config = {
         "name": "sine",
         "dim_model": embed_dim,
         "seq_len": sequence_length,
@@ -226,10 +222,9 @@ def instantiate_xformer(
 
     block_config = xFormerEncoderConfig(
         dim_model=embed_dim,
-        attention_config=AttentionConfig(**attention_config),
-        multi_head_config=MultiHeadDispatchConfig(**multi_head_config),
-        feedforward_config=FeedforwardConfig(**feedforward_config),
-        position_encoding_config=PositionEmbeddingConfig(**position_encoding_config),
+        multi_head_config=multi_head_config,
+        feedforward_config=feedforward_config,
+        position_encoding_config=position_embedding_config,
     )
 
     block = xFormerEncoderBlock.from_config(block_config)

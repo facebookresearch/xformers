@@ -26,16 +26,16 @@ test_configs = [
                     "vocab_size": 64,
                 },
                 "num_layers": 3,
-                "attention_config": {
-                    "name": "linformer",
-                    "dropout": 0,
-                    "causal": True,
-                    "seq_len": 512,
-                },
                 "multi_head_config": {
                     "num_heads": 4,
                     "dim_model": 384,
                     "residual_dropout": 0,
+                    "attention": {
+                        "name": "linformer",
+                        "dropout": 0,
+                        "causal": True,
+                        "seq_len": 512,
+                    },
                 },
                 "feedforward_config": {
                     "name": "MLP",
@@ -55,32 +55,28 @@ test_configs = [
                     "vocab_size": 64,
                 },
                 "num_layers": 2,
-                "attention_configs": [
-                    {
+                "multi_head_config_pre_encoder": {
+                    "num_heads": 4,
+                    "dim_model": 384,
+                    "residual_dropout": 0,
+                    "attention": {
                         "name": "linformer",
                         "dropout": 0,
                         "causal": True,
                         "seq_len": 512,
                     },
-                    {
+                },
+                "multi_head_config_post_encoder": {
+                    "num_heads": 4,
+                    "dim_model": 384,
+                    "residual_dropout": 0,
+                    "attention": {
                         "name": "linformer",
                         "dropout": 0,
-                        "causal": False,
+                        "causal": True,
                         "seq_len": 512,
                     },
-                ],
-                "multi_head_configs": [
-                    {
-                        "num_heads": 4,
-                        "dim_model": 384,
-                        "residual_dropout": 0,
-                    },
-                    {
-                        "num_heads": 4,
-                        "dim_model": 384,
-                        "residual_dropout": 0,
-                    },
-                ],
+                },
                 "feedforward_config": {
                     "name": "MLP",
                     "dim_model": 384,

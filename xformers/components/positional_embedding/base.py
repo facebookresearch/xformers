@@ -1,13 +1,11 @@
 from abc import ABCMeta, abstractmethod
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 import torch.nn as nn
 
-from xformers.utils import ExtensibleConfig
 
-
-@dataclass(init=False)
-class PositionEmbeddingConfig(ExtensibleConfig):
+@dataclass
+class PositionEmbeddingConfig:
     name: str
     dim_model: int
     seq_len: int
@@ -20,4 +18,9 @@ class PositionEmbedding(nn.Module, metaclass=ABCMeta):
 
     @classmethod
     def from_config(cls, config: PositionEmbeddingConfig) -> "PositionEmbedding":
-        return cls(**PositionEmbeddingConfig.as_patchy_dict(config))
+        # Generate the class inputs from the config
+        fields = asdict(config)
+
+        # Skip all Nones so that default values are used
+        fields = {k: v for k, v in fields.items() if v is not None}
+        return cls(**fields)

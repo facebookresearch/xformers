@@ -12,7 +12,7 @@ from xformers.components.attention.core import (
 from xformers.components.attention.utils import iterative_pinv
 
 
-@dataclass(init=False)
+@dataclass
 class NystromSelfAttentionConfig(AttentionConfig):
     """
     num_heads               Number of heads.
@@ -169,7 +169,3 @@ class NystromAttention(Attention):
 
     def _tril_mask(self, dim_1: int, dim_2: int, dim_3: int):
         return torch.tril(torch.ones(dim_1, dim_2, dim_3, dtype=torch.bool), diagonal=0)
-
-    @classmethod
-    def from_config(cls, config: AttentionConfig) -> "Attention":
-        return cls(**NystromSelfAttentionConfig.as_patchy_dict(config))

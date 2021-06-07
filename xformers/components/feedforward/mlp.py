@@ -9,7 +9,7 @@ from xformers.components.feedforward import Feedforward, FeedforwardConfig
 from . import register_feedforward
 
 
-@dataclass(init=False)
+@dataclass
 class MlpConfig(FeedforwardConfig):
     hidden_layer_multiplier: int
 
@@ -41,7 +41,3 @@ class MLP(Feedforward):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.mlp(inputs)
-
-    @classmethod
-    def from_config(cls, config: FeedforwardConfig) -> "Feedforward":
-        return cls(**MlpConfig.as_patchy_dict(config))

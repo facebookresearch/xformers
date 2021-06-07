@@ -10,11 +10,10 @@ from xformers.factory.block_factory import (
     xFormerEncoderBlock,
     xFormerEncoderConfig,
 )
-from xformers.utils import ExtensibleConfig
 
 
 @dataclass(init=False)
-class xFormerConfig(ExtensibleConfig):
+class xFormerConfig:
     block_configs: List[Union[xFormerEncoderConfig, xFormerDecoderConfig]]
 
     def __init__(self, block_configs):

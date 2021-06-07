@@ -1,18 +1,22 @@
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
 
-from xformers.components import MultiHeadDispatchConfig, build_multi_head_attention
-from xformers.components.attention import AttentionConfig  # noqa
-from xformers.components.feedforward import FeedforwardConfig, build_feedforward
+from xformers.components import build_multi_head_attention
+from xformers.components.feedforward import (
+    FEEDFORWARD_REGISTRY,
+    FeedforwardConfig,
+    build_feedforward,
+)
 from xformers.components.positional_embedding import (
+    POSITION_EMBEDDING_REGISTRY,
     PositionEmbeddingConfig,
     build_positional_embedding,
 )
-from xformers.utils import ExtensibleConfig
+from xformers.utils import generate_matching_config
 
 
 class BlockType(str, Enum):
@@ -30,58 +34,80 @@ class LayerNormStyle(str, Enum):
     Post = "post"
 
 
-@dataclass
-class _xFormerBlockConfig(ExtensibleConfig):
+@dataclass(init=False)
+class _xFormerBlockConfig:
     dim_model: int
     feedforward_config: FeedforwardConfig
-    position_encoding_config: Optional[PositionEmbeddingConfig]
+    position_encoding_config: PositionEmbeddingConfig
 
-    def __post_init__(self):
-        self.feedforward_config = FeedforwardConfig(**self.feedforward_config)
-        if self.position_encoding_config:
-            self.position_encoding_config = PositionEmbeddingConfig(
-                **self.position_encoding_config
-            )
+    def __init__(
+        self,
+        dim_model: int,
+        feedforward_config: Dict[str, Any],
+        position_encoding_config: Dict[str, Any],
+    ):
+        self.dim_model = dim_model
+
+        self.feedforward_config = generate_matching_config(
+            feedforward_config, FEEDFORWARD_REGISTRY[feedforward_config["name"]].config
+        )
+
+        self.position_encoding_config = generate_matching_config(
+            position_encoding_config,
+            POSITION_EMBEDDING_REGISTRY[position_encoding_config["name"]].config,
+        )
 
 
-@dataclass
+@dataclass(init=False)
 class xFormerEncoderConfig(_xFormerBlockConfig):
-    attention_config: AttentionConfig
-    multi_head_config: MultiHeadDispatchConfig
-    block_type: BlockType = field(default_factory=lambda: BlockType("encoder"))
-    num_layers: int = 1
-    layer_norm_style: LayerNormStyle = LayerNormStyle.Post
+    multi_head_config: Dict[str, Any]
+    block_type: BlockType
+    num_layers: int
+    layer_norm_style: LayerNormStyle
 
-    def __post_init__(self):
-        try:
-            super().__post_init__()
-            self.attention_config = AttentionConfig(**self.attention_config)
-            self.multi_head_config = MultiHeadDispatchConfig(**self.multi_head_config)
-            self.block_type = BlockType(self.block_type)
-        except TypeError:
-            pass
+    def __init__(
+        self,
+        dim_model: int,
+        feedforward_config: Dict[str, Any],
+        position_encoding_config: Dict[str, Any],
+        multi_head_config: Dict[str, Any],
+        block_type=BlockType("encoder"),
+        num_layers=1,
+        layer_norm_style=LayerNormStyle.Post,
+    ):
+        super().__init__(dim_model, feedforward_config, position_encoding_config)
+        self.num_layers = num_layers
+        self.block_type = block_type
+        self.layer_norm_style = layer_norm_style
+        self.multi_head_config = multi_head_config
 
 
-@dataclass
+@dataclass(init=False)
 class xFormerDecoderConfig(_xFormerBlockConfig):
-    attention_configs: Tuple[AttentionConfig, AttentionConfig]
-    multi_head_configs: Tuple[MultiHeadDispatchConfig, MultiHeadDispatchConfig]
+    multi_head_config_pre_encoder: Dict[str, Any]
+    multi_head_config_post_encoder: Dict[str, Any]
+
     block_type: BlockType = field(default_factory=lambda: BlockType("decoder"))
     num_layers: int = 1
     layer_norm_style: LayerNormStyle = LayerNormStyle.Post
 
-    def __post_init__(self):
-        try:
-            super().__post_init__()
-            self.attention_configs = tuple(
-                AttentionConfig(**c) for c in self.attention_configs
-            )
-            self.multi_head_configs = tuple(
-                MultiHeadDispatchConfig(**c) for c in self.multi_head_configs
-            )
-            self.block_type = BlockType(self.block_type)
-        except TypeError:
-            pass
+    def __init__(
+        self,
+        dim_model: int,
+        feedforward_config: Dict[str, Any],
+        position_encoding_config: Dict[str, Any],
+        multi_head_config_pre_encoder: Dict[str, Any],
+        multi_head_config_post_encoder: Dict[str, Any],
+        block_type=BlockType("encoder"),
+        num_layers=1,
+        layer_norm_style=LayerNormStyle.Post,
+    ):
+        super().__init__(dim_model, feedforward_config, position_encoding_config)
+        self.num_layers = num_layers
+        self.block_type = block_type
+        self.layer_norm_style = layer_norm_style
+        self.multi_head_config_pre_encoder = multi_head_config_pre_encoder
+        self.multi_head_config_post_encoder = multi_head_config_post_encoder
 
 
 class xFormerEncoderBlock(nn.Module):
@@ -93,16 +119,13 @@ class xFormerEncoderBlock(nn.Module):
         self.ln2 = nn.LayerNorm(config.dim_model)
 
         self.pose_encoding = (
-            build_positional_embedding(config.position_encoding_config)
+            build_positional_embedding(asdict(config.position_encoding_config))
             if config.position_encoding_config
             else None
         )
 
-        self.attn = build_multi_head_attention(
-            config.attention_config,
-            config.multi_head_config,
-        )
-        self.ff = build_feedforward(config.feedforward_config)
+        self.attn = build_multi_head_attention(config.multi_head_config)
+        self.ff = build_feedforward(asdict(config.feedforward_config))
         self.layer_norm_style = config.layer_norm_style
 
     @classmethod
@@ -145,17 +168,11 @@ class xFormerDecoderBlock(nn.Module):
         self.ln3 = nn.LayerNorm(config.dim_model)
 
         self.pose_encoding = (
-            build_positional_embedding(config.position_encoding_config)
-            if config.position_encoding_config
-            else None
+            build_positional_embedding(config.position_encoding_config) if config.position_encoding_config else None
         )
 
-        self.attn1 = build_multi_head_attention(
-            config.attention_configs[0], config.multi_head_configs[0]
-        )
-        self.attn2 = build_multi_head_attention(
-            config.attention_configs[1], config.multi_head_configs[1]
-        )
+        self.attn1 = build_multi_head_attention(config.multi_head_config_pre_encoder)
+        self.attn2 = build_multi_head_attention(config.multi_head_config_post_encoder)
 
         self.ff = build_feedforward(config.feedforward_config)
         self.layer_norm_style = config.layer_norm_style
@@ -180,31 +197,20 @@ class xFormerDecoderBlock(nn.Module):
 
         if self.layer_norm_style == LayerNormStyle.Post:
             # Masked multi head attention
-            x = self.ln1(
-                target + self.attn1(target, target, target, att_mask=decoder_att_mask)
-            )
+            x = self.ln1(target + self.attn1(target, target, target, att_mask=decoder_att_mask))
 
             # Include the memory/Encoder results
-            x = self.ln2(
-                x
-                + self.attn2(
-                    key=memory, value=memory, query=x, att_mask=encoder_att_mask
-                )
-            )
+            x = self.ln2(x + self.attn2(key=memory, value=memory, query=x, att_mask=encoder_att_mask))
 
             # FF
             x = self.ln3(x + self.ff(x))
         else:
             # Masked multi head attention
             target_norm = self.ln1(target)
-            x = target + self.attn1(
-                target_norm, target_norm, target_norm, att_mask=decoder_att_mask
-            )
+            x = target + self.attn1(target_norm, target_norm, target_norm, att_mask=decoder_att_mask)
 
             # Include the memory/Encoder results
-            x = x + self.attn2(
-                key=memory, value=memory, query=self.ln2(x), att_mask=encoder_att_mask
-            )
+            x = x + self.attn2(key=memory, value=memory, query=self.ln2(x), att_mask=encoder_att_mask)
 
             # FF
             x = x + self.ff(self.ln3(x))

@@ -2,11 +2,7 @@ import pytest
 import torch
 
 from xformers.components import Activation
-from xformers.components.feedforward import (
-    FEEDFORWARD_REGISTRY,
-    FeedforwardConfig,
-    build_feedforward,
-)
+from xformers.components.feedforward import FEEDFORWARD_REGISTRY, build_feedforward
 
 BATCH = 20
 SEQ = 512
@@ -30,7 +26,7 @@ def test_feedforward(feedforward_name: str, activation: Activation):
     }
 
     # dummy, just check construction and dimensions in the FW pass
-    ffw = build_feedforward(FeedforwardConfig(**test_config))
+    ffw = build_feedforward(test_config)
 
     inputs = torch.rand(BATCH, SEQ, LATENT)
     _ = ffw(inputs)

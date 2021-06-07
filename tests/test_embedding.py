@@ -3,7 +3,6 @@ import torch
 
 from xformers.components.positional_embedding import (
     POSITION_EMBEDDING_REGISTRY,
-    PositionEmbeddingConfig,
     build_positional_embedding,
 )
 
@@ -27,6 +26,6 @@ def test_dimensions(encoding_name: str, dropout: float):
     }
 
     # dummy, just check construction and dimensions in the FW pass
-    encoding = build_positional_embedding(PositionEmbeddingConfig(**test_config))
+    encoding = build_positional_embedding(test_config)
     inputs = (torch.rand(BATCH, SEQ) * 10).abs().to(torch.int)
     _ = encoding(inputs)

@@ -16,16 +16,16 @@ from xformers.components.attention.feature_maps import (
 )
 
 
-@dataclass(init=False)
+@dataclass
 class FavorAttentionConfig(AttentionConfig):
-    dim_features: Optional[int]  # The dimensions of the random features
+    dim_features: Optional[int] = None  # The dimensions of the random features
     dim_head: Optional[
         int
-    ]  # The embedding dimension of the inputs. Only useful to get a dim_features estimate
+    ] = None  # The embedding dimension of the inputs. Only useful to get a dim_features estimate
     iter_before_redraw: Optional[
         int
-    ]  # The number of iterations before the random features are re-drawn from scratch
-    feature_map: Optional[FeatureMapType]
+    ] = None  # The number of iterations before the random features are re-drawn from scratch
+    feature_map: Optional[FeatureMapType] = None
 
 
 @register_attention("favor", FavorAttentionConfig)
@@ -39,8 +39,8 @@ class FavorAttention(Attention):
         iter_before_redraw: Optional[int] = None,
         feature_map_type: FeatureMapType = FeatureMapType.SMReg,
         normalize_inputs: bool = False,
-        *args,
-        **kwargs,
+        *_,
+        **__,
     ):
         r"""
         Kernelized attention, as proposed in Performers_
@@ -146,7 +146,3 @@ class FavorAttention(Attention):
             att = self.attn_drop(att)
 
         return att
-
-    @classmethod
-    def from_config(cls, config: AttentionConfig) -> "Attention":
-        return cls(**FavorAttentionConfig.as_patchy_dict(config))

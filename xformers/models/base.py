@@ -2,11 +2,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 from xformers.components import Activation
-from xformers.utils import ExtensibleConfig
 
 
 @dataclass
-class ModelConfig(ExtensibleConfig):
+class ModelConfig:
     num_heads: int
     dim_sequence: int
     dim_embedding: int

@@ -8,7 +8,7 @@ from xformers.components.attention import Attention, AttentionConfig, register_a
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
-@dataclass(init=False)
+@dataclass
 class LinformerSelfAttentionConfig(AttentionConfig):
     seq_len: int  # dimension of the input sequence
     k: Optional[int]  # dimension of the internal space
@@ -49,7 +49,3 @@ class LinformerAttention(Attention):
             q, k_projected, v_projected, att_mask=None, dropout=self.attn_drop
         )
         return y
-
-    @classmethod
-    def from_config(cls, config: AttentionConfig) -> "Attention":
-        return cls(**LinformerSelfAttentionConfig.as_patchy_dict(config))

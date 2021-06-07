@@ -18,11 +18,11 @@ from xformers.components.attention.attention_patterns import (
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
-@dataclass(init=False)
+@dataclass
 class LocalAttentionConfig(AttentionConfig):
-    causal: bool
-    window_size: int
-    force_sparsity: bool
+    causal: Optional[bool]
+    window_size: Optional[int]
+    force_sparsity: Optional[bool]
 
 
 @register_attention("local", LocalAttentionConfig)
@@ -102,7 +102,3 @@ class LocalAttention(Attention):
         )
 
         return scaled_dot_product_attention(q, k, v, mask, dropout=self.attn_drop)
-
-    @classmethod
-    def from_config(cls, config: AttentionConfig) -> "Attention":
-        return cls(**LocalAttentionConfig.as_patchy_dict(config))

@@ -1,9 +1,13 @@
 from pathlib import Path
-from typing import Any, Callable, Dict, Set
+from typing import Any, Callable, Dict, Set, Union
 
 import torch
 
-from xformers.utils import get_registry_decorator, import_all_modules
+from xformers.utils import (
+    generate_matching_config,
+    get_registry_decorator,
+    import_all_modules,
+)
 
 from ._sputnik_sparse import SparseCS
 from .base import Attention, AttentionConfig  # noqa
@@ -19,7 +23,7 @@ _DENSITY_THRESHOLD = 0.30  # noqa # from the sputnik paper, vs.
 _USE_SPUTNIK = True
 
 
-def build_attention(config: AttentionConfig):
+def build_attention(config: Union[Dict[str, Any], AttentionConfig]):
     """Builds an attention from a config.
 
     This assumes a 'name' key in the config which is used to determine what
@@ -27,7 +31,16 @@ def build_attention(config: AttentionConfig):
     "foo": "bar"}` will find a class that was registered as "my_attention"
     (see :func:`register_attention`) and call .from_config on it."""
 
-    return ATTENTION_REGISTRY[config.name].constructor.from_config(config)
+    if not isinstance(config, AttentionConfig):
+        config_instance = generate_matching_config(
+            config, ATTENTION_REGISTRY[config["name"]].config
+        )
+    else:
+        config_instance = config
+
+    return ATTENTION_REGISTRY[config_instance.name].constructor.from_config(
+        config_instance
+    )
 
 
 """Registers an Attention subclass.

@@ -1,7 +1,11 @@
 from pathlib import Path
-from typing import Any, Callable, Dict, Set
+from typing import Any, Callable, Dict, Set, Union
 
-from xformers.utils import get_registry_decorator, import_all_modules
+from xformers.utils import (
+    generate_matching_config,
+    get_registry_decorator,
+    import_all_modules,
+)
 
 from .base import PositionEmbedding, PositionEmbeddingConfig  # noqa
 
@@ -11,7 +15,7 @@ POSITION_EMBEDDING_REGISTRY: Dict[str, Any] = {}
 POSITION_EMBEDDING_CLASS_NAMES: Set[str] = set()
 
 
-def build_positional_embedding(config: PositionEmbeddingConfig):
+def build_positional_embedding(config: Union[Dict[str, Any], PositionEmbeddingConfig]):
     """Builds a position encoding from a config.
 
     This assumes a 'name' key in the config which is used to determine what
@@ -19,7 +23,16 @@ def build_positional_embedding(config: PositionEmbeddingConfig):
     "foo": "bar"}` will find a class that was registered as "my_position_encoding"
     (see :func:`register_positional_embedding`) and call .from_config on it."""
 
-    return POSITION_EMBEDDING_REGISTRY[config.name].constructor.from_config(config)
+    if not isinstance(config, PositionEmbeddingConfig):
+        config_instance = generate_matching_config(
+            config, POSITION_EMBEDDING_REGISTRY[config["name"]].config
+        )
+    else:
+        config_instance = config
+
+    return POSITION_EMBEDDING_REGISTRY[config_instance.name].constructor.from_config(
+        config_instance
+    )
 
 
 """Registers a PositionEncoding subclass.

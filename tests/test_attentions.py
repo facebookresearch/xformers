@@ -7,7 +7,6 @@ from xformers.components import MultiHeadDispatch
 from xformers.components.attention import (
     _DENSITY_THRESHOLD,
     ATTENTION_REGISTRY,
-    AttentionConfig,
     build_attention,
 )
 
@@ -51,7 +50,7 @@ def test_order_invariance(
         "dim_head": MODEL / heads,
     }
 
-    attention = build_attention(AttentionConfig(**test_config))
+    attention = build_attention(test_config)
 
     # build a multi head dispatch to test this attention mechanism
     multi_head = MultiHeadDispatch(
