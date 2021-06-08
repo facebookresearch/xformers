@@ -183,6 +183,34 @@ def test_sddmm_csr(L, M, K):
 
 
 @cuda_only
+@pytest.mark.parametrize("nnz", [4, 16, 20, 36])
+def test_sddmm_csr_per_nnz(nnz):
+    device = torch.device("cuda")
+    B = 8
+    L, M, K = 1024, 1024, 32
+    a = torch.rand(B, L, K, device=device)
+    b = torch.rand(B, M, K, device=device)
+    mask = torch.zeros(L, M, dtype=torch.bool, device=device)
+    mask.view(-1)[: nnz - 1] = True
+    mask[-1, -1] = True
+
+    mask_csr = xformers.components.attention.core.SparseCS(mask, device)
+    row_indices = mask_csr.row_indices
+    row_offsets = mask_csr.row_offsets
+    column_indices = mask_csr.column_indices
+
+    fn = torch.ops.xformers.csr_sddmm
+    fn_gt = torch.ops.xformers.sddmm_sputnik
+
+    res = fn(a, b, row_indices, row_offsets, column_indices)
+    res_gt = fn_gt(a, b, row_indices, row_offsets, column_indices)
+
+    assert res.dtype == res_gt.dtype
+    assert torch.allclose(res, res_gt, atol=1e-6)
+    torch.cuda.synchronize()
+
+
+@cuda_only
 @pytest.mark.parametrize("K", [32, 17])
 @pytest.mark.parametrize("M", [30, 17])
 @pytest.mark.parametrize("L", [30, 17])
