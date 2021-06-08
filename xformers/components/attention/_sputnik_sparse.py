@@ -1,6 +1,13 @@
 import torch
 
 
+def _coo_to_csr(m, n, row_indices, column_indices):
+    # assumes coalesced coo
+    row_offsets = row_indices.bincount(minlength=n).cumsum(0, dtype=row_indices.dtype)
+    row_offsets = torch.nn.functional.pad(row_offsets, (1, 0))
+    return row_offsets, column_indices
+
+
 def _csr_to_coo(m, n, row_offsets, column_indices):
     # convert from compressed rows to uncompressed
     indices = torch.arange(m, dtype=row_offsets.dtype, device=row_offsets.device)
@@ -293,13 +300,14 @@ class SparseCS:
         )
 
     def to_dense(self):
-        shape = (self.values.shape[0],) + self.shape
+        m, n = self.shape
+        shape = (self.values.shape[0], m, n)
         matrix = torch.zeros(shape, dtype=self.values.dtype, device=self.values.device)
-        sizes = torch.diff(self.row_offsets).long()
-        idxs = torch.arange(self.shape[0], device=self.values.device)
-        r_idxs = torch.repeat_interleave(idxs, sizes)
-        for i, v in enumerate(self.values):
-            matrix[i, r_idxs, self.column_indices.long()] = v
+        row_offsets = self.row_offsets.long()
+        column_indices = self.column_indices.long()
+        row_coo, _ = _csr_to_coo(m, n, row_offsets, column_indices)
+        b_idxs = torch.arange(len(self.values), device=self.values.device)[:, None]
+        matrix[b_idxs, row_coo, column_indices] = self.values
         return matrix
 
     def logical_and(self, other: torch.Tensor):
@@ -322,9 +330,7 @@ def _get_transpose_info(m, n, row_indices, row_offsets, column_indices):
     # - compress the new rows and return the permutation to be applied on the values
 
     # convert from compressed rows to uncompressed
-    indices = torch.arange(m, device=row_offsets.device)
-    row_sizes = torch.diff(row_offsets)
-    row_coo = torch.repeat_interleave(indices, row_sizes.long())
+    row_coo, _ = _csr_to_coo(m, n, row_offsets, column_indices)
 
     # get the permutation for the stable sort
     # unfortunately PyTorch sort is not stable, so we need to
@@ -334,17 +340,12 @@ def _get_transpose_info(m, n, row_indices, row_offsets, column_indices):
 
     # workaround the lack of stable sorting in PyTorch
     perm2 = torch.argsort(new_columns + row_offsets_t * m)
-    column_indices_t = new_columns[perm2].int()
+    column_indices_t = new_columns[perm2]
 
     # find the final permutation corresponding to the indices of the stable sort
     perm = perm1[perm2]
 
-    row_offsets_t = torch.cat(
-        [
-            torch.zeros(1, dtype=row_offsets_t.dtype, device=row_offsets_t.device),
-            row_offsets_t.bincount(minlength=n).cumsum(0),
-        ]
-    ).int()
+    row_offsets_t, _ = _coo_to_csr(m, n, row_offsets_t, column_indices)
     row_indices_t = _diffsort(row_offsets_t).int()
 
     return row_indices_t, row_offsets_t, column_indices_t, perm
