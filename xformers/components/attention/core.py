@@ -112,6 +112,31 @@ def bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return a @ b
 
 
+def _apply_dropout(att, dropout):
+    if dropout is None:
+        return att
+    # Dropout chokes on sparse tensors
+    if isinstance(att, SparseCS):
+        values = att.values.clone()
+        values = dropout(values)
+        att = SparseCS.wrap(
+            att.shape,
+            values,
+            att.row_indices,
+            att.row_offsets,
+            att.column_indices,
+            att._transp_info,
+        )
+    elif att.is_sparse:
+        att = att.coalesce()
+        values = att.values().clone()  # protect against in-place droupout
+        values = dropout(values)
+        att = torch.sparse_coo_tensor(att.indices(), values, att.shape)
+    else:
+        att = dropout(att)
+    return att
+
+
 def scaled_query_key_softmax(
     q: torch.Tensor,
     k: torch.Tensor,
@@ -140,26 +165,7 @@ def scaled_dot_product_attention(
     att = scaled_query_key_softmax(q, k, att_mask)
 
     #  Optional dropout, could be part of the masking in the future
-    if dropout is not None:
-        # Dropout chokes on sparse tensors
-        if isinstance(att, SparseCS):
-            values = att.values.clone()
-            values = dropout(values)
-            att = SparseCS.wrap(
-                att.shape,
-                values,
-                att.row_indices,
-                att.row_offsets,
-                att.column_indices,
-                att._transp_info,
-            )
-        elif att.is_sparse:
-            att = att.coalesce()
-            values = att.values().clone()  # protect against in-place droupout
-            values = dropout(values)
-            att = torch.sparse_coo_tensor(att.indices(), values, att.shape)
-        else:
-            att = dropout(att)
+    att = _apply_dropout(att, dropout)
 
     # Get to the predicted values, for all heads
     # y = att @ v  # (N, S, S) x (N, S, hs) -> (N, S, hs)
