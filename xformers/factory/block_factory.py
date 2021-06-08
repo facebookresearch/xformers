@@ -38,13 +38,13 @@ class LayerNormStyle(str, Enum):
 class _xFormerBlockConfig:
     dim_model: int
     feedforward_config: FeedforwardConfig
-    position_encoding_config: PositionEmbeddingConfig
+    position_encoding_config: Optional[PositionEmbeddingConfig]
 
     def __init__(
         self,
         dim_model: int,
         feedforward_config: Dict[str, Any],
-        position_encoding_config: Dict[str, Any],
+        position_encoding_config: Optional[Dict[str, Any]],
     ):
         self.dim_model = dim_model
 
@@ -52,9 +52,13 @@ class _xFormerBlockConfig:
             feedforward_config, FEEDFORWARD_REGISTRY[feedforward_config["name"]].config
         )
 
-        self.position_encoding_config = generate_matching_config(
-            position_encoding_config,
-            POSITION_EMBEDDING_REGISTRY[position_encoding_config["name"]].config,
+        self.position_encoding_config = (
+            generate_matching_config(
+                position_encoding_config,
+                POSITION_EMBEDDING_REGISTRY[position_encoding_config["name"]].config,
+            )
+            if position_encoding_config is not None
+            else None
         )
 
 
