@@ -207,7 +207,6 @@ def test_sddmm_csr_per_nnz(nnz):
 
     assert res.dtype == res_gt.dtype
     assert torch.allclose(res, res_gt, atol=1e-6)
-    torch.cuda.synchronize()
 
 
 @cuda_only
