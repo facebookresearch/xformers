@@ -5,7 +5,7 @@ from xformers.components.attention import Attention, AttentionConfig, register_a
 
 @register_attention("fourier_mix", AttentionConfig)
 class FourierMix(Attention):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *_, **__):
         """
         FFT-based pseudo-attention mechanism, from
         "
@@ -13,10 +13,7 @@ class FourierMix(Attention):
         Lee-Thorp et al., 2021, https://arxiv.org/pdf/2105.03824.pdf
         """
         super().__init__()
+        self.requires_input_projection = False
 
-    def forward(self, q: torch.Tensor, *args, **kwargs):
-        fourier_hidden = torch.fft.fft(q, dim=-1)  # FFT on the embedding dimension
-        fourier_sequence = torch.fft.fft(
-            fourier_hidden, dim=1
-        )  # FFT on the sequence dimension
-        return torch.real(fourier_sequence)  # only keep the real part, as suggested
+    def forward(self, q: torch.Tensor, *_, **__):
+        return torch.fft.fft2(q).real

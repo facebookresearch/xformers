@@ -25,6 +25,7 @@ class Attention(nn.Module, metaclass=ABCMeta):
     @abstractmethod
     def __init__(self, dropout: Optional[float] = None, *args, **kwargs):
         super().__init__()
+        self.requires_input_projection = True
 
     @classmethod
     def from_config(cls, config: AttentionConfig) -> "Attention":

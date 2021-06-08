@@ -62,11 +62,12 @@ class MultiHeadDispatch(nn.Module):
         self.attention = attention
 
         # key, query, value projections for all heads
-        self.project_key = nn.Linear(
-            dim_model, dim_key, bias=False
-        )  # NOTE: optional bias ?
-        self.project_query = nn.Linear(dim_model, dim_key, bias=False)
-        self.project_value = nn.Linear(dim_model, dim_value, bias=False)
+        if attention.requires_input_projection:
+            self.project_key = nn.Linear(
+                dim_model, dim_key, bias=False
+            )  # NOTE: optional bias ?
+            self.project_query = nn.Linear(dim_model, dim_key, bias=False)
+            self.project_value = nn.Linear(dim_model, dim_value, bias=False)
 
         # Regularization
         self.resid_drop = nn.Dropout(residual_dropout, inplace=False)
@@ -95,11 +96,14 @@ class MultiHeadDispatch(nn.Module):
         B, S, _ = query.size()  # Batch x Sequence x Embedding (latent)
 
         # Calculate query, key, values for all heads in batch
-        k, q, v = (
-            self.project_key(key),
-            self.project_query(query),
-            self.project_value(value),
-        )
+        if self.attention.requires_input_projection:
+            k, q, v = (
+                self.project_key(key),
+                self.project_query(query),
+                self.project_value(value),
+            )
+        else:
+            k, q, v = key, query, value
 
         k = _fold_heads(k, B, S, self.num_heads, self.dim_k)
         q = _fold_heads(q, B, S, self.num_heads, self.dim_k)
