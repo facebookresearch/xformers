@@ -42,10 +42,19 @@ class LinformerAttention(Attention):
     def forward(
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs
     ):
+        # Handle a smaller dimension than expected
+        padding = 0
+        if q.shape[1] < self.seq_len:
+            padding = self.seq_len - q.shape[1]
+            pad_dims = (0, 0, 0, padding)
+            q = torch.nn.functional.pad(q, pad_dims)
+            k = torch.nn.functional.pad(k, pad_dims)
+            v = torch.nn.functional.pad(v, pad_dims)
+
         k_projected = self.E(k.transpose(-2, -1)).transpose(-2, -1)
         v_projected = self.F(v.transpose(-2, -1)).transpose(-2, -1)
 
         y = scaled_dot_product_attention(
             q, k_projected, v_projected, att_mask=None, dropout=self.attn_drop
         )
-        return y
+        return y[:, :-padding, :] if padding > 0 else y

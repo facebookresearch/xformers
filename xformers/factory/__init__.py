@@ -7,3 +7,4 @@ from .block_factory import xFormerDecoderBlock  # noqa
 from .block_factory import xFormerDecoderConfig  # noqa
 from .block_factory import xFormerEncoderBlock  # noqa
 from .block_factory import xFormerEncoderConfig  # noqa
+from .model_factory import xFormer, xFormerConfig  # noqa

@@ -1,9 +1,11 @@
+import contextlib
 import importlib
 import os
 import sys
+import tempfile
 from collections import namedtuple
 from dataclasses import fields
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, Generator, List
 
 Item = namedtuple("Item", ["constructor", "config"])
 
@@ -71,3 +73,23 @@ def generate_matching_config(superset: Dict[str, Any], config_class: Any) -> Any
             subset[k] = None
 
     return config_class(**subset)
+
+
+def rmf(filename: str) -> None:
+    """Remove a file like rm -f."""
+    try:
+        os.remove(filename)
+    except FileNotFoundError:
+        pass
+
+
+@contextlib.contextmanager
+def temp_files_ctx(num: int) -> Generator:
+    """ A context to get tempfiles and ensure they are cleaned up. """
+    files = [tempfile.mkstemp()[1] for _ in range(num)]
+
+    yield tuple(files)
+
+    # temp files could have been removed, so we use rmf.
+    for name in files:
+        rmf(name)

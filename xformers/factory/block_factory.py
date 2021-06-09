@@ -146,10 +146,16 @@ class xFormerEncoderBlock(nn.Module):
             x = self.pose_encoding(x)
 
         if input_mask is not None:
-            x *= input_mask.unsqueeze(-1)
+            # The mask acts as an input bias. In particular, nulling the influence of some elements
+            # can be done by setting the corresponding mask to '-float("inf")'
+            q = x
+            k = x + input_mask.unsqueeze(-1)
+            v = k
+        else:
+            q, k, v = x, x, x
 
         if self.layer_norm_style == LayerNormStyle.Post:
-            x = self.ln1(x + self.attn(x, x, x, att_mask))
+            x = self.ln1(x + self.attn(query=q, key=k, value=v, att_mask=att_mask))
             x = self.ln2(x + self.ff(x))
 
         else:
@@ -199,12 +205,24 @@ class xFormerDecoderBlock(nn.Module):
             target = self.pose_encoding(target)
 
         if input_mask is not None:
-            target *= input_mask.unsqueeze(-1)
+            # The mask acts as an input bias. In particular, nulling the influence of some elements
+            # can be done by setting the corresponding mask to '-float("inf")'
+            target += input_mask.unsqueeze(-1)
+
+        if input_mask is not None:
+            # The mask acts as an input bias. In particular, nulling the influence of some elements
+            # can be done by setting the corresponding mask to '-float("inf")'
+            target_q = target
+            target_k = target + input_mask.unsqueeze(-1)
+            target_v = target_k
+        else:
+            target_q, target_k, target_v = target, target, target
 
         if self.layer_norm_style == LayerNormStyle.Post:
             # Masked multi head attention
             x = self.ln1(
-                target + self.attn1(target, target, target, att_mask=decoder_att_mask)
+                target
+                + self.attn1(target_q, target_k, target_v, att_mask=decoder_att_mask)
             )
 
             # Include the memory/Encoder results

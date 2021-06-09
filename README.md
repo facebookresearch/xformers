@@ -68,6 +68,7 @@ Some examples, generated with `python3 benchmarks/benchmark_encoder.py --activat
 
 ![](docs/plots/runtime_vs_attention.png)
 
+
 ### Benchmark the core sparse attention mechanisms
 `python3 benchmarks/benchmark_core.py` will measure the speed of the core sparse attention mechanism. The current numbers are as follows:
 
@@ -125,7 +126,29 @@ Times are in microseconds (us).
 Times are in microseconds (us).
 ```
 
-## Bibliography
+### LRA
+The code for this benchmark has been adapted from https://github.com/mlpen/Nystromformer/tree/main/LRA. [A dedicated README is available here](benchmarks/LRA/README.md)
+
+Some results:
+
+| Attention                   | ListOps*  | Text      | Retrieval | Image     | Pathfinder | *Avg* | *Est. flops* | *Peak mem (mb)* |
+| --------------------------- | --------- | --------- | --------- | --------- | ---------- | ----- | ------------ | --------------- |
+| Standard                    | **40.93** | **61.63** | 75.32     | 34.97     | **68.21**  | 56.21 | 1.21         | 2291            |
+| Nystromformer-128           | 19.56     | 60.69     | **79.02** | **37.57** | 66.81      | 52.73 | 0.62         | 383             |
+| Favor-256 (redraw)          | 19.15     | 59.20     | 77.30     | 34.15     | 62.44      | 50.45 | 0.49         | 445             |
+| FourierMix                  | 32.86     | 59.78     | 75.46     | 30.80     | 50.20      | 49.82 | **0.17**     | **87**          |
+| Linformer-seq/4 (no redraw) | 38.31     | 60.52     | 77.11     | 38.31     | 51.9       | 53.23 | 0.67         | 719             |
+
+
+
+Contrary to the initial LRA proposal, we use the same model architecture for all tasks (2 layers). The training schedule for ListOps has also been lengthened, while keeping it the fastest of all tasks, which reduces the seed dependence in the final accuracy figure. Estimated flops and peak memory are on the ListOps task, using 4 GPUs. Note that LRA is not completely well defined, in that hyperparameters and model architectures can vary (should the same architecture be used everywhere ? Similar hyperparams ?). This could be improved in the future, but in the meantime one should probably not read too much into small differences for some tasks, probably not meaningful.
+
+
+_*Note_: The ListOps score can vary a fair bit in between seeds, should probably be improved and distorts the overall results. This bimodal distribution seems to be present [in the original implementation](https://github.com/google-research/long-range-arena)
+
+
+
+## Bibliograpy
 Some references or papers used in the repo
 - [Attention is all you need, Vaswani et al., 2017](https://papers.nips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf)
 - [Linformer, self-attention with linear complexity, Wang et al., 2020](https://arxiv.org/pdf/2006.04768.pdf)
