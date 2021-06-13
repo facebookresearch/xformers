@@ -131,21 +131,20 @@ The code for this benchmark has been adapted from https://github.com/mlpen/Nystr
 
 Some results:
 
-| Attention                   | ListOps*  | Text      | Retrieval | Image     | Pathfinder | *Avg* | *Est. flops* | *Peak mem (mb)* |
-| --------------------------- | --------- | --------- | --------- | --------- | ---------- | ----- | ------------ | --------------- |
-| Standard                    | **40.93** | **61.63** | 75.32     | 34.97     | **68.21**  | 56.21 | 1.21         | 2291            |
-| Nystromformer-128           | 19.56     | 60.69     | **79.02** | **37.57** | 66.81      | 52.73 | 0.62         | 383             |
-| Favor-256 (redraw)          | 19.15     | 59.20     | 77.30     | 34.15     | 62.44      | 50.45 | 0.49         | 445             |
-| FourierMix                  | 32.86     | 59.78     | 75.46     | 30.80     | 50.20      | 49.82 | **0.17**     | **87**          |
-| Linformer-seq/4 (no redraw) | 38.31     | 60.52     | 77.11     | 38.31     | 51.9       | 53.23 | 0.67         | 719             |
+| Attention                   | ListOps   | Text      | Retrieval | Image     | Pathfinder | *Avg*     | *Est. Gflops* | *Peak mem (mb)* |
+| --------------------------- | --------- | --------- | --------- | --------- | ---------- | --------- | ------------- | --------------- |
+| Chance                      | 10        | 50        | 50        | 10        | 50         | 34        | 0             | 0               |
+| Standard                    | **37.10** | 63.51     | 79.02     | **37.10** | **67.55**  | 56.86     | 1.21          | 2291            |
+| Nystromformer-128           | 36.09     | 63.48     | 76.55     | 39.51     | 67.71      | 56.67     | 0.62          | 383             |
+| Favor-256 (redraw)          | 18.75     | **63.53** | **79.37** | 32.44     | 66.77      | **60.53** | 0.49          | 445             |
+| FourierMix                  | 35.69     | 63.09     | 73.98     | 33.71     | 51.14      | 51.52     | **0.17**      | **87**          |
+| Linformer-seq/4 (no redraw) | 37.10     | 57.87     | 76.46     | 38.84     | 55.15      | 53.08     | 0.67          | 719             |
 
 
 
 Contrary to the initial LRA proposal, we use the same model architecture for all tasks (2 layers). The training schedule for ListOps has also been lengthened, while keeping it the fastest of all tasks, which reduces the seed dependence in the final accuracy figure. Estimated flops and peak memory are on the ListOps task, using 4 GPUs. Note that LRA is not completely well defined, in that hyperparameters and model architectures can vary (should the same architecture be used everywhere ? Similar hyperparams ?). This could be improved in the future, but in the meantime one should probably not read too much into small differences for some tasks, probably not meaningful.
 
-
-_*Note_: The ListOps score can vary a fair bit in between seeds, should probably be improved and distorts the overall results. This bimodal distribution seems to be present [in the original implementation](https://github.com/google-research/long-range-arena)
-
+_Note_: The estimated flops currently miss accounting for many operators, and are almost certainly an undercount. See issue [#154](https://github.com/fairinternal/xformers/issues/154)
 
 
 ## Bibliograpy

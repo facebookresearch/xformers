@@ -147,8 +147,8 @@ class ModelForSC(ModelTrunk):
 
             token_out = self.norm(
                 self.model(input_ids_0, encoder_input_mask=mask_0)
-                * mask_0.unsqueeze(-1)
-            )
+            ) * mask_0.unsqueeze(-1)
+
             seq_scores = self.seq_classifer(token_out)
 
             seq_loss = torch.nn.CrossEntropyLoss(reduction="none")(seq_scores, label)
@@ -180,12 +180,10 @@ class ModelForSCDual(ModelTrunk):
 
             token_out_0 = self.norm(
                 self.model(input_ids_0, encoder_input_mask=mask_0)
-                * mask_0.unsqueeze(-1)
-            )
+            ) * mask_0.unsqueeze(-1)
             token_out_1 = self.norm(
                 self.model(input_ids_1, encoder_input_mask=mask_1)
-                * mask_1.unsqueeze(-1)
-            )
+            ) * mask_1.unsqueeze(-1)
             seq_scores = self.seq_classifer(token_out_0, token_out_1)
 
             seq_loss = torch.nn.CrossEntropyLoss(reduction="none")(seq_scores, label)

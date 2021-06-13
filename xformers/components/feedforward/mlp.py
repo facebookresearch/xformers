@@ -35,6 +35,7 @@ class MLP(Feedforward):
         self.mlp = nn.Sequential(
             nn.Linear(dim_model, hidden_layer_multiplier * dim_model),
             activation_layer,
+            nn.Dropout(dropout),
             nn.Linear(hidden_layer_multiplier * dim_model, dim_model),
             nn.Dropout(dropout),
         )

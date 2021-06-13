@@ -321,10 +321,10 @@ def benchmark(rank, args):
         summary[component]["accu"].append(accu)
 
     # Start training or evaluating
+    train_step_idx = 0
     if not args.skip_train:
         try:
             model.train()
-            train_step_idx = 0
             for epoch in range(epochs):
                 logger.info(f"\nEpoch {epoch}")
 
@@ -364,7 +364,10 @@ def benchmark(rank, args):
                             model_path,
                             logger,
                         )
-                    train_step_idx += 1
+
+                    if not grad_accumulate:
+                        train_step_idx += 1
+
                     if train_step_idx == config_training["num_train_steps"]:
                         break
 

@@ -24,7 +24,8 @@
                 "num_classes": 2,
                 "seq_len": 4096,
                 "num_heads": 2,
-                "vocab_size": 512
+                "vocab_size": 512,
+                "dropout": 0.1
             },
             "xformer": {
                 "block_configs": [
@@ -38,13 +39,11 @@
                             "residual_dropout": 0.1,
                             "attention": {
                                 "name": "generic",
-                                "dropout": 0.1,
                                 "causal": false
                             }
                         },
                         "feedforward_config": {
                             "name": "MLP",
-                            "dropout": 0.1,
                             "activation": "gelu",
                             "hidden_layer_multiplier": 2
                         }
@@ -90,7 +89,8 @@
                 "num_heads": 2,
                 "dim_model": 64,
                 "seq_len": 2048,
-                "vocab_size": 32
+                "vocab_size": 32,
+                "dropout": 0.1
             },
             "xformer": {
                 "block_configs": [
@@ -104,13 +104,11 @@
                             "residual_dropout": 0.1,
                             "attention": {
                                 "name": "generic",
-                                "dropout": 0.1,
                                 "causal": false
                             }
                         },
                         "feedforward_config": {
                             "name": "MLP",
-                            "dropout": 0.1,
                             "activation": "gelu",
                             "hidden_layer_multiplier": 2
                         }
@@ -147,7 +145,7 @@
             "eval_frequency": 300,
             "num_train_steps": 30000,
             "num_eval_steps": 565,
-            "gradient_accumulation": 1
+            "gradient_accumulation": 2
         },
         "model": {
             "pooling_mode": "mean",
@@ -156,7 +154,8 @@
                 "num_heads": 2,
                 "seq_len": 4096,
                 "dim_model": 64,
-                "vocab_size": 512
+                "vocab_size": 512,
+                "dropout": 0.1
             },
             "xformer": {
                 "block_configs": [
@@ -170,13 +169,11 @@
                             "residual_dropout": 0.1,
                             "attention": {
                                 "name": "generic",
-                                "dropout": 0.1,
                                 "causal": false
                             }
                         },
                         "feedforward_config": {
                             "name": "MLP",
-                            "dropout": 0.1,
                             "activation": "gelu",
                             "hidden_layer_multiplier": 2
                         }
@@ -217,7 +214,8 @@
                 "num_classes": 2,
                 "num_heads": 2,
                 "seq_len": 1024,
-                "dim_model": 64
+                "dim_model": 64,
+                "dropout": 0.1
             },
             "xformer": {
                 "block_configs": [
@@ -231,13 +229,11 @@
                             "residual_dropout": 0.1,
                             "attention": {
                                 "name": "generic",
-                                "dropout": 0.1,
                                 "causal": false
                             }
                         },
                         "feedforward_config": {
                             "name": "MLP",
-                            "dropout": 0.1,
                             "activation": "gelu",
                             "hidden_layer_multiplier": 2
                         }
@@ -283,7 +279,8 @@
                 "num_classes": 10,
                 "num_heads": 2,
                 "seq_len": 1024,
-                "dim_model": 64
+                "dim_model": 64,
+                "dropout": 0.1
             },
             "xformer": {
                 "block_configs": [
@@ -297,13 +294,11 @@
                             "residual_dropout": 0.1,
                             "attention": {
                                 "name": "generic",
-                                "dropout": 0.1,
                                 "causal": false
                             }
                         },
                         "feedforward_config": {
                             "name": "MLP",
-                            "dropout": 0.1,
                             "activation": "gelu",
                             "hidden_layer_multiplier": 2
                         }
