@@ -83,7 +83,7 @@ def _train_for_several_steps(
     # - nonsensical data, but remove that from the compute time
     inputs = torch.rand(batch_size, sequence_length).to(device)
 
-    with profiler as p:
+    with profiler as p:  # type: ignore
         for _ in range(num_steps):
             optim.zero_grad()
 

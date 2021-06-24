@@ -39,17 +39,17 @@ setup_venv: &setup_venv
         which pip
         pip install --upgrade pip
 
-install_dep_181: &install_dep_181
+install_dep_190: &install_dep_190
   - run:
-      name: Install Dependencies with torch 1.8.1
+      name: Install Dependencies with torch 1.9.0
       command: |
         # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
-        if [ -f /home/circleci/venv/check_version.py ]; then python /home/circleci/venv/check_version.py torch eq 1.8 && exit 0; fi
+        if [ -f /home/circleci/venv/check_version.py ]; then python /home/circleci/venv/check_version.py torch eq 1.9 && exit 0; fi
         # start installing
-        pip install --progress-bar off torch==1.8.1+cu111 torchvision==0.9.1+cu111 -f https://download.pytorch.org/whl/torch_stable.html
+        pip install --progress-bar off torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
         pip install --progress-bar off -r requirements-benchmark.txt
         python -c 'import torch; print("Torch version:", torch.__version__)'
-        python -c 'import torch; assert torch.__version__.split(".")[:2] == ["1", "8"], "wrong torch version"'
+        python -c 'import torch; assert torch.__version__.split(".")[:2] == ["1", "9"], "wrong torch version"'
         python -m torch.utils.collect_env
         wget -O /home/circleci/venv/check_version.py https://raw.githubusercontent.com/min-xu-ai/check_verion/main/check_version.py
 
@@ -133,14 +133,14 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-cpu-py38-181-386-{{ checksum "requirements-test.txt"}}
+            - cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}
 
-      - <<: *install_dep_181
+      - <<: *install_dep_190
 
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-cpu-py38-181-386-{{ checksum "requirements-test.txt"}}
+          key: cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}
 
       - <<: *install_repo
 
@@ -155,7 +155,7 @@ jobs:
           path: test-results
 
 
-  gpu_tests_181:
+  gpu_tests_190:
     <<: *gpu
 
     working_directory: ~/xformers
@@ -172,14 +172,14 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-181-386-{{ checksum "requirements-test.txt"}}
+            - cache-key-gpu-190-386-{{ checksum "requirements-test.txt"}}
 
-      - <<: *install_dep_181
+      - <<: *install_dep_190
 
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-gpu-181-386-{ checksum "requirements-test.txt"}}
+          key: cache-key-gpu-190-386-{ checksum "requirements-test.txt"}}
 
       - <<: *install_repo
 
@@ -196,4 +196,4 @@ workflows:
   build:
     jobs:
       - cpu_tests_py38
-      - gpu_tests_181
+      - gpu_tests_190
