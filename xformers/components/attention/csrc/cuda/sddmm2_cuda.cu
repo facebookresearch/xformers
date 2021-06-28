@@ -561,6 +561,15 @@ torch::Tensor coo_sddmm(
   TORCH_CHECK(colind.dtype() == torch::kInt32);
   TORCH_CHECK(D1.dtype() == torch::kFloat32);
   TORCH_CHECK(D2.dtype() == torch::kFloat32);
+
+  TORCH_CHECK(
+      D1.device() == D2.device(), "a should be in the same device as b");
+  TORCH_CHECK(
+      D1.device() == rowind.device(),
+      "a should be in the same device as row_offsets");
+  TORCH_CHECK(
+      D1.device() == colind.device(),
+      "a should be in the same device as column_indices");
   return ge_spmm::sddmm_cuda_coo(rowind, colind, D1, D2);
 }
 
@@ -582,6 +591,15 @@ torch::Tensor csr_sddmm(
   TORCH_CHECK(colind.dtype() == torch::kInt32);
   TORCH_CHECK(D1.dtype() == torch::kFloat32);
   TORCH_CHECK(D2.dtype() == torch::kFloat32);
+
+  TORCH_CHECK(
+      D1.device() == D2.device(), "a should be in the same device as b");
+  TORCH_CHECK(
+      D1.device() == rowptr.device(),
+      "a should be in the same device as row_offsets");
+  TORCH_CHECK(
+      D1.device() == colind.device(),
+      "a should be in the same device as column_indices");
   return ge_spmm::sddmm_cuda_csr(rowptr, colind, D1, D2);
 }
 

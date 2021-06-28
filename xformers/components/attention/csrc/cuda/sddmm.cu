@@ -356,6 +356,17 @@ at::Tensor sddmm_sputnik(
   TORCH_CHECK(
       !column_indices.is_sparse(), "column_offsets must be a dense tensor");
 
+  TORCH_CHECK(a.device() == b.device(), "a should be in the same device as b");
+  TORCH_CHECK(
+      a.device() == row_indices.device(),
+      "a should be in the same device as row_indices");
+  TORCH_CHECK(
+      a.device() == row_offsets.device(),
+      "a should be in the same device as row_offsets");
+  TORCH_CHECK(
+      a.device() == column_indices.device(),
+      "a should be in the same device as column_indices");
+
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   int batch = a.size(0);
   int m = a.size(1);

@@ -258,6 +258,19 @@ at::Tensor sparse_softmax_backward_sputnik(
   TORCH_CHECK(
       !column_indices.is_sparse(), "column_offsets must be a dense tensor");
 
+  TORCH_CHECK(
+      values.device() == grad.device(),
+      "values should be in the same device as grad");
+  TORCH_CHECK(
+      values.device() == row_indices.device(),
+      "a should be in the same device as row_indices");
+  TORCH_CHECK(
+      values.device() == row_offsets.device(),
+      "a should be in the same device as row_offsets");
+  TORCH_CHECK(
+      values.device() == column_indices.device(),
+      "a should be in the same device as column_indices");
+
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   int batch = values.size(0);
