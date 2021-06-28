@@ -117,7 +117,7 @@ class NystromAttention(Attention):
             mask = None
             if self.causal:
                 mask = self._tril_mask(batched_dim, seq_len, seq_len)
-            x = scaled_dot_product_attention(q, k, v, mask)
+            x = scaled_dot_product_attention(q=q, k=k, v=v, att_mask=mask)
 
         else:
             q_landmarks = self.landmark_pooling(q)
@@ -139,7 +139,7 @@ class NystromAttention(Attention):
                 q_landmarks, k_landmarks, self.causal_mask_2
             )
             kernel_3 = scaled_dot_product_attention(
-                q_landmarks, k, v, self.causal_mask_3
+                q=q_landmarks, k=k, v=v, att_mask=self.causal_mask_3
             )
 
             kernel_2_inv = (

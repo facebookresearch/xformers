@@ -110,7 +110,7 @@ class MultiHeadDispatch(nn.Module):
         v = _fold_heads(v, B, S, self.num_heads, self.dim_k)
 
         # Self-attend
-        y = self.attention(q, k, v, att_mask=att_mask)
+        y = self.attention(q=q, k=k, v=v, att_mask=att_mask)
 
         # Re-assemble all head outputs side by side
         y = (

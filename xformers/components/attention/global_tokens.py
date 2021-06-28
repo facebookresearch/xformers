@@ -94,5 +94,5 @@ class GlobalAttention(Attention):
         )
 
         return scaled_dot_product_attention(
-            q, k, v, att_mask=mask, dropout=self.attn_drop
+            q=q, k=k, v=v, att_mask=mask, dropout=self.attn_drop
         )

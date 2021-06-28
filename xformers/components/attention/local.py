@@ -101,4 +101,6 @@ class LocalAttention(Attention):
             self.attention_mask if att_mask is None else self.attention_mask & att_mask
         )
 
-        return scaled_dot_product_attention(q, k, v, mask, dropout=self.attn_drop)
+        return scaled_dot_product_attention(
+            q=q, k=k, v=v, att_mask=mask, dropout=self.attn_drop
+        )

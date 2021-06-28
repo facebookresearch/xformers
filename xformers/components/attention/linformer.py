@@ -55,6 +55,6 @@ class LinformerAttention(Attention):
         v_projected = self.F(v.transpose(-2, -1)).transpose(-2, -1)
 
         y = scaled_dot_product_attention(
-            q, k_projected, v_projected, att_mask=None, dropout=self.attn_drop
+            q=q, k=k_projected, v=v_projected, att_mask=None, dropout=self.attn_drop
         )
         return y[:, :-padding, :] if padding > 0 else y

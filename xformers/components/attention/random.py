@@ -93,4 +93,6 @@ class RandomAttention(Attention):
             else self.rand_attention_mask & att_mask
         )
 
-        return scaled_dot_product_attention(q, k, v, mask, dropout=self.attn_drop)
+        return scaled_dot_product_attention(
+            q=q, k=k, v=v, att_mask=mask, dropout=self.attn_drop
+        )

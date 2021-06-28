@@ -213,7 +213,12 @@ class xFormerDecoderBlock(nn.Module):
             # Masked multi head attention
             x = self.ln1(
                 target
-                + self.attn1(target_q, target_k, target_v, att_mask=decoder_att_mask)
+                + self.attn1(
+                    query=target_q,
+                    key=target_k,
+                    value=target_v,
+                    att_mask=decoder_att_mask,
+                )
             )
 
             # Include the memory/Encoder results
