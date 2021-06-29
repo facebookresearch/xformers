@@ -35,6 +35,7 @@ def _get_attention_query_mask(sequence_length: int, ratio: float):
 def _get_trace_handler(name: str):
     def trace_handler(prof):
         prof.export_chrome_trace(f"profile_{name}.json")
+        prof.export_stacks(f"stacks_{name}.txt", "self_cuda_time_total")
 
     return trace_handler
 
@@ -74,6 +75,7 @@ def _train_for_several_steps(
                 f"{att_name}_batch_{batch_size}_seq_{sequence_length}_embed_dim_{embed_dim}"
             ),
             profile_memory=True,
+            with_stack=True,
         )
         if profile
         else suppress()
