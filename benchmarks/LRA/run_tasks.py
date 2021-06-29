@@ -6,18 +6,19 @@ import json
 import logging
 import math
 import os
+import random
 import sys
 import time
 from contextlib import suppress
 from enum import Enum
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 
 import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from fvcore.nn import FlopCountAnalysis
+from fvcore.nn import FlopCountAnalysis, flop_count_str
 from torch.utils.data import DataLoader, DistributedSampler
 
 from benchmarks.LRA.code.dataset import LRADataset
@@ -67,8 +68,9 @@ def build_model(args: argparse.Namespace, config: Dict) -> nn.Module:
         x = torch.rand(1, seq_len).long()
         mask = torch.rand(1, seq_len).long()
         indices = torch.rand(1, seq_len).long()
-        flops = FlopCountAnalysis(model.model, (x, mask, indices)).total()
-        args.logger.info(f"complexity: {round(flops/1e9, 3)} GFlops")
+        flops = FlopCountAnalysis(model.model, (x, mask, indices))
+        args.logger.info(f"complexity: {round(flops.total()/1e9, 3)} GFlops")
+        args.logger.info(flop_count_str(flops))
 
     return model
 
@@ -170,12 +172,24 @@ def eval_model(model, dataloaders, component, config, step):
     model.eval()
 
     for dev_step_idx, batch_dev in enumerate(dataloaders[component]):
-        _ = step(batch_dev, component, dev_step_idx)
+        _ = step(
+            batch_dev,
+            component,
+            step_idx=dev_step_idx,
+            step_max=config["num_eval_steps"],
+        )
 
         if dev_step_idx == config["num_eval_steps"]:
             break
 
     model.train()
+
+
+def seed_worker(_: int):
+    # Make sure that non-pytorch random generators are properly set
+    worker_seed = torch.initial_seed() % 2 ** 32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 
 def benchmark(rank, args):
@@ -194,6 +208,8 @@ def benchmark(rank, args):
 
     torch.manual_seed(0)  # also sets the cuda seed
     np.random.seed(0)
+
+    torch.backends.cudnn.enabled = True
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     torch.cuda.reset_peak_memory_stats()
@@ -212,7 +228,9 @@ def benchmark(rank, args):
     device_ids = list(range(torch.cuda.device_count()))
     logger.info(f"GPU list: {device_ids}")
     model = model.cuda()
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[rank])
+    model = nn.parallel.DistributedDataParallel(
+        model, device_ids=[rank], broadcast_buffers=True
+    )
 
     (
         datasets,
@@ -261,6 +279,8 @@ def benchmark(rank, args):
 
     logger.info(f"accumu_steps={accumu_steps}")
     model_path = str(log_f_path).replace(".log", ".model")
+    g = torch.Generator()
+    g.manual_seed(0)
 
     dataloaders = {
         k: DataLoader(
@@ -270,12 +290,20 @@ def benchmark(rank, args):
             shuffle=False,
             pin_memory=True,
             num_workers=2,
+            worker_init_fn=seed_worker,
+            generator=g,
         )
         for k in datasets.keys()
     }
 
     # Our step function
-    def step(batch, component, step_idx, accumulate: bool = False):
+    def step(
+        batch: Dict[str, Any],
+        component: str,
+        step_idx: int,
+        step_max: int,
+        accumulate: bool = False,
+    ):
         t0 = time.time()
         batch_size = batch[list(batch.keys())[0]].size(0)
         if batch_size != per_gpu_batch_size:
@@ -311,7 +339,7 @@ def benchmark(rank, args):
 
         if not step_idx % 10:
             logger.info(
-                f"{component}: step={step_idx}, total_time={time_since_start:.1f},"
+                f"{component}: step={step_idx}/{step_max}, total_time={time_since_start:.1f},"
                 + f" batch_time={t_escape:.3f}, bs={batch_size}, lr={learning_rate:.6f},"
                 + f" loss={loss:.4f}, accu={accu:.4f}",
             )
@@ -339,8 +367,9 @@ def benchmark(rank, args):
 
                     _ = step(
                         batch,
-                        "train",
-                        train_step_idx,
+                        component="train",
+                        step_idx=train_step_idx,
+                        step_max=config_training["num_train_steps"],
                         accumulate=grad_accumulate,
                     )
 
@@ -444,7 +473,7 @@ def get_arg_parser():
 if __name__ == "__main__":
     parser = get_arg_parser()
     args = parser.parse_args()
-    setup_log(args, "main", "_".join(args.attention), "_".join(args.task))
+    setup_log(args, "main", f"{args.attention}", f"{args.task}")
 
     with temp_files_ctx(num=1) as temp_files:
         args.temp_file = temp_files[0]

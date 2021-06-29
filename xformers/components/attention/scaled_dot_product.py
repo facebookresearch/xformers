@@ -47,7 +47,7 @@ class ScaledDotProduct(Attention):
         if self.mask is not None:
             att_mask = self.mask if att_mask is None else self.mask & att_mask
 
-        # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
+        # Self-attend: (B x nh, S, hs) x (B x nh, hs, S) -> (B x nh, S, S)
         y = scaled_dot_product_attention(
             q=q, k=k, v=v, att_mask=att_mask, dropout=self.attn_drop
         )
