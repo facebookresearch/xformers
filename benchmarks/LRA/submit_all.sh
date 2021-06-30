@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 declare -a Tasks=("text" "image" "listops" "retrieval" "pathfinder32-curv_contour_length_14")
-declare -a Attentions=("scaled_dot_product" "nystrom" "favor" "fourier_mix" "linformer")
+declare -a Attentions=("scaled_dot_product" "nystrom" "favor" "fourier_mix" "linformer" "lambda")
 
 config_path=$1
 checkpoint_path=$2
