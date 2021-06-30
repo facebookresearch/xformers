@@ -2,6 +2,7 @@
 # https://github.com/mlpen/Nystromformer
 
 import argparse
+import datetime
 import json
 import logging
 import math
@@ -336,10 +337,18 @@ def benchmark(rank, args):
         loss = outputs["loss"].data.item()
         accu = outputs["accu"].data.item()
         time_since_start = time.time() - init_t
+        eta = (
+            datetime.timedelta(
+                seconds=round(time_since_start / (step_idx + 1) * step_max)
+            )
+            if component == "train"
+            else -1
+        )
 
         if not step_idx % 10:
             logger.info(
                 f"{component}: step={step_idx}/{step_max}, total_time={time_since_start:.1f},"
+                + f" eta={eta},"
                 + f" batch_time={t_escape:.3f}, bs={batch_size}, lr={learning_rate:.6f},"
                 + f" loss={loss:.4f}, accu={accu:.4f}",
             )
