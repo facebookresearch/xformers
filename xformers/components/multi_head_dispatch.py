@@ -1,10 +1,36 @@
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
 
 from xformers.components.attention import Attention  # , build_attention
+
+
+class InProjContainer(torch.nn.Module):
+    """
+    Inspired by https://github.com/pytorch/text/blob/master/torchtext/nn/modules/multiheadattention.py
+
+    query_proj: a projection layer for query.
+    key_proj: a projection layer for key.
+    value_proj: a projection layer for value.
+    """
+
+    def __init__(
+        self, query_proj: nn.Module, key_proj: nn.Module, value_proj: nn.Module
+    ):
+        super().__init__()
+        self.query_proj = query_proj
+        self.key_proj = key_proj
+        self.value_proj = value_proj
+
+    def forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return self.query_proj(query), self.key_proj(key), self.value_proj(value)
 
 
 @dataclass
@@ -15,6 +41,8 @@ class MultiHeadDispatchConfig:
     attention: Attention
     dim_key: Optional[int]
     dim_value: Optional[int]
+    in_proj_container: Optional[InProjContainer]
+    out_proj: Optional[nn.Module]
 
 
 # Move head forward and fold into batch dim. dimensions become (B * nh, S, hs)
@@ -39,13 +67,12 @@ class MultiHeadDispatch(nn.Module):
         attention: Attention,
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
+        in_proj_container: Optional[InProjContainer] = None,
+        out_proj: Optional[nn.Module] = None,
         *args,
         **kwargs,
     ):
         super().__init__()
-
-        # TODO: Expose the projection method,
-        # see https://github.com/pytorch/text/blob/torchtext/nn/modules/multiheadattention.py#L5-L36, very clean
 
         assert (
             dim_model % num_heads == 0
@@ -63,17 +90,25 @@ class MultiHeadDispatch(nn.Module):
 
         # key, query, value projections for all heads
         if attention.requires_input_projection:
-            self.project_key = nn.Linear(
-                dim_model, dim_key, bias=False
-            )  # NOTE: optional bias ?
-            self.project_query = nn.Linear(dim_model, dim_key, bias=False)
-            self.project_value = nn.Linear(dim_model, dim_value, bias=False)
+            self.in_proj_container = (
+                in_proj_container
+                if in_proj_container
+                else InProjContainer(
+                    query_proj=nn.Linear(
+                        dim_model, dim_key, bias=False
+                    ),  # NOTE: optional bias ?
+                    key_proj=nn.Linear(dim_model, dim_key, bias=False),
+                    value_proj=nn.Linear(dim_model, dim_value, bias=False),
+                )
+            )
 
         # Regularization
         self.resid_drop = nn.Dropout(residual_dropout, inplace=False)
 
         # Output projection
-        self.proj = nn.Linear(dim_model, dim_model, bias=False)
+        self.proj = (
+            out_proj if out_proj else nn.Linear(dim_model, dim_model, bias=False)
+        )
 
     def _check(self, t, name):
         assert (
@@ -87,7 +122,10 @@ class MultiHeadDispatch(nn.Module):
         value: torch.Tensor,
         att_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-
+        """
+        Expected input dimensions are [batch size, sequence length, embed dim]
+        Output dimensions are [batch size, sequence length, embed dim]
+        """
         # Check the dimensions properly
         self._check(query, "query")
         self._check(value, "value")
@@ -97,11 +135,7 @@ class MultiHeadDispatch(nn.Module):
 
         # Calculate query, key, values for all heads in batch
         if self.attention.requires_input_projection:
-            k, q, v = (
-                self.project_key(key),
-                self.project_query(query),
-                self.project_value(value),
-            )
+            q, k, v = self.in_proj_container(query=query, key=key, value=value)
         else:
             k, q, v = key, query, value
 
