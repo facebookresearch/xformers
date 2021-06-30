@@ -129,15 +129,15 @@ The code for this benchmark has been adapted from [this repository](https://gith
 
 Some results:
 
-| Attention                   | ListOps   | Text      | Retrieval | Image     | Pathfinder | *Avg*     | *Est. Gflops* | *Peak mem (mb)* |
-| --------------------------- | --------- | --------- | --------- | --------- | ---------- | --------- | ------------- | --------------- |
-| Chance                      | 10        | 50        | 50        | 10        | 50         | 34        | 0             | 0               |
-| Standard                    | **37.10** | 63.51     | 79.02     | 37.10     | 67.55      | **56.86** | 1.21          | 2291            |
-| Nystromformer-128           | 36.09     | 63.48     | 76.55     | **39.51** | **67.71**  | 56.67     | 0.62          | 383             |
-| Favor-256 (redraw)          | 18.75     | **63.53** | **79.37** | 32.44     | 66.77      | 52.17     | 0.49          | 445             |
-| FourierMix                  | 35.69     | 63.09     | 73.98     | 33.71     | 51.14      | 51.52     | **0.17**      | **87**          |
-| Linformer-seq/4 (no redraw) | 37.10     | 57.87     | 76.46     | 38.84     | 55.15      | 53.08     | 0.67          | 719             |
-| Lambda                      | 19.76     | 62.47     | 79.11     | 35.04     | 49.74      | 49.74     | x             | 1023            |
+| Attention                   | ListOps  | Text      | Retrieval | Image     | Pathfinder | *Avg* | *Est. Gflops* | *Peak mem (mb)* |
+| --------------------------- | -------- | --------- | --------- | --------- | ---------- | ----- | ------------- | --------------- |
+| Chance                      | 10       | 50        | 50        | 10        | 50         | 34    | 0             | 0               |
+| Standard                    | **37.5** | 62.66     | 79.24     | 38.69     | **70.37**  | 57.69 | 1.21          | 2291            |
+| Nystromformer-128           | 36.29    | **63.24** | 78.18     | **42.86** | 67.49      | 57.61 | 0.62          | 383             |
+| Favor-256 (redraw)          | 19.56    | 62.76     | **81.1**  | 36.09     | 67.23      | 53.35 | 0.49          | 445             |
+| FourierMix                  | 36.29    | 60.72     | 76.41     | 36.53     | 54.07      | 52.8  | **0.17**      | **87**          |
+| Linformer-seq/4 (no redraw) | 36.69    | 57.39     | 76.41     | 35.57     | 65.12      | 54.2  | 0.67          | 719             |
+| Lambda                      | x        | x         | x         | x         | x          | x     | x             | 1023            |
 
 Contrary to the initial LRA proposal, we use the same model architecture for all tasks (2 layers). The training schedule for ListOps has also been lengthened, while keeping it the fastest of all tasks, which reduces the seed dependence in the final accuracy figure. Estimated flops and peak memory are on the ListOps task, using 4 GPUs. Note that LRA is not completely well defined, in that hyperparameters and model architectures can vary (should the same architecture be used everywhere ? Similar hyperparams ?). This could be improved in the future, but in the meantime one should probably not read too much into small differences for some tasks, probably not meaningful.
 

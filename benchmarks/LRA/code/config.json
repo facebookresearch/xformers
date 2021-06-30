@@ -32,6 +32,7 @@
                     {
                         "block_type": "encoder",
                         "num_layers": 2,
+                        "layer_norm_style": "pre",
                         "position_encoding_config": {
                             "name": "vocab"
                         },
@@ -97,6 +98,7 @@
                     {
                         "block_type": "encoder",
                         "num_layers": 2,
+                        "layer_norm_style": "pre",
                         "position_encoding_config": {
                             "name": "vocab"
                         },
@@ -162,6 +164,7 @@
                     {
                         "block_type": "encoder",
                         "num_layers": 2,
+                        "layer_norm_style": "pre",
                         "position_encoding_config": {
                             "name": "vocab"
                         },
@@ -222,6 +225,7 @@
                     {
                         "block_type": "encoder",
                         "num_layers": 2,
+                        "layer_norm_style": "pre",
                         "position_encoding_config": {
                             "name": "vocab"
                         },
@@ -287,6 +291,7 @@
                     {
                         "block_type": "encoder",
                         "num_layers": 2,
+                        "layer_norm_style": "pre",
                         "position_encoding_config": {
                             "name": "vocab"
                         },
