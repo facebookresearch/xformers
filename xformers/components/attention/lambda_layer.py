@@ -42,7 +42,7 @@ class LambdaLayer(Attention):
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs
     ):
         """..NOTE: We're reusing the einsum notation suggested by the paper, changed in that
-        heads are foled in the batch dimension"""
+        heads are folded in the batch dimension"""
 
         content_lambda = torch.einsum("bnk,bnv->bkv", torch.softmax(k, dim=-1), v)
         content_output = torch.einsum("bnk,bkv->bnv", q, content_lambda)
