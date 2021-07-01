@@ -436,8 +436,7 @@ def get_arg_parser():
     parser.add_argument(
         "--task",
         type=Task,
-        help=f"Task to chose, among {[t.value for t in Task]}. \
-            A list can be passed to benchmark several tasks in sequence",
+        help=f"Task to chose, among {[t.value for t in Task]}.",
         dest="task",
         required=True,
     )
