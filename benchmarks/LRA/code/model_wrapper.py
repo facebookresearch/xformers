@@ -53,6 +53,9 @@ def patch_model_config(config, attention_name):
         b["multi_head_config"].update(commons)
         b["multi_head_config"]["attention"].update(commons)
         b["multi_head_config"]["attention"]["name"] = attention_name
+        b["multi_head_config"]["attention"]["dim_head"] = (
+            commons["dim_model"] / commons["num_heads"]
+        )
         if extra_attention_settings is not None:
             b["multi_head_config"]["attention"].update(extra_attention_settings)
 
