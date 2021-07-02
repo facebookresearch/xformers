@@ -37,4 +37,11 @@ __Batch submissions__ are possible, for instance as follows
 ```bash
 python3 batch_submit.py -c code/config.json -ck <your checkpoing and log path> -a lambda
 ```
-d
+
+Collecting all the results at once can be done with another small script, as follows:
+
+```bash
+python3 batch_fetch_results.py -ck <your checkpoing and log path>
+```
+
+This will synthetise the logs and show the score matrix for all the tasks and variants in this run.
