@@ -113,7 +113,7 @@ class NystromAttention(Attention):
         batched_dim = k.size(0)
         seq_len = k.size(-2)
 
-        if self.num_landmarks == seq_len:
+        if self.num_landmarks >= seq_len:
             mask = None
             if self.causal:
                 mask = self._tril_mask(batched_dim, seq_len, seq_len)
@@ -123,7 +123,11 @@ class NystromAttention(Attention):
             q_landmarks = self.landmark_pooling(q)
             k_landmarks = self.landmark_pooling(k)
 
-            if self.causal and self.causal_mask_1 is None:
+            if self.causal and (
+                self.causal_mask_1 is None
+                or (batched_dim, seq_len, self.num_landmarks)
+                != self.causal_mask_1.size()
+            ):
                 self.causal_mask_1 = self._tril_mask(
                     batched_dim, seq_len, self.num_landmarks
                 ).to(q.device)
