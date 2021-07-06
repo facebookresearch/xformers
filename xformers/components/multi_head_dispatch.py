@@ -118,14 +118,20 @@ class MultiHeadDispatch(nn.Module):
     def forward(
         self,
         query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
+        key: Optional[torch.Tensor] = None,
+        value: Optional[torch.Tensor] = None,
         att_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Expected input dimensions are [batch size, sequence length, embed dim]
         Output dimensions are [batch size, sequence length, embed dim]
         """
+
+        if key is None:
+            key = query
+        if value is None:
+            value = query
+
         # Check the dimensions properly
         self._check(query, "query")
         self._check(value, "value")
