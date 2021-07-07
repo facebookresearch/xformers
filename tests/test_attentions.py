@@ -24,21 +24,7 @@ GLOBAL_ATTENTION_RATIO = (
 assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
 
 
-@pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
-@pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
-@pytest.mark.parametrize("causal", [True, False])
-@pytest.mark.parametrize("heads", [1, 3])
-@pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
-@pytest.mark.parametrize("device", DEVICES)
-def test_order_invariance(
-    attention_name: str,
-    heads: int,
-    attn_dropout: float,
-    residual_dropout: float,
-    causal: bool,
-    device: torch.device,
-):
-
+def _get_multihead(attention_name, attn_dropout, res_dropout, causal, heads, device):
     test_config = {
         "name": attention_name,
         "dropout": attn_dropout,
@@ -56,10 +42,31 @@ def test_order_invariance(
     multi_head = MultiHeadDispatch(
         seq_len=SEQ,
         dim_model=MODEL,
-        residual_dropout=residual_dropout,
+        residual_dropout=res_dropout,
         num_heads=heads,
         attention=attention,
     ).to(device)
+
+    return multi_head
+
+
+@pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
+@pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
+@pytest.mark.parametrize("causal", [True, False])
+@pytest.mark.parametrize("heads", [1, 3])
+@pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
+@pytest.mark.parametrize("device", DEVICES)
+def test_order_invariance(
+    attention_name: str,
+    heads: int,
+    attn_dropout: float,
+    residual_dropout: float,
+    causal: bool,
+    device: torch.device,
+):
+    multi_head = _get_multihead(
+        attention_name, attn_dropout, residual_dropout, causal, heads, device
+    )
 
     # Check that a shuffled input produces the same results
     inputs = torch.rand(BATCH, SEQ, MODEL, device=device)
@@ -70,6 +77,50 @@ def test_order_invariance(
     results_shuffled = multi_head(inputs_shuffled, inputs_shuffled, inputs_shuffled)
 
     torch.allclose(results[:, shuffle, :], results_shuffled)
+
+
+@pytest.mark.parametrize("heads", [1, 3])
+@pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
+@pytest.mark.parametrize("device", DEVICES)
+def test_kqv_ordering(
+    attention_name: str,
+    heads: int,
+    device: torch.device,
+):
+
+    multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
+
+    # Check kqv are not flipped
+    # this will not catch all issues, but would catch a V being misplaced
+    # make k and q complimentary, so that QKt is all zero and attention is uniform
+
+    q = torch.cat(
+        (
+            torch.rand((1, MODEL // 2), device=device),
+            torch.zeros((1, MODEL // 2), device=device),
+        ),
+        dim=1,
+    ).expand((BATCH, SEQ, MODEL))
+
+    k = torch.cat(
+        (
+            torch.zeros((1, MODEL // 2), device=device),
+            torch.rand((1, MODEL // 2), device=device),
+        ),
+        dim=1,
+    ).expand((BATCH, SEQ, MODEL))
+    v = torch.rand(BATCH, SEQ, MODEL, device=device)
+
+    # Normal call
+    res = multi_head(query=q, key=k, value=v)
+    for i in range(BATCH):
+        assert torch.allclose(res[i, :, :], res[i, 0, :].unsqueeze(-2))
+
+    assert not torch.allclose(res[0, :, :], res[1, :, :])
+
+    # Flip qkv, and check that we invert the above check properly
+    res_false = multi_head(query=v, key=k, value=q)
+    assert torch.allclose(res_false[0, :, :], res_false[1, :, :])
 
 
 # TODO: way more unit tests..
