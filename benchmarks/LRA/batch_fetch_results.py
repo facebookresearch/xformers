@@ -7,6 +7,8 @@ reference_steps = {
     "image": 35176,
     "listops": 10000,
     "pathfinder32-curv_contour_length_14": 62400,
+    "pathfinder32-curv_baseline": 62400,
+    "pathfinder32-curv_contour_length_9": 62400,
     "text": 20000,
     "retrieval": 30000,
 }
