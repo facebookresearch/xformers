@@ -102,7 +102,6 @@ def _get_ln_factory(d_model: int, layer_norm_style: Optional[LayerNormStyle]):
 @dataclass(init=False)  # handle constructors explicitly to force type changes
 class xFormerBlockConfig:
     dim_model: int
-    num_layers: int
     feedforward_config: FeedforwardConfig
     position_encoding_config: Optional[PositionEmbeddingConfig]
     block_type: BlockType
@@ -114,11 +113,9 @@ class xFormerBlockConfig:
         feedforward_config: Dict[str, Any],
         position_encoding_config: Optional[Dict[str, Any]],
         block_type: BlockType,
-        num_layers: int = 1,
         layer_norm_style: LayerNormStyle = LayerNormStyle("post"),
     ):
         self.dim_model = dim_model
-        self.num_layers = num_layers
         self.block_type = block_type
         self.layer_norm_style = layer_norm_style
 
@@ -148,7 +145,6 @@ class xFormerEncoderConfig(xFormerBlockConfig):
         feedforward_config: Dict[str, Any],
         position_encoding_config: Optional[Dict[str, Any]],
         multi_head_config: Dict[str, Any],
-        num_layers: int = 1,
         layer_norm_style: str = "post",
         *args,
         **kwargs,
@@ -158,7 +154,6 @@ class xFormerEncoderConfig(xFormerBlockConfig):
             feedforward_config=feedforward_config,
             position_encoding_config=position_encoding_config,
             layer_norm_style=LayerNormStyle(layer_norm_style),
-            num_layers=num_layers,
             block_type=BlockType("encoder"),
         )
 
@@ -177,7 +172,6 @@ class xFormerDecoderConfig(xFormerBlockConfig):
         position_encoding_config: Optional[Dict[str, Any]],
         multi_head_config_masked: Dict[str, Any],
         multi_head_config_cross: Dict[str, Any],
-        num_layers: int = 1,
         layer_norm_style: str = "post",
         *args,
         **kwargs,
@@ -187,7 +181,6 @@ class xFormerDecoderConfig(xFormerBlockConfig):
             feedforward_config=feedforward_config,
             position_encoding_config=position_encoding_config,
             layer_norm_style=LayerNormStyle(layer_norm_style),
-            num_layers=num_layers,
             block_type=BlockType("encoder"),
         )
 

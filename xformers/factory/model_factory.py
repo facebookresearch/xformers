@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 
@@ -13,24 +13,41 @@ from xformers.factory.block_factory import (
 
 
 @dataclass(init=False)
+class xFormerStackConfig:
+    """
+    A stack is defined by the definition of a given block, and an optional repetition factor
+    """
+
+    block_config: Union[xFormerEncoderConfig, xFormerDecoderConfig]
+    num_layers: int
+
+    def __init__(self, block_config: Dict[str, Any]):
+
+        if block_config["block_type"] == BlockType.Encoder:
+            self.block_config = xFormerEncoderConfig(**block_config)
+        else:
+            self.block_config = xFormerDecoderConfig(**block_config)
+
+        # Convenience: make num_layers optional, so that a stack at that point could
+        # only be defined by a given block, and no repetition
+        if "num_layers" in block_config.keys():
+            self.num_layers = block_config["num_layers"]
+        else:
+            self.num_layers = 1
+
+
+@dataclass(init=False)
 class xFormerConfig:
-    block_configs: List[Union[xFormerEncoderConfig, xFormerDecoderConfig]]
+    stack_configs: List[Union[xFormerStackConfig, xFormerStackConfig]]
 
-    def __init__(self, block_configs):
-        typed_configs = []
-
-        for config in block_configs:
-            if config["block_type"] == BlockType.Encoder:
-                typed_configs.append(xFormerEncoderConfig(**config))
-            else:
-                typed_configs.append(xFormerDecoderConfig(**config))
-
-        self.block_configs = typed_configs
+    def __init__(self, block_configs: List[Dict[str, Any]]):
+        # Type all the configurations. Possible typos are caught here
+        self.stack_configs = [xFormerStackConfig(config) for config in block_configs]
 
 
 class xFormer(torch.nn.Module):
     def __init__(
-        self, block_configs: List[Union[xFormerEncoderConfig, xFormerDecoderConfig]]
+        self, stack_configs: List[Union[xFormerStackConfig, xFormerStackConfig]]
     ):
         """
         Given a serialized configuration, generate the corresponding model.
@@ -42,17 +59,17 @@ class xFormer(torch.nn.Module):
         encoders: List[torch.nn.Module] = []
         decoders: List[torch.nn.Module] = []
 
-        for config in block_configs:
-            if type(config) is xFormerEncoderConfig:
-                config = cast(xFormerEncoderConfig, config)
-                for i in range(config.num_layers):
+        for stack in stack_configs:
+            config = stack.block_config
+
+            if isinstance(config, xFormerEncoderConfig):
+                for i in range(stack.num_layers):
                     if i > 0:
                         config.position_encoding_config = None
                     encoders.append(xFormerEncoderBlock.from_config(config))
 
-            elif type(config) is xFormerDecoderConfig:
-                config = cast(xFormerDecoderConfig, config)
-                for i in range(config.num_layers):
+            elif isinstance(config, xFormerDecoderConfig):
+                for i in range(stack.num_layers):
                     if i > 0:
                         config.position_encoding_config = None
                     decoders.append(xFormerDecoderBlock.from_config(config))
@@ -65,7 +82,7 @@ class xFormer(torch.nn.Module):
 
     @classmethod
     def from_config(cls, config: xFormerConfig):
-        return cls(config.block_configs)
+        return cls(config.stack_configs)
 
     def forward(
         self,
