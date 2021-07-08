@@ -84,6 +84,7 @@ from .global_tokens import GlobalAttention  # noqa
 from .linformer import LinformerAttention  # noqa
 from .local import LocalAttention  # noqa
 from .nystrom import NystromAttention  # noqa
+from .ortho import OrthoFormerAttention  # noqa
 from .random import RandomAttention  # noqa
 from .scaled_dot_product import ScaledDotProduct  # noqa
 
@@ -93,6 +94,7 @@ __all__ = [
     "LinformerAttention",
     "NystromAttention",
     "RandomAttention",
+    "OrthoFormerAttention",
     "GlobalAttention",
     "FavorAttention",
     "Attention",
