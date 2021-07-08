@@ -19,6 +19,31 @@ from xformers.components.positional_embedding import (
 from xformers.utils import generate_matching_config
 
 
+class LayerPositionBitmask(int, Enum):
+    First = 0b01
+    Last = 0b10
+    Default = 0b11
+
+
+class LayerPosition:
+    """ Bitmask to mark this layer as first, last, nothing or both"""
+
+    def __init__(self):
+        self.bitmask = LayerPositionBitmask.Default
+
+    def is_first(self):
+        return bool(self.bitmask & LayerPositionBitmask.First)
+
+    def is_last(self):
+        return bool(self.bitmask & LayerPositionBitmask.Last)
+
+    def mark_not_first(self):
+        self.bitmask &= ~LayerPositionBitmask.First
+
+    def mark_not_last(self):
+        self.bitmask &= ~LayerPositionBitmask.Last
+
+
 class BlockType(str, Enum):
     Encoder = "encoder"
     Decoder = "decoder"
@@ -106,6 +131,7 @@ class xFormerBlockConfig:
     position_encoding_config: Optional[PositionEmbeddingConfig]
     block_type: BlockType
     layer_norm_style: LayerNormStyle
+    layer_position: LayerPosition
 
     def __init__(
         self,
@@ -133,6 +159,9 @@ class xFormerBlockConfig:
             if position_encoding_config is not None
             else None
         )
+
+        # Default is that this layer is the only one, so both first and last
+        self.layer_position = LayerPosition()
 
 
 @dataclass(init=False)
@@ -193,9 +222,11 @@ class xFormerEncoderBlock(nn.Module):
 
     def __init__(self, config: xFormerEncoderConfig):
         super().__init__()
+
+        # If this layer is the first one, and a pose encoding as been requested
         self.pose_encoding = (
             build_positional_embedding(asdict(config.position_encoding_config))
-            if config.position_encoding_config
+            if config.position_encoding_config and config.layer_position.is_first()
             else None
         )
 
@@ -211,9 +242,15 @@ class xFormerEncoderBlock(nn.Module):
             self.layer_norm_feedforward = ln_factory(self.feedforward)
 
             self.wrap_att = Residual(self.layer_norm_att)
-            self.wrap_ff = PostNorm(
-                config.dim_model, Residual(self.layer_norm_feedforward)
+
+            # If this is the last layer in a stack, add a layer norm
+            ff_residual = Residual(self.layer_norm_feedforward)
+            self.wrap_ff: Union[Residual, PostNorm] = (
+                PostNorm(config.dim_model, ff_residual)
+                if config.layer_position.is_last()
+                else ff_residual
             )
+
         else:
             # Attention and residual path are applied on the raw sigal, the normalization happens last
             self.residual_att = Residual(self.mha)
@@ -258,9 +295,10 @@ class xFormerDecoderBlock(nn.Module):
         self.linear1 = nn.Linear(config.dim_model, config.feedforward_config.dim_model)
         self.linear2 = nn.Linear(config.dim_model, config.feedforward_config.dim_model)
 
+        # If this layer is the first one, and a pose encoding as been requested
         self.pose_encoding = (
             build_positional_embedding(config.position_encoding_config)
-            if config.position_encoding_config
+            if config.position_encoding_config and config.layer_position.is_first()
             else None
         )
 
@@ -279,8 +317,13 @@ class xFormerDecoderBlock(nn.Module):
 
             self.wrap_att = Residual(self.layer_norm_att)
             self.wrap_cross = Residual(self.layer_norm_cross)
-            self.wrap_ff = PostNorm(
-                config.dim_model, Residual(self.layer_norm_feedforward)
+
+            # If this is the last layer in a stack, add a layer norm
+            ff_residual = Residual(self.layer_norm_feedforward)
+            self.wrap_ff: Union[Residual, PostNorm] = (
+                PostNorm(config.dim_model, ff_residual)
+                if config.layer_position.is_last()
+                else ff_residual
             )
         else:
             # Attention and residual path are applied on the raw sigal, the normalization happens last

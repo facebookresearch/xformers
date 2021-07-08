@@ -62,20 +62,24 @@ class xFormer(torch.nn.Module):
         for stack in stack_configs:
             config = stack.block_config
 
-            if isinstance(config, xFormerEncoderConfig):
-                for i in range(stack.num_layers):
-                    if i > 0:
-                        config.position_encoding_config = None
-                    encoders.append(xFormerEncoderBlock.from_config(config))
+            # Handle either Encoder or Decoder stacks
+            builder = (
+                xFormerEncoderBlock.from_config
+                if isinstance(config, xFormerEncoderConfig)
+                else xFormerDecoderBlock.from_config
+            )
+            recipient = (
+                encoders if isinstance(config, xFormerEncoderConfig) else decoders
+            )
 
-            elif isinstance(config, xFormerDecoderConfig):
-                for i in range(stack.num_layers):
-                    if i > 0:
-                        config.position_encoding_config = None
-                    decoders.append(xFormerDecoderBlock.from_config(config))
+            # Build up the stack
+            for i in range(stack.num_layers):
+                if i > 0:
+                    config.layer_position.mark_not_first()
+                if i < stack.num_layers - 1:
+                    config.layer_position.mark_not_last()
 
-            else:
-                raise NotImplementedError(f"{config} is not supported")
+                recipient.append(builder(config))  # type: ignore
 
         self.encoders = torch.nn.ModuleList(encoders)
         self.decoders = torch.nn.ModuleList(decoders)
