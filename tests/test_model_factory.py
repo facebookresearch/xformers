@@ -55,7 +55,7 @@ test_configs = [
                     "vocab_size": 64,
                 },
                 "num_layers": 2,
-                "multi_head_config_pre_encoder": {
+                "multi_head_config_masked": {
                     "num_heads": 4,
                     "dim_model": 384,
                     "residual_dropout": 0,
@@ -66,7 +66,7 @@ test_configs = [
                         "seq_len": 512,
                     },
                 },
-                "multi_head_config_post_encoder": {
+                "multi_head_config_cross": {
                     "num_heads": 4,
                     "dim_model": 384,
                     "residual_dropout": 0,

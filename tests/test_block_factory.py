@@ -34,6 +34,7 @@ VOCAB_SIZE = 32
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
+@pytest.mark.parametrize("layer_norm_style", ["pre", "post"])
 @pytest.mark.parametrize("device", DEVICES)
 def test_xformer_encoder_block(
     attention_name: str,
@@ -43,6 +44,7 @@ def test_xformer_encoder_block(
     residual_dropout: float,
     causal: bool,
     activation: Activation,
+    layer_norm_style: str,
     device: torch.device,
 ):
 
@@ -84,6 +86,7 @@ def test_xformer_encoder_block(
         multi_head_config=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
+        layer_norm_style=layer_norm_style,
     )
 
     # Test that the whole block can be instantiated
@@ -110,6 +113,7 @@ def test_xformer_encoder_block(
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
+@pytest.mark.parametrize("layer_norm_style", ["pre", "post"])
 @pytest.mark.parametrize("device", DEVICES)
 def test_xformer_decoder_block(
     attention_name: str,
@@ -119,6 +123,7 @@ def test_xformer_decoder_block(
     residual_dropout: float,
     causal: bool,
     activation: Activation,
+    layer_norm_style: str,
     device: torch.device,
 ):
 
@@ -164,8 +169,8 @@ def test_xformer_decoder_block(
 
     decoder_block_config = xFormerDecoderConfig(
         dim_model=MODEL,
-        multi_head_config_pre_encoder=multi_head_config,
-        multi_head_config_post_encoder=multi_head_config,
+        multi_head_config_masked=multi_head_config,
+        multi_head_config_cross=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
     )
