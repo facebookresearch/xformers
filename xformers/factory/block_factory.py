@@ -108,10 +108,21 @@ class PostNorm(nn.Module):
         return self.norm(x)
 
 
-def _get_ln_factory(d_model: int, layer_norm_style: Optional[LayerNormStyle]):
-    def get_layer_norm(
-        d_model: int, sublayer: nn.Module, layer_norm_style: Optional[LayerNormStyle]
+def _get_ln_factory(
+    d_model: int, layer_norm_style: Optional[LayerNormStyle], residual: bool = True
+):
+    def get_layer_wrapper(
+        d_model: int,
+        sublayer: nn.Module,
+        layer_norm_style: Optional[LayerNormStyle],
+        residual: bool = True,
     ):
+        if residual:
+            return (
+                Residual(PreNorm(d_model, sublayer))
+                if layer_norm_style == LayerNormStyle.Pre
+                else PostNorm(d_model, Residual(sublayer))
+            )
         return (
             PreNorm(d_model, sublayer)
             if layer_norm_style == LayerNormStyle.Pre
@@ -119,7 +130,7 @@ def _get_ln_factory(d_model: int, layer_norm_style: Optional[LayerNormStyle]):
         )
 
     def ln_factory(sublayer: nn.Module):
-        return get_layer_norm(d_model, sublayer, layer_norm_style)
+        return get_layer_wrapper(d_model, sublayer, layer_norm_style, residual)
 
     return ln_factory
 
@@ -230,34 +241,21 @@ class xFormerEncoderBlock(nn.Module):
             else None
         )
 
-        # mini helper, builds a LayerNorm with the right Pre/Post config and the right dimensions
+        # mini helper, builds a LayerNorm with the right Pre/Post config, residuals, and the right dimensions
         ln_factory = _get_ln_factory(config.dim_model, config.layer_norm_style)
 
         self.mha = build_multi_head_attention(config.multi_head_config)
         self.feedforward = build_feedforward(asdict(config.feedforward_config))
 
-        if config.layer_norm_style == LayerNormStyle.Pre:
-            # Attention is computed on normalized inputs, the residual path stays un-normalized
-            self.layer_norm_att = ln_factory(self.mha)
-            self.layer_norm_feedforward = ln_factory(self.feedforward)
+        # Attention is computed on normalized inputs, the residual path stays un-normalized
+        self.wrap_att = ln_factory(self.mha)
+        self.wrap_ff: Union[Residual, PostNorm] = ln_factory(self.feedforward)
 
-            self.wrap_att = Residual(self.layer_norm_att)
-
-            # If this is the last layer in a stack, add a layer norm
-            ff_residual = Residual(self.layer_norm_feedforward)
-            self.wrap_ff: Union[Residual, PostNorm] = (
-                PostNorm(config.dim_model, ff_residual)
-                if config.layer_position.is_last()
-                else ff_residual
-            )
-
-        else:
-            # Attention and residual path are applied on the raw sigal, the normalization happens last
-            self.residual_att = Residual(self.mha)
-            self.residual_ff = Residual(self.feedforward)
-
-            self.wrap_att = ln_factory(self.residual_att)
-            self.wrap_ff = ln_factory(self.residual_ff)
+        if (
+            config.layer_norm_style == LayerNormStyle.Pre
+            and config.layer_position.is_last()
+        ):
+            self.wrap_ff = PostNorm(config.dim_model, self.wrap_ff)
 
     @classmethod
     def from_config(cls, config: xFormerEncoderConfig):
@@ -309,31 +307,19 @@ class xFormerDecoderBlock(nn.Module):
         self.cross_mha = build_multi_head_attention(config.multi_head_config_cross)
         self.feedforward = build_feedforward(config.feedforward_config)
 
-        if config.layer_norm_style == LayerNormStyle.Pre:
-            # Attention is computed on normalized inputs, the residual path stays un-normalized
-            self.layer_norm_att = ln_factory(self.mha)
-            self.layer_norm_cross = ln_factory(self.cross_mha)
-            self.layer_norm_feedforward = ln_factory(self.feedforward)
+        self.wrap_att = ln_factory(self.mha)
+        self.wrap_cross = (
+            ln_factory(self.cross_mha)
+            if config.layer_norm_style == LayerNormStyle.Pre
+            else Residual(Residual(self.cross_mha))
+        )
+        self.wrap_ff: Union[Residual, PostNorm] = ln_factory(self.feedforward)
 
-            self.wrap_att = Residual(self.layer_norm_att)
-            self.wrap_cross = Residual(self.layer_norm_cross)
-
-            # If this is the last layer in a stack, add a layer norm
-            ff_residual = Residual(self.layer_norm_feedforward)
-            self.wrap_ff: Union[Residual, PostNorm] = (
-                PostNorm(config.dim_model, ff_residual)
-                if config.layer_position.is_last()
-                else ff_residual
-            )
-        else:
-            # Attention and residual path are applied on the raw sigal, the normalization happens last
-            self.residual_att = Residual(self.mha)
-            self.residual_cross = Residual(self.cross_mha)
-            self.residual_ff = Residual(self.feedforward)
-
-            self.wrap_att = ln_factory(self.residual_att)
-            self.wrap_cross = Residual(self.cross_mha)
-            self.wrap_ff = ln_factory(self.residual_ff)
+        if (
+            config.layer_norm_style == LayerNormStyle.Pre
+            and config.layer_position.is_last()
+        ):
+            self.wrap_ff = PostNorm(config.dim_model, self.wrap_ff)
 
     @classmethod
     def from_config(cls, config: xFormerDecoderConfig):
