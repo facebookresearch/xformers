@@ -94,10 +94,15 @@ class xFormer(torch.nn.Module):
         encoder_input_mask: Optional[torch.Tensor] = None,
         decoder_input_mask: Optional[torch.Tensor] = None,
     ) -> Optional[torch.Tensor]:
-        # Encode to latent space if encoder is present
+
         latent = inputs
 
+        # Encode to latent space if encoder is present
         if self.encoders:
+            latent = (
+                inputs.clone()
+            )  # Make sure that we don't modify the inputs in place
+
             for encoder in self.encoders:
                 latent = encoder(latent, input_mask=encoder_input_mask)
 
