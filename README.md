@@ -22,7 +22,9 @@ Flexible Transformers, defined by interoperable and optimized building blocks th
 
 ## Using xFormers
 
-### Installing the repod
+If in doubt, please check out the [HOWTO](HOWTO.md). Only some general considerations are laid out in the README.
+
+### Installing the repository
 
 It is recommended to use a dedicated virtual environment, as often with python, through `python-virtualenv` or `conda` for instance.
 `pip install -e .` is all you need to install in dev mode (you can change the repo code and the installation will follow suit), if you just want to install from source and not change it afterwards `pip install .` is what you'll need.
@@ -43,40 +45,9 @@ It is recommended to use a dedicated virtual environment, as often with python, 
 ...                             # Full models, ready to be used
 ```
 
-### Conventions using Attentions
+### Using Attentions
 
-Let's consider the vanilla attention, and comment out some key points:
-
-```python
-@register_attention("scaled_dot_product", AttentionConfig)
-class ScaledDotProduct(Attention):
-    r"""
-    Implementing the Scaled Dot-Product attention proposed in
-    "Attention is all you need", Vaswani et al. https://arxiv.org/abs/1706.03762v5
-    """
-
-    def __init__(
-        self,
-        dropout: float = 0.0,
-        causal: bool = False,                         # Whether or not you can attend to the future
-        seq_len: Optional[int] = None,
-        to_seq_len: Optional[int] = None,
-        *args,
-        **kwargs,
-    ):
-        ...
-
-    def forward(
-        self,
-        q: torch.Tensor,                              # Dimensions: [Batch * Sequence * Embedding]
-        k: torch.Tensor,                              # (same)
-        v: torch.Tensor,                              # (same)
-        att_mask: Optional[torch.Tensor] = None,      # [Sequence x Sequence] mask, not input masking
-        *args,
-        **kwargs,
-    ) -> torch.Tensor:
-        ...
-```
+You can find some more details in the [HOWTO](HOWTO.md), but in short:
 
 - How does multi-head attention works ?
   - The multi-head wrapper handles the dimension changes, so maybe that is what you would like to use. In a nutshell, we fold the head dimension into the batch, since both relate to parallel, independent computations. Feel free to skip the multi-head wrapper if that's easier for you
@@ -85,37 +56,8 @@ class ScaledDotProduct(Attention):
 - Can I just cherry pick an attention from the repo and run with it ?
   - Yes, go for it !
 - How can I easily test out different attentions ?
-  - Either you import the ones you're interesed in directly in your code base, their API should be very close and you would own everything.
-  - Alternatively, a `build_attention` helper is provided, which takes a dict as an input. By sweeping over several settings (attention names for instance), you can try out several options in a pretty compact code footprint, like this:
-
-```python
-  from xformers.components import MultiHeadDispatch, build_attention
-  SEQ = 1024
-  MODEL = 384
-  HEADS = 16
-  DROPOUT = 0.1
-
-  my_config = {
-      "name": attention_name,  # you can easily make this dependent on a file, sweep,..
-      "dropout": DROPOUT,
-      "seq_len": SEQ,
-      "attention_query_mask": torch.rand((SEQ, 1)) < 0.3, # some dummy mask
-  }
-
-  attention = build_attention(my_config)
-
-  # build a multi head dispatch to test this attention mechanism
-  multi_head = MultiHeadDispatch(
-      seq_len=SEQ,
-      dim_model=MODEL,
-      residual_dropout=DROPOUT,
-      num_heads=HEADS,
-      attention=attention,
-  ).to(device)
-
-  # do something with my new multi-head attention
-  #...
-```
+  - Either you import the ones you're interested in directly in your code base, their API should be very close and you would own everything. The dimension expectations are explained in the HOWTO
+  - Alternatively, a `build_attention` helper is provided, which takes a dict as an input. By sweeping over several settings (attention names for instance), you can try out several options in a pretty compact code footprint
 
 ### Sparse attention
 
@@ -123,27 +65,6 @@ Below you will find a set of notebooks that will show you how you can use xForme
 
 - [Creating complex sparsity patterns with xFormers](docs/source/2d_attention_patterns.ipynb)
 - [Changing ViT to use sparse attention, benchmarking the effects](docs/source/vision_transformers.ipynb)
-
-## Contributing
-
-### Adding new variants
-
-Here are a couple of guidelines which should make it easier to add a new block variant to this repo:
-
-- Blocks live in `xformers/components`
-- Make sure that the block and its config inherit from the ones defined in the base file
-- Default values need to be defined in the class constructor, not in the config.
-  - Using the config objects is optional, people should feel free to cherry pick the blocks as is
-  - Prevent duplication or colliding definitions
-  - Make sure that the configurations are composable, in that a subset of the configs is enough to instantiate all the blocks with reasonable settings.
-- Fields which have default values in the block constructor should be typed as `Optional[Type]`
-- Please follow the CONTRIBUTING guide to make sure that formatting and linting is checked
-- `@register` your new block variant with a unique and hopefully descriptive name
-- Just define the (pure pytorch) constructor and forward call typically, no need to handle enything specific to this repo (except for inheritance)
-- keep `*args` and `**kwargs` in your constructor, this is important for the config composition
-- No need to change unit tests or benchmarks, the new variant will be automatically picked up
-
-That's it. Rest assured that the community will be thankful for your contribution !
 
 ### Adding new models
 
@@ -221,3 +142,4 @@ Some references or papers used in the repo
 - [Longformer: The Long-Document Transformer, Beltagy et al., 2020](https://arxiv.org/pdf/2004.05150.pdf)
 - [Long Range Arena: a benchmark for efficient Transformers, Tay et al., 2020](https://arxiv.org/abs/2011.04006)
 - [FNet: Mixing tokens with Fourier transform, Lee-Thorp et al., 2021](https://arxiv.org/pdf/2105.03824v1.pdf)
+- [The reversible residual network: Backpropagation without storing activations. Gomez,et al. 2017](https://arxiv.org/abs/1707.04585)
