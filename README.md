@@ -2,7 +2,7 @@
 
 ![xFormers Logo](./docs/assets/logo.png)
 
-Flexible Transformers, defined by interoperable and optimized building blocks that you can trust.
+Flexible Transformers, defined by interoperable and optimized building blocks.
 
 ## Key concepts
 
