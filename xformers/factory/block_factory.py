@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -17,6 +17,14 @@ from xformers.components.positional_embedding import (
     build_positional_embedding,
 )
 from xformers.utils import generate_matching_config
+
+
+def _to_tensor_list(
+    inputs: Union[torch.Tensor, List[torch.Tensor]]
+) -> List[torch.Tensor]:
+    if not isinstance(inputs, list):
+        inputs = [inputs]
+    return inputs
 
 
 class LayerPositionBitmask(int, Enum):
@@ -68,8 +76,7 @@ class Residual(nn.Module):
         self.layer = layer
 
     def forward(self, inputs: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs):
-        if not isinstance(inputs, list):
-            inputs = [inputs]
+        inputs = _to_tensor_list(inputs)
 
         return inputs[0] + self.layer(*inputs, *args, **kwargs)
 
@@ -85,8 +92,7 @@ class PreNorm(nn.Module):
         self.sublayer = sublayer
 
     def forward(self, inputs: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs):
-        if not isinstance(inputs, list):
-            inputs = [inputs]
+        inputs = _to_tensor_list(inputs)
 
         x_norm = [self.norm(x_) for x_ in inputs]
         return self.sublayer(*x_norm, *args, **kwargs)
@@ -101,8 +107,7 @@ class PostNorm(nn.Module):
         self.sublayer = sublayer
 
     def forward(self, inputs: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs):
-        if not isinstance(inputs, list):
-            inputs = [inputs]
+        inputs = _to_tensor_list(inputs)
 
         x = self.sublayer(*inputs, *args, **kwargs)
         return self.norm(x)
@@ -186,7 +191,6 @@ class xFormerEncoderConfig(xFormerBlockConfig):
         position_encoding_config: Optional[Dict[str, Any]],
         multi_head_config: Dict[str, Any],
         layer_norm_style: str = "post",
-        *args,
         **kwargs,
     ):
         super().__init__(
@@ -213,7 +217,6 @@ class xFormerDecoderConfig(xFormerBlockConfig):
         multi_head_config_masked: Dict[str, Any],
         multi_head_config_cross: Dict[str, Any],
         layer_norm_style: str = "post",
-        *args,
         **kwargs,
     ):
         super().__init__(
@@ -228,13 +231,18 @@ class xFormerDecoderConfig(xFormerBlockConfig):
         self.multi_head_config_cross = multi_head_config_cross
 
 
-class xFormerEncoderBlock(nn.Module):
+class xFormerEncoderBlock(torch.nn.Module):
     r""" A vanilla Transformer Encoder block """
 
-    def __init__(self, config: xFormerEncoderConfig):
+    def __init__(self, config: xFormerEncoderConfig, **kwargs):
         super().__init__()
 
-        # If this layer is the first one, and a pose encoding as been requested
+        self.reversible_f = None
+        self.reversible_g = None
+        self.layer_norm_style = config.layer_norm_style
+        self.dim_model = config.dim_model
+
+        # If this layer is the first one, and a pose encoding has been requested
         self.pose_encoding = (
             build_positional_embedding(asdict(config.position_encoding_config))
             if config.position_encoding_config and config.layer_position.is_first()
@@ -247,7 +255,7 @@ class xFormerEncoderBlock(nn.Module):
         self.mha = build_multi_head_attention(config.multi_head_config)
         self.feedforward = build_feedforward(asdict(config.feedforward_config))
 
-        # Attention is computed on normalized inputs, the residual path stays un-normalized
+        # Wrappers handle the different layer norm styles (pre- and post-) and the residual path
         self.wrap_att = ln_factory(self.mha)
         self.wrap_ff: Union[Residual, PostNorm] = ln_factory(self.feedforward)
 
@@ -260,6 +268,19 @@ class xFormerEncoderBlock(nn.Module):
     @classmethod
     def from_config(cls, config: xFormerEncoderConfig):
         return cls(config)
+
+    @staticmethod
+    def get_reversible_layer(config) -> Tuple[nn.Module, nn.Module]:
+        ln_factory = _get_ln_factory(
+            config.dim_model, config.layer_norm_style, residual=False
+        )
+
+        mha = build_multi_head_attention(config.multi_head_config)
+        feedforward = build_feedforward(asdict(config.feedforward_config))
+
+        reversible_f = ln_factory(mha)
+        reversible_g = ln_factory(feedforward)
+        return reversible_f, reversible_g
 
     def forward(
         self,
@@ -285,13 +306,13 @@ class xFormerEncoderBlock(nn.Module):
         return x
 
 
-class xFormerDecoderBlock(nn.Module):
-    r""" A vanilla Transformer Decoder block """
+class xFormerDecoderBlock(torch.nn.Module):
+    r"""A vanilla Transformer Decoder block
 
-    def __init__(self, config: xFormerDecoderConfig):
+    ... note: this implementation is not (yet ?) reversible"""
+
+    def __init__(self, config: xFormerDecoderConfig, **kwargs):
         super().__init__()
-        self.linear1 = nn.Linear(config.dim_model, config.feedforward_config.dim_model)
-        self.linear2 = nn.Linear(config.dim_model, config.feedforward_config.dim_model)
 
         # If this layer is the first one, and a pose encoding as been requested
         self.pose_encoding = (

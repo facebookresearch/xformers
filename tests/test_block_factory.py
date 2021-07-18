@@ -36,6 +36,7 @@ VOCAB_SIZE = 32
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
 @pytest.mark.parametrize("layer_norm_style", ["pre", "post"])
 @pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("reversible", [True, False])
 def test_xformer_encoder_block(
     attention_name: str,
     feedforward_name: str,
@@ -46,6 +47,7 @@ def test_xformer_encoder_block(
     activation: Activation,
     layer_norm_style: str,
     device: torch.device,
+    reversible: bool,
 ):
 
     attention_config = {
@@ -87,6 +89,7 @@ def test_xformer_encoder_block(
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
         layer_norm_style=layer_norm_style,
+        reversible=reversible,
     )
 
     # Test that the whole block can be instantiated

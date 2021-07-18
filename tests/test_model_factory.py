@@ -5,6 +5,7 @@ from xformers.factory.model_factory import xFormer, xFormerConfig
 
 BATCH = 20
 SEQ = 512
+EMB = 384
 DEVICES = (
     [torch.device("cpu")]
     if not torch.cuda.is_available()
@@ -14,21 +15,21 @@ DEVICES = (
 )
 
 test_configs = [
-    {
-        "block_configs": [
-            {
+    [
+        {
+            "reversible": False,
+            "block_config": {
                 "block_type": "encoder",
                 "dim_model": 384,
                 "position_encoding_config": {
                     "name": "vocab",
-                    "dim_model": 384,
                     "seq_len": SEQ,
                     "vocab_size": 64,
+                    "dim_model": EMB,
                 },
                 "num_layers": 3,
                 "multi_head_config": {
                     "num_heads": 4,
-                    "dim_model": 384,
                     "residual_dropout": 0,
                     "attention": {
                         "name": "linformer",
@@ -36,29 +37,32 @@ test_configs = [
                         "causal": True,
                         "seq_len": 512,
                     },
+                    "dim_model": EMB,
                 },
                 "feedforward_config": {
                     "name": "MLP",
-                    "dim_model": 384,
                     "dropout": 0,
                     "activation": "relu",
                     "hidden_layer_multiplier": 4,
+                    "dim_model": EMB,
                 },
             },
-            {
+        },
+        {
+            "block_config": {
                 "block_type": "decoder",
                 "dim_model": 384,
                 "position_encoding_config": {
                     "name": "vocab",
-                    "dim_model": 384,
                     "seq_len": SEQ,
                     "vocab_size": 64,
+                    "dim_model": EMB,
                 },
                 "num_layers": 2,
                 "multi_head_config_masked": {
                     "num_heads": 4,
-                    "dim_model": 384,
                     "residual_dropout": 0,
+                    "dim_model": EMB,
                     "attention": {
                         "name": "linformer",
                         "dropout": 0,
@@ -68,8 +72,8 @@ test_configs = [
                 },
                 "multi_head_config_cross": {
                     "num_heads": 4,
-                    "dim_model": 384,
                     "residual_dropout": 0,
+                    "dim_model": EMB,
                     "attention": {
                         "name": "linformer",
                         "dropout": 0,
@@ -79,14 +83,14 @@ test_configs = [
                 },
                 "feedforward_config": {
                     "name": "MLP",
-                    "dim_model": 384,
                     "dropout": 0,
                     "activation": "relu",
                     "hidden_layer_multiplier": 4,
+                    "dim_model": EMB,
                 },
-            },
-        ]
-    }
+            }
+        },
+    ]
 ]
 
 
@@ -94,13 +98,15 @@ test_configs = [
 
 
 @pytest.mark.parametrize("config", test_configs)
+@pytest.mark.parametrize("reversible", [True, False])
 @pytest.mark.parametrize("device", DEVICES)
-def test_presets(config, device):
+def test_presets(config, reversible, device):
     # Build the model
-    model = xFormer.from_config(xFormerConfig(**config)).to(device)
+    config[0]["reversible"] = reversible
+    model = xFormer.from_config(xFormerConfig(config)).to(device)
 
     # Dummy inputs, test a forward
-    inputs = (torch.rand(BATCH, SEQ, device=device) * 10).abs().to(torch.int)
+    inputs = (torch.rand((BATCH, SEQ), device=device) * 10).abs().to(torch.int)
 
     input_mask = torch.randn(SEQ, dtype=torch.float, device=device)
     input_mask[input_mask < 0.0] = -float("inf")

@@ -80,6 +80,6 @@ if __name__ == "__main__":
 
     for att in results.keys():
         print(
-            "{0:<20}   ".format(att)
-            + "   ".join("{0:<20}   ".format(results[att][t]) for t in tasks_sort)
+            "{0:<20}".format(att)
+            + "".join("{0:<20}   ".format(results[att][t]) for t in tasks_sort)
         )

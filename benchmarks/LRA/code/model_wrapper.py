@@ -46,26 +46,27 @@ def patch_model_config(config, attention_name):
     except KeyError:
         extra_attention_settings = None
 
-    for b in config["xformer"]["block_configs"]:
-        b["dim_model"] = commons["dim_model"]
-        b["position_encoding_config"].update(commons)
-        b["feedforward_config"].update(commons)
-        b["multi_head_config"].update(commons)
-        b["multi_head_config"]["attention"].update(commons)
-        b["multi_head_config"]["attention"]["name"] = attention_name
-        b["multi_head_config"]["attention"]["dim_head"] = (
+    for b in config["xformer"]:
+        bc = b["block_config"]
+        bc["dim_model"] = commons["dim_model"]
+        bc["position_encoding_config"].update(commons)
+        bc["feedforward_config"].update(commons)
+        bc["multi_head_config"].update(commons)
+        bc["multi_head_config"]["attention"].update(commons)
+        bc["multi_head_config"]["attention"]["name"] = attention_name
+        bc["multi_head_config"]["attention"]["dim_head"] = (
             commons["dim_model"] / commons["num_heads"]
         )
         if extra_attention_settings is not None:
-            b["multi_head_config"]["attention"].update(extra_attention_settings)
+            bc["multi_head_config"]["attention"].update(extra_attention_settings)
 
-        b["multi_head_config"] = generate_matching_config(
-            b["multi_head_config"], MultiHeadDispatchConfig
+        bc["multi_head_config"] = generate_matching_config(
+            bc["multi_head_config"], MultiHeadDispatchConfig
         )
-        b["multi_head_config"].attention = build_attention(
-            b["multi_head_config"].attention
+        bc["multi_head_config"].attention = build_attention(
+            bc["multi_head_config"].attention
         )
-        b = generate_matching_config(b, xFormerEncoderConfig)
+        bc = generate_matching_config(bc, xFormerEncoderConfig)
 
     return config
 
@@ -119,10 +120,10 @@ class ModelTrunk(nn.Module):
 
         # Rebuild a specific config out of generic + extra params
         self.config_model = patch_model_config(config_model, model_name)
-        self.model = xFormer.from_config(xFormerConfig(**config_model["xformer"]))
+        self.model = xFormer.from_config(xFormerConfig(config_model["xformer"]))
         self.norm = nn.LayerNorm(self.config_model["common"]["dim_model"])
 
-        ff_config = self.config_model["xformer"]["block_configs"][0][
+        ff_config = self.config_model["xformer"][0]["block_config"][
             "feedforward_config"
         ]
         self.dim_mlp = (
@@ -181,13 +182,15 @@ class ModelForSCDual(ModelTrunk):
                 input_ids_0, mask_0 = append_cls(input_ids_0, mask_0, self.vocab_size)
                 input_ids_1, mask_1 = append_cls(input_ids_1, mask_1, self.vocab_size)
 
-            token_out_0 = self.norm(
-                self.model(input_ids_0, encoder_input_mask=mask_0)
-            ) * mask_0.unsqueeze(-1)
-            token_out_1 = self.norm(
-                self.model(input_ids_1, encoder_input_mask=mask_1)
-            ) * mask_1.unsqueeze(-1)
-            seq_scores = self.seq_classifer(token_out_0, token_out_1)
+            # Concatenate the two inputs into one batch
+            input_ids = torch.cat([input_ids_0, input_ids_1], dim=0)
+            masks = torch.cat([mask_0, mask_1], dim=0)
+
+            tokens_out = self.norm(
+                self.model(input_ids, encoder_input_mask=masks)
+            ) * masks.unsqueeze(-1)
+
+            seq_scores = self.seq_classifer(*torch.chunk(tokens_out, 2, dim=0))
 
             seq_loss = torch.nn.CrossEntropyLoss(reduction="none")(seq_scores, label)
             seq_accu = (seq_scores.argmax(dim=-1) == label).to(torch.float32)

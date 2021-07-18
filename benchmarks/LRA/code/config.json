@@ -27,9 +27,10 @@
                 "vocab_size": 512,
                 "dropout": 0.1
             },
-            "xformer": {
-                "block_configs": [
-                    {
+            "xformer": [
+                {
+                    "reversible": true,
+                    "block_config": {
                         "block_type": "encoder",
                         "num_layers": 2,
                         "layer_norm_style": "pre",
@@ -49,18 +50,18 @@
                             "hidden_layer_multiplier": 2
                         }
                     }
-                ]
-            },
-            "extra_settings": {
-                "attention": {
-                    "favor": {
-                        "dim_features": 256,
-                        "iter_before_redraw": 1000
-                    },
-                    "nystrom": {
-                        "conv_kernel_size": 35,
-                        "num_landmarks": 128
-                    }
+                }
+            ]
+        },
+        "extra_settings": {
+            "attention": {
+                "favor": {
+                    "dim_features": 256,
+                    "iter_before_redraw": 1000
+                },
+                "nystrom": {
+                    "conv_kernel_size": 35,
+                    "num_landmarks": 128
                 }
             }
         }
@@ -93,9 +94,10 @@
                 "vocab_size": 32,
                 "dropout": 0.1
             },
-            "xformer": {
-                "block_configs": [
-                    {
+            "xformer": [
+                {
+                    "reversible": true,
+                    "block_config": {
                         "block_type": "encoder",
                         "num_layers": 2,
                         "layer_norm_style": "pre",
@@ -115,8 +117,8 @@
                             "hidden_layer_multiplier": 2
                         }
                     }
-                ]
-            },
+                }
+            ],
             "extra_settings": {
                 "attention": {
                     "favor": {
@@ -159,9 +161,10 @@
                 "vocab_size": 512,
                 "dropout": 0.1
             },
-            "xformer": {
-                "block_configs": [
-                    {
+            "xformer": [
+                {
+                    "reversible": true,
+                    "block_config": {
                         "block_type": "encoder",
                         "num_layers": 2,
                         "layer_norm_style": "pre",
@@ -181,8 +184,8 @@
                             "hidden_layer_multiplier": 2
                         }
                     }
-                ]
-            },
+                }
+            ],
             "extra_settings": {
                 "attention": {
                     "favor": {
@@ -220,9 +223,10 @@
                 "dim_model": 64,
                 "dropout": 0.1
             },
-            "xformer": {
-                "block_configs": [
-                    {
+            "xformer": [
+                {
+                    "reversible": true,
+                    "block_config": {
                         "block_type": "encoder",
                         "num_layers": 2,
                         "layer_norm_style": "pre",
@@ -242,8 +246,8 @@
                             "hidden_layer_multiplier": 2
                         }
                     }
-                ]
-            },
+                }
+            ],
             "extra_settings": {
                 "attention": {
                     "favor": {
@@ -286,9 +290,10 @@
                 "dim_model": 64,
                 "dropout": 0.1
             },
-            "xformer": {
-                "block_configs": [
-                    {
+            "xformer": [
+                {
+                    "reversible": true,
+                    "block_config": {
                         "block_type": "encoder",
                         "num_layers": 2,
                         "layer_norm_style": "pre",
@@ -308,8 +313,8 @@
                             "hidden_layer_multiplier": 2
                         }
                     }
-                ]
-            },
+                }
+            ],
             "extra_settings": {
                 "attention": {
                     "favor": {

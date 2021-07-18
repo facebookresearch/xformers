@@ -230,7 +230,7 @@ def benchmark(rank, args):
     logger.info(f"GPU list: {device_ids}")
     model = model.cuda()
     model = nn.parallel.DistributedDataParallel(
-        model, device_ids=[rank], broadcast_buffers=True
+        model, device_ids=[rank], broadcast_buffers=True, find_unused_parameters=False
     )
 
     (
