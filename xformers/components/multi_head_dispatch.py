@@ -17,12 +17,15 @@ class InProjContainer(torch.nn.Module):
     """
 
     def __init__(
-        self, query_proj: nn.Module, key_proj: nn.Module, value_proj: nn.Module
+        self,
+        query_proj: nn.Module,
+        key_proj: Optional[nn.Module],
+        value_proj: Optional[nn.Module],
     ):
         super().__init__()
         self.query_proj = query_proj
-        self.key_proj = key_proj
-        self.value_proj = value_proj
+        self.key_proj = key_proj if key_proj is not None else query_proj
+        self.value_proj = value_proj if value_proj is not None else query_proj
 
     def forward(
         self,
@@ -42,6 +45,7 @@ class MultiHeadDispatchConfig:
     dim_key: Optional[int]
     dim_value: Optional[int]
     in_proj_container: Optional[InProjContainer]
+    use_separate_proj_weight: Optional[bool]
     out_proj: Optional[nn.Module]
 
 
@@ -68,6 +72,7 @@ class MultiHeadDispatch(nn.Module):
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
         in_proj_container: Optional[InProjContainer] = None,
+        use_separate_proj_weight: Optional[bool] = False,
         out_proj: Optional[nn.Module] = None,
         *args,
         **kwargs,
@@ -97,8 +102,12 @@ class MultiHeadDispatch(nn.Module):
                     query_proj=nn.Linear(
                         dim_model, dim_key, bias=False
                     ),  # NOTE: optional bias ?
-                    key_proj=nn.Linear(dim_model, dim_key, bias=False),
-                    value_proj=nn.Linear(dim_model, dim_value, bias=False),
+                    key_proj=nn.Linear(dim_model, dim_key, bias=False)
+                    if use_separate_proj_weight
+                    else None,
+                    value_proj=nn.Linear(dim_model, dim_value, bias=False)
+                    if use_separate_proj_weight
+                    else None,
                 )
             )
 
