@@ -188,8 +188,8 @@ class xFormerEncoderConfig(xFormerBlockConfig):
         self,
         dim_model: int,
         feedforward_config: Dict[str, Any],
-        position_encoding_config: Optional[Dict[str, Any]],
         multi_head_config: Dict[str, Any],
+        position_encoding_config: Optional[Dict[str, Any]] = None,
         layer_norm_style: str = "post",
         **kwargs,
     ):
@@ -213,9 +213,9 @@ class xFormerDecoderConfig(xFormerBlockConfig):
         self,
         dim_model: int,
         feedforward_config: Dict[str, Any],
-        position_encoding_config: Optional[Dict[str, Any]],
         multi_head_config_masked: Dict[str, Any],
         multi_head_config_cross: Dict[str, Any],
+        position_encoding_config: Optional[Dict[str, Any]] = None,
         layer_norm_style: str = "post",
         **kwargs,
     ):
@@ -329,11 +329,7 @@ class xFormerDecoderBlock(torch.nn.Module):
         self.feedforward = build_feedforward(config.feedforward_config)
 
         self.wrap_att = ln_factory(self.mha)
-        self.wrap_cross = (
-            ln_factory(self.cross_mha)
-            if config.layer_norm_style == LayerNormStyle.Pre
-            else Residual(Residual(self.cross_mha))
-        )
+        self.wrap_cross = ln_factory(self.cross_mha)
         self.wrap_ff: Union[Residual, PostNorm] = ln_factory(self.feedforward)
 
         if (
@@ -366,7 +362,7 @@ class xFormerDecoderBlock(torch.nn.Module):
             target_q, target_k, target_v = target, target, target
 
         x = self.wrap_att([target_q, target_k, target_v], att_mask=decoder_att_mask)
-        x = self.wrap_cross([memory, memory, x], att_mask=encoder_att_mask)
+        x = self.wrap_cross([x, memory, memory], att_mask=encoder_att_mask)
         x = self.wrap_ff(x)
 
         return x

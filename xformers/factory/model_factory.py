@@ -111,48 +111,61 @@ class xFormer(torch.nn.Module):
         )
         self.decoders = torch.nn.ModuleList(decoders)
 
+        if self.decoders:
+            # Use Xavier init for encoding/decoding tasks
+            self._reset_parameters()
+
     @classmethod
     def from_config(cls, config: xFormerConfig):
         return cls(config.stack_configs)
 
+    def _reset_parameters(self):
+        r"""Initiate parameters in the transformer model."""
+
+        for p in self.parameters():
+            if p.dim() > 1:
+                torch.nn.init.xavier_uniform_(p)
+
     def forward(
         self,
-        inputs: torch.Tensor,
+        src: torch.Tensor,
+        tgt: Optional[torch.Tensor] = None,
         encoder_input_mask: Optional[torch.Tensor] = None,
         decoder_input_mask: Optional[torch.Tensor] = None,
     ) -> Optional[torch.Tensor]:
 
-        latent = inputs.clone()  # Make sure that we don't modify the inputs in place
-
         # Encode to latent space if encoder is present
         if self.encoders:
             if isinstance(self.encoders, torch.nn.ModuleList):
+                memory = src.clone()
                 for encoder in self.encoders:
-                    latent = encoder(latent, input_mask=encoder_input_mask)
+                    memory = encoder(memory, input_mask=encoder_input_mask)
             else:
                 if self.enc_pose_encoding:
-                    latent = self.enc_pose_encoding(inputs)
+                    memory = self.enc_pose_encoding(src)
 
                 # Reversible Encoder
-                x = torch.cat([latent, latent], dim=-1)
+                x = torch.cat([memory, memory], dim=-1)
 
                 # TODO: pass in key and value independently.
                 kwargs = {"att_mask": encoder_input_mask}
                 x = self.encoders(x, **kwargs)
-                latent = torch.stack(x.chunk(2, dim=-1)).mean(dim=0)
+                memory = torch.stack(x.chunk(2, dim=-1)).mean(dim=0)
+
+            if not self.decoders:
+                return memory
 
         # If decoder: either use the encoder ouput, or just decode, both options are possible
         if self.decoders:
-            x = inputs.clone()
+            tgt = src.clone() if tgt is None else tgt
 
             for decoder in self.decoders:
-                x = decoder(
-                    target=x,
-                    memory=latent,
+                tgt = decoder(
+                    target=tgt,
+                    memory=memory,
                     input_mask=decoder_input_mask,
                 )
 
-            return x
+            return tgt
 
-        # There was no decoder, we're looking for encoded values
-        return latent
+        return None

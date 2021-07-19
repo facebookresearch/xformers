@@ -150,8 +150,9 @@ def test_reversible_train(config, device):
         )
 
     def step(model: torch.nn.Module, optim: torch.optim.Optimizer):
-        optim.zero_grad()
         batch, target = data()
+        model.train()
+        optim.zero_grad()
 
         outputs = model(batch)
         loss = torch.norm(torch.mean(outputs, dim=-1) - target)
@@ -167,6 +168,7 @@ def test_reversible_train(config, device):
 
     def evaluate(model: torch.nn.Module):
         batch, target = data()
+        model.eval()
         outputs = model(batch)
         return torch.norm(torch.mean(outputs, dim=-1) - target).item()
 
@@ -177,9 +179,6 @@ def test_reversible_train(config, device):
     model_reversible = xFormer.from_config(xFormerConfig(_rev_config(config, True))).to(
         device
     )
-
-    model_reversible.train()
-    model_non_reversible.train()
 
     optim_rev = torch.optim.SGD(model_reversible.parameters(), lr=1e-3, momentum=0.9)
     optim_non_rev = torch.optim.SGD(
@@ -198,7 +197,5 @@ def test_reversible_train(config, device):
     # Arbitrary threshold
     eval_stop_rev = evaluate(model_reversible)
     eval_stop_non_rev = evaluate(model_non_reversible)
-    assert eval_start_rev / eval_stop_rev > 50
-    assert (
-        eval_start_non_rev / eval_stop_non_rev > 3
-    )  # for some reason the reversible layers train very well here (?)
+    assert eval_start_rev / eval_stop_rev > 3
+    assert eval_start_non_rev / eval_stop_non_rev > 3
