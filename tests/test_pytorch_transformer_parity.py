@@ -7,12 +7,12 @@ import torch
 from xformers.factory.model_factory import xFormer, xFormerConfig
 
 BATCH = 20
-SEQ = 128
+SEQ = 64
 EMB = 48
 VOCAB = 16
 HEADS = 4
 DROP = 0.1
-LAYERS = 3
+LAYERS = 2
 ACTIVATION = "relu"
 
 _devices = (
@@ -156,7 +156,6 @@ def train(model, optimizer, name, steps, device):
     # Dummy training, just checking that both options give the same results
     # Same seed for everyone
     reset_seeds()
-
     start = time.time()
     for i in range(steps):
         loss = step(model, optimizer, device)
@@ -172,8 +171,8 @@ def test_pytorch_encoder_parity(device):
     model_xformers = xFormer.from_config(xFormerConfig([_test_config_encoder])).to(
         device
     )
+    print(model_xformers)
 
-    reset_seeds()
     model_pytorch = torch.nn.TransformerEncoder(
         torch.nn.TransformerEncoderLayer(
             d_model=EMB,
@@ -187,6 +186,7 @@ def test_pytorch_encoder_parity(device):
         ),
         num_layers=LAYERS,
     )
+    print(model_pytorch)
 
     optim_xformers = torch.optim.SGD(model_xformers.parameters(), lr=1e-3, momentum=0.9)
     optim_pytorch = torch.optim.SGD(model_pytorch.parameters(), lr=1e-3, momentum=0.9)
@@ -195,8 +195,8 @@ def test_pytorch_encoder_parity(device):
     eval_start_xformer = evaluate(model_xformers, device)
     eval_start_pytorch = evaluate(model_pytorch, device)
     print("starting point: ", eval_start_pytorch, eval_start_xformer)
-    train(model_pytorch, optim_pytorch, "pytorch", 100, device)
-    train(model_xformers, optim_xformers, "xformers", 100, device)
+    train(model_pytorch, optim_pytorch, "pytorch", 1000, device)
+    train(model_xformers, optim_xformers, "xformers", 1000, device)
 
     # Check that we can classify this dummy example
     # Arbitrary threshold
@@ -229,7 +229,6 @@ def test_pytorch_tranformer_parity(device):
     model_xformers = xFormer.from_config(xFormerConfig(_test_config)).to(device)
     print(model_xformers)
 
-    reset_seeds()
     model_pytorch = torch.nn.Transformer(
         d_model=EMB,
         nhead=HEADS,

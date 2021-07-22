@@ -104,14 +104,14 @@ class xFormer(torch.nn.Module):
                 else:
                     recipient.append(block)  # type: ignore
 
-        self.encoders = (
+        self.encoders: torch.nn.Module = (
             rv.ReversibleSequence(torch.nn.ModuleList(encoders))
             if self.reversible_encoder
             else torch.nn.ModuleList(encoders)
         )
         self.decoders = torch.nn.ModuleList(decoders)
 
-        if self.decoders:
+        if len(self.decoders) > 0:
             # Use Xavier init for encoding/decoding tasks
             self._reset_parameters()
 
@@ -120,7 +120,8 @@ class xFormer(torch.nn.Module):
         return cls(config.stack_configs)
 
     def _reset_parameters(self):
-        r"""Initiate parameters in the transformer model."""
+        r"""Initiate parameters in the transformer model
+        following the Xavier distribution."""
 
         for p in self.parameters():
             if p.dim() > 1:
@@ -135,7 +136,7 @@ class xFormer(torch.nn.Module):
     ) -> Optional[torch.Tensor]:
 
         # Encode to latent space if encoder is present
-        if self.encoders:
+        if len(list(self.encoders.parameters())) > 0:
             if isinstance(self.encoders, torch.nn.ModuleList):
                 memory = src.clone()
                 for encoder in self.encoders:
@@ -156,7 +157,7 @@ class xFormer(torch.nn.Module):
                 return memory
 
         # If decoder: either use the encoder ouput, or just decode, both options are possible
-        if self.decoders:
+        if len(self.decoders) > 0:
             tgt = src.clone() if tgt is None else tgt
 
             for decoder in self.decoders:
