@@ -195,8 +195,8 @@ def test_pytorch_encoder_parity(device):
     eval_start_xformer = evaluate(model_xformers, device)
     eval_start_pytorch = evaluate(model_pytorch, device)
     print("starting point: ", eval_start_pytorch, eval_start_xformer)
-    train(model_pytorch, optim_pytorch, "pytorch", 1000, device)
-    train(model_xformers, optim_xformers, "xformers", 1000, device)
+    train(model_pytorch, optim_pytorch, "pytorch", 500, device)
+    train(model_xformers, optim_xformers, "xformers", 500, device)
 
     # Check that we can classify this dummy example
     # Arbitrary threshold
@@ -215,10 +215,10 @@ def test_pytorch_encoder_parity(device):
 
     # Catch a significant difference in between the two
     assert (
-        abs(eval_start_xformer - eval_start_pytorch) < 1e-2
+        abs(eval_start_xformer - eval_start_pytorch) < 1e-1
     )  # initial eval is about 50, arbitrary limits
     assert (
-        abs(eval_stop_xformer - eval_stop_pytorch) < 1e-2
+        abs(eval_stop_xformer - eval_stop_pytorch) < 1e-1
     )  # final eval is about 0.74, arbitrary limits
 
 
