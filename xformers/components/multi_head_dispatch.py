@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 
-from xformers.components.attention import Attention  # , build_attention
+from xformers.components.attention import Attention
 
 
 class InProjContainer(torch.nn.Module):
@@ -22,10 +22,19 @@ class InProjContainer(torch.nn.Module):
         key_proj: Optional[nn.Module],
         value_proj: Optional[nn.Module],
     ):
+
         super().__init__()
+
         self.query_proj = query_proj
-        self.key_proj = key_proj if key_proj is not None else query_proj
-        self.value_proj = value_proj if value_proj is not None else query_proj
+
+        # If no projection is passed for key and value, the projection from the Query (minus optional bias) is used
+        bias_free_query_proj = nn.Linear(
+            self.query_proj.in_features, self.query_proj.out_features, bias=False  # type: ignore
+        )
+        bias_free_query_proj.weights = self.query_proj.weight
+
+        self.key_proj = key_proj if key_proj is not None else bias_free_query_proj
+        self.value_proj = value_proj if value_proj is not None else bias_free_query_proj
 
     def forward(
         self,
@@ -42,6 +51,7 @@ class MultiHeadDispatchConfig:
     residual_dropout: float
     num_heads: int
     attention: Attention
+    bias: bool
     dim_key: Optional[int]
     dim_value: Optional[int]
     in_proj_container: Optional[InProjContainer]
@@ -69,6 +79,7 @@ class MultiHeadDispatch(nn.Module):
         residual_dropout: float,
         num_heads: int,
         attention: Attention,
+        bias: bool = True,
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
         in_proj_container: Optional[InProjContainer] = None,
@@ -94,13 +105,16 @@ class MultiHeadDispatch(nn.Module):
         self.attention = attention
 
         # key, query, value projections for all heads
+        # critical options are
+        # - are we sharing weights ?
+        # - are we adding biases, and if yes are they shared ?
         if attention.requires_input_projection:
             self.in_proj_container = (
                 in_proj_container
-                if in_proj_container
+                if in_proj_container is not None
                 else InProjContainer(
                     query_proj=nn.Linear(
-                        dim_model, dim_key, bias=False
+                        dim_model, dim_key, bias=bias
                     ),  # NOTE: optional bias ?
                     key_proj=nn.Linear(dim_model, dim_key, bias=False)
                     if use_separate_proj_weight
@@ -115,9 +129,7 @@ class MultiHeadDispatch(nn.Module):
         self.resid_drop = nn.Dropout(residual_dropout, inplace=False)
 
         # Output projection
-        self.proj = (
-            out_proj if out_proj else nn.Linear(dim_model, dim_model, bias=False)
-        )
+        self.proj = out_proj if out_proj else nn.Linear(dim_model, dim_model, bias=bias)
 
     def _check(self, t, name):
         assert (
