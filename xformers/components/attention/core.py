@@ -146,9 +146,8 @@ def scaled_query_key_softmax(
     # this is needed due to limitations in sparse_bmm for now
 
     # Self-attend: (N, S, hs) x (N, hs, S) -> (N, S, S)
-    att = _matmul_with_mask(q, k.transpose(-2, -1), att_mask) * (
-        1.0 / math.sqrt(k.size(-1))
-    )
+    q = q * (1.0 / math.sqrt(k.size(-1)))
+    att = _matmul_with_mask(q, k.transpose(-2, -1), att_mask)
 
     # Softmax to get the attention probabilities
     att = _softmax(att)
