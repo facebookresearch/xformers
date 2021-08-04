@@ -142,6 +142,7 @@ class MultiHeadDispatch(nn.Module):
         key: Optional[torch.Tensor] = None,
         value: Optional[torch.Tensor] = None,
         att_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Expected input dimensions are [batch size, sequence length, embed dim]
@@ -172,7 +173,9 @@ class MultiHeadDispatch(nn.Module):
         v = _fold_heads(v, B, S_K, self.num_heads, self.dim_k)
 
         # Self-attend
-        y = self.attention(q=q, k=k, v=v, att_mask=att_mask)
+        y = self.attention(
+            q=q, k=k, v=v, att_mask=att_mask, key_padding_mask=key_padding_mask
+        )
 
         # Re-assemble all head outputs side by side
         y = (
