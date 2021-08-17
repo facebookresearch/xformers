@@ -142,7 +142,6 @@ def scaled_query_key_softmax(
     q: torch.Tensor,
     k: torch.Tensor,
     att_mask: Optional[torch.Tensor],
-    key_padding_mask: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     # TODO assume we have (N, S, hs) instead of (B, nh, S, hs), with N = B x nh
     # this is needed due to limitations in sparse_bmm for now
@@ -150,15 +149,6 @@ def scaled_query_key_softmax(
     # Self-attend: (N, S, hs) x (N, hs, S) -> (N, S, S)
     q = q * (1.0 / math.sqrt(k.size(-1)))
     att = _matmul_with_mask(q, k.transpose(-2, -1), att_mask)
-
-    if key_padding_mask is not None:
-        N, src_len, _ = q.size()
-        B, tgt_len = key_padding_mask.size()
-        nH = N // B
-        assert list(att.size()) == [N, src_len, tgt_len]
-        att = att.view(B, nH, src_len, tgt_len)
-        att = att.masked_fill(key_padding_mask.unsqueeze(1).unsqueeze(2), float("-inf"))
-        att = att.view(N, src_len, tgt_len)
 
     # Softmax to get the attention probabilities
     att = _softmax(att)
@@ -170,23 +160,16 @@ def scaled_dot_product_attention(
     k: torch.Tensor,
     v: torch.Tensor,
     att_mask: Optional[torch.Tensor],
-    key_padding_mask: Optional[torch.Tensor] = None,
     dropout: Optional[torch.nn.Module] = None,
 ) -> torch.Tensor:
-<<<<<<< HEAD
     autocast_disabled = isinstance(att_mask, SparseCS) or (
         att_mask is not None and att_mask.is_sparse
     )
     with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
         if autocast_disabled:
             q, k, v = q.float(), k.float(), v.float()
-=======
-    att = scaled_query_key_softmax(
-        q, k, att_mask=att_mask, key_padding_mask=key_padding_mask
-    )
->>>>>>> a727799 (add key padding mask, dropout only on training)
 
-        att = scaled_query_key_softmax(q, k, att_mask)
+        att = scaled_query_key_softmax(q, k, att_mask=att_mask)
 
         #  Optional dropout, could be part of the masking in the future
         att = _apply_dropout(att, dropout)

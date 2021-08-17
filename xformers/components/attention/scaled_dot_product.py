@@ -40,7 +40,6 @@ class ScaledDotProduct(Attention):
         k: torch.Tensor,
         v: torch.Tensor,
         att_mask: Optional[torch.Tensor] = None,
-        key_padding_mask: Optional[torch.Tensor] = None,
         *args,
         **kwargs,
     ) -> torch.Tensor:
@@ -56,6 +55,5 @@ class ScaledDotProduct(Attention):
             att_mask=att_mask,
             # Only apply dropout during training
             dropout=self.attn_drop if self.training else None,
-            key_padding_mask=key_padding_mask,
         )
         return y
