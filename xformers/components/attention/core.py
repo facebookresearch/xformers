@@ -1,4 +1,5 @@
 import math
+from contextlib import nullcontext
 from typing import Optional
 
 import torch
@@ -161,12 +162,19 @@ def scaled_dot_product_attention(
     att_mask: Optional[torch.Tensor],
     dropout: Optional[torch.nn.Module] = None,
 ) -> torch.Tensor:
-    att = scaled_query_key_softmax(q, k, att_mask)
+    autocast_disabled = isinstance(att_mask, SparseCS) or (
+        att_mask is not None and att_mask.is_sparse
+    )
+    with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
+        if autocast_disabled:
+            q, k, v = q.float(), k.float(), v.float()
 
-    #  Optional dropout, could be part of the masking in the future
-    att = _apply_dropout(att, dropout)
+        att = scaled_query_key_softmax(q, k, att_mask)
 
-    # Get to the predicted values, for all heads
-    # y = att @ v  # (N, S, S) x (N, S, hs) -> (N, S, hs)
-    y = bmm(att, v)
+        #  Optional dropout, could be part of the masking in the future
+        att = _apply_dropout(att, dropout)
+
+        # Get to the predicted values, for all heads
+        # y = att @ v  # (N, S, S) x (N, S, hs) -> (N, S, hs)
+        y = bmm(att, v)
     return y
