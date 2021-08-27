@@ -27,5 +27,7 @@ ENV/
 env.bak/
 venv.bak/
 .vscode/*
-benchmarks/LRA/datasets
-benchmarks/LRA/logs
+xformer_benchmarks/LRA/datasets
+xformer_benchmarks/LRA/logs
+
+my_runs.md

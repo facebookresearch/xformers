@@ -7,20 +7,18 @@ import sys
 import numpy as np
 
 sys.path.append("./datasets/long-range-arena")
-sys.path.append("./datasets/long-range-arena/lra_benchmarks/matching/")
+sys.path.append("./datasets/long-range-arena/lra_benchmarks/text_classification/")
 import input_pipeline  # type: ignore # noqa
 
 logging.getLogger().setLevel(logging.INFO)
 
-train_ds, eval_ds, test_ds, encoder = input_pipeline.get_matching_datasets(  # type: ignore
+train_ds, eval_ds, test_ds, encoder = input_pipeline.get_tc_datasets(  # type: ignore
     n_devices=1,
-    task_name=None,
-    data_dir="./datasets/lra_release/lra_release/tsv_data/",
+    task_name="imdb_reviews",
+    data_dir=None,
     batch_size=1,
     fixed_vocab=None,
     max_length=4000,
-    tokenizer="char",
-    vocab_file_path=None,
 )
 
 mapping = {"train": train_ds, "dev": eval_ds, "test": test_ds}
@@ -30,15 +28,12 @@ for component in mapping:
         ds_list.append(
             {
                 "input_ids_0": np.concatenate(
-                    [inst["inputs1"].numpy()[0], np.zeros(96, dtype=np.int32)]
-                ),
-                "input_ids_1": np.concatenate(
-                    [inst["inputs2"].numpy()[0], np.zeros(96, dtype=np.int32)]
+                    [inst["inputs"].numpy()[0], np.zeros(96, dtype=np.int32)]
                 ),
                 "label": inst["targets"].numpy()[0],
             }
         )
         if idx % 100 == 0:
             logging.info(f"{idx}\t\t")
-    with open(f"./datasets/retrieval.{component}.pickle", "wb") as f:
+    with open(f"./datasets/text.{component}.pickle", "wb") as f:
         pickle.dump(ds_list, f)

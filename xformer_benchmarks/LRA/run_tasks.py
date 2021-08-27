@@ -14,6 +14,7 @@ from contextlib import suppress
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict
+from xformers import components
 
 import numpy as np
 import torch
@@ -21,9 +22,10 @@ import torch.distributed as dist
 import torch.nn as nn
 from fvcore.nn import FlopCountAnalysis, flop_count_str
 from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.tensorboard import SummaryWriter
 
-from benchmarks.LRA.code.dataset import LRADataset
-from benchmarks.LRA.code.model_wrapper import ModelForSC, ModelForSCDual
+from xformer_benchmarks.LRA.code.dataset import LRADataset
+from xformer_benchmarks.LRA.code.model_wrapper import ModelForSC, ModelForSCDual
 from xformers.components.attention import ATTENTION_REGISTRY
 from xformers.utils import temp_files_ctx
 
@@ -87,12 +89,15 @@ def build_training_setup(
     samplers = {}
 
     for component in ["train", "test", "dev"]:
-        dataset = LRADataset(f"datasets/{task}.{component}.pickle")
+        dataset = LRADataset(f"datasets/{task}.{component}.pickle", config_training['seq_len'])
+
         sampler = DistributedSampler(
-            dataset, num_replicas=world_size, rank=rank, shuffle=True, drop_last=True
+            dataset, num_replicas=world_size, rank=rank, shuffle=(component == 'train'), drop_last=(component == 'train')
         )  # type:ignore
         datasets[component] = dataset
         samplers[component] = sampler
+
+    logging.info(f"Learning rate: {config_training['learning_rate']}")
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -118,10 +123,13 @@ def build_training_setup(
 
 
 def print_summary(
-    summary, save_if_improved, train_step_idx, model, checkpoint_path, logger
+    summary, save_if_improved, train_step_idx, model, checkpoint_path, logger, tb_logger = None
 ):
-    summary["loss"] = np.mean(summary["loss"])
-    summary["accu"] = np.mean(summary["accu"])
+
+    summary["loss"] = np.average(summary["loss"], weights=summary['count'])
+    summary["accu"] = np.average(summary["accu"], weights=summary['count'])
+    summary['count'] = np.sum(summary['count']).astype(float)
+    
 
     if summary["accu"] > summary["best_accu"]:
         summary["best_accu"] = summary["accu"]
@@ -142,13 +150,19 @@ def print_summary(
         else:
             summary_round[key] = round(summary[key], 4)
 
+    if tb_logger:
+        tb_logger.add_scalar('acc', summary["accu"], train_step_idx)
+        tb_logger.add_scalar('loss', summary["loss"], train_step_idx)
+        tb_logger.add_scalar('max_mem', summary["max_memory_mb"], train_step_idx)
+        tb_logger.add_scalar('count', summary['count'], train_step_idx)
+
     logger.info(summary_round)
     logger.info(json.dumps(summary_round, sort_keys=True) + "\n")
 
     summary["t"] = 0
     summary["loss"] = []
     summary["accu"] = []
-
+    summary['count'] = []
 
 def setup_log(args, rank, attention_name, task):
     log_f = Path(
@@ -185,6 +199,20 @@ def eval_model(model, dataloaders, component, config, step):
 
     model.train()
 
+def rewrite_hyper(config, rewrites):
+
+    def replace(config_dict, k, v):
+        if len(k.split(':')) == 1:
+            config_dict[k] = v
+            return
+        first_key = k.split(":")[0]
+        assert first_key in config_dict, (first_key)
+        k = k[len(first_key)+1:]
+        replace(config_dict[first_key], k, v)
+
+    for k, v in rewrites.items():
+        replace(config, k, v)
+    return config
 
 def seed_worker(_: int):
     # Make sure that non-pytorch random generators are properly set
@@ -207,13 +235,6 @@ def benchmark(rank, args):
         # Single node launcher
         torch.cuda.set_device(rank)
 
-    torch.manual_seed(0)  # also sets the cuda seed
-    np.random.seed(0)
-
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    torch.cuda.reset_peak_memory_stats()
     task = args.task
     attention_name = args.attention
 
@@ -221,16 +242,34 @@ def benchmark(rank, args):
     log_f_path, logger = setup_log(args, rank, attention_name, task)
     args.logger = logger
     config = load_config(args.config)
+    
     config_task = config[f"{task}"]
+    # rewrite hyperparameters
+    if args.sweep_parameters is not None:
+        logger.info('Replacing hyperparameters')
+        rewrite_hyper(config_task, args.sweep_parameters)
+    # logger.info(config)
+
     config_training = config_task["training"]
+    config_training['seq_len'] = config_task['model']['common']['seq_len']
     model = build_model(args, config)
+    
+    torch.manual_seed(config_training.get('seed', 0))  # also sets the cuda seed
+    np.random.seed(config_training.get('seed', 0))
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.cuda.reset_peak_memory_stats()
+
+    # tensorboard
+    tb_logger = SummaryWriter(args.tb_dir)
 
     # Setup the training
     device_ids = list(range(torch.cuda.device_count()))
     logger.info(f"GPU list: {device_ids}")
     model = model.cuda()
     model = nn.parallel.DistributedDataParallel(
-        model, device_ids=[rank], broadcast_buffers=True, find_unused_parameters=False
+        model, device_ids=[rank], broadcast_buffers=True, find_unused_parameters=True
     )
 
     (
@@ -249,6 +288,7 @@ def benchmark(rank, args):
             "t": 0,
             "loss": [],
             "accu": [],
+            'count': [],
             "best_accu": 0,
             "component": comp,
         }
@@ -266,6 +306,11 @@ def benchmark(rank, args):
         )
     )
 
+    # reset train/eval steps if using gradient accumulation
+    if accumu_steps > 1:
+        config_training['num_train_steps'] *= accumu_steps
+        config_training['num_eval_steps'] *= accumu_steps
+
     epochs = math.ceil(
         config_training["num_train_steps"]
         * config_training["batch_size"]
@@ -281,7 +326,7 @@ def benchmark(rank, args):
     logger.info(f"accumu_steps={accumu_steps}")
     model_path = str(log_f_path).replace(".log", ".model")
     g = torch.Generator()
-    g.manual_seed(0)
+    g.manual_seed(config_training.get('seed', 0))
 
     dataloaders = {
         k: DataLoader(
@@ -290,7 +335,7 @@ def benchmark(rank, args):
             batch_size=per_gpu_batch_size,
             shuffle=False,
             pin_memory=True,
-            num_workers=2,
+            num_workers=1,
             worker_init_fn=seed_worker,
             generator=g,
         )
@@ -307,8 +352,8 @@ def benchmark(rank, args):
     ):
         t0 = time.time()
         batch_size = batch[list(batch.keys())[0]].size(0)
-        if batch_size != per_gpu_batch_size:
-            return
+        # if batch_size != per_gpu_batch_size:
+        #     return
 
         for key in batch:
             batch[key] = batch[key].cuda()
@@ -334,8 +379,9 @@ def benchmark(rank, args):
 
         t_escape = t1 - t0
         learning_rate = optimizer.param_groups[0]["lr"]
-        loss = outputs["loss"].data.item()
-        accu = outputs["accu"].data.item()
+        loss = outputs["loss"].item()
+        accu = outputs["accu"].item()
+        cnt = outputs['count']
         time_since_start = time.time() - init_t
         eta = (
             datetime.timedelta(
@@ -356,6 +402,7 @@ def benchmark(rank, args):
         summary[component]["t"] += t_escape
         summary[component]["loss"].append(loss)
         summary[component]["accu"].append(accu)
+        summary[component]['count'].append(cnt)
 
     # Start training or evaluating
     train_step_idx = 0
@@ -401,6 +448,7 @@ def benchmark(rank, args):
                             model,
                             model_path,
                             logger,
+                            tb_logger
                         )
 
                     if not grad_accumulate:
@@ -459,7 +507,7 @@ def get_arg_parser():
         type=str,
         help="Path to the checkpoint directory",
         dest="checkpoint_dir",
-        default="logs/",
+        default=f"/checkpoints/{os.getenv('USER')}/xformers",
     )
     parser.add_argument(
         "--debug",
@@ -474,6 +522,20 @@ def get_arg_parser():
         dest="world_size",
         type=int,
         default=1,
+    )
+    parser.add_argument(
+        "--sweep_parameters",
+        help="Rewrite some hyperparameters in the config",
+        dest="sweep_parameters",
+        type=dict,
+        default=None,
+    )
+    parser.add_argument(
+        "--tb_dir",
+        type=str,
+        help="Path to the tensorboard directory",
+        dest="tb_dir",
+        default=f"/checkpoints/{os.getenv('USER')}/xformers/tb",
     )
     return parser
 

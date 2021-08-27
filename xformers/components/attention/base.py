@@ -26,6 +26,7 @@ class Attention(nn.Module, metaclass=ABCMeta):
     def __init__(self, dropout: Optional[float] = None, *args, **kwargs):
         super().__init__()
         self.requires_input_projection = True
+        self.requires_orig_inputs = False
 
     @classmethod
     def from_config(cls, config: AttentionConfig) -> "Attention":
@@ -34,7 +35,6 @@ class Attention(nn.Module, metaclass=ABCMeta):
 
         # Skip all Nones so that default values are used
         fields = {k: v for k, v in fields.items() if v is not None}
-
         return cls(**fields)
 
     @abstractmethod

@@ -18,21 +18,21 @@
             "gradient_accumulation": 1
         },
         "model": {
-            "pooling_mode": "mean",
+            "pooling_mode": "cls",
             "common": {
-                "dim_model": 64,
+                "dim_model": 256,
                 "num_classes": 2,
                 "seq_len": 4096,
-                "num_heads": 2,
+                "num_heads": 4,
                 "vocab_size": 512,
                 "dropout": 0.1
             },
             "xformer": [
                 {
-                    "reversible": true,
+                    "reversible": false,
                     "block_config": {
                         "block_type": "encoder",
-                        "num_layers": 2,
+                        "num_layers": 4,
                         "layer_norm_style": "pre",
                         "position_encoding_config": {
                             "name": "vocab"
@@ -47,7 +47,7 @@
                         "feedforward_config": {
                             "name": "MLP",
                             "activation": "gelu",
-                            "hidden_layer_multiplier": 2
+                            "hidden_layer_multiplier": 4
                         }
                     }
                 }

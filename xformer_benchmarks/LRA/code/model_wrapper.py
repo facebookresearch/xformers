@@ -63,6 +63,7 @@ def patch_model_config(config, attention_name):
         bc["multi_head_config"] = generate_matching_config(
             bc["multi_head_config"], MultiHeadDispatchConfig
         )
+        
         bc["multi_head_config"].attention = build_attention(
             bc["multi_head_config"].attention
         )
@@ -157,7 +158,7 @@ class ModelForSC(ModelTrunk):
 
             seq_loss = torch.nn.CrossEntropyLoss(reduction="none")(seq_scores, label)
             seq_accu = (seq_scores.argmax(dim=-1) == label).to(torch.float32)
-            outputs = {"loss": seq_loss.mean(), "accu": seq_accu.mean()}
+            outputs = {"loss": seq_loss.mean(), "accu": seq_accu.mean(), 'count': label.size(0)}
 
         return outputs
 
@@ -194,6 +195,6 @@ class ModelForSCDual(ModelTrunk):
 
             seq_loss = torch.nn.CrossEntropyLoss(reduction="none")(seq_scores, label)
             seq_accu = (seq_scores.argmax(dim=-1) == label).to(torch.float32)
-            outputs = {"loss": seq_loss.mean(), "accu": seq_accu.mean()}
+            outputs = {"loss": seq_loss.mean(), "accu": seq_accu.mean(), "count": label.size(0)}
 
         return outputs

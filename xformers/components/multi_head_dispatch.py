@@ -83,7 +83,7 @@ class MultiHeadDispatch(nn.Module):
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
         in_proj_container: Optional[InProjContainer] = None,
-        use_separate_proj_weight: Optional[bool] = False,
+        use_separate_proj_weight: Optional[bool] = True,
         out_proj: Optional[nn.Module] = None,
         *args,
         **kwargs,
@@ -116,10 +116,10 @@ class MultiHeadDispatch(nn.Module):
                     query_proj=nn.Linear(
                         dim_model, dim_key, bias=bias
                     ),  # NOTE: optional bias ?
-                    key_proj=nn.Linear(dim_model, dim_key, bias=False)
+                    key_proj=nn.Linear(dim_model, dim_key, bias=bias)
                     if use_separate_proj_weight
                     else None,
-                    value_proj=nn.Linear(dim_model, dim_value, bias=False)
+                    value_proj=nn.Linear(dim_model, dim_value, bias=bias)
                     if use_separate_proj_weight
                     else None,
                 )
@@ -170,8 +170,12 @@ class MultiHeadDispatch(nn.Module):
         q = _fold_heads(q, B, S, self.num_heads, self.dim_k)
         v = _fold_heads(v, B, S, self.num_heads, self.dim_k)
 
+        # TODO: Long-short requires the inputs before projection
         # Self-attend
-        y = self.attention(q=q, k=k, v=v, att_mask=att_mask)
+        if self.attention.requires_orig_inputs:
+            y = self.attention(x=query, q=q, k=k, v=v, att_mask=att_mask)
+        else:
+            y = self.attention(q=q, k=k, v=v, att_mask=att_mask)
 
         # Re-assemble all head outputs side by side
         y = (
