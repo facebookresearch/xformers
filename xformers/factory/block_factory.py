@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 from xformers.components import build_multi_head_attention
+from xformers.components.attention.utils import maybe_merge_masks
 from xformers.components.feedforward import (
     FEEDFORWARD_REGISTRY,
     FeedforwardConfig,
@@ -298,6 +299,9 @@ class xFormerEncoderBlock(torch.nn.Module):
             v = k
         else:
             q, k, v = x, x, x
+
+        bsz, src_len, num_heads = q.size(0), k.size(1), self.mha.num_heads
+        att_mask = maybe_merge_masks(att_mask, input_mask, bsz, src_len, num_heads)
 
         # Pre/Post norms and residual paths are already handled
         x = self.wrap_att(q, k, v, att_mask=att_mask)
