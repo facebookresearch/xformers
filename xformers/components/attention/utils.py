@@ -6,13 +6,13 @@ import torch
 # Combine the attention mask and key padding mask into a single mask
 # Taken from https://github.com/pytorch/pytorch/blob/master/torch/nn/functional.py
 # Additive masking not yet supported
-def merge_masks(
+def maybe_merge_masks(
     att_mask: Optional[torch.Tensor],
-    key_padding_mask: torch.Tensor,
+    key_padding_mask: Optional[torch.Tensor],
     batch_size: int,
     src_len: int,
     num_heads: int,
-):
+) -> Optional[torch.Tensor]:
     if key_padding_mask is not None:
         assert key_padding_mask.shape == (batch_size, src_len)
         key_padding_mask = (
