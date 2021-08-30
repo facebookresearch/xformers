@@ -130,7 +130,7 @@ def _apply_dropout(att, dropout):
         )
     elif att.is_sparse:
         att = att.coalesce()
-        values = att.values().clone()  # protect against in-place droupout
+        values = att.values().clone()  # protect against in-place dropout
         values = dropout(values)
         att = torch.sparse_coo_tensor(att.indices(), values, att.shape)
     else:
@@ -169,7 +169,7 @@ def scaled_dot_product_attention(
         if autocast_disabled:
             q, k, v = q.float(), k.float(), v.float()
 
-        att = scaled_query_key_softmax(q, k, att_mask)
+        att = scaled_query_key_softmax(q, k, att_mask=att_mask)
 
         #  Optional dropout, could be part of the masking in the future
         att = _apply_dropout(att, dropout)
