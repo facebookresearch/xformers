@@ -53,7 +53,6 @@ class ScaledDotProduct(Attention):
             k=k,
             v=v,
             att_mask=att_mask,
-            # Only apply dropout during training
-            dropout=self.attn_drop if self.training else None,
+            dropout=self.attn_drop,
         )
         return y
