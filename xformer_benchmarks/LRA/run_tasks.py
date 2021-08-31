@@ -244,11 +244,10 @@ def benchmark(rank, args):
     config = load_config(args.config)
     
     config_task = config[f"{task}"]
-    # rewrite hyperparameters
+
     if args.sweep_parameters is not None:
         logger.info('Replacing hyperparameters')
         rewrite_hyper(config_task, args.sweep_parameters)
-    # logger.info(config)
 
     config_training = config_task["training"]
     config_training['seq_len'] = config_task['model']['common']['seq_len']

@@ -70,7 +70,8 @@
                     "lsh_reformer": {"num_heads": 2, "num_hash": 2},
                     "longshort":{
                         "num_landmarks": 32,
-                        "window_size": 8
+                        "window_size": 256,
+                        "global_tokens": 2
                     }
                 }
             }

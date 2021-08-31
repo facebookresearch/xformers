@@ -1,10 +1,9 @@
-from numpy.lib.histograms import histogram_bin_edges
 from xformer_benchmarks.LRA.run_with_submitit import get_shared_folder, parse_args, get_init_file, Trainer
 from typing import Dict
 import submitit
 
 import itertools
-from collections import Iterable, namedtuple
+from collections import Iterable
 from datetime import date
 import os
 from pathlib import Path
@@ -38,7 +37,6 @@ def grid_search(args):
     partition = args.partition
 
     executor.update_parameters(
-        # mem_gb=400,
         gpus_per_node=num_gpus_per_node,
         tasks_per_node=num_gpus_per_node,  # one task per GPU
         cpus_per_task=10,
@@ -48,19 +46,19 @@ def grid_search(args):
         slurm_partition=partition,
     )
     executor.update_parameters(name="lra")
-
-    # # Launch one job per grid position
-    # grid_meta = {
-    #     "training:learning_rate": ([1e-4, 5e-5], lambda val: f'lr{val}'),
-    #     "training:warmup": ([8000], lambda val: f'warmup{val}'),
-    #     # "training:gradient_accumulation": ([1], lambda val: f'accugrad{val}'),
-    #     "training:seed": ([1234, 4321, 3], lambda val: f'seed{val}'),
-    #     # "model:extra_settings:attention:sinkhorn:block_size": ([128,256], lambda val: f'blocksize{val}'),
-    #     # "model:common:seq_len": ([3072], lambda val: f'seqlen{val}'),
-    #     "training:weight_decay": ([0.01], lambda val: f'wd{val}'),
-    #     "model:pooling_model": (["cls"], lambda val: f'pool-{val}'),
-    #     "model:common:dropout": ([0.1], lambda val: f'drop{val}'),
-    #     }
+    
+    if args.task == 'text':
+        grid_meta = {
+            "training:learning_rate": ([1e-4, 5e-5], lambda val: f'lr{val}'),
+            "training:warmup": ([8000], lambda val: f'warmup{val}'),
+            # "training:gradient_accumulation": ([1], lambda val: f'accugrad{val}'),
+            "training:seed": ([1234, 4321, 3], lambda val: f'seed{val}'),
+            # "model:extra_settings:attention:sinkhorn:block_size": ([128,256], lambda val: f'blocksize{val}'),
+            # "model:common:seq_len": ([3072], lambda val: f'seqlen{val}'),
+            "training:weight_decay": ([0.01], lambda val: f'wd{val}'),
+            "model:pooling_model": (["cls"], lambda val: f'pool-{val}'),
+            "model:common:dropout": ([0.1], lambda val: f'drop{val}'),
+            }
 
     # retrieval
     grid_meta = {
