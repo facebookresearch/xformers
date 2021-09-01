@@ -58,6 +58,7 @@ def _train_for_several_steps(
     optim = torch.optim.SGD(block.parameters(), lr=lr, momentum=0.9)
 
     if _use_cuda:
+        torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
         torch.cuda.synchronize()
 

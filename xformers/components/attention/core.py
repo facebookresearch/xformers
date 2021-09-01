@@ -1,3 +1,4 @@
+import logging
 import math
 from contextlib import nullcontext
 from typing import Optional
@@ -5,6 +6,17 @@ from typing import Optional
 import torch
 
 from ._sputnik_sparse import SparseCS
+
+# FIXME: Better coding on when to use triton and not
+_use_triton = True
+if _use_triton:
+    try:
+        from xformers.triton.softmax import softmax as triton_softmax
+    except ImportError:
+        logging.warning(
+            "Triton is not available, some optimizations will not be enabled."
+        )
+        _use_triton = False
 
 
 def _create_random_sparsity(matrix, sparsity, divisible_by=4):
@@ -67,7 +79,11 @@ def _softmax(a: torch.Tensor) -> torch.Tensor:
         return a.softmax()
     if a.is_sparse:
         return torch.sparse.softmax(a, dim=a.ndim - 1)
-    return torch.softmax(a, dim=a.ndim - 1)
+
+    if _use_triton:
+        return triton_softmax(a)
+    else:
+        return torch.softmax(a, dim=a.ndim - 1)
 
 
 class SparseBMM(torch.autograd.Function):
