@@ -18,7 +18,7 @@ train_ds, eval_ds, test_ds, encoder = input_pipeline.get_tc_datasets(  # type: i
     data_dir=None,
     batch_size=1,
     fixed_vocab=None,
-    max_length=1000,
+    max_length=4000,
 )
 
 mapping = {"train": train_ds, "dev": eval_ds, "test": test_ds}
@@ -28,7 +28,7 @@ for component in mapping:
         ds_list.append(
             {
                 "input_ids_0": np.concatenate(
-                    [inst["inputs"].numpy()[0], np.zeros(24, dtype=np.int32)]
+                    [inst["inputs"].numpy()[0], np.zeros(96, dtype=np.int32)]
                 ),
                 "label": inst["targets"].numpy()[0],
             }

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import submitit
 
-from benchmarks.LRA.run_tasks import benchmark, get_arg_parser
+from xformers.benchmarks.LRA.run_tasks import benchmark, get_arg_parser
 
 
 def parse_args():
@@ -32,7 +32,7 @@ def parse_args():
         "Submitit for LRA", parents=[get_arg_parser()], add_help=False
     )
     parser.add_argument(
-        "--ngpus", default=4, type=int, help="Number of gpus to request on each node"
+        "--ngpus", default=1, type=int, help="Number of gpus to request on each node"
     )
     parser.add_argument(
         "--nodes", default=1, type=int, help="Number of nodes to request"
@@ -40,11 +40,15 @@ def parse_args():
     parser.add_argument("--timeout", default=2800, type=int, help="Duration of the job")
 
     parser.add_argument(
-        "--partition", default="learnfair", type=str, help="Partition where to submit"
+        "--partition", default="a100", type=str, help="Partition where to submit"
     )
     parser.add_argument(
         "--use_volta32", action="store_true", help="Big models? Use this"
     )
+    parser.add_argument(
+        "--enforce_host_memory", action="store_true", help="Use if the host OOMs"
+    )
+
     parser.add_argument(
         "--comment",
         default="",
@@ -56,11 +60,13 @@ def parse_args():
 
 def get_shared_folder() -> Path:
     user = os.getenv("USER")
-    if Path("/checkpoint/").is_dir():
-        p = Path(f"/checkpoint/{user}/experiments")
-        p.mkdir(exist_ok=True)
-        return p
-    raise RuntimeError("No shared folder available")
+    checkpoint_paths = ["/checkpoint", "/checkpoints"]
+    for checkpoint_path in checkpoint_paths:
+        if Path(checkpoint_path).is_dir():
+            p = Path(f"{checkpoint_path}/{user}/xformers/submitit")
+            p.mkdir(exist_ok=True, parents=True)
+            return p
+    raise RuntimeError(f"No shared folder available - considering {checkpoint_paths}")
 
 
 def get_init_file():
@@ -112,22 +118,28 @@ def main():
     args.world_size = args.nodes * args.ngpus
 
     partition = args.partition
-    kwargs = {}
+
+    kwargs = {
+        "gpus_per_node": num_gpus_per_node,
+        "tasks_per_node": num_gpus_per_node,  # one task per GPU
+        "cpus_per_task": 10,
+        "nodes": nodes,
+        "timeout_min": timeout_min,  # max is 60 * 72
+        # Below are cluster dependent parameters
+        "slurm_partition": partition,
+        "slurm_signal_delay_s": 120,
+    }
+
+    if args.enforce_host_memory:
+        kwargs["mem_gb"] = (40 * num_gpus_per_node,)
+
     if args.use_volta32:
         kwargs["slurm_constraint"] = "volta32gb"
+
     if args.comment:
         kwargs["slurm_comment"] = args.comment
 
     executor.update_parameters(
-        mem_gb=40 * num_gpus_per_node,
-        gpus_per_node=num_gpus_per_node,
-        tasks_per_node=num_gpus_per_node,  # one task per GPU
-        cpus_per_task=10,
-        nodes=nodes,
-        timeout_min=timeout_min,  # max is 60 * 72
-        # Below are cluster dependent parameters
-        slurm_partition=partition,
-        slurm_signal_delay_s=120,
         **kwargs,
     )
 

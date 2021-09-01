@@ -18,7 +18,7 @@ train_ds, eval_ds, test_ds, encoder = input_pipeline.get_matching_datasets(  # t
     data_dir="./datasets/lra_release/lra_release/tsv_data/",
     batch_size=1,
     fixed_vocab=None,
-    max_length=4000,
+    max_length=4096,
     tokenizer="char",
     vocab_file_path=None,
 )
@@ -29,12 +29,8 @@ for component in mapping:
     for idx, inst in enumerate(iter(mapping[component])):
         ds_list.append(
             {
-                "input_ids_0": np.concatenate(
-                    [inst["inputs1"].numpy()[0], np.zeros(96, dtype=np.int32)]
-                ),
-                "input_ids_1": np.concatenate(
-                    [inst["inputs2"].numpy()[0], np.zeros(96, dtype=np.int32)]
-                ),
+                "input_ids_0": np.concatenate([inst["inputs1"].numpy()[0]]),
+                "input_ids_1": np.concatenate([inst["inputs2"].numpy()[0]]),
                 "label": inst["targets"].numpy()[0],
             }
         )

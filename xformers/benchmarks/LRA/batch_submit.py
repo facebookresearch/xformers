@@ -1,8 +1,7 @@
 import argparse
 import os
 
-from run_tasks import Task
-
+from xformers.benchmarks.LRA.run_tasks import Task
 from xformers.components.attention import ATTENTION_REGISTRY
 
 if __name__ == "__main__":
