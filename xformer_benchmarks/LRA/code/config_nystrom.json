@@ -67,11 +67,10 @@
                     "num_heads": 2,
                     "block_size": 256
                     },
-                    "lsh_reformer": {"num_heads": 2, "num_hash": 2},
+                    "lsh_reformer": {"num_heads": 2, "num_hash": 4},
                     "longshort":{
                         "num_landmarks": 32,
-                        "window_size": 256,
-                        "global_tokens": 2
+                        "window_size": 8
                     }
                 }
             }
@@ -144,6 +143,7 @@
                         "num_heads": 2,
                         "block_size": 256
                     },
+                    "lsh_reformer": {"num_heads": 2, "num_hash": 4},
                     "longshort":{
                         "num_landmarks": 32,
                         "window_size": 8
@@ -219,6 +219,7 @@
                         "num_heads": 2,
                         "block_size": 256
                     },
+                    "lsh_reformer": {"num_heads": 2, "num_hash": 4},
                     "longshort":{
                         "num_landmarks": 32,
                         "window_size": 8

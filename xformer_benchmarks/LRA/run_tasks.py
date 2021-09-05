@@ -14,7 +14,6 @@ from contextlib import suppress
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict
-from xformers import components
 
 import numpy as np
 import torch
