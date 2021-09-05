@@ -153,7 +153,7 @@ pytest -x -k my_component_name
 ```
 
 - if applicable (attention mechanism), the attention benchmark will pick up this new variant automatically
-- the [LRA benchmarks](benchmarks/LRA/README.md)) will pick up this new block option. You can define a [config](benchmarks/LRA/code/config.json) with your new part and trigger LRA jobs. As a reminder (more information in the dedicated README) you can trigger a LRA job locally with
+- the [LRA benchmarks](xformers/benchmarks/LRA/README.md)) will pick up this new block option. You can define a [config](xformers/benchmarks/LRA/code/config.json) with your new part and trigger LRA jobs. As a reminder (more information in the dedicated README) you can trigger a LRA job locally with
 
 ```bash
 python3 run_tasks.py --attention <your attention name> --task <task> --config <config_path> --world_size N

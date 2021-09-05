@@ -90,7 +90,7 @@ class SoftMaxPositiveEstimators(FeatureMap):
         norm_distribution: NormDistribution = NormDistribution.Uniform,
     ) -> torch.Tensor:
         r"""
-        Generate a random matrix whose rows are exactly orthogonal
+        Generate a random matrix whose rows are exactly orthonormal
 
         "How to generate random matrices from the classical compact groups", Mezzadri, 2007
         https://arxiv.org/pdf/math-ph/0609050v2.pdf

@@ -1,8 +1,5 @@
 from dataclasses import dataclass
 from typing import Optional
-from functools import partial, reduce
-from inspect import isfunction
-from operator import mul
 
 import torch
 import torch.nn as nn
@@ -12,9 +9,6 @@ from torch import Tensor
 from xformers.components.attention import ATTENTION_REGISTRY, Attention, AttentionConfig, register_attention
 from transformers.models.reformer.modeling_reformer import LSHSelfAttention, ReformerConfig, ReverseSort
 
-"""
-using implementation from huggingface transformers
-"""
 
 @dataclass
 class LSHSelfAttentionConfig(AttentionConfig):
@@ -25,7 +19,16 @@ class LSHSelfAttentionConfig(AttentionConfig):
 
 @register_attention("lsh_reformer", LSHSelfAttentionConfig)
 class LSHAttention(Attention):
-
+    """
+    Using implementation from huggingface transformers
+    LSH attention mechanism, from
+    "
+    Reformer: The Efficient Transformer
+    Nikita Kitaev, Łukasz Kaiser, Anselm Levskaya (2020)
+    "
+    ArXiv: https://arxiv.org/abs/2001.04451
+    Reference repository: https://huggingface.co/transformers/model_doc/reformer.html
+    """
     def __init__(
         self,
         num_heads: int,
@@ -44,9 +47,6 @@ class LSHAttention(Attention):
         attn_config.num_hashes = num_hash
         attn_config.max_position_embeddings = seq_len
         attn_config.attention_head_size = dim_model // num_heads
-        # attn_config.feed_forward_size = 1
-        # print(attn_config)
-        # import pdb;pdb.set_trace()
         self.attn = ReformerAttention(attn_config)
 
     def forward(
@@ -64,8 +64,8 @@ class LSHAttention(Attention):
 class ReformerAttention(LSHSelfAttention):
     def __init__(self, config):
         super().__init__(config)
-        self.query_key = None
-        self.value = None
+        del self.query_key
+        del self.value
         self.num_heads = self.num_attention_heads
 
     def forward(
@@ -92,7 +92,6 @@ class ReformerAttention(LSHSelfAttention):
         # num hashes can optionally be overwritten by user
         num_hashes = self.num_hashes
 
-
         # @xwhan reformer needs the key and query vectors to be the same
         # project hidden_states to query_key and value
         query_key_vectors = q.view(batch_size, self.num_attention_heads, sequence_length, head_dim)
@@ -115,7 +114,7 @@ class ReformerAttention(LSHSelfAttention):
         if not do_standard_self_attention:
             # set `num_buckets` on the fly, recommended way to do it
             if self.num_buckets is None:
-                self._set_num_buckets(sequence_length)
+                self._set_num_buckets(sequence_length.item())
 
             # hash query key vectors into buckets
             buckets = self._hash_vectors(query_key_vectors, num_hashes, attention_mask)
@@ -228,5 +227,4 @@ class ReformerAttention(LSHSelfAttention):
     
         return out_vectors.view(-1, sequence_length, head_dim).contiguous()
 
-        # return LSHSelfAttentionOutput(hidden_states=out_vectors, attention_probs=attention_probs, buckets=buckets)
 

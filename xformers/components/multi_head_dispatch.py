@@ -158,7 +158,8 @@ class MultiHeadDispatch(nn.Module):
         self._check(value, "value")
         self._check(key, "key")
 
-        B, S, _ = query.size()  # Batch x Sequence x Embedding (latent)
+        B, S_Q, _ = query.size()  # Batch x Sequence x Embedding (latent)
+        _, S_K, _ = key.size()  # K, Q's sequence length could differ
 
         # Calculate query, key, values for all heads in batch
         if self.attention.requires_input_projection:
@@ -166,9 +167,9 @@ class MultiHeadDispatch(nn.Module):
         else:
             k, q, v = key, query, value
 
-        k = _fold_heads(k, B, S, self.num_heads, self.dim_k)
-        q = _fold_heads(q, B, S, self.num_heads, self.dim_k)
-        v = _fold_heads(v, B, S, self.num_heads, self.dim_k)
+        k = _fold_heads(k, B, S_K, self.num_heads, self.dim_k)
+        q = _fold_heads(q, B, S_Q, self.num_heads, self.dim_k)
+        v = _fold_heads(v, B, S_K, self.num_heads, self.dim_k)
 
         # TODO: Long-short requires the inputs before projection
         # Self-attend
@@ -179,7 +180,7 @@ class MultiHeadDispatch(nn.Module):
 
         # Re-assemble all head outputs side by side
         y = (
-            y.view(B, self.num_heads, S, self.dim_k)
+            y.view(B, self.num_heads, S_Q, self.dim_k)
             .transpose(1, 2)
             .flatten(start_dim=2, end_dim=3)
         )

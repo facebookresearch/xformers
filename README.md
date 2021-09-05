@@ -75,20 +75,20 @@ Models live in `xformers/models`. As a general rule, one should try to write the
 ### Benchmark a full encoder block
 
 Sweeping over different attention settings to log max memory use and runtime can for instance be done by invoking
-`python3 benchmarks/benchmark_encoder.py`. Specifying a subset to test is done through command line arguments, for instance `python3 benchmarks/benchmark_encoder.py --causal True --attentions random --activations gelu -fp16 True`.
+`python3 xformers/benchmarks/benchmark_encoder.py`. Specifying a subset to test is done through command line arguments, for instance `python3 xformers/benchmarks/benchmark_encoder.py --causal True --attentions random --activations gelu -fp16 True`.
 
 Please note that:
 
 - These numbers are dependent of hyperparameters (dimensions chosen for Linformer, sparsity of the pattern), they are mostly an illustration
 - The sparse attention patterns tested here are just presets, as explained in the linked notebook generating any new sparse attention pattern should be relatively easy, while keeping the benefits of optimized computations.
 
-Some examples, generated with `python3 benchmarks/benchmark_encoder.py --activations gelu --plot -emb 256 -bs 32 -heads 16`
+Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 256 -bs 32 -heads 16`
 
 ![Memory use for different attentions](docs/plots/memory_vs_attention.png)  ![Runtime for different attentions](docs/plots/runtime_vs_attention.png)
 
 ### Benchmark the core sparse attention mechanisms
 
-`python3 benchmarks/benchmark_core.py` will measure the speed of the core sparse attention mechanism. The current numbers are as follows (times in microseconds (us)):
+`python3 xformers./benchmarks/benchmark_core.py` will measure the speed of the core sparse attention mechanism. The current numbers are as follows (times in microseconds (us)):
 
 |                        | **matmul_with_mask**  |                        | **softmax**           |                        | **bmm**               |                        |
 | ---------------------- | --------------------- | ---------------------- | --------------------- | ---------------------- | --------------------- | ---------------------- |
@@ -108,7 +108,7 @@ Some examples, generated with `python3 benchmarks/benchmark_encoder.py --activat
 
 ### LRA
 
-The code for this benchmark has been adapted from [this repository](https://github.com/mlpen/Nystromformer/tree/main/LRA). [A dedicated README is available here](benchmarks/LRA/README.md)
+The code for this benchmark has been adapted from [this repository](https://github.com/mlpen/Nystromformer/tree/main/LRA). [A dedicated README is available here](xformers/benchmarks/LRA/README.md)
 
 __Some results:__
 

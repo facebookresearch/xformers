@@ -142,3 +142,21 @@ def test_swin_attention_pattern(H, W, window_size):
     d_padded = d_padded[s, s, s, s].reshape(H * W, H * W)
 
     assert torch.all(d_padded == d_shifted)
+
+
+@pytest.mark.parametrize("k", [2, 3])
+@pytest.mark.parametrize("W", [8, 15])
+@pytest.mark.parametrize("H", [8, 15])
+def test_dilated_2d_pattern(H, W, k):
+    d = AP.dilated_2d_pattern(H, W, k)
+    d = d.reshape(H, W, H, W)
+    for h, w in itertools.product(range(H), range(W)):
+        i = h % k
+        j = w % k
+        # every kth element is taken
+        assert torch.all(d[h, w][i::k, j::k])
+        for ii, jj in itertools.product(range(k), range(k)):
+            if ii == i and jj == j:
+                continue
+            # and the other elements are discarded
+            assert torch.all(~d[h, w][ii::k, jj::k])
