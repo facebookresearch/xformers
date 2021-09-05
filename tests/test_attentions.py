@@ -123,4 +123,25 @@ def test_kqv_ordering(
     assert torch.allclose(res_false[0, :, :], res_false[1, :, :])
 
 
+@pytest.mark.parametrize("heads", [1, 3])
+@pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
+@pytest.mark.parametrize("device", DEVICES)
+def test_different_kq_dimensions(
+    attention_name: str,
+    heads: int,
+    device: torch.device,
+):
+    if attention_name in {"global", "local", "random", "lambda", "linformer"}:
+        pytest.skip(f"{attention_name} does not support different k, q dimensions yet.")
+    multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
+
+    seq_q = SEQ - 10
+    q = torch.rand((BATCH, seq_q, MODEL), device=device)
+    k = torch.rand((BATCH, SEQ, MODEL), device=device)
+    v = torch.rand((BATCH, SEQ, MODEL), device=device)
+
+    res = multi_head(query=q, key=k, value=v)
+    assert res.shape == torch.Size([BATCH, seq_q, MODEL])
+
+
 # TODO: way more unit tests..

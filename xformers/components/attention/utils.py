@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 from typing import Optional
 
@@ -21,6 +23,31 @@ def merge_masks(
         att_mask = att_mask.logical_and(key_padding_mask)
 
     return att_mask
+
+# Combine the attention mask and key padding mask into a single mask
+# Taken from https://github.com/pytorch/pytorch/blob/master/torch/nn/functional.py
+# Additive masking not yet supported
+def maybe_merge_masks(
+    att_mask: Optional[torch.Tensor],
+    key_padding_mask: Optional[torch.Tensor],
+    batch_size: int,
+    src_len: int,
+    num_heads: int,
+) -> Optional[torch.Tensor]:
+    if key_padding_mask is not None:
+        assert key_padding_mask.shape == (batch_size, src_len)
+        key_padding_mask = (
+            key_padding_mask.view(batch_size, 1, 1, src_len)
+            .expand(-1, num_heads, -1, -1)
+            .reshape(batch_size * num_heads, 1, src_len)
+        )
+        if att_mask is None:
+            att_mask = key_padding_mask
+        # Assumption is that False means to mask.
+        att_mask = att_mask.logical_and(key_padding_mask)
+
+    return att_mask
+
 
 # Assumes that matrix passed in has had softmax applied to it.
 def iterative_pinv(softmax_mat: torch.Tensor, n_iter=6, pinverse_original_init=False):

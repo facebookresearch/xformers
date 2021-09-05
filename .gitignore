@@ -27,7 +27,12 @@ ENV/
 env.bak/
 venv.bak/
 .vscode/*
+<<<<<<< HEAD
 xformer_benchmarks/LRA/datasets
 xformer_benchmarks/LRA/logs
+=======
+xformers/benchmarks/LRA/datasets
+xformers/benchmarks/LRA/logs
+>>>>>>> origin/main
 
 my_runs.md

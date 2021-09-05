@@ -7,9 +7,9 @@ import torch
 from xformers.factory.model_factory import xFormer, xFormerConfig
 
 BATCH = 20
-SEQ = 64
-EMB = 48
-VOCAB = 16
+SEQ = 32
+EMB = 8
+VOCAB = 8
 HEADS = 4
 DROP = 0.1
 LAYERS = 2

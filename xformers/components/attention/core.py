@@ -1,9 +1,22 @@
+import logging
 import math
+from contextlib import nullcontext
 from typing import Optional
 
 import torch
 
 from ._sputnik_sparse import SparseCS
+
+# FIXME: Better coding on when to use triton and not
+_use_triton = True
+if _use_triton:
+    try:
+        from xformers.triton.softmax import softmax as triton_softmax
+    except ImportError:
+        logging.warning(
+            "Triton is not available, some optimizations will not be enabled."
+        )
+        _use_triton = False
 
 
 def _create_random_sparsity(matrix, sparsity, divisible_by=4):
@@ -66,7 +79,11 @@ def _softmax(a: torch.Tensor) -> torch.Tensor:
         return a.softmax()
     if a.is_sparse:
         return torch.sparse.softmax(a, dim=a.ndim - 1)
-    return torch.softmax(a, dim=a.ndim - 1)
+
+    if _use_triton:
+        return triton_softmax(a)
+    else:
+        return torch.softmax(a, dim=a.ndim - 1)
 
 
 class SparseBMM(torch.autograd.Function):
@@ -129,7 +146,7 @@ def _apply_dropout(att, dropout):
         )
     elif att.is_sparse:
         att = att.coalesce()
-        values = att.values().clone()  # protect against in-place droupout
+        values = att.values().clone()  # protect against in-place dropout
         values = dropout(values)
         att = torch.sparse_coo_tensor(att.indices(), values, att.shape)
     else:
@@ -161,12 +178,19 @@ def scaled_dot_product_attention(
     att_mask: Optional[torch.Tensor],
     dropout: Optional[torch.nn.Module] = None,
 ) -> torch.Tensor:
-    att = scaled_query_key_softmax(q, k, att_mask)
+    autocast_disabled = isinstance(att_mask, SparseCS) or (
+        att_mask is not None and att_mask.is_sparse
+    )
+    with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
+        if autocast_disabled:
+            q, k, v = q.float(), k.float(), v.float()
 
-    #  Optional dropout, could be part of the masking in the future
-    att = _apply_dropout(att, dropout)
+        att = scaled_query_key_softmax(q, k, att_mask=att_mask)
 
-    # Get to the predicted values, for all heads
-    # y = att @ v  # (N, S, S) x (N, S, hs) -> (N, S, hs)
-    y = bmm(att, v)
+        #  Optional dropout, could be part of the masking in the future
+        att = _apply_dropout(att, dropout)
+
+        # Get to the predicted values, for all heads
+        # y = att @ v  # (N, S, S) x (N, S, hs) -> (N, S, hs)
+        y = bmm(att, v)
     return y

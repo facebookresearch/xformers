@@ -113,7 +113,7 @@ run_benchmarks: &run_benchmarks
   - run:
       name: Run Benchmarks
       command: |
-        CUDA_LAUNCH_BLOCKING=1 python3 benchmarks/benchmark_encoder.py --activations gelu --plot -emb 128 -bs 16 -heads 16
+        CUDA_LAUNCH_BLOCKING=1 python3 xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 128 -bs 16 -heads 16
 
 # -------------------------------------------------------------------------------------
 # Jobs to run
