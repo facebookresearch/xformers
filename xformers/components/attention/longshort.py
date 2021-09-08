@@ -14,10 +14,10 @@ from xformers.components.attention import Attention, AttentionConfig, register_a
 class LongShortConfig(AttentionConfig):
     block_size: int
     num_heads: int
-    seq_len: int
     dim_model: int
     num_landmarks: int
     window_size: int
+    global_tokens: int
 
 @register_attention("longshort", LongShortConfig)
 class LongShortAttention(Attention):
@@ -25,10 +25,10 @@ class LongShortAttention(Attention):
         self, 
         dropout: float, 
         num_heads: int,
-        num_landmarks: int,
         dim_model: int,
-        seq_len: int,
-        window_size: int,
+        num_landmarks: int = 64,
+        window_size: int = 256,
+        global_tokens: int = 1,
         *args, **kwargs
     ):
         """
@@ -44,12 +44,11 @@ class LongShortAttention(Attention):
         self.num_head = num_heads
         self.head_dim = dim_model // num_heads
         self.num_landmarks = num_landmarks
-        self.seq_len = seq_len
         self.dim = dim_model
         self.window_size = window_size        
         self.requires_orig_inputs = True
 
-        self.cls_from_seq = True
+        self.global_tokens = global_tokens # default num of global tokens
 
         # Sec 3.4 to stablize the attention combination
         self.dual_ln_s = nn.LayerNorm(self.num_head * self.head_dim)
@@ -68,36 +67,36 @@ class LongShortAttention(Attention):
         key_padding_mask: Optional[Tensor] = None,
         *args, **kwargs
     ):
+        global_tokens = self.global_tokens
 
         batch_size = q.shape[0] // self.num_head
         sequence_length = q.shape[1]
 
         # xformer format, att_mask: B x seq_len x seq_len #TODO: better solution?
-        if key_padding_mask is not None:
-            mask = key_padding_mask == 0
-        elif att_mask is not None:
+        # if key_padding_mask is not None:
+        #     mask = key_padding_mask == 0
+        if att_mask is not None:
             assert len(att_mask.shape) == 3
             att_mask = att_mask.reshape(batch_size, self.num_head, -1, sequence_length)[:,0,:,:]
             mask = att_mask.sum(1) > 0
         else:
             mask = None
 
-
         Q = q.view(batch_size, self.num_head, -1, self.head_dim).mul(1./math.sqrt(self.head_dim))
         K = k.view(batch_size, self.num_head, -1, self.head_dim).transpose(1,2).reshape(batch_size, -1, self.dim)
         V = v.view(batch_size, self.num_head, -1, self.head_dim).transpose(1,2).reshape(batch_size, -1, self.dim)
 
-        if self.cls_from_seq:
+        if global_tokens > 0:
             # cls_embed = x[:,:1].contiguous()
-            cls_embed_q = Q[:,:,:1].contiguous()
-            cls_embed_k = K[:,:1].contiguous()
-            cls_embed_v = V[:,:1].contiguous()
+            cls_embed_q = Q[:,:,:global_tokens].contiguous()
+            cls_embed_k = K[:,:global_tokens].contiguous()
+            cls_embed_v = V[:,:global_tokens].contiguous()
 
-            x = x[:,1:].contiguous() # B x (seq - 1) x dim_model
-            Q = Q[:,:,1:].contiguous() # B x heads x (seq - 1) x head_dim
-            K = K[:,1:].contiguous() # B x (seq - 1) x dim_model
-            V = V[:,1:].contiguous()
-            mask = mask[:,1:].contiguous() if mask is not None else None # B x (seq - 1)
+            x = x[:,global_tokens:].contiguous() # B x (seq - 1) x dim_model
+            Q = Q[:,:,global_tokens:].contiguous() # B x heads x (seq - 1) x head_dim
+            K = K[:,global_tokens:].contiguous() # B x (seq - 1) x dim_model
+            V = V[:,global_tokens:].contiguous()
+            mask = mask[:,global_tokens:].contiguous() if mask is not None else None # B x (seq - 1)
 
         def _pad_to_window_size(x, window_size):
             seq_len = x.size(-2)
@@ -131,8 +130,7 @@ class LongShortAttention(Attention):
             K_compress = head_scores.matmul(K) # bsz x num_head x num_lms x head_dim
             V_compress = head_scores.matmul(V)
 
-        if cls_embed_q is not None:
-
+        if global_tokens > 0:
             Q_cls = cls_embed_q # B x heads x 1 x head_dim
             K_cls = self.split_heads(cls_embed_k) # B x heads x 1 x head_dim
             V_cls = self.split_heads(cls_embed_v)
@@ -184,10 +182,11 @@ class LongShortAttention(Attention):
 
         if win_attn_weights is not None:
             win_attn_probs = all_attn[:,:,:,-win_attn_weights.shape[-1]:]
+            seq_len = win_attn_probs.shape[2]
             if self.window_size > 0:
-                win_attn_probs = win_attn_probs.view(batch_size, self.num_head, sequence_length // self.window_size, self.window_size,-1)
+                win_attn_probs = win_attn_probs.view(batch_size, self.num_head, seq_len // self.window_size, self.window_size,-1)
                 V_tiles = self.get_tiles_v2(V, transpose=False)
-                C += win_attn_probs.matmul(V_tiles).view(batch_size, self.num_head, sequence_length, self.head_dim)
+                C += win_attn_probs.matmul(V_tiles).view(batch_size, self.num_head, seq_len, self.head_dim)
             else:
                 C += win_attn_probs * V
 
@@ -201,7 +200,7 @@ class LongShortAttention(Attention):
             cls_probs = torch.softmax(cls_scores, dim=-1, dtype=torch.float32)#.to(X)
             # if not self.fp32:
             cls_probs = cls_probs.to(x)
-            out_cls_embed = V_cls * cls_probs[:,:,:,:1] + cls_probs[:,:,:,1:].matmul(C)
+            out_cls_embed = cls_probs[:,:,:,:global_tokens].matmul(V_cls) + cls_probs[:,:,:,global_tokens:].matmul(C)
 
         if cls_embed_q is not None:
             C = torch.cat([out_cls_embed, C], dim=2)
@@ -209,9 +208,10 @@ class LongShortAttention(Attention):
         # if self.fp32:
         #     # Finally convert it back, same as Nystromformer
         #     C = C.to(x)
+        
 
         # get rid of the padding positions
-        C = C[:,:,:-pad_len].view(-1, sequence_length, self.head_dim)
+        C = C[:,:,:sequence_length].view(-1, sequence_length, self.head_dim)
 
         return C
 

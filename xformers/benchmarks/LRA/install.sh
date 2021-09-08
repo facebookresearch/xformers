@@ -35,13 +35,13 @@ cd ..
 
 red_echo "\n*** All required data fetched, now installing datasets ***\n"
 
-if [ ! -f "datasets/pathfinder32-curv_baseline.dev.pickle" ]; then
-    red_echo "Installing the pathfinder dataset\n"
-    python3 setup/pathfinder.py
-    maybe_success
-else
-    red_echo "[x] Pathfinder dataset seems to be installed already\n"
-fi
+# if [ ! -f "datasets/pathfinder32-curv_baseline.dev.pickle" ]; then
+#     red_echo "Installing the pathfinder dataset\n"
+#     python3 setup/pathfinder.py
+#     maybe_success
+# else
+#     red_echo "[x] Pathfinder dataset seems to be installed already\n"
+# fi
 
 if [ ! -f "datasets/listops.dev.pickle" ]; then
     red_echo "Installing the listops dataset\n"
@@ -67,5 +67,5 @@ else
     red_echo "[x] Text dataset seems to be installed already\n"
 fi
 
-red_echo "Installing the cifar10 dataset\n"
-python3 setup/cifar10.py
+# red_echo "Installing the cifar10 dataset\n"
+# python3 setup/cifar10.py
