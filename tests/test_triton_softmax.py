@@ -5,6 +5,7 @@ import torch
 from torch.cuda.amp.autocast_mode import autocast
 
 try:
+    from xformers.triton.softmax import log_softmax as triton_log_softmax
     from xformers.triton.softmax import softmax as triton_softmax
 
     _triton_available = True
@@ -28,7 +29,8 @@ SHAPES = [
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [False, True])
-def test_softmax_parity(shape, amp):
+@pytest.mark.parametrize("log", [False, True])
+def test_softmax_parity(shape, amp, log):
     """Check that PyTorch and Triton softmax give the same result"""
 
     # Check the result of a FW pass
@@ -37,8 +39,8 @@ def test_softmax_parity(shape, amp):
     X_.requires_grad = True
 
     with autocast(enabled=amp):
-        y_torch = torch.softmax(X, dim=-1)
-        y_triton = triton_softmax(X_)
+        y_torch = torch.log_softmax(X, dim=-1) if log else torch.softmax(X, dim=-1)
+        y_triton = triton_log_softmax(X_) if log else triton_softmax(X_)
         assert torch.allclose(y_torch, y_triton)
 
         # Check that BW also gives the same result

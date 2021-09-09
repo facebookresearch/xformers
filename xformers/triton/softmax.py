@@ -18,6 +18,8 @@ kernel_configs = [
     triton.Config({}, num_warps=1),
     triton.Config({}, num_warps=2),
     triton.Config({}, num_warps=4),
+    triton.Config({}, num_warps=8),
+    triton.Config({}, num_warps=16),
 ]
 
 
@@ -35,7 +37,7 @@ def _get_fp16(*args, **kwargs):
     configs=kernel_configs,
     key=["K"],
 )
-@triton.heuristics(values={"DEPTH": _get_depth, "is_fp16": _get_fp16})
+@triton.heuristics(values={"depth": _get_depth, "is_fp16": _get_fp16})
 @triton.jit
 def _softmax(
     Y,
@@ -57,7 +59,7 @@ def _softmax(
     n = tl.program_id(1)
 
     # col indices
-    k = tl.arange(0, meta["DEPTH"])
+    k = tl.arange(0, meta["depth"])
 
     # the memory address of all the elements that we want to load can be computed as follows
     X = X + m * stride_xm + n * stride_xn + k * stride_xk
@@ -74,12 +76,12 @@ def _softmax(
         z = z.to(tl.float32)
 
     num = tl.exp(z)
-
-    if meta["is_fp16"]:
-        num = num.to(tl.float16)
-
     denom = tl.sum(num, axis=0)
-    y = num / denom
+
+    if meta["log"]:
+        y = z - tl.log(denom)
+    else:
+        y = num / denom
 
     # write back to Y.
     # we only write once, hence the "fused" softmax naming
@@ -87,6 +89,11 @@ def _softmax(
     tl.store(Y, y, mask=k < K)
 
 
+@triton.autotune(
+    configs=kernel_configs,
+    key=["K"],
+)
+@triton.heuristics(values={"is_fp16": _get_fp16})
 @triton.jit
 def _softmax_backward(
     B,
@@ -113,7 +120,7 @@ def _softmax_backward(
     n = tl.program_id(1)
 
     # col indices
-    k = tl.arange(0, meta["DEPTH"])
+    k = tl.arange(0, meta["depth"])
 
     # the memory address of all the elements that we want to load can be computed as follows
     G = G + m * stride_gm + n * stride_gn + k * stride_gk
@@ -123,11 +130,17 @@ def _softmax_backward(
     g = tl.load(G, mask=k < K, other=float(0))
     o = tl.load(Out, mask=k < K, other=float(0))
 
-    # Step 1: Compute the intermediate sum used for the gradient
-    s = tl.sum(g * o, 0)
+    if meta["log"]:
+        s = tl.sum(g, 0)
+        if meta["is_fp16"]:
+            o = o.to(tl.float32)
+        b = g - tl.exp(o) * s
+    else:
+        # Step 1: Compute the intermediate sum used for the gradient
+        s = tl.sum(g * o, 0)
 
-    # Step 2: Compute the gradients
-    b = o * (g - s)
+        # Step 2: Compute the gradients
+        b = o * (g - s)
 
     # write back to B.
     # we only write once, hence the "fused" softmax naming
@@ -139,7 +152,7 @@ def _softmax_backward(
 class _softmax_triton(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16 if _triton_softmax_fp16_enabled else None)
-    def forward(ctx, x):
+    def forward(ctx, x, log_outputs):
         """
         Fused softmax implementation, using the Triton programming model.
         This only supports a reduction over the last dimension for now
@@ -166,9 +179,11 @@ class _softmax_triton(torch.autograd.Function):
             x.stride(1),
             x.stride(2),
             x.shape[2],
+            log=log_outputs,
         )
 
         ctx.save_for_backward(y)
+        ctx.log_outputs = log_outputs
         return y
 
     @staticmethod
@@ -184,13 +199,7 @@ class _softmax_triton(torch.autograd.Function):
             grad.shape[1],
         )
 
-        DEPTH = next_power_of_2(out.shape[2])
-
-        num_warps = 4
-        if DEPTH >= 2048:
-            num_warps = 8
-        if DEPTH >= 4096:
-            num_warps = 16
+        depth = next_power_of_2(out.shape[2])
 
         # enqueue GPU kernel
         ga = torch.empty_like(out)
@@ -208,13 +217,21 @@ class _softmax_triton(torch.autograd.Function):
             out.stride(1),
             out.stride(2),
             out.shape[2],
-            DEPTH=DEPTH,
-            num_warps=num_warps,
+            depth=depth,
+            log=ctx.log_outputs,
         )
-        return ga
+        return ga, None
 
 
 def softmax(x: torch.Tensor) -> torch.Tensor:
+    return _softmax_dispatch(x, log=False)
+
+
+def log_softmax(x: torch.Tensor) -> torch.Tensor:
+    return _softmax_dispatch(x, log=True)
+
+
+def _softmax_dispatch(x: torch.Tensor, log: bool) -> torch.Tensor:
     # Triton is used if
     # - CUDA
     # - there's enough data to make it faster than pytorch. This could change over time, Triton is improving
@@ -222,23 +239,23 @@ def softmax(x: torch.Tensor) -> torch.Tensor:
 
     global _triton_register_overflow
 
-    if (
-        torch.cuda.is_available()
-        and x.is_cuda
-        and x.numel()
-        and not _triton_register_overflow
-    ):
-        try:
-            return _softmax_triton.apply(x)
-        except triton.OutOfResources:
-            # Catch cases where the current GPU does not have enough registers to hold a full tensor line
-            # fallback to PyTorch's implementation, which streams the tensor in and out
-            _triton_register_overflow = True
-            logging.warning(
-                "Triton softmax kernel register spillover caught."
-                "Deactivating this kernel, please file an issue int the xFormers repository"
-            )
+    try:
+        if (
+            torch.cuda.is_available()
+            and x.is_cuda
+            and x.numel()
+            and not _triton_register_overflow
+        ):
+            return _softmax_triton.apply(x, log)
+    except triton.OutOfResources:
+        # Catch cases where the current GPU does not have enough registers to hold a full tensor line
+        # fallback to PyTorch's implementation, which streams the tensor in and out
+        _triton_register_overflow = True
+        logging.warning(
+            "Triton softmax kernel register spillover caught."
+            "Deactivating this kernel, please file an issue int the xFormers repository"
+        )
 
-            pass
+        pass
 
     return torch.softmax(x, dim=-1)
