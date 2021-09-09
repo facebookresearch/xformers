@@ -3,27 +3,16 @@ import logging
 import torch
 import triton
 import triton.language as tl
+from torch.cuda.amp import custom_bwd, custom_fwd
+
+from xformers.triton.utils import next_power_of_2
 
 # CREDITS: This is essentially the vanilla Triton example from https://openai.com/blog/triton/
 # and https://triton-lang.org/getting-started/tutorials/02-fused-softmax.html
 
 
 _triton_register_overflow = False
-
-
-def next_power_of_2(n):
-    """Return the smallest power of 2 greater than or equal to n"""
-    assert n < 2 ** 16, "Depths beyond 2^16 are not yet handled by this softmax kernel"
-
-    n -= 1
-    n |= n >> 1
-    n |= n >> 2
-    n |= n >> 4
-    n |= n >> 8
-    n |= n >> 16
-    n += 1
-    return n
-
+_triton_softmax_fp16_enabled = False  # NOTE: PyTorch keeps softmax as fp32
 
 kernel_configs = [
     triton.Config({}, num_warps=1),
@@ -149,6 +138,7 @@ def _softmax_backward(
 # Helper to handle the SMPD launch grid and error cases
 class _softmax_triton(torch.autograd.Function):
     @staticmethod
+    @custom_fwd(cast_inputs=torch.float16 if _triton_softmax_fp16_enabled else None)
     def forward(ctx, x):
         """
         Fused softmax implementation, using the Triton programming model.
@@ -182,6 +172,7 @@ class _softmax_triton(torch.autograd.Function):
         return y
 
     @staticmethod
+    @custom_bwd
     def backward(ctx, grad):
         (out,) = ctx.saved_tensors
 
