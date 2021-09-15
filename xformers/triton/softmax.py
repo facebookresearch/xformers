@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 import logging
 
 import torch
@@ -7,7 +13,7 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 
 from xformers.triton.utils import next_power_of_2
 
-# CREDITS: This is essentially the vanilla Triton example from https://openai.com/blog/triton/
+# Credits: This is adapted from the vanilla Triton example. See https://openai.com/blog/triton/
 # and https://triton-lang.org/getting-started/tutorials/02-fused-softmax.html
 
 

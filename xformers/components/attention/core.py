@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 import logging
 import math
 from contextlib import nullcontext
@@ -7,7 +13,7 @@ import torch
 
 from ._sputnik_sparse import SparseCS
 
-# FIXME: Better coding on when to use triton and not
+# NOTE: Could do with a better option on when to use triton and not
 _use_triton = True
 if _use_triton:
     try:
