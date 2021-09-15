@@ -196,6 +196,10 @@ class SparseCS:
         return self.values.device
 
     @property
+    def dtype(self):
+        return self.values.dtype
+
+    @property
     def is_sparse(self):
         return True
 
@@ -214,6 +218,19 @@ class SparseCS:
 
     def __mul__(self, other):
         out = self.values * other
+        return type(self).wrap(
+            self.shape,
+            out,
+            self.row_indices,
+            self.row_offsets,
+            self.column_indices,
+            self._transp_info,
+        )
+
+    def __add__(self, other):
+        assert isinstance(other, type(self))
+        # TODO add cheap assert for indices
+        out = self.values + other.values
         return type(self).wrap(
             self.shape,
             out,

@@ -166,6 +166,9 @@ def scaled_query_key_softmax(
     q = q * (1.0 / math.sqrt(k.size(-1)))
     att = _matmul_with_mask(q, k.transpose(-2, -1), att_mask)
 
+    if att_mask is not None and att_mask.dtype != torch.bool:
+        att = att + att_mask
+
     # Softmax to get the attention probabilities
     att = _softmax(att)
     return att
