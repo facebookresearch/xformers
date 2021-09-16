@@ -27,7 +27,7 @@ def next_power_of_2(n):
     return n
 
 
-def bench_functions(test_cases: List[TestCase], shapes):
+def bench_functions(test_cases: List[TestCase], shapes, metric_transform, unit):
     device = torch.device("cuda")
 
     for dtype in [torch.float16, torch.float32]:
@@ -38,11 +38,14 @@ def bench_functions(test_cases: List[TestCase], shapes):
 
             for testcase in test_cases:
                 time = triton.testing.do_bench(lambda: testcase.function(a))[0]
+
+                metric = metric_transform(a, time)
+
                 key = f"B={B}, M={M}, K={K}"
                 if key not in results:
                     results[key] = {}
 
-                results[key][testcase.name] = f"{time:.2f}"
+                results[key][testcase.name] = f"{metric:.1f} {unit}"
 
         pretty_print(
             results, title=" ------------- Type: {} ------------- ".format(dtype)

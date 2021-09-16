@@ -34,6 +34,16 @@ def triton_log_fw_bw(x):
 
 
 # Test FW
+def to_gbs_fw(a, ms):
+    # Read and write the full array
+    return (2 * a.numel() * a.element_size() * 1e-9) / (ms * 1e-3)
+
+
+def to_gbs_fwbw(a, ms):
+    # same as above, but we do it twice (FW and then gradient)
+    return 2 * to_gbs_fw(a, ms)
+
+
 bench_functions(
     [
         TestCase(lambda x: torch.softmax(x, dim=-1), "pytorch - fw"),
@@ -42,6 +52,8 @@ bench_functions(
         TestCase(triton_log_softmax, "triton  - log - fw"),
     ],
     SHAPES,
+    to_gbs_fw,
+    "gbs",
 )
 
 # Test FW+BW
@@ -53,4 +65,6 @@ bench_functions(
         TestCase(triton_log_fw_bw, "triton  - log - fw+bw"),
     ],
     SHAPES,
+    to_gbs_fwbw,
+    "gbs",
 )
