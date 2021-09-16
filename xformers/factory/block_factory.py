@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 from xformers.components import build_multi_head_attention
+from xformers.components.attention.utils import maybe_merge_masks
 from xformers.components.feedforward import (
     FEEDFORWARD_REGISTRY,
     FeedforwardConfig,

@@ -83,6 +83,7 @@ from .favor import FavorAttention  # noqa
 from .global_tokens import GlobalAttention  # noqa
 from .linformer import LinformerAttention  # noqa
 from .local import LocalAttention  # noqa
+from .longshort import LongShortAttention  # noqa
 from .nystrom import NystromAttention  # noqa
 from .ortho import OrthoFormerAttention  # noqa
 from .random import RandomAttention  # noqa
