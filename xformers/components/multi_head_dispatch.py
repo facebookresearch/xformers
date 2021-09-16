@@ -142,6 +142,7 @@ class MultiHeadDispatch(nn.Module):
         key: Optional[torch.Tensor] = None,
         value: Optional[torch.Tensor] = None,
         att_mask: Optional[torch.Tensor] = None,
+        **kwargs
     ) -> torch.Tensor:
         """
         Expected input dimensions are [batch size, sequence length, embed dim]
@@ -173,10 +174,11 @@ class MultiHeadDispatch(nn.Module):
 
         # TODO: Long-short requires the inputs before projection
         # Self-attend
+        key_padding_mask = kwargs.get("key_padding_mask", None)
         if self.attention.requires_orig_inputs:
-            y = self.attention(x=query, q=q, k=k, v=v, att_mask=att_mask)
+            y = self.attention(x=query, q=q, k=k, v=v, att_mask=att_mask, key_padding_mask=key_padding_mask)
         else:
-            y = self.attention(q=q, k=k, v=v, att_mask=att_mask)
+            y = self.attention(q=q, k=k, v=v, att_mask=att_mask, key_padding_mask=key_padding_mask)
 
         # Re-assemble all head outputs side by side
         y = (

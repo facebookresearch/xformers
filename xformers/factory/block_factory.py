@@ -302,9 +302,9 @@ class xFormerEncoderBlock(torch.nn.Module):
 
         bsz, src_len, num_heads = q.size(0), k.size(1), self.mha.num_heads
         att_mask = merge_masks(att_mask, input_mask, bsz, src_len, num_heads)
-
+        
         # Pre/Post norms and residual paths are already handled
-        x = self.wrap_att(q, k, v, att_mask=att_mask)
+        x = self.wrap_att(q, k, v, att_mask=att_mask, key_padding_mask=~input_mask.bool())
         x = self.wrap_ff(x)
 
         return x
