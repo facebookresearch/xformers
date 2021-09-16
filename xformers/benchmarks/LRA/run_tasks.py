@@ -59,7 +59,7 @@ def build_model(args: argparse.Namespace, config: Dict) -> nn.Module:
     else:
         model = ModelForSC(config[f"{task}"], attention_name)
 
-    args.logger.info(model)
+    # args.logger.info(model)
     args.logger.info(
         f"num_parameter: {np.sum([np.prod(weight.size()) for weight in model.parameters()]) // 1e3 / 1e3}M"
     )
@@ -68,9 +68,9 @@ def build_model(args: argparse.Namespace, config: Dict) -> nn.Module:
         # Check the flops
         seq_len = config[f"{task}"]["model"]["common"]["seq_len"]
         x = torch.rand(1, seq_len).long()
-        mask = torch.rand(1, seq_len).long()
+        mask = torch.ones(1, seq_len).bool()
         indices = torch.rand(1, seq_len).long()
-        flops = FlopCountAnalysis(model.model, (x, mask, indices))
+        flops = FlopCountAnalysis(model.model, (x, indices, mask))
         args.logger.info(f"complexity: {round(flops.total()/1e9, 3)} GFlops")
         args.logger.info(flop_count_str(flops))
 

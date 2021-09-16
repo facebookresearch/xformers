@@ -60,40 +60,43 @@ def grid_search(args):
     if args.task == "text":
         grid_meta = {
             "training:learning_rate": (
-                [1e-4, 2e-4, 3e-4, 5e-5],
+                [1e-4, 2e-4, 3e-4],
                 lambda val: f"lr{val}",
             ),
-            "training:warmup": ([3000, 8000], lambda val: f"warmup{val}"),
-            "training:seed": ([1234, 32, 1994], lambda val: f"seed{val}"),
-            "training:weight_decay": ([0.02, 0.05, 0.01], lambda val: f"wd{val}"),
+            "training:warmup": ([8000], lambda val: f"warmup{val}"),
+            "training:seed": ([1234, 32], lambda val: f"seed{val}"),
+            "training:weight_decay": ([0.01], lambda val: f"wd{val}"),
             "model:pooling_model": (["cls"], lambda val: f"pool-{val}"),
-            "model:common:dropout": ([0, 0.05], lambda val: f"drop{val}"),
+            "model:common:dropout": ([0], lambda val: f"drop{val}"),
+            "model:extra_settings:attention:blockwise:window_size": ([8], lambda val: f"window{val}"),
         }
     elif args.task == "retrieval":
         grid_meta = {
             "training:learning_rate": ([1e-4, 3e-4], lambda val: f"lr{val}"),
             "training:warmup": ([2000, 8000], lambda val: f"warmup{val}"),
-            "training:seed": ([4096, 1234, 3, 15, 5], lambda val: f"seed{val}"),
+            "training:seed": ([4096, 1234], lambda val: f"seed{val}"),
             "training:weight_decay": ([0.01, 0], lambda val: f"wd{val}"),
             "model:pooling_model": (["cls"], lambda val: f"pool-{val}"),
             "model:common:dropout": ([0], lambda val: f"drop{val}"),
+            "model:extra_settings:attention:blockwise:window_size": ([8,32], lambda val: f"window{val}"),
         }
     elif args.task == "listops":
         grid_meta = {
             "training:learning_rate": (
-                [1e-4, 2e-4, 3e-4, 5e-5],
+                [1e-4, 2e-4, 3e-4],
                 lambda val: f"lr{val}",
             ),
-            "training:warmup": ([3000, 2000], lambda val: f"warmup{val}"),
+            "training:warmup": ([3000], lambda val: f"warmup{val}"),
             "training:seed": (
                 [
                     1234,
                 ],
                 lambda val: f"seed{val}",
             ),
-            "training:weight_decay": ([0.02, 0.05, 0, 1], lambda val: f"wd{val}"),
+            "training:weight_decay": ([0.02, 0.05, 0], lambda val: f"wd{val}"),
             "model:pooling_model": (["cls"], lambda val: f"pool-{val}"),
             "model:common:dropout": ([0], lambda val: f"drop{val}"),
+            "model:extra_settings:attention:blockwise:window_size": ([16, 32], lambda val: f"window{val}"),
         }
     else:
         grid_meta = {
