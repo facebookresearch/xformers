@@ -52,7 +52,11 @@ def test_fused_matmul(shape):
         triton_activation = get_triton_activation_kernel(activation)
         res_triton, _ = fused_matmul(a, b, c, triton_activation)
 
-        tol = 1e-6 if activation != Activation.GeLU else 1e-3
+        # FIXME: @lefaudeux
+        # GeLUs are not well handled for now, we use an approximation
+        # they're also slower than pytorch so not likely to be used
+        # Issue tracked with https://github.com/fairinternal/xformers/issues/238
+        tol = 1e-6 if activation != Activation.GeLU else 1e-2
 
         assert torch.allclose(
             res_torch, res_triton, atol=tol
@@ -109,7 +113,7 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
 
         # FIXME: @lefaudeux
         if activation != Activation.GeLU:
-            # Sigmoids are not well handled for now
+            # GeLUs are not well handled for now, we use an approximation
             # they're also slower than pytorch so not likely to be used
             # Issue tracked with https://github.com/fairinternal/xformers/issues/238
             assert torch.allclose(
