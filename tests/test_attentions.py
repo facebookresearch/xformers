@@ -19,9 +19,9 @@ DEVICES = (
     [torch.device("cpu")] if not torch.cuda.is_available() else [torch.device("cuda")]
 )
 
-BATCH = 5
-SEQ = 128
-MODEL = 96
+BATCH = 2
+SEQ = 128 if torch.cuda.is_available() else 32
+MODEL = 96 if torch.cuda.is_available() else 48
 GLOBAL_ATTENTION_RATIO = (
     _DENSITY_THRESHOLD * 0.9
 )  # Make sure that we test the sparse implementation, no matter the threshold

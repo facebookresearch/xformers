@@ -17,13 +17,7 @@ SEQ = 128
 MODEL = 96
 DROPOUT = 0.5
 GLOBAL_ATTENTION_RATIO = 0.1  # 10% of the tokens have a global view
-DEVICES = (
-    [torch.device("cpu")]
-    if not torch.cuda.is_available()
-    else [
-        torch.device("cuda")
-    ]  # save a bit on CI for now, we have seperate cpu and gpu jobs
-)
+DEVICES = [torch.device("cuda")]
 VOCAB_SIZE = 32
 
 
@@ -37,6 +31,9 @@ VOCAB_SIZE = 32
 @pytest.mark.parametrize("layer_norm_style", ["pre", "post"])
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("reversible", [True, False])
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="This test requires a CUDA device"
+)
 def test_xformer_encoder_block(
     attention_name: str,
     feedforward_name: str,
@@ -118,6 +115,9 @@ def test_xformer_encoder_block(
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
 @pytest.mark.parametrize("layer_norm_style", ["pre", "post"])
 @pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="This test requires a CUDA device"
+)
 def test_xformer_decoder_block(
     attention_name: str,
     feedforward_name: str,

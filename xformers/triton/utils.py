@@ -3,14 +3,16 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-
+import logging
 from collections import namedtuple
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import torch
 import triton
 
 TestCase = namedtuple("TestCase", ["function", "name"])
+
+_gpu_is_old: Optional[bool] = None
 
 
 def next_power_of_2(n):
@@ -65,3 +67,29 @@ def pretty_print(results, title):
         print("{0:<40}".format(k) + "".join("{:<20} ".format(v) for v in w))
 
     print("")
+
+
+def gpu_capabilities_older_than_70() -> bool:
+    """Return True if the GPU's compute capability is older than SM70."""
+    global _gpu_is_old
+    if _gpu_is_old is None:
+        for i in range(torch.cuda.device_count()):
+            major, _ = torch.cuda.get_device_capability(f"cuda:{i}")
+            if major < 7:
+                _gpu_is_old = True
+        if _gpu_is_old is None:
+            _gpu_is_old = False
+    return _gpu_is_old
+
+
+SUPPORTED_CUDA_DEVICES = ["V100", "A100"]
+
+
+def get_current_cuda_device():
+    current_device = str(torch.cuda.get_device_properties(torch.cuda.current_device()))
+    for device_str in SUPPORTED_CUDA_DEVICES:
+        if current_device.find(device_str) > 0:
+            return device_str
+
+    logging.warning("Unsupported device, Triton code generation may fail")
+    return "P100"  # default to an old GPU

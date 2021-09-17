@@ -22,7 +22,6 @@ from tqdm import tqdm
 
 from xformers.components import Activation
 from xformers.components.attention import ATTENTION_REGISTRY
-from xformers.components.feedforward import FEEDFORWARD_REGISTRY
 from xformers.factory.block_factory import xFormerEncoderBlock, xFormerEncoderConfig
 
 _use_cuda = torch.cuda.is_available()
@@ -289,6 +288,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-a", "--attentions", nargs="+", default=list(ATTENTION_REGISTRY.keys())
     )
+    parser.add_argument("-mlp", "--mlp", nargs="+", default=["MLP"])
     parser.add_argument(
         "-act", "--activations", nargs="+", default=[a.value for a in Activation]
     )
@@ -331,7 +331,7 @@ if __name__ == "__main__":
         "heads": args.heads,
         "activation": args.activations,
         "attention_name": args.attentions,
-        "feedforward_name": list(FEEDFORWARD_REGISTRY.keys()),
+        "feedforward_name": args.mlp,
         "sequence_length": args.sequence_length,
         "embed_dim": args.embedding_dim,
         "batch_size": args.batch_size,

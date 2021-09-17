@@ -33,6 +33,7 @@ class Feedforward(nn.Module, metaclass=ABCMeta):
         **kwargs,
     ):
         super().__init__()
+        self.requires_cuda = False
 
     @classmethod
     def from_config(cls, config: FeedforwardConfig) -> "Feedforward":

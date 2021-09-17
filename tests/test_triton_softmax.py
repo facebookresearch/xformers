@@ -55,7 +55,7 @@ def test_softmax_parity(shape, amp, log):
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
 @pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
-def test_fp16(dtype):
+def test_softmax_fp16(dtype):
     b, s, d = 8, 64, 32
 
     a = torch.rand(b, s, d, device="cuda", dtype=dtype)
