@@ -34,7 +34,7 @@ class FavorAttention(Attention):
         self,
         causal: bool = False,
         dropout: float = 0.0,
-        dim_features: Optional[int] = None,
+        dim_features: int = 256,
         dim_head: Optional[int] = None,
         iter_before_redraw: Optional[int] = None,
         feature_map_type: FeatureMapType = FeatureMapType.SMReg,

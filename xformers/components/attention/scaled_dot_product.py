@@ -43,6 +43,8 @@ class ScaledDotProduct(Attention):
         *args,
         **kwargs,
     ) -> torch.Tensor:
+
+        
         # Mask-aware attention
         if self.mask is not None:
             att_mask = self.mask if att_mask is None else self.mask & att_mask

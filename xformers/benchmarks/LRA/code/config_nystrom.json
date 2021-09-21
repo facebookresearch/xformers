@@ -65,7 +65,7 @@
                     },
                     "sinkhorn": {
                     "num_heads": 2,
-                    "block_size": 256
+                    "block_size": 8
                     },
                     "lsh_reformer": {"num_heads": 2, "num_hash": 2},
                     "longshort":{
@@ -73,7 +73,8 @@
                         "window_size": 8
                     },
                     "blockwise": {"window_size": 16},
-                    "longformer": {"window_size": 8}
+                    "longformer": {"window_size": 8},
+                    "performer": {"rp_dim": 256}
                 }
             }
         }
@@ -134,23 +135,24 @@
             "extra_settings": {
                 "attention": {
                     "favor": {
-                        "dim_features": 256,
+                        "dim_features": 128,
                         "iter_before_redraw": 1000
                     },
                     "nystrom": {
                         "conv_kernel_size": 35,
-                        "num_landmarks": 128
+                        "num_landmarks": 64
                     },
                     "sinkhorn": {
                         "num_heads": 2,
-                        "block_size": 256
+                        "block_size": 8
                     },
                     "longshort":{
                         "num_landmarks": 32,
                         "window_size": 8
                     },
                     "blockwise": {"window_size": 8},
-                    "longformer": {"window_size": 32}
+                    "longformer": {"window_size": 32},
+                    "performer": {"rp_dim": 64}
                 }
             }
         }
@@ -220,14 +222,15 @@
                     },
                     "sinkhorn": {
                         "num_heads": 2,
-                        "block_size": 256
+                        "block_size": 8
                     },
                     "longshort":{
                         "num_landmarks": 32,
                         "window_size": 8
                     },
                     "blockwise": {"window_size": 32},
-                    "longformer": {"window_size": 8}
+                    "longformer": {"window_size": 8},
+                    "performer": {"rp_dim": 256}
                 }
             }
         }

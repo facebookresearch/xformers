@@ -9,7 +9,7 @@ from xformers.components.attention.core import (
     scaled_dot_product_attention,
     scaled_query_key_softmax,
 )
-from xformers.components.attention.utils import iterative_pinv
+from xformers.components.attention.utils import iterative_pinv, merge_masks
 
 
 @dataclass
@@ -59,8 +59,8 @@ class NystromAttention(Attention):
         use_razavi_pinverse: bool = True,
         pinverse_original_init: bool = False,
         inv_iterations: int = 6,  # recommended default in paper was 6.
+        conv_kernel_size: int = 35,
         v_skip_connection: Optional[nn.Module] = None,
-        conv_kernel_size: Optional[int] = None,
         *args,
         **kwargs,
     ):
@@ -108,16 +108,27 @@ class NystromAttention(Attention):
         self.causal_mask_3: Optional[torch.Tensor] = None
 
     def forward(
-        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs
+        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, 
+        att_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
+        *args, **kwargs
     ):
+        mask = ~key_padding_mask.eq(1)
+        bsz = mask.shape[0]
+        mask = mask.to(q)
         batched_dim = k.size(0)
         seq_len = k.size(-2)
 
+        mask = mask.view(bsz, 1, 1, seq_len).expand(-1, self.num_heads, -1, -1).reshape(bsz*self.num_heads, 1, seq_len)
+
         if self.num_landmarks >= seq_len:
-            mask = None
             if self.causal:
-                mask = self._tril_mask(batched_dim, seq_len, seq_len)
-            x = scaled_dot_product_attention(q=q, k=k, v=v, att_mask=mask)
+                causal_mask = self._tril_mask(batched_dim, seq_len, seq_len)
+                merged_mask = causal_mask.logical_and(mask)
+            else:
+                merged_mask = mask.to(torch.bool)
+    
+            x = scaled_dot_product_attention(q=q, k=k, v=v, att_mask=merged_mask)
 
         else:
             q_landmarks = self.landmark_pooling(q)
@@ -142,8 +153,14 @@ class NystromAttention(Attention):
             kernel_2 = scaled_query_key_softmax(
                 q_landmarks, k_landmarks, self.causal_mask_2
             )
+            # merge key_padding_mask and causal mask            
+            if self.causal_mask_3 is None:
+                merged_mask = mask.to(torch.bool)
+            else:
+                merged_mask = self.causal_mask_3.logical_and(mask)
+
             kernel_3 = scaled_dot_product_attention(
-                q=q_landmarks, k=k, v=v, att_mask=self.causal_mask_3
+                q=q_landmarks, k=k, v=v, att_mask=merged_mask
             )
 
             kernel_2_inv = (

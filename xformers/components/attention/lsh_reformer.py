@@ -20,8 +20,8 @@ using implementation from huggingface transformers
 class LSHSelfAttentionConfig(AttentionConfig):
     num_hash: int
     num_heads: int
-    seq_len: int
     dim_model: int
+    seq_len: int
 
 @register_attention("lsh_reformer", LSHSelfAttentionConfig)
 class LSHAttention(Attention):
@@ -29,10 +29,10 @@ class LSHAttention(Attention):
     def __init__(
         self,
         num_heads: int,
-        num_hash: int,
         dim_model: int,
+        num_hash: int = 4,
+        seq_len: int = 4096,
         dropout: float = 0.0,
-        seq_len: Optional[int] = None,
         *args,
         **kwargs,
     ):
@@ -45,8 +45,7 @@ class LSHAttention(Attention):
         attn_config.max_position_embeddings = seq_len
         attn_config.attention_head_size = dim_model // num_heads
         # attn_config.feed_forward_size = 1
-        # print(attn_config)
-        # import pdb;pdb.set_trace()
+        attn_config.local_attn_chunk_length
         self.attn = ReformerAttention(attn_config)
 
     def forward(
@@ -64,8 +63,10 @@ class LSHAttention(Attention):
 class ReformerAttention(LSHSelfAttention):
     def __init__(self, config):
         super().__init__(config)
-        self.query_key = None
-        self.value = None
+        # self.query_key = None
+        # self.value = None
+        del self.query_key
+        del self.value
         self.num_heads = self.num_attention_heads
 
     def forward(
@@ -91,7 +92,6 @@ class ReformerAttention(LSHSelfAttention):
 
         # num hashes can optionally be overwritten by user
         num_hashes = self.num_hashes
-
 
         # @xwhan reformer needs the key and query vectors to be the same
         # project hidden_states to query_key and value
