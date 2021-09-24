@@ -19,6 +19,7 @@ def cdiv(x, y):
     return (x + y - 1) // y
 
 
+# fmt: off
 @triton.autotune(
     configs=kernel_config,
     key=["M", "N", "K"],
@@ -26,31 +27,20 @@ def cdiv(x, y):
 @triton.jit
 def kernel_fma_grad(
     # Pointers to matrices
-    D,
-    E,
-    A,
-    W,
+    GRAD_IN, ACT_IN, GRAD_OUT, W,
     # Matrix dimensions
-    M,
-    N,
-    K,
+    M, N, K,
     # The stride variables represent how much to increase the ptr by when moving by 1
     # element in a particular dimension. E.g. stride_am is how much to increase a_ptr
     # by to get the element one row down (A has M rows)
-    stride_db,
-    stride_dm,
-    stride_dk,
-    stride_eb,
-    stride_em,
-    stride_en,
-    stride_ab,
-    stride_am,
-    stride_an,
-    stride_wk,
-    stride_wn,
+    stride_gib, stride_gim, stride_gik,
+    stride_aib, stride_aim, stride_ain,
+    stride_gob, stride_gom, stride_gon,
+    stride_wk, stride_wn,
     # Meta-parameters
     **META,
 ):
+    # fmt: on
     """
     Kernel for computing `grad_out = grad_in * activation_grad(inputs) @ W^T`
     - grad_out has shape (B, M, N)
@@ -89,48 +79,49 @@ def kernel_fma_grad(
     rn = tl.arange(0, BLOCK_N)
 
     # memory blocks can be computed using numpy-style broadcasting
-    A += rm[:, None] * stride_am + rn[None, :] * stride_an + batch_id * stride_ab
-    E += rm[:, None] * stride_em + rn[None, :] * stride_en + batch_id * stride_eb
-    D += rm[:, None] * stride_dm + rk[None, :] * stride_dk + batch_id * stride_db
+    GRAD_OUT += rm[:, None] * stride_gom + rn[None, :] * stride_gon + batch_id * stride_gob
+    ACT_IN += rm[:, None] * stride_aim + rn[None, :] * stride_ain + batch_id * stride_aib
+    GRAD_IN += rm[:, None] * stride_gim + rk[None, :] * stride_gik + batch_id * stride_gib
     W += rn[:, None] * stride_wn + rk[None, :] * stride_wk
 
     # initialize and iteratively update accumulator
-    acc = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
+    grad_in = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
+    act_grad_fn = META["ACTIVATION_GRAD"]
+
     for _ in range(N, 0, -BLOCK_N):
-        a = tl.load(A)
+        grad_out = tl.load(GRAD_OUT)
         w = tl.load(W)
 
         # optional fused activation gradient (while the data is in shared memory)
         if META["ACTIVATION_GRAD"]:
             if META["ACTIVATION_GRAD_REQ_INPUTS"]:
-                e = tl.load(E)
-                grad = META["ACTIVATION_GRAD"](e)
-                E += BLOCK_N * stride_en
+                # This activation
+                act_input = tl.load(ACT_IN)
+                grad_act = act_grad_fn(act_input)
+                ACT_IN += BLOCK_N * stride_ain
             else:
                 # Save some time, we can reuse the outputs to know about the grad
-                grad = META["ACTIVATION_GRAD"](a)
+                grad_act = act_grad_fn(grad_out)
 
-            grad = grad.to(a.dtype)
-
-            a *= grad
+            grad_out *= grad_act.to(grad_out.dtype)
 
         # block level matrix multiplication. this translates to MMA directly
-        acc += tl.dot(a, w)
+        grad_in += tl.dot(grad_out, w)
 
         # increment pointers so that the next blocks of A and B
         # are loaded during the next iteration
-        A += BLOCK_N * stride_an
+        GRAD_OUT += BLOCK_N * stride_gon
         W += BLOCK_N * stride_wn
 
     # write back result
-    tl.store(D, acc, mask=mask)  # type promotion or downgrade is automatic
+    tl.store(GRAD_IN, grad_in, mask=mask)  # type promotion or downgrade is automatic
 
 
 # Activation needs to be a triton kernel
 def fused_matmul_backward(
     grad_out: torch.Tensor,
     weight: torch.Tensor,
-    linear_outputs: Optional[torch.Tensor],
+    activation_inputs: Optional[torch.Tensor],
     activation_grad=None,
     activation_grad_req_inputs: bool = False,
 ):
@@ -163,31 +154,21 @@ def fused_matmul_backward(
             B,
         )
 
-    if linear_outputs is None:
-        linear_outputs = grad_out
+    if activation_inputs is None:
+        # place holder, this will not be used really
+        activation_inputs = grad_out
 
+    # fmt: off
     kernel_fma_grad[grid](
         # data ptrs
-        grad_in,
-        linear_outputs,
-        grad_out,
-        weight,
+        grad_in, activation_inputs, grad_out, weight,
         # shapes
-        M,
-        N,
-        K,
+        M, N, K,
         # strides
-        grad_in.stride(0),
-        grad_in.stride(1),
-        grad_in.stride(2),
-        linear_outputs.stride(0),
-        linear_outputs.stride(1),
-        linear_outputs.stride(2),
-        grad_out.stride(0),
-        grad_out.stride(1),
-        grad_out.stride(2),
-        weight.stride(0),
-        weight.stride(1),
+        grad_in.stride(0), grad_in.stride(1), grad_in.stride(2),
+        activation_inputs.stride(0), activation_inputs.stride(1), activation_inputs.stride(2),
+        grad_out.stride(0), grad_out.stride(1), grad_out.stride(2),
+        weight.stride(0), weight.stride(1),
         # optional fused activation
         ACTIVATION_GRAD=activation_grad,
         # data reuse optimization
@@ -195,6 +176,7 @@ def fused_matmul_backward(
         BLOCK_N=32,
         ACTIVATION_GRAD_REQ_INPUTS=activation_grad_req_inputs,
     )
+    # fmt: on
 
     if _should_squeeze:
         grad_in = grad_in.squeeze_()

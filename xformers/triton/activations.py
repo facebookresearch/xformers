@@ -12,8 +12,6 @@ import triton.language as tl
 from xformers.components import Activation
 
 _kAlpha = math.sqrt(2.0 / math.pi)
-_kErf = 1 / math.sqrt(math.pi)
-_k2Erf = 2 / math.sqrt(math.pi)
 _k1OverSqrt2 = 1 / math.sqrt(2.0)
 
 
@@ -22,7 +20,8 @@ def get_triton_activation_kernel(activation: Optional[Activation]):
         {
             Activation.ReLU: relu,
             Activation.LeakyReLU: leaky_relu,
-            Activation.GeLU: gelu_quick,
+            Activation.GeLU: gelu,
+            Activation.SquaredReLU: squared_relu,
         }[activation]
         if activation
         else None
@@ -34,7 +33,8 @@ def get_triton_activation_bwd_kernel(activation: Optional[Activation]):
         {
             Activation.ReLU: relu_grad,
             Activation.LeakyReLU: leaky_relu_grad,
-            Activation.GeLU: gelu_quick_grad,
+            Activation.GeLU: gelu_grad,
+            Activation.SquaredReLU: squared_relu_grad,
         }[activation]
         if activation
         else None
@@ -45,33 +45,6 @@ def get_triton_activation_bwd_kernel(activation: Optional[Activation]):
 def tanh(x):
     # Tanh is just a scaled sigmoid
     return 2 * tl.sigmoid(2 * x) - 1
-
-
-@triton.jit
-def erf(x):
-    # Let's use the Taylor series expansion for now
-    res = 2 * x * _kErf
-
-    x_acc = x * x * x  # x3
-    res -= (2.0 / 3.0 * x_acc) * _kErf
-
-    x_acc = x_acc * x * x  # x5
-    res += x_acc / 5.0 * _kErf
-
-    x_acc = x_acc * x * x  # x7
-    res -= x_acc / 21.0 * _kErf
-
-    x_acc = x_acc * x * x  # x9
-    res += x_acc / 108.0 * _kErf
-
-    # x_acc = x_acc * x * x  # x11
-    # res -= x_acc / 660.0 * _kErf
-    return res
-
-
-@triton.jit
-def erf_grad(x):
-    return _k2Erf * tl.exp(-x * x)
 
 
 @triton.jit
@@ -96,6 +69,19 @@ def relu_grad(x):
     return tl.where(x >= 0, 1.0 + 0.0, 0.0 + 0.0)
 
 
+# Squared ReLU
+# See https://arxiv.org/abs/2109.08668v1
+@triton.jit
+def squared_relu(x):
+    x_ = relu(x)
+    return x_ * x_
+
+
+@triton.jit
+def squared_relu_grad(x):
+    return tl.where(x >= 0, 2.0 * x, 0.0 + 0.0)
+
+
 # Leaky ReLU
 @triton.jit
 def leaky_relu(x):
@@ -109,32 +95,14 @@ def leaky_relu_grad(x):
 
 
 # GeLU - Gaussian error linear unit (https://arxiv.org/pdf/1606.08415.pdf)
-
-
 @triton.jit
-def gelu_quick(x):
+def gelu(x):
     x = x.to(tl.float32)
-    return x * tl.sigmoid(1.702 * x)
+    return 0.5 * x * (1 + tanh(_kAlpha * (x + 0.044715 * x * x * x)))
 
 
 @triton.jit
-def gelu_quick_grad(x):
-    # (e^(1.702 x) (1.702 x + e^(1.702 x) + 1))/(e^(1.702 x) + 1)^2
-    x = x.to(tl.float32)
-    _exp = tl.exp(x)
-    _x = 1.702 * x
-    _denom = (_exp + 1) * (_exp + 1)
-    return _exp * (_x + _exp + 1.0) / _denom
-
-
-@triton.jit
-def gelu_accurate(x):
-    x = x.to(tl.float32)
-    return 0.5 * x * (1 + erf(x * _k1OverSqrt2))
-
-
-@triton.jit
-def gelu_accurate_grad(x):
+def gelu_grad(x):
     # Normal computation, just try to maximize reuse
     x_3 = x * x * x
     _a = 0.0356774 * x_3 + _kAlpha * x

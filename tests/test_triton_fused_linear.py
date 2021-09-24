@@ -100,7 +100,7 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
 
     # Now check parity
     with autocast(enabled=amp):
-        tolerance = 1e-5 if not amp else 1e-4
+        tolerance = 1e-4
 
         y_torch = torch_sequence(X)
         y_triton = triton_fused_linear(X_)
@@ -112,15 +112,9 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
         loss_triton = torch.norm(y_triton)
         loss_triton.backward()
 
-        # FIXME: @lefaudeux
-        if activation != Activation.GeLU:
-            # GeLUs are not well handled for now, we use an approximation
-            # they're also slower than pytorch so not likely to be used
-            # Issue tracked with https://github.com/fairinternal/xformers/issues/238
-            assert torch.allclose(
-                loss_torch, loss_triton, atol=tolerance
-            ), f"Torch: {loss_torch.item()} - Triton: {loss_triton.item()}"
+        assert torch.allclose(X, X_, atol=tolerance), f"{X[:,0,0]} vs. {X_[:,0,0]}"
 
-            assert torch.allclose(
-                X.grad, X_.grad, atol=tolerance
-            ), f"{torch.norm(X.grad).item()} vs. {torch.norm(X_.grad).item()}"
+        # Grad being correct checks both the loss + the backward pass
+        assert torch.allclose(
+            X.grad, X_.grad, atol=tolerance
+        ), f"{X.grad[:,0,0]} vs. {X_.grad[:,0,0]}"

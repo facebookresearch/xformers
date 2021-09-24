@@ -19,6 +19,7 @@ def cdiv(x, y):
     return (x + y - 1) // y
 
 
+# fmt: off
 @triton.autotune(
     configs=kernel_config,
     key=["M", "N", "K"],
@@ -26,42 +27,33 @@ def cdiv(x, y):
 @triton.jit
 def kernel_fma(
     # Pointers to matrices
-    D,
-    E,
-    A,
-    W,
-    C,
+    D, A, W, C, In,
     # Matrix dimensions
-    M,
-    N,
-    K,
+    M, N, K,
     # The stride variables represent how much to increase the ptr by when moving by 1
     # element in a particular dimension. E.g. stride_am is how much to increase a_ptr
     # by to get the element one row down (A has M rows)
-    stride_db,
-    stride_dm,
-    stride_dn,
-    stride_eb,
-    stride_em,
-    stride_en,
-    stride_ab,
-    stride_am,
-    stride_ak,
-    stride_wk,
-    stride_wn,
+    stride_db,  stride_dm, stride_dn,
+    stride_ab, stride_am, stride_ak,
+    stride_wk, stride_wn,
+    stride_ib,  stride_im, stride_in,
     # Meta-parameters
     **META,
 ):
+    # fmt: on
+
     """
     Kernel for computing D = activation(A x W + C)
 
     - A has shape (B, M, K)
     - W has shape (K, N)
     - C has shape (N,)
-    - D and E have shape (B, M, N)
+    - D has shape (B, M, N)
+    - In (optional) has shape (B, M, N)
 
-    E optionally saves the A x W + C intermediate for backward computations
+    In optionally saves the A x W + C intermediate for backward computations
     """
+
     # extract metaparameters
     BLOCK_M, GROUP_M = META["BLOCK_ROW"], META["GROUP_M"]
     BLOCK_N, BLOCK_K = META["BLOCK_COL"], META["BLOCK_K"]
@@ -130,11 +122,12 @@ def kernel_fma(
         if META["FP16"]:
             acc = acc.to(tl.float32)
 
-    # optional (if backward pass planned + activation): save the linear layer outputs
-    if META["SAVE_FOR_BACKWARD"]:
-        # Note: this will auto cast to fp16
-        E += rm[:, None] * stride_em + rn[None, :] * stride_en + batch_id * stride_eb
-        tl.store(E, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
+    # optionally save the activation inputs
+    if META["SAVE_ACT_INPUTS"]:
+        acc = acc.to(tl.float16)  # workaround, sync barrier
+        In += rm[:, None] * stride_im + rn[None, :] * stride_in + batch_id * stride_ib
+        tl.store(In, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
+        acc = acc.to(tl.float32)
 
     # optional fused activation (while the data is in shared memory)
     if META["ACTIVATION"]:
@@ -150,7 +143,7 @@ def fused_matmul(
     weight: torch.Tensor,
     bias: Optional[torch.Tensor],
     activation=None,
-    save_activation_inputs: bool = False,
+    save_inputs: bool = False
 ):
     """
     Compute e = activation(x @ weight + bias).
@@ -182,6 +175,7 @@ def fused_matmul(
     ), "We don't check memory-out-of-bounds with K so K must be divisible by BLOCK_K"
 
     outputs = torch.empty((B, M, N), device=x.device, dtype=x.dtype)
+    act_inputs = torch.empty_like(outputs) if save_inputs else outputs
 
     # 1D launch kernel where each block gets its own program.
     def grid(META):
@@ -190,31 +184,19 @@ def fused_matmul(
             B,
         )
 
-    linear_outputs = torch.empty_like(outputs) if save_activation_inputs else outputs
-
+    # fmt: off
     kernel_fma[grid](
         # data ptrs
-        outputs,
-        linear_outputs,
-        x,
-        weight,
+        outputs, x, weight,
         bias if bias is not None else x,  # auto skip bias if not present
+        act_inputs,
         # shapes
-        M,
-        N,
-        K,
+        M, N, K,
         # strides
-        outputs.stride(0),
-        outputs.stride(1),
-        outputs.stride(2),
-        linear_outputs.stride(0),
-        linear_outputs.stride(1),
-        linear_outputs.stride(2),
-        x.stride(0),
-        x.stride(1),
-        x.stride(2),
-        weight.stride(0),
-        weight.stride(1),
+        outputs.stride(0), outputs.stride(1), outputs.stride(2),
+        x.stride(0), x.stride(1), x.stride(2),
+        weight.stride(0), weight.stride(1),
+        act_inputs.stride(0), act_inputs.stride(1), act_inputs.stride(2),
         # optional fused activation
         ACTIVATION=activation,
         # optional fused bias
@@ -223,15 +205,14 @@ def fused_matmul(
         # improve on data reuse in L2 cache
         GROUP_M=8,
         BLOCK_K=32,
-        # save the linear layer outputs if a backward pass is likely
-        SAVE_FOR_BACKWARD=save_activation_inputs,
         FP16=weight.dtype == torch.float16,
+        SAVE_ACT_INPUTS=save_inputs
     )
+    # fmt: on
 
     if _should_squeeze:
-        outputs = outputs.squeeze_()
+        outputs.squeeze_()
+        if save_inputs:
+            act_inputs.squeeze_()
 
-        if save_activation_inputs:
-            linear_outputs = linear_outputs.squeeze_()
-
-    return outputs, linear_outputs if save_activation_inputs else None
+    return (outputs, act_inputs) if save_inputs else (outputs, None)

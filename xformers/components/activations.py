@@ -7,18 +7,25 @@
 from enum import Enum
 from typing import Optional
 
+import torch
 from torch import nn
 
 
 class Activation(str, Enum):
+    SquaredReLU = "squared_relu"
     GeLU = "gelu"
     LeakyReLU = "leaky_relu"
     ReLU = "relu"
 
 
-# The following activations require their inputs to be saved
-# to be able to compute their gradients
-requires_bwd_inputs = [Activation.GeLU]
+# For unit testing / parity comparisons, probably not the fastest way
+class SquaredReLU(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_ = torch.nn.functional.relu(x)
+        return x_ * x_
 
 
 def build_activation(activation: Optional[Activation]):
@@ -29,4 +36,5 @@ def build_activation(activation: Optional[Activation]):
         Activation.ReLU: nn.ReLU,
         Activation.GeLU: nn.GELU,
         Activation.LeakyReLU: nn.LeakyReLU,
+        Activation.SquaredReLU: SquaredReLU,
     }[activation]()

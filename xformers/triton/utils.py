@@ -56,7 +56,7 @@ def bench_functions(test_cases: List[TestCase], shapes, metric_transform, unit):
 
 def pretty_print(results, title):
     print(title)
-    print("{0:<40}".format("") + "".join("{0:<20} ".format(k) for k in results.keys()))
+    print("{0:<45}".format("") + "".join("{0:<20} ".format(k) for k in results.keys()))
 
     workloads: Dict[str, Any] = {k: [] for v in results.values() for k in v.keys()}
     for v in results.values():
@@ -64,7 +64,7 @@ def pretty_print(results, title):
             workloads[k].append(v[k])
 
     for k, w in workloads.items():
-        print("{0:<40}".format(k) + "".join("{:<20} ".format(v) for v in w))
+        print("{0:<45}".format(k) + "".join("{:<20} ".format(v) for v in w))
 
     print("")
 

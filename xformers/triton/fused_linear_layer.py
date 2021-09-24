@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from xformers.components.activations import Activation, requires_bwd_inputs
+from xformers.components.activations import Activation
 from xformers.triton.activations import (
     get_triton_activation_bwd_kernel,
     get_triton_activation_kernel,
@@ -18,37 +18,46 @@ from xformers.triton.activations import (
 from xformers.triton.fused_matmul import fused_matmul
 from xformers.triton.fused_matmul_backward import fused_matmul_backward
 
+# The following activations require their inputs to be saved to be able to compute their gradients
+_requires_bwd_inputs = [
+    Activation.GeLU,
+    Activation.SquaredReLU,
+]
+
 
 class _fused_linear_triton(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16)
-    def forward(ctx, x, weight, bias, activation, a_grad, save_activation_inputs):
-        ctx.activation_grad = a_grad
+    def forward(
+        ctx, x, weight, bias, activation, act_grad_kernel, save_activation_inputs
+    ):
+        ctx.activation_grad_kernel = act_grad_kernel
 
         # Kick the fused Triton kernel, handling bias and activation in one go
-        y, extra_outputs = fused_matmul(
+        y, activation_inputs = fused_matmul(
             x, weight, bias, activation, save_activation_inputs
         )
-        ctx.save_for_backward(weight, extra_outputs)
+
+        ctx.save_for_backward(weight, activation_inputs)
         ctx.save_activation_inputs = save_activation_inputs
 
         return y
 
     @staticmethod
     @custom_bwd
-    def backward(ctx: Any, grad_out) -> Any:  # type: ignore
+    def backward(ctx: Any, grad_out: torch.Tensor) -> Any:  # type: ignore
         """
         Compute the derivative with respect to x, other tensors were not trainable inputs.
         """
-        (weight, extra_outputs) = ctx.saved_tensors
+        (weight, activation_inputs) = ctx.saved_tensors
 
         # Kick the fused Triton kernel, handling transpose and activation gradient in one go
         grad_input = fused_matmul_backward(
-            grad_out,
-            weight,
-            extra_outputs,
-            ctx.activation_grad,
-            ctx.save_activation_inputs,
+            grad_out=grad_out,
+            weight=weight,
+            activation_inputs=activation_inputs,
+            activation_grad=ctx.activation_grad_kernel,
+            activation_grad_req_inputs=ctx.save_activation_inputs,
         )
 
         return grad_input, None, None, None, None, None
@@ -70,7 +79,7 @@ class FusedLinear(nn.Module):
         self._activation_kernel = get_triton_activation_kernel(activation)
         self._activation_grad_kernel = get_triton_activation_bwd_kernel(activation)
         self._save_activation_inputs = (
-            activation in requires_bwd_inputs if activation is not None else False
+            activation in _requires_bwd_inputs if activation is not None else False
         )
 
         self.reset_parameters()
