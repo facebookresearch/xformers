@@ -169,7 +169,7 @@ def scaled_query_key_softmax(
     # this is needed due to limitations in sparse_bmm for now
 
     # Self-attend: (N, S, hs) x (N, hs, S) -> (N, S, S)
-    q = q * (1.0 / math.sqrt(k.size(-1)))
+    q = q / math.sqrt(k.size(-1))
     att = _matmul_with_mask(q, k.transpose(-2, -1), att_mask)
 
     if att_mask is not None and att_mask.dtype != torch.bool:
