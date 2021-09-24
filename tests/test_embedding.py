@@ -29,3 +29,10 @@ def test_dimensions(encoding_name: str, dropout: float):
     encoding = build_positional_embedding(test_config)
     inputs = (torch.rand(BATCH, SEQ) * 10).abs().to(torch.int)
     _ = encoding(inputs)
+
+    # Test that inputs having an embedding dimension would also work out
+    if "name" == "sine":
+        inputs = (
+            (torch.rand(BATCH, SEQ, test_config["dim_model"]) * 10).abs().to(torch.int)
+        )
+        _ = encoding(inputs)
