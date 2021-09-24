@@ -9,8 +9,8 @@ from xformers.components import Activation, build_activation
 _triton_available = torch.cuda.is_available()
 if _triton_available:
     try:
+        from xformers.triton import FusedLinear
         from xformers.triton.activations import get_triton_activation_kernel
-        from xformers.triton.fused_linear_layer import FusedLinear
         from xformers.triton.fused_matmul import fused_matmul
         from xformers.triton.utils import gpu_capabilities_older_than_70
 
@@ -95,6 +95,7 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
         torch_linear.weight.data.clone().detach().transpose(1, 0)
     )
     if bias:
+        assert triton_fused_linear.bias is not None
         triton_fused_linear.bias.data = torch_linear.bias.data.clone().detach()
 
     # Now check parity

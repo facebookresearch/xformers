@@ -4,7 +4,7 @@ import torch
 import triton
 
 from xformers.components import Activation, build_activation
-from xformers.triton.fused_linear_layer import FusedLinear
+from xformers.triton import FusedLinear
 from xformers.triton.utils import TestCase, pretty_print
 
 SHAPES = [

@@ -5,8 +5,8 @@ import torch
 from torch.cuda.amp.autocast_mode import autocast
 
 try:
-    from xformers.triton.softmax import log_softmax as triton_log_softmax
-    from xformers.triton.softmax import softmax as triton_softmax
+    from xformers.triton import log_softmax as triton_log_softmax
+    from xformers.triton import softmax as triton_softmax
 
     _triton_available = True
 except ImportError:

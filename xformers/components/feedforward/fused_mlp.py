@@ -14,7 +14,7 @@ from xformers.components.feedforward import (
 _use_triton = torch.cuda.is_available()
 if _use_triton:
     try:
-        from xformers.triton.fused_linear_layer import FusedLinear
+        from xformers.triton import FusedLinear
     except ImportError:
         logging.warning("Triton is not available, FusedMLP will not be enabled.")
         _use_triton = False
@@ -44,7 +44,12 @@ if _use_triton:
             super().__init__()
 
             self.mlp = nn.Sequential(
-                FusedLinear(dim_model, hidden_layer_multiplier * dim_model, activation),
+                FusedLinear(
+                    in_features=dim_model,
+                    out_features=hidden_layer_multiplier * dim_model,
+                    activation=activation,
+                    bias=True,
+                ),
                 nn.Dropout(dropout),
                 nn.Linear(hidden_layer_multiplier * dim_model, dim_model),
                 nn.Dropout(dropout),
