@@ -40,6 +40,6 @@ class SinePositionalEmbedding(PositionEmbedding):
 
         if x.ndim == 2:
             # Handle a non-existing embedding dimension
-            x.unsqueeze_(-1)
+            x = x.unsqueeze(-1)
 
         return x + pos.unsqueeze(0)
