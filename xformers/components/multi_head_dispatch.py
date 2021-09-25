@@ -72,11 +72,14 @@ def _fold_heads(t: torch.Tensor, B: int, S: int, H: int, Hs: int):
 
 class MultiHeadDispatch(nn.Module):
     """
-    A vanilla multi-head masked self-attention dispatch mechanism, with a projection at the end,
-    following the architecture proposed in
-    "Attention is all you need", Vaswani et al. https://arxiv.org/abs/1706.03762v5
+    A multi-head masked self-attention dispatch mechanism, with a projection at the end,
+    following the architecture proposed in `Attention is all you need`_, Vaswani et al.
 
-    The actual attention mechanism can vary, be it scaled dot product, local or other
+    The actual attention mechanism can vary, as well as the projections.
+    This can be used to wrap the proposed attention mechanisms and make them multi-head aware,
+    but it is optional.
+
+    .. _`Attention is all you need`: https://arxiv.org/abs/1706.03762v5
     """
 
     def __init__(

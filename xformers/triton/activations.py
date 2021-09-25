@@ -59,6 +59,11 @@ def cosh(x):
 # ReLU
 @triton.jit
 def relu(x):
+    """
+    ReLU_ activation function
+
+    .. _ReLU: https://pytorch.org/docs/stable/generated/torch.nn.ReLU.html
+    """
     return tl.where(x >= 0, x, 0.0)
 
 
@@ -69,10 +74,13 @@ def relu_grad(x):
     return tl.where(x >= 0, 1.0 + 0.0, 0.0 + 0.0)
 
 
-# Squared ReLU
-# See https://arxiv.org/abs/2109.08668v1
 @triton.jit
 def squared_relu(x):
+    """
+    Squared ReLU activation, as proposed in the Primer_ paper.
+
+    .. _Primer: https://arxiv.org/abs/2109.08668
+    """
     x_ = relu(x)
     return x_ * x_
 
@@ -85,6 +93,11 @@ def squared_relu_grad(x):
 # Leaky ReLU
 @triton.jit
 def leaky_relu(x):
+    """
+    LeakyReLU_ activation
+
+    .. _LeakyReLU: https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html
+    """
     scale = 0.01 + 0.0
     return tl.where(x >= 0, x, scale * x)
 
@@ -94,10 +107,14 @@ def leaky_relu_grad(x):
     return tl.where(x >= 0, 1.0 + 0.0, 0.01 + 0.0)
 
 
-# GeLU - Gaussian error linear unit (https://arxiv.org/pdf/1606.08415.pdf)
 @triton.jit
 def gelu(x):
-    x = x.to(tl.float32)
+    """
+    GeLU_ activation - Gaussian error linear unit
+
+    .. _GeLU: https://arxiv.org/pdf/1606.08415.pdf
+    """
+    x = x.to(tl.float32)  # tl.exp() requires fp32
     return 0.5 * x * (1 + tanh(_kAlpha * (x + 0.044715 * x * x * x)))
 
 

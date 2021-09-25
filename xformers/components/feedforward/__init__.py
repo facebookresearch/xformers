@@ -49,6 +49,7 @@ def build_feedforward(config: Union[Dict[str, Any], FeedforwardConfig]):
     subclass, like this:
 
     .. code-block:: python
+
         @dataclass
         class MyConfig:
             ...

@@ -64,13 +64,23 @@ class _fused_linear_triton(torch.autograd.Function):
 
 
 class FusedLinear(nn.Module):
+    """
+    Handle a linear transform, like torch.nn.Linear_, and a given activation, in a single kernel.
+    The whole transform: is :math:`y = activation(xA^T + b)`.
+
+    This is typically significantly faster than PyTorch while using fp16 and non-sigmoid activations,
+    as of September 2021.
+
+    .. _torch.nn.Linear: https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
+    """
+
     def __init__(
         self,
         in_features: int,
         out_features: int,
         bias: bool = False,
         activation: Optional[Activation] = None,
-        **kwargs
+        **_
     ):
         super().__init__()
         self.weight = nn.Parameter(torch.empty(in_features, out_features))
@@ -92,12 +102,6 @@ class FusedLinear(nn.Module):
             torch.nn.init.uniform_(self.bias, -bound, bound)
 
     def forward(self, x):
-        """
-        Fused linear layer implementation, using the Triton programming model.
-
-        y = activation(x * weight + bias)
-        """
-
         # Minor perf boost: don't save inputs if we're only doing inference
         save_activation_inputs = self._save_activation_inputs and x.requires_grad
 

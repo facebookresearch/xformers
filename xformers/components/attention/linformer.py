@@ -26,13 +26,11 @@ class LinformerAttention(Attention):
         self, dropout: float, seq_len: int, k: Optional[int] = None, *args, **kwargs
     ):
         """
-        Linformer attention mechanism, from
-        "
-        Linformer: Self-Attention with Linear Complexity. ArXiv, 2048(2019)
-        Wang, S., Li, B. Z., Khabsa, M., Fang, H., & Ma, H. (2020).
-        "
+        Linformer attention mechanism,
+        from `Linformer: Self-Attention with Linear Complexity`_, Wang et al (2020).
+        The original notation is kept as is.
 
-        The paper's notation are kept wherever possible
+        .. _`Linformer: Self-Attention with Linear Complexity` : https://arxiv.org/abs/2006.04768v2
         """
         super().__init__()
 

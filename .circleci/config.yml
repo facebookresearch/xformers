@@ -115,6 +115,16 @@ run_benchmarks: &run_benchmarks
       command: |
         CUDA_LAUNCH_BLOCKING=1 python3 xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 128 -bs 16 -heads 16
 
+run_doc_build: &run_doc_build
+   - run:
+       name: Testing doc build
+       command: |
+         cd docs
+         pip install --progress-bar off -r requirements.txt
+         make help
+         make singlehtml | tee make.out
+         ! tail make.out | grep -q warning
+
 commands:
    setup_pyenv:
      parameters:
@@ -164,6 +174,7 @@ jobs:
       - <<: *run_flake8
       - <<: *run_clang_format
       - <<: *run_unittests
+      - <<: *run_doc_build
 
       - store_test_results:
           path: test-results

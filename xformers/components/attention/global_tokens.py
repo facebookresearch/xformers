@@ -42,11 +42,11 @@ class GlobalAttention(Attention):
         *_,
         **__,
     ):
-        """
-        "Global" attention, as proposed for instance in _BigBird or _Longformer.
+        r"""
+        Global attention, as proposed for instance in BigBird_ or Longformer_.
 
-        Global means in that case that the queries positively labelled in the `attention_query_mask` can attend
-        to all the other queries. The queries negatively labelled in the `attention_query_mask`cannot attend to
+        Global means in that case that the queries positively labelled in the ```attention_query_mask``` can attend
+        to all the other queries. The queries negatively labelled in the ```attention_query_mask``` cannot attend to
         any other query.
 
         This implementation is sparse-aware, meaning that the empty attention parts will not be represented in memory.
@@ -55,10 +55,6 @@ class GlobalAttention(Attention):
             dropout (float): probability of an element to be zeroed
             attention_mask (torch.Tensor): if true, this query can attend to all the others
 
-        _BigBird: "Zaheer, M., Guruganesh, G., Dubey, A., Ainslie, J., Alberti, C., Ontanon, S., Pham, P., Ravula,
-         A., Wang, Q., Yang, L., & Ahmed, A. (2020). Big Bird: Transformers for Longer Sequences"
-
-        _Longformer: "Beltagy, I., Peters, M. E., & Cohan, A. (2020). Longformer: The Long-Document Transformer"
         """
         super().__init__()
 

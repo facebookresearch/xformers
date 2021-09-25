@@ -49,6 +49,7 @@ def build_positional_embedding(config: Union[Dict[str, Any], PositionEmbeddingCo
     subclass, like this:
 
     .. code-block:: python
+
         @dataclass
         class MyConfig:
             ...

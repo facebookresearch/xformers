@@ -247,10 +247,42 @@ class _softmax_triton(torch.autograd.Function):
 
 
 def softmax(x: torch.Tensor) -> torch.Tensor:
+    r"""Applies the Softmax function to an 3-dimensional input Tensor
+    rescaling them so that the elements of the n-dimensional output Tensor
+    lie in the range [0,1] and sum to 1.
+
+    Softmax is defined as:
+
+    .. math::
+        \text{Softmax}(x_{i}) = \frac{\exp(x_i)}{\sum_j \exp(x_j)}
+
+    .. warning: softmax is computed on the last dimension of the input tensor.
+
+
+    Args:
+        x: input tensor.
+
+    Returns:
+        a Tensor of the same dimension and shape as the input with
+        values in the range [0, 1] and sum to 1
+    """
     return _softmax_dispatch(x, log=False)
 
 
 def log_softmax(x: torch.Tensor) -> torch.Tensor:
+    r"""Applies the :math:`\log(\text{Softmax}(x))` function to an 3-dimensional
+    input Tensor. The LogSoftmax formulation can be simplified as:
+
+    .. math::
+        \text{LogSoftmax}(x_{i}) = \log\left(\frac{\exp(x_i) }{ \sum_j \exp(x_j)} \right)
+
+    Args:
+        x: input tensor.
+
+    Returns:
+        a Tensor of the same dimension and shape as the input with
+        values in the range [-inf, 0)
+    """
     return _softmax_dispatch(x, log=True)
 
 

@@ -56,6 +56,7 @@ def build_attention(config: Union[Dict[str, Any], AttentionConfig]):
     subclass, like this:
 
     .. code-block:: python
+
         @dataclass
         class MyConfig:
             ...

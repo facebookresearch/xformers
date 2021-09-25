@@ -55,14 +55,12 @@ class LocalAttention(Attention):
                 distributed on both sides of each query
 
 
-        _RoutingTransformer: "Efficient Content-Based Sparse Attention with Routing Transformers", A. Roy et al.
-        https://arxiv.org/pdf/2003.05997.pdf
+        .. _RoutingTransformer: https://arxiv.org/pdf/2003.05997.pdf
 
-        _BigBird: "Big Bird: Transformers for Longer Sequences" M. Zaheer et al
-        https://arxiv.org/pdf/2007.14062.pdf
+        .. _BigBird: https://arxiv.org/pdf/2007.14062.pdf
 
-        _Longformer: "Longformer: The Long-Document Transformer.", I. Beltagy et al
-        https://arxiv.org/pdf/2004.05150.pdf
+        .. _Longformer: https://arxiv.org/pdf/2004.05150.pdf
+
         """
         super().__init__()
 

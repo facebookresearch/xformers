@@ -105,13 +105,16 @@ class NystromAttention(Attention):
         **kwargs,
     ):
         """
-        Nystrom attention mechanism, from
-        "
-        Nystromformer: A Nystrom-based Algorithm for Approximating Self-Attention.
-        Xiong, Y., Zeng, Z., Chakraborty, R., Tan, M., Fung, G., Li, Y., Singh, V. (2021)
-        "
-        ArXiv: https://arxiv.org/pdf/2102.03902.pdf
-        Code: https://github.com/mlpen/Nystromformer
+        Nystrom attention mechanism, from Nystromformer_.
+        ::
+
+            "A Nystrom-based Algorithm for Approximating Self-Attention."
+            Xiong, Y., Zeng, Z., Chakraborty, R., Tan, M., Fung, G., Li, Y., Singh, V. (2021)
+
+            Reference codebase: https://github.com/mlpen/Nystromformer
+
+        .. _Nystromformer: https://arxiv.org/pdf/2102.03902.pdf
+
         """
         super().__init__()
 

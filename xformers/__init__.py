@@ -54,6 +54,6 @@ try:
     _register_extensions()
 except (ImportError, OSError) as e:
     print(e)
-    raise ImportError(
-        f"ERROR: {e}\nNeed to compile C++ extensions. Run python setup.py build develop"
-    )
+    # raise ImportError(
+    #     f"ERROR: {e}\nNeed to compile C++ extensions. Run python setup.py build develop"
+    # )

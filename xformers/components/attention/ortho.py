@@ -53,13 +53,17 @@ class OrthoFormerAttention(Attention):
         **kwargs,
     ):
         """
-        Orthoformer attention mechanism, from
-        "
-        Keeping Your Eye on the Ball: Trajectory Attention in Video Transformers
-        Patrick, M., Campbell, D., Asano, Y., Misra, I., Metze, F., Feichtenhofer, C., Vedaldi, A., Henriques, J. (2021)
-        "
-        ArXiv: https://arxiv.org/abs/2106.05392
-        Reference repository: https://github.com/facebookresearch/Motionformer
+        Orthoformer_ attention mechanism.
+        ::
+
+            "Keeping Your Eye on the Ball: Trajectory Attention in Video Transformers"
+            Patrick, M., Campbell, D., Asano, Y., Misra, I., Metze, F., Feichtenhofer,
+            C., Vedaldi, A., Henriques, J. (2021)
+
+            Reference codebase: https://github.com/facebookresearch/Motionformer
+
+        .. _Orthoformer: https://arxiv.org/abs/2106.05392
+
         """
         super().__init__()
 

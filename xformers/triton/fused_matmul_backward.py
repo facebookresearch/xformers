@@ -127,7 +127,8 @@ def fused_matmul_backward(
 ):
     """
     Compute grad_in = activation^-1(grad_out) @ weight.transpose()
-    NOTE: The weight buffer is transposed on the fly
+
+    .. note: The weight buffer is transposed on the fly
     """
 
     if grad_out.ndim == 2:

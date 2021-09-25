@@ -16,7 +16,9 @@ from xformers.components.attention.core import scaled_dot_product_attention
 class ScaledDotProduct(Attention):
     r"""
     Implementing the Scaled Dot-Product attention proposed in
-    "Attention is all you need", Vaswani et al. https://arxiv.org/abs/1706.03762v5
+    `Attention is all you need`_, Vaswani et al.
+
+    .. _`Attention is all you need`: https://arxiv.org/abs/1706.03762v5
     """
 
     def __init__(
