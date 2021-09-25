@@ -17,7 +17,7 @@ _gpu_is_old: Optional[bool] = None
 
 def next_power_of_2(n):
     """Return the smallest power of 2 greater than or equal to n"""
-    assert n < 2 ** 16, "Depths beyond 2^16 are not yet handled by this softmax kernel"
+    assert n < 2 ** 32, "Depths beyond 2^32 are not yet handled by this kernel"
 
     n -= 1
     n |= n >> 1
@@ -25,6 +25,7 @@ def next_power_of_2(n):
     n |= n >> 4
     n |= n >> 8
     n |= n >> 16
+    n |= n >> 32
     n += 1
     return n
 

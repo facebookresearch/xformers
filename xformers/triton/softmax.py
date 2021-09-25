@@ -74,6 +74,9 @@ def _softmax(
     """
     Fused softmax kernel over a 3d tensor.
     The softmax is applied over the last dimension, meaning that this is equivalent to torch.softmax(tensor, dim=-1)
+
+    Note, if the last dimension is large, say 128K elements, the kernel compile time can shot up to many minutes when
+    the kernel is run for the first time.
     """
     m = tl.program_id(0)
     n = tl.program_id(1)
@@ -168,7 +171,7 @@ def _softmax_backward(
     tl.store(B, b, mask=k < K)
 
 
-# Helper to handle the SMPD launch grid and error cases
+# Helper to handle the SPMD launch grid and error cases
 class _softmax_triton(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16 if _triton_softmax_fp16_enabled else None)
@@ -267,7 +270,7 @@ def _softmax_dispatch(x: torch.Tensor, log: bool) -> torch.Tensor:
             and not _triton_register_overflow
         ):
             return _softmax_triton.apply(x, log)
-    except triton.OutOfResources:
+    except triton.code_gen.OutOfResources:
         # Catch cases where the current GPU does not have enough registers to hold a full tensor line
         # fallback to PyTorch's implementation, which streams the tensor in and out
         _triton_register_overflow = True
@@ -275,7 +278,5 @@ def _softmax_dispatch(x: torch.Tensor, log: bool) -> torch.Tensor:
             "Triton softmax kernel register spillover caught."
             "Deactivating this kernel, please file an issue int the xFormers repository"
         )
-
-        pass
 
     return torch.softmax(x, dim=-1)
