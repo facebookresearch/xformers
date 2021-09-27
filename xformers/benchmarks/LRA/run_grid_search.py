@@ -60,25 +60,26 @@ def grid_search(args):
     if args.task == "text":
         grid_meta = {
             "training:learning_rate": (
-                [1e-4, 3e-4],
+                [1e-4, 3e-4, 5e-5],
                 lambda val: f"lr{val}",
             ),
-            "training:warmup": ([8000], lambda val: f"warmup{val}"),
-            "training:seed": ([1234, 32], lambda val: f"seed{val}"),
-            "training:weight_decay": ([0.01], lambda val: f"wd{val}"),
+            "training:warmup": ([2000], lambda val: f"warmup{val}"), # used to be 8000
+            "training:seed": ([1234, 32, 3, 4321], lambda val: f"seed{val}"),
+            "training:weight_decay": ([0, 0.02, 0.05], lambda val: f"wd{val}"),
             "model:pooling_model": (["cls"], lambda val: f"pool-{val}"),
             "model:common:dropout": ([0], lambda val: f"drop{val}"),
-            "model:extra_settings:attention:nystrom:num_landmarks": ([64, 128], lambda val: f"lm{val}"),
+            "model:extra_settings:attention:lsh_reformer:num_hash": ([4], lambda val: f"hash{val}"),
+            # "model:extra_settings:attention:nystrom:num_landmarks": ([64, 128], lambda val: f"lm{val}"),
         }
     elif args.task == "retrieval":
         grid_meta = {
-            "training:learning_rate": ([3e-4], lambda val: f"lr{val}"), # stick to this lr as it's always the best
+            "training:learning_rate": ([1e-4, 3e-4], lambda val: f"lr{val}"), # stick to this lr as it's always the best
             "training:warmup": ([2000, 8000], lambda val: f"warmup{val}"),
-            "training:seed": ([4096, 1234], lambda val: f"seed{val}"),
+            "training:seed": ([14, 3, 5], lambda val: f"seed{val}"),
             "training:weight_decay": ([0.01, 0], lambda val: f"wd{val}"),
             "model:pooling_model": (["cls"], lambda val: f"pool-{val}"),
             "model:common:dropout": ([0], lambda val: f"drop{val}"),
-            "model:extra_settings:attention:nystrom:num_landmarks": ([64, 128], lambda val: f"lm{val}"),
+            # "model:extra_settings:attention:nystrom:num_landmarks": ([64, 128], lambda val: f"lm{val}"),
             # "model:extra_settings:attention:performer:rp_dim": ([64, 256], lambda val: f"rp{val}"),
             # "model:extra_settings:attention:blockwise:window_size": ([8,32], lambda val: f"window{val}"),
         }

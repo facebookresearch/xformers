@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from torch import Tensor
 import torch
 import torch.nn as nn
 
@@ -12,15 +13,16 @@ import torch.nn.functional as F
 @dataclass
 class LinformerSelfAttentionConfig(AttentionConfig):
     max_seq_len: int  # dimension of the input sequence
-    k: Optional[int]  # dimension of the internal space
-
+    num_heads: int
+    compress: int
 
 @register_attention("linformer", LinformerSelfAttentionConfig)
 class LinformerAttention(Attention):
     def __init__(
         self, 
         dropout: float, 
-        max_seq_len: int, 
+        num_heads: int,
+        max_seq_len: int = 4096, 
         compress: int = 4, 
         *args, **kwargs
     ):
@@ -37,13 +39,19 @@ class LinformerAttention(Attention):
 
         k = max_seq_len // compress
 
+        self.num_heads = num_heads
         self.E = nn.Linear(max_seq_len, k, bias=False)
         self.F = nn.Linear(max_seq_len, k, bias=False)
         self.attn_drop = nn.Dropout(dropout, inplace=False)
 
     def forward(
-        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs
+        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, 
+        key_padding_mask: Optional[Tensor] = None,
+        *args, **kwargs
     ):
+        bsz = q.shape[0] // self.num_heads
+        mask = ~key_padding_mask.eq(1)
+        mask = mask.to(q)
 
         tgt_len = k.shape[1]
         k_projected = F.linear(k.transpose(-2, -1), self.E.weight[:, 0:tgt_len]).transpose(-2, -1)
@@ -52,4 +60,7 @@ class LinformerAttention(Attention):
         y = scaled_dot_product_attention(
             q=q, k=k_projected, v=v_projected, att_mask=None, dropout=self.attn_drop
         )
+
+        y = y.view(bsz, self.num_heads, y.shape[1], y.shape[2])
+        y = (y * mask[:,None,:,None]).view(bsz*self.num_heads, tgt_len, -1)
         return y

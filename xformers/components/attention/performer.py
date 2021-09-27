@@ -34,14 +34,11 @@ class PerformerAttention(Attention):
         rp_dim: int = 256,
         *args, **kwargs
     ):
-
         super().__init__()
-
         self.num_head = num_heads
         self.head_dim = dim_model // num_heads
         self.rp_dim = rp_dim
         self.attn_fn = FastAttention(dim_heads = self.head_dim, nb_features = self.rp_dim, causal = False, kernel_fn = nn.ReLU())
-
 
     def forward(
         self, 
