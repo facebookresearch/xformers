@@ -51,7 +51,7 @@ def kernel_fma(
     - D has shape (B, M, N)
     - In (optional) has shape (B, M, N)
 
-    In optionally saves the A x W + C intermediate for backward computations
+    'In' optionally saves the A x W + C intermediate for backward computations
     """
 
     # extract metaparameters
@@ -99,41 +99,30 @@ def kernel_fma(
         # block level matrix multiplication
         a = tl.load(A)
         w = tl.load(W)
-        acc += tl.dot(a, w)
+        acc += tl.dot(a, w).to(tl.float32)
 
         # increment pointers so that the next blocks of A and B
         # are loaded during the next iteration
         A += BLOCK_K * stride_ak
         W += BLOCK_K * stride_wk
 
-    # optional: add the bias while the data is already in shared memor
+    # optional: add the bias while the data is already in shared memory
     if META["BIAS"]:
-        # NOTE: Type conversions are a bit cumbersome here will be improved down the line.
-        # TL; DR is that the acc object above is not yet coalesced in memory
-        # and the Triton compiler is a bit wrong for now around that, so casting
-        # bias to fp32 does not work out as it should.
-        # The workaround is to cast acc instead
-        if META["FP16"]:
-            acc = acc.to(tl.float16)
+        bias = tl.load(C + rn, mask=rn < N, other=0.0)
+        bias = bias.to(tl.float32)
+        acc += bias[None, :]
 
-        bias = tl.load(C + rn[None, :], mask=(rn[None, :] < N), other=0.0)
-        acc += bias
-
-        if META["FP16"]:
-            acc = acc.to(tl.float32)
-
-    # optionally save the activation inputs
+    # optional: save the activation inputs
     if META["SAVE_ACT_INPUTS"]:
-        acc = acc.to(tl.float16)  # workaround, sync barrier
         In += rm[:, None] * stride_im + rn[None, :] * stride_in + batch_id * stride_ib
         tl.store(In, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
-        acc = acc.to(tl.float32)
 
-    # optional fused activation (while the data is in shared memory)
+    # optional: fused activation (while the data is in shared memory)
     if META["ACTIVATION"]:
         acc = META["ACTIVATION"](acc)
 
     # write back result
+    acc = acc.to(D.dtype.element_ty)
     tl.store(D, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
 
 
@@ -205,7 +194,6 @@ def fused_matmul(
         # improve on data reuse in L2 cache
         GROUP_M=8,
         BLOCK_K=32,
-        FP16=weight.dtype == torch.float16,
         SAVE_ACT_INPUTS=save_inputs
     )
     # fmt: on

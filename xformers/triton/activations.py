@@ -12,7 +12,6 @@ import triton.language as tl
 from xformers.components import Activation
 
 _kAlpha = math.sqrt(2.0 / math.pi)
-_k1OverSqrt2 = 1 / math.sqrt(2.0)
 
 
 def get_triton_activation_kernel(activation: Optional[Activation]):
@@ -69,9 +68,7 @@ def relu(x):
 
 @triton.jit
 def relu_grad(x):
-    # NOTE: +0.0 are temporary hacks, to force Triton
-    # to consider these as variables (else 'constant' and fp32 is assumed)
-    return tl.where(x >= 0, 1.0 + 0.0, 0.0 + 0.0)
+    return tl.where(x >= 0, 1.0, 0.0)
 
 
 @triton.jit
@@ -87,7 +84,7 @@ def squared_relu(x):
 
 @triton.jit
 def squared_relu_grad(x):
-    return tl.where(x >= 0, 2.0 * x, 0.0 + 0.0)
+    return tl.where(x >= 0, 2.0 * x, 0.0)
 
 
 # Leaky ReLU
@@ -104,7 +101,7 @@ def leaky_relu(x):
 
 @triton.jit
 def leaky_relu_grad(x):
-    return tl.where(x >= 0, 1.0 + 0.0, 0.01 + 0.0)
+    return tl.where(x >= 0, 1.0, 0.01)
 
 
 @triton.jit
@@ -114,7 +111,6 @@ def gelu(x):
 
     .. _GeLU: https://arxiv.org/pdf/1606.08415.pdf
     """
-    x = x.to(tl.float32)  # tl.exp() requires fp32
     return 0.5 * x * (1 + tanh(_kAlpha * (x + 0.044715 * x * x * x)))
 
 
@@ -128,6 +124,7 @@ def gelu_grad(x):
     exp_a = tl.exp(_a)
     exp_m_a = 1.0 / exp_a
 
-    _cos_h = (exp_a + exp_m_a) * 0.5
-    _tan_h = (exp_a - exp_m_a) / (exp_a + exp_m_a)
+    _cos_h = exp_a + exp_m_a
+    _tan_h = (exp_a - exp_m_a) / _cos_h
+    _cos_h *= 0.5
     return 0.5 + 0.5 * _tan_h + (0.0535161 * x_3 + 0.398942 * x) / (_cos_h * _cos_h)
