@@ -70,6 +70,10 @@ def _fold_heads(t: torch.Tensor, B: int, S: int, H: int, Hs: int):
     return t.view(B, S, H, Hs).transpose(1, 2).flatten(start_dim=0, end_dim=1)
 
 
+def _split_heads(t: torch.Tensor, B: int, S: int, H: int, Hs: int):
+    return t.view(B, S, H, Hs).transpose(1, 2)
+
+
 class MultiHeadDispatch(nn.Module):
     """
     A multi-head masked self-attention dispatch mechanism, with a projection at the end,
@@ -176,9 +180,14 @@ class MultiHeadDispatch(nn.Module):
         else:
             k, q, v = key, query, value
 
-        k = _fold_heads(k, B, S_K, self.num_heads, self.dim_k)
-        q = _fold_heads(q, B, S_Q, self.num_heads, self.dim_k)
-        v = _fold_heads(v, B, S_K, self.num_heads, self.dim_k)
+        # Reshape k/q/v to either expose the heads, or fold the head dimension into the batch
+        reshape_fn = (
+            _split_heads if self.attention.requires_head_dimension else _fold_heads
+        )
+
+        k = reshape_fn(k, B, S_K, self.num_heads, self.dim_k)
+        q = reshape_fn(q, B, S_Q, self.num_heads, self.dim_k)
+        v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
 
         # Self-attend
         y = self.attention(q=q, k=k, v=v, att_mask=att_mask)

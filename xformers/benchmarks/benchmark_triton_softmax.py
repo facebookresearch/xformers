@@ -5,12 +5,19 @@
 
 import torch
 
-from tests.test_triton_softmax import SHAPES
 from xformers.triton.softmax import log_softmax as triton_log_softmax
 from xformers.triton.softmax import softmax as triton_softmax
 from xformers.triton.utils import TestCase, bench_functions
 
-MIN_RUN_TIME = 1
+SHAPES = [
+    (8, 384, 128),
+    (8, 784, 512),
+    (4, 2048, 384),
+    (4, 3136, 1024),
+    (2, 1024, 2048),
+    (2, 2048, 4096),
+    (2, 4096, 4096),
+]
 
 
 def pytorch_fw_bw(x):

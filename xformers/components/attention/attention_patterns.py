@@ -159,3 +159,22 @@ def dilated_2d_pattern(H, W, k=2):
     d_w = local_nd_distance(H, W, p=1, weights=(0, 1))
     d = (d_h.floor() % k == 0) & (d_w.floor() % k == 0)
     return d
+
+
+# Block sparse utils
+def block_sparsify_tensor(x, mask, block_size):
+    """
+    Block sparsify a tensor, given a mask and block size
+    """
+    ret = torch.empty(
+        (x.size(0), mask.sum(), block_size, block_size), dtype=x.dtype, device=x.device
+    )
+
+    for idx, (h, i, j) in enumerate(zip(*mask.nonzero(as_tuple=True))):
+        ret[:, idx, :, :] = x[
+            :,
+            h,
+            i * block_size : (i + 1) * block_size,
+            j * block_size : (j + 1) * block_size,
+        ]
+    return ret

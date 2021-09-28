@@ -46,6 +46,7 @@ def test_xformer_encoder_block(
     device: torch.device,
     reversible: bool,
 ):
+    block_size = 16
 
     attention_config = {
         "name": attention_name,
@@ -56,6 +57,8 @@ def test_xformer_encoder_block(
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
         "dim_head": MODEL / heads,
+        "layout": torch.eye(SEQ // block_size, SEQ // block_size, dtype=torch.long),
+        "block_size": block_size,
     }
 
     multi_head_config = {
@@ -130,6 +133,8 @@ def test_xformer_decoder_block(
     device: torch.device,
 ):
 
+    block_size = 16
+
     attention_config = {
         "name": attention_name,
         "dropout": attn_dropout,
@@ -139,6 +144,8 @@ def test_xformer_decoder_block(
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
         "dim_head": MODEL / heads,
+        "layout": torch.eye(SEQ // block_size, SEQ // block_size, dtype=torch.long),
+        "block_size": block_size,
     }
 
     multi_head_config = {
@@ -168,6 +175,7 @@ def test_xformer_decoder_block(
         multi_head_config=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
+        layer_norm_style=layer_norm_style,
     )
 
     decoder_block_config = xFormerDecoderConfig(
@@ -176,6 +184,7 @@ def test_xformer_decoder_block(
         multi_head_config_cross=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
+        layer_norm_style=layer_norm_style,
     )
 
     # Test that the whole block can be instantiated

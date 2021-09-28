@@ -31,3 +31,6 @@ xformers/benchmarks/LRA/datasets
 xformers/benchmarks/LRA/logs
 
 my_runs.md
+
+# Triton cache
+.cache

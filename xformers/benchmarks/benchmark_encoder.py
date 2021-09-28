@@ -167,6 +167,17 @@ def test_xformer_encoder_block(
         dropout=dropout,
     ).to(device)
 
+    print(
+        "Testing:",
+        block,
+        batch_size,
+        sequence_length,
+        embed_dim,
+        autocast,
+        device,
+        attention_name,
+    )
+
     return benchmark_model(
         num_steps=num_steps,
         num_warmup=num_warmup,
@@ -194,6 +205,8 @@ def instantiate_xformer(
     dropout: float,
 ) -> xFormerEncoderBlock:
 
+    block_size = 16
+
     attention_config = {
         "name": attention_name,
         "dropout": attn_dropout,
@@ -204,6 +217,14 @@ def instantiate_xformer(
         ),
         "num_heads": heads,
         "dim_head": embed_dim / heads,
+        "layout": torch.eye(
+            sequence_length // block_size,
+            sequence_length // block_size,
+            dtype=torch.int,
+        )
+        .unsqueeze(0)
+        .expand(heads, -1, -1),
+        "block_size": block_size,
     }
 
     multi_head_config = {
@@ -260,7 +281,11 @@ def plot(args, results: List[Dict[str, Any]]):
         by=["sequence_length", "max_memory"], ascending=[False, True], inplace=True
     )
     sns.barplot(
-        x="sequence_length", y="max_memory", hue="attention_name", data=df_filtered
+        x="sequence_length",
+        y="max_memory",
+        hue="attention_name",
+        data=df_filtered,
+        palette="Set2",
     )
     plt.xlabel("Sequence length")
     plt.ylabel("Max memory being used")
@@ -272,7 +297,11 @@ def plot(args, results: List[Dict[str, Any]]):
         by=["sequence_length", "run_time"], ascending=[False, True], inplace=True
     )
     sns.barplot(
-        x="sequence_length", y="run_time", hue="attention_name", data=df_filtered
+        x="sequence_length",
+        y="run_time",
+        hue="attention_name",
+        data=df_filtered,
+        palette="Set2",
     )
     plt.xlabel("Sequence length")
     plt.ylabel("Average epoch time")

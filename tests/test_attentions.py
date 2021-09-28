@@ -21,7 +21,7 @@ DEVICES = (
 
 BATCH = 2
 SEQ = 128 if torch.cuda.is_available() else 32
-MODEL = 96 if torch.cuda.is_available() else 48
+MODEL = 128 if torch.cuda.is_available() else 64
 GLOBAL_ATTENTION_RATIO = (
     _DENSITY_THRESHOLD * 0.9
 )  # Make sure that we test the sparse implementation, no matter the threshold
@@ -41,6 +41,13 @@ def _get_multihead(attention_name, attn_dropout, res_dropout, causal, heads, dev
         "dim_head": MODEL / heads,
     }
 
+    # Add some blocksparse layout to test the corresponding attention
+    block_size = 16
+    test_config["layout"] = torch.eye(
+        SEQ // block_size, SEQ // block_size, dtype=torch.long
+    )
+    test_config["block_size"] = block_size
+
     attention = build_attention(test_config)
 
     # build a multi head dispatch to test this attention mechanism
@@ -58,7 +65,7 @@ def _get_multihead(attention_name, attn_dropout, res_dropout, causal, heads, dev
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("causal", [True, False])
-@pytest.mark.parametrize("heads", [1, 3])
+@pytest.mark.parametrize("heads", [1, 4])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("device", DEVICES)
 def test_order_invariance(
@@ -76,7 +83,7 @@ def test_order_invariance(
     # Check that a shuffled input produces the same results
     inputs = torch.rand(BATCH, SEQ, MODEL, device=device)
     shuffle = torch.randperm(inputs.shape[1])
-    inputs_shuffled = inputs[:, shuffle, :]
+    inputs_shuffled = inputs[:, shuffle, :].clone()
 
     results = multi_head(inputs, inputs, inputs)
     results_shuffled = multi_head(inputs_shuffled, inputs_shuffled, inputs_shuffled)
@@ -84,7 +91,7 @@ def test_order_invariance(
     torch.allclose(results[:, shuffle, :], results_shuffled)
 
 
-@pytest.mark.parametrize("heads", [1, 3])
+@pytest.mark.parametrize("heads", [1, 4])
 @pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
 @pytest.mark.parametrize("device", DEVICES)
 def test_kqv_ordering(
@@ -128,7 +135,7 @@ def test_kqv_ordering(
     assert torch.allclose(res_false[0, :, :], res_false[1, :, :])
 
 
-@pytest.mark.parametrize("heads", [1, 3])
+@pytest.mark.parametrize("heads", [1, 4])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("device", DEVICES)
 def test_different_kq_dimensions(
@@ -136,11 +143,18 @@ def test_different_kq_dimensions(
     heads: int,
     device: torch.device,
 ):
-    if attention_name in {"global", "local", "random", "lambda", "linformer"}:
+    if attention_name in {
+        "global",
+        "local",
+        "random",
+        "lambda",
+        "linformer",
+        "blocksparse",
+    }:
         pytest.skip(f"{attention_name} does not support different k, q dimensions yet.")
     multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
 
-    seq_q = SEQ - 10
+    seq_q = SEQ - 16
     q = torch.rand((BATCH, seq_q, MODEL), device=device)
     k = torch.rand((BATCH, SEQ, MODEL), device=device)
     v = torch.rand((BATCH, SEQ, MODEL), device=device)
