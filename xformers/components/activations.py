@@ -28,9 +28,17 @@ class SquaredReLU(nn.Module):
         return x_ * x_
 
 
+class Passthrough(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x
+
+
 def build_activation(activation: Optional[Activation]):
     if not activation:
-        return lambda x: x
+        return Passthrough()
 
     return {
         Activation.ReLU: nn.ReLU,

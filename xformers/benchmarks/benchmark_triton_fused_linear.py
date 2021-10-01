@@ -114,9 +114,9 @@ def bench_linear(activation: Optional[Activation], bias: bool, backward: bool):
 
 
 # Test FW
-activations = [None] + [ac for ac in Activation]  # type: ignore
+activations = [ac for ac in Activation] + [None]  # type: ignore
 
 for a in activations:
     for bias in [True, False]:
-        for bw in [False, True]:
+        for bw in [True, False]:
             bench_linear(a, bias, bw)

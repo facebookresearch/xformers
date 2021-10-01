@@ -37,16 +37,6 @@ def _get_fp16(*args, **kwargs):
     return args[0].dtype == torch.float16
 
 
-def _get_num_warps(*args, **kwargs):
-    num_warps = 4
-    if kwargs["depth"] >= 2048:
-        num_warps = 8
-    if kwargs["depth"] >= 4096:
-        num_warps = 16
-
-    return num_warps
-
-
 # autotune: Triton will test out these configurations, and automatically pick the fastest one.
 # heuristic: add arguments to the kernel call automatically given some heuristics. These arguments are passed in "meta"
 @triton.autotune(
