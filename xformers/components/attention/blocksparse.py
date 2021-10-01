@@ -44,7 +44,7 @@ if _use_triton:
         r"""
         Thin wrap over the Triton blocksparse computations. The sparsity pattern is determined through the layout.
 
-        .. warning: the layout is assumed to have the dimensions [heads, seq, head_dim].
+        .. warning: the layout is assumed to have the dimensions [heads, seq, seq].
             If some dimensions are missing, we assume that the same layout is to be used across heads.
 
         .. note: it is possible to pass a specific per batch mask in the forward call,
