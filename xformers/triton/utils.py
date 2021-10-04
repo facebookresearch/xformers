@@ -25,7 +25,7 @@ def gpu_capabilities_older_than_70() -> bool:
     return _gpu_is_old
 
 
-SUPPORTED_CUDA_DEVICES = ["V100", "A100"]
+SUPPORTED_CUDA_DEVICES = ["V100", "A100", "T4"]
 
 
 def get_current_cuda_device():

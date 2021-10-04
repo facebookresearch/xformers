@@ -35,9 +35,12 @@ _configs_V100 = _configs_P100 + [
 _configs_A100 = _configs_V100
 
 kernel_config = (
-    {"P100": _configs_P100, "V100": _configs_V100, "A100": _configs_A100}[
-        get_current_cuda_device()
-    ]
+    {
+        "P100": _configs_P100,
+        "T4": _configs_P100,
+        "V100": _configs_V100,
+        "A100": _configs_A100,
+    }[get_current_cuda_device()]
     if torch.cuda.is_available()
     else {}
 )
