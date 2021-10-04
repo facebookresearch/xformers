@@ -205,7 +205,7 @@ jobs:
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-gpu-112-190-386-{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-gpu-112-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_repo
 
