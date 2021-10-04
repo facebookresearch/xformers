@@ -15,11 +15,6 @@ DROP = 0.1
 LAYERS = 2
 ACTIVATION = "relu"
 
-_devices = (
-    [torch.device("cpu")]
-    if not torch.cuda.is_available()
-    else [torch.device("cuda")]  # save a bit on CI, we have seperate cpu and gpu jobs
-)
 
 _test_config_encoder = {
     "block_config": {
@@ -164,8 +159,8 @@ def train(model, optimizer, name, steps, device):
     print("Trained {} in {:.3}s".format(name, time.time() - start))
 
 
-@pytest.mark.parametrize("device", _devices)
-def test_pytorch_encoder_parity(device):
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="This test requires a gpu")
+def test_pytorch_encoder_parity(device=torch.device("cuda")):
     # Build both a xFormers and Pytorch model
     reset_seeds()
     model_xformers = xFormer.from_config(xFormerConfig([_test_config_encoder])).to(
@@ -222,8 +217,8 @@ def test_pytorch_encoder_parity(device):
     )  # final eval is about 0.74, arbitrary limits
 
 
-@pytest.mark.parametrize("device", _devices)
-def test_pytorch_tranformer_parity(device):
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="This test requires a gpu")
+def test_pytorch_tranformer_parity(device=torch.device("cuda")):
     # Build both a xFormers and Pytorch model
     reset_seeds()
     model_xformers = xFormer.from_config(xFormerConfig(_test_config)).to(device)
