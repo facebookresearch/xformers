@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
+from torch.nn.init import constant_, xavier_uniform_
 
 from xformers.components.attention import Attention
 
@@ -41,6 +42,21 @@ class InProjContainer(torch.nn.Module):
 
         self.key_proj = key_proj if key_proj is not None else bias_free_query_proj
         self.value_proj = value_proj if value_proj is not None else bias_free_query_proj
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        xavier_uniform_(self.query_proj.weight)
+        xavier_uniform_(self.key_proj.weight)
+        xavier_uniform_(self.value_proj.weight)
+
+        def _init_bias(proj: nn.Linear):
+            if proj.bias is not None:
+                constant_(proj.bias, 0.0)
+
+        _init_bias(self.query_proj)
+        _init_bias(self.key_proj)
+        _init_bias(self.value_proj)
 
     def forward(
         self,
@@ -126,13 +142,11 @@ class MultiHeadDispatch(nn.Module):
                 in_proj_container
                 if in_proj_container is not None
                 else InProjContainer(
-                    query_proj=nn.Linear(
-                        dim_model, dim_key, bias=bias
-                    ),  # NOTE: optional bias ?
-                    key_proj=nn.Linear(dim_model, dim_key, bias=False)
+                    query_proj=nn.Linear(dim_model, dim_key, bias=bias),
+                    key_proj=nn.Linear(dim_model, dim_key, bias=bias)
                     if use_separate_proj_weight
                     else None,
-                    value_proj=nn.Linear(dim_model, dim_value, bias=False)
+                    value_proj=nn.Linear(dim_model, dim_value, bias=bias)
                     if use_separate_proj_weight
                     else None,
                 )
@@ -143,6 +157,8 @@ class MultiHeadDispatch(nn.Module):
 
         # Output projection
         self.proj = out_proj if out_proj else nn.Linear(dim_model, dim_model, bias=bias)
+        if self.proj.bias is not None:
+            constant_(self.proj.bias, 0.0)
 
     def _check(self, t, name):
         assert (
