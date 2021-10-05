@@ -21,11 +21,12 @@ if _use_triton:
         from triton.ops.blocksparse import matmul as blocksparse_matmul
         from triton.ops.blocksparse import softmax as blocksparse_softmax
 
-        from xformers.triton import MaskType, MatmulType
+        from xformers.triton import MatmulType
+        from xformers.triton.softmax import MaskType
 
-    except ImportError:
+    except ImportError as e:
         logging.warning(
-            "Triton is not available, BlockSparse attention will not be available"
+            f"Triton is not available: {e}.\nBlockSparse attention will not be available"
         )
         _use_triton = False
 

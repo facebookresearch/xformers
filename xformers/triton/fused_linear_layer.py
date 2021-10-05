@@ -99,7 +99,7 @@ class FusedLinear(nn.Module):
         out_features: int,
         bias: bool = False,
         activation: Optional[Activation] = None,
-        **_
+        **_,
     ):
         super().__init__()
         self.weight = nn.Parameter(

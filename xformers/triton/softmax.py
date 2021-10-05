@@ -5,6 +5,7 @@
 
 
 import logging
+from enum import Enum
 
 import torch
 import triton
@@ -27,6 +28,11 @@ kernel_configs = [
     triton.Config({}, num_warps=8),
     triton.Config({}, num_warps=16),
 ]
+
+
+class MaskType(str, Enum):
+    ADD = "add"
+    MUL = "mul"
 
 
 def _get_depth(*args, **kwargs):
