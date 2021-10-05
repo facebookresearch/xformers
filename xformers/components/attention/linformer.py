@@ -64,3 +64,6 @@ class LinformerAttention(Attention):
         y = y.view(bsz, self.num_heads, y.shape[1], y.shape[2])
         y = (y * mask[:,None,:,None]).view(bsz*self.num_heads, tgt_len, -1)
         return y
+
+
+    ### can we also augment Linformer with global tokens

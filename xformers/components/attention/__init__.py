@@ -83,14 +83,12 @@ from .favor import FavorAttention  # noqa
 from .global_tokens import GlobalAttention  # noqa
 from .linformer import LinformerAttention  # noqa
 from .local import LocalAttention  # noqa
-from .longshort import LongShortAttention  # noqa
 from .nystrom import NystromAttention  # noqa
 from .ortho import OrthoFormerAttention  # noqa
 from .random import RandomAttention  # noqa
 from .scaled_dot_product import ScaledDotProduct  # noqa
-from .sinkhorn import SinkhornAttention  # noqa
-from .lsh_reformer import LSHAttention  # noqa
-from .longshort import LongShortAttention
+# from .sinkhorn import SinkhornAttention  # noqa
+# from .longshort import LongShortAttention
 
 __all__ = [
     "ScaledDotProduct",
@@ -104,9 +102,8 @@ __all__ = [
     "Attention",
     "build_attention",
     "register_attention",
-    "SinkhornAttention",
-    "LSHAttention",
-    "LongShortAttention"
+    # "SinkhornAttention",
+    # "LongShortAttention"
 ]
 
 # automatically import any Python files in the directory
