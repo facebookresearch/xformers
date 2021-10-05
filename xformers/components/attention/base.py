@@ -33,6 +33,7 @@ class Attention(nn.Module, metaclass=ABCMeta):
         super().__init__()
         self.requires_input_projection = True
         self.requires_head_dimension = False
+        self.accepts_att_mask = True
 
     @classmethod
     def from_config(cls, config: AttentionConfig) -> "Attention":

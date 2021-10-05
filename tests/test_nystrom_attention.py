@@ -2,11 +2,13 @@
 #
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
+import random
 
 import pytest
 import torch
 
 from xformers.components.attention import NystromAttention, ScaledDotProduct
+from xformers.components.attention.utils import maybe_merge_masks
 
 
 @pytest.mark.parametrize("pinverse_original_init", [True, False])
@@ -19,32 +21,92 @@ def test_nystrom_attention(
 ):
     # TODO: conv_kernel_size parameter not set to None fails this test. Investigate.
     b, s, d = 8, 900, 384
+    num_heads = 2
     seed = 42
     torch.random.manual_seed(seed)
 
+    nystrom_config = {
+        "name": "nystrom",
+        "dropout": 0.0,
+        "num_landmarks": num_landmarks,
+        "num_heads": num_heads,
+        "pinverse_original_init": pinverse_original_init,
+        "use_razavi_pinverse": use_razavi_pinverse,
+    }
+
+    sdp_config = {
+        "name": "scaled_dot_product",
+        "dropout": 0.0,
+    }
+
+    a = torch.rand(b, s, d)
+
     def test_close_to_sdp():
         # Make sure that Nystrom and Normal attention are not too far off.
-        a = torch.rand(b, s, d)
-        nystrom_config = {
-            "name": "nystrom",
-            "dropout": 0.0,
-            "num_landmarks": num_landmarks,
-            "num_heads": 2,
-            "pinverse_original_init": pinverse_original_init,
-            "use_razavi_pinverse": use_razavi_pinverse,
-        }
-
-        sdp_config = {
-            "name": "scaled_dot_product",
-            "dropout": 0.0,
-        }
 
         nystrom_attention = NystromAttention(**nystrom_config)
         sdp_attention = ScaledDotProduct(**sdp_config)
 
-        r_nystrom = nystrom_attention(a, a, a)
-        r_sdp = sdp_attention(a, a, a)
+        r_nystrom = nystrom_attention(a, a, a, att_mask=None)
+        r_sdp = sdp_attention(a, a, a, att_mask=None)
 
         assert torch.allclose(r_nystrom, r_sdp, rtol=0.005, atol=1e-2)
 
+        # Make sure that Nystrom and Normal attention are not too far off.
+
+        nystrom_attention = NystromAttention(**nystrom_config)
+        sdp_attention = ScaledDotProduct(**sdp_config)
+
+        r_nystrom = nystrom_attention(a, a, a, att_mask=None)
+        r_sdp = sdp_attention(a, a, a, att_mask=None)
+
+        assert torch.allclose(r_nystrom, r_sdp, rtol=0.005, atol=1e-2)
+
+    def test_att_mask_ignored():
+        # If an sxs attention mask is passed in, it should be ignored.
+        # Results should be the same as if no mask was passed in.
+        nystrom_attention = NystromAttention(**nystrom_config)
+        sdp_attention = ScaledDotProduct(**sdp_config)
+
+        key_padding_mask = torch.randint(0, 2, (b // num_heads, s)).to(dtype=torch.bool)
+        att_mask = torch.randint(0, 2, (s, s)).to(dtype=torch.bool)
+        mask = maybe_merge_masks(
+            att_mask,
+            key_padding_mask,
+            batch_size=b // num_heads,
+            src_len=s,
+            num_heads=num_heads,
+        )
+        r_nystrom = nystrom_attention(a, a, a, att_mask=mask)
+        r_sdp = sdp_attention(a, a, a, att_mask=None)
+        assert torch.allclose(r_nystrom, r_sdp, rtol=0.005, atol=1e-2)
+
+    def test_masking():
+        nystrom_config["causal"] = True
+        sdp_config["causal"] = True
+
+        nystrom_attention = NystromAttention(**nystrom_config)
+        sdp_attention = ScaledDotProduct(**sdp_config)
+
+        key_padding_mask = torch.randint(0, 2, (b // num_heads, s)).to(dtype=torch.bool)
+        mask = maybe_merge_masks(
+            None,
+            key_padding_mask,
+            batch_size=b // num_heads,
+            src_len=s,
+            num_heads=num_heads,
+        )
+        r_nystrom = nystrom_attention(a, a, a, att_mask=mask)
+        r_sdp = sdp_attention(a, a, a, att_mask=mask)
+        # account for when nan != nan
+        if r_nystrom.isnan().any() or r_sdp.isnan().any():
+            rand = random.uniform(0, 1)
+            r_nystrom = r_nystrom.masked_fill(r_nystrom.isnan(), rand)
+            r_sdp = r_sdp.masked_fill(r_sdp.isnan(), rand)
+
+        # Not very close, but more so testing functionality.
+        assert torch.allclose(r_nystrom, r_sdp, rtol=0.1, atol=0.5)
+
     test_close_to_sdp()
+    test_att_mask_ignored()
+    test_masking()
