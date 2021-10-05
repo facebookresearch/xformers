@@ -5,7 +5,6 @@
 
 import pytest
 import torch
-import triton
 
 from xformers.components.attention.attention_patterns import block_sparsify_tensor
 
@@ -19,6 +18,7 @@ _triton_available = torch.cuda.is_available()
 
 if _triton_available:
     try:
+        import triton
         from triton.ops.blocksparse import matmul as blocksparse_matmul
         from triton.ops.blocksparse import softmax as blocksparse_softmax
 
@@ -31,7 +31,7 @@ if _triton_available:
 
         _triton_available = not gpu_capabilities_older_than_70()
         _matmul_types = list(MatmulType)
-    except ImportError:
+    except (ImportError, ModuleNotFoundError):
         _triton_available = False
 else:
     _matmul_types = []  # noqa
