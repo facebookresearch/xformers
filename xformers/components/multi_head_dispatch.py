@@ -157,7 +157,7 @@ class MultiHeadDispatch(nn.Module):
 
         # Output projection
         self.proj = out_proj if out_proj else nn.Linear(dim_model, dim_model, bias=bias)
-        if self.proj.bias is not None:
+        if isinstance(self.proj, nn.Linear) and self.proj.bias is not None:
             constant_(self.proj.bias, 0.0)
 
     def _check(self, t, name):
