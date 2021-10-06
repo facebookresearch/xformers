@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from enum import Enum
 
 import torch
 
@@ -13,11 +12,6 @@ if _triton_available:
         from xformers.triton.fused_linear_layer import FusedLinear  # noqa
         from xformers.triton.softmax import log_softmax, softmax  # noqa
 
-        class MatmulType(str, Enum):
-            DDS = "dds"
-            DSD = "dsd"
-            SDD = "sdd"
-
-        __all__ = ["softmax", "log_softmax", "FusedLinear", "MatmulType"]
+        __all__ = ["softmax", "log_softmax", "FusedLinear"]
     except ImportError:
         __all__ = []

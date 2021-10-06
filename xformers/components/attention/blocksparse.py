@@ -21,7 +21,6 @@ if _use_triton:
         from triton.ops.blocksparse import matmul as blocksparse_matmul
         from triton.ops.blocksparse import softmax as blocksparse_softmax
 
-        from xformers.triton import MatmulType
         from xformers.triton.softmax import MaskType
 
     except ImportError as e:
@@ -85,14 +84,14 @@ if _use_triton:
             self.sparse_dot_sdd = blocksparse_matmul(
                 self.layout,
                 self.block_size,
-                MatmulType.SDD,
+                "sdd",
                 trans_a=False,
                 trans_b=True,
             )
             self.sparse_dot_dsd = blocksparse_matmul(
                 self.layout,
                 self.block_size,
-                MatmulType.DSD,
+                "dsd",
                 trans_a=False,
                 trans_b=False,
             )

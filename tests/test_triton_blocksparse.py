@@ -23,14 +23,13 @@ if _triton_available:
         from triton.ops.blocksparse import softmax as blocksparse_softmax
 
         from xformers.components.attention import BlockSparseAttention
-        from xformers.triton import MatmulType
         from xformers.triton.utils import (
             assert_almost_equal,
             gpu_capabilities_older_than_70,
         )
 
         _triton_available = not gpu_capabilities_older_than_70()
-        _matmul_types = list(MatmulType)
+        _matmul_types = ["sdd", "dsd", "dds"]
     except (ImportError, ModuleNotFoundError):
         _triton_available = False
 else:
@@ -55,9 +54,9 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
         (Z, H, N, K) if TRANS_B else (Z, H, K, N), dtype=DTYPE, device="cuda"
     )
     shape = {
-        MatmulType.SDD: (M, N),
-        MatmulType.DSD: (a.shape[2], a.shape[3]),
-        MatmulType.DDS: (b.shape[2], b.shape[3]),
+        "sdd": (M, N),
+        "dsd": (a.shape[2], a.shape[3]),
+        "dds": (b.shape[2], b.shape[3]),
     }[MODE]
     layout = torch.randint(2, (H, shape[0] // BLOCK, shape[1] // BLOCK))
 
