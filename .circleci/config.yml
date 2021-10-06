@@ -115,6 +115,12 @@ run_benchmarks: &run_benchmarks
       command: |
         CUDA_LAUNCH_BLOCKING=1 python3 xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 128 -bs 16 -heads 4
 
+run_pytorch_benchmark: &run_pytorch_benchmark
+  - run:
+      name: Run Pytorch benchmark
+      command: |
+        python3 xformers/benchmarks/benchmark_pytorch_transformer.py
+
 run_doc_build: &run_doc_build
    - run:
        name: Testing doc build
@@ -212,6 +218,8 @@ jobs:
       - <<: *run_coverage
 
       - <<: *run_benchmarks
+
+      - <<: *run_pytorch_benchmark
 
       - store_test_results:
           path: test-results
