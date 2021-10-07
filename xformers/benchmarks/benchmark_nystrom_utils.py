@@ -93,6 +93,7 @@ def iterative_pinv_analysis(
                 break
 
 
-iterative_pinv_analysis()
-bench_inverse(iterative_pinv)
-bench_inverse(torch.linalg.pinv)
+if __name__ == "__main__":
+    iterative_pinv_analysis()
+    bench_inverse(iterative_pinv)
+    bench_inverse(torch.linalg.pinv)

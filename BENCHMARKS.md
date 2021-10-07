@@ -35,7 +35,7 @@ Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py 
 | sparsity sputnik: 0.95 | 43.2                  | 258.6                  | 32.5                  | 32.7                   | 39.7                  | 223.6                  |
 | sparsity sputnik: 0.99 | 43.5                  | 145.4                  | 33.2                  | 32.7                   | 39.7                  | 77.4                   |
 
-##  Triton layers
+## Triton layers
 
 ### Fused softmax
 

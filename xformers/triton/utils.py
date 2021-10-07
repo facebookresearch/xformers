@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional
 import torch
 import triton
 
+from xformers.benchmarks.utils import pretty_plot, pretty_print
+
 TestCase = namedtuple("TestCase", ["function", "name"])
 
 _gpu_is_old: Optional[bool] = None
@@ -30,7 +32,9 @@ def next_power_of_2(n):
     return n
 
 
-def bench_functions(test_cases: List[TestCase], shapes, metric_transform, unit):
+def bench_functions(
+    test_cases: List[TestCase], shapes, metric_transform, unit, title=""
+):
     device = torch.device("cuda")
 
     for dtype in [torch.float16, torch.float32]:
@@ -48,26 +52,15 @@ def bench_functions(test_cases: List[TestCase], shapes, metric_transform, unit):
                 if key not in results:
                     results[key] = {}
 
-                results[key][testcase.name] = f"{metric:.1f} {unit}"
+                results[key][testcase.name] = f"{metric:.1f}"
 
         pretty_print(
-            results, title=" ------------- Type: {} ------------- ".format(dtype)
+            results,
+            title=" ------------- Type: {} ------------- ".format(dtype),
+            units=unit,
         )
-
-
-def pretty_print(results, title):
-    print(title)
-    print("{0:<45}".format("") + "".join("{0:<20} ".format(k) for k in results.keys()))
-
-    workloads: Dict[str, Any] = {k: [] for v in results.values() for k in v.keys()}
-    for v in results.values():
-        for k in v.keys():
-            workloads[k].append(v[k])
-
-    for k, w in workloads.items():
-        print("{0:<45}".format(k) + "".join("{:<20} ".format(v) for v in w))
-
-    print("")
+        _type = " fp16" if dtype == torch.float16 else " fp32"
+        pretty_plot(results, title + _type, unit, dash_key="pytorch")
 
 
 def gpu_capabilities_older_than_70() -> bool:

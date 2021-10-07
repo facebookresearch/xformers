@@ -10,8 +10,9 @@ from typing import Any, Dict, List, Tuple
 import torch
 import triton
 
+from xformers.benchmarks.utils import pretty_print
 from xformers.factory.model_factory import xFormer, xFormerConfig
-from xformers.triton.utils import TestCase, pretty_print
+from xformers.triton.utils import TestCase
 
 VOCAB = 8
 
@@ -208,7 +209,7 @@ def bench_pytorch_encoder(
             ]
             results[key][testcase.name + "-MB"] = median_memory
 
-    pretty_print(results, "\n--- Transformer training benchmark ---")
+    pretty_print(results, title="\n--- Transformer training benchmark ---", units="ms")
 
 
 if __name__ == "__main__":
