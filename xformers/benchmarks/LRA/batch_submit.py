@@ -15,6 +15,9 @@ if __name__ == "__main__":
         "-a", "--attentions", nargs="+", default=list(ATTENTION_REGISTRY.keys())
     )
     parser.add_argument("-t", "--tasks", nargs="+", default=[t.value for t in Task])
+    parser.add_argument(
+        "--partition", default="a100", type=str, help="Partition where to submit"
+    )
     args = parser.parse_args()
 
     for attention in args.attentions:
@@ -23,4 +26,5 @@ if __name__ == "__main__":
                 "python3 run_with_submitit.py"
                 + f" --attention {attention}  --task {task} --config {args.config_path}"
                 + f" --checkpoint_dir {args.checkpoint_path}/{attention}"
+                + f" --partition {args.partition}"
             )
