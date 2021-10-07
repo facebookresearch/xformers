@@ -24,6 +24,7 @@ def test_nystrom_attention(
     num_heads = 2
     seed = 42
     torch.random.manual_seed(seed)
+    random.seed(seed)
 
     nystrom_config = {
         "name": "nystrom",
@@ -105,7 +106,9 @@ def test_nystrom_attention(
             r_sdp = r_sdp.masked_fill(r_sdp.isnan(), rand)
 
         # Not very close, but more so testing functionality.
-        assert torch.allclose(r_nystrom, r_sdp, rtol=0.1, atol=0.5)
+        assert torch.allclose(
+            r_nystrom, r_sdp, rtol=0.1, atol=0.5
+        ), f"max diff {torch.max(torch.abs(r_nystrom-r_sdp))}"
 
     test_close_to_sdp()
     test_att_mask_ignored()
