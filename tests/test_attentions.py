@@ -90,6 +90,9 @@ def test_order_invariance(
 
     torch.allclose(results[:, shuffle, :], results_shuffled)
 
+    # Test the non-self-attention codepath
+    _ = multi_head(inputs, inputs_shuffled, inputs)
+
 
 @pytest.mark.parametrize("heads", [1, 4])
 @pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
