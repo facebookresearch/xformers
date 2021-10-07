@@ -99,7 +99,8 @@ def bench_pytorch_encoder(
     device: torch.device = torch.device("cuda"),
     steps: int = 20,
 ):
-    results: Dict[str, Any] = {}
+    results_time: Dict[str, Any] = {}
+    results_memory: Dict[str, Any] = {}
 
     for shape in shapes:
         batch, seq, emb = shape
@@ -199,17 +200,27 @@ def bench_pytorch_encoder(
         ]:
             time, _, _ = triton.testing.do_bench(lambda: testcase.function())
             key = "emb {} - heads {}".format(emb, n_heads)
-            if key not in results:
-                results[key] = {}
+            if key not in results_time:
+                results_time[key] = {}
+                results_memory[key] = {}
 
-            results[key][testcase.name + "-time"] = f"{time/1000:.1f}"
+            results_time[key][testcase.name] = f"{time/1000:.1f}"
 
             median_memory = sorted(memory[testcase.name])[
                 len(memory[testcase.name]) // 2
             ]
-            results[key][testcase.name + "-MB"] = median_memory
+            results_memory[key][testcase.name] = median_memory
 
-    pretty_print(results, title="\n--- Transformer training benchmark ---", units="ms")
+    pretty_print(
+        results_time,
+        title="\n--- Transformer training benchmark - runtime ---",
+        units="s",
+    )
+    pretty_print(
+        results_memory,
+        title="\n--- Transformer training benchmark - memory use ---",
+        units="MB",
+    )
 
 
 if __name__ == "__main__":
