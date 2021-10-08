@@ -10,9 +10,8 @@ from typing import Any, Dict, List, Tuple
 import torch
 import triton
 
-from xformers.benchmarks.utils import pretty_print
+from xformers.benchmarks.utils import TestCase, pretty_print
 from xformers.factory.model_factory import xFormer, xFormerConfig
-from xformers.triton.utils import TestCase
 
 VOCAB = 8
 

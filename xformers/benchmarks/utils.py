@@ -3,12 +3,26 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, Dict
+import logging
+from collections import namedtuple
+from typing import Any, Dict, List
 
 import matplotlib.pyplot as plt
 import seaborn as sns
+import torch
 
 sns.set()
+
+TestCase = namedtuple("TestCase", ["function", "name"])
+
+
+_triton_is_available = torch.cuda.is_available()
+if _triton_is_available:
+    try:
+        import triton
+    except ImportError as e:
+        logging.warning(f"Triton is not available: {e}.\nbench_functions")
+        _triton_is_available = False
 
 
 def pretty_print(results, title, units):
@@ -72,3 +86,36 @@ def pretty_plot(results, title, units: str, filename=None, dash_key=""):
 
     plt.savefig(filename, bbox_inches="tight")
     plt.clf()
+
+
+if _triton_is_available:
+
+    def bench_functions(
+        test_cases: List[TestCase], shapes, metric_transform, unit, title=""
+    ):
+        device = torch.device("cuda")
+
+        for dtype in [torch.float16, torch.float32]:
+            results: Dict[str, Any] = {}
+
+            for B, M, K in shapes:
+                a = torch.rand(B, M, K, device=device, dtype=dtype, requires_grad=True)
+
+                for testcase in test_cases:
+                    time = triton.testing.do_bench(lambda: testcase.function(a))[0]
+
+                    metric = metric_transform(a, time)
+
+                    key = f"B={B}, M={M}, K={K}"
+                    if key not in results:
+                        results[key] = {}
+
+                    results[key][testcase.name] = f"{metric:.1f}"
+
+            pretty_print(
+                results,
+                title=" ------------- Type: {} ------------- ".format(dtype),
+                units=unit,
+            )
+            _type = " fp16" if dtype == torch.float16 else " fp32"
+            pretty_plot(results, title + _type, unit, dash_key="pytorch")

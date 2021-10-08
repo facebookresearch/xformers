@@ -12,9 +12,8 @@ import torch
 import triton
 from triton.ops.blocksparse import matmul as blocksparse_matmul
 
-from xformers.benchmarks.utils import pretty_print
+from xformers.benchmarks.utils import TestCase, pretty_print
 from xformers.components.attention.core import SparseCS, _matmul_with_mask
-from xformers.triton.utils import TestCase
 
 
 def bench_matmul(dtype: torch.dtype, shapes):

@@ -3,10 +3,9 @@ from typing import Any, Dict, List, Optional
 import torch
 import triton
 
-from xformers.benchmarks.utils import pretty_plot, pretty_print
+from xformers.benchmarks.utils import TestCase, pretty_plot, pretty_print
 from xformers.components import Activation, build_activation
 from xformers.triton.fused_linear_layer import FusedLinear
-from xformers.triton.utils import TestCase
 
 SHAPES = [
     (8, 256, 512),

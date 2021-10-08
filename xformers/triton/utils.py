@@ -4,15 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from collections import namedtuple
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 import torch
 import triton
-
-from xformers.benchmarks.utils import pretty_plot, pretty_print
-
-TestCase = namedtuple("TestCase", ["function", "name"])
 
 _gpu_is_old: Optional[bool] = None
 
@@ -30,37 +25,6 @@ def next_power_of_2(n):
     n |= n >> 32
     n += 1
     return n
-
-
-def bench_functions(
-    test_cases: List[TestCase], shapes, metric_transform, unit, title=""
-):
-    device = torch.device("cuda")
-
-    for dtype in [torch.float16, torch.float32]:
-        results: Dict[str, Any] = {}
-
-        for B, M, K in shapes:
-            a = torch.rand(B, M, K, device=device, dtype=dtype, requires_grad=True)
-
-            for testcase in test_cases:
-                time = triton.testing.do_bench(lambda: testcase.function(a))[0]
-
-                metric = metric_transform(a, time)
-
-                key = f"B={B}, M={M}, K={K}"
-                if key not in results:
-                    results[key] = {}
-
-                results[key][testcase.name] = f"{metric:.1f}"
-
-        pretty_print(
-            results,
-            title=" ------------- Type: {} ------------- ".format(dtype),
-            units=unit,
-        )
-        _type = " fp16" if dtype == torch.float16 else " fp32"
-        pretty_plot(results, title + _type, unit, dash_key="pytorch")
 
 
 def gpu_capabilities_older_than_70() -> bool:
