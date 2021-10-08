@@ -4,5 +4,4 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from .mask_to_layout import mask_to_layout  # noqa
 from .timm_sparse_attention import TimmSparseAttention  # noqa
