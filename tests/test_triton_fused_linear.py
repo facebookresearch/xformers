@@ -25,7 +25,7 @@ if _triton_available:
         )
         _triton_available = False
 
-SHAPES = [(8, 384, 128), (8, 784, 512)]
+SHAPES = [(128, 256), (8, 384, 128), (8, 784, 512)]
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
@@ -38,8 +38,8 @@ def test_fused_matmul(shape, dtype):
     torch.random.manual_seed(0)
 
     # Raw fused matrix multiply first, to catch gross errors
-    a = torch.rand((shape[1], shape[2]), dtype=dtype, device="cuda")
-    b = torch.rand((shape[2], shape[1]), dtype=dtype, device="cuda")
+    a = torch.rand((shape[-2], shape[-1]), dtype=dtype, device="cuda")
+    b = torch.rand((shape[-1], shape[-2]), dtype=dtype, device="cuda")
 
     # Test that not passing any bias is fine
     res_torch = a @ b
@@ -47,7 +47,7 @@ def test_fused_matmul(shape, dtype):
     assert torch.allclose(res_torch, res_triton), "Vanilla matmul is broken"
 
     # Now test with a real FMA
-    c = -torch.rand((shape[1],), dtype=dtype, device="cuda")
+    c = -torch.rand((shape[-2],), dtype=dtype, device="cuda")
     res_torch = torch.addmm(c, a, b)
     res_triton, _ = fused_matmul(a, b.transpose(1, 0), c)
 
@@ -90,7 +90,7 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
     X = torch.normal(0, 1, size=shape, device="cuda")
     X.requires_grad_()
 
-    torch_linear = torch.nn.Linear(shape[2], shape[2] // 2, bias=bias).to("cuda")
+    torch_linear = torch.nn.Linear(shape[-1], shape[-1] // 2, bias=bias).to("cuda")
     torch_activation = build_activation(activation)
     torch_sequence = torch.nn.Sequential(torch_linear, torch_activation)
 
@@ -99,7 +99,7 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
     X_.requires_grad_()
 
     triton_fused_linear = FusedLinear(
-        shape[2], shape[2] // 2, bias=bias, activation=activation
+        shape[-1], shape[-1] // 2, bias=bias, activation=activation
     ).to("cuda")
 
     # Now check parity

@@ -190,7 +190,5 @@ def fused_matmul(
 
     if _should_squeeze:
         outputs.squeeze_()
-        if save_inputs:
-            act_inputs.squeeze_()
 
     return (outputs, act_inputs) if save_inputs else (outputs, None)
