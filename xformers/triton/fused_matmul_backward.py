@@ -187,6 +187,8 @@ def fused_matmul_backward(
     grad_weight = None
     if trainable_weight:
         grad_act_ = torch.reshape(grad_act, (grad_act.shape[0]*grad_act.shape[1], grad_act.shape[2])).transpose(1, 0)
+        if inputs.ndim == 2:
+            inputs = inputs.unsqueeze(0)
         inputs_ = torch.reshape(inputs, (inputs.shape[0]*inputs.shape[1], inputs.shape[2]))
         grad_weight = triton.ops.matmul(grad_act_, inputs_)
 
