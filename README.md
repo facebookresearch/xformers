@@ -61,6 +61,17 @@ You can find some more details in the [HOWTO](HOWTO.md), but in short:
 
 ### Sparse attention
 
+1. Setup
+As a reminder, these are built when you run `pip install -e .` and the CUDA buildchain is available (NVCC compiler). Re-building can for instance be done via `python3 setup.py clean && python3 setup.py develop`, so similarly wipe the `build` folder and redo a pip install -e.
+
+Some advices related to building these CUDA-specific components, tentatively adressing common pitfalls:
+
+- make sure that NVCC and the current CUDA runtime match. You can often change the CUDA runtime with `module unload cuda module load cuda/xx.x`, possibly also `nvcc`
+- make sure that the version of GCC that you're using matches the current NVCC capabilities
+- make sure that `TORCH_CUDA_ARCH_LIST` is set to the architures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;8.0;8.6"`
+
+2. Example usecase
+
 Below you will find a set of notebooks that will show you how you can use xFormers in your project
 
 - [Creating complex sparsity patterns with xFormers](docs/source/2d_attention_patterns.ipynb)
@@ -69,7 +80,6 @@ Below you will find a set of notebooks that will show you how you can use xForme
 ### Adding new models
 
 Models live in `xformers/models`. As a general rule, one should try to write them using the blocks present in `xformers/components` (or upstream PyTorch), so that ulterior improvements are propagated to each implementation.
-
 
 ## Bibliograpy
 

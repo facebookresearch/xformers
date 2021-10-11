@@ -12,7 +12,7 @@ import torch
 import triton
 from triton.ops.blocksparse import matmul as blocksparse_matmul
 
-from xformers.benchmarks.utils import TestCase, pretty_print
+from xformers.benchmarks.utils import TestCase, pretty_plot, pretty_print
 from xformers.components.attention.core import SparseCS, _matmul_with_mask
 
 
@@ -118,6 +118,14 @@ def bench_matmul(dtype: torch.dtype, shapes):
     pretty_print(
         results,
         title="\n ------------- Type: {} -------------".format(dtype),
+        units="TFlops/s",
+    )
+
+    pretty_plot(
+        results,
+        title=f"Sparse/Blocksparse throughput - {dtype}",
+        filename=f"blocksparse_{dtype}.png",
+        dash_key="pytorch",
         units="TFlops/s",
     )
 
