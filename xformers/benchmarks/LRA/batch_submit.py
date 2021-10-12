@@ -1,10 +1,23 @@
 import argparse
 import os
+from pathlib import Path
 
 from xformers.benchmarks.LRA.run_tasks import Task
 from xformers.components.attention import ATTENTION_REGISTRY
 
+
+def get_default_shared_folder() -> str:
+    checkpoint_paths = ["/checkpoint", "/checkpoints"]
+    for checkpoint_path in checkpoint_paths:
+        if Path(checkpoint_path).is_dir():
+            return checkpoint_path
+
+    return "."
+
+
 if __name__ == "__main__":
+    default_checkpoint_path = get_default_shared_folder()
+
     # Get the user requests
     parser = argparse.ArgumentParser(
         "Benchmark different attention mechanisms on various sequence lengths"
@@ -18,6 +31,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--partition", default="a100", type=str, help="Partition where to submit"
     )
+    parser.add_argument(
+        "-tb",
+        "--tb_path",
+        type=str,
+        help="Path to the tensorboard directory",
+        dest="tb_dir",
+        default=f"/{default_checkpoint_path}/{os.getenv('USER')}/xformers/tb",
+    )
     args = parser.parse_args()
 
     for attention in args.attentions:
@@ -27,4 +48,5 @@ if __name__ == "__main__":
                 + f" --attention {attention}  --task {task} --config {args.config_path}"
                 + f" --checkpoint_dir {args.checkpoint_path}/{attention}"
                 + f" --partition {args.partition}"
+                + f" --tb_dir {args.tb_dir}/{attention}"
             )
