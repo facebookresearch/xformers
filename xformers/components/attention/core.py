@@ -98,7 +98,7 @@ def _softmax(a: torch.Tensor) -> torch.Tensor:
         return torch.sparse.softmax(a, dim=a.ndim - 1)
 
     if _use_triton:
-        return triton_softmax(a)
+        return triton_softmax(a, mask=None)
     else:
         return torch.softmax(a, dim=a.ndim - 1)
 

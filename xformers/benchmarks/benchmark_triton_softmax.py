@@ -12,11 +12,12 @@ from xformers.triton.softmax import softmax as triton_softmax
 SHAPES = [
     (8, 384, 128),
     (8, 784, 512),
-    (4, 2048, 384),
-    (4, 3136, 1024),
-    (2, 1024, 2048),
+    (4, 1024, 768),
+    (4, 2048, 1024),
+    (2, 2048, 2048),
     (2, 2048, 4096),
     (2, 4096, 4096),
+    (1, 2048, 12288),
 ]
 
 
@@ -25,8 +26,17 @@ def pytorch_fw_bw(x):
     y.backward()
 
 
+def triton_causal_fw(x):
+    _ = triton_softmax(x, causal=True)
+
+
 def triton_fw_bw(x):
     y = torch.norm(triton_softmax(x))
+    y.backward()
+
+
+def triton_causal_fw_bw(x):
+    y = torch.norm(triton_softmax(x, causal=True))
     y.backward()
 
 
@@ -54,9 +64,10 @@ def to_gbs_fwbw(a, ms):
 bench_functions(
     [
         TestCase(lambda x: torch.softmax(x, dim=-1), "pytorch - fw"),
-        TestCase(triton_softmax, "triton  - fw"),
+        TestCase(triton_softmax, "triton - fw"),
+        TestCase(triton_causal_fw, "triton - causal - fw"),
         TestCase(lambda x: torch.log_softmax(x, dim=-1), "pytorch - log - fw"),
-        TestCase(triton_log_softmax, "triton  - log - fw"),
+        TestCase(triton_log_softmax, "triton - log - fw"),
     ],
     SHAPES,
     to_gbs_fw,
@@ -68,9 +79,10 @@ bench_functions(
 bench_functions(
     [
         TestCase(pytorch_fw_bw, "pytorch - fw+bw"),
-        TestCase(triton_fw_bw, "triton  - fw+bw"),
+        TestCase(triton_fw_bw, "triton - fw+bw"),
+        TestCase(triton_causal_fw_bw, "triton - causal - fw+bw"),
         TestCase(pytorch_log_fw_bw, "pytorch - log - fw+bw"),
-        TestCase(triton_log_fw_bw, "triton  - log - fw+bw"),
+        TestCase(triton_log_fw_bw, "triton - log - fw+bw"),
     ],
     SHAPES,
     to_gbs_fwbw,
