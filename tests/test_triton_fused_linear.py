@@ -16,7 +16,7 @@ if _triton_available:
     try:
         from xformers.triton import FusedLinear
         from xformers.triton.activations import get_triton_activation_kernel
-        from xformers.triton.fused_matmul import fused_matmul
+        from xformers.triton.k_fused_matmul import fused_matmul
         from xformers.triton.utils import gpu_capabilities_older_than_70
 
     except ImportError:

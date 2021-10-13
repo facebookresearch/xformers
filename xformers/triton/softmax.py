@@ -13,8 +13,6 @@ import triton
 import triton.language as tl
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from xformers.triton.utils import next_power_of_2
-
 # Credits: This is adapted from the vanilla Triton example. See https://openai.com/blog/triton/
 # and https://triton-lang.org/getting-started/tutorials/02-fused-softmax.html
 
@@ -29,8 +27,8 @@ class MaskType(str, Enum):
     MUL = "mul"
 
 
-def _get_depth(*args, **kwargs):
-    return next_power_of_2(args[-1])
+def get_depth(*args, **_):
+    return triton.next_power_of_2(args[-1])
 
 
 # autotune: Triton will test out these configurations, and automatically pick the fastest one.
@@ -47,7 +45,7 @@ def _get_depth(*args, **kwargs):
     ],
     key=["K"],
 )
-@triton.heuristics(values={"depth": _get_depth, "is_fp16": lambda *args, **_: args[0].dtype == torch.float16})
+@triton.heuristics(values={"depth": get_depth , "is_fp16": lambda *args, **_: args[0].dtype == torch.float16})
 @triton.jit
 def _softmax(
     Y, X, M,
@@ -255,7 +253,7 @@ class _softmax_triton(torch.autograd.Function):
             grad_out.shape[1],
         )
 
-        depth = next_power_of_2(out.shape[2])
+        depth = triton.next_power_of_2(out.shape[2])
         grad_in = torch.empty_like(out)  # torch.zeros is measurably slower, we'll zero out in the kernel
 
         assert grad_in.stride(2) == 1 and grad_out.stride(2) == 1 and out.stride(2) == 1

@@ -15,6 +15,7 @@ from xformers.components.attention.attention_patterns import block_sparsify_tens
 
 
 _triton_available = torch.cuda.is_available()
+_matmul_types = []
 
 if _triton_available:
     try:
@@ -30,10 +31,11 @@ if _triton_available:
 
         _triton_available = not gpu_capabilities_older_than_70()
         _matmul_types = ["sdd", "dsd", "dds"]
-    except (ImportError, ModuleNotFoundError):
+    except (ImportError, ModuleNotFoundError) as e:
+        import logging
+
+        logging.warning(f"Triton is not available: {e}. Some tests will be skipped")
         _triton_available = False
-else:
-    _matmul_types = []  # noqa
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")

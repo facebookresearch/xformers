@@ -15,8 +15,7 @@ from xformers.triton.activations import (
     get_triton_activation_bwd_kernel,
     get_triton_activation_kernel,
 )
-from xformers.triton.fused_matmul import fused_matmul
-from xformers.triton.fused_matmul_backward import fused_matmul_backward
+from xformers.triton.k_fused_matmul import fused_matmul, fused_matmul_backward
 
 # The following activations require their inputs to be saved to be able to compute their gradients
 _requires_bwd_inputs = [

@@ -34,3 +34,7 @@ my_runs.md
 
 # Triton cache
 .cache
+
+# JetBrains PyCharm IDE
+.idea/
+

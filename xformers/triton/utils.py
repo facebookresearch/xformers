@@ -12,21 +12,6 @@ import triton
 _gpu_is_old: Optional[bool] = None
 
 
-def next_power_of_2(n):
-    """Return the smallest power of 2 greater than or equal to n"""
-    assert n < 2 ** 32, "Depths beyond 2^32 are not yet handled by this kernel"
-
-    n -= 1
-    n |= n >> 1
-    n |= n >> 2
-    n |= n >> 4
-    n |= n >> 8
-    n |= n >> 16
-    n |= n >> 32
-    n += 1
-    return n
-
-
 def gpu_capabilities_older_than_70() -> bool:
     """Return True if the GPU's compute capability is older than SM70."""
     global _gpu_is_old

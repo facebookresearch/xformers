@@ -14,8 +14,10 @@ try:
     from xformers.triton import softmax as triton_softmax
 
     _triton_available = True
-except ImportError:
-    logging.warning("Triton is not available, some optimizations will not be tested.")
+except ImportError as e:
+    logging.warning(
+        f"Triton is not available, some optimizations will not be tested.\n{e}"
+    )
     _triton_available = False
 
 SHAPES = [
