@@ -28,7 +28,6 @@ VOCAB_SIZE = 32
 
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
-@pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 3])
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
@@ -45,7 +44,6 @@ def test_xformer_encoder_block(
     heads: int,
     attn_dropout: float,
     residual_dropout: float,
-    causal: bool,
     activation: Activation,
     layer_norm_style: str,
     device: torch.device,
@@ -56,7 +54,7 @@ def test_xformer_encoder_block(
     attention_config = {
         "name": attention_name,
         "dropout": attn_dropout,
-        "causal": causal,
+        "causal": False,
         "window_size": SEQ // 8 + 1,
         "seq_len": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
