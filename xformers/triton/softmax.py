@@ -19,7 +19,8 @@ from xformers.triton.utils import next_power_of_2
 # and https://triton-lang.org/getting-started/tutorials/02-fused-softmax.html
 
 
-_triton_register_overflow = False
+_triton_registered_overflow = False
+_triton_registered_warnings = False
 _triton_softmax_fp16_enabled = False  # NOTE: PyTorch keeps softmax as fp32
 
 
@@ -289,6 +290,8 @@ def softmax(x: torch.Tensor, mask: Optional[torch.Tensor] = None, causal: bool =
 
     Args:
         x: input tensor.
+        mask: optional mask, its application will be fused to the softmax computation if triton is used
+        causal: optional performance optimization, if triton is used and the attention is causal
 
     Returns:
         a Tensor of the same dimension and shape as the input with
@@ -320,23 +323,33 @@ def _softmax_dispatch(x: torch.Tensor, log: bool, mask: Optional[torch.Tensor], 
     # - there's enough data to make it faster than pytorch. This could change over time, Triton is improving
     # - there was no previous failure
 
-    global _triton_register_overflow
+    global _triton_registered_overflow
+    global _triton_registered_warnings
 
     try:
         if (
             torch.cuda.is_available()
             and x.is_cuda
-            and not _triton_register_overflow
+            and not _triton_registered_overflow
         ):
             return _softmax_triton.apply(x, mask, log, causal)
     except triton.code_gen.OutOfResources:
         # Catch cases where the current GPU does not have enough registers to hold a full tensor line
         # fallback to PyTorch's implementation, which streams the tensor in and out
-        _triton_register_overflow = True
+        _triton_registered_overflow = True
         logging.warning(
             "Triton softmax kernel register spillover caught."
             "Deactivating this kernel, please file an issue int the xFormers repository"
         )
 
-    assert not causal, "Causal is not handled with Pytorch softmax"  # NOTE: could be fixed
+    if causal and not _triton_registered_warnings:
+        logging.warning(
+            "Triton softmax could not be used. \
+                The causal flags is being passed but it does not provide any benefit with PyTorch softmax."
+        )
+        _triton_registered_warnings = True
+
+    if mask is not None:
+        x += mask
+
     return torch.softmax(x, dim=-1)

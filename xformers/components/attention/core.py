@@ -90,7 +90,7 @@ def _matmul_with_mask(
     return att
 
 
-def _softmax(a: torch.Tensor) -> torch.Tensor:
+def _softmax(a: torch.Tensor, causal: bool = False) -> torch.Tensor:
     if _is_sparse_available and isinstance(a, SparseCS):
         return a.softmax()
 
@@ -98,7 +98,7 @@ def _softmax(a: torch.Tensor) -> torch.Tensor:
         return torch.sparse.softmax(a, dim=a.ndim - 1)
 
     if _use_triton:
-        return triton_softmax(a, mask=None)
+        return triton_softmax(a, mask=None, causal=causal)
     else:
         return torch.softmax(a, dim=a.ndim - 1)
 
@@ -181,6 +181,7 @@ def scaled_query_key_softmax(
     q: torch.Tensor,
     k: torch.Tensor,
     att_mask: Optional[torch.Tensor],
+    causal: bool = False,
 ) -> torch.Tensor:
     # TODO assume we have (N, S, hs) instead of (B, nh, S, hs), with N = B x nh
     # this is needed due to limitations in sparse_bmm for now
@@ -193,7 +194,7 @@ def scaled_query_key_softmax(
         att = att + att_mask
 
     # Softmax to get the attention probabilities
-    att = _softmax(att)
+    att = _softmax(att, causal=causal)
     return att
 
 
@@ -203,6 +204,7 @@ def scaled_dot_product_attention(
     v: torch.Tensor,
     att_mask: Optional[torch.Tensor],
     dropout: Optional[torch.nn.Module] = None,
+    causal: bool = False,
 ) -> torch.Tensor:
     autocast_disabled = (
         _is_sparse_available
@@ -214,7 +216,7 @@ def scaled_dot_product_attention(
         if autocast_disabled:
             q, k, v = q.float(), k.float(), v.float()
 
-        att = scaled_query_key_softmax(q, k, att_mask=att_mask)
+        att = scaled_query_key_softmax(q, k, att_mask=att_mask, causal=causal)
 
         #  Optional dropout, could be part of the masking in the future
         att = _apply_dropout(att, dropout)

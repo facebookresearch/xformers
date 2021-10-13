@@ -56,10 +56,6 @@ class ScaledDotProduct(Attention):
 
         # Self-attend: (B x nh, S, hs) x (B x nh, hs, S) -> (B x nh, S, S)
         y = scaled_dot_product_attention(
-            q=q,
-            k=k,
-            v=v,
-            att_mask=att_mask,
-            dropout=self.attn_drop,
+            q=q, k=k, v=v, att_mask=att_mask, dropout=self.attn_drop, causal=self.causal
         )
         return y
