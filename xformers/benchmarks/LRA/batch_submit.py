@@ -46,7 +46,7 @@ if __name__ == "__main__":
             os.system(
                 "python3 run_with_submitit.py"
                 + f" --attention {attention}  --task {task} --config {args.config_path}"
-                + f" --checkpoint_dir {args.checkpoint_path}/{attention}"
+                + f" --checkpoint_dir {args.checkpoint_path}/{attention}/{task}"
                 + f" --partition {args.partition}"
-                + f" --tb_dir {args.tb_dir}/{attention}"
+                + f" --tb_dir {args.tb_dir}/{attention}/{task}"
             )
