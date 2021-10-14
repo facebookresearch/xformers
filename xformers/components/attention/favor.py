@@ -138,12 +138,10 @@ class FavorAttention(Attention):
             att_normalization = q_prime @ (
                 k_prime.transpose(-2, -1) @ torch.ones_like(v)
             )
-
-        # Actually compute attention
-        if self.causal:
-            att_raw, att_normalization = self._causal_attention(k_prime, q_prime, v)
-        else:
             att_raw = q_prime @ (k_prime.transpose(-2, -1) @ v)
+        else:
+            # Actually compute attention
+            att_raw, att_normalization = self._causal_attention(k_prime, q_prime, v)
 
         # Normalize
         att = att_raw / att_normalization

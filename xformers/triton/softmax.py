@@ -330,6 +330,7 @@ def _softmax_dispatch(x: torch.Tensor, log: bool, mask: Optional[torch.Tensor], 
             and x.is_cuda
             and not _triton_registered_overflow
         ):
+            # pyre-ignore[16]: Pyre is unable to find the `apply` method.
             return _softmax_triton.apply(x, mask, log, causal)
     except triton.code_gen.OutOfResources:
         # Catch cases where the current GPU does not have enough registers to hold a full tensor line

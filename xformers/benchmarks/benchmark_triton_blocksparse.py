@@ -64,6 +64,8 @@ def bench_matmul(dtype: torch.dtype, shapes):
             if mode == "sdd":
                 b_cs = b_cs.transpose(-2, -1)
 
+            # pyre-fixme[16]: TODO(T101400990): Pyre did not recognize the
+            # `SparseCS` import.
             sparse_cs_mask = SparseCS(
                 mask.flatten(start_dim=0, end_dim=1).contiguous(),
                 device=torch.device("cuda"),

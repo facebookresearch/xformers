@@ -85,6 +85,7 @@ class LinformerEncoderLayer(torch.nn.Module):
 
     @classmethod
     def from_config(cls, config: LinformerConfig):
+        # pyre-fixme[16]: `LinformerConfig` has no attribute `as_patchy_dict`.
         return cls(**config.as_patchy_dict())
 
 
@@ -165,6 +166,7 @@ class LinformerDecoderLayer(torch.nn.Module):
 
     @classmethod
     def from_config(cls, config: LinformerConfig):
+        # pyre-fixme[16]: `LinformerConfig` has no attribute `as_patchy_dict`.
         return cls(**config.as_patchy_dict())
 
 
@@ -237,4 +239,5 @@ class LinFormer(torch.nn.Module):
 
     @classmethod
     def from_config(cls, config: LinformerConfig):
+        # pyre-fixme[16]: `LinformerConfig` has no attribute `as_patchy_dict`.
         return cls(**config.as_patchy_dict())

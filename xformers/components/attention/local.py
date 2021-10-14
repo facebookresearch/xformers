@@ -102,7 +102,10 @@ class LocalAttention(Attention):
 
         # Take into account the optional user mask
         mask = (
-            self.attention_mask if att_mask is None else self.attention_mask & att_mask
+            self.attention_mask
+            if att_mask is None
+            # pyre-ignore[58]: Pyre mistakenly thinks `self.attention_mask` may be None.
+            else self.attention_mask & att_mask
         )
 
         return scaled_dot_product_attention(

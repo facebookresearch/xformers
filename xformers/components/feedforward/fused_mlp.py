@@ -44,6 +44,8 @@ if _use_triton:
             super().__init__()
 
             self.mlp = nn.Sequential(
+                # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize
+                # the `FusedLinear` import.
                 FusedLinear(
                     in_features=dim_model,
                     out_features=hidden_layer_multiplier * dim_model,

@@ -60,10 +60,11 @@ class SoftMaxPositiveEstimators(FeatureMap):
                     x.shape[-1], self.dim_feature_map, x.device
                 )
 
-            assert self.features is not None
+            features = self.features
+            assert features is not None
 
-            if self.features.dtype != x.dtype:
-                self.features = self.features.to(x.dtype)
+            if features.dtype != x.dtype:
+                self.features = features.to(x.dtype)
 
             self._iter_counter += 1
 

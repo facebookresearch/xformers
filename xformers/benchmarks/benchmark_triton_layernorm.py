@@ -36,6 +36,8 @@ def bench_layernorm(backward: bool):
             # Pytorch layer norn
             torch_layernorm = torch.nn.LayerNorm([K]).to(dtype=dtype, device=device)
 
+            # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize the
+            # `FusedLinearNorm` import.
             # Fused layernorm equivalent
             fused_layernorm = FusedLayerNorm([K]).to(dtype=dtype, device=device)
 
