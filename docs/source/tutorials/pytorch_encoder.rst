@@ -74,50 +74,7 @@ You can think of it as a declaration of the sequence of blocks that you would li
                     "attention": {
                         "name": "linformer", # whatever attention mechanism
                         "dropout": 0,
-                        "causal": True,
-                        "seq_len": 512,
-                    },
-                },
-                "feedforward_config": {
-                    "name": "MLP",
-                    "dim_model": 384,
-                    "dropout": 0,
-                    "activation": "relu",
-                    "hidden_layer_multiplier": 4,
-                },
-            }
-        }
-    ]
-
-    config = xFormerConfig(**my_config)  # This part of xFormers is entirely type checked and needs a config object, could be changed in the fututure
-    model = xFormer.from_config(config).to(device)
-
-    from xformers.factory.model_factory import xFormer, xFormerConfig
-
-    my_config =  [
-        # A list of the encoder or decoder blocks which constitute the Transformer.
-        # Note that a sequence of different encoder blocks can be used, same for decoders
-        {
-            "reversible": False,  # Optionally make these layers reversible, to save memory
-            "block_config": {
-                "block_type": "encoder",
-                "num_layers": 3,  # Optional, this means that this config will repeat N times
-                "dim_model": 384,
-                "layer_norm_style": "pre",  # Optional, pre/post
-                "position_encoding_config": {
-                    "name": "vocab",  # whatever position encodinhg makes sense
-                    "dim_model": 384,
-                    "seq_len": 1024,
-                    "vocab_size": 64,
-                },
-                "multi_head_config": {
-                    "num_heads": 4,
-                    "dim_model": 384,
-                    "residual_dropout": 0,
-                    "attention": {
-                        "name": "linformer", # whatever attention mechanism
-                        "dropout": 0,
-                        "causal": True,
+                        "causal": False,
                         "seq_len": 512,
                     },
                 },
