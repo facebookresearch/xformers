@@ -106,6 +106,7 @@ if _use_triton:
             k: torch.Tensor,
             v: torch.Tensor,
             att_mask: Optional[torch.Tensor] = None,
+            key_padding_mask: Optional[torch.Tensor] = None,
             scale: float = 1.0,
             *args,
             **kwargs,
@@ -142,7 +143,9 @@ if _use_triton:
             sparse_att_mat = self.sparse_softmax(
                 sparse_att_mat,
                 scale=scale,
+                key_padding_mask=key_padding_mask,
                 attn_mask=att_mask,
+                kp_mask_mode=MaskType.MUL,
                 attn_mask_mode=MaskType.MUL,
             )
 
