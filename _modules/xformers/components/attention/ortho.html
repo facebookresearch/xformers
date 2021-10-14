@@ -1,0 +1,697 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!-->
+<html class="no-js" lang="en">
+<!--<![endif]-->
+
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>xformers.components.attention.ortho | xFormers 0.0.1 documentation</title>
+  
+  <script src="../../../../_static/js/ga.js"></script>
+  <script src="../../../../_static/js/redirect.js"></script>
+  
+  <link rel="shortcut icon" href="../../../../_static/images/favicon.png" />
+  
+  
+  <link rel="canonical" href="https://fairinternal.github.io/xformers_modules/xformers/components/attention/ortho.html" />
+  
+  <meta property="og:title" content="xformers.components.attention.ortho | xFormers 0.0.1 documentation">
+  <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
+  <!--<meta property="twitter:image" content="https://mmf.sh/img/logo.png">-->
+  <meta name="twitter:image:alt" content="Image for xFormers">
+  <meta name="twitter:card" content="summary_large_image">
+  
+
+  
+  
+  
+
+  
+
+  <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="../../../../_static/css/customize.css" type="text/css" />
+  <link rel="index" title="Index" href="../../../../genindex.html" />
+  <link rel="search" title="Search" href="../../../../search.html" /> 
+
+  
+  <script src="../../../../_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="../../../../_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../../_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../../_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../../_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../../_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../../_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://github.com/facebookresearch/xformers"><img src="_static/logo.png"
+          style="padding-right: 90px;" width="280px" height="53px"></a>
+
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers"> xFormers Github</a>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+
+  </div>
+</div>
+
+
+<body class="pytorch-body">
+
+   
+
+  
+
+  <div class="table-of-contents-link-wrapper">
+    <span>Table of Contents</span>
+    <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+  </div>
+
+  <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+    <div class="pytorch-side-scroll">
+      <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+        <div class="pytorch-left-menu-search">
+          
+
+          
+          
+          
+          
+
+          
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        
+        
+        
+        
+        
+        <p><span class="caption-text">Index</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../what_is_xformers.html">What is xFormers?</a></li>
+</ul>
+<p><span class="caption-text">Components Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../components/index.html">API Reference</a></li>
+</ul>
+<p><span class="caption-text">Factory</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../factory/index.html">Factory</a></li>
+</ul>
+<p><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../tutorials/index.html">Tutorials</a></li>
+</ul>
+<p><span class="caption-text">Tools</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../triton/index.html">Triton components reference</a></li>
+</ul>
+<p><span class="caption-text">Tools</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../tools/index.html">Tools</a></li>
+</ul>
+
+        
+        
+      </div>
+    </div>
+  </nav>
+
+  <div class="pytorch-container">
+    <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+      <div class="pytorch-breadcrumbs-wrapper">
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="../../../../index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+          <li><a href="../../../index.html">Module code</a> &gt;</li>
+        
+          <li><a href="../attention.html">xformers.components.attention</a> &gt;</li>
+        
+      <li>xformers.components.attention.ortho</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+      </div>
+
+      <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+        Shortcuts
+      </div>
+    </div>
+
+    <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+      <div class="pytorch-content-left">
+
+        
+        
+          <div class="rst-content">
+            
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+                
+  <h1>Source code for xformers.components.attention.ortho</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># This source code is licensed under the BSD license found in the</span>
+<span class="c1"># LICENSE file in the root directory of this source tree.</span>
+
+
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span> <span class="nn">torch.autograd.profiler</span> <span class="k">as</span> <span class="nn">profiler</span>
+<span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
+<span class="kn">import</span> <span class="nn">torch.nn.functional</span> <span class="k">as</span> <span class="nn">Fn</span>
+
+<span class="kn">from</span> <span class="nn">xformers.components.attention</span> <span class="kn">import</span> <span class="n">Attention</span><span class="p">,</span> <span class="n">AttentionConfig</span><span class="p">,</span> <span class="n">register_attention</span>
+<span class="kn">from</span> <span class="nn">xformers.components.attention.core</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">scaled_dot_product_attention</span><span class="p">,</span>
+    <span class="n">scaled_query_key_softmax</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">LandmarkSelection</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+    <span class="n">Orthogonal</span> <span class="o">=</span> <span class="s2">&quot;orthogonal&quot;</span>
+    <span class="n">KMeans</span> <span class="o">=</span> <span class="s2">&quot;kmeans&quot;</span>
+    <span class="n">KMeans_Spherical</span> <span class="o">=</span> <span class="s2">&quot;kmeans_spherical&quot;</span>
+    <span class="n">Random</span> <span class="o">=</span> <span class="s2">&quot;random&quot;</span>
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">OrthoformerAttentionConfig</span><span class="p">(</span><span class="n">AttentionConfig</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    num_landmarks           Number of landmarks to use for softmax approximation.</span>
+<span class="sd">    subsample_fraction      Percentage of q_samples matrix to sample per iteration</span>
+<span class="sd">    landmark_selection      Landmark selection strategy</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">num_landmarks</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+    <span class="n">subsample_fraction</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
+    <span class="n">landmark_selection</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LandmarkSelection</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="OrthoFormerAttention"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.OrthoFormerAttention">[docs]</a><span class="nd">@register_attention</span><span class="p">(</span><span class="s2">&quot;orthoformer&quot;</span><span class="p">,</span> <span class="n">OrthoformerAttentionConfig</span><span class="p">)</span>
+<span class="k">class</span> <span class="nc">OrthoFormerAttention</span><span class="p">(</span><span class="n">Attention</span><span class="p">):</span>
+<div class="viewcode-block" id="OrthoFormerAttention.__init__"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.OrthoFormerAttention.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">dropout</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">num_landmarks</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span>
+        <span class="n">subsample_fraction</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">landmark_selection</span><span class="p">:</span> <span class="n">LandmarkSelection</span> <span class="o">=</span> <span class="n">LandmarkSelection</span><span class="o">.</span><span class="n">Orthogonal</span><span class="p">,</span>
+        <span class="o">*</span><span class="n">args</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Orthoformer_ attention mechanism.</span>
+<span class="sd">        ::</span>
+
+<span class="sd">            &quot;Keeping Your Eye on the Ball: Trajectory Attention in Video Transformers&quot;</span>
+<span class="sd">            Patrick, M., Campbell, D., Asano, Y., Misra, I., Metze, F., Feichtenhofer,</span>
+<span class="sd">            C., Vedaldi, A., Henriques, J. (2021)</span>
+
+<span class="sd">            Reference codebase: https://github.com/facebookresearch/Motionformer</span>
+
+<span class="sd">        .. _Orthoformer: https://arxiv.org/abs/2106.05392</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span> <span class="o">=</span> <span class="n">num_landmarks</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attn_drop</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="n">dropout</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">subsample_fraction</span> <span class="o">=</span> <span class="n">subsample_fraction</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">landmark_selection</span> <span class="o">=</span> <span class="n">landmark_selection</span></div>
+
+<div class="viewcode-block" id="OrthoFormerAttention.forward"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.OrthoFormerAttention.forward">[docs]</a>    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">k</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">v</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">att_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="n">args</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="n">N</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span> <span class="o">==</span> <span class="n">N</span><span class="p">:</span>
+            <span class="c1">#  Default attention</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">scaled_dot_product_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">att_mask</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">(),</span> <span class="n">profiler</span><span class="o">.</span><span class="n">record_function</span><span class="p">(</span><span class="s2">&quot;select landmarks&quot;</span><span class="p">):</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">landmark_selection</span> <span class="o">==</span> <span class="n">LandmarkSelection</span><span class="o">.</span><span class="n">Orthogonal</span><span class="p">:</span>
+                    <span class="n">landmarks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_orthogonal_landmarks</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">landmark_selection</span> <span class="o">==</span> <span class="n">LandmarkSelection</span><span class="o">.</span><span class="n">Random</span><span class="p">:</span>
+                    <span class="n">half_L</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span> <span class="o">//</span> <span class="mi">2</span>
+                    <span class="n">landmarks_q</span> <span class="o">=</span> <span class="n">q</span><span class="p">[:,</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">half_L</span><span class="p">,)),</span> <span class="p">:]</span>
+                    <span class="n">landmarks_k</span> <span class="o">=</span> <span class="n">k</span><span class="p">[:,</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">half_L</span><span class="p">,)),</span> <span class="p">:]</span>
+                    <span class="n">landmarks</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">landmarks_q</span><span class="p">,</span> <span class="n">landmarks_k</span><span class="p">),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">2</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">landmark_selection</span> <span class="o">==</span> <span class="n">LandmarkSelection</span><span class="o">.</span><span class="n">KMeans</span><span class="p">:</span>
+                    <span class="n">landmarks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cluster_landmarks</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">landmark_selection</span> <span class="o">==</span> <span class="n">LandmarkSelection</span><span class="o">.</span><span class="n">KMeans_Spherical</span><span class="p">:</span>
+                    <span class="n">landmarks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cluster_landmarks</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">spherical</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">att_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;Orthoformer: attention mask passed alongside with using landmarks to reduce dimensions. </span><span class="se">\</span>
+<span class="s2">                    The two are typically not compatible&quot;</span>
+                <span class="p">)</span>
+                <span class="c1"># FIXME: Should we still accept a mask in that case ?</span>
+                <span class="n">att_mask</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">kernel_1</span> <span class="o">=</span> <span class="n">scaled_query_key_softmax</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">landmarks</span><span class="p">,</span> <span class="n">att_mask</span><span class="p">)</span>
+            <span class="n">kernel_2</span> <span class="o">=</span> <span class="n">scaled_query_key_softmax</span><span class="p">(</span><span class="n">landmarks</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">att_mask</span><span class="p">)</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">kernel_1</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">kernel_2</span><span class="p">,</span> <span class="n">v</span><span class="p">))</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn_drop</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span></div>
+
+    <span class="k">def</span> <span class="nf">_cluster_landmarks</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">spherical</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">num_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">6</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Construct set of landmarks by recursively selecting new landmarks</span>
+<span class="sd">        that are maximally orthogonal to the existing set.</span>
+<span class="sd">        Returns near orthogonal landmarks with shape (B, M, D).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">subsample_fraction</span> <span class="o">&lt;</span> <span class="mf">1.0</span><span class="p">:</span>
+            <span class="n">num_samples</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+                <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">subsample_fraction</span> <span class="o">*</span> <span class="n">q</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">)),</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span>
+            <span class="p">)</span>  <span class="c1"># Need at least M/2 samples of queries and keys</span>
+            <span class="n">q_samples</span> <span class="o">=</span> <span class="n">q</span><span class="p">[:,</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">),</span> <span class="p">(</span><span class="n">num_samples</span><span class="p">,)),</span> <span class="p">:]</span>  <span class="c1"># (B, N, D)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">q_samples</span> <span class="o">=</span> <span class="n">q</span>  <span class="c1"># (B, N, D)</span>
+
+        <span class="k">if</span> <span class="n">spherical</span><span class="p">:</span>
+            <span class="n">q_samples_normalized</span> <span class="o">=</span> <span class="n">Fn</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span>
+                <span class="n">q_samples</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span>
+            <span class="p">)</span>  <span class="c1"># may need to change default eps to eps=1e-8 for mixed precision compatibility</span>
+            <span class="n">landmarks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kmeans_spherical</span><span class="p">(</span>
+                <span class="n">q_samples_normalized</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span><span class="p">,</span> <span class="n">num_iters</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">landmarks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kmeans</span><span class="p">(</span><span class="n">q_samples</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span><span class="p">,</span> <span class="n">num_iters</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">landmarks</span>  <span class="c1"># (B, M, D)</span>
+
+    <span class="k">def</span> <span class="nf">_kmeans</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">K</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">num_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Arguments:</span>
+<span class="sd">            x: (B, N, D)</span>
+<span class="sd">            K: number of clusters</span>
+<span class="sd">            num_iters: the number of kmeans updates</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">B</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">D</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="n">K</span> <span class="o">&lt;=</span> <span class="n">N</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span>
+            <span class="p">:,</span> <span class="n">torch</span><span class="o">.</span><span class="n">randperm</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="p">)[:</span><span class="n">K</span><span class="p">],</span> <span class="p">:</span>
+        <span class="p">]</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>  <span class="c1"># initialisation for the centroids</span>
+
+        <span class="k">with</span> <span class="n">profiler</span><span class="o">.</span><span class="n">record_function</span><span class="p">(</span><span class="s2">&quot;kmeans&quot;</span><span class="p">):</span>
+            <span class="n">x_i</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span>
+            <span class="n">c_j</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span>
+            <span class="n">counts</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">new_zeros</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">K</span><span class="p">)</span>
+            <span class="n">ones</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">new_ones</span><span class="p">((</span><span class="n">B</span><span class="p">,</span> <span class="n">N</span><span class="p">))</span>
+
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_iters</span><span class="p">):</span>
+                <span class="c1"># E step: assign points to the nearest cluster</span>
+                <span class="n">D_ij</span> <span class="o">=</span> <span class="p">((</span><span class="n">x_i</span> <span class="o">-</span> <span class="n">c_j</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (B, N, K) squared distances</span>
+                <span class="n">cl</span> <span class="o">=</span> <span class="n">D_ij</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span>
+                    <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">long</span><span class="p">()</span>  <span class="c1"># (B, N, 1) index of point to nearest cluster</span>
+
+                <span class="c1"># M step: update the centroids</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">scatter_add_</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="n">cl</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">D</span><span class="p">),</span> <span class="n">x</span><span class="p">)</span>  <span class="c1"># sum of points per cluster</span>
+                <span class="n">counts</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">1e-6</span><span class="p">)</span>  <span class="c1"># avoid div0</span>
+                <span class="n">counts</span><span class="o">.</span><span class="n">scatter_add_</span><span class="p">(</span>
+                    <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">cl</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ones</span>
+                <span class="p">)</span>  <span class="c1"># number of points per cluster</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">divide_</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>  <span class="c1"># compute the average</span>
+
+        <span class="k">return</span> <span class="n">c</span>
+
+    <span class="k">def</span> <span class="nf">_kmeans_spherical</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">K</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">num_iters</span><span class="o">=</span><span class="mi">10</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Arguments:</span>
+<span class="sd">            x: (B, N, D)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">B</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">D</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="n">K</span> <span class="o">&lt;=</span> <span class="n">N</span>
+
+        <span class="c1"># initialisation for the centroids</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="n">torch</span><span class="o">.</span><span class="n">randperm</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="p">)[:</span><span class="n">K</span><span class="p">],</span> <span class="p">:]</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+
+        <span class="k">with</span> <span class="n">profiler</span><span class="o">.</span><span class="n">record_function</span><span class="p">(</span><span class="s2">&quot;kmeans_spherical&quot;</span><span class="p">):</span>
+            <span class="n">counts</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">new_zeros</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">K</span><span class="p">)</span>
+            <span class="n">ones</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">new_ones</span><span class="p">((</span><span class="n">B</span><span class="p">,</span> <span class="n">N</span><span class="p">))</span>
+
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_iters</span><span class="p">):</span>
+                <span class="c1"># E step: assign points to the nearest cluster</span>
+                <span class="n">D_ij</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span>
+                    <span class="n">x</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+                <span class="p">)</span>  <span class="c1"># (B, N, K) cosine similarity</span>
+                <span class="n">cl</span> <span class="o">=</span> <span class="n">D_ij</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span>
+                    <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">long</span><span class="p">()</span>  <span class="c1"># (B, N, 1) index of point to nearest cluster</span>
+
+                <span class="c1"># M step: update the centroids</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">scatter_add_</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="n">cl</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">D</span><span class="p">),</span> <span class="n">x</span><span class="p">)</span>  <span class="c1"># sum of points per cluster</span>
+                <span class="n">counts</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">1e-6</span><span class="p">)</span>  <span class="c1"># avoid div0</span>
+                <span class="n">counts</span><span class="o">.</span><span class="n">scatter_add_</span><span class="p">(</span>
+                    <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">cl</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ones</span>
+                <span class="p">)</span>  <span class="c1"># number of points per cluster</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">divide_</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>  <span class="c1"># compute the average</span>
+                <span class="n">c</span> <span class="o">=</span> <span class="n">Fn</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># renormalise</span>
+        <span class="k">return</span> <span class="n">c</span>
+
+    <span class="k">def</span> <span class="nf">_compute_orthogonal_landmarks</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Construct set of landmarks by recursively selecting new landmarks</span>
+<span class="sd">        that are maximally orthogonal to the existing set.</span>
+<span class="sd">        Returns near orthogonal landmarks with shape (B, M, D).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">subsample_fraction</span> <span class="o">&lt;</span> <span class="mf">1.0</span><span class="p">:</span>
+            <span class="c1"># Need at least M samples of queries</span>
+            <span class="n">num_samples</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+                <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">subsample_fraction</span> <span class="o">*</span> <span class="n">q</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">)),</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span>
+            <span class="p">)</span>
+            <span class="n">q_samples</span> <span class="o">=</span> <span class="n">q</span><span class="p">[</span>
+                <span class="p">:,</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">),</span> <span class="p">(</span><span class="n">num_samples</span><span class="p">,),</span> <span class="n">device</span><span class="o">=</span><span class="n">q</span><span class="o">.</span><span class="n">device</span><span class="p">),</span> <span class="p">:</span>
+            <span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># (B, N, D)</span>
+            <span class="n">q_samples</span> <span class="o">=</span> <span class="n">q</span>
+
+        <span class="c1"># may need to change default eps to eps=1e-8 for mixed precision compatibility</span>
+        <span class="n">q_samples_normalized</span> <span class="o">=</span> <span class="n">Fn</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">q_samples</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">B</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">D</span> <span class="o">=</span> <span class="n">q_samples_normalized</span><span class="o">.</span><span class="n">shape</span>
+
+        <span class="n">selected_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">B</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">q_samples_normalized</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">landmark_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">selected_mask</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">q_samples_normalized</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span>
+
+        <span class="c1">#  Get initial random landmark</span>
+        <span class="n">random_idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span>
+            <span class="n">q_samples_normalized</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">),</span> <span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">q_samples_normalized</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span>
+        <span class="n">selected_mask</span><span class="o">.</span><span class="n">scatter_</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="n">random_idx</span><span class="p">,</span> <span class="n">landmark_mask</span><span class="p">)</span>
+
+        <span class="c1">#  Selected landmarks</span>
+        <span class="n">selected_landmarks</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span><span class="p">,</span> <span class="n">D</span><span class="p">),</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">q_samples_normalized</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">q_samples_normalized</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">selected_landmarks</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">q_samples_normalized</span><span class="p">[</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">q_samples_normalized</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">)),</span> <span class="n">random_idx</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="p">:</span>
+        <span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span>
+
+        <span class="c1"># Store computed cosine similarities</span>
+        <span class="n">cos_sims</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span><span class="p">),</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">q_samples_normalized</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">q_samples_normalized</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">M</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span><span class="p">):</span>
+            <span class="k">with</span> <span class="n">profiler</span><span class="o">.</span><span class="n">record_function</span><span class="p">(</span><span class="s2">&quot;find new landmark&quot;</span><span class="p">):</span>
+                <span class="c1">#  Calculate absolute cosine similarity between selected and unselected landmarks</span>
+                <span class="c1"># (B, N, D) * (B, D) -&gt; (B, N)</span>
+                <span class="n">cos_sims</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">M</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
+                    <span class="s2">&quot;b n d, b d -&gt; b n&quot;</span><span class="p">,</span>
+                    <span class="n">q_samples_normalized</span><span class="p">,</span>
+                    <span class="n">selected_landmarks</span><span class="p">[:,</span> <span class="n">M</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="p">:],</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span>
+
+                <span class="c1"># (B, N, M) cosine similarities of current set of landmarks wrt all queries and keys</span>
+                <span class="n">cos_sim_set</span> <span class="o">=</span> <span class="n">cos_sims</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">M</span><span class="p">]</span>
+
+                <span class="c1">#  Get orthogonal landmark: landmark with smallest absolute cosine similarity:</span>
+                <span class="c1"># set cosine similarity for already selected landmarks to &gt; 1</span>
+                <span class="n">cos_sim_set</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">M</span><span class="p">)[</span><span class="n">selected_mask</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">bool</span><span class="p">(),</span> <span class="p">:]</span> <span class="o">=</span> <span class="mi">10</span>
+
+                <span class="c1"># (B,) - want max for non</span>
+                <span class="n">selected_landmark_idx</span> <span class="o">=</span> <span class="n">cos_sim_set</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+                <span class="c1">#  Add most orthogonal landmark to selected landmarks:</span>
+                <span class="n">selected_landmarks</span><span class="p">[:,</span> <span class="n">M</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">q_samples_normalized</span><span class="p">[</span>
+                    <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">q_samples_normalized</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">)),</span> <span class="n">selected_landmark_idx</span><span class="p">,</span> <span class="p">:</span>
+                <span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span>
+
+                <span class="c1">#  Removed selected indices from non-selected mask:</span>
+                <span class="n">selected_mask</span><span class="o">.</span><span class="n">scatter_</span><span class="p">(</span>
+                    <span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="n">selected_landmark_idx</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">landmark_mask</span>
+                <span class="p">)</span>
+
+        <span class="c1"># (B, M, D)</span>
+        <span class="n">landmarks</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">masked_select</span><span class="p">(</span><span class="n">q_samples</span><span class="p">,</span> <span class="n">selected_mask</span><span class="o">.</span><span class="n">bool</span><span class="p">())</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
+            <span class="n">B</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">D</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">landmarks</span>  <span class="c1">#  (B, M, D)</span></div>
+</pre></div>
+
+              </article>
+              
+            </div>
+            <footer>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2021, Facebook AI Research.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+        </div>
+
+        <!-- <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              
+            </div>
+          </div>
+        </div> -->
+    </section>
+  </div>
+
+  
+
+
+  
+
+  
+  <script type="text/javascript" id="documentation_options" data-url_root="../../../../"
+    src="../../../../_static/documentation_options.js"></script>
+  <script src="../../../../_static/jquery.js"></script>
+  <script src="../../../../_static/underscore.js"></script>
+  <script src="../../../../_static/doctools.js"></script>
+  <script src="../../../../_static/language_data.js"></script>
+  
+
+  
+
+  <script type="text/javascript" src="../../../../_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="../../../../_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="../../../../_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+  <!-- Begin Footer -->
+
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://github.com/facebookresearch/xformers" class="footer-logo"></a>
+      </div>
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://github.com/facebookresearch/xformers">fairscale</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="">Resources</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers">Docs</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/issues" target="_blank">Github Issues</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    </div>
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../../../../_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://github.com/facebookresearch/xformers" aria-label="fairscale"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Docs</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Github</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="../../../../_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function () {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function (e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+
+</html>

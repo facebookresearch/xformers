@@ -233,8 +233,59 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
-  <section id="feedforward-mechanisms">
-<h1>Feedforward mechanisms<a class="headerlink" href="#feedforward-mechanisms" title="Permalink to this headline">¶</a></h1>
+  <section id="module-xformers.components.feedforward">
+<span id="feedforward-mechanisms"></span><h1>Feedforward mechanisms<a class="headerlink" href="#module-xformers.components.feedforward" title="Permalink to this headline">¶</a></h1>
+<dl class="py class">
+<dt id="xformers.components.feedforward.MLP">
+<em class="property">class </em><code class="sig-prename descclassname">xformers.components.feedforward.</code><code class="sig-name descname">MLP</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">dim_model</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span></em>, <em class="sig-param"><span class="n">dropout</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#float" title="(in Python v3.6)">float</a></span></em>, <em class="sig-param"><span class="n">activation</span><span class="p">:</span> <span class="n">xformers.components.activations.Activation</span></em>, <em class="sig-param"><span class="n">hidden_layer_multiplier</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/feedforward/mlp.html#MLP"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.feedforward.MLP" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">xformers.components.feedforward.base.Feedforward</span></code></p>
+<dl class="py method">
+<dt id="xformers.components.feedforward.MLP.forward">
+<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">inputs</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitda7bfd9 ))">torch.Tensor</a></span></em><span class="sig-paren">)</span> &#x2192; <a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitda7bfd9 ))">torch.Tensor</a><a class="reference internal" href="../_modules/xformers/components/feedforward/mlp.html#MLP.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.feedforward.MLP.forward" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt id="xformers.components.feedforward.MLP.training">
+<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.components.feedforward.MLP.training" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="xformers.components.feedforward.Feedforward">
+<em class="property">class </em><code class="sig-prename descclassname">xformers.components.feedforward.</code><code class="sig-name descname">Feedforward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">dim_model</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">dropout</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#float" title="(in Python v3.6)">float</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">activation</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span>xformers.components.activations.Activation<span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/feedforward/base.html#Feedforward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.feedforward.Feedforward" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">torch.nn.modules.module.Module</span></code></p>
+<dl class="py method">
+<dt id="xformers.components.feedforward.Feedforward.from_config">
+<em class="property">classmethod </em><code class="sig-name descname">from_config</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n">xformers.components.feedforward.base.FeedforwardConfig</span></em><span class="sig-paren">)</span> &#x2192; xformers.components.feedforward.base.Feedforward<a class="reference internal" href="../_modules/xformers/components/feedforward/base.html#Feedforward.from_config"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.feedforward.Feedforward.from_config" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt id="xformers.components.feedforward.Feedforward.training">
+<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.components.feedforward.Feedforward.training" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt id="xformers.components.feedforward.build_feedforward">
+<code class="sig-prename descclassname">xformers.components.feedforward.</code><code class="sig-name descname">build_feedforward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n">Union<span class="p">[</span>Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span><span class="p">, </span>xformers.components.feedforward.base.FeedforwardConfig<span class="p">]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/feedforward.html#build_feedforward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.feedforward.build_feedforward" title="Permalink to this definition">¶</a></dt>
+<dd><p>Builds a feedforward from a config.</p>
+<p>This assumes a ‘name’ key in the config which is used to determine what
+attention class to instantiate. For instance, a config <cite>{“name”: “my_feedforward”,
+“foo”: “bar”}</cite> will find a class that was registered as “my_feedforward”
+(see <a class="reference internal" href="#xformers.components.feedforward.register_feedforward" title="xformers.components.feedforward.register_feedforward"><code class="xref py py-func docutils literal notranslate"><span class="pre">register_feedforward()</span></code></a>) and call .from_config on it.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt id="xformers.components.feedforward.register_feedforward">
+<code class="sig-prename descclassname">xformers.components.feedforward.</code><code class="sig-name descname">register_feedforward</code><span class="sig-paren">(</span><em class="sig-param">name: str</em>, <em class="sig-param">config: Any = &lt;class 'xformers.components.feedforward.base.FeedforwardConfig'&gt;</em><span class="sig-paren">)</span><a class="headerlink" href="#xformers.components.feedforward.register_feedforward" title="Permalink to this definition">¶</a></dt>
+<dd><p>Registers a subclass.</p>
+<p>This decorator allows xFormers to instantiate a given subclass
+from a configuration file, even if the class itself is not part of the
+xFormers library.</p>
+</dd></dl>
+
 </section>
 
 

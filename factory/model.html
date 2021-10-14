@@ -233,8 +233,69 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
-  <section id="model-factory">
-<h1>Model factory<a class="headerlink" href="#model-factory" title="Permalink to this headline">¶</a></h1>
+  <section id="module-xformers.factory.model_factory">
+<span id="model-factory"></span><h1>Model factory<a class="headerlink" href="#module-xformers.factory.model_factory" title="Permalink to this headline">¶</a></h1>
+<dl class="py class">
+<dt id="xformers.factory.model_factory.xFormerStackConfig">
+<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.model_factory.</code><code class="sig-name descname">xFormerStackConfig</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">block_config</span><span class="p">:</span> <span class="n">Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span></span></em>, <em class="sig-param"><span class="n">reversible</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></span> <span class="o">=</span> <span class="default_value">False</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/model_factory.html#xFormerStackConfig"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.model_factory.xFormerStackConfig" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#object" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>A stack is defined by the definition of a given block, and an optional repetition factor</p>
+<dl class="py attribute">
+<dt id="xformers.factory.model_factory.xFormerStackConfig.block_config">
+<code class="sig-name descname">block_config</code><em class="property">: Union<span class="p">[</span><a class="reference internal" href="block.html#xformers.factory.block_factory.xFormerEncoderConfig" title="xformers.factory.block_factory.xFormerEncoderConfig">xformers.factory.block_factory.xFormerEncoderConfig</a><span class="p">, </span><a class="reference internal" href="block.html#xformers.factory.block_factory.xFormerDecoderConfig" title="xformers.factory.block_factory.xFormerDecoderConfig">xformers.factory.block_factory.xFormerDecoderConfig</a><span class="p">]</span></em><a class="headerlink" href="#xformers.factory.model_factory.xFormerStackConfig.block_config" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt id="xformers.factory.model_factory.xFormerStackConfig.num_layers">
+<code class="sig-name descname">num_layers</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></em><a class="headerlink" href="#xformers.factory.model_factory.xFormerStackConfig.num_layers" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt id="xformers.factory.model_factory.xFormerStackConfig.reversible">
+<code class="sig-name descname">reversible</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.factory.model_factory.xFormerStackConfig.reversible" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="xformers.factory.model_factory.xFormerConfig">
+<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.model_factory.</code><code class="sig-name descname">xFormerConfig</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">stack_configs</span><span class="p">:</span> <span class="n">List<span class="p">[</span>Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span><span class="p">]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/model_factory.html#xFormerConfig"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.model_factory.xFormerConfig" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#object" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<dl class="py attribute">
+<dt id="xformers.factory.model_factory.xFormerConfig.stack_configs">
+<code class="sig-name descname">stack_configs</code><em class="property">: List<span class="p">[</span><a class="reference internal" href="#xformers.factory.model_factory.xFormerStackConfig" title="xformers.factory.model_factory.xFormerStackConfig">xformers.factory.model_factory.xFormerStackConfig</a><span class="p">]</span></em><a class="headerlink" href="#xformers.factory.model_factory.xFormerConfig.stack_configs" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="xformers.factory.model_factory.xFormer">
+<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.model_factory.</code><code class="sig-name descname">xFormer</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">stack_configs</span><span class="p">:</span> <span class="n">List<span class="p">[</span><a class="reference internal" href="#xformers.factory.model_factory.xFormerStackConfig" title="xformers.factory.model_factory.xFormerStackConfig">xformers.factory.model_factory.xFormerStackConfig</a><span class="p">]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/model_factory.html#xFormer"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.model_factory.xFormer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">torch.nn.modules.module.Module</span></code></p>
+<dl class="py method">
+<dt id="xformers.factory.model_factory.xFormer.__init__">
+<code class="sig-name descname">__init__</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">stack_configs</span><span class="p">:</span> <span class="n">List<span class="p">[</span><a class="reference internal" href="#xformers.factory.model_factory.xFormerStackConfig" title="xformers.factory.model_factory.xFormerStackConfig">xformers.factory.model_factory.xFormerStackConfig</a><span class="p">]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/model_factory.html#xFormer.__init__"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.model_factory.xFormer.__init__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Given a serialized configuration, generate the corresponding model.
+This is only a helper and can easily be bypassed</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="xformers.factory.model_factory.xFormer.training">
+<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.factory.model_factory.xFormer.training" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt id="xformers.factory.model_factory.xFormer.from_config">
+<em class="property">classmethod </em><code class="sig-name descname">from_config</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n"><a class="reference internal" href="#xformers.factory.model_factory.xFormerConfig" title="xformers.factory.model_factory.xFormerConfig">xformers.factory.model_factory.xFormerConfig</a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/model_factory.html#xFormer.from_config"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.model_factory.xFormer.from_config" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt id="xformers.factory.model_factory.xFormer.forward">
+<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">src</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitda7bfd9 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">tgt</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitda7bfd9 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">encoder_input_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitda7bfd9 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">decoder_input_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitda7bfd9 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em><span class="sig-paren">)</span> &#x2192; Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitda7bfd9 ))">torch.Tensor</a><span class="p">]</span><a class="reference internal" href="../_modules/xformers/factory/model_factory.html#xFormer.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.model_factory.xFormer.forward" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
 </section>
 
 
