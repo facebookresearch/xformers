@@ -40,6 +40,8 @@ def get_metrics_transform(
     if backward:
         flop *= 2
 
+        # fixme: add weight + bias, but probably negligible
+
     # optional weight on top
     if b is not None:
         flop += b.numel()
@@ -58,7 +60,7 @@ def bench_linear(activations: List[Optional[Activation]]):
         torch.float16,
         torch.float32,
     ]:
-        for backward in [False, True]:
+        for backward in [True, False]:
 
             results: Dict[str, Any] = {}
 

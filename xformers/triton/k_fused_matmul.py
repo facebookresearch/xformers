@@ -9,14 +9,29 @@ import torch
 import triton
 import triton.language as tl
 
-from xformers.triton.configs_matmul import kernel_config
-
 # CREDITS: Initially inspired by the Triton tutorial on matrix multiplications
+
+_fuse_bias_gradient_computation = (
+    False  # depending on the matrix sizes, this is not always beneficial
+)
 
 
 # fmt: off
 @triton.autotune(
-    configs=kernel_config,
+    configs=[
+        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 128}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 64}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 256}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 128}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 64}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 64 , 'BLOCK_N': 64}, num_stages=5, num_warps=2),
+        triton.Config({'BLOCK_M': 64 , 'BLOCK_N': 32}, num_stages=5, num_warps=2),
+        triton.Config({'BLOCK_M': 32 , 'BLOCK_N': 64}, num_stages=5, num_warps=2),
+        triton.Config({'BLOCK_M': 64 , 'BLOCK_N': 128}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 64 , 'BLOCK_N': 256}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 128 , 'BLOCK_N': 256}, num_stages=3, num_warps=8)
+    ],
     key=["M", "N", "K"],
 )
 @triton.jit
@@ -28,10 +43,9 @@ def kernel_fma(
     # The stride variables represent how much to increase the ptr by when moving by 1
     # element in a particular dimension. E.g. stride_am is how much to increase a_ptr
     # by to get the element one row down (A has M rows)
-    stride_db,  stride_dm, stride_dn,
-    stride_ab, stride_am, stride_ak,
+    stride_dm, stride_am,
     stride_wn, stride_wk,
-    stride_ib,  stride_im, stride_in,
+    stride_im,
     # Meta-parameters
     **META,
 ):
@@ -40,21 +54,21 @@ def kernel_fma(
     """
     Kernel for computing D = activation(A x W + C)
 
-    - A has shape (B, M, K)
+    - A has shape (M, K)
     - W has shape (K, N)
     - C has shape (N,)
-    - D has shape (B, M, N)
-    - In (optional) has shape (B, M, N)
+    - D has shape (M, N)
+    - In (optional) has shape (M, N)
 
     'In' optionally saves the A x W + C intermediate for backward computations
     """
 
     # extract metaparameters
-    BLOCK_M, GROUP_M = META["BLOCK_ROW"], META["GROUP_M"]
-    BLOCK_N, BLOCK_K = META["BLOCK_COL"], META["BLOCK_K"]
+    BLOCK_M, GROUP_M = META["BLOCK_M"], META["GROUP_M"]
+    BLOCK_N, BLOCK_K = META["BLOCK_N"], META["BLOCK_K"]
 
     # programs are grouped together to improve L2 hit rate
-    pid, batch_id = tl.program_id(axis=0), tl.program_id(axis=1)
+    pid = tl.program_id(axis=0)
 
     num_pid_m = tl.cdiv(M, BLOCK_M)  # number of program ids along the M axis
     num_pid_n = tl.cdiv(N, BLOCK_N)  # number of programs ids along the N axis
@@ -83,9 +97,9 @@ def kernel_fma(
 
     # the memory addresses of elements in the first block of
     # A and W can be computed using numpy-style broadcasting
-    D += rm[:, None] * stride_dm + rn[None, :] * stride_dn + batch_id * stride_db
-    A += rm[:, None] * stride_am + rk[None, :] * stride_ak + batch_id * stride_ab
-    W += rk[:, None] * stride_wk + rn[None, :] * stride_wn
+    D += rm[:, None] * stride_dm + rn[None, :]
+    A += rm[:, None] * stride_am + rk[None, :]
+    W += rn[None, :] * stride_wn + rk[:, None] * stride_wk
 
     # initialize and iteratively update accumulator
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
@@ -95,19 +109,20 @@ def kernel_fma(
         acc += bias[None, :]
 
     for _ in range(K, 0, -BLOCK_K):
-        # block level matrix multiplication
-        a = tl.load(A)
-        w = tl.load(W)
-        acc += tl.dot(a, w).to(tl.float32)
-
-        # increment pointers so that the next blocks of A and B
+        # load then increment pointers so that the next blocks of A and B
         # are loaded during the next iteration
-        A += BLOCK_K * stride_ak
+        a = tl.load(A, mask=(rm[:, None] < M) & (rk[None, :] < K))
+        A += BLOCK_K
+
+        w = tl.load(W, mask=(rn[None, :] < N) & (rk[:, None] < K))
         W += BLOCK_K * stride_wk
+
+        # block level matrix multiplication
+        acc += tl.dot(a, w).to(tl.float32)
 
     # optional: save the activation inputs
     if META["SAVE_ACT_INPUTS"]:
-        In += rm[:, None] * stride_im + rn[None, :] * stride_in + batch_id * stride_ib
+        In += rm[:, None] * stride_im + rn[None, :]
         tl.store(In, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
 
     # optional: fused activation (while the data is in shared memory)
@@ -116,6 +131,18 @@ def kernel_fma(
 
     # write back result
     tl.store(D, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
+
+
+def _sanitize_inputs(x, weight, bias):
+    assert (
+        x.shape[1] == weight.shape[1]
+    ), f"Incompatible dimensions in between inputs and weight, {x.shape} - {weight.shape}"
+    assert bias is None or bias.is_contiguous()
+    assert (
+        bias is None or bias.shape[0] == weight.shape[0]
+    ), "Incompatible dimensions in between weight and bias"
+
+    assert x.is_contiguous(), "A contiguous input is required"
 
 
 # Activation needs to be a triton kernel
@@ -131,51 +158,35 @@ def fused_matmul(
     This wrapper kicks the `kernel_fma` Triton kernel
     """
 
-    if x.ndim == 2:
-        x = x.unsqueeze(0)
-        _should_squeeze = True
-    else:
-        _should_squeeze = False
+    # Fold the batch dimension, if any
+    x_ = x.flatten(0, 1) if x.ndim == 3 else x
+    _sanitize_inputs(x_, weight, bias)
 
-    assert (
-        x.shape[2] == weight.shape[1]
-    ), f"Incompatible dimensions in between inputs and weight, {x.shape} - {weight.shape}"
-    assert bias is None or bias.is_contiguous()
-    assert (
-        bias is None or bias.shape[0] == weight.shape[0]
-    ), "Incompatible dimensions in between weight and bias"
-
-    B, M, K = x.shape
+    M, K = x_.shape
     N, K = weight.shape
 
-    # FIXME: @lefaudeux
-    assert (
-        K % 32 == 0
-    ), "We don't check memory-out-of-bounds with K so K must be divisible by BLOCK_K"
-
-    outputs = torch.empty((B, M, N), device=x.device, dtype=x.dtype)
+    outputs = torch.empty((M, N), device=x.device, dtype=x.dtype)
     act_inputs = torch.empty_like(outputs) if save_inputs else outputs
 
     # 1D launch kernel where each block gets its own program.
     def grid(META):
         return (
-            triton.cdiv(M, META["BLOCK_ROW"]) * triton.cdiv(N, META["BLOCK_COL"]),
-            B,
+            triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),
         )
 
     # fmt: off
     kernel_fma[grid](
         # data ptrs
-        outputs, x, weight,
+        outputs, x_, weight,
         bias if bias is not None else x,  # auto skip bias if not present
         act_inputs,
         # shapes
         M, N, K,
         # strides
-        outputs.stride(0), outputs.stride(1), outputs.stride(2),
-        x.stride(0), x.stride(1), x.stride(2),
+        outputs.stride(0),
+        x_.stride(0),
         weight.stride(0), weight.stride(1),
-        act_inputs.stride(0), act_inputs.stride(1), act_inputs.stride(2),
+        act_inputs.stride(0),
         # optional fused activation
         ACTIVATION=activation,
         # optional fused bias
@@ -188,50 +199,67 @@ def fused_matmul(
     )
     # fmt: on
 
-    if _should_squeeze:
-        outputs.squeeze_()
+    if x.ndim == 3:
+        outputs = outputs.reshape(x.shape[0], x.shape[1], N)
 
     return (outputs, act_inputs) if save_inputs else (outputs, None)
 
 
 # fmt: off
 @triton.autotune(
-    configs=kernel_config,
-    key=["M", "N", "K"],
+    configs=[
+        triton.Config({'BLOCK_M': 128, 'BLOCK_K': 256}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_M': 256, 'BLOCK_K': 128}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_M': 256, 'BLOCK_K': 64}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 64 , 'BLOCK_K': 256}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_K': 128}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_K': 64}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 64 , 'BLOCK_K': 128}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 64 , 'BLOCK_K': 32}, num_stages=5, num_warps=2),
+        triton.Config({'BLOCK_M': 32 , 'BLOCK_K': 64}, num_stages=5, num_warps=2),
+    ],
+    key=['M', 'N', 'K'],
 )
 @triton.jit
-def kernel_fma_grad_in(
+def kernel_grad_inputs(
     # Pointers to all the tensors
-    GRAD_IN, GRAD_ACT, ACT_IN, GRAD_OUT, W,
+    GRAD_IN, GRAD_ACT, GRAD_OUT, ACT_IN, WEIGHT,
     # Tensor dimensions
     M, N, K,
     # strides for all the gradients
-    stride_gib, stride_gim, stride_gik,
-    stride_gab, stride_gam, stride_gan,
-    stride_gob, stride_gom, stride_gon,
+    stride_gim, stride_gam, stride_gom,
     # strides for the extra data
-    stride_aib, stride_aim, stride_ain,
-    stride_wn, stride_wk,
+    stride_aim, stride_wn, stride_wk,
     # Meta-parameters
     **META,
 ):
     # fmt: on
     """
-    Kernel for computing `grad_out = grad_in * activation_grad(inputs) @ W^T`
-    - grad_out has shape (B, M, N)
-    - W has shape (K, N)
-    - grad_in has shape (B, M, K)
-    - X has shape (B, M, K)
+    Compute the input gradients.
+
+    Shapes:
+        GRAD_IN     (M, K)
+        GRAD_ACT    (M, N)
+        GRAD_OUT    (M, N)
+        WEIGHT      (K, N)
+        ACT_IN      (M, N)
+
+    The main matmul is
+        GRAD_IN <- GRAD_OUT x WEIGHT^T
+        (M, K)  <- (M, N) x (N, K)
+        we're accumulating on N
     """
+
     # extract metaparameters
-    BLOCK_M, GROUP_M = META["BLOCK_ROW"], META["GROUP_M"]
-    BLOCK_N, BLOCK_K = META["BLOCK_N"], META["BLOCK_COL"]
+    BLOCK_M, GROUP_M = META["BLOCK_M"], META["GROUP_M"]
+    BLOCK_N, BLOCK_K = META["BLOCK_N"], META["BLOCK_K"]
 
     # programs are grouped together to improve L2 hit rate
-    pid, batch_id = tl.program_id(axis=0), tl.program_id(axis=1)
+    pid = tl.program_id(axis=0)
 
-    num_pid_m = tl.cdiv(M, BLOCK_M)  # number of program ids along the M axis
-    num_pid_k = tl.cdiv(K, BLOCK_K)  # number of programs ids along the N axis
+    num_pid_m = tl.cdiv(M, BLOCK_M)
+    num_pid_k = tl.cdiv(K, BLOCK_K)
     num_pid_in_group = GROUP_M * num_pid_k  # number of programs in group
     group_id = pid // num_pid_in_group  # id of the group this program is in
     first_pid_m = group_id * GROUP_M  # row-id of the first program in the group
@@ -251,48 +279,163 @@ def kernel_fma_grad_in(
     rn = tl.arange(0, BLOCK_N)
 
     # memory blocks can be computed using numpy-style broadcasting
-    GRAD_OUT += rm[:, None] * stride_gom + rn[None, :] * stride_gon + batch_id * stride_gob
-    GRAD_ACT += rm[:, None] * stride_gam + rn[None, :] * stride_gan + batch_id * stride_gab
-    ACT_IN += rm[:, None] * stride_aim + rn[None, :] * stride_ain + batch_id * stride_aib
-    GRAD_IN += rm[:, None] * stride_gim + rk[None, :] * stride_gik + batch_id * stride_gib
-    W += rn[:, None] * stride_wn + rk[None, :] * stride_wk
+    grad_out_ptrs = GRAD_OUT + rm[:, None] * stride_gom + rn[None, :]
+    grad_act_ptrs = GRAD_ACT + rm[:, None] * stride_gam + rn[None, :]
+    act_in_ptrs = ACT_IN + rm[:, None] * stride_aim + rn[None, :]
+    grad_in_ptrs = GRAD_IN + rm[:, None] * stride_gim + rk[None, :]
+    w_ptrs = WEIGHT + rn[:, None] * stride_wn + rk[None, :] * stride_wk
 
     # initialize and iteratively update accumulator
-    grad_in = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
+    grad_in_acc = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
     act_grad_fn = META["ACTIVATION_GRAD"]
 
+    mask_mk = (rm[:, None] < M) & (rk[None, :] < K)
+
     for _ in range(N, 0, -BLOCK_N):
-        grad_out = tl.load(GRAD_OUT)  # BLOCK_M x BLOCK_N
-        w = tl.load(W)  # BLOCK_N x BLOCK_K
+        grad_out = tl.load(grad_out_ptrs)
+        grad_out_ptrs += BLOCK_N
+
+        w = tl.load(w_ptrs)
+        w_ptrs += BLOCK_N * stride_wn
 
         # optional fused activation gradient (while the data is in shared memory)
         if META["ACTIVATION_GRAD"]:
             if META["ACTIVATION_GRAD_REQ_INPUTS"]:
                 # This activation requires its inputs
-                act_input = tl.load(ACT_IN)
+                act_input = tl.load(act_in_ptrs)
+                act_in_ptrs += BLOCK_N
+
                 grad_act = act_grad_fn(act_input)
-                ACT_IN += BLOCK_N * stride_ain
             else:
                 # Save some time, we can reuse the outputs to know about the grad
                 grad_act = act_grad_fn(grad_out)
 
             grad_out *= grad_act.to(grad_out.dtype)
 
-        # store grad_act as an intermediate, will be used for grad/weight and grad/bias
+        # store grad_act as an intermediate, will be used for grad/weight
         if META["SAVE_ACT_GRAD"]:
-            tl.store(GRAD_ACT, grad_out)
+            tl.store(grad_act_ptrs, grad_out)
+            grad_act_ptrs += BLOCK_N
 
         # gradient #1: input with respect to outputs
         # grad_in is grad_out scaled by the (transposed) weight
-        grad_in += tl.dot(grad_out, w)
-
-        # increment pointers so that the next blocks of A and B are loaded during the next iteration
-        GRAD_OUT += BLOCK_N * stride_gon
-        GRAD_ACT += BLOCK_N * stride_gan
-        W += BLOCK_N * stride_wn
+        grad_in_acc += tl.dot(grad_out, w)
 
     # write back result
-    tl.store(GRAD_IN, grad_in, mask=(rm[:, None] < M) & (rk[None, :] < K))  # type promotion or downgrade is automatic
+    # automatic type promotion/downgrade
+    tl.store(grad_in_ptrs, grad_in_acc, mask=mask_mk)
+
+
+# fmt: off
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_N': 256, 'BLOCK_K': 256}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_N': 128, 'BLOCK_K': 256}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_N': 256, 'BLOCK_K': 128}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_N': 256, 'BLOCK_K': 64}, num_stages=4, num_warps=8),
+        triton.Config({'BLOCK_N': 64 , 'BLOCK_K': 256}, num_stages=4, num_warps=8),
+        triton.Config({'BLOCK_N': 128, 'BLOCK_K': 128}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 128, 'BLOCK_K': 64}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 64 , 'BLOCK_K': 128}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 128, 'BLOCK_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 64 , 'BLOCK_K': 64}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 64 , 'BLOCK_K': 32}, num_stages=5, num_warps=2),
+        triton.Config({'BLOCK_N': 32 , 'BLOCK_K': 64}, num_stages=5, num_warps=2),
+        triton.Config({'BLOCK_N': 32 , 'BLOCK_K': 32}, num_stages=5, num_warps=2),
+    ],
+    key=['M', 'N', 'K'],
+)
+@triton.jit
+def kernel_grad_bias_weight(
+    # Pointers to all the tensors
+    GRAD_BIAS, GRAD_WEIGHT, GRAD_ACT, INPUTS,
+    # Tensor dimensions
+    M, N, K,
+    # strides for all the gradients & inputs
+    stride_gwn, stride_gam, stride_im,
+    # Meta-parameters
+    **META,
+):
+    # fmt: on
+    """
+    Compute the grad and weight gradients.
+
+    Shapes:
+        INPUTS      (M, K)
+        GRAD_ACT    (M, N)
+        GRAD_BIAS   (N)
+        GRAD_WEIGHT (N, K)
+
+    The main matmul is
+        GRAD_WEIGHT <- GRAD_ACT^T x INPUTS
+        (N, K)      <- (N, M)     x (M, K)
+        meaning that we consolidate over M
+    """
+
+    # extract metaparameters
+    BLOCK_M, GROUP_N = META["BLOCK_M"], META["GROUP_N"]
+    BLOCK_N, BLOCK_K = META["BLOCK_N"], META["BLOCK_K"]
+
+    # get the kernel ids, aka where are we ?
+    pid = tl.program_id(axis=0)
+    num_pid_n = tl.cdiv(N, BLOCK_N)
+    num_pid_k = tl.cdiv(K, BLOCK_K)
+    num_pid_in_group = GROUP_N * num_pid_k  # number of programs in group
+    group_id = pid // num_pid_in_group  # id of the group this program is in
+    first_pid_n = group_id * GROUP_N  # row-id of the first program in the group
+    GROUP_N = min(
+        num_pid_n - first_pid_n, GROUP_N
+    )  # if `num_pid_m` isn't divisible by `GROUP_M`, the last group is smaller
+
+    # *within groups*, programs are ordered in a column-major order
+    pid_n = first_pid_n + (pid % GROUP_N)  # row-id of the program in the *launch grid*
+    pid_k = (
+        pid % num_pid_in_group
+    ) // GROUP_N  # col-id of the program in the *launch grid*
+
+    # memory ranges
+    rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    rk = pid_k * BLOCK_K + tl.arange(0, BLOCK_K)
+    rm = tl.arange(0, BLOCK_M)
+
+    # set the starting points for all the pointers
+    grad_act_ptrs = GRAD_ACT + rn[:, None] + rm[None, :] * stride_gam    # N x M
+    inputs_ptrs = INPUTS + rm[:, None] * stride_im + rk[None, :]         # M x K
+
+    if META["COMPUTE_GRAD_BIAS"]:
+        grad_bias = tl.zeros((BLOCK_N,), tl.float16)
+        if META["FP_32"]:
+            grad_bias = grad_bias.to(tl.float32)
+
+    grad_weight_acc = tl.zeros((BLOCK_N, BLOCK_K), tl.float32)
+
+    # matmul + fused grad bias.
+    # consolidate over M
+    mask_nm = ((rn[:, None] < N) & (rm[None, :] < M))
+    mask_mk = (rm[:, None] < M) & (rk[None, :] < K)
+
+    for _ in range(M, 0, -BLOCK_M):
+        grad_act = tl.load(grad_act_ptrs, mask=mask_nm, other=0.)
+        grad_act_ptrs += BLOCK_M * stride_gam
+
+        if META["COMPUTE_GRAD_WEIGHT"]:
+            # GRAD_WEIGHT <- GRAD_ACT^T x INPUTS
+            inputs = tl.load(inputs_ptrs, mask=mask_mk, other=0.)
+            grad_weight_acc += tl.dot(grad_act, inputs)
+            inputs_ptrs += BLOCK_M * stride_im
+
+        if META["COMPUTE_GRAD_BIAS"]:
+            # grad bias is just the accumulation of grad_act over M
+            grad_bias += tl.sum(grad_act, axis=1)
+
+    # epilogue, save whatever is needed
+    if META["COMPUTE_GRAD_BIAS"]:
+        grad_bias_ptrs = GRAD_BIAS + rn
+        tl.store(grad_bias_ptrs, grad_bias, mask=rn < N)
+
+    if META["COMPUTE_GRAD_WEIGHT"]:
+        grad_weight_ptrs = GRAD_WEIGHT + rn[:, None] * stride_gwn + rk[None, :]
+        tl.store(grad_weight_ptrs, grad_weight_acc, mask=((rn[:, None] < N) & (rk[None, :] < K)))
 
 
 # Activation needs to be a triton kernel
@@ -312,71 +455,98 @@ def fused_matmul_backward(
     .. note: The weight buffer is transposed on the fly
     """
 
-    if grad_out.ndim == 2:
-        # Add the batch dimension
-        # This is inelegant and maybe slow, but never really used in the xformers context
-        grad_out = grad_out.unsqueeze(0)
-        _should_squeeze = True
-    else:
-        _should_squeeze = False
+    grad_out = grad_out.flatten(0, 1) if grad_out.ndim == 3 else grad_out
+    if grad_out.stride(1) != 1:
+        grad_out.contiguous()
 
     assert (
-        grad_out.shape[2] == weight.shape[0]
+        grad_out.shape[1] == weight.shape[0]
     ), "Incompatible dimensions in between grad_out and weight"
 
-    B, M, N = grad_out.shape
+    M, N = grad_out.shape
     N, K = weight.shape
 
-    grad_in = torch.empty((B, M, K), device=grad_out.device, dtype=grad_out.dtype)
+    grad_in = torch.empty((M, K), device=grad_out.device, dtype=grad_out.dtype)
     grad_act = torch.empty_like(grad_out)
+    activation_inputs = grad_out if activation_inputs is None else activation_inputs
 
-    # Compute the gradient for the inputs
     def grid(META):
         return (
-            triton.cdiv(M, META["BLOCK_ROW"]) * triton.cdiv(K, META["BLOCK_COL"]),
-            B,
+            triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(K, META["BLOCK_K"]),
         )
 
-    if activation_inputs is None:
-        # place holder, this will not be used really
-        activation_inputs = grad_out
-
+    # Compute the gradient for the inputs + partial reduction for grad bias
     # fmt: off
-    kernel_fma_grad_in[grid](
+    # (M, K) <- (M, N) x (N, K)
+    kernel_grad_inputs[grid](
         # data ptrs
-        grad_in, grad_act, activation_inputs, grad_out, weight,
+        grad_in, grad_act, grad_out,
+        activation_inputs, weight,
         # shapes
         M, N, K,
         # strides
-        grad_in.stride(0), grad_in.stride(1), grad_in.stride(2),
-        grad_act.stride(0), grad_act.stride(1), grad_act.stride(2),
-        grad_out.stride(0), grad_out.stride(1), grad_out.stride(2),
-        activation_inputs.stride(0), activation_inputs.stride(1), activation_inputs.stride(2),
-        weight.stride(0), weight.stride(1),
+        grad_in.stride(0), grad_act.stride(0), grad_out.stride(0),
+        activation_inputs.stride(0), weight.stride(0), weight.stride(1),
         # optional fused activation
         ACTIVATION_GRAD=activation_grad,
-        # data reuse optimization
-        GROUP_M=16,
+        GROUP_M=8,  # L2 data reuse optimization
         BLOCK_N=32,
         ACTIVATION_GRAD_REQ_INPUTS=activation_grad_req_inputs,
-        SAVE_ACT_GRAD=trainable_weight or trainable_bias
+        SAVE_ACT_GRAD=trainable_weight or trainable_bias,
+        GRAD_BIAS=trainable_bias
     )
     # fmt: on
 
-    grad_bias = torch.sum(grad_act, dim=[0, 1]) if trainable_bias else None
-
-    # Reuse Triton optimized matmul
     grad_weight = None
-    if trainable_weight:
-        grad_act_ = torch.reshape(grad_act, (grad_act.shape[0]*grad_act.shape[1], grad_act.shape[2])).transpose(1, 0)
-        if inputs.ndim == 2:
-            inputs = inputs.unsqueeze(0)
-        inputs_ = torch.reshape(inputs, (inputs.shape[0]*inputs.shape[1], inputs.shape[2]))
-        grad_weight = triton.ops.matmul(grad_act_, inputs_)
+    grad_bias = None
 
-    if _should_squeeze:
-        grad_in = grad_in.squeeze_()
+    _fuse_bias_gradient_computation = True
+
+    if trainable_bias or trainable_weight:
+        # NOTE: the bias gradient computation is not fused here, as it currently leads to worse performance
+
+        # placeholders if in need
+        grad_weight = torch.empty((N, K), device=grad_out.device, dtype=grad_out.dtype) \
+            if trainable_weight else grad_act
+
+        grad_bias = torch.empty((N), device=grad_out.device, dtype=grad_out.dtype) if trainable_bias else grad_act
+
+        def grid(META):
+            return (
+                triton.cdiv(N, META["BLOCK_N"]) * triton.cdiv(K, META["BLOCK_K"]),
+            )
+
+        # fmt: off
+        inputs_ = inputs.flatten(0, 1) if inputs.ndim == 3 else inputs
+
+        # (N, K) <- (N, M) x (M, K)
+        kernel_grad_bias_weight[grid](
+            # data ptrs
+            grad_bias, grad_weight, grad_act, inputs_,
+            # shapes
+            M, N, K,
+            # strides
+            grad_weight.stride(0), grad_act.stride(0), inputs_.stride(0),
+            COMPUTE_GRAD_BIAS=_fuse_bias_gradient_computation and trainable_bias,
+            COMPUTE_GRAD_WEIGHT=trainable_weight,
+            GROUP_N=8,  # L2 data reuse optimization
+            BLOCK_M=32,
+            FP_32=(inputs.dtype == torch.float32)
+        )
+
+        if trainable_bias and not _fuse_bias_gradient_computation:
+            grad_bias = torch.sum(grad_act, dim=0)
+
+        if not trainable_weight:
+            grad_weight = None
+
+        if not trainable_bias:
+            grad_bias = None
 
     del grad_act
 
-    return grad_in, grad_weight, grad_bias
+    return (
+            grad_in.reshape(inputs.shape),
+            grad_weight,
+            grad_bias
+        )

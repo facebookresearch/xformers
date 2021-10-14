@@ -80,7 +80,7 @@ def test_fused_matmul(shape, dtype):
 )
 @pytest.mark.parametrize("activation", [None] + [a.value for a in Activation])  # type: ignore
 @pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("bias", [True, False])
+@pytest.mark.parametrize("bias", [False, True])
 @pytest.mark.parametrize("amp", [True])  # FIXME: @lefaudeux check the fp32 case
 def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: bool):
     """Check that PyTorch and fused linear layers give the same result"""
@@ -129,12 +129,10 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
         loss_triton = torch.norm(y_triton)
         loss_triton.backward()
 
-        assert torch.allclose(X, X_, atol=tolerance), f"{X[:,0,0]} vs. {X_[:,0,0]}"
+        assert torch.allclose(X, X_, atol=tolerance)
 
         # Input grad being correct checks both the loss + some of the backward pass
-        assert torch.allclose(
-            X.grad, X_.grad, atol=tolerance
-        ), f"{X.grad[:,0,0]} vs. {X_.grad[:,0,0]}"
+        assert torch.allclose(X.grad, X_.grad, atol=tolerance), f"{X.grad}\n{X_.grad}"
 
         # Check that the linear layer bias are also properly trainable
         if bias:
@@ -142,11 +140,11 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
             assert triton_fused_linear.bias.grad is not None
             assert torch.allclose(
                 torch_linear.bias.grad, triton_fused_linear.bias.grad, atol=tolerance
-            )
+            ), f"\n{torch_linear.bias.grad}\n{triton_fused_linear.bias.grad}"
 
         # Check that the linear layer weights are also properly trainable
         assert torch.allclose(
             torch_linear.weight.grad,
             triton_fused_linear.weight.grad,
             atol=tolerance,
-        )
+        ), f"\n{torch_linear.weight.grad}\n{triton_fused_linear.weight.grad}"

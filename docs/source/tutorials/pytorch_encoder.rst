@@ -62,7 +62,7 @@ You can think of it as a declaration of the sequence of blocks that you would li
                 "dim_model": 384,
                 "layer_norm_style": "pre",  # Optional, pre/post
                 "position_encoding_config": {
-                    "name": "vocab",  # whatever position encodinhg makes sense
+                    "name": "vocab",  # whatever position encoding makes sense
                     "dim_model": 384,
                     "seq_len": 1024,
                     "vocab_size": 64,

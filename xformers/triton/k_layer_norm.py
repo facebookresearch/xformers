@@ -36,12 +36,11 @@ def layer_norm_fw(X, Y, W, B, M, V, stride, N, eps, **META):
     # Move to this row
     x_ptrs = X + row * stride + cols
     x = tl.load(x_ptrs, mask=cols < N, other=0.0).to(tl.float32)
-    x = tl.where(cols < N, x, 0.)  # Triton bug workarounds
 
     # Compute variance
     x_mean = tl.sum(x, axis=0) / N
     x_zm = x - x_mean
-    x_zm = tl.where(cols < N, x_zm, 0.0)  # Triton bug workaround
+    x_zm = tl.where(cols < N, x_zm, 0.0)  # removing the -x_mean (x is 1D..)
     x_var = tl.sum(x_zm * x_zm, axis=0) / N
     x_inv_sigma = 1.0 / tl.sqrt(x_var + eps)
 
@@ -52,7 +51,7 @@ def layer_norm_fw(X, Y, W, B, M, V, stride, N, eps, **META):
     # Normalize the inputs
     w = tl.load(W + cols, mask=cols < N, other=1.0)
     zero = 0.
-    zero = zero.to(w.dtype)  # Triton bug workarounds
+    zero = zero.to(w.dtype)  # Triton syntax workarounds
     w = tl.where(cols < N, w, zero)
 
     b = tl.load(B + cols, mask=cols < N, other=0.0)
@@ -173,7 +172,6 @@ def _layer_norm_bwd_dwdb(DW, DB, FINAL_DW, FINAL_DB, M, N, **meta):
     tl.store(FINAL_DB + cols, sum_db, mask=cols < N)
 
 
-# FIXME: @lefaudeux tensor shape changes are not well handled, see shape3
 class _LayerNorm(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16 if _triton_layernorm_fp16_enabled else None)
