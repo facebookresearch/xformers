@@ -13,7 +13,7 @@ import triton
 import triton.language as tl
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-# Credits: This is adapted from the vanilla Triton example. See https://openai.com/blog/triton/
+# CREDITS: This is adapted from the vanilla Triton example. See https://openai.com/blog/triton/
 # and https://triton-lang.org/getting-started/tutorials/02-fused-softmax.html
 
 
@@ -330,7 +330,6 @@ def _softmax_dispatch(x: torch.Tensor, log: bool, mask: Optional[torch.Tensor], 
             and x.is_cuda
             and not _triton_registered_overflow
         ):
-            # pyre-ignore[16]: Pyre is unable to find the `apply` method.
             return _softmax_triton.apply(x, mask, log, causal)
     except triton.code_gen.OutOfResources:
         # Catch cases where the current GPU does not have enough registers to hold a full tensor line

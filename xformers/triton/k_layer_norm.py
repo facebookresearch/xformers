@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-# Credits: This comes almost as-is from the Triton layer norm tutorial
+# CREDITS: This comes almost as-is from the Triton layer norm tutorial
 # https://github.com/openai/triton/blob/master/python/tutorials/05-layer-norm.py
 
 import torch
