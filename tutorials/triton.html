@@ -1,0 +1,716 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!-->
+<html class="no-js" lang="en">
+<!--<![endif]-->
+
+<head>
+  <meta charset="utf-8">
+  <meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Using Triton-based layers | xFormers 0.0.1 documentation</title>
+  
+  <script src="../_static/js/ga.js"></script>
+  <script src="../_static/js/redirect.js"></script>
+  
+  <link rel="shortcut icon" href="../_static/images/favicon.png" />
+  
+  
+  <link rel="canonical" href="https://fairinternal.github.io/xformerstutorials/triton.html" />
+  
+  <meta property="og:title" content="Using Triton-based layers | xFormers 0.0.1 documentation">
+  <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
+  <!--<meta property="twitter:image" content="https://mmf.sh/img/logo.png">-->
+  <meta name="twitter:image:alt" content="Image for xFormers">
+  <meta name="twitter:card" content="summary_large_image">
+  
+
+  
+  
+  
+
+  
+
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="../_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="../_static/css/customize.css" type="text/css" />
+  <link rel="index" title="Index" href="../genindex.html" />
+  <link rel="search" title="Search" href="../search.html" />
+  <link rel="next" title="Triton components reference" href="../triton/index.html" />
+  <link rel="prev" title="Using the Reversible block" href="reversible.html" /> 
+
+  
+  <script src="../_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://github.com/facebookresearch/xformers"><img src="_static/logo.png"
+          style="padding-right: 90px;" width="280px" height="53px"></a>
+
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers"> xFormers Github</a>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+
+  </div>
+</div>
+
+
+<body class="pytorch-body">
+
+   
+
+  
+
+  <div class="table-of-contents-link-wrapper">
+    <span>Table of Contents</span>
+    <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+  </div>
+
+  <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+    <div class="pytorch-side-scroll">
+      <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+        <div class="pytorch-left-menu-search">
+          
+
+          
+          
+          
+          
+
+          
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        
+        
+        
+        
+        
+        <p><span class="caption-text">Index</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../what_is_xformers.html">What is xFormers?</a></li>
+</ul>
+<p><span class="caption-text">Components Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../components/index.html">API Reference</a></li>
+</ul>
+<p><span class="caption-text">Factory</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../factory/index.html">Factory</a></li>
+</ul>
+<p><span class="caption-text">Tutorials</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Tutorials</a></li>
+</ul>
+<p><span class="caption-text">Tools</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../triton/index.html">Triton components reference</a></li>
+</ul>
+<p><span class="caption-text">Tools</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../tools/index.html">Tools</a></li>
+</ul>
+
+        
+        
+      </div>
+    </div>
+  </nav>
+
+  <div class="pytorch-container">
+    <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+      <div class="pytorch-breadcrumbs-wrapper">
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="../index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+          <li><a href="index.html">Tutorials</a> &gt;</li>
+        
+      <li>Using Triton-based layers</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="../_sources/tutorials/triton.rst.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+      </div>
+
+      <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+        Shortcuts
+      </div>
+    </div>
+
+    <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+      <div class="pytorch-content-left">
+
+        
+        
+          <div class="rst-content">
+            
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+                
+  <section id="using-triton-based-layers">
+<h1>Using Triton-based layers<a class="headerlink" href="#using-triton-based-layers" title="Permalink to this headline">¶</a></h1>
+<p><a class="reference external" href="https://triton-lang.org/">Triton</a> is a language and compiler for parallel programming, currently applicable to CUDA-enabled GPUs.
+It is compatible with PyTorch CUDA Tensors, and can be interfaced directly with pure python code.</p>
+<p>PyTorch provides many primitives capable of tranforming tensors, which correspond to operators in each of the supported backends.
+There are limits to how many of them can be supported at any point in time, short of supporting a JIT toolchain,
+so some operations typical of the Transformer family are supported in PyTorch as a sequence of base operators.</p>
+<p>Triton makes it possible to consolidate some of them into ad-hoc fused operators, which are compiled just-in-time.
+xFormers proposes a couple of optimized layers, and the goal is to increase their number over time.</p>
+<section id="fused-softmax-layer">
+<h2>Fused softmax layer<a class="headerlink" href="#fused-softmax-layer" title="Permalink to this headline">¶</a></h2>
+<p>This is a drop-in replacement to <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Softmax.html">torch.nn.softmax</a>, the only limitation being that the softmax operation is limited to the last dimension.
+Log-softmax is also available. The actual Triton kernel is very similar to <cite>this tutorial&lt;https://triton-lang.org/getting-started/tutorials/02-fused-softmax.html#sphx-glr-getting-started-tutorials-02-fused-softmax-py&gt;</cite></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">xformers.triton</span> <span class="kn">import</span> <span class="n">softmax</span><span class="p">,</span> <span class="n">log_softmax</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">softmax</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>   <span class="c1"># Torch AMP, autograd aware</span>
+</pre></div>
+</div>
+<p>The expected throughput, when compared to PyTorch and on a nVidia V100, is along these lines</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 19%" />
+<col style="width: 12%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 12%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>torch.float16</p></th>
+<th class="head"><p>Unit: GB/s</p></th>
+<th class="head"></th>
+<th class="head"></th>
+<th class="head"></th>
+<th class="head"></th>
+<th class="head"></th>
+<th class="head"></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td></td>
+<td><p>B=8, M=384, K=128</p></td>
+<td><p>B=8, M=784, K=512</p></td>
+<td><p>B=4, M=2048, K=384</p></td>
+<td><p>B=4, M=3136, K=1024</p></td>
+<td><p>B=2, M=1024, K=2048</p></td>
+<td><p>B=2, M=2048, K=4096</p></td>
+<td><p>B=2, M=4096, K=4096</p></td>
+</tr>
+<tr class="row-odd"><td><p>pytorch - fw</p></td>
+<td><p>170.7</p></td>
+<td><p>501.8</p></td>
+<td><p>512.0</p></td>
+<td><p>597.3</p></td>
+<td><p>399.6</p></td>
+<td><p>524.3</p></td>
+<td><p>553.0</p></td>
+</tr>
+<tr class="row-even"><td><p>triton  - fw</p></td>
+<td><p>153.6</p></td>
+<td><p>522.7</p></td>
+<td><p>512.0</p></td>
+<td><p>716.8</p></td>
+<td><p>606.8</p></td>
+<td><p>736.4</p></td>
+<td><p>775.6</p></td>
+</tr>
+<tr class="row-odd"><td><p>pytorch - log - fw</p></td>
+<td><p>192.0</p></td>
+<td><p>545.4</p></td>
+<td><p>534.3</p></td>
+<td><p>669.0</p></td>
+<td><p>496.5</p></td>
+<td><p>601.2</p></td>
+<td><p>615.4</p></td>
+</tr>
+<tr class="row-even"><td><p>triton  - log - fw</p></td>
+<td><p>153.6</p></td>
+<td><p>570.2</p></td>
+<td><p>558.5</p></td>
+<td><p>748.9</p></td>
+<td><p>682.7</p></td>
+<td><p>780.2</p></td>
+<td><p>799.2</p></td>
+</tr>
+<tr class="row-odd"><td><p>pytorch - fw+bw</p></td>
+<td><p>71.4</p></td>
+<td><p>170.7</p></td>
+<td><p>168.3</p></td>
+<td><p>205.6</p></td>
+<td><p>164.7</p></td>
+<td><p>196.5</p></td>
+<td><p>203.5</p></td>
+</tr>
+<tr class="row-even"><td><p>triton  - fw+bw</p></td>
+<td><p>69.8</p></td>
+<td><p>218.2</p></td>
+<td><p>211.9</p></td>
+<td><p>264.8</p></td>
+<td><p>224.4</p></td>
+<td><p>271.4</p></td>
+<td><p>284.3</p></td>
+</tr>
+<tr class="row-odd"><td><p>pytorch - log - fw+bw</p></td>
+<td><p>78.8</p></td>
+<td><p>207.3</p></td>
+<td><p>204.8</p></td>
+<td><p>255.3</p></td>
+<td><p>206.1</p></td>
+<td><p>247.3</p></td>
+<td><p>255.5</p></td>
+</tr>
+<tr class="row-even"><td><p>triton  - log - fw+bw</p></td>
+<td><p>71.4</p></td>
+<td><p>220.1</p></td>
+<td><p>213.7</p></td>
+<td><p>266.9</p></td>
+<td><p>229.1</p></td>
+<td><p>273.6</p></td>
+<td><p>285.6</p></td>
+</tr>
+</tbody>
+</table>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 19%" />
+<col style="width: 12%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 12%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>torch.float32</p></th>
+<th class="head"><p>Unit: GB/s</p></th>
+<th class="head"></th>
+<th class="head"></th>
+<th class="head"></th>
+<th class="head"></th>
+<th class="head"></th>
+<th class="head"></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td></td>
+<td><p>B=8, M=384, K=128</p></td>
+<td><p>B=8, M=784, K=512</p></td>
+<td><p>B=4, M=2048, K=384</p></td>
+<td><p>B=4, M=3136, K=1024</p></td>
+<td><p>B=2, M=1024, K=2048</p></td>
+<td><p>B=2, M=2048, K=4096</p></td>
+<td><p>B=2, M=4096, K=4096</p></td>
+</tr>
+<tr class="row-odd"><td><p>pytorch - fw</p></td>
+<td><p>341.3</p></td>
+<td><p>660.2</p></td>
+<td><p>682.7</p></td>
+<td><p>760.2</p></td>
+<td><p>555.4</p></td>
+<td><p>636.3</p></td>
+<td><p>650.5</p></td>
+</tr>
+<tr class="row-even"><td><p>triton  - fw</p></td>
+<td><p>307.2</p></td>
+<td><p>678.1</p></td>
+<td><p>682.7</p></td>
+<td><p>784.0</p></td>
+<td><p>712.3</p></td>
+<td><p>789.6</p></td>
+<td><p>809.1</p></td>
+</tr>
+<tr class="row-odd"><td><p>pytorch - log - fw</p></td>
+<td><p>384.0</p></td>
+<td><p>696.9</p></td>
+<td><p>702.2</p></td>
+<td><p>777.9</p></td>
+<td><p>537.2</p></td>
+<td><p>541.6</p></td>
+<td><p>543.9</p></td>
+</tr>
+<tr class="row-even"><td><p>triton  - log - fw</p></td>
+<td><p>307.2</p></td>
+<td><p>696.9</p></td>
+<td><p>702.2</p></td>
+<td><p>796.4</p></td>
+<td><p>744.7</p></td>
+<td><p>799.2</p></td>
+<td><p>814.1</p></td>
+</tr>
+<tr class="row-odd"><td><p>pytorch - fw+bw</p></td>
+<td><p>133.6</p></td>
+<td><p>203.1</p></td>
+<td><p>204.0</p></td>
+<td><p>229.9</p></td>
+<td><p>193.9</p></td>
+<td><p>211.1</p></td>
+<td><p>215.3</p></td>
+</tr>
+<tr class="row-even"><td><p>triton  - fw+bw</p></td>
+<td><p>136.5</p></td>
+<td><p>254.7</p></td>
+<td><p>257.3</p></td>
+<td><p>290.9</p></td>
+<td><p>263.2</p></td>
+<td><p>294.5</p></td>
+<td><p>301.0</p></td>
+</tr>
+<tr class="row-odd"><td><p>pytorch - log - fw+bw</p></td>
+<td><p>149.9</p></td>
+<td><p>252.1</p></td>
+<td><p>252.1</p></td>
+<td><p>289.6</p></td>
+<td><p>234.1</p></td>
+<td><p>251.6</p></td>
+<td><p>254.5</p></td>
+</tr>
+<tr class="row-even"><td><p>triton  - log - fw+bw</p></td>
+<td><p>136.5</p></td>
+<td><p>257.3</p></td>
+<td><p>258.7</p></td>
+<td><p>291.7</p></td>
+<td><p>265.3</p></td>
+<td><p>295.2</p></td>
+<td><p>301.3</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="fused-linear-layer">
+<h2>Fused linear layer<a class="headerlink" href="#fused-linear-layer" title="Permalink to this headline">¶</a></h2>
+<p>This is a drop-in replacement to two PyTorch operands: a <cite>torch.nn.Linear</cite>, and an activation, like <cite>torch.nn.ReLU</cite>. It is Torch AMP and autograd aware, and can be used very simply:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">xformers.triton</span> <span class="kn">import</span> <span class="n">FusedLinearLayer</span>
+
+<span class="n">my_linear_layer</span> <span class="o">=</span> <span class="n">FusedLinearLayer</span><span class="p">(</span><span class="n">in_features</span><span class="p">,</span> <span class="n">out_features</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="o">/</span><span class="kc">False</span><span class="p">,</span> <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;squared_relu&quot;</span><span class="p">)</span>
+
+<span class="o">...</span>
+
+<span class="n">y</span> <span class="o">=</span> <span class="n">my_linear_layer</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>It is possible to skip either the bias or the activation (just use <cite>None</cite> in that case). As of September 2021, this layer is <strong>faster than PyTorch for non-sigmoid activations and fp16</strong>.
+In all other usecases, you will be better served using PyTorch.</p>
+<p>The following is an example of the measured performance on a nVidia V100.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 28%" />
+<col style="width: 15%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 15%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>torch.float16</p></th>
+<th class="head"><p>Unit: TFlops</p></th>
+<th class="head"></th>
+<th class="head"></th>
+<th class="head"></th>
+<th class="head"></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td></td>
+<td><p>B=8, M=256, K=512</p></td>
+<td><p>B=8, M=512, K=1024</p></td>
+<td><p>B=4, M=1024, K=1024</p></td>
+<td><p>B=2, M=2048, K=2048</p></td>
+<td><p>B=2, M=4096, K=4096</p></td>
+</tr>
+<tr class="row-odd"><td><p>pytorch - squared_relu -  bias - fw</p></td>
+<td><p>6.3</p></td>
+<td><p>12.4</p></td>
+<td><p>12.3</p></td>
+<td><p>17.1</p></td>
+<td><p>19.0</p></td>
+</tr>
+<tr class="row-even"><td><p>triton  - squared_relu -  bias - fw</p></td>
+<td><p>13.8</p></td>
+<td><p>18.9</p></td>
+<td><p>18.9</p></td>
+<td><p>21.9</p></td>
+<td><p>21.7</p></td>
+</tr>
+<tr class="row-odd"><td><p>pytorch - squared_relu -  bias - fw+bw</p></td>
+<td><p>4.0</p></td>
+<td><p>7.6</p></td>
+<td><p>7.7</p></td>
+<td><p>10.7</p></td>
+<td><p>12.6</p></td>
+</tr>
+<tr class="row-even"><td><p>triton  - squared_relu -  bias - fw+bw</p></td>
+<td><p>8.4</p></td>
+<td><p>13.5</p></td>
+<td><p>13.3</p></td>
+<td><p>15.9</p></td>
+<td><p>16.8</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+
+
+              </article>
+              
+            </div>
+            <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="../triton/index.html" class="btn btn-neutral float-right" title="Triton components reference" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="reversible.html" class="btn btn-neutral" title="Using the Reversible block" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2021, Facebook AI Research.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+        </div>
+
+        <!-- <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">Using Triton-based layers</a><ul>
+<li><a class="reference internal" href="#fused-softmax-layer">Fused softmax layer</a></li>
+<li><a class="reference internal" href="#fused-linear-layer">Fused linear layer</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+          </div>
+        </div> -->
+    </section>
+  </div>
+
+  
+
+
+  
+
+  
+  <script type="text/javascript" id="documentation_options" data-url_root="../"
+    src="../_static/documentation_options.js"></script>
+  <script src="../_static/jquery.js"></script>
+  <script src="../_static/underscore.js"></script>
+  <script src="../_static/doctools.js"></script>
+  <script src="../_static/language_data.js"></script>
+  
+
+  
+
+  <script type="text/javascript" src="../_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="../_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+  <!-- Begin Footer -->
+
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://github.com/facebookresearch/xformers" class="footer-logo"></a>
+      </div>
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://github.com/facebookresearch/xformers">fairscale</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="">Resources</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers">Docs</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/issues" target="_blank">Github Issues</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    </div>
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://github.com/facebookresearch/xformers" aria-label="fairscale"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Docs</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Github</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="../_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function () {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function (e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+
+</html>
