@@ -15,7 +15,7 @@ from xformers.utils import (
 
 from .base import Feedforward, FeedforwardConfig  # noqa
 
-# Credits: Classy Vision registry mechanism
+# CREDITS: Classy Vision registry mechanism
 
 FEEDFORWARD_REGISTRY: Dict[str, Any] = {}
 FEEDFORWARD_CLASS_NAMES: Set[str] = set()

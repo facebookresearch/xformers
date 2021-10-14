@@ -16,7 +16,7 @@ import torch
 import torch.nn.functional as F
 from sklearn.model_selection import ParameterGrid
 
-# Credits: Sean Naren
+# CREDITS: Sean Naren
 from torch.autograd.profiler import record_function
 from tqdm import tqdm
 

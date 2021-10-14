@@ -221,7 +221,7 @@ def alibi_pattern(threshold: float, mask_shape: torch.Size) -> torch.Tensor:
     .. _ALiBi: https://arxiv.org/pdf/2108.12409.pdf
     """
 
-    # Credits: code snippet from Ofir Press, one of the authors
+    # CREDITS: code snippet from Ofir Press, one of the authors
 
     def get_slopes(n: int):
         def get_slopes_power_of_2(n: int) -> List[float]:

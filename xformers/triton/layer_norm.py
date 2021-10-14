@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Credits: the underlying kernel comes straight from the Triton tutorials
+# CREDITS: the underlying kernel comes straight from the Triton tutorials
 # see https://github.com/openai/triton/blob/master/python/tutorials/05-layer-norm.py
 
 from typing import Optional

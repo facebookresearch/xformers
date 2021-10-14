@@ -73,7 +73,7 @@ class LayerNormStyle(str, Enum):
     Post = "post"
 
 
-# Credits: the following is inspired by FastAI's Transformer implementation
+# CREDITS: the following is inspired by FastAI's Transformer implementation
 class Residual(nn.Module):
     """Object-oriented handling of the residual path"""
 

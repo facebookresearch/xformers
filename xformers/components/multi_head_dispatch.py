@@ -21,7 +21,7 @@ class InProjContainer(nn.Module):
     """
     Handle all the input projections in one go, opportunistically fuse some operations.
 
-    Credits: Inspired by https://github.com/pytorch/text/blob/master/torchtext/nn/modules/multiheadattention.py
+    CREDITS: Inspired by https://github.com/pytorch/text/blob/master/torchtext/nn/modules/multiheadattention.py
     and the MultiHeadAttention implementation from PyTorch
     """
 

@@ -18,7 +18,7 @@ from xformers.utils import (
 from ._sputnik_sparse import SparseCS
 from .base import Attention, AttentionConfig  # noqa
 
-# Credits: Classy Vision registry mechanism
+# CREDITS: Classy Vision registry mechanism
 
 ATTENTION_REGISTRY: Dict[str, Any] = {}
 ATTENTION_CLASS_NAMES: Set[str] = set()

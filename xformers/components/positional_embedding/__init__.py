@@ -15,7 +15,7 @@ from xformers.utils import (
 
 from .base import PositionEmbedding, PositionEmbeddingConfig  # noqa
 
-# Credits: Classy Vision registry mechanism
+# CREDITS: Classy Vision registry mechanism
 
 POSITION_EMBEDDING_REGISTRY: Dict[str, Any] = {}
 POSITION_EMBEDDING_CLASS_NAMES: Set[str] = set()
