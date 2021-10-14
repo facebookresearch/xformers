@@ -148,7 +148,7 @@ if _use_triton:
                 scale=scale,
                 key_padding_mask=key_padding_mask,
                 attn_mask=att_mask,
-                kp_mask_mode=MaskType.MUL,
+                key_padding_mask_mode=MaskType.MUL,
                 attn_mask_mode=MaskType.MUL,
             )
 
