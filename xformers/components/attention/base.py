@@ -22,6 +22,11 @@ class AttentionConfig:
     dropout: float  # dropout probability
 
 
+from typing import Type, TypeVar
+
+Self = TypeVar("Self", bound="Attention")
+
+
 # Define the common interface, every attention block needs to derive from it
 class Attention(nn.Module, metaclass=ABCMeta):
     r"""The base Attention mechanism, which is typically a sub-part of the multi-head attention"""
@@ -36,7 +41,7 @@ class Attention(nn.Module, metaclass=ABCMeta):
         self.accepts_att_mask = True
 
     @classmethod
-    def from_config(cls, config: AttentionConfig) -> "Attention":
+    def from_config(cls: Type[Self], config: AttentionConfig) -> Self:
         # Generate the class inputs from the config
         fields = asdict(config)
 
@@ -53,9 +58,11 @@ class Attention(nn.Module, metaclass=ABCMeta):
 
     def _get_causal_mask(self, seq_len: int, to_seq_len: int) -> torch.Tensor:
         # Cache a mask so that multiple instances would reuse the same
-        if not self._causal_mask:
-            self._causal_mask = torch.tril(torch.ones(seq_len, to_seq_len), diagonal=0)
-            self._causal_mask[self._causal_mask == 1] = -float("inf")
-            self._causal_mask.unsqueeze_(0)  # batch dimension
+        causal_mask = self._causal_mask
+        if not causal_mask:
+            causal_mask = torch.tril(torch.ones(seq_len, to_seq_len), diagonal=0)
+            causal_mask[self._causal_mask == 1] = -float("inf")
+            causal_mask.unsqueeze_(0)  # batch dimension
+            self._causal_mask = causal_mask
 
-        return self._causal_mask
+        return causal_mask

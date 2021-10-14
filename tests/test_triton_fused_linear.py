@@ -98,6 +98,8 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
     X_ = torch.normal(0, 1, size=shape, device="cuda")
     X_.requires_grad_()
 
+    # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize the
+    # `FusedLinear` import.
     triton_fused_linear = FusedLinear(
         shape[-1], shape[-1] // 2, bias=bias, activation=activation
     ).to("cuda")

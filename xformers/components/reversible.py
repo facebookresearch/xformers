@@ -17,6 +17,7 @@ from torch.utils.checkpoint import get_device_states, set_device_states
 # https://pytorch.org/docs/stable/_modules/torch/utils/checkpoint.html
 
 
+# pyre-fixme[13]: `cpu_state` is not initialized in the constructor.
 class Deterministic(nn.Module):
     def __init__(self, net: nn.Module):
         super().__init__()

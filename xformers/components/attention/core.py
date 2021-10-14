@@ -136,6 +136,7 @@ if _is_sparse_available:
         assert a.ndim == b.ndim == 3
         assert a.shape[0] == b.shape[0]
         assert a.shape[2] == b.shape[1]
+        # pyre-fixme[16]: The `apply` method is not visible to Pyre.
         return SparseBMM.apply(a, b)
 
 

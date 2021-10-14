@@ -96,6 +96,7 @@ class RandomAttention(Attention):
         mask = (
             self.rand_attention_mask
             if att_mask is None
+            # pyre-ignore[58]: Pyre mistakenly thinks `self.rand_attention_mask` may be None.
             else self.rand_attention_mask & att_mask
         )
 
