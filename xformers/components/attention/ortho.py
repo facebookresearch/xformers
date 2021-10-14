@@ -107,7 +107,12 @@ class OrthoFormerAttention(Attention):
                 )
                 # FIXME: Should we still accept a mask in that case ?
                 att_mask = None
+
+            # pyre-ignore[61]: TODO(T103337542): `landmarks` mistakenly seems
+            # like it could be uninitialized.
             kernel_1 = scaled_query_key_softmax(q, landmarks, att_mask)
+            # pyre-ignore[61]: TODO(T103337542): `landmarks` mistakenly seems
+            # like it could be uninitialized.
             kernel_2 = scaled_query_key_softmax(landmarks, k, att_mask)
             x = torch.matmul(kernel_1, torch.matmul(kernel_2, v))
         x = self.attn_drop(x)

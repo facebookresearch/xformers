@@ -40,6 +40,7 @@ def test_feedforward(
     ffw = build_feedforward(test_config)
 
     if ffw.requires_cuda and not device.type == "cuda":
+        # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
         pytest.skip("This MLP requires CUDA and current device does not match")
 
     inputs = torch.rand(BATCH, SEQ, LATENT, device=device)

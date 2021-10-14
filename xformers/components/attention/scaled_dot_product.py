@@ -21,6 +21,8 @@ class ScaledDotProduct(Attention):
     .. _`Attention is all you need`: https://arxiv.org/abs/1706.03762v5
     """
 
+    mask: Optional[torch.Tensor]
+
     def __init__(
         self,
         dropout: float = 0.0,
