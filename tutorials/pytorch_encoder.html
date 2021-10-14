@@ -297,50 +297,7 @@ You can think of it as a declaration of the sequence of blocks that you would li
                 <span class="s2">&quot;attention&quot;</span><span class="p">:</span> <span class="p">{</span>
                     <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;linformer&quot;</span><span class="p">,</span> <span class="c1"># whatever attention mechanism</span>
                     <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
-                    <span class="s2">&quot;causal&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-                    <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="mi">512</span><span class="p">,</span>
-                <span class="p">},</span>
-            <span class="p">},</span>
-            <span class="s2">&quot;feedforward_config&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;MLP&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;dim_model&quot;</span><span class="p">:</span> <span class="mi">384</span><span class="p">,</span>
-                <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
-                <span class="s2">&quot;activation&quot;</span><span class="p">:</span> <span class="s2">&quot;relu&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;hidden_layer_multiplier&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
-            <span class="p">},</span>
-        <span class="p">}</span>
-    <span class="p">}</span>
-<span class="p">]</span>
-
-<span class="n">config</span> <span class="o">=</span> <span class="n">xFormerConfig</span><span class="p">(</span><span class="o">**</span><span class="n">my_config</span><span class="p">)</span>  <span class="c1"># This part of xFormers is entirely type checked and needs a config object, could be changed in the fututure</span>
-<span class="n">model</span> <span class="o">=</span> <span class="n">xFormer</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="n">config</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-
-<span class="kn">from</span> <span class="nn">xformers.factory.model_factory</span> <span class="kn">import</span> <span class="n">xFormer</span><span class="p">,</span> <span class="n">xFormerConfig</span>
-
-<span class="n">my_config</span> <span class="o">=</span>  <span class="p">[</span>
-    <span class="c1"># A list of the encoder or decoder blocks which constitute the Transformer.</span>
-    <span class="c1"># Note that a sequence of different encoder blocks can be used, same for decoders</span>
-    <span class="p">{</span>
-        <span class="s2">&quot;reversible&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>  <span class="c1"># Optionally make these layers reversible, to save memory</span>
-        <span class="s2">&quot;block_config&quot;</span><span class="p">:</span> <span class="p">{</span>
-            <span class="s2">&quot;block_type&quot;</span><span class="p">:</span> <span class="s2">&quot;encoder&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;num_layers&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>  <span class="c1"># Optional, this means that this config will repeat N times</span>
-            <span class="s2">&quot;dim_model&quot;</span><span class="p">:</span> <span class="mi">384</span><span class="p">,</span>
-            <span class="s2">&quot;layer_norm_style&quot;</span><span class="p">:</span> <span class="s2">&quot;pre&quot;</span><span class="p">,</span>  <span class="c1"># Optional, pre/post</span>
-            <span class="s2">&quot;position_encoding_config&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;vocab&quot;</span><span class="p">,</span>  <span class="c1"># whatever position encodinhg makes sense</span>
-                <span class="s2">&quot;dim_model&quot;</span><span class="p">:</span> <span class="mi">384</span><span class="p">,</span>
-                <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
-                <span class="s2">&quot;vocab_size&quot;</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span>
-            <span class="p">},</span>
-            <span class="s2">&quot;multi_head_config&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;num_heads&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
-                <span class="s2">&quot;dim_model&quot;</span><span class="p">:</span> <span class="mi">384</span><span class="p">,</span>
-                <span class="s2">&quot;residual_dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
-                <span class="s2">&quot;attention&quot;</span><span class="p">:</span> <span class="p">{</span>
-                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;linformer&quot;</span><span class="p">,</span> <span class="c1"># whatever attention mechanism</span>
-                    <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
-                    <span class="s2">&quot;causal&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s2">&quot;causal&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
                     <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="mi">512</span><span class="p">,</span>
                 <span class="p">},</span>
             <span class="p">},</span>
