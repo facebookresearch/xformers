@@ -39,6 +39,8 @@ class Attention(nn.Module, metaclass=ABCMeta):
         self.requires_input_projection = True
         self.requires_head_dimension = False
         self.accepts_att_mask = True
+        # key padding mask and attention mask must be passed in as separate arguments instead of a merged attention mask
+        self.requires_separate_masks = True
 
     @classmethod
     def from_config(cls: Type[Self], config: AttentionConfig) -> Self:

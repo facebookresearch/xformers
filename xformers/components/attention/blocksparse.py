@@ -100,6 +100,9 @@ if _use_triton:
             # make sure that the head dimension is not folded down with the batch
             self.requires_head_dimension = True
 
+            # key padding mask and attention mask must be passed in separately
+            self.requires_separate_masks = True
+
         def forward(
             self,
             q: torch.Tensor,
