@@ -8,7 +8,7 @@ import torch
 
 from xformers.components.attention.attention_patterns import block_sparsify_tensor
 
-# Credits:
+# CREDITS:
 # Tests from, very lightly changed
 # https://github.com/openai/triton/blob/master/python/test/unit/operators/test_blocksparse.py
 # Initially copied here folowing a fork from the matmul kernel

@@ -11,7 +11,7 @@ import triton.language as tl
 
 from xformers.triton.configs_matmul import kernel_config
 
-# Credits: Initially inspired by the Triton tutorial on matrix multiplications
+# CREDITS: Initially inspired by the Triton tutorial on matrix multiplications
 
 
 # fmt: off

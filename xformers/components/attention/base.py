@@ -6,7 +6,7 @@
 
 from abc import ABCMeta, abstractmethod
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Optional, Type, TypeVar
 
 import torch
 import torch.nn as nn
@@ -21,8 +21,6 @@ class AttentionConfig:
     name: str  # the registered name for this attention mechanism
     dropout: float  # dropout probability
 
-
-from typing import Type, TypeVar
 
 Self = TypeVar("Self", bound="Attention")
 

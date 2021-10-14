@@ -1,6 +1,6 @@
 # LRA Benchmark
 
-## Credits
+## CREDITS
 
 Adapted from [the Nystromformer authors' repo](https://github.com/mlpen/Nystromformer) and [the original long-range-arena repo](https://github.com/google-research/long-range-arena)
 

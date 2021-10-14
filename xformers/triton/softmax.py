@@ -13,7 +13,7 @@ import triton
 import triton.language as tl
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-# Credits: This is adapted from the vanilla Triton example. See https://openai.com/blog/triton/
+# CREDITS: This is adapted from the vanilla Triton example. See https://openai.com/blog/triton/
 # and https://triton-lang.org/getting-started/tutorials/02-fused-softmax.html
 
 

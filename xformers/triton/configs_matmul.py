@@ -8,7 +8,7 @@ import triton
 
 from xformers.triton.utils import get_current_cuda_device
 
-# Credits: Optimized defaults as suggested in the Triton documentation for matrix multiplications
+# CREDITS: Optimized defaults as suggested in the Triton documentation for matrix multiplications
 
 
 # Handle different SM configurations for the older GPUs
