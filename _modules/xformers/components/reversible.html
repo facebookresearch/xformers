@@ -246,6 +246,7 @@
 <span class="c1"># https://pytorch.org/docs/stable/_modules/torch/utils/checkpoint.html</span>
 
 
+<span class="c1"># pyre-fixme[13]: `cpu_state` is not initialized in the constructor.</span>
 <div class="viewcode-block" id="Deterministic"><a class="viewcode-back" href="../../../components/reversible.html#xformers.components.reversible.Deterministic">[docs]</a><span class="k">class</span> <span class="nc">Deterministic</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">net</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>

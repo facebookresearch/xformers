@@ -372,20 +372,22 @@
 
         <span class="c1"># Encode to latent space if encoder is present</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">encoders</span><span class="o">.</span><span class="n">parameters</span><span class="p">()))</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">encoders</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">):</span>
+            <span class="n">encoders</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoders</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">encoders</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">):</span>
                 <span class="n">memory</span> <span class="o">=</span> <span class="n">src</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
-                <span class="k">for</span> <span class="n">encoder</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoders</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">encoder</span> <span class="ow">in</span> <span class="n">encoders</span><span class="p">:</span>
                     <span class="n">memory</span> <span class="o">=</span> <span class="n">encoder</span><span class="p">(</span><span class="n">memory</span><span class="p">,</span> <span class="n">input_mask</span><span class="o">=</span><span class="n">encoder_input_mask</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">enc_pose_encoding</span><span class="p">:</span>
                     <span class="n">memory</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">enc_pose_encoding</span><span class="p">(</span><span class="n">src</span><span class="p">)</span>
 
+                <span class="c1"># pyre-fixme[61]: `memory` is not always initialized here.</span>
                 <span class="c1"># Reversible Encoder</span>
                 <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">memory</span><span class="p">,</span> <span class="n">memory</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
 
                 <span class="c1"># TODO: pass in key and value independently.</span>
                 <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;att_mask&quot;</span><span class="p">:</span> <span class="n">encoder_input_mask</span><span class="p">}</span>
-                <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoders</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="n">encoders</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
                 <span class="n">memory</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">chunk</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">decoders</span><span class="p">:</span>
@@ -398,6 +400,7 @@
             <span class="k">for</span> <span class="n">decoder</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">decoders</span><span class="p">:</span>
                 <span class="n">tgt</span> <span class="o">=</span> <span class="n">decoder</span><span class="p">(</span>
                     <span class="n">target</span><span class="o">=</span><span class="n">tgt</span><span class="p">,</span>
+                    <span class="c1"># pyre-fixme[61]: `memory` is not always initialized here.</span>
                     <span class="n">memory</span><span class="o">=</span><span class="n">memory</span><span class="p">,</span>
                     <span class="n">input_mask</span><span class="o">=</span><span class="n">decoder_input_mask</span><span class="p">,</span>
                 <span class="p">)</span>

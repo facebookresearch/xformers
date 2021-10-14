@@ -369,12 +369,10 @@
             <span class="n">att_normalization</span> <span class="o">=</span> <span class="n">q_prime</span> <span class="o">@</span> <span class="p">(</span>
                 <span class="n">k_prime</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
             <span class="p">)</span>
-
-        <span class="c1"># Actually compute attention</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">causal</span><span class="p">:</span>
-            <span class="n">att_raw</span><span class="p">,</span> <span class="n">att_normalization</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_causal_attention</span><span class="p">(</span><span class="n">k_prime</span><span class="p">,</span> <span class="n">q_prime</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
             <span class="n">att_raw</span> <span class="o">=</span> <span class="n">q_prime</span> <span class="o">@</span> <span class="p">(</span><span class="n">k_prime</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">v</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Actually compute attention</span>
+            <span class="n">att_raw</span><span class="p">,</span> <span class="n">att_normalization</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_causal_attention</span><span class="p">(</span><span class="n">k_prime</span><span class="p">,</span> <span class="n">q_prime</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
 
         <span class="c1"># Normalize</span>
         <span class="n">att</span> <span class="o">=</span> <span class="n">att_raw</span> <span class="o">/</span> <span class="n">att_normalization</span>
