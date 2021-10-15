@@ -100,12 +100,16 @@ if _use_triton:
             # make sure that the head dimension is not folded down with the batch
             self.requires_head_dimension = True
 
+            # key padding mask and attention mask must be passed in separately
+            self.requires_separate_masks = True
+
         def forward(
             self,
             q: torch.Tensor,
             k: torch.Tensor,
             v: torch.Tensor,
             att_mask: Optional[torch.Tensor] = None,
+            key_padding_mask: Optional[torch.Tensor] = None,
             scale: float = 1.0,
             *args,
             **kwargs,
@@ -142,7 +146,9 @@ if _use_triton:
             sparse_att_mat = self.sparse_softmax(
                 sparse_att_mat,
                 scale=scale,
+                key_padding_mask=key_padding_mask,
                 attn_mask=att_mask,
+                key_padding_mask_mode=MaskType.MUL,
                 attn_mask_mode=MaskType.MUL,
             )
 
