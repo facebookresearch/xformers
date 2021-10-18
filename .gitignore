@@ -1,0 +1,42 @@
+*~
+*.swp
+
+*.pyc
+*.pyo
+*.so
+
+.mypy_cache/
+*.egg-info/
+
+build/
+dist/
+
+# Pytest verbose output
+test-results/
+
+# Coverage reports
+.coverage
+.coverage.*
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.vscode/*
+xformers/benchmarks/LRA/datasets
+xformers/benchmarks/LRA/logs
+
+my_runs.md
+
+# Triton cache
+.cache
+
+# JetBrains PyCharm IDE
+.idea/
+
+# Pyre cache.
+.pyre/

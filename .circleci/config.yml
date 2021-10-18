@@ -1,0 +1,233 @@
+# Python CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-python/ for more details
+#
+# Adopted from
+# https://github.com/facebookresearch/detectron2/blob/master/.circleci/config.yml
+
+version: 2.1
+
+# -------------------------------------------------------------------------------------
+# Environments to run the jobs in
+# -------------------------------------------------------------------------------------
+cpu_py38: &cpu_py38
+  docker:
+    - image: cimg/python:3.8
+  resource_class: large
+
+gpu_cu112: &gpu_cu112
+  environment:
+    CUDA_VERSION: "11.2"
+    CUDA_HOME: /usr/local/cuda-11.2
+  machine:
+    image: ubuntu-2004-cuda-11.2:202103-01
+  resource_class: gpu.large
+
+# -------------------------------------------------------------------------------------
+# Re-usable commands
+# -------------------------------------------------------------------------------------
+setup_venv: &setup_venv
+  - run:
+      name: Setup Virtual Env
+      working_directory: ~/
+      command: |
+        python -m venv ~/venv
+        echo ". ~/venv/bin/activate" >> $BASH_ENV
+        . ~/venv/bin/activate
+        python --version
+        which python
+        which pip
+        pip install --upgrade pip
+
+install_dep_190: &install_dep_190
+  - run:
+      name: Install Dependencies with torch 1.9.0
+      command: |
+        # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
+        if [ -f /home/circleci/venv/check_version.py ]; then python /home/circleci/venv/check_version.py torch eq 1.9 && exit 0; fi
+        # start installing
+        pip install --progress-bar off torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
+        pip install --progress-bar off -r requirements-benchmark.txt
+        python -c 'import torch; print("Torch version:", torch.__version__)'
+        python -c 'import torch; assert torch.__version__.split(".")[:2] == ["1", "9"], "wrong torch version"'
+        python -m torch.utils.collect_env
+        wget -O /home/circleci/venv/check_version.py https://raw.githubusercontent.com/min-xu-ai/check_verion/main/check_version.py
+
+install_repo: &install_repo
+  - run:
+      name: Install Repository
+      command: |
+        python3 -m pip install -e .
+        # Test import.
+        python -c 'import sys; sys.path = sys.path[1:]; import xformers'
+
+
+run_isort: &run_isort
+   - run:
+       name: Run Linter (isort)
+       command: |
+         isort . --check --profile black
+
+run_black: &run_black
+   - run:
+       name: Run Linter (black)
+       command: |
+         black --check .
+
+run_mypy: &run_mypy
+   - run:
+       name: Run type-checking (mypy)
+       command: |
+         mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ .
+
+run_flake8: &run_flake8
+  - run:
+      name: Run Linter (flake8)
+      command: |
+        flake8 --show-source --statistics
+
+run_clang_format: &run_clang_format
+  - run:
+      name: Run Linter (clang-format)
+      command: |
+        curl https://oss-clang-format.s3.us-east-2.amazonaws.com/linux64/clang-format-linux64 -o clang-format
+        chmod +x clang-format
+        sudo mv clang-format /opt/clang-format
+        ./.circleci/run-clang-format.py -r xformers/components/attention/csrc --clang-format-executable /opt/clang-format
+
+run_coverage: &run_coverage
+  - run:
+      name: Run Unit Tests With Coverage
+      command: |
+        pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./
+        #Uploading test coverage for Python code
+        bash <(curl -s https://codecov.io/bash) -f coverage.xml -cF Python
+
+run_unittests: &run_unittests
+  - run:
+      name: Run Unit Tests
+      command: |
+        pytest --junitxml=test-results/junit.xml --verbose --timeout 600
+
+run_benchmarks: &run_benchmarks
+  - run:
+      name: Run Benchmarks
+      command: |
+        CUDA_LAUNCH_BLOCKING=1 python3 xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 128 -bs 16 -heads 4
+
+run_pytorch_benchmark: &run_pytorch_benchmark
+  - run:
+      name: Run Pytorch benchmark
+      command: |
+        python3 xformers/benchmarks/benchmark_pytorch_transformer.py
+
+run_doc_build: &run_doc_build
+   - run:
+       name: Testing doc build
+       command: |
+         cd docs
+         pip install --progress-bar off -r requirements.txt
+         make help
+         make singlehtml | tee make.out
+         ! tail make.out | grep -q warning
+
+commands:
+   setup_pyenv:
+     parameters:
+       version:
+         type: string
+     steps:
+       - run:
+           name: Setup pyenv
+           command: |
+             git clone git://github.com/pyenv/pyenv-update.git $(pyenv root)/plugins/pyenv-update
+             pyenv update
+             pyenv install -f <<parameters.version>>
+             pyenv global <<parameters.version>>
+
+# -------------------------------------------------------------------------------------
+# Jobs to run
+# -------------------------------------------------------------------------------------
+
+jobs:
+  cpu_tests_py38:
+    <<: *cpu_py38
+
+    working_directory: ~/xformers
+
+    steps:
+      - checkout
+
+      - <<: *setup_venv
+
+      # Cache the venv directory that contains dependencies
+      - restore_cache:
+          keys:
+            - cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+
+      - <<: *install_dep_190
+
+      - save_cache:
+          paths:
+            - ~/venv
+          key: cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+
+      - <<: *install_repo
+
+      - <<: *run_isort
+      - <<: *run_black
+      - <<: *run_mypy
+      - <<: *run_flake8
+      - <<: *run_clang_format
+      - <<: *run_unittests
+      - <<: *run_doc_build
+
+      - store_test_results:
+          path: test-results
+
+
+  gpu_tests_190:
+    <<: *gpu_cu112
+
+    working_directory: ~/xformers
+
+    steps:
+      - checkout
+
+      - run: nvidia-smi
+
+      - setup_pyenv:
+          version: 3.8.6
+
+      - <<: *setup_venv
+
+      # Cache the venv directory that contains dependencies
+      - restore_cache:
+          keys:
+            - cache-key-gpu-112-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+
+      - <<: *install_dep_190
+
+      - save_cache:
+          paths:
+            - ~/venv
+          key: cache-key-gpu-112-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+
+      - <<: *install_repo
+
+      - <<: *run_coverage
+
+      - <<: *run_benchmarks
+
+      - <<: *run_pytorch_benchmark
+
+      - store_test_results:
+          path: test-results
+
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - cpu_tests_py38
+      - gpu_tests_190
