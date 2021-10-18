@@ -199,7 +199,7 @@ def test_xformer_decoder_block(
     encoded = encoder_block(inputs)
     _ = decoder_block(
         inputs, encoded
-    )  # FIXME: does not make a lot of sense, just checking dimensions
+    )  # NOTE: does not make a lot of sense, just checking dimensions
 
     # Check that we support masking, at least interface wise (do not check correctness yet)
     att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)

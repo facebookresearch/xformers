@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Tuple
 
 import torch
 import triton
+from torch.cuda.amp import autocast
 
 from xformers.benchmarks.utils import TestCase, pretty_print
 from xformers.factory.model_factory import xFormer, xFormerConfig
@@ -97,6 +98,7 @@ def bench_pytorch_encoder(
     layers: int = 2,
     device: torch.device = torch.device("cuda"),
     steps: int = 20,
+    use_amp: bool = True,
 ):
     results_time: Dict[str, Any] = {}
     results_memory: Dict[str, Any] = {}
@@ -163,18 +165,19 @@ def bench_pytorch_encoder(
         optim_pytorch = torch.optim.Adam(model_pytorch.parameters(), lr=1e-3)
 
         def run_training(model, optimizer, label):
-            eval_start = evaluate(model, batch, seq, emb, device)
-            torch.cuda.empty_cache()
-            torch.cuda.reset_peak_memory_stats()
-            torch.cuda.synchronize()
+            with autocast(enabled=use_amp):
+                eval_start = evaluate(model, batch, seq, emb, device)
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.synchronize()
 
-            train(model, optimizer, label, steps, batch, seq, emb, device)
-            max_memory = torch.cuda.max_memory_allocated() // 2 ** 20
-            print(f"Peak memory use: {max_memory}MB")
+                train(model, optimizer, label, steps, batch, seq, emb, device)
+                max_memory = torch.cuda.max_memory_allocated() // 2 ** 20
+                print(f"Peak memory use: {max_memory}MB")
 
-            eval_stop = evaluate(model, batch, seq, emb, device)
-            print(f"Trained from {eval_start} to {eval_stop}\n")
-            return eval_start, eval_stop, max_memory
+                eval_stop = evaluate(model, batch, seq, emb, device)
+                print(f"Trained from {eval_start} to {eval_stop}\n")
+                return eval_start, eval_stop, max_memory
 
         # Save the memory being used by both
         memory: Dict[str, Any] = {"pytorch": [], "xformers": []}
@@ -225,11 +228,12 @@ def bench_pytorch_encoder(
 if __name__ == "__main__":
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     bench_pytorch_encoder(
-        shapes=[(16, 128, 128), (2, 1024, 1024)],
+        shapes=[(16, 128, 128), (2, 1024, 1024), (1, 1024, 2048)],
         activation="gelu",
         n_heads=8,
         dropout=0.1,
         layers=2,
         device=device,
         steps=20,
+        use_amp=True,
     )
