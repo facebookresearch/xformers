@@ -268,6 +268,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">requires_input_projection</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">requires_head_dimension</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">accepts_att_mask</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="c1"># key padding mask and attention mask must be passed in as separate arguments instead of a merged attention mask</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">requires_separate_masks</span> <span class="o">=</span> <span class="kc">False</span>
 
 <div class="viewcode-block" id="Attention.from_config"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.Attention.from_config">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_config</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Self</span><span class="p">],</span> <span class="n">config</span><span class="p">:</span> <span class="n">AttentionConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
