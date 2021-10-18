@@ -39,105 +39,42 @@ Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py 
 
 ### Fused softmax
 
-You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_softmax.py`. The units are GB/s. These results are for a nVidia V100, and PyTorch 1.9.
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_softmax.py`. The units are GB/s. These results are for a nVidia V100, Triton 1.1 and PyTorch 1.9.
+Note that in the Triton case the slowdowns at extreme sizes are because of register spilling, A100s get much better performance.
 
+![Softmax throughput in fp16 - inference](docs/plots/Softmax_Bandwidth_FW_fp16.png)
 
-| Float16               | B=8, M=384, K=128 | B=8, M=784, K=512 | B=4, M=2048, K=384 | B=4, M=3136, K=1024 | B=2, M=1024, K=2048 | B=2, M=2048, K=4096 | B=2, M=4096, K=4096 |
-| --------------------- | ----------------- | ----------------- | ------------------ | ------------------- | ------------------- | ------------------- | ------------------- |
-| pytorch - fw          | 170.7             | 501.8             | 512.0              | 597.3               | 399.6               | 524.3               | 553.0               |
-| triton  - fw          | 153.6             | 522.7             | 512.0              | 716.8               | 606.8               | 736.4               | 775.6               |
-| pytorch - log - fw    | 192.0             | 545.4             | 534.3              | 669.0               | 496.5               | 601.2               | 615.4               |
-| triton  - log - fw    | 153.6             | 570.2             | 558.5              | 748.9               | 682.7               | 780.2               | 799.2               |
-| pytorch - fw+bw       | 71.4              | 170.7             | 168.3              | 205.6               | 164.7               | 196.5               | 203.5               |
-| triton  - fw+bw       | 69.8              | 218.2             | 211.9              | 264.8               | 224.4               | 271.4               | 284.3               |
-| pytorch - log - fw+bw | 78.8              | 207.3             | 204.8              | 255.3               | 206.1               | 247.3               | 255.5               |
-| triton  - log - fw+bw | 71.4              | 220.1             | 213.7              | 266.9               | 229.1               | 273.6               | 285.6               |
+![Softmax throughput in fp16 - training](docs/plots/Softmax_Bandwidth_FW_BW_fp16.png)
 
-| Float32               | B=8, M=384, K=128 | B=8, M=784, K=512 | B=4, M=2048, K=384 | B=4, M=3136, K=1024 | B=2, M=1024, K=2048 | B=2, M=2048, K=4096 | B=2, M=4096, K=4096 |
-| --------------------- | ----------------- | ----------------- | ------------------ | ------------------- | ------------------- | ------------------- | ------------------- |
-| pytorch - fw          | 341.3             | 660.2             | 682.7              | 760.2               | 555.4               | 636.3               | 650.5               |
-| triton  - fw          | 307.2             | 678.1             | 682.7              | 784.0               | 712.3               | 789.6               | 809.1               |
-| pytorch - log - fw    | 384.0             | 696.9             | 702.2              | 777.9               | 537.2               | 541.6               | 543.9               |
-| triton  - log - fw    | 307.2             | 696.9             | 702.2              | 796.4               | 744.7               | 799.2               | 814.1               |
-| pytorch - fw+bw       | 133.6             | 203.1             | 204.0              | 229.9               | 193.9               | 211.1               | 215.3               |
-| triton  - fw+bw       | 136.5             | 254.7             | 257.3              | 290.9               | 263.2               | 294.5               | 301.0               |
-| pytorch - log - fw+bw | 149.9             | 252.1             | 252.1              | 289.6               | 234.1               | 251.6               | 254.5               |
-| triton  - log - fw+bw | 136.5             | 257.3             | 258.7              | 291.7               | 265.3               | 295.2               | 301.3               |
+![Softmax throughput in fp32 - inference](docs/plots/Softmax_Bandwidth_FW_fp32.png)
+
+![Softmax throughput in fp32 - training](docs/plots/Softmax_Bandwidth_FW_BW_fp32.png)
 
 ### Fused linear layer
 
-You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_fused_linear_layer.py`. The units are TFlops/s. These results are for a nVidia V100, and PyTorch 1.9.
-**As of September 2021, these Triton kernels are not competitive with PyTorch for Float32 computations**.
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_fused_linear_layer.py`. The units are TFlops/s. These results are for a nVidia V100, Triton 1.1 and PyTorch 1.9.
+**As of October 2021, these Triton kernelsonly competitive with Pytorch for float16 inference, this is a work in progress**.
 
-#### Squared ReLU
+![Fused linear layers throughput in fp16 - inference](docs/plots/FusedLinear_fp16_FW.png)
 
-|                                          | B=8, M=256, K=512 | B=8, M=512, K=1024 | B=4, M=1024, K=1024 | B=2, M=2048, K=2048 | B=2, M=4096, K=4096 |
-| ---------------------------------------- | ----------------- | ------------------ | ------------------- | ------------------- | ------------------- |
-| pytorch - squared_relu -  bias - fw      | 6.3               | 12.4               | 12.3                | 17.1                | 19.0                |
-| triton  - squared_relu -  bias - fw      | 13.8              | 18.9               | 18.9                | 21.9                | 21.7                |
-| pytorch - squared_relu -  bias - fw+bw   | 4.0               | 7.6                | 7.7                 | 10.7                | 12.6                |
-| triton  - squared_relu -  bias - fw+bw   | 8.4               | 13.5               | 13.3                | 15.9                | 16.8                |
-| pytorch - squared_relu - no bias - fw    | 8.8               | 14.1               | 14.1                | 18.9                | 20.2                |
-| triton  - squared_relu - no bias - fw    | 14.0              | 19.6               | 19.4                | 22.2                | 22.1                |
-| pytorch - squared_relu - no bias - fw+bw | 4.6               | 8.3                | 8.3                 | 11.2                | 13.0                |
-| triton  - squared_relu - no bias - fw+bw | 8.4               | 13.6               | 13.4                | 16.1                | 14.9                |
+![Fused linear layers throughput in fp16 - training](docs/plots/FusedLinear_fp16_FW_BW.png)
 
-#### ReLU
+![Fused linear layers throughput in fp32 - inference](docs/plots/FusedLinear_fp32_FW.png)
 
-|                                  | B=8, M=256, K=512 | B=8, M=512, K=1024 | B=4, M=1024, K=1024 | B=2, M=2048, K=2048 | B=2, M=4096, K=4096 |
-| -------------------------------- | ----------------- | ------------------ | ------------------- | ------------------- | ------------------- |
-| pytorch - relu -  bias - fw      | 8.6               | 13.9               | 13.9                | 18.7                | 19.9                |
-| triton  - relu -  bias - fw      | 13.6              | 19.1               | 18.7                | 21.8                | 21.7                |
-| pytorch - relu -  bias - fw+bw   | 5.3               | 9.6                | 9.6                 | 12.2                | 13.7                |
-| triton  - relu -  bias - fw+bw   | 9.1               | 14.2               | 14.1                | 16.4                | 17.3                |
-| pytorch - relu - no bias - fw    | 11.2              | 16.8               | 16.7                | 20.9                | 21.3                |
-| triton  - relu - no bias - fw    | 14.0              | 19.3               | 19.5                | 22.2                | 22.0                |
-| pytorch - relu - no bias - fw+bw | 6.3               | 10.6               | 10.6                | 12.9                | 14.1                |
-| triton  - relu - no bias - fw+bw | 9.2               | 14.3               | 14.3                | 16.5                | 17.4                |
+![Fused linear layers throughput in fp32 - training](docs/plots/FusedLinear_fp32_FW_BW.png)
 
+### Fused layer norm
 
-#### Leaky ReLU
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_layernorm.py`. The units are TFlops/s. These results are for a nVidia V100, Triton 1.1 and PyTorch 1.9.
+Note that in the Triton case the slowdowns at extreme sizes are because of register spilling, A100s get much better performance.
 
+![Fused layer norm throughput in fp16 - inference](docs/plots/LayerNorm_FW_torch.float16.png)
 
-|                                        | B=8, M=256, K=512 | B=8, M=512, K=1024 | B=4, M=1024, K=1024 | B=2, M=2048, K=2048 | B=2, M=4096, K=4096 |
-| -------------------------------------- | ----------------- | ------------------ | ------------------- | ------------------- | ------------------- |
-| pytorch - leaky_relu -  bias - fw      | 8.6               | 13.9               | 13.9                | 18.5                | 19.9                |
-| triton  - leaky_relu -  bias - fw      | 13.6              | 19.0               | 18.9                | 21.7                | 21.7                |
-| pytorch - leaky_relu -  bias - fw+bw   | 5.2               | 9.6                | 9.5                 | 12.2                | 13.7                |
-| triton  - leaky_relu -  bias - fw+bw   | 9.0               | 14.2               | 14.0                | 16.7                | 17.7                |
-| pytorch - leaky_relu - no bias - fw    | 11.2              | 16.7               | 16.7                | 20.8                | 21.1                |
-| triton  - leaky_relu - no bias - fw    | 14.0              | 19.3               | 19.7                | 22.4                | 22.0                |
-| pytorch - leaky_relu - no bias - fw+bw | 6.3               | 10.5               | 10.5                | 13.0                | 14.2                |
-| triton  - leaky_relu - no bias - fw+bw | 9.0               | 14.3               | 14.1                | 16.9                | 17.8                |
+![Fused layer norm throughput in fp16 - training](docs/plots/LayerNorm_FW+BW_torch.float16.png))
 
-#### GeLU
+![Fused layer norm throughput in fp32 - inference](docs/plots/LayerNorm_FW_torch.float32.png))
 
-**As of September 2021, these Triton kernels are not competitive with PyTorch for the GeLU activation**.
-
-|                                  | B=8, M=256, K=512 | B=8, M=512, K=1024 | B=4, M=1024, K=1024 | B=2, M=2048, K=2048 | B=2, M=4096, K=4096 |
-| -------------------------------- | ----------------- | ------------------ | ------------------- | ------------------- | ------------------- |
-| pytorch - gelu -  bias - fw      | 8.1               | 13.3               | 13.4                | 18.2                | 19.4                |
-| triton  - gelu -  bias - fw      | 10.0              | 9.0                | 9.0                 | 16.3                | 15.7                |
-| pytorch - gelu -  bias - fw+bw   | 5.0               | 9.2                | 9.2                 | 11.8                | 13.3                |
-| triton  - gelu -  bias - fw+bw   | 3.8               | 5.5                | 5.5                 | 5.6                 | 4.6                 |
-| pytorch - gelu - no bias - fw    | 10.4              | 15.6               | 15.9                | 20.4                | 20.8                |
-| triton  - gelu - no bias - fw    | 11.4              | 11.9               | 11.9                | 17.8                | 15.9                |
-| pytorch - gelu - no bias - fw+bw | 6.0               | 10.1               | 10.1                | 12.5                | 13.8                |
-| triton  - gelu - no bias - fw+bw | 3.8               | 6.0                | 6.0                 | 5.7                 | 4.6                 |
-
-#### No activation
-
-|                                  | B=8, M=256, K=512 | B=8, M=512, K=1024 | B=4, M=1024, K=1024 | B=2, M=2048, K=2048 | B=2, M=4096, K=4096 |
-| -------------------------------- | ----------------- | ------------------ | ------------------- | ------------------- | ------------------- |
-| pytorch - None -  bias - fw      | 10.8              | 16.3               | 16.2                | 20.8                | 21.0                |
-| triton  - None -  bias - fw      | 13.8              | 19.0               | 18.6                | 21.7                | 21.8                |
-| pytorch - None -  bias - fw+bw   | 6.2               | 10.8               | 10.8                | 12.9                | 14.2                |
-| triton  - None -  bias - fw+bw   | 9.8               | 15.2               | 15.1                | 17.6                | 19.0                |
-| pytorch - None - no bias - fw    | 15.2              | 20.5               | 20.1                | 23.7                | 22.6                |
-| triton  - None - no bias - fw    | 14.0              | 19.5               | 19.5                | 22.1                | 21.8                |
-| pytorch - None - no bias - fw+bw | 7.5               | 12.1               | 12.1                | 13.8                | 14.5                |
-| triton  - None - no bias - fw+bw | 9.9               | 15.4               | 15.2                | 17.8                | 19.1                |
-
+![Fused layer norm throughput in fp32 - training](docs/plots/LayerNorm_FW+BW_torch.float32.png))
 
 ## LRA
 

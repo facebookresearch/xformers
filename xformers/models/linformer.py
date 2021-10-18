@@ -77,7 +77,7 @@ class LinformerEncoderLayer(torch.nn.Module):
         self.dropout = nn.Dropout(p=final_dropout)
 
     def forward(self, tensor: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        # FIXME: Handle automatically different layer norm positions
+        # NOTE: this is just an example, pre/post layer norms are possible in practice
         tensor = self.norm1(tensor + self.multihead(tensor, tensor, tensor))
         tensor = self.norm2(tensor + self.feedforward(tensor))
         tensor *= mask.unsqueeze(-1).type_as(tensor)
@@ -100,7 +100,7 @@ class LinformerDecoderLayer(torch.nn.Module):
     def __init__(
         self,
         num_heads: int,
-        dim_sequence: int,  # FIXME: should not be needed, make this dynamic
+        dim_sequence: int,  # NOTE: should not be needed, this could just be dynamic
         dim_embedding: int,
         dim_feedforward: int,
         activation: Activation,

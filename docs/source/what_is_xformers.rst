@@ -9,7 +9,7 @@ Flexible Transformers, defined by interoperable and optimized building blocks.
     :align: center
 
 
-xFormers is tentatively focused on the following values
+xFormers is focused on the following values
 
 - **Field agnostic**. This library is not focused on any given field, by design.
 
