@@ -198,6 +198,5 @@ def test_pytorch_tranformer_parity(device=torch.device("cuda")):
 
     print(fit_ratio_pytorch, fit_ratio_xformer)
 
-    # FIXME: Should not have a discrenpancy here.
     assert fit_ratio_xformer > 50
     assert fit_ratio_pytorch > 50

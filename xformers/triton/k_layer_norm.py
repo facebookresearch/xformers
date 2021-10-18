@@ -7,12 +7,15 @@
 # CREDITS: This comes almost as-is from the Triton layer norm tutorial
 # https://github.com/openai/triton/blob/master/python/tutorials/05-layer-norm.py
 
+import logging
+
 import torch
 import triton
 import triton.language as tl
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 _triton_layernorm_fp16_enabled = False  # NOTE: PyTorch keeps layernorm as fp32
+_triton_registered_warnings = False
 
 
 # fmt: off
@@ -193,7 +196,16 @@ class _LayerNorm(torch.autograd.Function):
         if N > BLOCK_SIZE_N:
             raise RuntimeError("This layer norm doesn't support feature dim >= 64KB.")
 
-        assert x_arg.is_contiguous() and y.is_contiguous()
+        if not x_arg.is_contiguous() or not y.is_contiguous():
+            global _triton_registered_warnings
+            if not _triton_registered_warnings:
+                logging.warning("Non-contiguous input tensor found. Making it contiguous,"
+                                + " but could have perf or trainer implications")
+
+                _triton_registered_warnings = True
+
+            x_arg = x_arg.contiguous()
+            y = y.contiguous()
 
         # heuristics for number of warps.
         num_warps = min(max(BLOCK_SIZE_N // 256, 1), 8)

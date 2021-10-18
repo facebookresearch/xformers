@@ -63,7 +63,7 @@ def test_fused_matmul(shape, dtype):
         triton_activation = get_triton_activation_kernel(activation)
         res_triton, _ = fused_matmul(a, b.transpose(1, 0), c, triton_activation)
 
-        # FIXME: @lefaudeux
+        # NOTE: @lefaudeux
         # GeLUs are not well handled for now, we use an approximation
         # they're also slower than pytorch so not likely to be used
         # Issue tracked with https://github.com/fairinternal/xformers/issues/238

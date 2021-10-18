@@ -1,97 +1,191 @@
-# xFormers
+<img src="./docs/assets/logo.png" width=800>
 
-![xFormers Logo](./docs/assets/logo.png)
+![PyPI](https://img.shields.io/pypi/v/xformers)
+[![Documentation Status](https://readthedocs.org/projects/xformers/badge/?version=latest)](https://xformers.readthedocs.io/en/latest/?badge=latest)
+[![CircleCI](https://circleci.com/gh/facebookresearch/xformers.svg?style=shield)](https://app.circleci.com/pipelines/github/facebookresearch/xformers/)
+![PyPI - License](https://img.shields.io/pypi/l/xformers)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+--------------------------------------------------------------------------------
 
-Flexible Transformers, defined by interoperable and optimized building blocks.
+## Description
 
-## Key concepts
+xFormers is a modular and field agnostic library to flexibly generate transformer architectures by interoperable and optimized building blocks.
 
-- **Field agnostic**. This repo is not focused on NLP, speech or vision, by design. The focus is on making sure that building transformers is a shared building block in between. This makes the models, ideas and optimizations easier to share.
+## Getting started
 
-- **Composable**. There are basically two obvious takes to the Transformer ecosystem:
-  - expose all the architectures proposed in different papers more or less individually
-  - break all the achitectures into a _block zoo_, which allows you to recompose said reference models, but also study ablations or architecture search. This repo aims at supporting this second way.
+The full [documentation](https://xformers.readthedocs.io/) contains instructions for getting started, deep dives and tutorials about the various APIs.
+If in doubt, please check out the [HOWTO](HOWTO.md). Only some general considerations are laid out in the README.
 
-- **Extensible**. This is meant to support a research effort, and not to substitute to modelling and field specific know how, or to constraint into the use of specific blocks. xFormers aims at being _easy to extend locally_, so that one can focus on a specific improvement, and easily compare it against the state of the art.
+### Installation
 
-- **Optimized**. Reusing building blocks across teams and domains means that engineering efforts can be more valued, so that investing in speeding up some key building blocks (without breaking compatibility thanks to the settled interface) is possible. Some results [here](BENCHMARKS.md).
+To install xFormers, it is recommended to use a dedicated virtual environment, as often with python, through `python-virtualenv` or `conda` for instance.
+There are two ways you can install it:
 
-- **Tested**. Each and every of the variant in the repo is _tested, alone and composed with the other relevant blocks_. This happens automatically anytime somebody proposes a new variant through a PR, via a registry mechanism.
+#### Directly from the pip package
 
-- **Crowd Sourced**. This is probably the single most important part. All of the above should make it possible for people interested to contribute: contributing on a small block is easier than on a full model, unit tests and common interfaces should help, the ability to extend the library locally and test the relevance prior to a PR should also help. PRs are really welcome, [see for details](CONTRIBUTING.md).
+  You can also fetch the latest release from PyPi. This will not contain the wheels for the sparse attention kernels, for which you will need to build from source.
+
+  ```bash
+  conda create --name xformer_env
+  conda activate xformer_env
+  pip install xformers
+  ```
+
+#### Build from source (dev mode)
+
+  These commands will fetch the latest version of the code, create a dedicated `conda` environment, activate it then install xFormers from source. If you want to build the sparse attention CUDA kernels, please make sure that the next point is covered prior to running these instructions.
+
+  ```bash
+  git clone git@github.com:fairinternal/xformers.git
+  conda create --name xformer_env python=3.8
+  conda activate xformer_env
+  cd xformers
+  pip install -r requirements.txt
+  pip install -e .
+  ```
+
+#### Sparse attention kernels
+
+Installing the CUDA-based sparse attention kernels may require extra care, as this mobilizes the CUDA toolchain. As a reminder, these kernels are built when you run `pip install -e .` and the CUDA buildchain is available (NVCC compiler). Re-building can for instance be done via `python3 setup.py clean && python3 setup.py develop`, so similarly wipe the `build` folder and redo a pip install -e.
+
+Some advices related to building these CUDA-specific components, tentatively adressing common pitfalls. Please make sure that:
+
+* NVCC and the current CUDA runtime match. You can often change the CUDA runtime with `module unload cuda module load cuda/xx.x`, possibly also `nvcc`
+* the version of GCC that you're using matches the current NVCC capabilities
+* the `TORCH_CUDA_ARCH_LIST` env variable is set to the architures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;8.0;8.6"`
+
+#### Triton
+
+Some parts of xFormers use [Triton](http://www.triton-lang.org), and will only expose themselves if Triton is installed, and a compatible GPU is present (nVidia GPU with tensor cores). If Triton was not installed as part of the testing procedure, you can install it directly by running `pip install triton`. You can optionally test that the installation is successful by running one of the Triton-related benchmarks, for instance `python3 xformers/benchmarks/benchmnark_triton_softmax.py`
+
+Triton will cache the compiled kernels to `/tmp/triton` by default. If this becomes an issue, this path can be specified through the `TRITON_CACHE_DIR` environment variable.
+
+### Testing the installation
+
+This will run a benchmark of the attention mechanisms exposed by xFormers, and generate a runtime and memory plot.
+If this concludes without errors, the installation is successful. This step is optional, and you will need some extra dependencies for it to
+be able to go through : `pip install -r requirements-benchmark.txt`.
+
+Once this is done, you can run this particular benchmark as follows:
+
+```python
+python3 xformers/benchmarks/benchmark_encoder.py --activations relu  --plot -emb 256 -bs 32 -heads 16
+```
 
 ## Using xFormers
 
-If in doubt, please check out the [HOWTO](HOWTO.md). Only some general considerations are laid out in the README.
+### Transformers key concepts
 
-### Installing the repository
+Let's start from a classical overview of the Transformer architecture (illustration from Lin et al,, "A Survey of Transformers")
+<p align="center">
+  <img src="./docs/assets/Transformer_arch_Lin_et_al.png" width=600>
+</p>
 
-It is recommended to use a dedicated virtual environment, as often with python, through `python-virtualenv` or `conda` for instance.
-`pip install -e .` is all you need to install in dev mode (you can change the repo code and the installation will follow suit), if you just want to install from source and not change it afterwards `pip install .` is what you'll need.
+You'll find the key repository boundaries in this illustration: a Transformer is generally made of a collection of attention mechanisms, embeddings to encode some positional information, feed-forward blocks and a residual path (typically referred to as pre- or post- layer norm). These boundaries do not work for all models, but we found in practice that given some accomodations it could capture most of the state of the art.
+
+Models are thus not implemented in monolithic files, which are typically complicated to handle and modify. Most of the concepts present in the above illustration correspond to an abstraction level, and when variants are present for a given sub-block it should always be possible to select any of them. You can focus on a given encapsulation level and modify it as needed.
+
 
 ### Repo map
 
 ```bash
 ├── components                  # Parts zoo, any of which can be used directly
-│   ├── attention               # all the supported attentions
-│   ├── feedforward             # ..
-│   ├─- positional_embedding    # ..
-│   ├── activations.py          # ..
+│   └── attention
+│        └ ...                  # all the supported attentions
+│   └── feedforward             #
+│        └ ...                  # all the supported feedforwards
+│   └─- positional_embedding    #
+│        └ ...                  # all the supported positional embeddings
+│   ├── activations.py          #
 │   └── multi_head_dispatch.py  # (optional) multihead wrap
-├── factory
+d├── factory
 │   ├── block_factory.py        # (optional) helper to programatically generate layers
 │   └── model_factory.py        # (optional) helper to programatically generate models
 ├── models
 ...                             # Full models, ready to be used
 ```
 
-### Using Attentions
+<details><summary> Attention mechanisms</summary><p>
 
-You can find some more details in the [HOWTO](HOWTO.md), but in short:
+- [Scaled dot product](xformers/components/attention/scaled_dot_product.py)
+  - *[Attention is all you need, Vaswani et al., 2017](https://arxiv.org/abs/1706.03762)*
+- [Sparse](xformers/components/attention/scaled_dot_product.py)
+  - whenever a sparse enough mask is passed
+- [BlockSparse](xformers/components/attention/blocksparse.py)
+  - *courtesy of [Triton](www.triton-lang.org)*
+- [Linformer](xformers/components/attention/linformer.py)
+  - *[Linformer, self-attention with linear complexity, Wang et al., 2020](https://arxiv.org/abs/2006.04768)*
+- [Nystrom](xformers/components/attention/nystrom.py)
+  - *[Nyströmformer: A Nyström-Based Algorithm for Approximating Self-Attention, Xiong et al., 2021](https://arxiv.org/abs/2102.03902)*
+- [Local](xformers/components/attention/local.py).
+ Notably used in (and many others)
+  - *[Longformer: The Long-Document Transformer, Beltagy et al., 2020](https://arxiv.org/abs/2004.05150)*
+  - *[BigBird, Transformer for longer sequences, Zaheer et al., 2020](https://arxiv.org/abs/2007.14062)*
 
-- How does multi-head attention works ?
-  - The multi-head wrapper handles the dimension changes, so maybe that is what you would like to use. In a nutshell, we fold the head dimension into the batch, since both relate to parallel, independent computations. Feel free to skip the multi-head wrapper if that's easier for you
-- Do all attentions expose the same settings ?
-  - As much as possible, yes. Some options do not relate well to some attention mechanisms though, maybe because there's no real attention map to begin with, or that the dimensions are arbitrarily changed
-- Can I just cherry pick an attention from the repo and run with it ?
-  - Yes, go for it !
-- How can I easily test out different attentions ?
-  - Either you import the ones you're interested in directly in your code base, their API should be very close and you would own everything. The dimension expectations are explained in the HOWTO
-  - Alternatively, a `build_attention` helper is provided, which takes a dict as an input. By sweeping over several settings (attention names for instance), you can try out several options in a pretty compact code footprint
+- [Favor/Performer](xformers/components/attention/favor.py)
+  - *[Rethinking Attention with Performers, Choromanski et al., 2020](https://arxiv.org/abs/2009.14794v1)*
+- [Orthoformer](xformers/components/attention/ortho.py)
+  - *[Keeping Your Eye on the Ball: Trajectory Attention in Video Transformers,
+Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
+- [Random](xformers/components/attention/random.py)
+  - See BigBird, Longformers,..
+- [Global](xformers/components/attention/random.py)
+  - See BigBird, Longformers,..
+- [FourierMix](xformers/components/attention/fourier_mix.py)
+  - *[FNet: Mixing Tokens with Fourier Transforms, Lee-Thorp et al.](https://arxiv.org/abs/2105.03824v1)*
+- ... add a new one [see Contribution.md](CONTRIBUTING.md)
 
-### Sparse attention
+</p></details>
 
-1. Setup
-As a reminder, these are built when you run `pip install -e .` and the CUDA buildchain is available (NVCC compiler). Re-building can for instance be done via `python3 setup.py clean && python3 setup.py develop`, so similarly wipe the `build` folder and redo a pip install -e.
+<details><summary>Feed forward mechanisms </summary><p>
 
-Some advices related to building these CUDA-specific components, tentatively adressing common pitfalls:
+- [MLP](xformers/components/feedforward/mlp.py)
+- [Fused](xformers/components/feedforward/fused_mlp.py)
 
-- make sure that NVCC and the current CUDA runtime match. You can often change the CUDA runtime with `module unload cuda module load cuda/xx.x`, possibly also `nvcc`
-- make sure that the version of GCC that you're using matches the current NVCC capabilities
-- make sure that `TORCH_CUDA_ARCH_LIST` is set to the architures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;8.0;8.6"`
+</p></details>
 
-2. Example usecase
+<details><summary>Positional embedding </summary><p>
 
-Below you will find a set of notebooks that will show you how you can use xFormers in your project
+- [Sine](xformers/components/positional_embedding/sine.py)
+- [Vocabulary](xformers/components/positional_embedding/vocab.py)
 
-- [Creating complex sparsity patterns with xFormers](docs/source/2d_attention_patterns.ipynb)
-- [Changing ViT to use sparse attention, benchmarking the effects](docs/source/vision_transformers.ipynb)
+</p></details>
 
-### Adding new models
+### Key Features
 
-Models live in `xformers/models`. As a general rule, one should try to write them using the blocks present in `xformers/components` (or upstream PyTorch), so that ulterior improvements are propagated to each implementation.
+1. Many attention mechanisms, interchangeables
+2. Optimized building blocks, beyond PyTorch primitives
+   1. sparse attention
+   2. block-sparse attention
+   3. fused softmax
+   4. fused linear layer
+   5. fused layer norm
+3. Benchmarking and testing tools
+   1. [micro benchnmarks](BENCHMARKS.md)
+   2. transformer block benchmark
+   3. [LRA](xformers/benchmarks/LRA/README.md), with SLURM suppot
+4. Programatic and sweep friendly layer and model construction
+5. Hackable
+   1. Not using monolithic CUDA kernels, composable building blocks
+   2. Using [Triton](https://triton-lang.org/) for some optimized parts, explicit, pythonic and user-accessible
 
-## Bibliograpy
+### FAQ ?
 
-Some references or papers used in the repo
+We've tried to collect a relatively exhaustive list of explanations in the [HOWTO](HOWTO.md)
 
-- [Attention is all you need, Vaswani et al., 2017](https://papers.nips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf)
-- [Linformer, self-attention with linear complexity, Wang et al., 2020](https://arxiv.org/pdf/2006.04768.pdf)
-- [BigBird, Transformer for longer sequences, Zaheer et al., 2020](https://papers.nips.cc/paper/2020/file/c8512d142a2d849725f31a9a7a361ab9-Paper.pdf)
-- [Nyströmformer: A Nyström-Based Algorithm for Approximating Self-Attention, Xiong et al., 2021](https://arxiv.org/abs/2102.03902)
-- [Rethinking Attention with Performers, Choromanski et al., 2020](https://arxiv.org/abs/2009.14794v1)
-- [Reformer: The Efficient Transformer, Kitaev et al., 2020](https://arxiv.org/abs/2001.04451)
-- [Longformer: The Long-Document Transformer, Beltagy et al., 2020](https://arxiv.org/pdf/2004.05150.pdf)
-- [Long Range Arena: a benchmark for efficient Transformers, Tay et al., 2020](https://arxiv.org/abs/2011.04006)
-- [FNet: Mixing tokens with Fourier transform, Lee-Thorp et al., 2021](https://arxiv.org/pdf/2105.03824v1.pdf)
-- [The reversible residual network: Backpropagation without storing activations. Gomez,et al. 2017](https://arxiv.org/abs/1707.04585)
+### License
+
+xFormers has a BSD-style license, as found in the [LICENSE](LICENSE) file.
+
+## Citing xFormers
+
+If you use xFormers in your publication, please cite it by using the following BibTeX entry.
+
+``` bibtex
+@Misc{xFormers2021,
+  author =       {Benjamin Lefaudeux, Francisco Massa, Diana Liskovich, Min Xu, Jieru Hu, Marta Tintore, Susan Zhang },
+  title =        {xFormers: A modular and hackable Transformer modelling library},
+  howpublished = {\url{https://github.com/facebookresearch/xformers}},
+  year =         {2021}
+}
+```

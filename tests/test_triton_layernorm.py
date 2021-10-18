@@ -99,3 +99,19 @@ def test_layernorm_parity(shape, amp):
             f"Bias grad mismatch: {torch.norm(torch_layernorm.bias.grad)} vs."
             + f" {torch.norm(triton_layernorm.bias.grad)}"
         )
+
+
+@pytest.mark.skipif(not _triton_available, reason="Triton is not available")
+def test_no_contiguous():
+    """Check that we don't choke on non-contigous tensors"""
+    shape = (8, 384, 128)
+
+    # Get the same inputs
+    torch.random.manual_seed(0)
+    X = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
+    X = X.transpose(2, 1).contiguous().transpose(2, 1)
+
+    assert not X.is_contiguous()
+
+    triton_layernorm = FusedLayerNorm(X.shape[-1]).to("cuda")
+    _ = triton_layernorm(X)
