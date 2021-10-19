@@ -15,7 +15,7 @@ xFormers is a modular and field agnostic library to flexibly generate transforme
 
 ## Getting started
 
-The full [documentation](https://xformers.readthedocs.io/) contains instructions for getting started, deep dives and tutorials about the various APIs.
+The full [documentation](https://facebookresearch.github.io/xformers/) contains instructions for getting started, deep dives and tutorials about the various APIs.
 If in doubt, please check out the [HOWTO](HOWTO.md). Only some general considerations are laid out in the README.
 
 ### Installation
