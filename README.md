@@ -1,9 +1,11 @@
 <img src="./docs/assets/logo.png" width=800>
 
-![PyPI](https://img.shields.io/pypi/v/xformers)
-[![Documentation Status](https://readthedocs.org/projects/xformers/badge/?version=latest)](https://xformers.readthedocs.io/en/latest/?badge=latest)
+<!-- FIXME @lefaudeux - PyPI package -->
+<!-- ![PyPI](https://img.shields.io/pypi/v/xformers)
+![PyPI - License](https://img.shields.io/pypi/l/xformers) -->
+
+[![Documentation Status](https://github.com/facebookresearch/xformers/actions/workflows/gh-pages.yml/badge.svg)](https://github.com/facebookresearch/xformers/actions/workflows/gh-pages.yml/badge.svg)
 [![CircleCI](https://circleci.com/gh/facebookresearch/xformers.svg?style=shield)](https://app.circleci.com/pipelines/github/facebookresearch/xformers/)
-![PyPI - License](https://img.shields.io/pypi/l/xformers)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 --------------------------------------------------------------------------------
 
@@ -13,7 +15,7 @@ xFormers is a modular and field agnostic library to flexibly generate transforme
 
 ## Getting started
 
-The full [documentation](https://xformers.readthedocs.io/) contains instructions for getting started, deep dives and tutorials about the various APIs.
+The full [documentation](https://facebookresearch.github.io/xformers/) contains instructions for getting started, deep dives and tutorials about the various APIs.
 If in doubt, please check out the [HOWTO](HOWTO.md). Only some general considerations are laid out in the README.
 
 ### Installation
