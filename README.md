@@ -1,9 +1,11 @@
 <img src="./docs/assets/logo.png" width=800>
 
-![PyPI](https://img.shields.io/pypi/v/xformers)
-[![Documentation Status](https://readthedocs.org/projects/xformers/badge/?version=latest)](https://xformers.readthedocs.io/en/latest/?badge=latest)
+<!-- FIXME @lefaudeux - PyPI package -->
+<!-- ![PyPI](https://img.shields.io/pypi/v/xformers)
+![PyPI - License](https://img.shields.io/pypi/l/xformers) -->
+
+[![Documentation Status](https://github.com/facebookresearch/xformers/actions/workflows/gh-pages.yml/badge.svg)](https://github.com/facebookresearch/xformers/actions/workflows/gh-pages.yml/badge.svg)
 [![CircleCI](https://circleci.com/gh/facebookresearch/xformers.svg?style=shield)](https://app.circleci.com/pipelines/github/facebookresearch/xformers/)
-![PyPI - License](https://img.shields.io/pypi/l/xformers)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 --------------------------------------------------------------------------------
 
