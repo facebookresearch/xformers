@@ -364,6 +364,10 @@ Transformer(
 
 We don't have the exact same interfaces, but we have something fairly close with the [model_factory](xformers/factory/model_factory.py).
 
+It’s worth noting that xFormer’s blocks expect tensors to be batch first, while Pytorch’s transformers uses a sequence first convention. Don’t forget to permute if you use xFormers’s blocks as drop-in replacements.
+
+Similarly, the attention masks conventions are different: in Pytorch, the mask is *True* when an element should *not* be attended to, whereas in xFormer it’s the opposite. Don’t forget to negate your attention masks to use xFormers’ blocks as drop-in replacements.
+
 The equivalent with xFormers would look like the following. You can think of it  as a declaration of the sequence of blocks that you would like instantiated.
 
 ```python
