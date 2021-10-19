@@ -1,9 +1,7 @@
 <img src="./docs/assets/logo.png" width=800>
 
-<!-- FIXME @lefaudeux - PyPI package -->
-<!-- ![PyPI](https://img.shields.io/pypi/v/xformers)
-![PyPI - License](https://img.shields.io/pypi/l/xformers) -->
-
+![PyPI](https://img.shields.io/pypi/v/xformers)
+![PyPI - License](https://img.shields.io/pypi/l/xformers)
 [![Documentation Status](https://github.com/facebookresearch/xformers/actions/workflows/gh-pages.yml/badge.svg)](https://github.com/facebookresearch/xformers/actions/workflows/gh-pages.yml/badge.svg)
 [![CircleCI](https://circleci.com/gh/facebookresearch/xformers.svg?style=shield)](https://app.circleci.com/pipelines/github/facebookresearch/xformers/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -52,7 +50,7 @@ Installing the CUDA-based sparse attention kernels may require extra care, as th
 
 Some advices related to building these CUDA-specific components, tentatively adressing common pitfalls. Please make sure that:
 
-* NVCC and the current CUDA runtime match. You can often change the CUDA runtime with `module unload cuda module load cuda/xx.x`, possibly also `nvcc`
+* NVCC and the current CUDA runtime match. Depending on your setup, you may be able to change the CUDA runtime with `module unload cuda module load cuda/xx.x`, possibly also `nvcc`
 * the version of GCC that you're using matches the current NVCC capabilities
 * the `TORCH_CUDA_ARCH_LIST` env variable is set to the architures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;8.0;8.6"`
 
