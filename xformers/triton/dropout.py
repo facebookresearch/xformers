@@ -17,9 +17,9 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 @triton.autotune(
     configs=[
         triton.Config({"BLOCK_SIZE" : 256}, num_warps=1),
-        triton.Config({"BLOCK_SIZE" : 512}, num_warps=1),
-        triton.Config({"BLOCK_SIZE" : 1024}, num_warps=2),
-        triton.Config({"BLOCK_SIZE" : 2048}, num_warps=4),
+        triton.Config({"BLOCK_SIZE" : 512}, num_warps=2),
+        triton.Config({"BLOCK_SIZE" : 1024}, num_warps=4),
+        triton.Config({"BLOCK_SIZE" : 2048}, num_warps=8),
         triton.Config({"BLOCK_SIZE" : 4096}, num_warps=8),
     ],
     key=["N"],
