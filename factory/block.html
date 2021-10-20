@@ -302,79 +302,8 @@
 </dd></dl>
 
 <dl class="py class">
-<dt id="xformers.factory.block_factory.LayerNormStyle">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">LayerNormStyle</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">value</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#LayerNormStyle"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.LayerNormStyle" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a>, <a class="reference external" href="https://docs.python.org/3.6/library/enum.html#enum.Enum" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">enum.Enum</span></code></a></p>
-<p>Support different layer norm styles.
-See “On Layer Normalization in the Transformer Architecture”,
-Xiong et al., <a class="reference external" href="https://arxiv.org/pdf/2002.04745v1.pdf">https://arxiv.org/pdf/2002.04745v1.pdf</a></p>
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.LayerNormStyle.Pre">
-<code class="sig-name descname">Pre</code><em class="property"> = 'pre'</em><a class="headerlink" href="#xformers.factory.block_factory.LayerNormStyle.Pre" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.LayerNormStyle.Post">
-<code class="sig-name descname">Post</code><em class="property"> = 'post'</em><a class="headerlink" href="#xformers.factory.block_factory.LayerNormStyle.Post" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
-<dt id="xformers.factory.block_factory.Residual">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">Residual</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">layer</span><span class="p">:</span> <span class="n">torch.nn.modules.module.Module</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#Residual"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.Residual" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">torch.nn.modules.module.Module</span></code></p>
-<p>Object-oriented handling of the residual path</p>
-<dl class="py method">
-<dt id="xformers.factory.block_factory.Residual.forward">
-<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">inputs</span><span class="p">:</span> <span class="n">Union<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a><span class="p">, </span>List<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a><span class="p">]</span><span class="p">]</span></span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#Residual.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.Residual.forward" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.Residual.training">
-<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.factory.block_factory.Residual.training" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
-<dt id="xformers.factory.block_factory.PreNorm">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">PreNorm</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">d_model</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span></em>, <em class="sig-param"><span class="n">sublayer</span><span class="p">:</span> <span class="n">torch.nn.modules.module.Module</span></em>, <em class="sig-param"><span class="n">use_triton</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></span> <span class="o">=</span> <span class="default_value">True</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#PreNorm"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.PreNorm" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">torch.nn.modules.module.Module</span></code></p>
-<p>Adds LayerNorm before computing attention</p>
-<p>..Note: If a list of inputs is passed, all of them get normalized</p>
-<dl class="py method">
-<dt id="xformers.factory.block_factory.PreNorm.forward">
-<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">inputs</span><span class="p">:</span> <span class="n">Union<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a><span class="p">, </span>List<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a><span class="p">]</span><span class="p">]</span></span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#PreNorm.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.PreNorm.forward" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.PreNorm.training">
-<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.factory.block_factory.PreNorm.training" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
-<dt id="xformers.factory.block_factory.PostNorm">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">PostNorm</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">d_model</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span></em>, <em class="sig-param"><span class="n">sublayer</span><span class="p">:</span> <span class="n">torch.nn.modules.module.Module</span></em>, <em class="sig-param"><span class="n">use_triton</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></span> <span class="o">=</span> <span class="default_value">True</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#PostNorm"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.PostNorm" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">torch.nn.modules.module.Module</span></code></p>
-<p>Adds LayerNorm after computing attention</p>
-<dl class="py method">
-<dt id="xformers.factory.block_factory.PostNorm.forward">
-<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">inputs</span><span class="p">:</span> <span class="n">Union<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a><span class="p">, </span>List<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a><span class="p">]</span><span class="p">]</span></span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#PostNorm.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.PostNorm.forward" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.PostNorm.training">
-<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.factory.block_factory.PostNorm.training" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
 <dt id="xformers.factory.block_factory.xFormerBlockConfig">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">xFormerBlockConfig</code><span class="sig-paren">(</span><em class="sig-param">dim_model: int, feedforward_config: Dict[str, Any], position_encoding_config: Union[Dict[str, Any], NoneType], block_type: xformers.factory.block_factory.BlockType, layer_norm_style: xformers.factory.block_factory.LayerNormStyle = &lt;LayerNormStyle.Post: 'post'&gt;, use_triton: bool = True</em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerBlockConfig"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig" title="Permalink to this definition">¶</a></dt>
+<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">xFormerBlockConfig</code><span class="sig-paren">(</span><em class="sig-param">dim_model: int, feedforward_config: Dict[str, Any], position_encoding_config: Union[Dict[str, Any], NoneType], block_type: xformers.factory.block_factory.BlockType, layer_norm_style: xformers.components.residual.LayerNormStyle = &lt;LayerNormStyle.Post: 'post'&gt;, use_triton: bool = True</em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerBlockConfig"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#object" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <dl class="py attribute">
 <dt id="xformers.factory.block_factory.xFormerBlockConfig.use_triton">
@@ -393,7 +322,7 @@ Xiong et al., <a class="reference external" href="https://arxiv.org/pdf/2002.047
 
 <dl class="py attribute">
 <dt id="xformers.factory.block_factory.xFormerBlockConfig.layer_norm_style">
-<code class="sig-name descname">layer_norm_style</code><em class="property">: <a class="reference internal" href="#xformers.factory.block_factory.LayerNormStyle" title="xformers.factory.block_factory.LayerNormStyle">xformers.factory.block_factory.LayerNormStyle</a></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig.layer_norm_style" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">layer_norm_style</code><em class="property">: xformers.components.residual.LayerNormStyle</em><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig.layer_norm_style" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
@@ -457,7 +386,7 @@ Xiong et al., <a class="reference external" href="https://arxiv.org/pdf/2002.047
 
 <dl class="py method">
 <dt id="xformers.factory.block_factory.xFormerEncoderBlock.forward">
-<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">input_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerEncoderBlock.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderBlock.forward" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git0397558 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git0397558 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">input_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git0397558 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerEncoderBlock.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderBlock.forward" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
@@ -485,7 +414,7 @@ Xiong et al., <a class="reference external" href="https://arxiv.org/pdf/2002.047
 
 <dl class="py method">
 <dt id="xformers.factory.block_factory.xFormerDecoderBlock.forward">
-<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">target</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">memory</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">encoder_att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">decoder_att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">input_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+gitc186c99 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerDecoderBlock.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerDecoderBlock.forward" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">target</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git0397558 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">memory</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git0397558 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">encoder_att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git0397558 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">decoder_att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git0397558 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">input_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git0397558 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerDecoderBlock.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerDecoderBlock.forward" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 </dd></dl>
