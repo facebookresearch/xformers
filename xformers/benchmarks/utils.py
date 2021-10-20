@@ -69,8 +69,8 @@ def pretty_plot(results, title, units: str, filename=None, dash_key=""):
 
     # Make sure that the plot is big enough
     f = plt.figure()
-    f.set_figwidth(6)
-    f.set_figheight(6)
+    f.set_figwidth(10)
+    f.set_figheight(10)
 
     # Display the collections
     for k, v in workloads.items():
