@@ -183,9 +183,20 @@ If you use xFormers in your publication, please cite it by using the following B
 
 ``` bibtex
 @Misc{xFormers2021,
-  author =       {Benjamin Lefaudeux, Francisco Massa, Diana Liskovich, Vittorio Caggiano, Min Xu, Jieru Hu, Marta Tintore, Susan Zhang},
+  author =       {Benjamin Lefaudeux, Francisco Massa, Diana Liskovich, Wenhan Xiong, Vittorio Caggiano, Min Xu, Jieru Hu, Marta Tintore, Susan Zhang},
   title =        {xFormers: A modular and hackable Transformer modelling library},
   howpublished = {\url{https://github.com/facebookresearch/xformers}},
   year =         {2021}
 }
 ```
+
+## Credits
+
+The following repositories are used in xFormers, either in close to original form or as an inspiration:
+
+* [Sputnik](https://github.com/google-research/sputnik)
+* [GE-SpMM](https://github.com/hgyhungry/ge-spmm)
+* [Triton](https://github.com/openai/triton)
+* [LucidRain Reformer](https://github.com/lucidrains/reformer-pytorch)
+* [RevTorch](https://github.com/RobinBruegger/RevTorch)
+* [Nystromformer](https://github.com/mlpen/Nystromformer)

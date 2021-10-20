@@ -158,7 +158,7 @@ model = VisionTransformer(img_size=img_size, patch_size=patch_size,
 
 
 # Define the mask that we want to use
-# We suppose in this snipper that you have a precise mask in mind already
+# We suppose in this snippert that you have a precise mask in mind already
 # but several helpers and examples are proposed in  `xformers.components.attention.attention_patterns`
 my_fancy_mask : torch.Tensor  # This would be for you to define
 
