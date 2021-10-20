@@ -118,7 +118,7 @@ def kernel_fma(
         W += BLOCK_K * stride_wk
 
         # block level matrix multiplication
-        acc += tl.dot(a, w).to(tl.float32)
+        acc += tl.dot(a, w)
 
     # optional: save the activation inputs
     if META["SAVE_ACT_INPUTS"]:
@@ -326,118 +326,6 @@ def kernel_grad_inputs(
     tl.store(grad_in_ptrs, grad_in_acc, mask=mask_mk)
 
 
-# fmt: off
-@triton.autotune(
-    configs=[
-        triton.Config({'BLOCK_N': 256, 'BLOCK_K': 256}, num_stages=3, num_warps=8),
-        triton.Config({'BLOCK_N': 128, 'BLOCK_K': 256}, num_stages=3, num_warps=8),
-        triton.Config({'BLOCK_N': 256, 'BLOCK_K': 128}, num_stages=3, num_warps=8),
-        triton.Config({'BLOCK_N': 256, 'BLOCK_K': 64}, num_stages=4, num_warps=8),
-        triton.Config({'BLOCK_N': 64 , 'BLOCK_K': 256}, num_stages=4, num_warps=8),
-        triton.Config({'BLOCK_N': 128, 'BLOCK_K': 128}, num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_N': 128, 'BLOCK_K': 64}, num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_N': 64 , 'BLOCK_K': 128}, num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_N': 128, 'BLOCK_K': 32}, num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_N': 64 , 'BLOCK_K': 64}, num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_N': 64 , 'BLOCK_K': 32}, num_stages=5, num_warps=2),
-        triton.Config({'BLOCK_N': 32 , 'BLOCK_K': 64}, num_stages=5, num_warps=2),
-        triton.Config({'BLOCK_N': 32 , 'BLOCK_K': 32}, num_stages=5, num_warps=2),
-    ],
-    key=['M', 'N', 'K'],
-)
-@triton.jit
-def kernel_grad_bias_weight(
-    # Pointers to all the tensors
-    GRAD_BIAS, GRAD_WEIGHT, GRAD_ACT, INPUTS,
-    # Tensor dimensions
-    M, N, K,
-    # strides for all the gradients & inputs
-    stride_gwn, stride_gam, stride_im,
-    # Meta-parameters
-    **META,
-):
-    # fmt: on
-    """
-    Compute the grad and weight gradients.
-
-    Shapes:
-        INPUTS      (M, K)
-        GRAD_ACT    (M, N)
-        GRAD_BIAS   (N)
-        GRAD_WEIGHT (N, K)
-
-    The main matmul is
-        GRAD_WEIGHT <- GRAD_ACT^T x INPUTS
-        (N, K)      <- (N, M)     x (M, K)
-        meaning that we consolidate over M
-    """
-
-    # extract metaparameters
-    BLOCK_M, GROUP_N = META["BLOCK_M"], META["GROUP_N"]
-    BLOCK_N, BLOCK_K = META["BLOCK_N"], META["BLOCK_K"]
-
-    # get the kernel ids, aka where are we ?
-    pid = tl.program_id(axis=0)
-    num_pid_n = tl.cdiv(N, BLOCK_N)
-    num_pid_k = tl.cdiv(K, BLOCK_K)
-    num_pid_in_group = GROUP_N * num_pid_k  # number of programs in group
-    group_id = pid // num_pid_in_group  # id of the group this program is in
-    first_pid_n = group_id * GROUP_N  # row-id of the first program in the group
-    GROUP_N = min(
-        num_pid_n - first_pid_n, GROUP_N
-    )  # if `num_pid_m` isn't divisible by `GROUP_M`, the last group is smaller
-
-    # *within groups*, programs are ordered in a column-major order
-    pid_n = first_pid_n + (pid % GROUP_N)  # row-id of the program in the *launch grid*
-    pid_k = (
-        pid % num_pid_in_group
-    ) // GROUP_N  # col-id of the program in the *launch grid*
-
-    # memory ranges
-    rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    rk = pid_k * BLOCK_K + tl.arange(0, BLOCK_K)
-    rm = tl.arange(0, BLOCK_M)
-
-    # set the starting points for all the pointers
-    grad_act_ptrs = GRAD_ACT + rn[:, None] + rm[None, :] * stride_gam    # N x M
-    inputs_ptrs = INPUTS + rm[:, None] * stride_im + rk[None, :]         # M x K
-
-    if META["COMPUTE_GRAD_BIAS"]:
-        grad_bias = tl.zeros((BLOCK_N,), tl.float16)
-        if META["FP_32"]:
-            grad_bias = grad_bias.to(tl.float32)
-
-    grad_weight_acc = tl.zeros((BLOCK_N, BLOCK_K), tl.float32)
-
-    # matmul + fused grad bias.
-    # consolidate over M
-    mask_nm = ((rn[:, None] < N) & (rm[None, :] < M))
-    mask_mk = (rm[:, None] < M) & (rk[None, :] < K)
-
-    for _ in range(M, 0, -BLOCK_M):
-        grad_act = tl.load(grad_act_ptrs, mask=mask_nm, other=0.)
-        grad_act_ptrs += BLOCK_M * stride_gam
-
-        if META["COMPUTE_GRAD_WEIGHT"]:
-            # GRAD_WEIGHT <- GRAD_ACT^T x INPUTS
-            inputs = tl.load(inputs_ptrs, mask=mask_mk, other=0.)
-            grad_weight_acc += tl.dot(grad_act, inputs)
-            inputs_ptrs += BLOCK_M * stride_im
-
-        if META["COMPUTE_GRAD_BIAS"]:
-            # grad bias is just the accumulation of grad_act over M
-            grad_bias += tl.sum(grad_act, axis=1)
-
-    # epilogue, save whatever is needed
-    if META["COMPUTE_GRAD_BIAS"]:
-        grad_bias_ptrs = GRAD_BIAS + rn
-        tl.store(grad_bias_ptrs, grad_bias, mask=rn < N)
-
-    if META["COMPUTE_GRAD_WEIGHT"]:
-        grad_weight_ptrs = GRAD_WEIGHT + rn[:, None] * stride_gwn + rk[None, :]
-        tl.store(grad_weight_ptrs, grad_weight_acc, mask=((rn[:, None] < N) & (rk[None, :] < K)))
-
-
 # Activation needs to be a triton kernel
 def fused_matmul_backward(
     grad_out: torch.Tensor,
@@ -497,51 +385,9 @@ def fused_matmul_backward(
     )
     # fmt: on
 
-    grad_weight = None
-    grad_bias = None
-
-    _fuse_bias_gradient_computation = True
-
-    if trainable_bias or trainable_weight:
-        # NOTE: the bias gradient computation is not fused here, as it currently leads to worse performance
-
-        # placeholders if in need
-        grad_weight = torch.empty((N, K), device=grad_out.device, dtype=grad_out.dtype) \
-            if trainable_weight else grad_act
-
-        grad_bias = torch.empty((N), device=grad_out.device, dtype=grad_out.dtype) if trainable_bias else grad_act
-
-        def grid(META):
-            return (
-                triton.cdiv(N, META["BLOCK_N"]) * triton.cdiv(K, META["BLOCK_K"]),
-            )
-
-        # fmt: off
-        inputs_ = inputs.flatten(0, 1) if inputs.ndim == 3 else inputs
-
-        # (N, K) <- (N, M) x (M, K)
-        kernel_grad_bias_weight[grid](
-            # data ptrs
-            grad_bias, grad_weight, grad_act, inputs_,
-            # shapes
-            M, N, K,
-            # strides
-            grad_weight.stride(0), grad_act.stride(0), inputs_.stride(0),
-            COMPUTE_GRAD_BIAS=_fuse_bias_gradient_computation and trainable_bias,
-            COMPUTE_GRAD_WEIGHT=trainable_weight,
-            GROUP_N=8,  # L2 data reuse optimization
-            BLOCK_M=32,
-            FP_32=(inputs.dtype == torch.float32)
-        )
-
-        if trainable_bias and not _fuse_bias_gradient_computation:
-            grad_bias = torch.sum(grad_act, dim=0)
-
-        if not trainable_weight:
-            grad_weight = None
-
-        if not trainable_bias:
-            grad_bias = None
+    grad_bias = torch.sum(grad_act, dim=0) if trainable_bias else None
+    inputs_ = inputs.flatten(0, 1) if inputs.ndim == 3 else inputs
+    grad_weight = triton.ops.matmul(grad_act.transpose(0, 1), inputs_) if trainable_weight else None
 
     del grad_act
 

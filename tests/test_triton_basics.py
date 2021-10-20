@@ -18,7 +18,7 @@ if _triton_available:
 if _triton_available:
 
     @triton.jit
-    def k_mean_var(X, Mean, Var, stride, N, **META):
+    def k_mean(X, Mean, Var, stride, N, **META):
         # fmt: on
         """
         Fused layernorm kernel over a 3d tensor.
@@ -44,7 +44,7 @@ if _triton_available:
         tl.store(Mean + row, x_mean)
         tl.store(Var + row, x_var)
 
-    def mean_var(x: torch.Tensor):
+    def stats(x: torch.Tensor):
         # reshape input data into 2D tensor
         x_arg = x.reshape(-1, x.shape[-1])
         M, N = x_arg.shape
@@ -62,7 +62,7 @@ if _triton_available:
 
         # enqueue kernel
         # fmt: off
-        k_mean_var[(M,)](
+        k_mean[(M,)](
             x_arg, mean, var,
             x_arg.stride(0),
             N,
@@ -73,47 +73,11 @@ if _triton_available:
 
         return mean.reshape(x.shape[:-1]), var.reshape(x.shape[:-1])
 
-    @triton.jit
-    def k_add(
-        x_ptr,
-        a_output_ptr,
-        n_elements,
-        **meta,
-    ):
-        # See https://github.com/openai/triton/issues/221
-        BLOCK_SIZE = meta["BLOCK_SIZE"]
-
-        pid = tl.program_id(axis=0)
-        block_start = pid * BLOCK_SIZE
-        offsets = block_start + tl.arange(0, BLOCK_SIZE)
-        mask = offsets < n_elements
-
-        x = tl.load(x_ptr + offsets, mask=mask)
-        a_val = tl.sum(x, axis=0)
-        tl.atomic_add(a_output_ptr, a_val)
-
-    def add(x: torch.Tensor):
-        a_output = torch.zeros(1, device="cuda:0")
-        assert x.is_cuda and a_output.is_cuda
-        n_elements = x.shape[0]
-
-        def grid(meta):
-            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-
-        k_add[grid](x, a_output, n_elements, BLOCK_SIZE=128)
-        return a_output
-
-    def test_kernel_add():
-        size = 256
-        x = torch.rand(size, device="cuda")
-        output_triton = add(x)
-        assert torch.allclose(output_triton, x.sum())
-
-    def test_kernel_mean():
+    def test_mean():
         torch.random.manual_seed(0)
         a = torch.rand((4, 2048, 384), device=torch.device("cuda"))
 
-        mean, var = mean_var(a)
+        mean, var = stats(a)
         t_mean = torch.mean(a, dim=-1)
         t_var = torch.var(a, dim=-1)
 
