@@ -203,7 +203,7 @@ class xFormerEncoderBlock(torch.nn.Module):
         )
 
         # mini helper, builds a LayerNorm with the right Pre/Post config, residuals, and the right dimensions
-        ln_factory = _get_ln_factory(config.dim_model, config.layer_norm_style)
+        ln_factory = _get_ln_factory(config.dim_model, config.layer_norm_style, use_triton=config.use_triton)
 
         self.mha = build_multi_head_attention(config.multi_head_config)
         self.feedforward = build_feedforward(asdict(config.feedforward_config))
@@ -212,10 +212,7 @@ class xFormerEncoderBlock(torch.nn.Module):
         self.wrap_att = ln_factory(self.mha)
         self.wrap_ff: Union[Residual, PostNorm] = ln_factory(self.feedforward)
 
-        if (
-            config.layer_norm_style == LayerNormStyle.Pre
-            and config.layer_position.is_last()
-        ):
+        if config.layer_norm_style == LayerNormStyle.Pre and config.layer_position.is_last():
             self.wrap_ff = PostNorm(config.dim_model, self.wrap_ff)
 
     @classmethod
@@ -225,7 +222,7 @@ class xFormerEncoderBlock(torch.nn.Module):
     @staticmethod
     def get_reversible_layer(config) -> Tuple[nn.Module, nn.Module]:
         ln_factory = _get_ln_factory(
-            config.dim_model, config.layer_norm_style, residual=False
+            config.dim_model, config.layer_norm_style, residual=False, use_triton=config.use_triton
         )
 
         mha = build_multi_head_attention(config.multi_head_config)
@@ -275,7 +272,7 @@ class xFormerDecoderBlock(torch.nn.Module):
         )
 
         # mini helper, builds a LayerNorm with the right Pre/Post config and the right dimensions
-        ln_factory = _get_ln_factory(config.dim_model, config.layer_norm_style)
+        ln_factory = _get_ln_factory(config.dim_model, config.layer_norm_style, use_triton=config.use_triton)
 
         self.mha = build_multi_head_attention(config.multi_head_config_masked)
         self.cross_mha = build_multi_head_attention(config.multi_head_config_cross)
@@ -285,10 +282,7 @@ class xFormerDecoderBlock(torch.nn.Module):
         self.wrap_cross = ln_factory(self.cross_mha)
         self.wrap_ff: Union[Residual, PostNorm] = ln_factory(self.feedforward)
 
-        if (
-            config.layer_norm_style == LayerNormStyle.Pre
-            and config.layer_position.is_last()
-        ):
+        if config.layer_norm_style == LayerNormStyle.Pre and config.layer_position.is_last():
             self.wrap_ff = PostNorm(config.dim_model, self.wrap_ff)
 
     @classmethod
