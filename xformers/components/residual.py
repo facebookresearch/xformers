@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 
 # NOTE: The Triton layernorm can be activated/deactivated from here
-_is_triton_available = False
+_is_triton_available = True
 
 if _is_triton_available:
     try:
