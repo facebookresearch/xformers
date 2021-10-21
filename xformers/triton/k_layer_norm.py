@@ -256,14 +256,13 @@ class _LayerNorm(torch.autograd.Function):
         _db = torch.empty((GROUP_SIZE_M, weight.shape[0]), **t_args)
         dw = torch.empty((weight.shape[0],), **t_args)
         db = torch.empty((weight.shape[0],), **t_args)
+        dy = dy.contiguous()
         dx = torch.empty_like(dy)
 
         # Check the tensor shapes and layouts
         # we suppose in the kernel that they have the same size and are contiguous
         assert dx.numel() == x.numel(), \
             "Something is wrong in the backward graph, possibly because of an inplace operation after the layernorm"
-
-        assert dx.is_contiguous() and dy.is_contiguous()
 
         # enqueue kernel using forward pass heuristics
         # also compute partial sums for DW and DB
