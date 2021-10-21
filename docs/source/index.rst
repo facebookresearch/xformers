@@ -45,9 +45,9 @@ to create some state of the art models.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Tools
+   :caption: Custom parts
 
-   triton/index
+   custom_parts/index
 
 |
 |

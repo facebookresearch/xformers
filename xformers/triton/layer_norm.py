@@ -22,9 +22,10 @@ class FusedLayerNorm(nn.Module):
     both for training and inference worloads.
 
     .. NOTE: Computations under Torch AMP are kept as float32 by default, one can change this to be float16
-    by setting the flag `xformers.triton.k_layer_norm._triton_layernorm_fp16_enabled = True`
+        by setting the flag `xformers.triton.k_layer_norm._triton_layernorm_fp16_enabled = True`
 
     .. _torch.nn.LayerNorm: https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
+
     """
 
     def __init__(self, normalized_shape, eps=1e-05):
