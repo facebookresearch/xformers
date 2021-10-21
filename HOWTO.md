@@ -188,7 +188,6 @@ Note that in practice exchanging all the attentions with a sparse alternative ma
 - on creating [complex sparsity patterns](docs/source/2d_attention_patterns.ipynb)
 - on a [SwinTransformers](docs/source/swin_transformers.ipynb)
 
-
 ## BlockSparseAttention
 
 BlockSparse attention uses [Triton](https://github.com/openai/triton) to limit the attention computations to some tiles, which you define at construction time.
@@ -244,8 +243,7 @@ Let's look at an example:
     query = torch.randn((BATCH, SEQ, EMB), requires_grad=True, device=torch.device("cuda"), dtype=dtype)
 
     # Self attention in this particular example, no limitations really
-    multi_head(query=query, key=query, value=query, att_mask=causal_mask)
-
+    att_val = multi_head(query=query, key=query, value=query, att_mask=causal_mask)
 
     #########################################
     # Bonus: compare the memory use vs dense:
@@ -283,7 +281,6 @@ On a V100, with PyTorch 1.9, Triton 1.1 and xFormers 0.0.1 this reports somethin
 ```
 
 Note that the pattern here is not that sparse (half of the matrix is empty), the more sparse it gets the more biased the result will get towards BlockSparseAttention.
-
 
 ## Extend the xFormers parts zoo locally
 
