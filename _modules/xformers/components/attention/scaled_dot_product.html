@@ -283,6 +283,14 @@
         <span class="o">*</span><span class="n">args</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        att_mask    A 2D or 3D mask which ignores attention at certain positions. A value of True will keep the</span>
+<span class="sd">                    value, while a value of False will mask the value. Key padding masks</span>
+<span class="sd">                    (dimension: batch x sequence length) and attention masks</span>
+<span class="sd">                    (dimension: sequence length x sequence length OR batch x sequence length x sequence length)</span>
+<span class="sd">                    can be combined and passed in here. Method maybe_merge_masks provided in the utils can be</span>
+<span class="sd">                    used for that merging.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Mask-aware attention</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">att_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="k">if</span> <span class="n">att_mask</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="o">&amp;</span> <span class="n">att_mask</span>

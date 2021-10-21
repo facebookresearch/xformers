@@ -249,7 +249,15 @@
 <dl class="py method">
 <dt id="xformers.components.attention.ScaledDotProduct.forward">
 <code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">q</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git15fecc4 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">k</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git15fecc4 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">v</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git15fecc4 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git15fecc4 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span> &#x2192; <a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git15fecc4 ))">torch.Tensor</a><a class="reference internal" href="../_modules/xformers/components/attention/scaled_dot_product.html#ScaledDotProduct.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.attention.ScaledDotProduct.forward" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dd><dl class="simple">
+<dt>att_mask    A 2D or 3D mask which ignores attention at certain positions. A value of True will keep the</dt><dd><p>value, while a value of False will mask the value. Key padding masks
+(dimension: batch x sequence length) and attention masks
+(dimension: sequence length x sequence length OR batch x sequence length x sequence length)
+can be combined and passed in here. Method maybe_merge_masks provided in the utils can be
+used for that merging.</p>
+</dd>
+</dl>
+</dd></dl>
 
 </dd></dl>
 
@@ -319,7 +327,12 @@ The original notation is kept as is.</p>
 <dl class="py method">
 <dt id="xformers.components.attention.NystromAttention.forward">
 <code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">q</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git15fecc4 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">k</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git15fecc4 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">v</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git15fecc4 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.11.0a0+git15fecc4 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/attention/nystrom.html#NystromAttention.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.attention.NystromAttention.forward" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dd><dl class="simple">
+<dt>att_mask    Only a key padding mask is accepted here. The size must be</dt><dd><p>(batch size * num_heads, 1, sequence length). If dimensions are not correct, the mask will be
+ignored. Method maybe_merge_masks in utils can help transform key padding mask to required shape.</p>
+</dd>
+</dl>
+</dd></dl>
 
 </dd></dl>
 

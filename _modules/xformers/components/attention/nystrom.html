@@ -390,6 +390,11 @@
         <span class="o">*</span><span class="n">args</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
+        <span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        att_mask    Only a key padding mask is accepted here. The size must be</span>
+<span class="sd">                    (batch size * num_heads, 1, sequence length). If dimensions are not correct, the mask will be</span>
+<span class="sd">                    ignored. Method maybe_merge_masks in utils can help transform key padding mask to required shape.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">batched_dim</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
         <span class="n">seq_len</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">)</span>
 
