@@ -56,7 +56,7 @@ Some advices related to building these CUDA-specific components, tentatively adr
 
 #### Triton
 
-Some parts of xFormers use [Triton](http://www.triton-lang.org), and will only expose themselves if Triton is installed, and a compatible GPU is present (nVidia GPU with tensor cores). If Triton was not installed as part of the testing procedure, you can install it directly by running `pip install triton`. You can optionally test that the installation is successful by running one of the Triton-related benchmarks, for instance `python3 xformers/benchmarks/benchmnark_triton_softmax.py`
+Some parts of xFormers use [Triton](http://www.triton-lang.org), and will only expose themselves if Triton is installed, and a compatible GPU is present (nVidia GPU with tensor cores). If Triton was not installed as part of the testing procedure, you can install it directly by running `pip install triton`. You can optionally test that the installation is successful by running one of the Triton-related benchmarks, for instance `python3 xformers/benchmarks/benchmark_triton_softmax.py`
 
 Triton will cache the compiled kernels to `/tmp/triton` by default. If this becomes an issue, this path can be specified through the `TRITON_CACHE_DIR` environment variable.
 
