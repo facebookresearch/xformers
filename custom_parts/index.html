@@ -13,7 +13,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Triton components reference | xFormers 0.0.1 documentation</title>
+  <title>Custom parts reference | xFormers 0.0.1 documentation</title>
   
   <script src="../_static/js/ga.js"></script>
   <script src="../_static/js/redirect.js"></script>
@@ -21,9 +21,9 @@
   <link rel="shortcut icon" href="../_static/images/favicon.png" />
   
   
-  <link rel="canonical" href="https://fairinternal.github.io/xformerstriton/index.html" />
+  <link rel="canonical" href="https://fairinternal.github.io/xformerscustom_parts/index.html" />
   
-  <meta property="og:title" content="Triton components reference | xFormers 0.0.1 documentation">
+  <meta property="og:title" content="Custom parts reference | xFormers 0.0.1 documentation">
   <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
@@ -152,9 +152,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/index.html">Tutorials</a></li>
 </ul>
-<p><span class="caption-text">Tools</span></p>
+<p><span class="caption-text">Custom parts</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Triton components reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Custom parts reference</a></li>
 </ul>
 <p><span class="caption-text">Tools</span></p>
 <ul>
@@ -199,13 +199,13 @@
       </li>
 
         
-      <li>Triton components reference</li>
+      <li>Custom parts reference</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="../_sources/triton/index.rst.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
+            <a href="../_sources/custom_parts/index.rst.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -231,8 +231,50 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
-  <section id="module-xformers.triton">
-<span id="triton-components-reference"></span><h1>Triton components reference<a class="headerlink" href="#module-xformers.triton" title="Permalink to this headline">¶</a></h1>
+  <section id="custom-parts-reference">
+<h1>Custom parts reference<a class="headerlink" href="#custom-parts-reference" title="Permalink to this headline">¶</a></h1>
+<section id="sparse-cuda-kernels">
+<h2>Sparse CUDA kernels<a class="headerlink" href="#sparse-cuda-kernels" title="Permalink to this headline">¶</a></h2>
+<section id="building-the-kernels">
+<h3>1. Building the kernels<a class="headerlink" href="#building-the-kernels" title="Permalink to this headline">¶</a></h3>
+<p>xFormers transparently supports CUDA kernels to implement sparse attention computations, some of which are based on <a class="reference external" href="https://github.com/google-research/sputnik">Sputnik</a>.
+These kernels require xFormers to be installed from source, and the recipient machine to be able to compile CUDA source code.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git clone git@github.com:fairinternal/xformers.git
+conda create --name xformer_env <span class="nv">python</span><span class="o">=</span><span class="m">3</span>.8
+conda activate xformer_env
+<span class="nb">cd</span> xformers
+pip install -r requirements.txt
+pip install -e .
+</pre></div>
+</div>
+<p>Common issues are related to:</p>
+<ul class="simple">
+<li><p>NVCC and the current CUDA runtime match. You can often change the CUDA runtime with <cite>module unload cuda module load cuda/xx.x</cite>, possibly also <cite>nvcc</cite></p></li>
+<li><p>the version of GCC that you’re using matches the current NVCC capabilities</p></li>
+<li><p>the <cite>TORCH_CUDA_ARCH_LIST</cite> env variable is set to the architures that you want to support. A suggested setup (slow to build but comprehensive) is <cite>export TORCH_CUDA_ARCH_LIST=”6.0;6.1;6.2;7.0;7.2;8.0;8.6”</cite></p></li>
+</ul>
+</section>
+<section id="usage">
+<h3>2. Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h3>
+<p>The sparse attention computation is automatically triggered when using the <strong>scaled dot product</strong> attention (<a class="reference external" href="https://github.com/facebookresearch/xformers/blob/main/xformers/components/attention/scaled_dot_product.py">see</a>), and a sparse enough mask (currently less than 30% of true values).
+There is nothing specific to do, and a couple of examples are provided in the tutorials.</p>
+</section>
+</section>
+<section id="triton-parts">
+<h2>Triton parts<a class="headerlink" href="#triton-parts" title="Permalink to this headline">¶</a></h2>
+<section id="requirements">
+<h3>1. Requirements<a class="headerlink" href="#requirements" title="Permalink to this headline">¶</a></h3>
+<p>We use <a class="reference external" href="https://triton-lang.org/">Triton</a> to implement the following parts.
+These parts will only be visible on a CUDA-enabled machine, and Triton needs to be installed (<cite>pip install triton</cite>),
+if any of these conditions are not met a warning is issued.</p>
+</section>
+<section id="possible-usage">
+<h3>2. Possible usage<a class="headerlink" href="#possible-usage" title="Permalink to this headline">¶</a></h3>
+<p>The following parts are independent and can be used as-is in any model,
+provided the above limitations (Triton is installed, and there is a CUDA GPU present) are fullfilled.
+They are used by default, when possible, in some of the xFormers building blocks.</p>
+<span class="target" id="module-xformers.triton"></span></section>
+</section>
 </section>
 
 
@@ -278,7 +320,19 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Triton components reference</a></li>
+<li><a class="reference internal" href="#">Custom parts reference</a><ul>
+<li><a class="reference internal" href="#sparse-cuda-kernels">Sparse CUDA kernels</a><ul>
+<li><a class="reference internal" href="#building-the-kernels">1. Building the kernels</a></li>
+<li><a class="reference internal" href="#usage">2. Usage</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#triton-parts">Triton parts</a><ul>
+<li><a class="reference internal" href="#requirements">1. Requirements</a></li>
+<li><a class="reference internal" href="#possible-usage">2. Possible usage</a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
 
             </div>

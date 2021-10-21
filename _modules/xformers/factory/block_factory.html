@@ -149,9 +149,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
 </ul>
-<p><span class="caption-text">Tools</span></p>
+<p><span class="caption-text">Custom parts</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../triton/index.html">Triton components reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../custom_parts/index.html">Custom parts reference</a></li>
 </ul>
 <p><span class="caption-text">Tools</span></p>
 <ul>
@@ -337,7 +337,6 @@
         <span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
         <span class="n">block_type</span><span class="p">:</span> <span class="n">BlockType</span><span class="p">,</span>
         <span class="n">layer_norm_style</span><span class="p">:</span> <span class="n">LayerNormStyle</span> <span class="o">=</span> <span class="n">LayerNormStyle</span><span class="p">(</span><span class="s2">&quot;post&quot;</span><span class="p">),</span>
-        <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">dim_model</span> <span class="o">=</span> <span class="n">dim_model</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">block_type</span> <span class="o">=</span> <span class="n">block_type</span>
@@ -365,6 +364,7 @@
 <div class="viewcode-block" id="xFormerEncoderConfig"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerEncoderConfig">[docs]</a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="k">class</span> <span class="nc">xFormerEncoderConfig</span><span class="p">(</span><span class="n">xFormerBlockConfig</span><span class="p">):</span>
     <span class="n">multi_head_config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+    <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -373,6 +373,7 @@
         <span class="n">multi_head_config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
         <span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">layer_norm_style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;post&quot;</span><span class="p">,</span>
+        <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
@@ -383,7 +384,8 @@
             <span class="n">block_type</span><span class="o">=</span><span class="n">BlockType</span><span class="p">(</span><span class="s2">&quot;encoder&quot;</span><span class="p">),</span>
         <span class="p">)</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">multi_head_config</span> <span class="o">=</span> <span class="n">multi_head_config</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">multi_head_config</span> <span class="o">=</span> <span class="n">multi_head_config</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">use_triton</span> <span class="o">=</span> <span class="n">use_triton</span></div>
 
 
 <div class="viewcode-block" id="xFormerDecoderConfig"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerDecoderConfig">[docs]</a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
@@ -399,6 +401,7 @@
         <span class="n">multi_head_config_cross</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
         <span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">layer_norm_style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;post&quot;</span><span class="p">,</span>
+        <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
@@ -410,7 +413,8 @@
         <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">multi_head_config_masked</span> <span class="o">=</span> <span class="n">multi_head_config_masked</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">multi_head_config_cross</span> <span class="o">=</span> <span class="n">multi_head_config_cross</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">multi_head_config_cross</span> <span class="o">=</span> <span class="n">multi_head_config_cross</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">use_triton</span> <span class="o">=</span> <span class="n">use_triton</span></div>
 
 
 <div class="viewcode-block" id="xFormerEncoderBlock"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock">[docs]</a><span class="k">class</span> <span class="nc">xFormerEncoderBlock</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
@@ -432,7 +436,9 @@
         <span class="p">)</span>
 
         <span class="c1"># mini helper, builds a LayerNorm with the right Pre/Post config, residuals, and the right dimensions</span>
-        <span class="n">ln_factory</span> <span class="o">=</span> <span class="n">_get_ln_factory</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">)</span>
+        <span class="n">ln_factory</span> <span class="o">=</span> <span class="n">_get_ln_factory</span><span class="p">(</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">,</span> <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span>
+        <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">mha</span> <span class="o">=</span> <span class="n">build_multi_head_attention</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">multi_head_config</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">feedforward</span> <span class="o">=</span> <span class="n">build_feedforward</span><span class="p">(</span><span class="n">asdict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">feedforward_config</span><span class="p">))</span>
@@ -454,7 +460,10 @@
 <div class="viewcode-block" id="xFormerEncoderBlock.get_reversible_layer"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock.get_reversible_layer">[docs]</a>    <span class="nd">@staticmethod</span>
     <span class="k">def</span> <span class="nf">get_reversible_layer</span><span class="p">(</span><span class="n">config</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">]:</span>
         <span class="n">ln_factory</span> <span class="o">=</span> <span class="n">_get_ln_factory</span><span class="p">(</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">,</span> <span class="n">residual</span><span class="o">=</span><span class="kc">False</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">,</span>
+            <span class="n">residual</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="n">mha</span> <span class="o">=</span> <span class="n">build_multi_head_attention</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">multi_head_config</span><span class="p">)</span>
@@ -504,7 +513,9 @@
         <span class="p">)</span>
 
         <span class="c1"># mini helper, builds a LayerNorm with the right Pre/Post config and the right dimensions</span>
-        <span class="n">ln_factory</span> <span class="o">=</span> <span class="n">_get_ln_factory</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">)</span>
+        <span class="n">ln_factory</span> <span class="o">=</span> <span class="n">_get_ln_factory</span><span class="p">(</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">,</span> <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span>
+        <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">mha</span> <span class="o">=</span> <span class="n">build_multi_head_attention</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">multi_head_config_masked</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">cross_mha</span> <span class="o">=</span> <span class="n">build_multi_head_attention</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">multi_head_config_cross</span><span class="p">)</span>
