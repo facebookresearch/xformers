@@ -175,20 +175,20 @@ def test_pattern_to_layout():
     # All ones
     mask1 = torch.ones((SIZE, SIZE), dtype=torch.bool)
     layout1 = AP.pattern_to_layout(mask1, BLOCK)
-    ref1 = torch.ones((LAYOUT_SIZE, LAYOUT_SIZE), dtype=torch.int)
+    ref1 = torch.ones((LAYOUT_SIZE, LAYOUT_SIZE), dtype=torch.long)
     assert torch.allclose(layout1, ref1)
 
     # Diagonal -> expect block diagonal
     mask2 = torch.eye(SIZE, dtype=torch.bool)
     layout2 = AP.pattern_to_layout(mask2, BLOCK)
-    ref2 = torch.eye(LAYOUT_SIZE, dtype=torch.int)
+    ref2 = torch.eye(LAYOUT_SIZE, dtype=torch.long)
     assert torch.allclose(layout2, ref2)
 
     # Lower triangular, without the diagonal
     # note that the layout will need to have the diagonal, else the coefficients close enough would not be computed
     mask3 = torch.tril(torch.ones((SIZE, SIZE)), diagonal=-1).to(torch.bool)
     layout3 = AP.pattern_to_layout(mask3, BLOCK)
-    ref3 = torch.tril(torch.ones((LAYOUT_SIZE, LAYOUT_SIZE)), diagonal=0).to(torch.int)
+    ref3 = torch.tril(torch.ones((LAYOUT_SIZE, LAYOUT_SIZE)), diagonal=0).to(torch.long)
     assert torch.allclose(layout3, ref3)
 
     # Handle heads properly
