@@ -326,6 +326,8 @@ Any of the other attention mechanisms can be instantiated and called in a simila
 
 Please note that this approach is not restricted to the attention, you can always import directly and work with `xformers.components.MultiHeadDispatch`, or `xformers.components.feedforward.FusedMLP`, or even `xformers.factory.xFormerEncoderBlock`.
 
+Something else of note is that, __while most attentions in xFormers will support a `causal` flag, one would really benefit from a pure causal computation (ie: only working on the lower triangular attention matrix) with the Sparse and BlockSparse attention if using a matching lower triangular pattern__. xFormers will possibly automate this in the future.
+
 ### I'm used to PyTorch Transformer Encoder, do you have an equivalent ?
 
 PyTorch already exposes a couple of pure Transformer blocks, for instance TransformerEncoder and [TransformerEncoderLayer](https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html?highlight=encoder#torch.nn.TransformerEncoderLayer).
@@ -420,17 +422,17 @@ Note that this exposes a couple more knobs than the PyTorch Transformer interfac
 You can easily compare the speed and memory use of the vanilla PyTorch Transformer Encoder and an equivalent from xFormers, there is an existing benchmark for that ([see](xformers/benchmarks/benchmark_pytorch_transformer.py)). It can be run with `python3 xformers/benchmarks/benchmark_pytorch_transformer.py`, and returns the loss values for every step along with the training time for a couple of shapes that you can customize. Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xFormers 0.1.1):
 
 --- Transformer training benchmark - runtime ---
-| Units: s                                       |emb 128 - heads 8   |emb 1024 - heads 8  |emb 2048 - heads 8  |
-|------------------------------------------------|--------------------|--------------------|--------------------|
-|xformers                                        |0.3                 |0.4                 |0.7                 |
-|pytorch                                         |0.2                 |0.6                 |0.8                 |
+| Units: s | emb 128 - heads 8 | emb 1024 - heads 8 | emb 2048 - heads 8 |
+| -------- | ----------------- | ------------------ | ------------------ |
+| xformers | 0.3               | 0.4                | 0.7                |
+| pytorch  | 0.2               | 0.6                | 0.8                |
 
 
 --- Transformer training benchmark - memory use ---
-| Units: MB                                      |emb 128 - heads 8   |emb 1024 - heads 8  |emb 2048 - heads 8  |
-|------------------------------------------------|--------------------|--------------------|--------------------|
-|xformers                                        |89                  |1182                |2709                |
-|pytorch                                         |155                 |1950                |4117                |
+| Units: MB | emb 128 - heads 8 | emb 1024 - heads 8 | emb 2048 - heads 8 |
+| --------- | ----------------- | ------------------ | ------------------ |
+| xformers  | 89                | 1182               | 2709               |
+| pytorch   | 155               | 1950               | 4117               |
 
 ## Reversible block
 
