@@ -159,6 +159,11 @@ class NystromAttention(Attention):
         *args,
         **kwargs,
     ):
+        r"""
+        att_mask    Only a key padding mask is accepted here. The size must be
+                    (batch size * num_heads, 1, sequence length). If dimensions are not correct, the mask will be
+                    ignored. Method maybe_merge_masks in utils can help transform key padding mask to required shape.
+        """
         batched_dim = k.size(0)
         seq_len = k.size(-2)
 

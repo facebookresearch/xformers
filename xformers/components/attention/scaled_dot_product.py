@@ -52,6 +52,14 @@ class ScaledDotProduct(Attention):
         *args,
         **kwargs,
     ) -> torch.Tensor:
+        r"""
+        att_mask    A 2D or 3D mask which ignores attention at certain positions. A value of True will keep the
+                    value, while a value of False will mask the value. Key padding masks
+                    (dimension: batch x sequence length) and attention masks
+                    (dimension: sequence length x sequence length OR batch x sequence length x sequence length)
+                    can be combined and passed in here. Method maybe_merge_masks provided in the utils can be
+                    used for that merging.
+        """
         # Mask-aware attention
         if self.mask is not None:
             att_mask = self.mask if att_mask is None else self.mask & att_mask
