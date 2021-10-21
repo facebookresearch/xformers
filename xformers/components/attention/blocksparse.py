@@ -114,6 +114,13 @@ if _use_triton:
             *args,
             **kwargs,
         ) -> torch.Tensor:
+            r"""
+            att_mask            A 2D attention mask. The dtype must be the same as q. Multiplicative mask where a value
+                                of 1 will keep the value, while a value of 0 will mask the value.
+            key_padding_mask    A mask with size (batch size x sequence length). The dtype must be the same as q.
+                                Multiplicative mask where a value of 1 will keep the value, while a value of 0 will
+                                mask the value.
+            """
 
             # NOTE:
             # The attention mask will be taken into account when computing the softmax
