@@ -21,7 +21,7 @@ gpu_cu112: &gpu_cu112
     CUDA_HOME: /usr/local/cuda-11.2
   machine:
     image: ubuntu-2004-cuda-11.2:202103-01
-  resource_class: gpu.large
+    resource_class: gpu.nvidia.medium
 
 # -------------------------------------------------------------------------------------
 # Re-usable commands
@@ -163,14 +163,14 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+            - cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_dep_190
 
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_repo
 
@@ -204,7 +204,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-112-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+            - cache-key-gpu-112-190-386-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_dep_190
 
