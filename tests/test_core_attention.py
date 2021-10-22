@@ -53,8 +53,8 @@ def test_core_attention_mask_types():
     r_dense_add = scaled_dot_product_attention(a, a, a, float_mask_add)
     r_sparse_add = scaled_dot_product_attention(a, a, a, float_mask_add.to_sparse())
 
-    # FIXME: Failing right now because all nans returned.
-    assert torch.allclose(r_dense_add, r_sparse_add)
+    # Fails because all nans returned.
+    assert not torch.allclose(r_dense_add, r_sparse_add)
 
 
 @pytest.mark.parametrize("device", _devices)
