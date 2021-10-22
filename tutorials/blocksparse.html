@@ -239,8 +239,9 @@
 A simple example is that of a causal attention: just compute the lower triangular tiles ! The tile size can be changed, the minimum being 16 coefficients on one dimension.</p>
 <p>If you already have a per-coefficient pattern in mind and this is not a perfect match with a block pattern, this is probably fine,
 BlockSparse is fast enough so that dropping some of the computations after the fact with a fine-grained mask is still probably better than dense computations.
-We provide a small helper (this is just maxpooling) to convert in between a per coefficient binary mask and the layout that you will need to build a block sparse attention.
-Let’s look at an example:</p>
+We provide a small helper (this is just maxpooling) to convert in between a per coefficient binary mask and the layout that you will need to build a block sparse attention.</p>
+<p><em>Please note that for now blocksparse attention requires the sequence length to be a power of two</em>.</p>
+<p>Let’s look at an example:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
 <span class="kn">from</span> <span class="nn">xformers.components</span> <span class="kn">import</span> <span class="n">MultiHeadDispatch</span>
