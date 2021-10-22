@@ -18,7 +18,7 @@ from torch.nn.init import (
 )
 
 
-def small_init(tensor: torch.Tensor, gain: float = 1.0) -> torch.Tensor:
+def small_init_(tensor: torch.Tensor, gain: float = 1.0) -> torch.Tensor:
     r"""Fills the input `Tensor` with values according to the method
     described in `Transformer Without Tears`_, using a uniform distribution.
 
@@ -53,7 +53,7 @@ class InProjParams:
 
 
 def _init_from_params(params: InProjParams):
-    return small_init if params.small_init else xavier_uniform_
+    return small_init_ if params.small_init else xavier_uniform_
 
 
 class InProjContainer(nn.Module):
