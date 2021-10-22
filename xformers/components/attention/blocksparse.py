@@ -48,6 +48,9 @@ if _use_triton:
         .. warning: the layout is assumed to have the dimensions [heads, seq, seq].
             If some dimensions are missing, we assume that the same layout is to be used across heads.
 
+        .. warning: for now, the sequence (context) length has to be a power of two. This constraint could
+            be relaxed in the future.
+
         .. note: it is possible to pass a specific per batch mask in the forward call,
             but this will not lead to any speed up.
             Any constant sparsity pattern is better passed through the layout parameter.

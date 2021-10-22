@@ -195,7 +195,9 @@ A simple example is that of a causal attention: just compute the lower triangula
 
 If you already have a per-coefficient pattern in mind and this is not a perfect match with a block pattern, this is probably fine,
 BlockSparse is fast enough so that dropping some of the computations after the fact with a fine-grained mask is still probably better than dense computations.
-We provide a small helper (this is just maxpooling) to convert in between a per coefficient binary mask and the layout that you will need to build a block sparse attention.
+
+We provide a small helper (this is just maxpooling) to convert in between a per coefficient binary mask and the layout that you will need to build a block sparse attention. Please note that for now _blocksparse attention requires the sequence length to be a power of two_.
+
 Let's look at an example:
 
 ```python
