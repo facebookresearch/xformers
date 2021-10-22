@@ -220,7 +220,7 @@ def instantiate_xformer(
         "layout": torch.eye(
             sequence_length // block_size,
             sequence_length // block_size,
-            dtype=torch.int,
+            dtype=torch.long,
         )
         .unsqueeze(0)
         .expand(heads, -1, -1),
@@ -325,12 +325,12 @@ if __name__ == "__main__":
         "-emb", "--embedding_dim", nargs="+", default=[64, 128, 256], type=int
     )
     parser.add_argument(
-        "-sl", "--sequence_length", nargs="+", default=[512, 768, 1024], type=int
+        "-sl", "--sequence_length", nargs="+", default=[512, 1024], type=int
     )
     parser.add_argument("-bs", "--batch_size", nargs="+", default=[8, 16, 32], type=int)
     parser.add_argument("-heads", "--heads", nargs="+", default=[8, 16], type=int)
 
-    parser.add_argument("-fp16", "--pytorch_amp", nargs="+", default=[False], type=bool)
+    parser.add_argument("-fp16", "--pytorch_amp", nargs="+", default=[True], type=bool)
     parser.add_argument("-causal", "--causal", nargs="+", default=[False], type=bool)
     parser.add_argument("-plot", "--plot", action="store_true", default=False)
     parser.add_argument(

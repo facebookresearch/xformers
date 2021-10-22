@@ -5,6 +5,7 @@
 
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -141,12 +142,30 @@ if _use_triton:
                 att_mask is None or att_mask.dim() == 2
             ), "The attention mask is constant across heads, expected dimensions are [seq x seq]"
 
-            # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
-            # When the computations are block sparse, the matrix types change along the way:
-            # - (sparse) attention matrix = (dense) Kt * (dense) Q
             assert (
                 q.shape[-2] == k.shape[-2]
             ), "Blocksparse requires the same dimensions for K and Q for now"
+
+            assert (
+                q.shape[-2] == self.layout.shape[-2] * self.block_size
+            ), "Actual sequence size and layout are inconsistent"
+            assert (
+                k.shape[-2] == self.layout.shape[-2] * self.block_size
+            ), "Actual sequence size and layout are inconsistent"
+
+            assert math.log(
+                q.shape[-2], 2
+            ).is_integer(), (
+                "For now blocksparse only works on power-of-two sequence lengths"
+            )
+
+            # Blocksparse only works on fp16
+            q_dtype = q.dtype
+            q, k, v = q.half(), k.half(), v.half()
+
+            # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
+            # When the computations are block sparse, the matrix types change along the way:
+            # - (sparse) attention matrix = (dense) Kt * (dense) Q
             sparse_att_mat = self.sparse_dot_sdd(q, k)
 
             # - softmax on the sparse attention matrix
@@ -161,5 +180,4 @@ if _use_triton:
 
             # - then (dense) attention is (sparse) attention matrix * dense (value)
             a = self.sparse_dot_dsd(sparse_att_mat, v)
-
-            return a
+            return a.to(q_dtype)
