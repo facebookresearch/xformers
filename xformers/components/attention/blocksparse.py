@@ -23,6 +23,14 @@ if _use_triton:
         from triton.ops.blocksparse import softmax as blocksparse_softmax
 
         from xformers.triton.softmax import MaskType
+        from xformers.triton.utils import gpu_capabilities_older_than_70
+
+        # Blocksparse requires Tensor cores
+        if gpu_capabilities_older_than_70():
+            logging.warning(
+                "Blocksparse is not available: the current GPU does not expose Tensor cores"
+            )
+            _use_triton = False
 
     except ImportError as e:
         logging.warning(
