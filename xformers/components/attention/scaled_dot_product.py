@@ -58,7 +58,7 @@ class ScaledDotProduct(Attention):
                     (dimension: batch x sequence length) and attention masks
                     (dimension: sequence length x sequence length OR batch x sequence length x sequence length)
                     can be combined and passed in here. Method maybe_merge_masks provided in the utils can be
-                    used for that merging.
+                    used for that merging. Additive masks are not yet supported.
         """
         # Mask-aware attention
         if self.mask is not None:
