@@ -49,7 +49,7 @@ class InProjParams:
     in_features: int
     out_features: int
     bias: bool
-    small_init: bool = True
+    small_init: bool = False
 
 
 def _init_from_params(params: InProjParams):
