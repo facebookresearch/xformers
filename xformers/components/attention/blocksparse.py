@@ -174,6 +174,9 @@ if _use_triton:
             q_dtype = q.dtype
             q, k, v = q.half(), k.half(), v.half()
 
+            if att_mask is not None:
+                att_mask = att_mask.half()
+
             # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
             # When the computations are block sparse, the matrix types change along the way:
             # - (sparse) attention matrix = (dense) Kt * (dense) Q
