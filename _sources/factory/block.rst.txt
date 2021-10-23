@@ -1,5 +1,5 @@
 Block factory
-================
+=============
 
 .. automodule:: xformers.factory.block_factory
     :members:

@@ -13,7 +13,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>I’m used to PyTorch Transformer Encoder, do you have an equivalent ? | xFormers 0.0.1 documentation</title>
+  <title>I’m used to PyTorch Transformer Encoder, do you have an equivalent? | xFormers 0.0.1 documentation</title>
   
   <script src="../_static/js/ga.js"></script>
   <script src="../_static/js/redirect.js"></script>
@@ -23,7 +23,7 @@
   
   <link rel="canonical" href="https://fairinternal.github.io/xformerstutorials/pytorch_encoder.html" />
   
-  <meta property="og:title" content="I’m used to PyTorch Transformer Encoder, do you have an equivalent ? | xFormers 0.0.1 documentation">
+  <meta property="og:title" content="I’m used to PyTorch Transformer Encoder, do you have an equivalent? | xFormers 0.0.1 documentation">
   <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
@@ -201,7 +201,7 @@
         
           <li><a href="index.html">Tutorials</a> &gt;</li>
         
-      <li>I’m used to PyTorch Transformer Encoder, do you have an equivalent ?</li>
+      <li>I’m used to PyTorch Transformer Encoder, do you have an equivalent?</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -234,10 +234,10 @@
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
   <section id="i-m-used-to-pytorch-transformer-encoder-do-you-have-an-equivalent">
-<h1>I’m used to PyTorch Transformer Encoder, do you have an equivalent ?<a class="headerlink" href="#i-m-used-to-pytorch-transformer-encoder-do-you-have-an-equivalent" title="Permalink to this headline">¶</a></h1>
+<h1>I’m used to PyTorch Transformer Encoder, do you have an equivalent?<a class="headerlink" href="#i-m-used-to-pytorch-transformer-encoder-do-you-have-an-equivalent" title="Permalink to this headline">¶</a></h1>
 <p>PyTorch already exposes a couple of pure Transformer blocks,
 for instance TransformerEncoder and <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html?highlight=encoder#torch.nn.TransformerEncoderLayer">TransformerEncoderLayer</a>.</p>
-<p>Their interfaces are :</p>
+<p>Their interfaces are:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">TransformerEncoderLayer</span><span class="p">(</span>
     <span class="n">d_model</span><span class="p">,</span>
     <span class="n">nhead</span><span class="p">,</span>
@@ -312,7 +312,7 @@ You can think of it as a declaration of the sequence of blocks that you would li
     <span class="p">}</span>
 <span class="p">]</span>
 
-<span class="n">config</span> <span class="o">=</span> <span class="n">xFormerConfig</span><span class="p">(</span><span class="o">**</span><span class="n">my_config</span><span class="p">)</span>  <span class="c1"># This part of xFormers is entirely type checked and needs a config object, could be changed in the fututure</span>
+<span class="n">config</span> <span class="o">=</span> <span class="n">xFormerConfig</span><span class="p">(</span><span class="n">my_config</span><span class="p">)</span>  <span class="c1"># This part of xFormers is entirely type checked and needs a config object, could be changed in the future</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">xFormer</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="n">config</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -365,7 +365,7 @@ this is taken care of in the LRA benchmarking config.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">I’m used to PyTorch Transformer Encoder, do you have an equivalent ?</a></li>
+<li><a class="reference internal" href="#">I’m used to PyTorch Transformer Encoder, do you have an equivalent?</a></li>
 </ul>
 
             </div>

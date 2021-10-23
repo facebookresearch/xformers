@@ -44,7 +44,7 @@
   <link rel="index" title="Index" href="../genindex.html" />
   <link rel="search" title="Search" href="../search.html" />
   <link rel="next" title="Extend the xFormers parts zoo" href="extend_attentions.html" />
-  <link rel="prev" title="Replace all attentions from an existing ViT model with a sparse equivalent ?" href="sparse_vit.html" /> 
+  <link rel="prev" title="Replace all attentions from an existing ViT model with a sparse equivalent?" href="sparse_vit.html" /> 
 
   
   <script src="../_static/js/modernizr.min.js"></script>
@@ -236,7 +236,7 @@
   <section id="using-blocksparseattention">
 <h1>Using BlockSparseAttention<a class="headerlink" href="#using-blocksparseattention" title="Permalink to this headline">¶</a></h1>
 <p>BlockSparse attention uses <a class="reference external" href="https://github.com/openai/triton">Triton</a> to limit the attention computations to some tiles, which you define at construction time.
-A simple example is that of a causal attention: just compute the lower triangular tiles ! The tile size can be changed, the minimum being 16 coefficients on one dimension.</p>
+A simple example is that of a causal attention: just compute the lower triangular tiles! The tile size can be changed, the minimum being 16 coefficients on one dimension.</p>
 <p>If you already have a per-coefficient pattern in mind and this is not a perfect match with a block pattern, this is probably fine,
 BlockSparse is fast enough so that dropping some of the computations after the fact with a fine-grained mask is still probably better than dense computations.
 We provide a small helper (this is just maxpooling) to convert in between a per coefficient binary mask and the layout that you will need to build a block sparse attention.</p>
@@ -336,7 +336,7 @@ PyTorch - Peak memory use: 393MB - <span class="m">6</span>.837ms
         <a href="extend_attentions.html" class="btn btn-neutral float-right" title="Extend the xFormers parts zoo" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="sparse_vit.html" class="btn btn-neutral" title="Replace all attentions from an existing ViT model with a sparse equivalent ?" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="sparse_vit.html" class="btn btn-neutral" title="Replace all attentions from an existing ViT model with a sparse equivalent?" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   

@@ -1,8 +1,8 @@
 I'm only interested in testing out the attention mechanisms that are hosted here
-=================================================================================
+================================================================================
 
 
-That's completely fine ! There are two paths to do this:
+That's completely fine! There are two paths to do this:
 
 - Either you import the attention mechanisms that you're interested in directly
     in your code base, their API should be very similar and you would own everything.

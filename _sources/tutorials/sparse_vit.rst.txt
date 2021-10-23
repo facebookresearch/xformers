@@ -1,5 +1,5 @@
-Replace all attentions from an existing ViT model with a sparse equivalent ?
-============================================================================
+Replace all attentions from an existing ViT model with a sparse equivalent?
+===========================================================================
 
 Let's say you're used to working with a given Transformer based model, and want to experiment with one of the attention mechanisms supported by xFormers.
 

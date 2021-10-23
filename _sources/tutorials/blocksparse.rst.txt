@@ -1,9 +1,8 @@
-
 Using BlockSparseAttention
 ==========================
 
 BlockSparse attention uses Triton_ to limit the attention computations to some tiles, which you define at construction time.
-A simple example is that of a causal attention: just compute the lower triangular tiles ! The tile size can be changed, the minimum being 16 coefficients on one dimension.
+A simple example is that of a causal attention: just compute the lower triangular tiles! The tile size can be changed, the minimum being 16 coefficients on one dimension.
 
 .. _Triton: https://github.com/openai/triton
 

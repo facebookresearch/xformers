@@ -1,13 +1,12 @@
-
-I'm used to PyTorch Transformer Encoder, do you have an equivalent ?
-====================================================================
+I'm used to PyTorch Transformer Encoder, do you have an equivalent?
+===================================================================
 
 PyTorch already exposes a couple of pure Transformer blocks,
 for instance TransformerEncoder and TransformerEncoderLayer_.
 
 .. _TransformerEncoderLayer: https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html?highlight=encoder#torch.nn.TransformerEncoderLayer
 
-Their interfaces are :
+Their interfaces are:
 
 .. code-block:: python
 
@@ -89,7 +88,7 @@ You can think of it as a declaration of the sequence of blocks that you would li
         }
     ]
 
-    config = xFormerConfig(**my_config)  # This part of xFormers is entirely type checked and needs a config object, could be changed in the fututure
+    config = xFormerConfig(my_config)  # This part of xFormers is entirely type checked and needs a config object, could be changed in the future
     model = xFormer.from_config(config).to(device)
 
 
