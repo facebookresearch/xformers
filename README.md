@@ -36,7 +36,7 @@ There are two ways you can install it:
   These commands will fetch the latest version of the code, create a dedicated `conda` environment, activate it then install xFormers from source. If you want to build the sparse attention CUDA kernels, please make sure that the next point is covered prior to running these instructions.
 
   ```bash
-  git clone git@github.com:fairinternal/xformers.git
+  git clone git@github.com:facebookresearch/xformers.git
   conda create --name xformer_env python=3.8
   conda activate xformer_env
   cd xformers
