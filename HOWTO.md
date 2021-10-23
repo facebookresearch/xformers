@@ -511,7 +511,7 @@ my_config =  [
     }
 ]
 
-config = xFormerConfig(**my_config)  # This part of xFormers is entirely type checked and needs a config object, could be changed in the fututure
+config = xFormerConfig(my_config)  # This part of xFormers is entirely type checked and needs a config object, could be changed in the future
 model = xFormer.from_config(config).to(device)
 ```
 
