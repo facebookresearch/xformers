@@ -206,8 +206,11 @@ class _softmax_triton(torch.autograd.Function):
         # Handle 2D/3D tensors
         x_ = x.unsqueeze(0) if x.ndim == 2 else x
 
+        if not x_.is_contiguous():
+            x_ = x_.contiguous()
+
         y = torch.empty_like(x_)
-        assert y.stride(2) == 1 and x_.stride(2) == 1
+        assert y.stride(2) == 1 and x_.stride(2) == 1, f"{x.shape} - {x_.shape} - {x_.stride()}"
 
         # SPMD launch grid
         grid_2d = (
