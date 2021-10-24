@@ -145,8 +145,21 @@ class xFormerEncoderConfig(xFormerBlockConfig):
         position_encoding_config: Optional[Dict[str, Any]] = None,
         layer_norm_style: str = "post",
         use_triton: bool = True,
-        **kwargs,
+        **_,
     ):
+        # Convenience, fill in duplicated field
+        if "dim_model" not in multi_head_config.keys():
+            multi_head_config["dim_model"] = dim_model
+
+        if "dim_model" not in feedforward_config.keys():
+            feedforward_config["dim_model"] = dim_model
+
+        if (
+            position_encoding_config is not None
+            and "dim_model" not in position_encoding_config.keys()
+        ):
+            position_encoding_config["dim_model"] = dim_model
+
         super().__init__(
             dim_model=dim_model,
             feedforward_config=feedforward_config,
@@ -173,8 +186,25 @@ class xFormerDecoderConfig(xFormerBlockConfig):
         position_encoding_config: Optional[Dict[str, Any]] = None,
         layer_norm_style: str = "post",
         use_triton: bool = True,
-        **kwargs,
+        **_,
     ):
+
+        # Convenience, fill in duplicated field
+        if "dim_model" not in multi_head_config_masked.keys():
+            multi_head_config_masked["dim_model"] = dim_model
+
+        if "dim_model" not in multi_head_config_cross.keys():
+            multi_head_config_cross["dim_model"] = dim_model
+
+        if "dim_model" not in feedforward_config.keys():
+            feedforward_config["dim_model"] = dim_model
+
+        if (
+            position_encoding_config is not None
+            and "dim_model" not in position_encoding_config.keys()
+        ):
+            position_encoding_config["dim_model"] = dim_model
+
         super().__init__(
             dim_model=dim_model,
             feedforward_config=feedforward_config,
