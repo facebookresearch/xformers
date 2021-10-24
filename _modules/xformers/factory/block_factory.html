@@ -374,8 +374,21 @@
         <span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">layer_norm_style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;post&quot;</span><span class="p">,</span>
         <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">_</span><span class="p">,</span>
     <span class="p">):</span>
+        <span class="c1"># Convenience, fill in duplicated field</span>
+        <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">multi_head_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+
+        <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">feedforward_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">feedforward_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">position_encoding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">position_encoding_config</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="n">position_encoding_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
             <span class="n">dim_model</span><span class="o">=</span><span class="n">dim_model</span><span class="p">,</span>
             <span class="n">feedforward_config</span><span class="o">=</span><span class="n">feedforward_config</span><span class="p">,</span>
@@ -402,8 +415,25 @@
         <span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">layer_norm_style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;post&quot;</span><span class="p">,</span>
         <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">_</span><span class="p">,</span>
     <span class="p">):</span>
+
+        <span class="c1"># Convenience, fill in duplicated field</span>
+        <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config_masked</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">multi_head_config_masked</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+
+        <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config_cross</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">multi_head_config_cross</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+
+        <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">feedforward_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">feedforward_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">position_encoding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">position_encoding_config</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="n">position_encoding_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
             <span class="n">dim_model</span><span class="o">=</span><span class="n">dim_model</span><span class="p">,</span>
             <span class="n">feedforward_config</span><span class="o">=</span><span class="n">feedforward_config</span><span class="p">,</span>
