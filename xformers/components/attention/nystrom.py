@@ -168,19 +168,19 @@ class NystromAttention(Attention):
         seq_len = k.size(-2)
 
         if att_mask is not None and att_mask.size() != (
-                batched_dim,
-                1,
-                seq_len,
-            ):
-                log.warning(
-                    "att_mask invalid dimensions, nystrom \
+            batched_dim,
+            1,
+            seq_len,
+        ):
+            log.warning(
+                "att_mask invalid dimensions, nystrom \
                     does not accept seq_len x seq_len \
                     attention masking. Ignoring attn mask."
-                )
-                att_mask = None
-        
+            )
+            att_mask = None
+
         assert att_mask is None or att_mask.dtype == torch.bool
-        
+
         if self.num_landmarks >= seq_len:
             mask: Optional[torch.Tensor] = None
             if self.causal:
