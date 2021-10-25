@@ -43,11 +43,11 @@ jobs:
           cd docs
           pip install --progress-bar off -r requirements.txt
           make help
-          make html
+          make singlehtml
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs/build/html
+          publish_dir: docs/build/singlehtml
         if: github.event_name != 'pull_request'
