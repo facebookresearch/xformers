@@ -9,6 +9,28 @@ from typing import Optional
 import torch
 
 
+# Reshapes key padding mask from (batch_size, src_len) -> (batch_size * num_heads 1, src_len)
+def reshape_key_padding_mask(
+    key_padding_mask: torch.Tensor, batched_dim: int
+) -> torch.Tensor:
+    assert key_padding_mask.ndim == 2
+    batch_size, src_len = key_padding_mask.size()
+    num_heads = batched_dim // batch_size
+    return _reshape_key_padding_mask(key_padding_mask, batch_size, src_len, num_heads)
+
+
+def _reshape_key_padding_mask(
+    key_padding_mask: torch.Tensor, batch_size: int, src_len: int, num_heads: int
+) -> torch.Tensor:
+    assert key_padding_mask.shape == (batch_size, src_len)
+    key_padding_mask = (
+        key_padding_mask.view(batch_size, 1, 1, src_len)
+        .expand(-1, num_heads, -1, -1)
+        .reshape(batch_size * num_heads, 1, src_len)
+    )
+    return key_padding_mask
+
+
 # Combine the attention mask and key padding mask into a single mask
 # Taken from https://github.com/pytorch/pytorch/blob/master/torch/nn/functional.py
 # Additive masking not yet supported
@@ -21,10 +43,8 @@ def maybe_merge_masks(
 ) -> Optional[torch.Tensor]:
     if key_padding_mask is not None:
         assert key_padding_mask.shape == (batch_size, src_len)
-        key_padding_mask = (
-            key_padding_mask.view(batch_size, 1, 1, src_len)
-            .expand(-1, num_heads, -1, -1)
-            .reshape(batch_size * num_heads, 1, src_len)
+        key_padding_mask = _reshape_key_padding_mask(
+            key_padding_mask, batch_size, src_len, num_heads
         )
         if att_mask is None:
             att_mask = key_padding_mask

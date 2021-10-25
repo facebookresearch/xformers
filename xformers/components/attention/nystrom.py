@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import logging as log
 from dataclasses import dataclass
 from typing import Optional
 
@@ -16,7 +15,7 @@ from xformers.components.attention.core import (
     scaled_dot_product_attention,
     scaled_query_key_softmax,
 )
-from xformers.components.attention.utils import iterative_pinv
+from xformers.components.attention.utils import iterative_pinv, reshape_key_padding_mask
 
 
 @dataclass
@@ -118,8 +117,8 @@ class NystromAttention(Attention):
 
         """
         super().__init__()
-
-        self.accepts_att_mask = False
+        # merged key padding mask and attention mask is not accepted
+        self.requires_separate_masks = True
         self.num_landmarks = num_landmarks
         # TODO: should be able to not have to pass in num_heads
         self.num_heads = num_heads
@@ -155,38 +154,41 @@ class NystromAttention(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
         *args,
         **kwargs,
     ):
         r"""
-        att_mask    Only a key padding mask is accepted here. The size must be
-                    (batch size * num_heads, 1, sequence length). If dimensions are not correct, the mask will be
-                    ignored. Method maybe_merge_masks in utils can help transform key padding mask to required shape.
+        key_padding_mask    Only a key padding mask is accepted here. The size must be (batch size, sequence length) or
+                            (batch size * num_heads, 1, sequence length). If dimensions are not correct, the mask will
+                            be ignored.
         """
         batched_dim = k.size(0)
         seq_len = k.size(-2)
 
-        if att_mask is not None and att_mask.size() != (
-            batched_dim,
-            1,
-            seq_len,
-        ):
-            log.warning(
-                "att_mask invalid dimensions, nystrom \
-                    does not accept seq_len x seq_len \
-                    attention masking. Ignoring attn mask."
-            )
-            att_mask = None
+        if key_padding_mask is not None:
+            assert key_padding_mask.dtype == torch.bool
 
-        assert att_mask is None or att_mask.dtype == torch.bool
+            if key_padding_mask.ndim == 2:
+                key_padding_mask = reshape_key_padding_mask(
+                    key_padding_mask, batched_dim
+                )
+
+            assert key_padding_mask.size() == (batched_dim, 1, seq_len,), (
+                f"key_padding_mask has invalid dimensions {key_padding_mask.size()}."
+                f" Must have dimensions {batched_dim, 1, seq_len} or (batch_size, {seq_len})."
+            )
 
         if self.num_landmarks >= seq_len:
             mask: Optional[torch.Tensor] = None
             if self.causal:
                 mask = self._tril_mask(batched_dim, seq_len, seq_len)
-            if att_mask is not None:
-                mask = att_mask if mask is None else mask.logical_and(att_mask)
+            if key_padding_mask is not None:
+                mask = (
+                    key_padding_mask
+                    if mask is None
+                    else mask.logical_and(key_padding_mask)
+                )
             x = scaled_dot_product_attention(q=q, k=k, v=v, att_mask=mask)
 
         else:
@@ -211,13 +213,17 @@ class NystromAttention(Attention):
             mask_1: Optional[torch.Tensor] = self.causal_mask_1
             mask_2: Optional[torch.Tensor] = self.causal_mask_2
             mask_3: Optional[torch.Tensor] = self.causal_mask_3
-            if att_mask is not None:
+            if key_padding_mask is not None:
                 mask_1 = (
-                    att_mask.transpose(-2, -1)
+                    key_padding_mask.transpose(-2, -1)
                     if mask_1 is None
-                    else mask_1.logical_and(att_mask.transpose(-2, -1))
+                    else mask_1.logical_and(key_padding_mask.transpose(-2, -1))
                 )
-                mask_3 = att_mask if mask_3 is None else mask_3.logical_and(att_mask)
+                mask_3 = (
+                    key_padding_mask
+                    if mask_3 is None
+                    else mask_3.logical_and(key_padding_mask)
+                )
 
             kernel_1 = scaled_query_key_softmax(q=q, k=k_landmarks, att_mask=mask_1)
             kernel_2 = scaled_query_key_softmax(
