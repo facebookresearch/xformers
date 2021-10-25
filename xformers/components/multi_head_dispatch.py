@@ -4,153 +4,15 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from collections import namedtuple
 from dataclasses import asdict, dataclass
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
-from torch.nn.init import constant_, xavier_uniform_
+from torch.nn.init import constant_
 
 from xformers.components.attention import Attention
-
-InProjParams = namedtuple("InProjParams", ["in_features", "out_features", "bias"])
-
-
-class InProjContainer(nn.Module):
-    """
-    Handle all the input projections in one go, opportunistically fuse some operations.
-
-    CREDITS: Inspired by https://github.com/pytorch/text/blob/master/torchtext/nn/modules/multiheadattention.py
-    and the MultiHeadAttention implementation from PyTorch
-    """
-
-    def __init__(
-        self,
-        query_proj_params: InProjParams,
-        key_proj_params: Optional[InProjParams],
-        value_proj_params: Optional[InProjParams],
-    ):
-
-        super().__init__()
-
-        assert (
-            query_proj_params.in_features == query_proj_params.out_features
-        ), "We assume in_features == out_features for queries, please provide your projection if this is not the case"
-
-        # If nothing is specified for key and value, use the same as query
-        if key_proj_params is None:
-            key_proj_params = query_proj_params
-
-        if value_proj_params is None:
-            value_proj_params = query_proj_params
-
-        # Catch a beneficial case, if Q,K,V dimensions are the same
-        self.same_dimensions = (
-            query_proj_params.in_features == key_proj_params.in_features
-            and value_proj_params.in_features == key_proj_params.in_features
-        )
-
-        self.out_features = query_proj_params.out_features
-
-        # - handle all the weights
-        if self.same_dimensions:
-            # We can use a single weight and bias buffer, which will speed up self attention
-            self.in_proj_weight = nn.Parameter(
-                torch.empty((3 * self.out_features, self.out_features))
-            )
-            self.register_parameter("q_proj_weight", None)
-            self.register_parameter("k_proj_weight", None)
-            self.register_parameter("v_proj_weight", None)
-        else:
-            # The dimensions are different, use seperate buffers
-            self.q_proj_weight = nn.Parameter(
-                torch.empty((self.out_features, query_proj_params.in_features))
-            )
-            self.k_proj_weight = nn.Parameter(
-                torch.empty((self.out_features, key_proj_params.in_features))
-            )
-            self.v_proj_weight = nn.Parameter(
-                torch.empty((self.out_features, value_proj_params.in_features))
-            )
-            self.register_parameter("in_proj_weight", None)
-
-        # - handle all the inputs
-        if query_proj_params.bias:
-            self.in_proj_bias = nn.Parameter(torch.empty(3 * self.out_features))
-        else:
-            self.register_parameter("in_proj_bias", None)
-
-        # - multi-head attention specific init for the weights and biases
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        if self.in_proj_weight is not None:
-            xavier_uniform_(self.in_proj_weight)
-        else:
-            xavier_uniform_(self.q_proj_weight)
-            xavier_uniform_(self.k_proj_weight)
-            xavier_uniform_(self.v_proj_weight)
-
-        if self.in_proj_bias is not None:
-            constant_(self.in_proj_bias, 0.0)
-
-    def forward(
-        self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        if self.in_proj_weight is not None:
-            if id(query) == id(key):
-                # Self attention, get all the projected values at once
-                # we compute everything transposed, so that q,k,v stay contiguous after splitting
-                qkv = query @ self.in_proj_weight.transpose(-2, -1)
-
-                if self.in_proj_bias is not None:
-                    qkv += self.in_proj_bias
-
-                q, k, v = map(
-                    lambda x: x.contiguous(),
-                    qkv.split(self.out_features, dim=-1),
-                )
-                return q, k, v
-
-            else:
-                # Not self attention
-                # - bias free projection
-                projections = self.in_proj_weight.split(self.out_features, dim=0)
-                q, k, v = map(
-                    lambda x, y: x @ y.transpose(1, 0), [query, key, value], projections
-                )
-
-                # - optionally add bias
-                if self.in_proj_bias is not None:
-                    biases = self.in_proj_bias.split(self.out_features, dim=0)
-                    q, k, v = map(lambda x, y: x + y, [q, k, v], biases)
-
-                return q, k, v
-
-        # We have a weight per input, but share a bigger bias buffer
-        assert (
-            self.q_proj_weight is not None
-            and self.k_proj_weight is not None
-            and self.v_proj_weight is not None
-        )
-
-        # - bias free projection
-        q, k, v = map(
-            lambda x, y: x @ y.transpose(1, 0),
-            [query, key, value],
-            [self.q_proj_weight, self.k_proj_weight, self.v_proj_weight],
-        )
-
-        # - optionally add bias
-        if self.in_proj_bias is not None:
-            biases = self.in_proj_bias.split(self.out_features, dim=0)
-            q, k, v = map(lambda x, y: x + y, [q, k, v], biases)
-
-        return q, k, v
+from xformers.components.in_proj_container import InProjContainer, InProjParams
 
 
 @dataclass
