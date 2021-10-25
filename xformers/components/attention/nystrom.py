@@ -167,10 +167,7 @@ class NystromAttention(Attention):
         batched_dim = k.size(0)
         seq_len = k.size(-2)
 
-        if att_mask is not None:
-            assert att_mask.dtype == torch.bool
-
-            if att_mask.size() != (
+        if att_mask is not None and att_mask.size() != (
                 batched_dim,
                 1,
                 seq_len,
@@ -181,7 +178,9 @@ class NystromAttention(Attention):
                     attention masking. Ignoring attn mask."
                 )
                 att_mask = None
-
+        
+        assert att_mask is None or att_mask.dtype == torch.bool
+        
         if self.num_landmarks >= seq_len:
             mask: Optional[torch.Tensor] = None
             if self.causal:
