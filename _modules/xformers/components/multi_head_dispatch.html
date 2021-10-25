@@ -233,153 +233,15 @@
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
 
-<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">namedtuple</span>
 <span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">asdict</span><span class="p">,</span> <span class="n">dataclass</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
-<span class="kn">from</span> <span class="nn">torch.nn.init</span> <span class="kn">import</span> <span class="n">constant_</span><span class="p">,</span> <span class="n">xavier_uniform_</span>
+<span class="kn">from</span> <span class="nn">torch.nn.init</span> <span class="kn">import</span> <span class="n">constant_</span>
 
 <span class="kn">from</span> <span class="nn">xformers.components.attention</span> <span class="kn">import</span> <span class="n">Attention</span>
-
-<span class="n">InProjParams</span> <span class="o">=</span> <span class="n">namedtuple</span><span class="p">(</span><span class="s2">&quot;InProjParams&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;in_features&quot;</span><span class="p">,</span> <span class="s2">&quot;out_features&quot;</span><span class="p">,</span> <span class="s2">&quot;bias&quot;</span><span class="p">])</span>
-
-
-<span class="k">class</span> <span class="nc">InProjContainer</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Handle all the input projections in one go, opportunistically fuse some operations.</span>
-
-<span class="sd">    CREDITS: Inspired by https://github.com/pytorch/text/blob/master/torchtext/nn/modules/multiheadattention.py</span>
-<span class="sd">    and the MultiHeadAttention implementation from PyTorch</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">query_proj_params</span><span class="p">:</span> <span class="n">InProjParams</span><span class="p">,</span>
-        <span class="n">key_proj_params</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">InProjParams</span><span class="p">],</span>
-        <span class="n">value_proj_params</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">InProjParams</span><span class="p">],</span>
-    <span class="p">):</span>
-
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-
-        <span class="k">assert</span> <span class="p">(</span>
-            <span class="n">query_proj_params</span><span class="o">.</span><span class="n">in_features</span> <span class="o">==</span> <span class="n">query_proj_params</span><span class="o">.</span><span class="n">out_features</span>
-        <span class="p">),</span> <span class="s2">&quot;We assume in_features == out_features for queries, please provide your projection if this is not the case&quot;</span>
-
-        <span class="c1"># If nothing is specified for key and value, use the same as query</span>
-        <span class="k">if</span> <span class="n">key_proj_params</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">key_proj_params</span> <span class="o">=</span> <span class="n">query_proj_params</span>
-
-        <span class="k">if</span> <span class="n">value_proj_params</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">value_proj_params</span> <span class="o">=</span> <span class="n">query_proj_params</span>
-
-        <span class="c1"># Catch a beneficial case, if Q,K,V dimensions are the same</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">same_dimensions</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">query_proj_params</span><span class="o">.</span><span class="n">in_features</span> <span class="o">==</span> <span class="n">key_proj_params</span><span class="o">.</span><span class="n">in_features</span>
-            <span class="ow">and</span> <span class="n">value_proj_params</span><span class="o">.</span><span class="n">in_features</span> <span class="o">==</span> <span class="n">key_proj_params</span><span class="o">.</span><span class="n">in_features</span>
-        <span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">out_features</span> <span class="o">=</span> <span class="n">query_proj_params</span><span class="o">.</span><span class="n">out_features</span>
-
-        <span class="c1"># - handle all the weights</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">same_dimensions</span><span class="p">:</span>
-            <span class="c1"># We can use a single weight and bias buffer, which will speed up self attention</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_weight</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">3</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">))</span>
-            <span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">register_parameter</span><span class="p">(</span><span class="s2">&quot;q_proj_weight&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">register_parameter</span><span class="p">(</span><span class="s2">&quot;k_proj_weight&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">register_parameter</span><span class="p">(</span><span class="s2">&quot;v_proj_weight&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># The dimensions are different, use seperate buffers</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">q_proj_weight</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="n">query_proj_params</span><span class="o">.</span><span class="n">in_features</span><span class="p">))</span>
-            <span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">k_proj_weight</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="n">key_proj_params</span><span class="o">.</span><span class="n">in_features</span><span class="p">))</span>
-            <span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">v_proj_weight</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="n">value_proj_params</span><span class="o">.</span><span class="n">in_features</span><span class="p">))</span>
-            <span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">register_parameter</span><span class="p">(</span><span class="s2">&quot;in_proj_weight&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-
-        <span class="c1"># - handle all the inputs</span>
-        <span class="k">if</span> <span class="n">query_proj_params</span><span class="o">.</span><span class="n">bias</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_bias</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">))</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">register_parameter</span><span class="p">(</span><span class="s2">&quot;in_proj_bias&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-
-        <span class="c1"># - multi-head attention specific init for the weights and biases</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_parameters</span><span class="p">()</span>
-
-    <span class="k">def</span> <span class="nf">_reset_parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_weight</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">xavier_uniform_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">in_proj_weight</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">xavier_uniform_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">q_proj_weight</span><span class="p">)</span>
-            <span class="n">xavier_uniform_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">k_proj_weight</span><span class="p">)</span>
-            <span class="n">xavier_uniform_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">v_proj_weight</span><span class="p">)</span>
-
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_bias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">constant_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">in_proj_bias</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
-
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_weight</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="nb">id</span><span class="p">(</span><span class="n">query</span><span class="p">)</span> <span class="o">==</span> <span class="nb">id</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
-                <span class="c1"># Self attention, get all the projected values at once</span>
-                <span class="c1"># we compute everything transposed, so that q,k,v stay contiguous after splitting</span>
-                <span class="n">qkv</span> <span class="o">=</span> <span class="n">query</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_weight</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_bias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">qkv</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_bias</span>
-
-                <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span>
-                    <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
-                    <span class="n">qkv</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
-                <span class="p">)</span>
-                <span class="k">return</span> <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span>
-
-            <span class="k">else</span><span class="p">:</span>
-                <span class="c1"># Not self attention</span>
-                <span class="c1"># - bias free projection</span>
-                <span class="n">projections</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_weight</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-                <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span>
-                    <span class="k">lambda</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">x</span> <span class="o">@</span> <span class="n">y</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">[</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">],</span> <span class="n">projections</span>
-                <span class="p">)</span>
-
-                <span class="c1"># - optionally add bias</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_bias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">biases</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_bias</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-                    <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span><span class="p">,</span> <span class="p">[</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">],</span> <span class="n">biases</span><span class="p">)</span>
-
-                <span class="k">return</span> <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span>
-
-        <span class="c1"># We have a weight per input, but share a bigger bias buffer</span>
-        <span class="k">assert</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">q_proj_weight</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_proj_weight</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_proj_weight</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="p">)</span>
-
-        <span class="c1"># - bias free projection</span>
-        <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span>
-            <span class="k">lambda</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">x</span> <span class="o">@</span> <span class="n">y</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
-            <span class="p">[</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">],</span>
-            <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">q_proj_weight</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_proj_weight</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_proj_weight</span><span class="p">],</span>
-        <span class="p">)</span>
-
-        <span class="c1"># - optionally add bias</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_bias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">biases</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_proj_bias</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-            <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span><span class="p">,</span> <span class="p">[</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">],</span> <span class="n">biases</span><span class="p">)</span>
-
-        <span class="k">return</span> <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span>
+<span class="kn">from</span> <span class="nn">xformers.components.in_proj_container</span> <span class="kn">import</span> <span class="n">InProjContainer</span><span class="p">,</span> <span class="n">InProjParams</span>
 
 
 <span class="nd">@dataclass</span>
