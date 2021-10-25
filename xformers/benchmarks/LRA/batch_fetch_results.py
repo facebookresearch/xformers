@@ -6,6 +6,7 @@
 
 import argparse
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict
 
@@ -34,35 +35,55 @@ if __name__ == "__main__":
     results: Dict[str, Any] = {}
 
     for attention in filter(lambda x: x.is_dir(), root.iterdir()):
-        print(f"\nFound results for {attention.stem}")
-        task_logs = attention.glob("*.log")
+        logging.info(f"\nFound results for {attention.stem}")
+        task_logs = attention.glob("*/*.log")
         results[attention.stem] = {}
 
         for task in filter(lambda x: "__0" in str(x), task_logs):
             task_name = task.stem.split("__")[0]
-            print(f"Logs found for task: {task_name}")
+            logging.info(f"Logs found for task: {task_name}")
             results[attention.stem][task_name] = -1
+            found_result = False
 
             # - collect the individual results
             with open(task, "r") as result_file:
                 for line in reversed(result_file.readlines()):
                     if '"component": "test"' in line:
+                        found_result = True
+
                         # Check that all the steps are done
                         res = json.loads(line)
+
                         if res["train_step_idx"] == reference_steps[task_name]:
                             results[attention.stem][task_name] = res["best_accu"]
-                            print(
+                            logging.info(
                                 f"Final result found for {task_name}: {results[attention.stem][task_name]}"
                             )
                         else:
-                            print(
+                            logging.info(
                                 "Current step: {}/{}. Not finished".format(
                                     res["train_step_idx"], reference_steps[task_name]
                                 )
                             )
                         break
 
-    print(f"\nCollected results: {json.dumps(results, indent=2)}")
+            # - report an error if no result was found
+            if not found_result:
+                ERR_TAIL = 30
+
+                logging.warning(
+                    f"No result found for {task_name}, showing the error log in {task.parent}"
+                )
+                err_log = Path(task.parent).glob("*.err")
+                print("*****************************************************")
+                with open(next(err_log), "r") as err_file:
+                    for i, line in enumerate(reversed(err_file.readlines())):
+                        print(line, end="")
+                        if i > ERR_TAIL:
+                            break
+                print("*****************************************************")
+
+    logging.info(f"\nCollected results: {json.dumps(results, indent=2)}")
 
     #  - reduction: compute the average
     tasks = set(t for v in results.values() for t in v.keys())
