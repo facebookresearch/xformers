@@ -21,6 +21,7 @@ except ImportError as e:
     _triton_available = False
 
 SHAPES = [
+    (384, 384),
     (2, 384, 384),
     (1, 784, 784),
     (1, 1024, 1024),

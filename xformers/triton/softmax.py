@@ -203,33 +203,34 @@ class _softmax_triton(torch.autograd.Function):
         This only supports a reduction over the last dimension for now
         """
 
-        y = torch.empty_like(x)
+        # Handle 2D/3D tensors
+        x_ = x.unsqueeze(0) if x.ndim == 2 else x
 
-        assert x.ndim == 3, "This implementation only supports 3-dim tensors"
-        assert y.stride(2) == 1 and x.stride(2) == 1
+        y = torch.empty_like(x_)
+        assert y.stride(2) == 1 and x_.stride(2) == 1
 
         # SPMD launch grid
         grid_2d = (
-            x.shape[0],
-            x.shape[1],
+            x_.shape[0],
+            x_.shape[1],
         )
 
         # enqueue GPU kernel
         use_mask = True
         if mask is None:
             #  placeholder, will not be used
-            mask = x
+            mask = x_
             use_mask = False
         else:
             # Make sure that the mask is binary
             assert mask.dtype == x.dtype, "An additive mask is requested"
 
         _softmax[grid_2d](
-            y, x, mask,
+            y, x_, mask,
             y.stride(0), y.stride(1),
-            x.stride(0), x.stride(1),
+            x_.stride(0), x_.stride(1),
             mask.stride(0),
-            x.shape[2],
+            x_.shape[2],
             log=log_outputs,
             use_mask=use_mask,
             causal=causal
@@ -238,31 +239,32 @@ class _softmax_triton(torch.autograd.Function):
         ctx.save_for_backward(y)
         ctx.log_outputs = log_outputs
         ctx.causal = causal
-        return y
+        return y.reshape_as(x)
 
     @staticmethod
     @custom_bwd
     def backward(ctx, grad_out):
         (out,) = ctx.saved_tensors
 
-        assert out.ndim == 3, "This implementation only supports 3-dim tensors"
+        # Handle 2D/3D tensors
+        grad_out_ = grad_out.unsqueeze(0) if grad_out.ndim == 2 else grad_out
 
         # SPMD launch grid
         grid_2d = (
-            grad_out.shape[0],
-            grad_out.shape[1],
+            grad_out_.shape[0],
+            grad_out_.shape[1],
         )
 
-        depth = triton.next_power_of_2(out.shape[2])
+        depth = triton.next_power_of_2(grad_out_.shape[2])
         grad_in = torch.empty_like(out)  # torch.zeros is measurably slower, we'll zero out in the kernel
 
-        assert grad_in.stride(2) == 1 and grad_out.stride(2) == 1 and out.stride(2) == 1
+        assert grad_in.stride(2) == 1 and grad_out_.stride(2) == 1 and out.stride(2) == 1
 
         # fmt: off
         _softmax_backward[grid_2d](
-            grad_in, grad_out, out,
+            grad_in, grad_out_, out,
             grad_in.stride(0), grad_in.stride(1),
-            grad_out.stride(0), grad_out.stride(1),
+            grad_out_.stride(0), grad_out_.stride(1),
             out.stride(0), out.stride(1),
             out.shape[2],
             depth=depth,
@@ -270,7 +272,7 @@ class _softmax_triton(torch.autograd.Function):
             causal=ctx.causal
         )
         # fmt: on
-        return grad_in, None, None, None
+        return grad_in.reshape_as(grad_out), None, None, None
 
 
 def softmax(x: torch.Tensor, mask: Optional[torch.Tensor] = None, causal: bool = False) -> torch.Tensor:
