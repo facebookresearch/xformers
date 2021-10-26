@@ -13,7 +13,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Welcome to xFormers’s documentation! | xFormers 0.0.1 documentation</title>
+  <title>What is xFormers? | xFormers 0.0.1 documentation</title>
   
   <script src="_static/js/ga.js"></script>
   <script src="_static/js/redirect.js"></script>
@@ -21,9 +21,9 @@
   <link rel="shortcut icon" href="_static/images/favicon.png" />
   
   
-  <link rel="canonical" href="https://facebookresearch.github.io/xformersindex.html" />
+  <link rel="canonical" href="https://facebookresearch.github.io/xformerswhat_is_xformers.html" />
   
-  <meta property="og:title" content="Welcome to xFormers’s documentation! | xFormers 0.0.1 documentation">
+  <meta property="og:title" content="What is xFormers? | xFormers 0.0.1 documentation">
   <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
@@ -43,7 +43,8 @@
   <link rel="stylesheet" href="_static/css/customize.css" type="text/css" />
   <link rel="index" title="Index" href="genindex.html" />
   <link rel="search" title="Search" href="search.html" />
-  <link rel="next" title="What is xFormers?" href="what_is_xformers.html" /> 
+  <link rel="next" title="API Reference" href="components/index.html" />
+  <link rel="prev" title="Welcome to xFormers’s documentation!" href="index.html" /> 
 
   
   <script src="_static/js/modernizr.min.js"></script>
@@ -136,8 +137,8 @@
         
         
         <p><span class="caption-text">Index</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="what_is_xformers.html">What is xFormers?</a></li>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">What is xFormers?</a></li>
 </ul>
 <p><span class="caption-text">Components Documentation</span></p>
 <ul>
@@ -186,7 +187,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="#">
+        <a href="index.html">
           
             Docs
           
@@ -194,13 +195,13 @@
       </li>
 
         
-      <li>Welcome to xFormers’s documentation!</li>
+      <li>What is xFormers?</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/index.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/what_is_xformers.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -226,82 +227,19 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
-  <section id="welcome-to-xformers-s-documentation">
-<h1>Welcome to xFormers’s documentation!<a class="headerlink" href="#welcome-to-xformers-s-documentation" title="Permalink to this headline">¶</a></h1>
-<p><em>xFormers</em> is a PyTorch based library which hosts flexible Transformers parts.
-They are interoperable and optimized building blocks, which can be optionally be combined
-to create some state of the art models.</p>
-<div class="toctree-wrapper compound">
-</div>
-<div class="line-block">
-<div class="line"><br /></div>
-<div class="line"><br /></div>
-</div>
-<div class="toctree-wrapper compound">
-<p><span class="caption-text">Components Documentation</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="components/index.html">API Reference</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="components/attentions.html">Attention mechanisms</a></li>
-<li class="toctree-l2"><a class="reference internal" href="components/feedforward.html">Feedforward mechanisms</a></li>
-<li class="toctree-l2"><a class="reference internal" href="components/position_embedding.html">Position Embeddings</a></li>
-<li class="toctree-l2"><a class="reference internal" href="components/reversible.html">Reversible layer</a></li>
-<li class="toctree-l2"><a class="reference internal" href="components/mha.html">Multi Head Attention</a></li>
+  <section id="what-is-xformers">
+<h1>What is xFormers?<a class="headerlink" href="#what-is-xformers" title="Permalink to this headline">¶</a></h1>
+<p>Flexible Transformers, defined by interoperable and optimized building blocks.</p>
+<a class="reference internal image-reference" href="_images/logo.png"><img alt="_images/logo.png" class="align-center" src="_images/logo.png" style="width: 700px; height: 205px;" /></a>
+<p>xFormers is focused on the following values</p>
+<ul class="simple">
+<li><p><strong>Field agnostic</strong>. This library is not focused on any given field, by design.</p></li>
+<li><p><strong>Composable</strong>. Ideally, break all the Transformer inspired models into a <em>block zoo</em>, which allows you to compose reference models but also study ablations or architecture search.</p></li>
+<li><p><strong>Extensible</strong>. xFormers aims at being <em>easy to extend locally</em>, so that one can focus on a specific improvement, and easily compare it against the state of the art.</p></li>
+<li><p><strong>Optimized</strong>. Reusing building blocks across domains means that engineering efforts can be more valued. And since you cannot improve what you cannot measure, xFormers is benchmark-heavy.</p></li>
+<li><p><strong>Tested</strong>. Each and every of the variant in the repo is tested, alone and composed with the other relevant blocks. This happens automatically anytime somebody proposes a new variant through a PR.</p></li>
+<li><p><strong>Crowd Sourced</strong>. PRs are really welcome, the state of the art is moving too fast for anything but a crowd sourced effort.</p></li>
 </ul>
-</li>
-</ul>
-</div>
-<div class="line-block">
-<div class="line"><br /></div>
-<div class="line"><br /></div>
-</div>
-<div class="toctree-wrapper compound">
-<p><span class="caption-text">Build models and blocks programatically</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="factory/index.html">Factory</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="factory/block.html">Block factory</a></li>
-<li class="toctree-l2"><a class="reference internal" href="factory/model.html">Model factory</a></li>
-</ul>
-</li>
-</ul>
-</div>
-<div class="line-block">
-<div class="line"><br /></div>
-<div class="line"><br /></div>
-</div>
-<div class="toctree-wrapper compound">
-<p><span class="caption-text">Tutorials and examples</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/index.html">Tutorials</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/sparse_vit.html">Replace all attentions from an existing ViT model with a sparse equivalent?</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/blocksparse.html">Using BlockSparseAttention</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/extend_attentions.html">Extend the xFormers parts zoo</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/use_attention.html">I’m only interested in testing out the attention mechanisms that are hosted here</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/pytorch_encoder.html">Building an encoder, comparing to PyTorch</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/pytorch_encoder.html#building-full-models">Building full models</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/reversible.html">Using the Reversible block</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/triton.html">Using Triton-based layers</a></li>
-</ul>
-</li>
-</ul>
-</div>
-<div class="line-block">
-<div class="line"><br /></div>
-<div class="line"><br /></div>
-</div>
-<div class="toctree-wrapper compound">
-<p><span class="caption-text">Some custom parts</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="custom_parts/index.html">Custom parts reference</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="custom_parts/index.html#sparse-cuda-kernels">Sparse CUDA kernels</a></li>
-<li class="toctree-l2"><a class="reference internal" href="custom_parts/index.html#triton-parts">Triton parts</a></li>
-</ul>
-</li>
-</ul>
-</div>
-<div class="line-block">
-<div class="line"><br /></div>
-<div class="line"><br /></div>
-</div>
 </section>
 
 
@@ -312,8 +250,10 @@ to create some state of the art models.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="what_is_xformers.html" class="btn btn-neutral float-right" title="What is xFormers?" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="components/index.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
+      
+        <a href="index.html" class="btn btn-neutral" title="Welcome to xFormers’s documentation!" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -345,9 +285,7 @@ to create some state of the art models.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Welcome to xFormers’s documentation!</a><ul>
-</ul>
-</li>
+<li><a class="reference internal" href="#">What is xFormers?</a></li>
 </ul>
 
             </div>

@@ -1,0 +1,643 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!-->
+<html class="no-js" lang="en">
+<!--<![endif]-->
+
+<head>
+  <meta charset="utf-8">
+  <meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Building an encoder, comparing to PyTorch | xFormers 0.0.1 documentation</title>
+  
+  <script src="../_static/js/ga.js"></script>
+  <script src="../_static/js/redirect.js"></script>
+  
+  <link rel="shortcut icon" href="../_static/images/favicon.png" />
+  
+  
+  <link rel="canonical" href="https://facebookresearch.github.io/xformerstutorials/pytorch_encoder.html" />
+  
+  <meta property="og:title" content="Building an encoder, comparing to PyTorch | xFormers 0.0.1 documentation">
+  <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
+  <!--<meta property="twitter:image" content="https://mmf.sh/img/logo.png">-->
+  <meta name="twitter:image:alt" content="Image for xFormers">
+  <meta name="twitter:card" content="summary_large_image">
+  
+
+  
+  
+  
+
+  
+
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="../_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="../_static/css/customize.css" type="text/css" />
+  <link rel="index" title="Index" href="../genindex.html" />
+  <link rel="search" title="Search" href="../search.html" />
+  <link rel="next" title="Using the Reversible block" href="reversible.html" />
+  <link rel="prev" title="I’m only interested in testing out the attention mechanisms that are hosted here" href="use_attention.html" /> 
+
+  
+  <script src="../_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://github.com/facebookresearch/xformers"><img
+          src="../_static/logo.png" style="padding-right: 90px;" width="280px" height="53px"></a>
+
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers"> xFormers Github</a>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+
+  </div>
+</div>
+
+
+<body class="pytorch-body">
+
+   
+
+  
+
+  <div class="table-of-contents-link-wrapper">
+    <span>Table of Contents</span>
+    <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+  </div>
+
+  <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+    <div class="pytorch-side-scroll">
+      <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+        <div class="pytorch-left-menu-search">
+          
+
+          
+          
+          
+          
+
+          
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        
+        
+        
+        
+        
+        <p><span class="caption-text">Index</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../what_is_xformers.html">What is xFormers?</a></li>
+</ul>
+<p><span class="caption-text">Components Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../components/index.html">API Reference</a></li>
+</ul>
+<p><span class="caption-text">Build models and blocks programatically</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../factory/index.html">Factory</a></li>
+</ul>
+<p><span class="caption-text">Tutorials and examples</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Tutorials</a></li>
+</ul>
+<p><span class="caption-text">Some custom parts</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../custom_parts/index.html">Custom parts reference</a></li>
+</ul>
+
+        
+        
+      </div>
+    </div>
+  </nav>
+
+  <div class="pytorch-container">
+    <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+      <div class="pytorch-breadcrumbs-wrapper">
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="../index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+          <li><a href="index.html">Tutorials</a> &gt;</li>
+        
+      <li>Building an encoder, comparing to PyTorch</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="../_sources/tutorials/pytorch_encoder.rst.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+      </div>
+
+      <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+        Shortcuts
+      </div>
+    </div>
+
+    <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+      <div class="pytorch-content-left">
+
+        
+        
+          <div class="rst-content">
+            
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+                
+  <section id="building-an-encoder-comparing-to-pytorch">
+<h1>Building an encoder, comparing to PyTorch<a class="headerlink" href="#building-an-encoder-comparing-to-pytorch" title="Permalink to this headline">¶</a></h1>
+<p>Let’s now walk up the hierarchy, and consider a whole encoder block. You may be used to the PyTorch encoder layer so we’ll consider it as a point of comparison, but other libraries would probably expose similar interfaces.</p>
+<section id="pytorch-encoder-layer">
+<h2>PyTorch Encoder Layer<a class="headerlink" href="#pytorch-encoder-layer" title="Permalink to this headline">¶</a></h2>
+<p>PyTorch already exposes a <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html?highlight=encoder#torch.nn.TransformerEncoderLayer">TransformerEncoderLayer</a>. Its constructor is:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">TransformerEncoderLayer</span><span class="p">(</span>
+    <span class="n">d_model</span><span class="p">,</span>
+    <span class="n">nhead</span><span class="p">,</span>
+    <span class="n">dim_feedforward</span><span class="o">=</span><span class="mi">2048</span><span class="p">,</span>
+    <span class="n">dropout</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+    <span class="n">activation</span><span class="o">=</span><span class="s1">&#39;relu&#39;</span><span class="p">,</span>
+    <span class="n">layer_norm_eps</span><span class="o">=</span><span class="mf">1e-05</span><span class="p">,</span>
+    <span class="n">batch_first</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span>
+    <span class="p">):</span>
+    <span class="o">...</span>
+</pre></div>
+</div>
+<p>Note that you cannot change the attention mechanism, so this example will use the “Scaled Dot Product”, as proposed by Vaswani et al., but in the xFormers case this is a free floating parameter.</p>
+</section>
+<section id="warning">
+<h2>Warning<a class="headerlink" href="#warning" title="Permalink to this headline">¶</a></h2>
+<p>It’s worth noting that <strong>xFormer’s blocks expect tensors to be batch first, while PyTorch’s transformers uses a sequence first convention. Don’t forget to permute if you use xFormers’s blocks as drop-in replacements.</strong></p>
+<p>Similarly, the attention masks conventions are different: in PyTorch, the mask is <em>True</em> when an element should <em>not</em> be attended to, whereas in xFormer it’s the opposite. Don’t forget to negate your attention masks to use xFormers’ blocks as drop-in replacements.</p>
+</section>
+<section id="block-factory">
+<h2>Block factory<a class="headerlink" href="#block-factory" title="Permalink to this headline">¶</a></h2>
+<p>We don’t have the exact same interfaces, but we have something fairly close to PyTorch with the [model_factory](xformers/factory/model_factory.py). Please note that, similarly to the attention example above, you can also directly import the <cite>xFormerEncoderBlock</cite> and construct it from there, but we’ll assume here that you could be interested in systematic evaluation of different architectures, and that as such something which can be easily automated is preferred, so the “factory” path is the one put forward.</p>
+<p>The equivalent to the PyTorch example above would look like the following. You can think of it  as a declaration of the sequence of blocks that you would like instantiated. We’re trying to:</p>
+<ul class="simple">
+<li><p>make it very explicit what is in this block</p></li>
+<li><p>keep everything pythonic</p></li>
+<li><p>make this sweep and automation friendly in general</p></li>
+</ul>
+<p>With this said, you can build an encoder directly as follows:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">xformers.factory</span> <span class="kn">import</span> <span class="n">xFormerEncoderBlock</span><span class="p">,</span> <span class="n">xFormerEncoderConfig</span>
+<span class="kn">import</span> <span class="nn">torch</span>
+
+<span class="n">BATCH</span> <span class="o">=</span> <span class="mi">8</span>
+<span class="n">SEQ</span> <span class="o">=</span> <span class="mi">1024</span>
+<span class="n">EMB</span> <span class="o">=</span> <span class="mi">384</span>
+<span class="n">VOCAB</span> <span class="o">=</span> <span class="mi">64</span>
+
+<span class="n">encoder_config</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;dim_model&quot;</span><span class="p">:</span> <span class="n">EMB</span><span class="p">,</span>
+    <span class="s2">&quot;layer_norm_style&quot;</span><span class="p">:</span> <span class="s2">&quot;pre&quot;</span><span class="p">,</span>  <span class="c1"># Optional, pre/post</span>
+    <span class="s2">&quot;position_encoding_config&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;vocab&quot;</span><span class="p">,</span>  <span class="c1"># whatever position encodinhg makes sense</span>
+        <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="n">SEQ</span><span class="p">,</span>
+        <span class="s2">&quot;vocab_size&quot;</span><span class="p">:</span> <span class="n">VOCAB</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;multi_head_config&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;num_heads&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+        <span class="s2">&quot;residual_dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;attention&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;linformer&quot;</span><span class="p">,</span>  <span class="c1"># whatever attention mechanism</span>
+            <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="n">SEQ</span><span class="p">,</span>
+        <span class="p">},</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;feedforward_config&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;MLP&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;activation&quot;</span><span class="p">:</span> <span class="s2">&quot;relu&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;hidden_layer_multiplier&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">}</span>
+
+<span class="c1"># &quot;constructing&quot; the config will lead to a lot of type checking,</span>
+<span class="c1"># which could catch some errors early on</span>
+<span class="n">config</span> <span class="o">=</span> <span class="n">xFormerEncoderConfig</span><span class="p">(</span><span class="o">**</span><span class="n">encoder_config</span><span class="p">)</span>
+
+<span class="n">encoder</span> <span class="o">=</span> <span class="n">xFormerEncoderBlock</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+
+<span class="c1">#  Test out with dummy inputs</span>
+<span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">((</span><span class="n">BATCH</span><span class="p">,</span> <span class="n">SEQ</span><span class="p">))</span> <span class="o">*</span> <span class="n">VOCAB</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">int</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">encoder</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="building-full-models">
+<h1>Building full models<a class="headerlink" href="#building-full-models" title="Permalink to this headline">¶</a></h1>
+<p>This is the last example in the series, and goes one level up again, so that we consider building a whole Tranformer/xFormer model. Please note that this is just an example, because building the whole model from explicit parts is always an option, from pure PyTorch building blocks or adding some xFormers primitives.</p>
+<section id="pytorch-transformer">
+<h2>PyTorch Transformer<a class="headerlink" href="#pytorch-transformer" title="Permalink to this headline">¶</a></h2>
+<p>Am implementation of a full Transformer is supported directly by PyTorch, see the <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Transformer.html?highlight=transformer#torch.nn.Transformer">PyTorchTransformer</a> for more options.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">Transformer</span><span class="p">(</span>
+    <span class="n">d_model</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span>
+    <span class="n">nhead</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+    <span class="n">num_encoder_layers</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span>
+    <span class="n">num_decoder_layers</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span>
+    <span class="n">dim_feedforward</span><span class="o">=</span><span class="mi">2048</span><span class="p">,</span>
+    <span class="n">dropout</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+    <span class="n">activation</span><span class="o">=</span><span class="s1">&#39;relu&#39;</span><span class="p">,</span>
+    <span class="n">custom_encoder</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="c1"># the xFormers exemple below defines that</span>
+    <span class="n">custom_decoder</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="c1"># Same</span>
+    <span class="n">layer_norm_eps</span><span class="o">=</span><span class="mf">1e-05</span><span class="p">,</span>
+    <span class="n">batch_first</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="o">.</span>
+</pre></div>
+</div>
+</section>
+<section id="model-factory">
+<h2>model factory<a class="headerlink" href="#model-factory" title="Permalink to this headline">¶</a></h2>
+<p>We don’t have the exact same interfaces, but we have something to propose with the <a class="reference external" href="https://github.com/facebookresearch/xformers/blob/main/xformers/factory/model_factory.py">model_factory</a>.
+Please note that, similarly to the attention example above, you can also directly import the <cite>xFormer</cite> and <cite>xFormerConfig</cite>
+and construct it from there, but we’ll assume here that you could be interested in systematic evaluation of different architectures,
+and that as such something which can be easily automated is preferred, so the “factory” path is the one put forward.</p>
+<p>The equivalent to the PyTorch example above would look like the following.
+You can think of it  as a declaration of the sequence of blocks that you would like instantiated.
+This is not really apples to apples, because we define a custom encoder and decoder here.
+There’s also an added flexibility with xFormers in that attention mechanisms can be chosen at will, on a per-layer basis.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">xformers.factory.model_factory</span> <span class="kn">import</span> <span class="n">xFormer</span><span class="p">,</span> <span class="n">xFormerConfig</span>
+<span class="kn">import</span> <span class="nn">torch</span>
+
+<span class="n">EMB</span> <span class="o">=</span> <span class="mi">384</span>
+<span class="n">SEQ</span> <span class="o">=</span> <span class="mi">1024</span>
+<span class="n">BATCH</span> <span class="o">=</span> <span class="mi">16</span>
+<span class="n">VOCAB</span> <span class="o">=</span> <span class="mi">64</span>
+
+<span class="n">my_config</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="c1"># A list of the encoder or decoder blocks which constitute the Transformer.</span>
+    <span class="c1"># Note that a sequence of different encoder blocks can be used, same for decoders</span>
+    <span class="p">{</span>
+        <span class="s2">&quot;reversible&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>  <span class="c1"># Optionally make these layers reversible, to save memory</span>
+        <span class="s2">&quot;block_config&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;block_type&quot;</span><span class="p">:</span> <span class="s2">&quot;encoder&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;num_layers&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>  <span class="c1"># Optional, this means that this config will repeat N times</span>
+            <span class="s2">&quot;dim_model&quot;</span><span class="p">:</span> <span class="n">EMB</span><span class="p">,</span>
+            <span class="s2">&quot;layer_norm_style&quot;</span><span class="p">:</span> <span class="s2">&quot;pre&quot;</span><span class="p">,</span>  <span class="c1"># Optional, pre/post</span>
+            <span class="s2">&quot;position_encoding_config&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;vocab&quot;</span><span class="p">,</span>  <span class="c1"># whatever position encodinhg makes sense</span>
+                <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
+                <span class="s2">&quot;vocab_size&quot;</span><span class="p">:</span> <span class="n">VOCAB</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="s2">&quot;multi_head_config&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;num_heads&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+                <span class="s2">&quot;residual_dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="s2">&quot;attention&quot;</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;linformer&quot;</span><span class="p">,</span>  <span class="c1"># whatever attention mechanism</span>
+                    <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                    <span class="s2">&quot;causal&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                    <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="n">SEQ</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">},</span>
+            <span class="s2">&quot;feedforward_config&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;MLP&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="s2">&quot;activation&quot;</span><span class="p">:</span> <span class="s2">&quot;relu&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;hidden_layer_multiplier&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">},</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="s2">&quot;reversible&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>  <span class="c1"># Optionally make these layers reversible, to save memory</span>
+        <span class="s2">&quot;block_config&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;block_type&quot;</span><span class="p">:</span> <span class="s2">&quot;decoder&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;num_layers&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>  <span class="c1"># Optional, this means that this config will repeat N times</span>
+            <span class="s2">&quot;dim_model&quot;</span><span class="p">:</span> <span class="n">EMB</span><span class="p">,</span>
+            <span class="s2">&quot;layer_norm_style&quot;</span><span class="p">:</span> <span class="s2">&quot;pre&quot;</span><span class="p">,</span>  <span class="c1"># Optional, pre/post</span>
+            <span class="s2">&quot;position_encoding_config&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;vocab&quot;</span><span class="p">,</span>  <span class="c1"># whatever position encodinhg makes sense</span>
+                <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="n">SEQ</span><span class="p">,</span>
+                <span class="s2">&quot;vocab_size&quot;</span><span class="p">:</span> <span class="n">VOCAB</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="s2">&quot;multi_head_config_masked&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;num_heads&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+                <span class="s2">&quot;residual_dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="s2">&quot;attention&quot;</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;nystrom&quot;</span><span class="p">,</span>  <span class="c1"># whatever attention mechanism</span>
+                    <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                    <span class="s2">&quot;causal&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="n">SEQ</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">},</span>
+            <span class="s2">&quot;multi_head_config_cross&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;num_heads&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+                <span class="s2">&quot;residual_dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="s2">&quot;attention&quot;</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;favor&quot;</span><span class="p">,</span>  <span class="c1"># whatever attention mechanism</span>
+                    <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                    <span class="s2">&quot;causal&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="n">SEQ</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">},</span>
+            <span class="s2">&quot;feedforward_config&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;MLP&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="s2">&quot;activation&quot;</span><span class="p">:</span> <span class="s2">&quot;relu&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;hidden_layer_multiplier&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">},</span>
+    <span class="p">},</span>
+<span class="p">]</span>
+
+<span class="c1"># This part of xFormers is entirely type checked and needs a config object,</span>
+<span class="c1"># could be changed in the future</span>
+<span class="n">config</span> <span class="o">=</span> <span class="n">xFormerConfig</span><span class="p">(</span><span class="n">my_config</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">xFormer</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+
+<span class="c1">#  Test out with dummy inputs</span>
+<span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">((</span><span class="n">BATCH</span><span class="p">,</span> <span class="n">SEQ</span><span class="p">))</span> <span class="o">*</span> <span class="n">VOCAB</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">int</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">src</span><span class="o">=</span><span class="n">x</span><span class="p">,</span> <span class="n">tgt</span><span class="o">=</span><span class="n">x</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Note that this exposes quite a few more knobs than the PyTorch Transformer interface, but in turn is probably a little more flexible. There are a couple of repeated settings here (dimensions mostly), this is taken care of in the [LRA benchmarking config](benchmarks/LRA/code/config.json)</p>
+<p>You can compare the speed and memory use of the vanilla PyTorch Transformer Encoder and an equivalent from xFormers, there is an existing benchmark for that ([see](xformers/benchmarks/benchmark_pytorch_transformer.py)). It can be run with <cite>python3 xformers/benchmarks/benchmark_pytorch_transformer.py</cite>, and returns the loss values for every step along with the training time for a couple of shapes that you can customize. Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xFormers 0.0.1):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>--- Transformer training benchmark - runtime ---
+<span class="p">|</span> Units: s <span class="p">|</span> emb <span class="m">128</span> - heads <span class="m">8</span> <span class="p">|</span> emb <span class="m">1024</span> - heads <span class="m">8</span> <span class="p">|</span> emb <span class="m">2048</span> - heads <span class="m">8</span> <span class="p">|</span>
+<span class="p">|</span> -------- <span class="p">|</span> ----------------- <span class="p">|</span> ------------------ <span class="p">|</span> ------------------ <span class="p">|</span>
+<span class="p">|</span> xformers <span class="p">|</span> <span class="m">0</span>.3               <span class="p">|</span> <span class="m">0</span>.4                <span class="p">|</span> <span class="m">0</span>.7                <span class="p">|</span>
+<span class="p">|</span> pytorch  <span class="p">|</span> <span class="m">0</span>.2               <span class="p">|</span> <span class="m">0</span>.6                <span class="p">|</span> <span class="m">0</span>.8                <span class="p">|</span>
+
+--- Transformer training benchmark - memory use ---
+<span class="p">|</span> Units: MB <span class="p">|</span> emb <span class="m">128</span> - heads <span class="m">8</span> <span class="p">|</span> emb <span class="m">1024</span> - heads <span class="m">8</span> <span class="p">|</span> emb <span class="m">2048</span> - heads <span class="m">8</span> <span class="p">|</span>
+<span class="p">|</span> --------- <span class="p">|</span> ----------------- <span class="p">|</span> ------------------ <span class="p">|</span> ------------------ <span class="p">|</span>
+<span class="p">|</span> xformers  <span class="p">|</span> <span class="m">89</span>                <span class="p">|</span> <span class="m">1182</span>               <span class="p">|</span> <span class="m">2709</span>               <span class="p">|</span>
+<span class="p">|</span> pytorch   <span class="p">|</span> <span class="m">155</span>               <span class="p">|</span> <span class="m">1950</span>               <span class="p">|</span> <span class="m">4117</span>               <span class="p">|</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+              </article>
+              
+            </div>
+            <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="reversible.html" class="btn btn-neutral float-right" title="Using the Reversible block" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="use_attention.html" class="btn btn-neutral" title="I’m only interested in testing out the attention mechanisms that are hosted here" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2021, Facebook AI Research.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+        </div>
+
+        <!-- <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">Building an encoder, comparing to PyTorch</a><ul>
+<li><a class="reference internal" href="#pytorch-encoder-layer">PyTorch Encoder Layer</a></li>
+<li><a class="reference internal" href="#warning">Warning</a></li>
+<li><a class="reference internal" href="#block-factory">Block factory</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#building-full-models">Building full models</a><ul>
+<li><a class="reference internal" href="#pytorch-transformer">PyTorch Transformer</a></li>
+<li><a class="reference internal" href="#model-factory">model factory</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+          </div>
+        </div> -->
+    </section>
+  </div>
+
+  
+
+
+  
+
+  
+  <script type="text/javascript" id="documentation_options" data-url_root="../"
+    src="../_static/documentation_options.js"></script>
+  <script src="../_static/jquery.js"></script>
+  <script src="../_static/underscore.js"></script>
+  <script src="../_static/doctools.js"></script>
+  <script src="../_static/language_data.js"></script>
+  
+
+  
+
+  <script type="text/javascript" src="../_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="../_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+  <!-- Begin Footer -->
+
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://github.com/facebookresearch/xformers" class="footer-logo"></a>
+      </div>
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://github.com/facebookresearch/xformers">fairscale</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="">Resources</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers">Docs</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/issues" target="_blank">Github Issues</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    </div>
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://github.com/facebookresearch/xformers" aria-label="fairscale"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Docs</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Github</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="../_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function () {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function (e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+
+</html>
