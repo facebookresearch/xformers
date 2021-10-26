@@ -14,11 +14,12 @@ from xformers.components import Activation, build_activation
 from xformers.triton.fused_linear_layer import FusedLinear
 
 SHAPES = [
-    (8, 256, 512),
-    (8, 512, 1024),
-    (4, 1024, 1024),
-    (2, 2048, 2048),
-    (2, 4096, 4096),
+    (8, 512, 256),  # Batch x Seq x Embedding
+    (8, 512, 512),
+    (4, 512, 1024),
+    (2, 512, 2048),
+    (2, 512, 4096),
+    (2, 512, 8192),
 ]
 
 
@@ -40,7 +41,15 @@ def get_metrics_transform(
     if backward:
         flop *= 2
 
-    # optional weight on top
+        # backward will also output a gradient with respect to the bias
+        # which consolidates on all the activation gradient
+        flop += a.shape[0] * a.shape[1] * w.shape[1]
+
+        # backward will also ouput another gradient with respect to the weight,
+        # which is another matmul, in between the grad_out and the inputs this time
+        flop += a.shape[0] * a.shape[1] * w.shape[1] * (2 * a.shape[2] - 1)
+
+    # optional bias on top
     if b is not None:
         flop += b.numel()
 
@@ -58,11 +67,11 @@ def bench_linear(activations: List[Optional[Activation]]):
         torch.float16,
         torch.float32,
     ]:
-        for backward in [False, True]:
-
-            results: Dict[str, Any] = {}
+        for backward in [True, False]:
 
             for activation in activations:
+                results: Dict[str, Any] = {}
+
                 for bias in [False, True]:
                     for B, M, K in SHAPES:
                         a = torch.rand(
@@ -129,17 +138,18 @@ def bench_linear(activations: List[Optional[Activation]]):
                             metric = metrics_transform(time)
                             results[key][testcase.name] = f"{metric:.1f}"
 
-            pretty_print(
-                results,
-                title="\n --- Type: {} ---".format(dtype),
-                units="TFlops/s",
-            )
+                pretty_print(
+                    results,
+                    title="\n --- Type: {} ---".format(dtype),
+                    units="TFlops/s",
+                )
 
-            _type = "_fp16" if dtype == torch.float16 else "_fp32"
-            title = "FusedLinear" + _type + "_FW"
-            if backward:
-                title += "_BW"
-            pretty_plot(results, title, "TFlops/s", dash_key="pytorch")
+                _type = "_fp16" if dtype == torch.float16 else "_fp32"
+                title = "FusedLinear" + _type + "_FW"
+                if backward:
+                    title += "_BW"
+                title += "_" + activation.value if activation else "_none"
+                pretty_plot(results, title, "TFlops/s", dash_key="pytorch")
 
 
 activations = [ac for ac in Activation] + [None]  # type: ignore

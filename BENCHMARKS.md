@@ -53,15 +53,28 @@ Note that in the Triton case the slowdowns at extreme sizes are because of regis
 ### Fused linear layer
 
 You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_fused_linear_layer.py`. The units are TFlops/s. These results are for a nVidia V100, Triton 1.1 and PyTorch 1.9.
-**As of October 2021, these Triton kernelsonly competitive with Pytorch for float16 inference, this is a work in progress**.
 
-![Fused linear layers throughput in fp16 - inference](docs/plots/FusedLinear_fp16_FW.png)
+**As of October 2021, these Triton kernels are only competitive with Pytorch in float16, this is a work in progress**.
 
-![Fused linear layers throughput in fp16 - training](docs/plots/FusedLinear_fp16_FW_BW.png)
+![Fused linear layers throughput in fp16 - inference](docs/plots/FusedLinear_fp16_FW_gelu.png)
 
-![Fused linear layers throughput in fp32 - inference](docs/plots/FusedLinear_fp32_FW.png)
+![Fused linear layers throughput in fp16 - training](docs/plots/FusedLinear_fp16_FW_BW_gelu.png)
 
-![Fused linear layers throughput in fp32 - training](docs/plots/FusedLinear_fp32_FW_BW.png)
+![Fused linear layers throughput in fp16 - inference](docs/plots/FusedLinear_fp16_FW_relu.png)
+
+![Fused linear layers throughput in fp16 - training](docs/plots/FusedLinear_fp16_FW_BW_relu.png)
+
+![Fused linear layers throughput in fp16 - inference](docs/plots/FusedLinear_fp16_FW_leaky_relu.png)
+
+![Fused linear layers throughput in fp16 - training](docs/plots/FusedLinear_fp16_FW_BW_leaky_relu.png)
+
+![Fused linear layers throughput in fp16 - inference](docs/plots/FusedLinear_fp16_FW_squared_relu.png)
+
+![Fused linear layers throughput in fp16 - training](docs/plots/FusedLinear_fp16_FW_BW_squared_relu.png)
+
+![Fused linear layers throughput in fp16 - inference](docs/plots/FusedLinear_fp16_FW_none.png)
+
+![Fused linear layers throughput in fp16 - training](docs/plots/FusedLinear_fp16_FW_BW_none.png)
 
 ### Fused layer norm
 

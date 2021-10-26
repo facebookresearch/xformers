@@ -15,7 +15,8 @@ from xformers.triton.activations import (
     get_triton_activation_bwd_kernel,
     get_triton_activation_kernel,
 )
-from xformers.triton.k_fused_matmul import fused_matmul, fused_matmul_backward
+from xformers.triton.k_fused_matmul_bw import fused_matmul_backward
+from xformers.triton.k_fused_matmul_fw import fused_matmul
 
 # The following activations require their inputs to be saved to be able to compute their gradients
 _requires_bwd_inputs = [
@@ -34,28 +35,17 @@ class _fused_linear_triton(torch.autograd.Function):
         bias,
         activation,
         act_grad_kernel,
-        save_activation_inputs,
         trainable_weight,
         trainable_bias,
     ):
 
         # Kick the fused Triton kernel, handling bias and activation in one go
-        y, activation_inputs = fused_matmul(
-            x, weight, bias, activation, save_activation_inputs
-        )
+        y = fused_matmul(x, weight, bias, activation)
 
         ctx.activation_grad_kernel = act_grad_kernel
         ctx.trainable_weight = trainable_weight
         ctx.trainable_bias = trainable_bias
-        ctx.save_activation_inputs = save_activation_inputs
-
-        # Micro-optimization: saving these is not always needed (?)
-        if x.requires_grad or ctx.trainable_weight or ctx.trainable_bias:
-            if ctx.trainable_weight:
-                ctx.save_for_backward(weight, activation_inputs, x)
-            else:
-                ctx.save_for_backward(weight, None, None)
-
+        ctx.save_for_backward(weight, bias, x)
         return y
 
     @staticmethod
@@ -64,18 +54,17 @@ class _fused_linear_triton(torch.autograd.Function):
         """
         Compute the derivative with respect to x, other tensors were not trainable inputs.
         """
-        (weight, activation_inputs, inputs) = ctx.saved_tensors
+        (weight, bias, inputs) = ctx.saved_tensors
 
         # Kick the fused Triton kernel, handling transpose and activation gradient in one go
         grad_input, grad_weight, grad_bias = fused_matmul_backward(
             grad_out=grad_out,
             inputs=inputs,
+            bias=bias,
             weight=weight,
             trainable_weight=ctx.trainable_weight,
             trainable_bias=ctx.trainable_bias,
-            activation_inputs=activation_inputs,
             activation_grad=ctx.activation_grad_kernel,
-            activation_grad_req_inputs=ctx.save_activation_inputs,
         )
 
         return grad_input, grad_weight, grad_bias, None, None, None, None, None
@@ -112,9 +101,6 @@ class FusedLinear(nn.Module):
 
         self._activation_kernel = get_triton_activation_kernel(activation)
         self._activation_grad_kernel = get_triton_activation_bwd_kernel(activation)
-        self._save_activation_inputs = (
-            activation in _requires_bwd_inputs if activation is not None else False
-        )
 
         self.reset_parameters()
 
@@ -132,7 +118,6 @@ class FusedLinear(nn.Module):
             self.bias,
             self._activation_kernel,
             self._activation_grad_kernel,
-            self._save_activation_inputs,
             self.weight.requires_grad,
             self.bias.requires_grad if self.bias is not None else False,
         )

@@ -116,15 +116,9 @@ def gelu(x):
 
 @triton.jit
 def gelu_grad(x):
-    # Normal computation, just try to maximize reuse
-    x_3 = x * x * x
-    _a = 0.0356774 * x_3 + _kAlpha * x
-
-    # (hoping that a division is cheaper than an exponential..)
-    exp_a = tl.exp(_a)
-    exp_m_a = 1.0 / exp_a
-
-    _cos_h = exp_a + exp_m_a
-    _tan_h = (exp_a - exp_m_a) / _cos_h
-    _cos_h *= 0.5
-    return 0.5 + 0.5 * _tan_h + (0.0535161 * x_3 + 0.398942 * x) / (_cos_h * _cos_h)
+    # CREDITS: Fast implementation proposed in
+    # https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/model/fused_bias_gelu.py#L30
+    tanh_out = tanh(0.79788456 * x * (1 + 0.044715 * x * x))
+    return 0.5 * x * (
+        (1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * x * x)
+    ) + 0.5 * (1 + tanh_out)
