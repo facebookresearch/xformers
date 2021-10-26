@@ -28,6 +28,8 @@ if __name__ == "__main__":
     parser.add_argument("-ck", "--checkpoint_path", required=True)
     args = parser.parse_args()
 
+    logging.getLogger().setLevel(logging.INFO)
+
     # Go through all the data in the given repo, try to find the end results
     root = Path(args.checkpoint_path)
 
