@@ -112,7 +112,7 @@ templates_path = ["_templates"]
 #
 html_theme_options = {
     "includehidden": True,
-    "canonical_url": "https://fairinternal.github.io/xformers",
+    "canonical_url": "https://facebookresearch.github.io/xformers",
     "pytorch_project": "docs",
     "logo_only": True,  # default = False
 }
@@ -128,7 +128,7 @@ html_context = {"css_files": ["_static/css/customize.css"]}
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = "xformersdocs"
-github_doc_root = "https://github.com/fairinternal/xformers/blob/v0.1/"
+github_doc_root = "https://github.com/facebookresearch/xformers/tree/main/docs/"
 
 
 # Over-ride PyTorch Sphinx css
