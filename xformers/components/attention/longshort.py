@@ -24,8 +24,8 @@ class LongShortAttention(Attention):
         dropout: float, 
         num_heads: int,
         dim_model: int,
-        num_landmarks: int = 64,
-        window_size: int = 256,
+        num_landmarks: int = 32,
+        window_size: int = 96,
         global_tokens: int = 1,
         *args, **kwargs
     ):

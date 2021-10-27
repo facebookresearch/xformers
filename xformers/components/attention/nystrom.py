@@ -53,7 +53,7 @@ class NystromAttention(Attention):
         self,
         dropout: float,
         num_heads: int,
-        num_landmarks: int = 64,
+        num_landmarks: int = 256,
         landmark_pooling: Optional[nn.Module] = None,
         causal: bool = False,
         use_razavi_pinverse: bool = True,

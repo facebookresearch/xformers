@@ -8,7 +8,7 @@ import torch
 from ._sputnik_sparse import SparseCS
 
 # FIXME: Better coding on when to use triton and not
-_use_triton = True
+_use_triton = False # FIXME @xwhan diabling it temporarily
 if _use_triton:
     try:
         from xformers.triton.softmax import softmax as triton_softmax

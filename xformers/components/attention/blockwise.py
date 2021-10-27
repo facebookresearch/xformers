@@ -24,7 +24,7 @@ class BlockWiseAttention(Attention):
         dropout: float, 
         num_heads: int,
         dim_model: int,
-        window_size: int = 256,
+        window_size: int = 128,
         *args, **kwargs
     ):
         super().__init__()

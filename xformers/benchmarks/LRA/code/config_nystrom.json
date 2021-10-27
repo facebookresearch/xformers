@@ -61,17 +61,19 @@
                     },
                     "nystrom": {
                     "conv_kernel_size": 35,
-                    "num_landmarks": 128
+                    "num_landmarks": 64
                     },
                     "sinkhorn": {
                     "num_heads": 2,
                     "block_size": 8
                     },
                     "lsh_reformer": {"num_heads": 2, "num_hash": 2},
+                    "lsh_global": {"num_heads": 2, "num_hash": 2},
                     "longshort":{
                         "num_landmarks": 32,
                         "window_size": 8
                     },
+                    "linformer": {"compress": 16, "max_seq_len": 4096},
                     "blockwise": {"window_size": 16},
                     "longformer": {"window_size": 8},
                     "performer": {"rp_dim": 256}
@@ -146,12 +148,15 @@
                         "num_heads": 2,
                         "block_size": 8
                     },
+                    "lsh_global": {"num_heads": 2, "num_hash": 2},
+                    "linformer": {"compress": 16, "max_seq_len": 2048},
                     "longshort":{
                         "num_landmarks": 32,
                         "window_size": 8
                     },
+                    "lsh_reformer": {"num_heads": 2, "num_hash": 2},
                     "blockwise": {"window_size": 8},
-                    "longformer": {"window_size": 32},
+                    "longformer": {"window_size": 8},
                     "performer": {"rp_dim": 64}
                 }
             }
@@ -218,16 +223,19 @@
                     },
                     "nystrom": {
                     "conv_kernel_size": 35,
-                    "num_landmarks": 128
+                    "num_landmarks": 64
                     },
+                    "lsh_global": {"num_heads": 2, "num_hash": 2},
                     "sinkhorn": {
                         "num_heads": 2,
                         "block_size": 8
                     },
+                    "lsh_reformer": {"num_heads": 2, "num_hash": 2},
                     "longshort":{
                         "num_landmarks": 32,
                         "window_size": 8
                     },
+                    "linformer": {"compress": 16, "max_seq_len": 4096},
                     "blockwise": {"window_size": 32},
                     "longformer": {"window_size": 8},
                     "performer": {"rp_dim": 256}
