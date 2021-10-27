@@ -53,7 +53,6 @@ def layer_norm(
         and weight is not None
         and bias is not None
     ):
-        # pyre-ignore[16]: Pyre is unable to find the `apply` method.
         return _LayerNorm.apply(x, normalized_shape, weight, bias, eps)
 
     return torch.nn.functional.layer_norm(

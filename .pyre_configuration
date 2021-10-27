@@ -1,7 +1,8 @@
 {
+  "ignore_all_errors": ["xformers/benchmarks/"],
   "python_version": "3.7",
   "source_directories": [
     "stubs",
-    "."
+    {"import_root": ".", "source": "xformers"}
   ]
 }
