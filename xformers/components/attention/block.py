@@ -111,7 +111,7 @@ class BlockAttention(Attention):
 
             selected_k[selection_padding_mask_nonzeros] = k_splited[extra_attention_mask_nonzeros]
             # (bsz, seq_len, num_heads, max_num_extra_indices_per_batch)
-            selected_attn_weights = torch.einsum('blhd,bshd->blhs', (q_splited, selected_k))
+            selected_attn_weights = torch.einsum('blhd,bshd->blhs', (q_splited, selected_k)) * (head_dim ** -0.5)
             selected_attn_weights[selection_padding_mask_zeros[0], :, :, selection_padding_mask_zeros[1]] = -10000
             attn_weights_over_g_tokens = selected_attn_weights.transpose(1,2)
 
@@ -163,7 +163,7 @@ class BlockAttention(Attention):
             selected_q = q_splited.new_zeros(bsz, max_num_extra_indices_per_batch, self.num_head, head_dim)
             selected_q[selection_padding_mask_nonzeros] = q_splited[extra_attention_mask_nonzeros]
 
-            g2all_attn_weights = selected_q.transpose(1,2).matmul(k_splited.permute(0,2,3,1))
+            g2all_attn_weights = selected_q.transpose(1,2).matmul(k_splited.permute(0,2,3,1)) * (head_dim ** -0.5)
             g2all_attn_weights[selection_padding_mask_zeros[0], :, selection_padding_mask_zeros[1], :] = -10000.0
 
             if hard_mask is not None:
