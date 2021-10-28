@@ -5,6 +5,7 @@
 
 import pytest
 import torch
+import math
 
 from xformers.components import MultiHeadDispatch
 from xformers.components.attention import build_attention
@@ -148,7 +149,8 @@ def test_attention_fwd_bwd(
     n_heads=2,
 ):
     # inputs
-    qkv_shape = (batch_size, n_heads, n_ctx, 64)
+    head_dim = 64
+    qkv_shape = (batch_size, n_heads, n_ctx, head_dim)
     qkvs = [
         torch.nn.Parameter(input_scale * torch.randn(qkv_shape), requires_grad=True)
         .to(dtype)
@@ -186,6 +188,7 @@ def test_attention_fwd_bwd(
 
     # Torch version:
     torch_q, torch_k, torch_v = [x.clone() for x in qkvs]
+    torch_q = torch_q / math.sqrt(head_dim)
     attn_mask = 1e6 * (-1 + (attn_mask.reshape((1, 1, n_ctx, n_ctx)).cuda()))
     torch_q.retain_grad()
     torch_k.retain_grad()
@@ -270,7 +273,7 @@ def test_blocksparse_attention_parity():
     )
     r_blocksparse = multi_head_blocksparse(inputs, inputs, inputs)
 
-    # FIXME: failing right now with diff of .04
+    # FIXME: failing right now with diff of .009
     assert torch.equal(
         r_sdp, r_blocksparse
     ), f"max diff is {torch.max(torch.abs(r_sdp - r_blocksparse))}"
