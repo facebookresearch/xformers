@@ -5,3 +5,4 @@ omit =
     setup.py
     xformers/benchmarks/*
     xformers/triton/k_*
+    stubs/*
