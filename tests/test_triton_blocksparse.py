@@ -3,9 +3,10 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
+
 import pytest
 import torch
-import math
 
 from xformers.components import MultiHeadDispatch
 from xformers.components.attention import build_attention
