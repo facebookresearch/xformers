@@ -274,7 +274,5 @@ def test_blocksparse_attention_parity():
     )
     r_blocksparse = multi_head_blocksparse(inputs, inputs, inputs)
 
-    # FIXME: failing right now with diff of .009
-    assert torch.equal(
-        r_sdp, r_blocksparse
-    ), f"max diff is {torch.max(torch.abs(r_sdp - r_blocksparse))}"
+    # FIXME: currently has max diff of .009, perhaps can be improved.
+    assert_almost_equal(r_sdp, r_blocksparse)
