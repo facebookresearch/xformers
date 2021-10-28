@@ -38,5 +38,8 @@ my_runs.md
 # JetBrains PyCharm IDE
 .idea/
 
-# Pyre cache.
+# Pyre cache
 .pyre/
+
+# Watchman config files
+.watchmanconfig

@@ -46,6 +46,8 @@ SHAPES = [
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [False, True])
 def test_dropout(shape, amp):
+    torch.random.manual_seed(0)
+
     x = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
 
     with autocast(enabled=amp):
