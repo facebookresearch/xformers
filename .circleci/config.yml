@@ -229,5 +229,14 @@ workflows:
   version: 2
   build:
     jobs:
-      - cpu_tests_py38
-      - gpu_tests_190
+      - cpu_tests_py38:
+        filters:
+          branches:
+            ignore:
+              - gh-pages
+
+      - gpu_tests_190:
+        filters:
+          branches:
+            ignore:
+              - gh-pages
