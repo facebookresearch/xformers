@@ -373,17 +373,22 @@
         <span class="o">**</span><span class="n">_</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="c1"># Convenience, fill in duplicated field</span>
-        <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-            <span class="n">multi_head_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">multi_head_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
 
-        <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">feedforward_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-            <span class="n">feedforward_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+            <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">feedforward_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">feedforward_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
 
-        <span class="k">if</span> <span class="p">(</span>
-            <span class="n">position_encoding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="ow">and</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">position_encoding_config</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
-        <span class="p">):</span>
-            <span class="n">position_encoding_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">position_encoding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">position_encoding_config</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+            <span class="p">):</span>
+                <span class="n">position_encoding_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="c1"># A config instance was passed in, this is fine</span>
+            <span class="k">pass</span>
 
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
             <span class="n">dim_model</span><span class="o">=</span><span class="n">dim_model</span><span class="p">,</span>
@@ -415,20 +420,24 @@
     <span class="p">):</span>
 
         <span class="c1"># Convenience, fill in duplicated field</span>
-        <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config_masked</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-            <span class="n">multi_head_config_masked</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config_masked</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">multi_head_config_masked</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
 
-        <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config_cross</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-            <span class="n">multi_head_config_cross</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+            <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config_cross</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">multi_head_config_cross</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
 
-        <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">feedforward_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-            <span class="n">feedforward_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+            <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">feedforward_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">feedforward_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
 
-        <span class="k">if</span> <span class="p">(</span>
-            <span class="n">position_encoding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="ow">and</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">position_encoding_config</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
-        <span class="p">):</span>
-            <span class="n">position_encoding_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">position_encoding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">position_encoding_config</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+            <span class="p">):</span>
+                <span class="n">position_encoding_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="c1"># A config instance was passed in, this is fine</span>
+            <span class="k">pass</span>
 
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
             <span class="n">dim_model</span><span class="o">=</span><span class="n">dim_model</span><span class="p">,</span>

@@ -238,6 +238,7 @@
 
 <span class="kn">from</span> <span class="nn">xformers.components.attention</span> <span class="kn">import</span> <span class="n">Attention</span>
 <span class="kn">from</span> <span class="nn">xformers.components.in_proj_container</span> <span class="kn">import</span> <span class="n">InProjContainer</span><span class="p">,</span> <span class="n">InProjParams</span>
+<span class="kn">from</span> <span class="nn">xformers.components.positional_embedding</span> <span class="kn">import</span> <span class="n">RotaryEmbedding</span>
 
 
 <span class="nd">@dataclass</span>
@@ -251,6 +252,7 @@
     <span class="n">dim_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
     <span class="n">in_proj_container</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">InProjContainer</span><span class="p">]</span>
     <span class="n">use_separate_proj_weight</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span>
+    <span class="n">use_rotary_embeddings</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span>
     <span class="n">out_proj</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">]</span>
 
 
@@ -286,6 +288,7 @@
         <span class="n">dim_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">in_proj_container</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">InProjContainer</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">use_separate_proj_weight</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">use_rotary_embeddings</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">out_proj</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="o">*</span><span class="n">args</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
@@ -324,6 +327,11 @@
                     <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
                 <span class="p">)</span>
             <span class="p">)</span>
+
+        <span class="c1"># Optional rotary embeddings</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rotary_embeddings</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">RotaryEmbedding</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dim_k</span><span class="p">)</span> <span class="k">if</span> <span class="n">use_rotary_embeddings</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
 
         <span class="c1"># Regularization</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">resid_drop</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="n">residual_dropout</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
@@ -369,14 +377,27 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">k</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">key</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">value</span>
 
-        <span class="c1"># Reshape k/q/v to either expose the heads, or fold the head dimension into the batch</span>
-        <span class="n">reshape_fn</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">_split_heads</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">requires_head_dimension</span> <span class="k">else</span> <span class="n">_fold_heads</span>
-        <span class="p">)</span>
+        <span class="c1"># Optional: rotary embedding, add relative positioning information</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rotary_embeddings</span><span class="p">:</span>
+            <span class="c1"># rotary requires the head dimension</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="n">_split_heads</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">S_Q</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dim_k</span><span class="p">)</span>
+            <span class="n">k</span> <span class="o">=</span> <span class="n">_split_heads</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">S_K</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dim_k</span><span class="p">)</span>
+            <span class="n">v</span> <span class="o">=</span> <span class="n">_split_heads</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">S_K</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dim_k</span><span class="p">)</span>
 
-        <span class="n">k</span> <span class="o">=</span> <span class="n">reshape_fn</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">S_K</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dim_k</span><span class="p">)</span>
-        <span class="n">q</span> <span class="o">=</span> <span class="n">reshape_fn</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">S_Q</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dim_k</span><span class="p">)</span>
-        <span class="n">v</span> <span class="o">=</span> <span class="n">reshape_fn</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">S_K</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dim_k</span><span class="p">)</span>
+            <span class="n">q</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rotary_embeddings</span><span class="p">(</span><span class="n">q</span><span class="o">=</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">requires_head_dimension</span><span class="p">:</span>
+                <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">k</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">v</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Reshape k/q/v to either expose the heads, or fold the head dimension into the batch</span>
+            <span class="n">reshape_fn</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_split_heads</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">requires_head_dimension</span> <span class="k">else</span> <span class="n">_fold_heads</span>
+            <span class="p">)</span>
+
+            <span class="n">q</span> <span class="o">=</span> <span class="n">reshape_fn</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">S_Q</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dim_k</span><span class="p">)</span>
+            <span class="n">k</span> <span class="o">=</span> <span class="n">reshape_fn</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">S_K</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dim_k</span><span class="p">)</span>
+            <span class="n">v</span> <span class="o">=</span> <span class="n">reshape_fn</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">S_K</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dim_k</span><span class="p">)</span>
 
         <span class="c1"># Self-attend</span>
         <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">attention</span><span class="p">(</span><span class="n">q</span><span class="o">=</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="o">=</span><span class="n">v</span><span class="p">,</span> <span class="n">att_mask</span><span class="o">=</span><span class="n">att_mask</span><span class="p">)</span>
