@@ -117,6 +117,7 @@ def test_xformer_encoder_block(
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 3])
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
+@pytest.mark.parametrize("rotary_embeddings", [False, True])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
 @pytest.mark.parametrize("layer_norm_style", ["pre", "post"])
@@ -126,6 +127,7 @@ def test_xformer_encoder_block(
 )
 def test_xformer_decoder_block(
     attention_name: str,
+    rotary_embeddings: bool,
     feedforward_name: str,
     heads: int,
     attn_dropout: float,
@@ -156,6 +158,7 @@ def test_xformer_decoder_block(
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
         "attention": attention_config,
+        "use_rotary_embeddings": rotary_embeddings,
     }
 
     feedforward_config = {
