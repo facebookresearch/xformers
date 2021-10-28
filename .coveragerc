@@ -3,3 +3,4 @@ omit =
     docs/*
     tests/*
     setup.py
+    xformers/benchmarks/*
