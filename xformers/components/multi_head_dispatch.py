@@ -13,6 +13,7 @@ from torch.nn.init import constant_
 
 from xformers.components.attention import Attention
 from xformers.components.in_proj_container import InProjContainer, InProjParams
+from xformers.components.positional_embedding import RotaryEmbedding
 
 
 @dataclass
@@ -26,6 +27,7 @@ class MultiHeadDispatchConfig:
     dim_value: Optional[int]
     in_proj_container: Optional[InProjContainer]
     use_separate_proj_weight: Optional[bool]
+    use_rotary_embeddings: Optional[bool]
     out_proj: Optional[nn.Module]
 
 
@@ -61,6 +63,7 @@ class MultiHeadDispatch(nn.Module):
         dim_value: Optional[int] = None,
         in_proj_container: Optional[InProjContainer] = None,
         use_separate_proj_weight: Optional[bool] = False,
+        use_rotary_embeddings: Optional[bool] = False,
         out_proj: Optional[nn.Module] = None,
         *args,
         **kwargs,
@@ -99,6 +102,11 @@ class MultiHeadDispatch(nn.Module):
                     else None,
                 )
             )
+
+        # Optional rotary embeddings
+        self.rotary_embeddings = (
+            RotaryEmbedding(self.dim_k) if use_rotary_embeddings else None
+        )
 
         # Regularization
         self.resid_drop = nn.Dropout(residual_dropout, inplace=False)
@@ -144,14 +152,27 @@ class MultiHeadDispatch(nn.Module):
         else:
             k, q, v = key, query, value
 
-        # Reshape k/q/v to either expose the heads, or fold the head dimension into the batch
-        reshape_fn = (
-            _split_heads if self.attention.requires_head_dimension else _fold_heads
-        )
+        # Optional: rotary embedding, add relative positioning information
+        if self.rotary_embeddings:
+            # rotary requires the head dimension
+            q = _split_heads(q, B, S_Q, self.num_heads, self.dim_k)
+            k = _split_heads(k, B, S_K, self.num_heads, self.dim_k)
+            v = _split_heads(v, B, S_K, self.num_heads, self.dim_k)
 
-        k = reshape_fn(k, B, S_K, self.num_heads, self.dim_k)
-        q = reshape_fn(q, B, S_Q, self.num_heads, self.dim_k)
-        v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
+            q, k = self.rotary_embeddings(q=q, k=k)
+
+            if not self.attention.requires_head_dimension:
+                q, k, v = q.flatten(0, 1), k.flatten(0, 1), v.flatten(0, 1)
+
+        else:
+            # Reshape k/q/v to either expose the heads, or fold the head dimension into the batch
+            reshape_fn = (
+                _split_heads if self.attention.requires_head_dimension else _fold_heads
+            )
+
+            q = reshape_fn(q, B, S_Q, self.num_heads, self.dim_k)
+            k = reshape_fn(k, B, S_K, self.num_heads, self.dim_k)
+            v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
 
         # Self-attend
         y = self.attention(q=q, k=k, v=v, att_mask=att_mask)
