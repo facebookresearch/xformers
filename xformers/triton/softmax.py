@@ -261,7 +261,8 @@ class _softmax_triton(torch.autograd.Function):
         depth = triton.next_power_of_2(grad_out_.shape[2])
         grad_in = torch.empty_like(out)  # torch.zeros is measurably slower, we'll zero out in the kernel
 
-        assert grad_in.stride(2) == 1 and grad_out_.stride(2) == 1 and out.stride(2) == 1
+        # Make sure that the tensor are contiguous
+        grad_in, grad_out, out = map(lambda x: x.contiguous(), [grad_in, grad_out, out])
 
         # fmt: off
         _softmax_backward[grid_2d](
