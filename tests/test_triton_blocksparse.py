@@ -6,6 +6,8 @@
 import pytest
 import torch
 
+from xformers.components import MultiHeadDispatch
+from xformers.components.attention import build_attention
 from xformers.components.attention.attention_patterns import block_sparsify_tensor
 from xformers.triton.utils import get_current_cuda_device
 
@@ -209,3 +211,58 @@ def test_attention_fwd_bwd(
             torch.norm(g2),
             err_msg=f"Triton grad {torch.norm(g1).item()} and torch grad {torch.norm(g2).item()}",
         )
+
+
+@pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
+def test_blocksparse_attention_parity():
+    def _reset_seeds():
+        torch.manual_seed(0)
+
+    seq = 64
+    model = 64
+    heads = 4
+    block_size = 16
+    batch_size = 2
+    batched_dim = heads * batch_size
+    dim_head = model // heads
+
+    test_config = {
+        "dropout": 0.0,
+        "causal": False,
+        "seq_len": seq,
+        "num_heads": 4,
+        "dim_head": dim_head,
+        "block_size": block_size,
+        "layout": torch.ones(seq // block_size, seq // block_size, dtype=torch.long),
+    }
+
+    inputs = torch.rand(batched_dim, seq, model, device="cuda")
+
+    _reset_seeds()
+    test_config["name"] = "scaled_dot_product"
+    attention_sdp = build_attention(test_config)
+    multi_head_sdp = MultiHeadDispatch(
+        seq_len=seq,
+        dim_model=model,
+        residual_dropout=0.0,
+        num_heads=heads,
+        attention=attention_sdp,
+    ).cuda()
+    r_sdp = multi_head_sdp(inputs, inputs, inputs)
+
+    _reset_seeds()
+    test_config["name"] = "blocksparse"
+    attention_blocksparse = build_attention(test_config)
+    multi_head_blocksparse = MultiHeadDispatch(
+        seq_len=seq,
+        dim_model=model,
+        residual_dropout=0.0,
+        num_heads=heads,
+        attention=attention_blocksparse,
+    ).cuda()
+    r_blocksparse = multi_head_blocksparse(inputs, inputs, inputs)
+
+    # FIXME: failing right now with diff of ~.1
+    assert torch.equal(
+        r_sdp, r_blocksparse
+    ), f"max diff is {torch.max(torch.abs(r_sdp - r_blocksparse))}"
