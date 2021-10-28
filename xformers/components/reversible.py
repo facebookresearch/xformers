@@ -129,6 +129,7 @@ class ReversibleSequence(nn.Module):
     def __init__(self, blocks: nn.ModuleList):
         super().__init__()
 
+        # pyre-fixme[23]: Unable to unpack `torch.nn.Module` into 2 values.
         self.blocks = nn.ModuleList([ReversibleBlock(f, g) for f, g in blocks])
 
     def forward(self, x, arg_route=(True, False), **kwargs):

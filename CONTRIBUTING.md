@@ -53,7 +53,7 @@ outlined on that page and do not file a public issue.
 
 ```bash
 black .
-isort
+isort .
 flake8
 ```
 
@@ -64,7 +64,7 @@ _Read the [editorconfig](.editorconfig) file to understand the exact coding styl
 ### Static analysis
 
 ```bash
-mypy --ignore-missing-imports --scripts-are-modules --pretty .
+mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude stubs/ .
 ```
 
 ### Unit tests
