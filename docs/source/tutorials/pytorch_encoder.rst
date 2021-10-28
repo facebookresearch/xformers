@@ -1,0 +1,255 @@
+Building an encoder, comparing to PyTorch
+=========================================
+
+Let's now walk up the hierarchy, and consider a whole encoder block. You may be used to the PyTorch encoder layer so we'll consider it as a point of comparison, but other libraries would probably expose similar interfaces.
+
+PyTorch Encoder Layer
+---------------------
+
+PyTorch already exposes a TransformerEncoderLayer_. Its constructor is:
+
+.. _TransformerEncoderLayer: https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html?highlight=encoder#torch.nn.TransformerEncoderLayer
+
+.. code-block:: python
+
+    TransformerEncoderLayer(
+        d_model,
+        nhead,
+        dim_feedforward=2048,
+        dropout=0.1,
+        activation='relu',
+        layer_norm_eps=1e-05,
+        batch_first=False,
+        device=None,
+        dtype=None
+        ):
+        ...
+
+Note that you cannot change the attention mechanism, so this example will use the "Scaled Dot Product", as proposed by Vaswani et al., but in the xFormers case this is a free floating parameter.
+
+Warning
+-------
+
+It’s worth noting that **xFormer’s blocks expect tensors to be batch first, while PyTorch’s transformers uses a sequence first convention. Don’t forget to permute if you use xFormers’s blocks as drop-in replacements.**
+
+Similarly, the attention masks conventions are different: in PyTorch, the mask is *True* when an element should *not* be attended to, whereas in xFormer it’s the opposite. Don’t forget to negate your attention masks to use xFormers’ blocks as drop-in replacements.
+
+Block factory
+-------------
+
+We don't have the exact same interfaces, but we have something fairly close to PyTorch with the [model_factory](xformers/factory/model_factory.py). Please note that, similarly to the attention example above, you can also directly import the `xFormerEncoderBlock` and construct it from there, but we'll assume here that you could be interested in systematic evaluation of different architectures, and that as such something which can be easily automated is preferred, so the "factory" path is the one put forward.
+
+The equivalent to the PyTorch example above would look like the following. You can think of it  as a declaration of the sequence of blocks that you would like instantiated. We're trying to:
+
+- make it very explicit what is in this block
+- keep everything pythonic
+- make this sweep and automation friendly in general
+
+With this said, you can build an encoder directly as follows:
+
+.. code-block:: python
+
+    from xformers.factory import xFormerEncoderBlock, xFormerEncoderConfig
+    import torch
+
+    BATCH = 8
+    SEQ = 1024
+    EMB = 384
+    VOCAB = 64
+
+    encoder_config = {
+        "dim_model": EMB,
+        "layer_norm_style": "pre",  # Optional, pre/post
+        "position_encoding_config": {
+            "name": "vocab",  # whatever position encodinhg makes sense
+            "seq_len": SEQ,
+            "vocab_size": VOCAB,
+        },
+        "multi_head_config": {
+            "num_heads": 4,
+            "residual_dropout": 0,
+            "attention": {
+                "name": "linformer",  # whatever attention mechanism
+                "dropout": 0,
+                "seq_len": SEQ,
+            },
+        },
+        "feedforward_config": {
+            "name": "MLP",
+            "dropout": 0,
+            "activation": "relu",
+            "hidden_layer_multiplier": 4,
+        },
+    }
+
+    # "constructing" the config will lead to a lot of type checking,
+    # which could catch some errors early on
+    config = xFormerEncoderConfig(**encoder_config)
+
+    encoder = xFormerEncoderBlock(config)
+
+    #  Test out with dummy inputs
+    x = (torch.rand((BATCH, SEQ)) * VOCAB).abs().to(torch.int)
+    y = encoder(x, x, x)
+    print(y)
+
+
+Building full models
+====================
+
+
+This is the last example in the series, and goes one level up again, so that we consider building a whole Tranformer/xFormer model. Please note that this is just an example, because building the whole model from explicit parts is always an option, from pure PyTorch building blocks or adding some xFormers primitives.
+
+PyTorch Transformer
+-------------------
+
+Am implementation of a full Transformer is supported directly by PyTorch, see the PyTorchTransformer_ for more options.
+
+.. _PyTorchTransformer: https://pytorch.org/docs/stable/generated/torch.nn.Transformer.html?highlight=transformer#torch.nn.Transformer
+
+.. code-block:: python
+
+    Transformer(
+        d_model=512,
+        nhead=8,
+        num_encoder_layers=6,
+        num_decoder_layers=6,
+        dim_feedforward=2048,
+        dropout=0.1,
+        activation='relu',
+        custom_encoder=None, # the xFormers exemple below defines that
+        custom_decoder=None, # Same
+        layer_norm_eps=1e-05,
+        batch_first=False,
+        device=None,
+        dtype=None):
+        .
+
+model factory
+-------------
+
+We don't have the exact same interfaces, but we have something to propose with the model_factory_.
+Please note that, similarly to the attention example above, you can also directly import the `xFormer` and `xFormerConfig`
+and construct it from there, but we'll assume here that you could be interested in systematic evaluation of different architectures,
+and that as such something which can be easily automated is preferred, so the "factory" path is the one put forward.
+
+.. _model_factory: https://github.com/facebookresearch/xformers/blob/main/xformers/factory/model_factory.py
+
+The equivalent to the PyTorch example above would look like the following.
+You can think of it  as a declaration of the sequence of blocks that you would like instantiated.
+This is not really apples to apples, because we define a custom encoder and decoder here.
+There's also an added flexibility with xFormers in that attention mechanisms can be chosen at will, on a per-layer basis.
+
+.. code-block:: python
+
+    from xformers.factory.model_factory import xFormer, xFormerConfig
+    import torch
+
+    EMB = 384
+    SEQ = 1024
+    BATCH = 16
+    VOCAB = 64
+
+    my_config = [
+        # A list of the encoder or decoder blocks which constitute the Transformer.
+        # Note that a sequence of different encoder blocks can be used, same for decoders
+        {
+            "reversible": False,  # Optionally make these layers reversible, to save memory
+            "block_config": {
+                "block_type": "encoder",
+                "num_layers": 3,  # Optional, this means that this config will repeat N times
+                "dim_model": EMB,
+                "layer_norm_style": "pre",  # Optional, pre/post
+                "position_encoding_config": {
+                    "name": "vocab",  # whatever position encodinhg makes sense
+                    "seq_len": 1024,
+                    "vocab_size": VOCAB,
+                },
+                "multi_head_config": {
+                    "num_heads": 4,
+                    "residual_dropout": 0,
+                    "attention": {
+                        "name": "linformer",  # whatever attention mechanism
+                        "dropout": 0,
+                        "causal": False,
+                        "seq_len": SEQ,
+                    },
+                },
+                "feedforward_config": {
+                    "name": "MLP",
+                    "dropout": 0,
+                    "activation": "relu",
+                    "hidden_layer_multiplier": 4,
+                },
+            },
+        },
+        {
+            "reversible": False,  # Optionally make these layers reversible, to save memory
+            "block_config": {
+                "block_type": "decoder",
+                "num_layers": 3,  # Optional, this means that this config will repeat N times
+                "dim_model": EMB,
+                "layer_norm_style": "pre",  # Optional, pre/post
+                "position_encoding_config": {
+                    "name": "vocab",  # whatever position encodinhg makes sense
+                    "seq_len": SEQ,
+                    "vocab_size": VOCAB,
+                },
+                "multi_head_config_masked": {
+                    "num_heads": 4,
+                    "residual_dropout": 0,
+                    "attention": {
+                        "name": "nystrom",  # whatever attention mechanism
+                        "dropout": 0,
+                        "causal": True,
+                        "seq_len": SEQ,
+                    },
+                },
+                "multi_head_config_cross": {
+                    "num_heads": 4,
+                    "residual_dropout": 0,
+                    "attention": {
+                        "name": "favor",  # whatever attention mechanism
+                        "dropout": 0,
+                        "causal": True,
+                        "seq_len": SEQ,
+                    },
+                },
+                "feedforward_config": {
+                    "name": "MLP",
+                    "dropout": 0,
+                    "activation": "relu",
+                    "hidden_layer_multiplier": 4,
+                },
+            },
+        },
+    ]
+
+    # This part of xFormers is entirely type checked and needs a config object,
+    # could be changed in the future
+    config = xFormerConfig(my_config)
+    model = xFormer.from_config(config)
+
+    #  Test out with dummy inputs
+    x = (torch.rand((BATCH, SEQ)) * VOCAB).abs().to(torch.int)
+    y = model(src=x, tgt=x)
+    print(y)
+
+
+Note that this exposes quite a few more knobs than the PyTorch Transformer interface, but in turn is probably a little more flexible. There are a couple of repeated settings here (dimensions mostly), this is taken care of in the [LRA benchmarking config](benchmarks/LRA/code/config.json)
+
+You can compare the speed and memory use of the vanilla PyTorch Transformer Encoder and an equivalent from xFormers, there is an existing benchmark for that ([see](xformers/benchmarks/benchmark_pytorch_transformer.py)). It can be run with `python3 xformers/benchmarks/benchmark_pytorch_transformer.py`, and returns the loss values for every step along with the training time for a couple of shapes that you can customize. Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xFormers 0.0.1):
+
+.. code-block:: bash
+
+    --- Transformer training benchmark - runtime ---
+    | Units: s | emb 128 - heads 8 | emb 1024 - heads 8 | emb 2048 - heads 8 |
+    | -------- | ----------------- | ------------------ | ------------------ |
+    | xformers | 0.3               | 0.4                | 0.7                |
+    | pytorch  | 0.2               | 0.6                | 0.8                |
+
+    --- Transformer training benchmark - memory use ---
+    | Units: MB | emb 128 - heads 8 | emb 1024 - heads 8 | emb 2048 - heads 8 |
+    | --------- | ----------------- | ------------------ | ------------------ |
+    | xformers  | 89                | 1182               | 2709               |
+    | pytorch   | 155               | 1950               | 4117               |

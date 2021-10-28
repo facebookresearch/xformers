@@ -1,0 +1,10 @@
+# Get core deps
+-r requirements-test.txt
+
+# Example requirement, can be anything that pip knows
+# install with `pip install -r requirements.txt`, and make sure that CI does the same
+scikit-learn == 0.24.1
+tqdm == 4.59.0
+pandas == 1.2.4
+seaborn == 0.11.1
+triton == 1.1.1
