@@ -214,7 +214,8 @@ def test_attention_fwd_bwd(
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
-def test_blocksparse_attention_parity():
+@pytest.mark.parametrize("fp16", [False, True])
+def test_blocksparse_attention_parity(fp16: bool):
     def _reset_seeds():
         torch.manual_seed(0)
 
@@ -237,6 +238,8 @@ def test_blocksparse_attention_parity():
     }
 
     inputs = torch.rand(batched_dim, seq, model, device="cuda")
+    if fp16:
+        inputs = inputs.half()
 
     _reset_seeds()
     test_config["name"] = "scaled_dot_product"
@@ -248,6 +251,8 @@ def test_blocksparse_attention_parity():
         num_heads=heads,
         attention=attention_sdp,
     ).cuda()
+    if fp16:
+        multi_head_sdp = multi_head_sdp.half()
     r_sdp = multi_head_sdp(inputs, inputs, inputs)
 
     _reset_seeds()
@@ -260,9 +265,11 @@ def test_blocksparse_attention_parity():
         num_heads=heads,
         attention=attention_blocksparse,
     ).cuda()
+    if fp16:
+        multi_head_blocksparse = multi_head_blocksparse.half()
     r_blocksparse = multi_head_blocksparse(inputs, inputs, inputs)
 
-    # FIXME: failing right now with diff of ~.1
+    # FIXME: failing right now with diff of nan for fp32, .04 for fp16
     assert torch.equal(
         r_sdp, r_blocksparse
     ), f"max diff is {torch.max(torch.abs(r_sdp - r_blocksparse))}"
