@@ -329,10 +329,7 @@
 
         <span class="c1"># Take into account the optional user mask</span>
         <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">attention_mask</span>
-            <span class="k">if</span> <span class="n">att_mask</span> <span class="ow">is</span> <span class="kc">None</span>
-            <span class="c1"># pyre-ignore[58]: Pyre mistakenly thinks `self.attention_mask` may be None.</span>
-            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">attention_mask</span> <span class="o">&amp;</span> <span class="n">att_mask</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">attention_mask</span> <span class="k">if</span> <span class="n">att_mask</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">attention_mask</span> <span class="o">&amp;</span> <span class="n">att_mask</span>
         <span class="p">)</span>
 
         <span class="k">return</span> <span class="n">scaled_dot_product_attention</span><span class="p">(</span>
