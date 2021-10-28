@@ -1,1 +1,0 @@
-`block_factory` and `model_factory` files can be used to generate models or parts from configurations, which is useful for CI and maybe some users. **This is completely optional and should not get in the way, please disregard this if not interested**
