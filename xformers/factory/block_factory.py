@@ -219,7 +219,7 @@ class xFormerDecoderConfig(xFormerBlockConfig):
             feedforward_config=feedforward_config,
             position_encoding_config=position_encoding_config,
             layer_norm_style=LayerNormStyle(layer_norm_style),
-            block_type=BlockType("encoder"),
+            block_type=BlockType("decoder"),
         )
 
         self.multi_head_config_masked = multi_head_config_masked

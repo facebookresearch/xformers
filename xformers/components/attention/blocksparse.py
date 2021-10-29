@@ -180,6 +180,7 @@ if _use_triton:
             # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
             # When the computations are block sparse, the matrix types change along the way:
             # - (sparse) attention matrix = (dense) Kt * (dense) Q
+            q = q / math.sqrt(q.size(-1))
             sparse_att_mat = self.sparse_dot_sdd(q, k)
 
             # - softmax on the sparse attention matrix

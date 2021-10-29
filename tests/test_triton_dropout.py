@@ -46,6 +46,8 @@ SHAPES = [
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [False, True])
 def test_dropout(shape, amp):
+    torch.random.manual_seed(0)
+
     x = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
 
     with autocast(enabled=amp):
@@ -53,7 +55,7 @@ def test_dropout(shape, amp):
 
         # Check that 0 means no dropout
         y = dropout(x, p=0)
-        assert torch.allclose(x.to(y.dtype), y, rtol=tol)
+        assert torch.allclose(x.to(y.dtype), y, rtol=tol), f"{x[x>y]}"
 
         # Check that 1 means dropout for sure
         y = dropout(x, p=1)
