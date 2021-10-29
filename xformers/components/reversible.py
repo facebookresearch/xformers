@@ -57,22 +57,23 @@ class ReversibleBlock(nn.Module):
         self.f = Deterministic(f)
         self.g = Deterministic(g)
 
-    def forward(self, x1: torch.Tensor, x2: torch.Tensor, f_args={}, g_args={}):
+    def forward(self, x: torch.Tensor, f_args={}, g_args={}):
+        x1, x2 = torch.chunk(x, 2, dim=-1)
+        y1, y2 = None, None
+
         with torch.no_grad():
             y1 = x1 + self.f(x2, record_rng=self.training, **f_args)
             y2 = x2 + self.g(y1, record_rng=self.training, **g_args)
 
-        return y1, y2
+        return torch.cat([y1, y2], dim=-1)
 
-    def backward_pass(
-        self,
-        y1: torch.Tensor,
-        y2: torch.Tensor,
-        dy1: torch.Tensor,
-        dy2: torch.Tensor,
-        f_args={},
-        g_args={},
-    ):
+    def backward_pass(self, y: torch.Tensor, dy: torch.Tensor, f_args={}, g_args={}):
+        y1, y2 = torch.chunk(y, 2, dim=-1)
+        del y
+
+        dy1, dy2 = torch.chunk(dy, 2, dim=-1)
+        del dy
+
         with torch.enable_grad():
             y1.requires_grad = True
             gy1 = self.g(y1, set_rng=True, **g_args)
@@ -99,40 +100,40 @@ class ReversibleBlock(nn.Module):
             del dy2
             x2.grad = None
 
-        return x1, x2.detach(), dx1, dx2
+            x = torch.cat([x1, x2.detach()], dim=2)
+            dx = torch.cat([dx1, dx2], dim=2)
+
+        return x, dx
 
 
 class _ReversibleFunction(Function):
     @staticmethod
-    def forward(ctx, x1, x2, blocks, kwargs):
+    def forward(ctx, x, blocks, kwargs):
         ctx.kwargs = kwargs
         for block in blocks:
-            x1, x2 = block(x1, x2, **kwargs)
-        ctx.y1 = x1.detach()
-        ctx.y2 = x2.detach()
+            x = block(x, **kwargs)
+        ctx.y = x.detach()
         ctx.blocks = blocks
-        return x1, x2
+        return x
 
     @staticmethod
-    def backward(ctx, dy1, dy2):
-        y1 = ctx.y1
-        y2 = ctx.y2
+    def backward(ctx, dy):
+        y = ctx.y
         kwargs = ctx.kwargs
         for block in ctx.blocks[::-1]:
-            y1, y2, dy1, dy2 = block.backward_pass(y1, y2, dy1, dy2, **kwargs)
-        return dy1, dy2, None, None
+            y, dy = block.backward_pass(y, dy, **kwargs)
+        return dy, None, None
 
 
 class ReversibleSequence(nn.Module):
     def __init__(self, blocks: nn.ModuleList):
         super().__init__()
 
+        # pyre-fixme[23]: Unable to unpack `torch.nn.Module` into 2 values.
         self.blocks = nn.ModuleList([ReversibleBlock(f, g) for f, g in blocks])
 
     def forward(self, x, arg_route=(True, False), **kwargs):
         f_args, g_args = map(lambda route: kwargs if route else {}, arg_route)
         block_kwargs = {"f_args": f_args, "g_args": g_args}
 
-        x1, x2 = x.chunk(2, 2)
-        x1, x2 = _ReversibleFunction.apply(x1, x2, self.blocks, block_kwargs)
-        return torch.cat([x1, x2], dim=2)
+        return _ReversibleFunction.apply(x, self.blocks, block_kwargs)
