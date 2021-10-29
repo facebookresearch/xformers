@@ -92,7 +92,7 @@ class ReversibleBlock(nn.Module):
         with torch.enable_grad():
             x2.requires_grad = True
             fx2 = self.f(x2, set_rng=True, **f_args)
-            torch.autograd.backward(fx2, dx1, retain_graph=True)
+            torch.autograd.backward(fx2, dx1)
 
         with torch.no_grad():
             x1 = y1 - fx2
