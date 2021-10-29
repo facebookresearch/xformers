@@ -93,7 +93,7 @@ _test_config_decoder = {
             "hidden_layer_multiplier": 4,
             "dim_model": EMB,
         },
-    }
+    },
 }
 
 # Test a pure encoder, a pure decoder, an encoder/decoder stack
@@ -109,6 +109,7 @@ def _rev_config(config, flag: bool):
         config,
     ):
         c["reversible"] = flag
+
     return config
 
 
@@ -128,6 +129,19 @@ def test_reversible_runs(config, device):
     inputs = (torch.rand((BATCH, SEQ), device=device) * 10).abs().to(torch.int)
     _ = model_non_reversible(inputs)
     _ = model_reversible(inputs)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_reversible_no_alternate(device):
+
+    # Check that we cannot build a non-coherent stack
+    with pytest.raises(AssertionError):
+        rev = dict(_test_config_encoder)  # we need to make a copy
+        rev["reversible"] = True
+        non_rev = dict(_test_config_encoder)
+        non_rev["reversible"] = False
+
+        _ = xFormer.from_config(xFormerConfig([rev, non_rev])).to(device)
 
 
 @pytest.mark.parametrize("config", [_test_configs[1]])

@@ -6,6 +6,8 @@
 [![CircleCI](https://circleci.com/gh/facebookresearch/xformers.svg?style=shield)](https://app.circleci.com/pipelines/github/facebookresearch/xformers/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![codecov](https://codecov.io/gh/facebookresearch/xformers/branch/main/graph/badge.svg?token=PKGKDR4JQM)](https://codecov.io/gh/facebookresearch/xformers)
+[![black]("https://img.shields.io/badge/code%20style-black-000000.svg")]("https://github.com/psf/black">
+
 --------------------------------------------------------------------------------
 
 ## Description
