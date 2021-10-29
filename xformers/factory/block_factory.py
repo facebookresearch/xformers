@@ -148,17 +148,22 @@ class xFormerEncoderConfig(xFormerBlockConfig):
         **_,
     ):
         # Convenience, fill in duplicated field
-        if "dim_model" not in multi_head_config.keys():
-            multi_head_config["dim_model"] = dim_model
+        try:
+            if "dim_model" not in multi_head_config.keys():
+                multi_head_config["dim_model"] = dim_model
 
-        if "dim_model" not in feedforward_config.keys():
-            feedforward_config["dim_model"] = dim_model
+            if "dim_model" not in feedforward_config.keys():
+                feedforward_config["dim_model"] = dim_model
 
-        if (
-            position_encoding_config is not None
-            and "dim_model" not in position_encoding_config.keys()
-        ):
-            position_encoding_config["dim_model"] = dim_model
+            if (
+                position_encoding_config is not None
+                and "dim_model" not in position_encoding_config.keys()
+            ):
+                position_encoding_config["dim_model"] = dim_model
+
+        except AttributeError:
+            # A config instance was passed in, this is fine
+            pass
 
         super().__init__(
             dim_model=dim_model,
@@ -190,27 +195,31 @@ class xFormerDecoderConfig(xFormerBlockConfig):
     ):
 
         # Convenience, fill in duplicated field
-        if "dim_model" not in multi_head_config_masked.keys():
-            multi_head_config_masked["dim_model"] = dim_model
+        try:
+            if "dim_model" not in multi_head_config_masked.keys():
+                multi_head_config_masked["dim_model"] = dim_model
 
-        if "dim_model" not in multi_head_config_cross.keys():
-            multi_head_config_cross["dim_model"] = dim_model
+            if "dim_model" not in multi_head_config_cross.keys():
+                multi_head_config_cross["dim_model"] = dim_model
 
-        if "dim_model" not in feedforward_config.keys():
-            feedforward_config["dim_model"] = dim_model
+            if "dim_model" not in feedforward_config.keys():
+                feedforward_config["dim_model"] = dim_model
 
-        if (
-            position_encoding_config is not None
-            and "dim_model" not in position_encoding_config.keys()
-        ):
-            position_encoding_config["dim_model"] = dim_model
+            if (
+                position_encoding_config is not None
+                and "dim_model" not in position_encoding_config.keys()
+            ):
+                position_encoding_config["dim_model"] = dim_model
+        except AttributeError:
+            # A config instance was passed in, this is fine
+            pass
 
         super().__init__(
             dim_model=dim_model,
             feedforward_config=feedforward_config,
             position_encoding_config=position_encoding_config,
             layer_norm_style=LayerNormStyle(layer_norm_style),
-            block_type=BlockType("encoder"),
+            block_type=BlockType("decoder"),
         )
 
         self.multi_head_config_masked = multi_head_config_masked

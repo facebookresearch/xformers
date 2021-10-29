@@ -39,7 +39,7 @@ SHAPES = [
     reason="Triton requires a SM70+ GPU",
 )
 @pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("amp", [False, True])
+@pytest.mark.parametrize("amp", [True, False])
 def test_layernorm_parity(shape, amp):
     """Check that PyTorch and Triton softmax give the same result"""
 

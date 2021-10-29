@@ -55,10 +55,33 @@ class xFormerConfig:
         # Type all the configurations. Possible typos are caught here
         self.stack_configs = [xFormerStackConfig(**config) for config in stack_configs]
 
+        # Check that the reversible setting is not alternating, which
+        # - makes little sense, since you loose all the reversible benefits
+        # - may break
+        # Reversible is only allowed on the encoder side
+
+        reversible = [
+            c.reversible
+            for c in filter(
+                lambda x: x.block_config.block_type == "encoder", self.stack_configs
+            )
+        ]
+        non_reversible = [not rev for rev in reversible]
+
+        try:
+            assert all(reversible) or all(non_reversible), (
+                "All layers need to have the same reversibility setting. "
+                + f"Currently {reversible}"
+            )
+        except AssertionError:
+            print(self.stack_configs)
+            print(reversible)
+            assert False
+
 
 class xFormer(torch.nn.Module):
     def __init__(
-        self, stack_configs: List[Union[xFormerStackConfig, xFormerStackConfig]]
+        self, stack_configs: Union[xFormerStackConfig, List[xFormerStackConfig]]
     ):
         """
         Given a serialized configuration, generate the corresponding model.
@@ -74,6 +97,11 @@ class xFormer(torch.nn.Module):
         self.enc_pose_encoding = None
         self.dec_pose_encoding = None
 
+        # Convenience, users can pass either a list of configs or a single one
+        if not isinstance(stack_configs, List):
+            stack_configs = [stack_configs]
+
+        # Unroll the configs and build the model
         for stack in stack_configs:
             config = stack.block_config
 
