@@ -11,7 +11,6 @@ import torch.nn as nn
 from torch.autograd.function import Function
 from torch.utils.checkpoint import get_device_states, set_device_states
 
-
 # CREDITS: Code adapted from
 # https://github.com/lucidrains/reformer-pytorch/blob/master/reformer_pytorch/reversible.py
 # https://github.com/RobinBruegger/RevTorch/blob/master/revtorch/revtorch.py,
