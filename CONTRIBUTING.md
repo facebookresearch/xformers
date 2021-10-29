@@ -47,15 +47,20 @@ outlined on that page and do not file a public issue.
 
 ## Coding Style
 
-* In your editor, install the [editorconfig](https://editorconfig.org/) extension
-  which should ensure that you are following the same standards as us.
-* Ideally, run black and isort before opening up your PR.
+In your editor, install the [editorconfig](https://editorconfig.org/) extension
+which should ensure that you are following the same standards as us.
+
+Two options to make sure that the code is formatted and linted properly:
+* either you run black, mypy and isort before opening up your PR.
 
 ```bash
 black .
-isort .
+isort . --profile black
 flake8
+mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ --exclude stubs/ .
 ```
+
+* or you can just install [pre-commit](https://pre-commit.com/), which will make sure that all of the above is run automatically anytime you commit 
 
 _Read the [editorconfig](.editorconfig) file to understand the exact coding style preferences._
 
