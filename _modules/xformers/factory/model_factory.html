@@ -278,12 +278,35 @@
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stack_configs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]):</span>
         <span class="c1"># Type all the configurations. Possible typos are caught here</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">stack_configs</span> <span class="o">=</span> <span class="p">[</span><span class="n">xFormerStackConfig</span><span class="p">(</span><span class="o">**</span><span class="n">config</span><span class="p">)</span> <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="n">stack_configs</span><span class="p">]</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack_configs</span> <span class="o">=</span> <span class="p">[</span><span class="n">xFormerStackConfig</span><span class="p">(</span><span class="o">**</span><span class="n">config</span><span class="p">)</span> <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="n">stack_configs</span><span class="p">]</span>
+
+        <span class="c1"># Check that the reversible setting is not alternating, which</span>
+        <span class="c1"># - makes little sense, since you loose all the reversible benefits</span>
+        <span class="c1"># - may break</span>
+        <span class="c1"># Reversible is only allowed on the encoder side</span>
+
+        <span class="n">reversible</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">reversible</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">filter</span><span class="p">(</span>
+                <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">block_config</span><span class="o">.</span><span class="n">block_type</span> <span class="o">==</span> <span class="s2">&quot;encoder&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_configs</span>
+            <span class="p">)</span>
+        <span class="p">]</span>
+        <span class="n">non_reversible</span> <span class="o">=</span> <span class="p">[</span><span class="ow">not</span> <span class="n">rev</span> <span class="k">for</span> <span class="n">rev</span> <span class="ow">in</span> <span class="n">reversible</span><span class="p">]</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="n">reversible</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">all</span><span class="p">(</span><span class="n">non_reversible</span><span class="p">),</span> <span class="p">(</span>
+                <span class="s2">&quot;All layers need to have the same reversibility setting. &quot;</span>
+                <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;Currently </span><span class="si">{</span><span class="n">reversible</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">AssertionError</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stack_configs</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">reversible</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="kc">False</span></div>
 
 
 <div class="viewcode-block" id="xFormer"><a class="viewcode-back" href="../../../factory/model.html#xformers.factory.model_factory.xFormer">[docs]</a><span class="k">class</span> <span class="nc">xFormer</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
 <div class="viewcode-block" id="xFormer.__init__"><a class="viewcode-back" href="../../../factory/model.html#xformers.factory.model_factory.xFormer.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">stack_configs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">xFormerStackConfig</span><span class="p">,</span> <span class="n">xFormerStackConfig</span><span class="p">]]</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">stack_configs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">xFormerStackConfig</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">xFormerStackConfig</span><span class="p">]]</span>
     <span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Given a serialized configuration, generate the corresponding model.</span>
@@ -299,6 +322,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">enc_pose_encoding</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">dec_pose_encoding</span> <span class="o">=</span> <span class="kc">None</span>
 
+        <span class="c1"># Convenience, users can pass either a list of configs or a single one</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stack_configs</span><span class="p">,</span> <span class="n">List</span><span class="p">):</span>
+            <span class="n">stack_configs</span> <span class="o">=</span> <span class="p">[</span><span class="n">stack_configs</span><span class="p">]</span>
+
+        <span class="c1"># Unroll the configs and build the model</span>
         <span class="k">for</span> <span class="n">stack</span> <span class="ow">in</span> <span class="n">stack_configs</span><span class="p">:</span>
             <span class="n">config</span> <span class="o">=</span> <span class="n">stack</span><span class="o">.</span><span class="n">block_config</span>
 
