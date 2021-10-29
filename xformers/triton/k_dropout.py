@@ -24,7 +24,7 @@ import triton.language as tl
 )
 @triton.jit
 def k_dropout(
-    Y, X, S,
+    Y, X, SEEDS,
     stride,
     N,
     p,
@@ -51,7 +51,7 @@ def k_dropout(
     x = tl.load(x_ptrs, mask=mask)
 
     # randomly prune it
-    seed = S + row
+    seed = SEEDS + row
     random = tl.rand(seed.to(tl.int32), offsets)
     x_keep = random > p
 
