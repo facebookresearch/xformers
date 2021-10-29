@@ -73,7 +73,11 @@ def build_attention(config: Union[Dict[str, Any], AttentionConfig]):
 
     To instantiate an attention from a configuration file, see :func:`build_attention`."""
 register_attention: Callable[[str, Any], Callable[[Any], Any]] = get_registry_decorator(
-    ATTENTION_REGISTRY, ATTENTION_CLASS_NAMES, Attention, AttentionConfig
+    ATTENTION_REGISTRY,
+    ATTENTION_CLASS_NAMES,
+    Attention,
+    AttentionConfig,
+    "xformers/attention",
 )
 
 

@@ -5,7 +5,7 @@
 
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
@@ -26,7 +26,9 @@ from xformers.components.attention.core import scaled_dot_product_attention
 
 @dataclass
 class GlobalAttentionConfig(AttentionConfig):
-    attention_query_mask: torch.Tensor  # Mark the queries which have global attention
+    # Mark the queries which have global attention
+    # should be torch.Tensor, but OmegaConf does not support this typing
+    attention_query_mask: Any
     causal: Optional[bool]
     force_sparsity: Optional[bool]
 

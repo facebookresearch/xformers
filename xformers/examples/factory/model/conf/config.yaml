@@ -1,0 +1,17 @@
+defaults:
+  # Use encoder/decoder schema to validate corresponding configs
+  - /xformers/encoder_schema@encoder.block_config
+  - /xformers/decoder_schema@decoder.block_config
+  # extend base_config from ConfigStore for primary config validation
+  - base_config
+  # encoder stack config, put them under encoder package
+  - stack@encoder: encoder_stack
+  # decoder stack config, put them under decoder package
+  - stack@decoder: decoder_stack
+  # lastly compose the configs outside of defaults list.
+  - _self_
+
+dim_model: 384
+vocab_size: 64
+seq_len: 1024
+

@@ -40,3 +40,7 @@ my_runs.md
 
 # Pyre cache.
 .pyre/
+
+# Hydra defaults output dir
+multirun
+outputs

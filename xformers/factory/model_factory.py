@@ -5,13 +5,14 @@
 
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import torch
 
 from xformers.components import reversible as rv
 from xformers.factory.block_factory import (
     BlockType,
+    xFormerBlockConfig,
     xFormerDecoderBlock,
     xFormerDecoderConfig,
     xFormerEncoderBlock,
@@ -25,7 +26,7 @@ class xFormerStackConfig:
     A stack is defined by the definition of a given block, and an optional repetition factor
     """
 
-    block_config: Union[xFormerEncoderConfig, xFormerDecoderConfig]
+    block_config: xFormerBlockConfig
     num_layers: int
     reversible: bool
 
@@ -57,9 +58,7 @@ class xFormerConfig:
 
 
 class xFormer(torch.nn.Module):
-    def __init__(
-        self, stack_configs: List[Union[xFormerStackConfig, xFormerStackConfig]]
-    ):
+    def __init__(self, stack_configs: List[xFormerStackConfig]):
         """
         Given a serialized configuration, generate the corresponding model.
         This is only a helper and can easily be bypassed

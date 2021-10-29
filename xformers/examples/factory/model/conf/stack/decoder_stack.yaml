@@ -1,0 +1,25 @@
+defaults:
+  # Move schema form xformers to black_config package for schema validation
+  - /xformers/decoder_schema@block_config
+  # extend the configs and typing from base_stack.yaml
+  - base_stack
+
+block_config:
+  block_type: Decoder
+  multi_head_config_masked:
+    num_heads: 4
+    residual_dropout: 0
+    attention:
+      name: nystrom  # whatever attention mechanism
+      dropout: 0
+      causal: True
+      seq_len: ${seq_len}
+
+  multi_head_config_cross:
+    num_heads: 4
+    residual_dropout: 0
+    attention:
+      name: favor  # whatever attention mechanism
+      dropout: 0
+      causal: True
+      seq_len: ${seq_len}

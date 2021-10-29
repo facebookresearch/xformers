@@ -5,7 +5,7 @@
 
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
@@ -43,11 +43,13 @@ class NystromSelfAttentionConfig(AttentionConfig):
 
     num_heads: int
     num_landmarks: Optional[int]
-    landmark_pooling: Optional[nn.Module]
+    # should be nn.Module, OmegaConf does not support the typing
+    landmark_pooling: Optional[Any]
     causal: Optional[bool]
     pinverse_original_init: Optional[bool]
     inv_iterations: Optional[int]
-    v_skip_connection: Optional[nn.Module]
+    # should be nn.Module, OmegaConf does not support the typing
+    v_skip_connection: Optional[Any]
     conv_kernel_size: Optional[int]
     use_razavi_pinverse: Optional[bool]
 

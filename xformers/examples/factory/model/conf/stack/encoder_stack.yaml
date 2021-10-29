@@ -1,0 +1,15 @@
+defaults:
+  # extend configs/schema from base_stack.yaml
+  - base_stack
+
+block_config:
+  block_type: Encoder
+  multi_head_config:
+    num_heads: 4
+    residual_dropout: 0
+    dim_model: ${dim_model}
+    attention:
+      name: linformer  # whatever attention mechanism
+      dropout: 0
+      causal: False
+      seq_len: ${seq_len}

@@ -13,7 +13,10 @@ from collections import namedtuple
 from dataclasses import fields
 from typing import Any, Callable, Dict, Generator, List
 
+from hydra.core.config_store import ConfigStore
+
 Item = namedtuple("Item", ["constructor", "config"])
+cs = ConfigStore.instance()
 
 
 # credit: snippet used in ClassyVision (and probably other places)
@@ -31,7 +34,7 @@ def import_all_modules(root: str, base_module: str) -> List[str]:
 
 
 def get_registry_decorator(
-    class_registry, name_registry, reference_class, default_config
+    class_registry, name_registry, reference_class, default_config, config_group
 ) -> Callable[[str, Any], Callable[[Any], Any]]:
     def register_item(name: str, config: Any = default_config):
         """Registers a subclass.
@@ -57,7 +60,11 @@ def get_registry_decorator(
                 )
 
             class_registry[name] = Item(constructor=cls, config=config)
+
             name_registry.add(cls.__name__)
+
+            cs.store(name=f"{name}_schema", node=config, group=config_group)
+
             return cls
 
         return register_cls

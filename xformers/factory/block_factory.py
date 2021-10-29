@@ -98,8 +98,8 @@ class xFormerBlockConfig:
     position_encoding_config: Optional[PositionEmbeddingConfig]
     block_type: BlockType
     layer_norm_style: LayerNormStyle
-    layer_position: LayerPosition
     use_triton: bool
+    seq_len: int
 
     def __init__(
         self,

@@ -62,7 +62,11 @@ def build_feedforward(config: Union[Dict[str, Any], FeedforwardConfig]):
 register_feedforward: Callable[
     [str, Any], Callable[[Any], Any]
 ] = get_registry_decorator(
-    FEEDFORWARD_REGISTRY, FEEDFORWARD_CLASS_NAMES, Feedforward, FeedforwardConfig
+    FEEDFORWARD_REGISTRY,
+    FEEDFORWARD_CLASS_NAMES,
+    Feedforward,
+    FeedforwardConfig,
+    "xformers/feedforward",
 )
 
 try:

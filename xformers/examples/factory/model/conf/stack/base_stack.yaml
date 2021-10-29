@@ -1,0 +1,26 @@
+defaults:
+  # Move schemas provided by xformer to corresponding config package for schema validation.
+  - /xformers/positional_embedding/vocab_schema@block_config.position_encoding_config
+  - /xformers/feedforward/MLP_schema@block_config.feedforward_config
+  - /xformers/stack_schema@_here_
+
+reversible: False
+num_layers: 3
+block_config:
+  block_type: ???
+  dim_model: ${dim_model}
+  layer_norm_style: Pre  # Optional pre/post
+  use_triton: True
+  seq_len: ${seq_len}
+  position_encoding_config:
+    name: vocab  # whatever position encodinhg makes sense
+    seq_len: ${seq_len}
+    vocab_size: ${vocab_size}
+    dropout: 0
+    dim_model: ${dim_model}
+  feedforward_config:
+    dim_model: ${dim_model}
+    name: MLP
+    dropout: 0
+    activation: ReLU
+    hidden_layer_multiplier: 4

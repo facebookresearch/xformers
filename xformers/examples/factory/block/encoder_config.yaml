@@ -1,0 +1,26 @@
+seq_len: 1024
+dim_model: 384
+vocab_size: 64
+
+encoder:
+  dim_model: ${dim_model}
+  layer_norm_style: pre  # Optional pre/post
+  position_encoding_config:
+    name: vocab  # whatever position encodinhg makes sense
+    seq_len: ${seq_len}
+    vocab_size: ${vocab_size}
+
+  multi_head_config:
+    num_heads: 4
+    residual_dropout: 0
+    attention:
+      name: linformer  # whatever attention mechanism
+      dropout: 0
+      seq_len: ${seq_len}
+
+  feedforward_config:
+    name: MLP
+    dropout: 0
+    activation: relu
+    hidden_layer_multiplier: 4
+    

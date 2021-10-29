@@ -66,6 +66,7 @@ register_positional_embedding: Callable[
     POSITION_EMBEDDING_CLASS_NAMES,
     PositionEmbedding,
     PositionEmbeddingConfig,
+    "xformers/positional_embedding",
 )
 
 
