@@ -69,4 +69,7 @@ class _dropout(torch.autograd.Function):
 
 
 def dropout(x: torch.Tensor, p: float):
-    return _dropout.apply(x, p)
+    if p > 0.0:
+        return _dropout.apply(x, p)
+
+    return x

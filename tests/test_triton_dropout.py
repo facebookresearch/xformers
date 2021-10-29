@@ -55,7 +55,7 @@ def test_dropout(shape, amp):
 
         # Check that 0 means no dropout
         y = dropout(x, p=0)
-        assert torch.allclose(x.to(y.dtype), y, rtol=tol)
+        assert torch.allclose(x.to(y.dtype), y, rtol=tol), f"{x[x>y]}"
 
         # Check that 1 means dropout for sure
         y = dropout(x, p=1)
