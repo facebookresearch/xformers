@@ -45,21 +45,29 @@ SHAPES = [
 )
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [False, True])
-def test_dropout(shape, amp):
+@pytest.mark.parametrize("bias", [False, True])
+def test_dropout(shape, amp, bias):
     torch.random.manual_seed(0)
 
     x = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
+    b = (
+        torch.normal(0, 1, size=(shape[-1],), device="cuda", requires_grad=True)
+        if bias
+        else None
+    )
 
     with autocast(enabled=amp):
         tol = 1e-2 if amp else 1e-5  # AMP rounding causes issues, 1e-5 is the default
 
         # Check that 0 means no dropout
-        y = dropout(x, p=0)
-        assert torch.allclose(x.to(y.dtype), y, rtol=tol), f"{x[x>y]}"
+        y = dropout(x, p=0, bias=b)
+        x_ref = (x + b if bias else x).to(y.dtype)
+        assert torch.allclose(x_ref, y, rtol=tol), f"{x[x>y]}"
 
         # Check that 1 means dropout for sure
-        y = dropout(x, p=1)
-        assert not torch.allclose(x.to(y.dtype), y, rtol=tol)
+        y = dropout(x, p=1, bias=b)
+        x_ref = (x + b if bias else x).to(y.dtype)
+        assert not torch.allclose(x_ref, y, rtol=tol)
 
         # Check that the drops are different for every row (could catch broken seeds per row)
         y = dropout(x, p=0.5)
@@ -74,4 +82,7 @@ def test_dropout(shape, amp):
         y_a = y_a.flatten(0, 1) if y_a.ndim == 3 else y_a
         y_b = y_b.flatten(0, 1) if y_b.ndim == 3 else y_b
 
-        assert not torch.sum(torch.eq(y_a[0, :] == 0.0, y_b[0, :] == 0.0)) == y.shape[1]
+        assert (
+            not torch.sum(torch.eq(y_a[0, :] == 0.0, y_b[0, :] == 0.0)).item()
+            == y.shape[1]
+        )

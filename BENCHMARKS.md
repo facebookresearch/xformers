@@ -89,6 +89,19 @@ Note that in the Triton case the slowdowns at extreme sizes are because of regis
 
 ![Fused layer norm throughput in fp32 - training](docs/plots/LayerNorm_FW+BW_torch.float32.png))
 
+### Fused dropout + bias
+
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_dropout.py`. The units are TFlops/s. These results are for a nVidia V100, Triton 1.1 and PyTorch 1.10.
+
+![Fused dropout+ bias throughput in fp16 - inference](docs/plots/Dropout_Bias_True_FW_torch.float16.png)
+
+![Fused dropout+ bias throughput in fp16 - training](docs/plots/Dropout_Bias_True_FW+BW_torch.float16.png))
+
+![Fused dropout+ bias throughput in fp32 - inference](docs/plots/Dropout_Bias_True_FW_torch.float32.png))
+
+![Fused dropout+ bias throughput in fp32 - training](docs/plots/Dropout_Bias_True_FW+BW_torch.float32.png))
+
+
 ## LRA
 
 The code for this benchmark has been adapted from [this repository](https://github.com/mlpen/Nystromformer/tree/main/LRA). [A dedicated README is available here](xformers/benchmarks/LRA/README.md)

@@ -24,12 +24,18 @@ SHAPES = [
 P = 0.1
 
 
-def to_gbs_fw(a, ms):
+def to_gbs_fw(a, ms, bias):
     # Read and write the full array
-    return (2 * a.numel() * a.element_size() * 1e-9) / (ms * 1e-3)
+    total = 2 * a.numel() * a.element_size()
+
+    if bias:
+        # Read the bias, ideally only once
+        total += a.shape[-1] * a.element_size()
+
+    return total * 1e-9 / (ms * 1e-3)
 
 
-def bench_dropout(backward: bool):
+def bench_dropout(bias: bool, backward: bool):
     device = torch.device("cuda")
 
     for dtype in [
@@ -39,16 +45,21 @@ def bench_dropout(backward: bool):
         results: Dict[str, Any] = {}
 
         for B, M, K in SHAPES:
-            a = torch.rand(B, M, K, device=device, dtype=dtype, requires_grad=backward)
+            a = torch.rand(
+                (B, M, K), device=device, dtype=dtype, requires_grad=backward
+            )
+            b = torch.rand(K, device=device, dtype=dtype, requires_grad=backward)
 
             def torch_step(x):
-                y = torch.nn.functional.dropout(x, P)
+                x_ = x + b if bias else x
+                y = torch.nn.functional.dropout(x_, P)
                 if backward:
                     torch.norm(y).backward()
                 return y
 
             def triton_step(x):
-                y = triton_dropout(x, P)
+                b_ = b if bias else None
+                y = triton_dropout(x, P, bias=b_)
                 if backward:
                     torch.norm(y).backward()
                 return y
@@ -56,11 +67,11 @@ def bench_dropout(backward: bool):
             for testcase in [
                 TestCase(
                     torch_step,
-                    "pytorch - fw{}".format("+bw" if backward else ""),
+                    "pytorch - bias: {} - fw{}".format(bias, "+bw" if backward else ""),
                 ),
                 TestCase(
                     triton_step,
-                    "triton - fw{}".format("+bw" if backward else ""),
+                    "triton - bias: {} - fw{}".format(bias, "+bw" if backward else ""),
                 ),
             ]:
                 time = triton.testing.do_bench(lambda: testcase.function(a))[0]
@@ -69,17 +80,20 @@ def bench_dropout(backward: bool):
                     results[key] = {}
 
                 # Record BW
-                bandwidth = to_gbs_fw(a, time)
+                bandwidth = to_gbs_fw(a, time, bias)
                 results[key][testcase.name] = f"{bandwidth:.1f}"
 
         pretty_print(results, title="\n --- Type: {} --- ".format(dtype), units="GB/s")
         pretty_plot(
             results,
-            title="Dropout-FW{}-{}".format("+BW" if backward else "", dtype),
+            title="Dropout-Bias-{}-FW{}-{}".format(
+                bias, "+BW" if backward else "", dtype
+            ),
             units="GB/s",
             dash_key="pytorch",
         )
 
 
-for bw in [False, True]:
-    bench_dropout(bw)
+for bw in [True, False]:
+    for bias in [True, False]:
+        bench_dropout(bias, bw)
