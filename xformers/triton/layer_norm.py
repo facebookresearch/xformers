@@ -28,10 +28,13 @@ class FusedLayerNorm(nn.Module):
 
     """
 
-    def __init__(self, normalized_shape, eps=1e-05):
+    def __init__(self, normalized_shape, affine=True, eps=1e-05):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(normalized_shape))
-        self.bias = nn.Parameter(torch.zeros(normalized_shape))
+        if affine:
+            self.weight = nn.Parameter(torch.ones(normalized_shape))
+            self.bias = nn.Parameter(torch.zeros(normalized_shape))
+        else:
+            self.weight = self.bias = None
         self.epsilon = eps
 
     def forward(self, x):
