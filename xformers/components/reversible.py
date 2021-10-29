@@ -124,15 +124,16 @@ class _ReversibleFunction(Function):
 
 
 class ReversibleSequence(nn.Module):
-    def __init__(self, blocks: nn.ModuleList):
+    def __init__(self, blocks: nn.ModuleList, split_dim: int = -1):
         super().__init__()
 
         self.blocks = nn.ModuleList([ReversibleBlock(f, g) for f, g in blocks])
+        self.split_dim = split_dim
 
     def forward(self, x, arg_route=(True, False), **kwargs):
         f_args, g_args = map(lambda route: kwargs if route else {}, arg_route)
         block_kwargs = {"f_args": f_args, "g_args": g_args}
 
-        x1, x2 = x.chunk(2, 2)
+        x1, x2 = x.chunk(2, self.split_dim)
         x1, x2 = _ReversibleFunction.apply(x1, x2, self.blocks, block_kwargs)
-        return torch.cat([x1, x2], dim=2)
+        return torch.cat([x1, x2], dim=self.split_dim)
