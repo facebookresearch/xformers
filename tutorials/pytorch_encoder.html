@@ -13,7 +13,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building an encoder, comparing to PyTorch | xFormers 0.0.1 documentation</title>
+  <title>Building an encoder, comparing to PyTorch | xFormers 0.0.2 documentation</title>
   
   <script src="../_static/js/ga.js"></script>
   <script src="../_static/js/redirect.js"></script>
@@ -23,7 +23,7 @@
   
   <link rel="canonical" href="https://facebookresearch.github.io/xformerstutorials/pytorch_encoder.html" />
   
-  <meta property="og:title" content="Building an encoder, comparing to PyTorch | xFormers 0.0.1 documentation">
+  <meta property="og:title" content="Building an encoder, comparing to PyTorch | xFormers 0.0.2 documentation">
   <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
@@ -442,7 +442,9 @@ There’s also an added flexibility with xFormers in that attention mechanisms c
 </pre></div>
 </div>
 <p>Note that this exposes quite a few more knobs than the PyTorch Transformer interface, but in turn is probably a little more flexible. There are a couple of repeated settings here (dimensions mostly), this is taken care of in the [LRA benchmarking config](benchmarks/LRA/code/config.json)</p>
-<p>You can compare the speed and memory use of the vanilla PyTorch Transformer Encoder and an equivalent from xFormers, there is an existing benchmark for that ([see](xformers/benchmarks/benchmark_pytorch_transformer.py)). It can be run with <cite>python3 xformers/benchmarks/benchmark_pytorch_transformer.py</cite>, and returns the loss values for every step along with the training time for a couple of shapes that you can customize. Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xFormers 0.0.1):</p>
+<p>You can compare the speed and memory use of the vanilla PyTorch Transformer Encoder and an equivalent from xFormers, there is an existing benchmark for that ([see](xformers/benchmarks/benchmark_pytorch_transformer.py)).
+It can be run with <cite>python3 xformers/benchmarks/benchmark_pytorch_transformer.py</cite>, and returns the loss values for every step along with the training time for a couple of shapes that you can customize.
+Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xFormers 0.0.2):</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>--- Transformer training benchmark - runtime ---
 <span class="p">|</span> Units: s <span class="p">|</span> emb <span class="m">128</span> - heads <span class="m">8</span> <span class="p">|</span> emb <span class="m">1024</span> - heads <span class="m">8</span> <span class="p">|</span> emb <span class="m">2048</span> - heads <span class="m">8</span> <span class="p">|</span>
 <span class="p">|</span> -------- <span class="p">|</span> ----------------- <span class="p">|</span> ------------------ <span class="p">|</span> ------------------ <span class="p">|</span>
