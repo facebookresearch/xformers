@@ -93,15 +93,15 @@ Models are thus not implemented in monolithic files, which are typically complic
 
 ```bash
 ├── components                  # Parts zoo, any of which can be used directly
-│   └── attention
-│        └ ...                  # all the supported attentions
-│   └── feedforward             #
-│        └ ...                  # all the supported feedforwards
-│   └─- positional_embedding    #
-│        └ ...                  # all the supported positional embeddings
+│   ├── attention
+│   │    └ ...                  # all the supported attentions
+│   ├── feedforward             #
+│   │    └ ...                  # all the supported feedforwards
+│   ├── positional_embedding    #
+│   │    └ ...                  # all the supported positional embeddings
 │   ├── activations.py          #
 │   └── multi_head_dispatch.py  # (optional) multihead wrap
-d├── factory
+├── factory
 │   ├── block_factory.py        # (optional) helper to programatically generate layers
 │   └── model_factory.py        # (optional) helper to programatically generate models
 ├── models
