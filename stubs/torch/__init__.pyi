@@ -94,7 +94,6 @@ class device:
 _just_device = device
 _device = Union[device, str]
 
-# pyre-fixme[39]: Tuple is not a valid parent class.
 class Size(Tuple[builtins.int, ...]):
     @overload
     def __getitem__(self: Size, key: builtins.int) -> builtins.int: ...
@@ -213,6 +212,7 @@ class Tensor(Generic[DType, Unpack[Ts]]):
         self: Tensor[DType, Unpack[Rs]], *sizes: Unpack[Rs2]
     ) -> Tensor[DType, Unpack[Broadcast[Tuple[Unpack[Rs]], Tuple[Unpack[Rs2]]]]]: ...
     def detach(self: T) -> T: ...
+    # pyre-ignore[24]: Pyre is unable to find the custom stubs for numpy.
     def numpy(self) -> ndarray[DType, Unpack[Ts]]: ...
     shape: Tuple[Unpack[Ts]]
     ndim: builtins.int

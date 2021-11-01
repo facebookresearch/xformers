@@ -700,11 +700,8 @@ def test_argsort() -> None:
 def test_functional_pad() -> None:
     x: torch.Tensor[torch.float32, L[2], L[3], L[4]]
 
-    # pyre-ignore[9]: Fixed in the latest version of Pyre.
     good: torch.Tensor[torch.float32, L[2], L[3], L[5]] = nn.functional.pad(x, (1, 0))
-    # pyre-fixme[9]: bad has type `Tensor[torch.float32, typing_extensions.Literal[99...
     bad: torch.Tensor[torch.float32, L[99], L[3], L[5]] = nn.functional.pad(x, (1, 0))
-    # pyre-ignore[9]: Fixed in the latest version of Pyre.
     good2: torch.Tensor[torch.float32, L[2], L[10], L[7]] = nn.functional.pad(
         x, (1, 2, 3, 4), "constant", value=0.0
     )
@@ -1187,7 +1184,6 @@ def test_repeat_interleave() -> None:
 
     # Too dynamic because the output shape depends on the contents of repeats.
 
-    # pyre-ignore[9]: Fixed in the latest version of Pyre.
     y5: torch.Tensor[torch.float32, L[0], L[3], L[4]] = torch.repeat_interleave(
         x, repeats, dim=0
     )
