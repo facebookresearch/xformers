@@ -102,3 +102,13 @@ def dropout(x: torch.Tensor, p: float, bias: Optional[torch.Tensor] = None):
         return _dropout.apply(x, p, bias)
 
     return x + bias if bias is not None else x
+
+
+class FusedDropoutBias(torch.nn.Module):
+    def __init__(self, p: float, bias_shape: Optional[int]) -> None:
+        super().__init__()
+        self.p = p
+        self.bias = torch.zeros(bias_shape) if bias_shape is not None else None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return dropout(x, self.p, self.bias)
