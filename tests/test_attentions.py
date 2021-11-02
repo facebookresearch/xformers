@@ -81,17 +81,21 @@ def test_order_invariance(
     )
 
     # Check that a shuffled input produces the same results
-    inputs = torch.rand(BATCH, SEQ, MODEL, device=device)
-    shuffle = torch.randperm(inputs.shape[1])
-    inputs_shuffled = inputs[:, shuffle, :].clone()
+    seqs = [SEQ, SEQ - 16] if attention_name != "blocksparse" else [SEQ]
 
-    results = multi_head(inputs, inputs, inputs)
-    results_shuffled = multi_head(inputs_shuffled, inputs_shuffled, inputs_shuffled)
+    for seq in seqs:
+        # Check that we can pass a smaller sequence
+        inputs = torch.rand(BATCH, seq, MODEL, device=device)
+        shuffle = torch.randperm(inputs.shape[1])
+        inputs_shuffled = inputs[:, shuffle, :].clone()
 
-    torch.allclose(results[:, shuffle, :], results_shuffled)
+        results = multi_head(inputs, inputs, inputs)
+        results_shuffled = multi_head(inputs_shuffled, inputs_shuffled, inputs_shuffled)
 
-    # Test the non-self-attention codepath
-    _ = multi_head(inputs, inputs_shuffled, inputs)
+        torch.allclose(results[:, shuffle, :], results_shuffled)
+
+        # Test the non-self-attention codepath
+        _ = multi_head(inputs, inputs_shuffled, inputs)
 
 
 @pytest.mark.parametrize("heads", [1, 4])

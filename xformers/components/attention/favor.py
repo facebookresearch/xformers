@@ -131,6 +131,7 @@ class FavorAttention(Attention):
         *args,
         **kwargs,
     ):
+
         # Project key and queries onto the feature map space
         k_prime = self.feature_map_key(k)
         q_prime = self.feature_map_query(q)
