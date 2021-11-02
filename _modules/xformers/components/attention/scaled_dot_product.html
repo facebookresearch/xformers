@@ -230,6 +230,7 @@
 <span class="c1"># This source code is licensed under the BSD license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
+<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
@@ -239,7 +240,14 @@
 <span class="kn">from</span> <span class="nn">xformers.components.attention.core</span> <span class="kn">import</span> <span class="n">scaled_dot_product_attention</span>
 
 
-<div class="viewcode-block" id="ScaledDotProduct"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.ScaledDotProduct">[docs]</a><span class="nd">@register_attention</span><span class="p">(</span><span class="s2">&quot;scaled_dot_product&quot;</span><span class="p">,</span> <span class="n">AttentionConfig</span><span class="p">)</span>
+<span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">ScaledDotProductConfig</span><span class="p">(</span><span class="n">AttentionConfig</span><span class="p">):</span>
+    <span class="n">causal</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span>
+    <span class="n">seq_len</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+    <span class="n">to_seq_len</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="ScaledDotProduct"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.ScaledDotProduct">[docs]</a><span class="nd">@register_attention</span><span class="p">(</span><span class="s2">&quot;scaled_dot_product&quot;</span><span class="p">,</span> <span class="n">ScaledDotProductConfig</span><span class="p">)</span>
 <span class="k">class</span> <span class="nc">ScaledDotProduct</span><span class="p">(</span><span class="n">Attention</span><span class="p">):</span>
     <span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Implementing the Scaled Dot-Product attention proposed in</span>
@@ -289,7 +297,22 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Mask-aware attention</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">att_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="k">if</span> <span class="n">att_mask</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="o">&amp;</span> <span class="n">att_mask</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">att_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">att_mask</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+                    <span class="n">att_mask</span><span class="o">.</span><span class="n">unsqueeze_</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">att_mask</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">:</span>
+                    <span class="c1"># bool mask</span>
+                    <span class="n">att_mask_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span>
+                    <span class="n">att_mask_</span><span class="p">[</span><span class="o">~</span><span class="n">att_mask</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;-inf&quot;</span><span class="p">)</span>
+                    <span class="n">att_mask</span> <span class="o">=</span> <span class="n">att_mask_</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># additive mask</span>
+                    <span class="n">att_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="o">+</span> <span class="n">att_mask</span>
+
+                <span class="n">att_mask</span> <span class="o">=</span> <span class="n">att_mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
 
         <span class="c1"># Self-attend: (B x nh, S, hs) x (B x nh, hs, S) -&gt; (B x nh, S, S)</span>
         <span class="n">y</span> <span class="o">=</span> <span class="n">scaled_dot_product_attention</span><span class="p">(</span>
