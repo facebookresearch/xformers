@@ -140,7 +140,7 @@ commands:
        - run:
            name: Setup pyenv
            command: |
-             git clone git://github.com/pyenv/pyenv-update.git $(pyenv root)/plugins/pyenv-update
+             git clone https://github.com/pyenv/pyenv-update.git $(pyenv root)/plugins/pyenv-update
              pyenv update
              pyenv install -f <<parameters.version>>
              pyenv global <<parameters.version>>
