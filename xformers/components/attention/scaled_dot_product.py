@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
@@ -12,7 +13,14 @@ from xformers.components.attention import Attention, AttentionConfig, register_a
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
-@register_attention("scaled_dot_product", AttentionConfig)
+@dataclass
+class ScaledDotProductConfig(AttentionConfig):
+    causal: Optional[bool]
+    seq_len: Optional[int]
+    to_seq_len: Optional[int]
+
+
+@register_attention("scaled_dot_product", ScaledDotProductConfig)
 class ScaledDotProduct(Attention):
     r"""
     Implementing the Scaled Dot-Product attention proposed in
@@ -63,6 +71,7 @@ class ScaledDotProduct(Attention):
         # Mask-aware attention
         if self.mask is not None:
             att_mask = self.mask if att_mask is None else self.mask & att_mask
+            att_mask = att_mask.to(q.dtype)
 
         # Self-attend: (B x nh, S, hs) x (B x nh, hs, S) -> (B x nh, S, S)
         y = scaled_dot_product_attention(
