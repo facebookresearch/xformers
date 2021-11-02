@@ -70,7 +70,7 @@ register_positional_embedding: Callable[
 
 
 from .rotary import RotaryEmbedding  # noqa
-from .sine import SinePositionalEmbedding  # noqa
+from .sine import SinePositionalEmbedding  # type: ignore  # noqa
 from .vocab import VocabEmbedding  # noqa
 
 __all__ = [
