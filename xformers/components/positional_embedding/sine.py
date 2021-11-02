@@ -13,7 +13,12 @@ import math
 from typing import TypeVar
 
 import torch
-from pyre_extensions import Generic
+
+try:
+    from pyre_extensions import Generic
+except ImportError:
+    from typing import Generic
+
 from typing_extensions import Literal as L
 
 from xformers.components.positional_embedding import (
