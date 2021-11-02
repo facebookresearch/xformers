@@ -70,8 +70,22 @@ class ScaledDotProduct(Attention):
         """
         # Mask-aware attention
         if self.mask is not None:
-            att_mask = self.mask if att_mask is None else self.mask & att_mask
-            att_mask = att_mask.to(q.dtype)
+            self.mask = self.mask.to(q.dtype)
+
+            if att_mask is not None:
+                if att_mask.ndim == 2:
+                    att_mask.unsqueeze_(0)
+
+                if att_mask.dtype == torch.bool:
+                    # bool mask
+                    att_mask_ = self.mask
+                    att_mask_[~att_mask] = float("-inf")
+                    att_mask = att_mask_
+                else:
+                    # additive mask
+                    att_mask = self.mask + att_mask
+
+                att_mask = att_mask.to(q.dtype)
 
         # Self-attend: (B x nh, S, hs) x (B x nh, hs, S) -> (B x nh, S, S)
         y = scaled_dot_product_attention(
