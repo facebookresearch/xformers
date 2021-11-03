@@ -22,6 +22,7 @@ from xformers.triton.k_fused_matmul_fw import fused_matmul
 _requires_bwd_inputs = [
     Activation.GeLU,
     Activation.SquaredReLU,
+    Activation.LeakyReLU,
 ]
 
 
@@ -37,15 +38,24 @@ class _fused_linear_triton(torch.autograd.Function):
         act_grad_kernel,
         trainable_weight,
         trainable_bias,
+        save_activation_inputs,
     ):
 
         # Kick the fused Triton kernel, handling bias and activation in one go
-        y = fused_matmul(x, weight, bias, activation)
+        y, activation_inputs = fused_matmul(
+            x, weight, bias, activation, save_activation_inputs
+        )
 
         ctx.activation_grad_kernel = act_grad_kernel
         ctx.trainable_weight = trainable_weight
         ctx.trainable_bias = trainable_bias
-        ctx.save_for_backward(weight, bias, x)
+
+        ctx.save_activation_inputs = save_activation_inputs
+
+        # Micro-optimization: saving these is not always needed (?)
+        if x.requires_grad or ctx.trainable_weight or ctx.trainable_bias:
+            ctx.save_for_backward(weight, activation_inputs, x)
+
         return y
 
     @staticmethod
@@ -54,20 +64,20 @@ class _fused_linear_triton(torch.autograd.Function):
         """
         Compute the derivative with respect to x, other tensors were not trainable inputs.
         """
-        (weight, bias, inputs) = ctx.saved_tensors
+        (weight, activation_inputs, x) = ctx.saved_tensors
 
-        # Kick the fused Triton kernel, handling transpose and activation gradient in one go
         grad_input, grad_weight, grad_bias = fused_matmul_backward(
             grad_out=grad_out,
-            inputs=inputs,
-            bias=bias,
+            inputs=x,
+            act_in=activation_inputs,
             weight=weight,
             trainable_weight=ctx.trainable_weight,
             trainable_bias=ctx.trainable_bias,
             activation_grad=ctx.activation_grad_kernel,
+            act_requires_input=ctx.save_activation_inputs,
         )
 
-        return grad_input, grad_weight, grad_bias, None, None, None, None, None
+        return grad_input, grad_weight, grad_bias, None, None, None, None, None, None
 
 
 class FusedLinear(nn.Module):
@@ -102,6 +112,9 @@ class FusedLinear(nn.Module):
         self._activation_kernel = get_triton_activation_kernel(activation)
         self._activation_grad_kernel = get_triton_activation_bwd_kernel(activation)
 
+        self._save_activation_inputs = (
+            activation in _requires_bwd_inputs if activation is not None else False
+        )
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
@@ -120,4 +133,5 @@ class FusedLinear(nn.Module):
             self._activation_grad_kernel,
             self.weight.requires_grad,
             self.bias.requires_grad if self.bias is not None else False,
+            self._save_activation_inputs,
         )

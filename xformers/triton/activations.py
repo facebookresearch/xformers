@@ -68,7 +68,12 @@ def relu(x):
 
 @triton.jit
 def relu_grad(x):
-    return tl.where(x >= 0, 1.0, 0.0)
+    # ReLU is different from other activations
+    # in that it does not require the input to retrospectively compute its gradient
+    # here the input is the downstream gradient, and we return the upstream gradient directly
+    zero = 0.0
+    zero = zero.to(x.dtype)
+    return tl.where(x >= 0, x, zero)
 
 
 @triton.jit

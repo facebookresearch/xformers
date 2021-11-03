@@ -35,13 +35,13 @@ import triton.language as tl
 @triton.jit
 def kernel_fma(
     # Pointers to matrices
-    OUT, INPUT, WEIGHT, BIAS,
+    OUT, ACT_INPUTS, INPUT, WEIGHT, BIAS,
     # Matrix dimensions
     M, N, K,
     # The stride variables represent how much to increase the ptr by when moving by 1
     # element in a particular dimension. E.g. stride_am is how much to increase a_ptr
     # by to get the element one row down (A has M rows)
-    stride_dm, stride_am,
+    stride_om, stride_im,
     stride_wn, stride_wk,
     # Meta-parameters
     **META,
@@ -91,7 +91,7 @@ def kernel_fma(
 
     # the memory addresses of elements in the first block of
     # A and W can be computed using numpy-style broadcasting
-    input_ptrs = INPUT + rm[:, None] * stride_am + rk[None, :]
+    input_ptrs = INPUT + rm[:, None] * stride_im + rk[None, :]
     weight_ptrs = WEIGHT + rk[:, None] * stride_wk + rn[None, :] * stride_wn
 
     # initialize and iteratively update accumulator
@@ -115,12 +115,17 @@ def kernel_fma(
         input_ptrs += BLOCK_K
         weight_ptrs += BLOCK_K * stride_wk
 
+    # optional: save the activation inputs
+    if META["SAVE_ACT_INPUTS"]:
+        act_in_ptrs = ACT_INPUTS + rm[:, None] * stride_om + rn[None, :]
+        tl.store(act_in_ptrs, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
+
     # optional: fused activation (while the data is in shared memory)
     if META["ACTIVATION"]:
         acc = META["ACTIVATION"](acc)
 
     # write back result
-    out_ptrs = OUT + rm[:, None] * stride_dm + rn[None, :]
+    out_ptrs = OUT + rm[:, None] * stride_om + rn[None, :]
     tl.store(out_ptrs, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
 
 
@@ -130,6 +135,7 @@ def fused_matmul(
     weight: torch.Tensor,
     bias: Optional[torch.Tensor],
     activation=None,
+    save_act_inputs: bool = False
 ):
     """
     Compute e = activation(x @ weight + bias).
@@ -153,6 +159,7 @@ def fused_matmul(
     N, K = weight.shape
 
     outputs = torch.empty((M, N), device=x.device, dtype=x.dtype)
+    act_inputs = torch.empty_like(outputs) if save_act_inputs else x  # will not be used in that case
 
     # 1D launch kernel where each block gets its own program.
     def grid(META):
@@ -163,7 +170,7 @@ def fused_matmul(
     # fmt: off
     kernel_fma[grid](
         # data ptrs
-        outputs, x_, weight,
+        outputs, act_inputs, x_, weight,
         bias if bias is not None else x,  # auto skip bias if not present
         # shapes
         M, N, K,
@@ -178,9 +185,10 @@ def fused_matmul(
         # improve on data reuse in L2 cache
         GROUP_ROW=8,
         BLOCK_K=32,
+        SAVE_ACT_INPUTS=save_act_inputs
     )
     # fmt: on
 
     outputs = outputs if x.ndim == 2 else outputs.reshape(x.shape[0], -1, N)
 
-    return outputs
+    return outputs, act_inputs if save_act_inputs else None
