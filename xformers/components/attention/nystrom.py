@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -15,7 +16,11 @@ from xformers.components.attention.core import (
     scaled_dot_product_attention,
     scaled_query_key_softmax,
 )
-from xformers.components.attention.utils import iterative_pinv, reshape_key_padding_mask
+from xformers.components.attention.utils import (
+    bool_mask_to_additive,
+    iterative_pinv,
+    reshape_key_padding_mask,
+)
 
 
 @dataclass
@@ -163,18 +168,26 @@ class NystromAttention(Attention):
                             (batch size * num_heads, 1, sequence length). If dimensions are not correct, the mask will
                             be ignored.
         """
+
         batched_dim = k.size(0)
         seq_len = k.size(-2)
+        tt = {"dtype": q.dtype, "device": q.device}
 
         if key_padding_mask is not None:
-            assert key_padding_mask.dtype == torch.bool
+            if key_padding_mask.dtype == torch.bool:
+                logging.warning(
+                    "Bool mask found, but an additive mask is expected. Converting but this is slow"
+                )
+                key_padding_mask = bool_mask_to_additive(key_padding_mask)
+
+            assert key_padding_mask is not None  # mypy is drunk
 
             if key_padding_mask.ndim == 2:
                 key_padding_mask = reshape_key_padding_mask(
                     key_padding_mask, batched_dim
                 )
 
-            assert key_padding_mask.size() == (batched_dim, 1, seq_len,), (
+            assert key_padding_mask.size() == (batched_dim, 1, seq_len), (
                 f"key_padding_mask has invalid dimensions {key_padding_mask.size()}."
                 f" Must have dimensions {batched_dim, 1, seq_len} or (batch_size, {seq_len})."
             )
@@ -182,13 +195,9 @@ class NystromAttention(Attention):
         if self.num_landmarks >= seq_len:
             mask: Optional[torch.Tensor] = None
             if self.causal:
-                mask = self._tril_mask(batched_dim, seq_len, seq_len)
+                mask = self._tril_mask(batched_dim, seq_len, seq_len, **tt)
             if key_padding_mask is not None:
-                mask = (
-                    key_padding_mask
-                    if mask is None
-                    else mask.logical_and(key_padding_mask)
-                )
+                mask = key_padding_mask if mask is None else mask + key_padding_mask
             x = scaled_dot_product_attention(q=q, k=k, v=v, att_mask=mask)
 
         else:
@@ -198,17 +207,17 @@ class NystromAttention(Attention):
             if self.causal and (
                 self.causal_mask_1 is None
                 or (batched_dim, seq_len, self.num_landmarks)
-                != self.causal_mask_1.size()
+                != self.causal_mask_1.size()[1:]
             ):
                 self.causal_mask_1 = self._tril_mask(
-                    batched_dim, seq_len, self.num_landmarks
-                ).to(q.device)
+                    batched_dim, seq_len, self.num_landmarks, **tt
+                )
                 self.causal_mask_2 = self._tril_mask(
-                    batched_dim, self.num_landmarks, self.num_landmarks
-                ).to(q.device)
+                    batched_dim, self.num_landmarks, self.num_landmarks, **tt
+                )
                 self.causal_mask_3 = self._tril_mask(
-                    batched_dim, self.num_landmarks, seq_len
-                ).to(q.device)
+                    batched_dim, self.num_landmarks, seq_len, **tt
+                )
 
             mask_1: Optional[torch.Tensor] = self.causal_mask_1
             mask_2: Optional[torch.Tensor] = self.causal_mask_2
@@ -217,12 +226,10 @@ class NystromAttention(Attention):
                 mask_1 = (
                     key_padding_mask.transpose(-2, -1)
                     if mask_1 is None
-                    else mask_1.logical_and(key_padding_mask.transpose(-2, -1))
+                    else mask_1 + key_padding_mask.transpose(-2, -1)
                 )
                 mask_3 = (
-                    key_padding_mask
-                    if mask_3 is None
-                    else mask_3.logical_and(key_padding_mask)
+                    key_padding_mask if mask_3 is None else mask_3 + key_padding_mask
                 )
 
             kernel_1 = scaled_query_key_softmax(q=q, k=k_landmarks, att_mask=mask_1)
@@ -258,5 +265,15 @@ class NystromAttention(Attention):
         x = self.attn_drop(x)
         return x
 
-    def _tril_mask(self, dim_1: int, dim_2: int, dim_3: int):
-        return torch.tril(torch.ones(dim_1, dim_2, dim_3, dtype=torch.bool), diagonal=0)
+    def _tril_mask(self, dim_1: int, dim_2: int, dim_3: int, **kwargs) -> torch.Tensor:
+        device = kwargs["device"]
+        dtype = kwargs["dtype"]
+
+        return (
+            torch.tril(
+                torch.ones(dim_3, dim_2, dtype=dtype, device=device) * float("-inf"),
+                diagonal=-1,
+            )
+            .transpose(0, 1)
+            .expand(dim_1, -1, -1)  # micro optim, save memory on the batch dimension
+        )

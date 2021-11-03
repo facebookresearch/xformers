@@ -202,6 +202,10 @@ class SparseCS:
         return self.values.device
 
     @property
+    def ndim(self):
+        return len(self.shape)
+
+    @property
     def dtype(self):
         return self.values.dtype
 

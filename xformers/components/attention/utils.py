@@ -87,3 +87,15 @@ def iterative_pinv(softmax_mat: torch.Tensor, n_iter=6, pinverse_original_init=F
             13 * i - torch.matmul(kv, 15 * i - torch.matmul(kv, 7 * i - kv)),
         )
     return v
+
+
+def bool_mask_to_additive(
+    mask: torch.Tensor, dtype: Optional[torch.dtype] = torch.float32
+):
+    assert (
+        mask.dtype == torch.bool
+    ), "This util is meant to convert in between bool masks and additive ones"
+
+    mask_ = torch.zeros_like(mask, dtype=dtype)
+    mask_[~mask] = float("-inf")
+    return mask_

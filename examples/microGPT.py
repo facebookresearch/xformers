@@ -273,7 +273,7 @@ if __name__ == "__main__":
     REF_BATCH = 512
     BATCH = 256  # adjust depending on the avaiable memory on your machine
     WORKERS = 8
-    EPOCHS = 2
+    EPOCHS = 1
     BLOCK = 128
     WARMUP = 20
 
@@ -298,10 +298,11 @@ if __name__ == "__main__":
     model = GPT(
         vocab_size=train_dataset.vocab_size,
         block_size=train_dataset.block_size,
-        attention="scaled_dot_product",
+        attention="nystrom",
         warmup_tokens=REF_BATCH * WARMUP,
         final_tokens=EPOCHS * len(train_dataset) * BLOCK,
     )
+    print(model)
 
     trainer = Trainer(
         gpus=1,

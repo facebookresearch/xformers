@@ -43,3 +43,6 @@ my_runs.md
 
 # Watchman config files
 .watchmanconfig
+
+# examples demo files
+examples/input.txt
