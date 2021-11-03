@@ -115,6 +115,15 @@ if _use_triton:
             # key padding mask and attention mask must be passed in separately
             self.requires_separate_masks = True
 
+        def update_mask_type(self, mask: torch.Tensor, to_dtype: torch.dtype):
+            global _mask_type_warning
+            if _mask_type_warning:
+                logging.warning(
+                    "Mask has to be multiplicative. Fixing that but this slows things down"
+                )
+                _mask_type_warning = False  # Only warn once
+            mask = mask.to(to_dtype)
+
         def forward(
             self,
             q: torch.Tensor,
@@ -141,13 +150,9 @@ if _use_triton:
             # initial attention setup
 
             if att_mask is not None and att_mask.dtype != q.dtype:
-                global _mask_type_warning
-                if _mask_type_warning:
-                    logging.warning(
-                        "Attention mask has to be multiplicative. Fixing that but this slows things down"
-                    )
-                    _mask_type_warning = False  # Only warn once
-                att_mask = att_mask.to(q.dtype)
+                self.update_mask_type(att_mask, q.dtype)
+            if key_padding_mask is not None and key_padding_mask.dtype != q.dtype:
+                self.update_mask_type(key_padding_mask, q.dtype)
 
             assert (
                 att_mask is None or att_mask.dim() == 2
@@ -176,6 +181,9 @@ if _use_triton:
 
             if att_mask is not None:
                 att_mask = att_mask.half()
+
+            if key_padding_mask is not None:
+                key_padding_mask = key_padding_mask.half()
 
             # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
             # When the computations are block sparse, the matrix types change along the way:
