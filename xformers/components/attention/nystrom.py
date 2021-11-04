@@ -180,8 +180,6 @@ class NystromAttention(Attention):
                 )
                 key_padding_mask = bool_mask_to_additive(key_padding_mask)
 
-            assert key_padding_mask is not None  # mypy is drunk
-
             if key_padding_mask.ndim == 2:
                 key_padding_mask = reshape_key_padding_mask(
                     key_padding_mask, batched_dim
