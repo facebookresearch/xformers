@@ -166,7 +166,7 @@ class NystromAttention(Attention):
         r"""
         key_padding_mask    Only a key padding mask is accepted here. The size must be (batch size, sequence length) or
                             (batch size * num_heads, 1, sequence length). If dimensions are not correct, the mask will
-                            be ignored.
+                            be ignored. An additive mask is expected, meaning float values using "-inf" to mask values
         """
 
         batched_dim = k.size(0)
@@ -194,10 +194,13 @@ class NystromAttention(Attention):
 
         if self.num_landmarks >= seq_len:
             mask: Optional[torch.Tensor] = None
+
             if self.causal:
                 mask = self._tril_mask(batched_dim, seq_len, seq_len, **tt)
+
             if key_padding_mask is not None:
                 mask = key_padding_mask if mask is None else mask + key_padding_mask
+
             x = scaled_dot_product_attention(q=q, k=k, v=v, att_mask=mask)
 
         else:
@@ -207,7 +210,7 @@ class NystromAttention(Attention):
             if self.causal and (
                 self.causal_mask_1 is None
                 or (batched_dim, seq_len, self.num_landmarks)
-                != self.causal_mask_1.size()[1:]
+                != self.causal_mask_1.size()
             ):
                 self.causal_mask_1 = self._tril_mask(
                     batched_dim, seq_len, self.num_landmarks, **tt

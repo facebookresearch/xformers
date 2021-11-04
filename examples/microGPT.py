@@ -271,7 +271,7 @@ def sample(model, x, steps, temperature=1.0, sample=False, top_k=None):
 if __name__ == "__main__":
     seed_everything(42)
     REF_BATCH = 512
-    BATCH = 256  # adjust depending on the avaiable memory on your machine
+    BATCH = 64  # adjust depending on the avaiable memory on your machine
     WORKERS = 8
     EPOCHS = 1
     BLOCK = 128
