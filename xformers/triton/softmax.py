@@ -182,14 +182,15 @@ def _softmax_dispatch(
     try:
         if torch.cuda.is_available() and x.is_cuda and not _triton_registered_overflow:
             return _softmax_triton.apply(x, mask, log, causal)
-    except triton.code_gen.OutOfResources:
+    except (triton.code_gen.OutOfResources, RuntimeError) as e:
         # Catch cases where the current GPU does not have enough registers to hold a full tensor line
         # fallback to PyTorch's implementation, which streams the tensor in and out
         _triton_registered_overflow = True
         logging.warning(
-            "Triton softmax kernel register spillover caught."
+            "Triton softmax kernel register spillover or invalid image caught."
             "Deactivating this kernel, please file an issue int the xFormers repository"
         )
+        logging.warning(e)
 
     if causal and not _triton_registered_warnings:
         logging.warning(
