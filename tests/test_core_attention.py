@@ -30,7 +30,7 @@ def test_core_attention():
 def test_core_attention_mask_types():
 
     b, s, d = 8, 900, 32
-    prob = 0.5
+    prob = 0.8  # make sure that we trigger the sparse kernels
 
     a = torch.rand(b, s, d)
     mask = torch.rand(b, s, s) > prob
@@ -40,12 +40,6 @@ def test_core_attention_mask_types():
     r_sparse_bool = scaled_dot_product_attention(a, a, a, mask.to_sparse())
     assert torch.allclose(r_dense_bool, r_sparse_bool)
 
-    # Test multiplicative float mask. Mask of 0's and 1's.
-    float_mask_mult = mask.to(dtype=torch.float)
-    r_dense_mult = scaled_dot_product_attention(a, a, a, float_mask_mult)
-    r_sparse_mult = scaled_dot_product_attention(a, a, a, float_mask_mult.to_sparse())
-    assert torch.allclose(r_dense_mult, r_sparse_mult)
-
     # Test additive mask. Mask of 0's and -infs.
     float_mask_add = torch.zeros_like(mask, dtype=torch.float)
     float_mask_add = float_mask_add.masked_fill(mask, float("-inf"))
@@ -53,8 +47,8 @@ def test_core_attention_mask_types():
     r_dense_add = scaled_dot_product_attention(a, a, a, float_mask_add)
     r_sparse_add = scaled_dot_product_attention(a, a, a, float_mask_add.to_sparse())
 
-    # Fails because all nans returned.
-    assert not torch.allclose(r_dense_add, r_sparse_add)
+    # Now properly handled
+    assert torch.allclose(r_dense_add, r_sparse_add)
 
 
 @pytest.mark.parametrize("device", _devices)

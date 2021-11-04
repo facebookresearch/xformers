@@ -17,7 +17,7 @@ if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
 
 # NOTE: Could do with a better option on when to use triton and not
-_use_triton = True
+_use_triton = torch.cuda.is_available()
 if _use_triton:
     try:
         from xformers.triton.softmax import softmax as triton_softmax
@@ -195,8 +195,12 @@ def scaled_query_key_softmax(
 
     # Self-attend: (N, S, hs) x (N, hs, S) -> (N, S, S)
     q = q / math.sqrt(k.size(-1))
-    att = _matmul_with_mask(q, k.transpose(-2, -1), att_mask)
 
+    # Matmul with mask, if boolean
+    is_bool_mask = att_mask is not None and att_mask.dtype == torch.bool
+    att = _matmul_with_mask(q, k.transpose(-2, -1), att_mask if is_bool_mask else None)
+
+    # Could also be that the mask was additive
     if att_mask is not None and att_mask.dtype != torch.bool:
         att = att + att_mask
 
@@ -219,20 +223,31 @@ def scaled_dot_product_attention(
         or (att_mask is not None and att_mask.is_sparse)
     )
 
-    if att_mask is not None and q.shape[-2] < att_mask.shape[0]:
-        # The sequence is smaller than the mask
+    # Try to handle a case where the sequence is smaller than the mask
+    if (
+        att_mask is not None
+        and q.shape[-2] == k.shape[-2]
+        and q.shape[-2] < att_mask.shape[0]
+    ):
         seq = q.shape[-2]
+        if att_mask.ndim == 2:
 
-        if not att_mask.is_sparse:
-            att_mask = att_mask[:seq, :seq]
+            if not att_mask.is_sparse:
+                att_mask = att_mask[:seq, :seq]
+            else:
+                logging.warning(
+                    "Mismatching attention mask and sequence length. On the fly correction but this will be slow"
+                )
+                # Loosing sparsity on purpose,
+                # expectation is that moving back and forth dense/sparse will negate the speedup
+                att_mask = att_mask.to_dense().squeeze(0)[:seq, :seq]
         else:
-            logging.warning(
-                "Mismatching attention mask and sequence length. On the fly correction but this will be slow"
-            )
-            # Loosing sparsity on purpose,
-            # expectation is that moving back and forth dense/sparse will negate the speedup
-            att_mask = att_mask.to_dense().squeeze(0)[:seq, :seq]
+            assert (
+                not att_mask.is_sparse
+            ), "Sparse masks with a batch dimension are not supported for now"
+            att_mask = att_mask[:, :seq, :seq]
 
+    # The actual attention
     with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
         if autocast_disabled:
             q, k, v = q.float(), k.float(), v.float()
