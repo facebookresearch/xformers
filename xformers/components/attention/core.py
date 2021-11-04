@@ -17,7 +17,7 @@ if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
 
 # NOTE: Could do with a better option on when to use triton and not
-_use_triton = torch.cuda.is_available()
+_use_triton = False and torch.cuda.is_available()
 if _use_triton:
     try:
         from xformers.triton.softmax import softmax as triton_softmax
