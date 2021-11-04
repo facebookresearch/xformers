@@ -231,17 +231,21 @@ def scaled_dot_product_attention(
     ):
         seq = q.shape[-2]
         if att_mask.ndim == 2:
-            att_mask = att_mask.unsqueeze(0)
 
-        if not att_mask.is_sparse:
-            att_mask = att_mask[:, :seq, :seq]
+            if not att_mask.is_sparse:
+                att_mask = att_mask[:seq, :seq]
+            else:
+                logging.warning(
+                    "Mismatching attention mask and sequence length. On the fly correction but this will be slow"
+                )
+                # Loosing sparsity on purpose,
+                # expectation is that moving back and forth dense/sparse will negate the speedup
+                att_mask = att_mask.to_dense().squeeze(0)[:seq, :seq]
         else:
-            logging.warning(
-                "Mismatching attention mask and sequence length. On the fly correction but this will be slow"
-            )
-            # Loosing sparsity on purpose,
-            # expectation is that moving back and forth dense/sparse will negate the speedup
-            att_mask = att_mask.to_dense().squeeze(0)[:, :seq, :seq]
+            assert (
+                not att_mask.is_sparse
+            ), "Sparse masks with a batch dimension are not supported for now"
+            att_mask = att_mask[:, :seq, :seq]
 
     # The actual attention
     with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
