@@ -13,9 +13,6 @@ import triton.language as tl
 
 
 # fmt: off
-@triton.heuristics({
-    'EVEN_K': lambda *args, **meta: args[7] % (meta['BLOCK_K']) == 0,
-})
 @triton.autotune(
     configs=[
         triton.Config({"BLOCK_ROW": 64, "BLOCK_COL": 32}, num_stages=5, num_warps=2),
@@ -108,12 +105,8 @@ def kernel_fma(
     # block level matrix multiplication.
     # We fetch a block memory block from both inputs, matmul and accumulate, then repeat
     for _ in range(K, 0, -BLOCK_K):
-        if META['EVEN_K']:
-            a = tl.load(input_ptrs)
-            w = tl.load(weight_ptrs)
-        else:
-            a = tl.load(input_ptrs, mask=(rk[None, :] < K), other=0.0)
-            w = tl.load(weight_ptrs, mask=(rk[:, None] < K), other=0.0)
+        a = tl.load(input_ptrs, mask=((rk[None, :] < K) & (rm[:, None] < M)), other=0.0)
+        w = tl.load(weight_ptrs, mask=((rk[:, None] < K) & (rn[None, :] < N)), other=0.0)
 
         acc += tl.dot(a, w).to(tl.float32)
 

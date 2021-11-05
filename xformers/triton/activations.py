@@ -89,7 +89,9 @@ def squared_relu(x):
 
 @triton.jit
 def squared_relu_grad(x):
-    return tl.where(x >= 0, 2.0 * x, 0.0)
+    zero = 0.0
+    zero = zero.to(x.dtype)
+    return tl.where(x >= 0, 2.0 * x, zero)
 
 
 # Leaky ReLU
@@ -101,12 +103,19 @@ def leaky_relu(x):
     .. _LeakyReLU: https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html
     """
     scale = 0.01 + 0.0
+    scale = scale.to(x.dtype)
     return tl.where(x >= 0, x, scale * x)
 
 
 @triton.jit
 def leaky_relu_grad(x):
-    return tl.where(x >= 0, 1.0, 0.01)
+    min_grad = 0.01
+    max_grad = 1
+
+    min_grad = min_grad.to(x.dtype)
+    max_grad = max_grad.to(x.dtype)
+
+    return tl.where(x >= 0, max_grad, min_grad)
 
 
 @triton.jit
