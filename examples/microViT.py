@@ -15,7 +15,6 @@ import math
 
 import pytorch_lightning as pl
 import torch
-from einops import rearrange
 from pl_bolts.datamodules import CIFAR10DataModule
 from torch import nn
 from torchmetrics import Accuracy
@@ -142,11 +141,11 @@ class VisionTransformer(pl.LightningModule):
         return [optimizer], [scheduler]
 
     def forward(self, x):
-        batch, *_ = x.shape
+        batch, channels, height, width = x.shape
         x = self.patch_emb(x)
 
         # flatten patches into sequence
-        x = rearrange(x, "b c h w -> b (h w) c")
+        x = x.view(batch, channels, height * width).transpose(1, 2)  # B HW C
 
         if self.classifier == "token":
             # prepend classification token
