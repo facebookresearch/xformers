@@ -1,2 +1,2 @@
-pytorch-lightning-bolts
+lightning-bolts
 einops
