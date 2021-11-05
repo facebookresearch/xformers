@@ -141,11 +141,12 @@ class VisionTransformer(pl.LightningModule):
         return [optimizer], [scheduler]
 
     def forward(self, x):
-        batch, channels, height, width = x.shape
+        batch, *_ = x.shape  # BCHW
+
         x = self.patch_emb(x)
 
         # flatten patches into sequence
-        x = x.view(batch, channels, height * width).transpose(1, 2)  # B HW C
+        x = x.flatten(2, 3).transpose(1, 2)  # B HW C
 
         if self.classifier == "token":
             # prepend classification token
