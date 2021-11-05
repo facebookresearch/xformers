@@ -67,6 +67,10 @@ def kernel_fma(
     BLOCK_N, BLOCK_K = META["BLOCK_COL"], META["BLOCK_K"]
 
     # programs are grouped together to improve L2 hit rate
+    # the logic is that we'll consolidate over K. If the programs were not grouped,
+    # then multiple cols/rows in the result would end up pulling in the same row and lines
+    # from the inputs. By grouping the computation we ensure some data reuse, which the hardware
+    # covers via the L2 cache
     pid = tl.program_id(axis=0)
 
     num_pid_m = tl.cdiv(M, BLOCK_M)  # number of program ids along the M axis
@@ -83,14 +87,14 @@ def kernel_fma(
     pid_m = first_pid_m + (pid % GROUP_M)
     pid_n = (pid % num_pid_in_group) // GROUP_M
 
+    # now compute the block that each program will go through
     # rm (resp. rn) denotes a range of indices
     # for rows (resp. col) of C
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     rk = tl.arange(0, BLOCK_K)
 
-    # the memory addresses of elements in the first block of
-    # A and W can be computed using numpy-style broadcasting
+    # the memory addresses of elements can follow numpy broadcasting
     input_ptrs = INPUT + rm[:, None] * stride_im + rk[None, :]
     weight_ptrs = WEIGHT + rk[:, None] * stride_wk + rn[None, :] * stride_wn
 
@@ -101,7 +105,8 @@ def kernel_fma(
         bias = tl.load(BIAS + rn, mask=rn < N, other=0.0).to(tl.float32)
         acc += bias[None, :]
 
-    # block level matrix multiplication
+    # block level matrix multiplication.
+    # We fetch a block memory block from both inputs, matmul and accumulate, then repeat
     for _ in range(K, 0, -BLOCK_K):
         if META['EVEN_K']:
             a = tl.load(input_ptrs)

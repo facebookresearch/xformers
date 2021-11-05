@@ -48,17 +48,18 @@ def kernel_bw(
     # extract metaparameters
     BLOCK_N = META["BLOCK_COL"]
 
-    # programs are grouped together to improve L2 hit rate
+    # this kernel is relatively simple in terms of scheduling:
+    # - per row (pid_m)
+    # - each program a given chunk on the col axis,
+    # since it's more effective memory and occupancy wise
     pid_m, pid_n = tl.program_id(axis=0), tl.program_id(axis=1)
-
-    # rm (resp. rn) denotes a range of indices
-    # for rows (resp. col) of C
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
 
     # the memory addresses of elements in the first block of
     # A and W can be computed using numpy-style broadcasting
     act_input_ptrs = ACT_INPUTS + pid_m * stride_aim + rn
 
+    # compute the gradient which is related to this activation
     if META["EVEN_N"]:
         act_in = tl.load(act_input_ptrs)
     else:
@@ -81,7 +82,6 @@ def kernel_bw(
     tl.store(grad_act_ptrs, grad_act, mask=rn < N)
 
 
-# Activation needs to be a triton kernel
 def fused_matmul_backward(
     grad_out: torch.Tensor,
     inputs: torch.Tensor,
@@ -96,8 +96,10 @@ def fused_matmul_backward(
     Compute grad_in = activation^-1(grad_out) @ weight.transpose()
 
     .. note: The weight buffer is transposed on the fly
+    .. note: Activation gradient needs to be a Triton kernel
     """
 
+    # Make sure that we don't have to handle the stride over cols
     if not grad_out.is_contiguous():
         grad_out = grad_out.contiguous()
 
