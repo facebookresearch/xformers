@@ -270,11 +270,9 @@ class NystromAttention(Attention):
         device = kwargs["device"]
         dtype = kwargs["dtype"]
 
-        return (
-            torch.tril(
-                torch.ones(dim_3, dim_2, dtype=dtype, device=device) * float("-inf"),
-                diagonal=-1,
-            )
-            .transpose(0, 1)
-            .expand(dim_1, -1, -1)  # micro optim, save memory on the batch dimension
-        )
+        return torch.triu(
+            torch.ones(dim_2, dim_3, dtype=dtype, device=device) * float("-inf"),
+            diagonal=1,
+        ).expand(
+            dim_1, -1, -1
+        )  # micro optim, save memory on the batch dimension
