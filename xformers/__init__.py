@@ -6,7 +6,7 @@
 import logging
 
 # Please update the doc version in docs/source/conf.py as well.
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 
 _is_sparse_available = True
 
@@ -58,8 +58,8 @@ try:
     _register_extensions()
 except (ImportError, OSError) as e:
     print(e)
-    logging.error(
-        f"ERROR: {e}\nNeed to compile C++ extensions to get sparse attention suport."
-        + "Please run python setup.py build develop"
+    logging.warning(
+        f"WARNING: {e}\nNeed to compile C++ extensions to get sparse attention suport."
+        + " Please run python setup.py build develop"
     )
     _is_sparse_available = False
