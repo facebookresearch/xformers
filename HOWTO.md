@@ -22,6 +22,7 @@ Let's present here a couple of code snippets on how to solve a couple of questio
       - [PyTorch Transformer](#pytorch-transformer)
       - [model factory](#model-factory)
       - [practical usecase: microGPT](#practical-usecase-microgpt)
+      - [another practical usecase: microViT](#another-practical-usecase-microvit)
   - [Extensibility](#extensibility)
     - [Extend the xFormers parts zoo locally](#extend-the-xformers-parts-zoo-locally)
     - [Contributing an extension to the xFormers repository](#contributing-an-extension-to-the-xformers-repository)
@@ -580,11 +581,13 @@ You can compare the speed and memory use of the vanilla PyTorch Transformer Enco
 | xformers  | 89                | 1182               | 2709               |
 | pytorch   | 155               | 1950               | 4117               |
 
-
 #### practical usecase: microGPT
 
 This repo contains an hommage of sorts to [minGPT](https://github.com/karpathy/minGPT), in the `/examples` folder. You can run it with `python3 microGPT.py`, and it uses the model factory described above to reproduce the character-level training as proposed by [this notebook](https://github.com/karpathy/minGPT/blob/master/play_char.ipynb), with everything being implemented in a single file. This example will train a model to predict the next character, based on Shakespeare's creations. It then runs a quick demo with the model generating a paragraph after being primed with a prompt. [Pytorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning) handles the training side, xFormers handles the modelling (which you can alter as you see fit), and the minimal dataset is kept mostly as-is.
 
+#### another practical usecase: microViT
+
+Another related example is `microViT`, where you'll instantiate a ViT a train it on Cifar10. You can find this in the `/examples` folder, and simply run it wwith `python3 microViT.py`. It uses the model factory described above to reproduce the patch-based classification initially proposed by [Dosovistkiy et al.](http://arxiv.org/abs/2010.11929). [Pytorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning) handles the training and dataset handling side, xFormers handles the modelling (which you can alter as you see fit).
 
 ## Extensibility
 
