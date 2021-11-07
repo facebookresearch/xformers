@@ -224,6 +224,24 @@ jobs:
       - store_test_results:
           path: test-results
 
+  binary_linux_wheel:
+    docker:
+      - image: "pytorch/manylinux-cuda102"
+    resource_class: 2xlarge+
+    environment:
+      CU_VERSION: "cu102"
+      PYTHON_VERSION: "3.8"
+      PYTORCH_VERSION: "1.10"
+      XFORMERS_VERSION_SUFFIX: ""
+    steps:
+      - checkout
+      - run: packaging/build_wheel.sh
+      - store_artifacts:
+          path: wheels
+      - persist_to_workspace:
+          root: wheels
+          paths:
+            - "*"
 
 workflows:
   version: 2
@@ -240,3 +258,7 @@ workflows:
           branches:
             ignore:
               - gh-pages
+      - binary_linux_wheel:
+        filters:
+          branches:
+            only: binaries_job
