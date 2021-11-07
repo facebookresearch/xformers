@@ -23,6 +23,31 @@ gpu_cu112: &gpu_cu112
     image: ubuntu-2004-cuda-11.2:202103-01
     resource_class: gpu.nvidia.medium
 
+
+binary_common: &binary_common
+  parameters:
+    pytorch_version:
+      description: "PyTorch version to build against"
+      type: string
+      default: "1.10.0"
+    python_version:
+      description: "Python version to build against (e.g., 3.7)"
+      type: string
+      default: "3.8"
+    cu_version:
+      description: "CUDA version to build against, in CU format (e.g., cpu or cu100)"
+      type: string
+      default: "cu102"
+    wheel_docker_image:
+      description: "Wheel only: what docker image to use"
+      type: string
+      default: "pytorch/manylinux-cuda102"
+  environment:
+      CU_VERSION: << parameters.cu_version >>
+      PYTHON_VERSION: << parameters.python_version >>
+      PYTORCH_VERSION: << parameters.pytorch_version >>
+      XFORMERS_VERSION_SUFFIX: ""
+
 # -------------------------------------------------------------------------------------
 # Re-usable commands
 # -------------------------------------------------------------------------------------
@@ -142,8 +167,10 @@ commands:
            command: |
              git clone https://github.com/pyenv/pyenv-update.git $(pyenv root)/plugins/pyenv-update
              pyenv update
-             pyenv install -f <<parameters.version>>
-             pyenv global <<parameters.version>>
+             # figure out the latest python version given a subversion, like 3.8
+             LATEST_PY_VERSION=$(pyenv install --list | sed 's/^  //' | grep -E '^[0-9].[0-9].[0-9]' | grep <<parameters.version>> | tail -1)
+             pyenv install -f $LATEST_PY_VERSION
+             pyenv global $LATEST_PY_VERSION
 
 # -------------------------------------------------------------------------------------
 # Jobs to run
@@ -225,14 +252,10 @@ jobs:
           path: test-results
 
   binary_linux_wheel:
+    <<: *binary_common
     docker:
-      - image: "pytorch/manylinux-cuda102"
+      - image: << parameters.wheel_docker_image >>
     resource_class: 2xlarge+
-    environment:
-      CU_VERSION: "cu102"
-      PYTHON_VERSION: "3.8"
-      PYTORCH_VERSION: "1.10"
-      XFORMERS_VERSION_SUFFIX: ""
     steps:
       - checkout
       - run: packaging/build_wheel.sh
@@ -242,6 +265,37 @@ jobs:
           root: wheels
           paths:
             - "*"
+
+  test_binary:
+    machine:
+      image: ubuntu-2004-cuda-11.2:202103-01
+      resource_class: gpu.nvidia.medium
+    <<: *binary_common
+    steps:
+      - attach_workspace:
+          at: ~/workspace
+      - setup_pyenv:
+          version: << parameters.python_version >>
+
+      - <<: *setup_venv
+      - run:
+          name: Install dependencies + xformers from binary
+          command: |
+            set -ex
+            echo "torch==${PYTORCH_VERSION}+${CU_VERSION}"
+            export PYTORCH_CONSTRAINT="torch==${PYTORCH_VERSION}+${CU_VERSION}"
+            pip install --progress-bar off "${PYTORCH_CONSTRAINT}" -f https://download.pytorch.org/whl/torch_stable.html
+            pip install --progress-bar off numpy pytest
+            echo $(ls ~/workspace)
+            pip install --progress-bar off $(ls -d ~/workspace/*)
+
+      - checkout
+
+      - run:
+          name: Smoke test binary
+          command: |
+            set -ex
+            pytest --import-mode=importlib tests/test_custom_ops.py
 
 workflows:
   version: 2
@@ -262,3 +316,10 @@ workflows:
         filters:
           branches:
             only: binaries_job
+        #name: binary_linux_wheel_py38_cu102
+      - test_binary:
+          requires:
+            - binary_linux_wheel
+          filters:
+            branches:
+              only: binaries_job
