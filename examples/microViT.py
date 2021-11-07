@@ -205,9 +205,9 @@ class VisionTransformer(pl.LightningModule):
 
 if __name__ == "__main__":
     pl.seed_everything(42)
-    BATCH_SIZE = 256
+    BATCH_SIZE = 512
     MAX_EPOCHS = 10
-    NUM_WORKERS = 8
+    NUM_WORKERS = 4
     GPUS = 1
 
     train_transforms = transforms.Compose(
@@ -230,12 +230,15 @@ if __name__ == "__main__":
     # See https://pytorchlightning.github.io/lightning-tutorials/notebooks/lightning_examples/cifar10-baseline.html
     # for a full tutorial
     dm = CIFAR10DataModule(
-        data_dir="data", batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, pin_memory=True
+        data_dir="data",
+        batch_size=BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+        pin_memory=True,
+        train_transforms=train_transforms,
+        test_transforms=test_transforms,
+        val_transforms=test_transforms,
     )
 
-    dm.train_transforms = train_transforms
-    dm.test_transforms = test_transforms
-    dm.val_transforms = test_transforms
     image_size = dm.size(-1)  # 32 for CIFAR
     num_classes = dm.num_classes  # 10 for CIFAR
 
@@ -249,7 +252,7 @@ if __name__ == "__main__":
         attention="scaled_dot_product",
     )
     trainer = pl.Trainer(
-        gpus=GPUS, max_epochs=MAX_EPOCHS, terminate_on_nan=True, precision=16
+        gpus=GPUS, max_epochs=MAX_EPOCHS, detect_anomaly=True, precision=16
     )
     trainer.fit(lm, dm)
 
