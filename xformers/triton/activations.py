@@ -89,9 +89,7 @@ def squared_relu(x):
 
 @triton.jit
 def squared_relu_grad(x):
-    zero = 0.0
-    zero = zero.to(x.dtype)
-    return tl.where(x >= 0, 2.0 * x, zero)
+    return tl.where(x >= 0, 2.0 * x, 0.0)
 
 
 # Leaky ReLU
