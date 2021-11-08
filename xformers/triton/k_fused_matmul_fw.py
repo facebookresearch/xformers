@@ -15,17 +15,17 @@ import triton.language as tl
 # fmt: off
 @triton.autotune(
     configs=[
+        triton.Config({"BLOCK_ROW": 16, "BLOCK_COL": 16}, num_stages=5, num_warps=1),
+        triton.Config({"BLOCK_ROW": 32, "BLOCK_COL": 32}, num_stages=5, num_warps=1),
         triton.Config({"BLOCK_ROW": 64, "BLOCK_COL": 32}, num_stages=5, num_warps=2),
         triton.Config({"BLOCK_ROW": 32, "BLOCK_COL": 64}, num_stages=5, num_warps=2),
-        triton.Config({"BLOCK_ROW": 32, "BLOCK_COL": 256}, num_stages=3, num_warps=4),
-        triton.Config({"BLOCK_ROW": 128, "BLOCK_COL": 256}, num_stages=3, num_warps=8),
-        triton.Config({"BLOCK_ROW": 256, "BLOCK_COL": 128}, num_stages=3, num_warps=8),
-        triton.Config({"BLOCK_ROW": 64, "BLOCK_COL": 256}, num_stages=4, num_warps=8),
-        triton.Config({"BLOCK_ROW": 256, "BLOCK_COL": 64}, num_stages=4, num_warps=4),
-        triton.Config({"BLOCK_ROW": 128, "BLOCK_COL": 128}, num_stages=4, num_warps=4),
         triton.Config({"BLOCK_ROW": 128, "BLOCK_COL": 64}, num_stages=4, num_warps=4),
         triton.Config({"BLOCK_ROW": 64, "BLOCK_COL": 128}, num_stages=4, num_warps=4),
-        triton.Config({"BLOCK_ROW": 128, "BLOCK_COL": 32}, num_stages=4, num_warps=4),
+        triton.Config({"BLOCK_ROW": 128, "BLOCK_COL": 128}, num_stages=4, num_warps=4),
+        # triton.Config({"BLOCK_ROW": 32, "BLOCK_COL": 256}, num_stages=3, num_warps=4),
+        # triton.Config({"BLOCK_ROW": 256, "BLOCK_COL": 32}, num_stages=3, num_warps=4),
+        # triton.Config({"BLOCK_ROW": 64, "BLOCK_COL": 256}, num_stages=3, num_warps=8),
+        # triton.Config({"BLOCK_ROW": 256, "BLOCK_COL": 64}, num_stages=3, num_warps=8),
     ],
     key=["M", "N", "K"],
 )
