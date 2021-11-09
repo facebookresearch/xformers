@@ -16,7 +16,7 @@ if _triton_available:
     try:
         from xformers.triton import FusedLinear
         from xformers.triton.activations import get_triton_activation_kernel
-        from xformers.triton.k_fused_matmul import fused_matmul
+        from xformers.triton.k_fused_matmul_fw import fused_matmul
         from xformers.triton.utils import gpu_capabilities_older_than_70
 
     except ImportError:
@@ -129,12 +129,12 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
         loss_triton = torch.norm(y_triton)
         loss_triton.backward()
 
-        assert torch.allclose(X, X_, atol=tolerance), f"{X[:,0,0]} vs. {X_[:,0,0]}"
+        assert torch.allclose(X, X_, atol=tolerance), f"{X} vs. {X_}"
 
         # Input grad being correct checks both the loss + some of the backward pass
         assert torch.allclose(
             X.grad, X_.grad, atol=tolerance
-        ), f"{X.grad[:,0,0]} vs. {X_.grad[:,0,0]}"
+        ), f"{X.grad} vs. {X_.grad}"
 
         # Check that the linear layer bias are also properly trainable
         if bias:
@@ -142,11 +142,11 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
             assert triton_fused_linear.bias.grad is not None
             assert torch.allclose(
                 torch_linear.bias.grad, triton_fused_linear.bias.grad, atol=tolerance
-            )
+            ), f"{torch_linear.bias.grad} vs. {triton_fused_linear.bias.grad}"
 
         # Check that the linear layer weights are also properly trainable
         assert torch.allclose(
             torch_linear.weight.grad,
             triton_fused_linear.weight.grad,
             atol=tolerance,
-        )
+        ), f"{torch_linear.weight.grad} vs. {triton_fused_linear.weight.grad}"
