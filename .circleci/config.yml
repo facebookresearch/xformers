@@ -313,13 +313,44 @@ workflows:
             ignore:
               - gh-pages
       - binary_linux_wheel:
-        filters:
-          branches:
-            only: binaries_job
-        #name: binary_linux_wheel_py38_cu102
+          python_version: "3.7"
+          name: binary_linux_wheel_py37_cu102
+          filters:
+            branches:
+              only: binaries_job
       - test_binary:
+          python_version: "3.7"
+          name: test_binary_linux_wheel_py37_cu102
           requires:
-            - binary_linux_wheel
+            - binary_linux_wheel_py37_cu102
+          filters:
+            branches:
+              only: binaries_job
+      - binary_linux_wheel:
+          python_version: "3.8"
+          name: binary_linux_wheel_py38_cu102
+          filters:
+            branches:
+              only: binaries_job
+      - test_binary:
+          python_version: "3.8"
+          name: test_binary_linux_wheel_py38_cu102
+          requires:
+            - binary_linux_wheel_py38_cu102
+          filters:
+            branches:
+              only: binaries_job
+      - binary_linux_wheel:
+          python_version: "3.9"
+          name: binary_linux_wheel_py39_cu102
+          filters:
+            branches:
+              only: binaries_job
+      - test_binary:
+          python_version: "3.9"
+          name: test_binary_linux_wheel_py39_cu102
+          requires:
+            - binary_linux_wheel_py39_cu102
           filters:
             branches:
               only: binaries_job
