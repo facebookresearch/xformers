@@ -63,7 +63,9 @@ def relu(x):
 
     .. _ReLU: https://pytorch.org/docs/stable/generated/torch.nn.ReLU.html
     """
-    return tl.where(x >= 0, x, 0.0)
+    zero = 0.0
+    zero = zero.to(x.dtype)
+    return tl.where(x >= 0, x, zero)
 
 
 @triton.jit
