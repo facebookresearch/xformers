@@ -49,7 +49,10 @@ def maybe_merge_masks(
         if att_mask is None:
             att_mask = key_padding_mask
         # Assumption is that False means to mask.
-        att_mask = att_mask.logical_and(key_padding_mask)
+        elif att_mask.dtype == torch.bool:
+            att_mask = att_mask.logical_and(key_padding_mask)
+        else:
+            att_mask = att_mask.masked_fill(~key_padding_mask, float("-inf"))
 
     return att_mask
 
