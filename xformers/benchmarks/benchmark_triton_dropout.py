@@ -11,7 +11,7 @@ import triton
 
 from xformers.benchmarks.utils import TestCase, pretty_plot, pretty_print
 from xformers.components import Activation, build_activation
-from xformers.triton import dropout as triton_dropout
+from xformers.triton import FusedDropoutBias
 
 SHAPES = [
     (8, 256, 512),
@@ -51,6 +51,9 @@ def bench_dropout(bias: bool, backward: bool, activation: Optional[Activation]):
             )
             b = torch.rand(K, device=device, dtype=dtype, requires_grad=backward)
             torch_act = build_activation(activation)
+            triton_dropout = FusedDropoutBias(
+                P, bias_shape=K if bias else None, activation=activation
+            )
 
             def torch_step(x):
                 x_ = x + b if bias else x
@@ -63,8 +66,7 @@ def bench_dropout(bias: bool, backward: bool, activation: Optional[Activation]):
                 return y
 
             def triton_step(x):
-                b_ = b if bias else None
-                y = triton_dropout(x, P, bias=b_, activation=activation)
+                y = triton_dropout(x)
                 if backward:
                     torch.norm(y).backward()
                 return y

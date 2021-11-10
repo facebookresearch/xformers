@@ -56,9 +56,7 @@ if torch.cuda.is_available():
                     nn.Linear(in_features=dim_mlp, out_features=dim_model, bias=False),
                     # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize
                     # the `FusedLinear` import.
-                    FusedDropoutBias(
-                        p=dropout, bias_shape=dim_model, activation=activation
-                    ),
+                    FusedDropoutBias(p=dropout, bias_shape=dim_model, activation=None),
                 )
                 self.requires_cuda = True
 

@@ -148,5 +148,9 @@ class FusedDropoutBias(torch.nn.Module):
         self.activation_grad = get_triton_activation_bwd_kernel(activation)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Convenience, catch a possible type or device mismatch
+        if self.bias is not None:  # type: ignore
+            self.bias = self.bias.to(dtype=x.dtype, device=x.device)  # type: ignore
+
         p = self.p if self.training else 0.0
         return _dropout.apply(x, p, self.bias, self.activation, self.activation_grad)
