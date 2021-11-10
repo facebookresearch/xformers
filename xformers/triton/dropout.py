@@ -17,6 +17,7 @@ from xformers.components.activations import Activation
 from xformers.triton.activations import (
     get_triton_activation_bwd_kernel,
     get_triton_activation_kernel,
+    requires_bwd_inputs,
 )
 from xformers.triton.k_dropout import k_dropout_bw, k_dropout_fw
 
@@ -25,7 +26,7 @@ from xformers.triton.k_dropout import k_dropout_bw, k_dropout_fw
 class _dropout(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16)
-    def forward(ctx, x, p, bias, activation, activation_grad):
+    def forward(ctx, x, p, bias, activation, activation_grad, act_grad_requires_inputs):
         # Soft-flatten an hypothetical 3rd dimension
         x_ = x.reshape(-1, x.shape[-1]).contiguous()
         y = torch.empty_like(x_)
@@ -62,6 +63,7 @@ class _dropout(torch.autograd.Function):
             ctx.save_for_backward(seeds, bias, None)
         ctx.trainable_bias = bias is not None
         ctx.activation_grad = activation_grad
+        ctx.act_grad_requires_inputs = act_grad_requires_inputs
         ctx.p = p
 
         return y.reshape_as(x)
@@ -100,7 +102,8 @@ class _dropout(torch.autograd.Function):
             N,
             ctx.p,
             USE_BIAS=bias is not None,
-            ACTIVATION_GRAD=ctx.activation_grad)
+            ACTIVATION_GRAD=ctx.activation_grad,
+            ACT_GRAD_REQUIRES_INPUTS=ctx.act_grad_requires_inputs)
         # fmt: on
 
         if ctx.trainable_bias:
@@ -108,7 +111,7 @@ class _dropout(torch.autograd.Function):
         else:
             grad_bias = None
 
-        return grad_in.reshape_as(grad_out), None, grad_bias, None, None
+        return grad_in.reshape_as(grad_out), None, grad_bias, None, None, None
 
 
 def dropout(
@@ -128,7 +131,12 @@ def dropout(
 
     act_kernel = get_triton_activation_kernel(activation)
     act_grad_kernel = get_triton_activation_bwd_kernel(activation)
-    return _dropout.apply(x, p, bias, act_kernel, act_grad_kernel)
+    act_grad_requires_inputs = (
+        activation in requires_bwd_inputs if activation else False
+    )
+    return _dropout.apply(
+        x, p, bias, act_kernel, act_grad_kernel, act_grad_requires_inputs
+    )
 
 
 class FusedDropoutBias(torch.nn.Module):
@@ -146,7 +154,17 @@ class FusedDropoutBias(torch.nn.Module):
         )
         self.activation = get_triton_activation_kernel(activation)
         self.activation_grad = get_triton_activation_bwd_kernel(activation)
+        self.act_grad_requires_inputs = (
+            activation in requires_bwd_inputs if activation else False
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         p = self.p if self.training else 0.0
-        return _dropout.apply(x, p, self.bias, self.activation, self.activation_grad)
+        return _dropout.apply(
+            x,
+            p,
+            self.bias,
+            self.activation,
+            self.activation_grad,
+            self.act_grad_requires_inputs,
+        )

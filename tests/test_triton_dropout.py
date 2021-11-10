@@ -100,13 +100,13 @@ def test_dropout(shape, amp, bias):
 @pytest.mark.parametrize("amp", [False, True])
 @pytest.mark.parametrize("bias", [True, False])
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
-@pytest.mark.parametrize("p", [0.0, 0.001, 0.5])
+@pytest.mark.parametrize("p", [0, 0.001, 0.5])
 def test_dropout_parity(shape, amp, bias, activation, p):
     """
     Check some basic dropout properties
     """
-    torch.random.manual_seed(0)
 
+    torch.random.manual_seed(0)
     x = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
     b = (
         torch.ones(size=(shape[-1],), device="cuda", requires_grad=True)
@@ -114,13 +114,13 @@ def test_dropout_parity(shape, amp, bias, activation, p):
         else None
     )
 
+    torch.random.manual_seed(0)
     x_ = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
     b_ = (
         torch.ones(size=(shape[-1],), device="cuda", requires_grad=True)
         if bias
         else None
     )
-    x_.data = x.data
 
     with autocast(enabled=amp):
         torch_activation = build_activation(activation)

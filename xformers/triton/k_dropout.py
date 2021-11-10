@@ -18,6 +18,20 @@ _k_configs = [
 ]
 
 
+@triton.jit
+def _drop_and_scale(SEEDS, row, p, offsets, x):
+    # randomly prune the weights
+    seed = SEEDS + row
+    random = tl.rand(seed.to(tl.int32), offsets)
+    x_keep = random > p
+
+    zero = 0.0
+    zero = zero.to(x.dtype)
+
+    # prune and normalize in one go
+    return tl.where(x_keep, (x / (1 - p)).to(x.dtype), zero)
+
+
 # fmt: off
 @triton.autotune(
     configs=_k_configs,
@@ -62,16 +76,8 @@ def k_dropout_fw(
     if META["ACTIVATION"]:
         x = META["ACTIVATION"](x)
 
-    # randomly prune it
     if p > 0.:
-        seed = SEEDS + row
-        random = tl.rand(seed.to(tl.int32), offsets)
-        x_keep = random > p
-
-        # write-back
-        zero = 0.
-        zero = zero.to(x.dtype)
-        output = tl.where(x_keep, (x / (1 - p)).to(x.dtype), zero)
+        output = _drop_and_scale(SEEDS, row, p, offsets, x)
     else:
         output = x
 
@@ -116,27 +122,26 @@ def k_dropout_bw(
 
     # optional: fused activation (while the data is in shared memory)
     if META["ACTIVATION_GRAD"]:
-        input_ptrs = INPUTS + row * stride_inputs + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        inputs = tl.load(input_ptrs, mask=mask)
+        # Some (most) activation gradients require the inputs
+        if META["ACT_GRAD_REQUIRES_INPUTS"]:
+            input_ptrs = INPUTS + row * stride_inputs + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+            inputs = tl.load(input_ptrs, mask=mask)
 
-        # optionally apply a fused bias
-        if META["USE_BIAS"]:
-            b_ptrs = BIAS + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-            b = tl.load(b_ptrs, mask=mask)
-            inputs += b
+            # optionally apply a fused bias
+            if META["USE_BIAS"]:
+                b_ptrs = BIAS + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+                b = tl.load(b_ptrs, mask=mask)
+                inputs += b
 
-        act_grad = META["ACTIVATION_GRAD"](inputs)
+            act_grad = META["ACTIVATION_GRAD"](inputs)
+        else:
+            # Some activation gradients can work with the incoming grad directly
+            act_grad = META["ACTIVATION_GRAD"](grad_out)
+
         grad_out *= act_grad
 
-    # randomly prune it
     if p > 0.:
-        seed = SEEDS + row
-        random = tl.rand(seed.to(tl.int32), grad_offsets)
-        x_keep = random > p
-
-        zero = 0.
-        zero = zero.to(grad_out.dtype)
-        output = tl.where(x_keep, (grad_out / (1 - p)).to(grad_out.dtype), zero)
+        output = _drop_and_scale(SEEDS, row, p, grad_offsets, grad_out)
     else:
         output = grad_out
 

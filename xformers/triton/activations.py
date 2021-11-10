@@ -14,6 +14,14 @@ from xformers.components import Activation
 _kAlpha = math.sqrt(2.0 / math.pi)
 
 
+# The following activations require their inputs to be saved to be able to compute their gradients
+requires_bwd_inputs = [
+    Activation.GeLU,
+    Activation.SquaredReLU,
+    Activation.LeakyReLU,
+]
+
+
 def get_triton_activation_kernel(activation: Optional[Activation]):
     return (
         {

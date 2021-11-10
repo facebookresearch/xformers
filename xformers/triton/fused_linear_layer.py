@@ -14,16 +14,10 @@ from xformers.components.activations import Activation
 from xformers.triton.activations import (
     get_triton_activation_bwd_kernel,
     get_triton_activation_kernel,
+    requires_bwd_inputs,
 )
 from xformers.triton.k_fused_matmul_bw import fused_matmul_backward
 from xformers.triton.k_fused_matmul_fw import fused_matmul
-
-# The following activations require their inputs to be saved to be able to compute their gradients
-_requires_bwd_inputs = [
-    Activation.GeLU,
-    Activation.SquaredReLU,
-    Activation.LeakyReLU,
-]
 
 
 class _fused_linear_triton(torch.autograd.Function):
@@ -113,7 +107,7 @@ class FusedLinear(nn.Module):
         self._activation_grad_kernel = get_triton_activation_bwd_kernel(activation)
 
         self._save_activation_inputs = (
-            activation in _requires_bwd_inputs if activation is not None else False
+            activation in requires_bwd_inputs if activation is not None else False
         )
         self.reset_parameters()
 
