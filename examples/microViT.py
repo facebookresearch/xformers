@@ -148,7 +148,7 @@ class VisionTransformer(pl.LightningModule):
         x = self.patch_emb(x)
 
         # flatten patches into sequence
-        x = x.flatten(2, 3).transpose(1, 2)  # B HW C
+        x = x.flatten(2, 3).transpose(1, 2).contiguous()  # B HW C
 
         if self.hparams.classifier == Classifier.TOKEN:
             # prepend classification token
