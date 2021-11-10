@@ -1,0 +1,8 @@
+defaults:
+   - /xformers/attention/random_schema@_here_
+
+name: random
+dropout: 0
+r: 0.01
+constant_masking: True
+force_sparsity: False

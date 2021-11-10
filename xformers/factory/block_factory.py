@@ -100,6 +100,8 @@ class xFormerBlockConfig:
     layer_norm_style: LayerNormStyle
     layer_position: LayerPosition
     use_triton: bool
+    reversible: bool 
+    num_layers: int
 
     def __init__(
         self,
@@ -108,10 +110,14 @@ class xFormerBlockConfig:
         position_encoding_config: Optional[Dict[str, Any]],
         block_type: BlockType,
         layer_norm_style: LayerNormStyle = LayerNormStyle("post"),
+        reversible: bool = False,
+        num_layers: int = 1,
     ):
         self.dim_model = dim_model
         self.block_type = block_type
         self.layer_norm_style = layer_norm_style
+        self.reversible = reversible
+        self.num_layers = num_layers
 
         # Fill in possible gaps in the config for subparts of the block
         self.feedforward_config = generate_matching_config(
@@ -256,7 +262,6 @@ class xFormerEncoderBlock(torch.nn.Module):
         # Wrappers handle the different layer norm styles (pre- and post-) and the residual path
         self.wrap_att = ln_factory(self.mha)
         self.wrap_ff: Union[Residual, PostNorm] = ln_factory(self.feedforward)
-
         if (
             config.layer_norm_style == LayerNormStyle.Pre
             and config.layer_position.is_last()
@@ -334,7 +339,6 @@ class xFormerDecoderBlock(torch.nn.Module):
         self.wrap_att = ln_factory(self.mha)
         self.wrap_cross = ln_factory(self.cross_mha)
         self.wrap_ff: Union[Residual, PostNorm] = ln_factory(self.feedforward)
-
         if (
             config.layer_norm_style == LayerNormStyle.Pre
             and config.layer_position.is_last()
