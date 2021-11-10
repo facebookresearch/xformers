@@ -14,7 +14,6 @@ from xformers.components.activations import Activation
 from xformers.triton.activations import (
     get_triton_activation_bwd_kernel,
     get_triton_activation_kernel,
-    requires_bwd_inputs,
 )
 from xformers.triton.k_fused_matmul_bw import fused_matmul_backward
 from xformers.triton.k_fused_matmul_fw import fused_matmul
@@ -44,8 +43,6 @@ class _fused_linear_triton(torch.autograd.Function):
         ctx.trainable_weight = trainable_weight
         ctx.trainable_bias = trainable_bias
 
-        ctx.save_activation_inputs = save_activation_inputs
-
         # Micro-optimization: saving these is not always needed (?)
         if x.requires_grad or ctx.trainable_weight or ctx.trainable_bias:
             ctx.save_for_backward(weight, activation_inputs, x)
@@ -68,7 +65,6 @@ class _fused_linear_triton(torch.autograd.Function):
             trainable_weight=ctx.trainable_weight,
             trainable_bias=ctx.trainable_bias,
             activation_grad=ctx.activation_grad_kernel,
-            act_requires_input=ctx.save_activation_inputs,
         )
 
         return grad_input, grad_weight, grad_bias, None, None, None, None, None, None
@@ -106,9 +102,6 @@ class FusedLinear(nn.Module):
         self._activation_kernel = get_triton_activation_kernel(activation)
         self._activation_grad_kernel = get_triton_activation_bwd_kernel(activation)
 
-        self._save_activation_inputs = (
-            activation in requires_bwd_inputs if activation is not None else False
-        )
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
@@ -127,5 +120,5 @@ class FusedLinear(nn.Module):
             self._activation_grad_kernel,
             self.weight.requires_grad,
             self.bias.requires_grad if self.bias is not None else False,
-            self._save_activation_inputs,
+            self.training and x.requires_grad,
         )

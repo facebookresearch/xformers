@@ -14,14 +14,6 @@ from xformers.components import Activation
 _kAlpha = math.sqrt(2.0 / math.pi)
 
 
-# The following activations require their inputs to be saved to be able to compute their gradients
-requires_bwd_inputs = [
-    Activation.GeLU,
-    Activation.SquaredReLU,
-    Activation.LeakyReLU,
-]
-
-
 def get_triton_activation_kernel(activation: Optional[Activation]):
     return (
         {
@@ -83,7 +75,9 @@ def relu_grad(x):
     # here the input is the downstream gradient, and we return the upstream gradient directly
     zero = 0.0
     zero = zero.to(x.dtype)
-    return tl.where(x >= 0, x, zero)
+    one = 1.0
+    one = one.to(x.dtype)
+    return tl.where(x >= 0, one, zero)
 
 
 @triton.jit

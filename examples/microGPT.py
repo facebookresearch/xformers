@@ -298,7 +298,7 @@ if __name__ == "__main__":
     model = GPT(
         vocab_size=train_dataset.vocab_size,
         block_size=train_dataset.block_size,
-        attention="linformer",
+        attention="nystrom",
         warmup_tokens=REF_BATCH * WARMUP,
         final_tokens=EPOCHS * len(train_dataset) * BLOCK,
     )

@@ -76,6 +76,7 @@ def k_dropout_fw(
     if META["ACTIVATION"]:
         x = META["ACTIVATION"](x)
 
+    # randomly prune it
     if p > 0.:
         output = _drop_and_scale(SEEDS, row, p, offsets, x)
     else:
@@ -122,24 +123,19 @@ def k_dropout_bw(
 
     # optional: fused activation (while the data is in shared memory)
     if META["ACTIVATION_GRAD"]:
-        # Some (most) activation gradients require the inputs
-        if META["ACT_GRAD_REQUIRES_INPUTS"]:
-            input_ptrs = INPUTS + row * stride_inputs + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-            inputs = tl.load(input_ptrs, mask=mask)
+        input_ptrs = INPUTS + row * stride_inputs + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+        inputs = tl.load(input_ptrs, mask=mask)
 
-            # optionally apply a fused bias
-            if META["USE_BIAS"]:
-                b_ptrs = BIAS + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-                b = tl.load(b_ptrs, mask=mask)
-                inputs += b
+        # optionally apply a fused bias
+        if META["USE_BIAS"]:
+            b_ptrs = BIAS + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+            b = tl.load(b_ptrs, mask=mask)
+            inputs += b
 
-            act_grad = META["ACTIVATION_GRAD"](inputs)
-        else:
-            # Some activation gradients can work with the incoming grad directly
-            act_grad = META["ACTIVATION_GRAD"](grad_out)
-
+        act_grad = META["ACTIVATION_GRAD"](inputs)
         grad_out *= act_grad
 
+    # randomly prune it
     if p > 0.:
         output = _drop_and_scale(SEEDS, row, p, grad_offsets, grad_out)
     else:

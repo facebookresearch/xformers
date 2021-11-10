@@ -68,14 +68,13 @@ def kernel_bw(
     grad_act = META["ACTIVATION_GRAD"](act_in)
 
     # now read the incoming gradient, the backpropagated one is the multiple of both
-    if META["ACTIVATION_REQUIRES_INPUT"]:
-        grad_out_ptrs = GRAD_OUT + pid_m * stride_gom + rn
-        if META["EVEN_N"]:
-            grad_out = tl.load(grad_out_ptrs)
-        else:
-            grad_out = tl.load(grad_out_ptrs, mask=rn < N)
+    grad_out_ptrs = GRAD_OUT + pid_m * stride_gom + rn
+    if META["EVEN_N"]:
+        grad_out = tl.load(grad_out_ptrs)
+    else:
+        grad_out = tl.load(grad_out_ptrs, mask=rn < N)
 
-        grad_act *= grad_out
+    grad_act *= grad_out
 
     # write back result
     grad_act_ptrs = GRAD_ACT + pid_m * stride_gom + rn
@@ -90,7 +89,6 @@ def fused_matmul_backward(
     trainable_weight: bool,
     trainable_bias: bool,
     activation_grad=None,
-    act_requires_input: bool = True
 ):
     """
     Compute grad_in = activation^-1(grad_out) @ weight.transpose()
@@ -137,7 +135,6 @@ def fused_matmul_backward(
             weight.stride(0), weight.stride(1),
             # optional fused activation
             ACTIVATION_GRAD=activation_grad,
-            ACTIVATION_REQUIRES_INPUT=act_requires_input
         )
 
         # Backpropagation going up, the reference gradient is now
