@@ -298,7 +298,7 @@ if __name__ == "__main__":
     model = GPT(
         vocab_size=train_dataset.vocab_size,
         block_size=train_dataset.block_size,
-        attention="nystrom",
+        attention="favor",
         warmup_tokens=REF_BATCH * WARMUP,
         final_tokens=EPOCHS * len(train_dataset) * BLOCK,
     )
@@ -310,7 +310,7 @@ if __name__ == "__main__":
         precision=16,
         gradient_clip_val=1,
         log_every_n_steps=1,
-        terminate_on_nan=True,
+        detect_anomaly=True,
         accumulate_grad_batches=REF_BATCH // BATCH,
     )
 

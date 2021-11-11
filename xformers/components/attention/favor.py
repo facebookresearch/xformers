@@ -123,6 +123,18 @@ class FavorAttention(Attention):
 
         return torch.cat(att_raw, dim=1), torch.cat(att_norm, dim=1)
 
+    @staticmethod
+    def _maybe_ceil_fp16(x: torch.Tensor) -> torch.Tensor:
+        """Handle fp16 limited dynamic range.
+        In this particular case (when this method is called),
+        we assume that inf can safely be capped with fp16 real max value (65504)"""
+
+        if not x.dtype == torch.float16:
+            return x
+
+        cap_value = 65504.0  # float16 actual max value
+        return torch.where(torch.isinf(x), torch.ones_like(x) * cap_value, x)
+
     def forward(
         self,
         q: torch.Tensor,
@@ -135,6 +147,7 @@ class FavorAttention(Attention):
         # Project key and queries onto the feature map space
         k_prime = self.feature_map_key(k)
         q_prime = self.feature_map_query(q)
+
         if not self.causal:
             att_normalization = q_prime @ (
                 k_prime.transpose(-2, -1) @ torch.ones_like(v)
@@ -144,8 +157,15 @@ class FavorAttention(Attention):
             # Actually compute attention
             att_raw, att_normalization = self._causal_attention(k_prime, q_prime, v)
 
+        # Catch overflow, this is technically fine
+        att_raw = self._maybe_ceil_fp16(att_raw)
+        att_normalization = self._maybe_ceil_fp16(att_normalization)
+
         # Normalize
         att = att_raw / att_normalization
+
+        if torch.isnan(att).any() or torch.isinf(att).any():
+            exit(-1)
 
         if self.attn_drop is not None:
             att = self.attn_drop(att)
