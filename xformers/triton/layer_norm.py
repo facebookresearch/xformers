@@ -47,7 +47,6 @@ class FusedLayerNorm(nn.Module):
 
 def layer_norm(
     x: torch.Tensor,
-    normalized_shape,
     weight: Optional[torch.Tensor] = None,
     bias: Optional[torch.Tensor] = None,
     eps: float = 1e-05,
@@ -65,7 +64,7 @@ def layer_norm(
             and weight is not None
             and bias is not None
         ):
-            return _LayerNorm.apply(x, normalized_shape, weight, bias, eps)
+            return _LayerNorm.apply(x, weight, bias, eps)
     except (triton.code_gen.OutOfResources, RuntimeError) as e:
         # Catch cases where the current GPU does not have enough registers to hold a full tensor line
         # fallback to PyTorch's implementation, which streams the tensor in and out
@@ -77,5 +76,5 @@ def layer_norm(
         logging.warning(e)
 
     return torch.nn.functional.layer_norm(
-        x, normalized_shape, weight=weight, bias=bias, eps=eps
+        x, [x.shape[-1]], weight=weight, bias=bias, eps=eps
     )
