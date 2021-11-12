@@ -26,7 +26,7 @@ if _triton_available:
         )
         _triton_available = False
 
-# Testing odd shapes on purpose
+# Testing odd (non-power-of-two for instance) shapes on purpose
 SHAPES = [
     (384, 128),
     (8, 384, 128),
@@ -158,4 +158,4 @@ def test_dropout_parity(shape, amp, bias, activation, p):
             if bias:
                 assert torch.allclose(
                     torch.norm(b.grad), torch.norm(b_.grad), rtol=0.01
-                ), f"{b.grad}\n{b_.grad}"
+                ), f"{b.grad.norm()}\n{b_.grad.norm()}"

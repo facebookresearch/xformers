@@ -19,6 +19,7 @@ from xformers.triton.k_activations import (
     get_triton_activation_kernel,
 )
 from xformers.triton.k_dropout import k_dropout_bw, k_dropout_fw
+from xformers.triton.sum_strided import sum_2d_dim_0
 
 
 # Helper to handle the SPMD launch grid and error cases
@@ -104,7 +105,7 @@ class _dropout(torch.autograd.Function):
         # fmt: on
 
         if ctx.trainable_bias:
-            grad_bias: Optional[torch.Tensor] = torch.sum(grad_in, dim=0)
+            grad_bias: Optional[torch.Tensor] = sum_2d_dim_0(grad_in)
         else:
             grad_bias = None
 

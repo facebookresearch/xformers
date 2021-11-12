@@ -10,6 +10,8 @@ import torch
 import triton
 import triton.language as tl
 
+from xformers.triton.sum_strided import sum_2d_dim_0
+
 
 # fmt: off
 @triton.heuristics({
@@ -144,6 +146,6 @@ def fused_matmul_backward(
     # The following ops can also be handled by triton
     grad_in = grad_out_ @ weight
     grad_weight = grad_out_.transpose(1, 0) @ inputs_ if trainable_weight else None
-    grad_bias = torch.sum(grad_out_, 0) if trainable_bias else None
+    grad_bias = sum_2d_dim_0(grad_out_) if trainable_bias else None
 
     return grad_in.reshape_as(inputs), grad_weight, grad_bias
