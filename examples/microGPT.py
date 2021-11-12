@@ -28,7 +28,7 @@ class GPT(pl.LightningModule):
         vocab_size,
         weight_decay=0.1,
         betas=(0.9, 0.95),
-        learning_rate=6e-4,
+        learning_rate=1e-4,
         n_embd=512,
         block_size=128,
         n_layer=4,
@@ -298,7 +298,7 @@ if __name__ == "__main__":
     model = GPT(
         vocab_size=train_dataset.vocab_size,
         block_size=train_dataset.block_size,
-        attention="nystrom",
+        attention="favor",
         warmup_tokens=REF_BATCH * WARMUP,
         final_tokens=EPOCHS * len(train_dataset) * BLOCK,
     )
@@ -310,7 +310,7 @@ if __name__ == "__main__":
         precision=16,
         gradient_clip_val=1,
         log_every_n_steps=1,
-        terminate_on_nan=True,
+        detect_anomaly=True,
         accumulate_grad_batches=REF_BATCH // BATCH,
     )
 
