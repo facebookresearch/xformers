@@ -148,6 +148,7 @@ class FavorAttention(Attention):
             # Note that the dimensions are vastly reduced when compared to scaled_dot_product
             k_prime = self._maybe_promote(k_prime)
             q_prime = self._maybe_promote(q_prime)
+            v = self._maybe_promote(v)
 
             if not self.causal:
                 att_normalization = q_prime @ (
