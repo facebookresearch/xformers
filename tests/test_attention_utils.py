@@ -31,7 +31,7 @@ def test_reshape_key_padding_mask():
         src_len=seq_len,
         num_heads=num_heads,
     )
-    assert torch.equal(merged_mask, reshaped_mask)
+    assert torch.equal(merged_mask, reshaped_mask.expand(-1, seq_len, -1))
 
     key_padding_mask = torch.randint(0, 2, (batched_dim, seq_len)).to(dtype=torch.bool)
     reshaped_mask = reshape_key_padding_mask(
