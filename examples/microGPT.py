@@ -311,9 +311,9 @@ if __name__ == "__main__":
         gpus=1,
         max_epochs=EPOCHS,
         precision=16,
-        gradient_clip_val=1,
+        gradient_clip_val=1,  # Use to catch divergent gradients, if experimenting
         log_every_n_steps=1,
-        detect_anomaly=True,
+        # detect_anomaly=True,  # Use to catch NaNs, if experimenting
         accumulate_grad_batches=REF_BATCH // BATCH,
     )
 

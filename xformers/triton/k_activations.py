@@ -64,8 +64,7 @@ def relu(x):
     .. _ReLU: https://pytorch.org/docs/stable/generated/torch.nn.ReLU.html
     """
     zero = 0.0
-    zero = zero.to(x.dtype)
-    return tl.where(x >= 0, x, zero)
+    return tl.where(x >= 0, x, zero.to(x.dtype))
 
 
 @triton.jit
@@ -74,10 +73,8 @@ def relu_grad(x):
     # in that it does not require the input to retrospectively compute its gradient
     # here the input is the downstream gradient, and we return the upstream gradient directly
     zero = 0.0
-    zero = zero.to(x.dtype)
     one = 1.0
-    one = one.to(x.dtype)
-    return tl.where(x >= 0, one, zero)
+    return tl.where(x >= 0, one.to(x.dtype), zero.to(x.dtype))
 
 
 @triton.jit
@@ -88,7 +85,7 @@ def squared_relu(x):
     .. _Primer: https://arxiv.org/abs/2109.08668
     """
     x_ = relu(x)
-    return x_ * x_
+    return (x_ * x_).to(x.dtype)
 
 
 @triton.jit

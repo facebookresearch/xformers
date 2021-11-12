@@ -28,12 +28,12 @@ if _triton_is_available:
 def pretty_print(results, title, units):
     """ Printout the contents of a dict as a human-readable and Markdown compatible array"""
     print(title)
-    header = " Units: {:<40}".format(units)
-    print("|" + header + "|" + "".join("{0:<20}|".format(k) for k in results.keys()))
+    header = " Units: {:<45}".format(units)
+    print("| " + header + "|" + "".join("{0:<20}|".format(k) for k in results.keys()))
 
     offset = len(header)
     print(
-        "|{}|".format("-" * offset)
+        "|-{}|".format("-" * offset)
         + "".join("{}|".format("-" * 20) for _ in results.keys())
     )
 
@@ -44,7 +44,7 @@ def pretty_print(results, title, units):
 
     for k, w in workloads.items():
         print(
-            "|{0:<{offset}}|".format(k, offset=offset)
+            "| {0:<{offset}}|".format(k, offset=offset)
             + "".join("{:<20}|".format(v) for v in w)
         )
 
@@ -85,7 +85,7 @@ def pretty_plot(results, title, units: str, filename=None, dash_key=""):
     plt.xticks(rotation=45)
 
     plt.savefig(filename, bbox_inches="tight")
-    plt.clf()
+    plt.close(f)
 
 
 if _triton_is_available:
