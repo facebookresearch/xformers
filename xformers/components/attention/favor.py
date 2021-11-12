@@ -10,6 +10,7 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
+from torch.cuda.amp import autocast
 
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.attention.feature_maps import (
@@ -100,6 +101,11 @@ class FavorAttention(Attention):
         self.feature_map_key: FeatureMap = feature_map_constructor(**feature_settings)  # type: ignore
 
     @staticmethod
+    def _maybe_promote(x: torch.Tensor) -> torch.Tensor:
+        # Only promote fp16 buffers, bfloat16 would be fine for instance
+        return x.float() if x.dtype == torch.float16 else x
+
+    @staticmethod
     def _causal_attention(
         k_prime: torch.Tensor, q_prime: torch.Tensor, v: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -123,18 +129,6 @@ class FavorAttention(Attention):
 
         return torch.cat(att_raw, dim=1), torch.cat(att_norm, dim=1)
 
-    @staticmethod
-    def _maybe_ceil_fp16(x: torch.Tensor) -> torch.Tensor:
-        """Handle fp16 limited dynamic range.
-        In this particular case (when this method is called),
-        we assume that inf can safely be capped with fp16 real max value (65504)"""
-
-        if not x.dtype == torch.float16:
-            return x
-
-        cap_value = 65504.0  # float16 actual max value
-        return torch.where(torch.isinf(x), torch.ones_like(x) * cap_value, x)
-
     def forward(
         self,
         q: torch.Tensor,
@@ -148,24 +142,24 @@ class FavorAttention(Attention):
         k_prime = self.feature_map_key(k)
         q_prime = self.feature_map_query(q)
 
-        if not self.causal:
-            att_normalization = q_prime @ (
-                k_prime.transpose(-2, -1) @ torch.ones_like(v)
-            )
-            att_raw = q_prime @ (k_prime.transpose(-2, -1) @ v)
-        else:
-            # Actually compute attention
-            att_raw, att_normalization = self._causal_attention(k_prime, q_prime, v)
+        with autocast(enabled=False):
+            # The softmax kernel approximation for Favor will easily overflow
+            # Force the computations here to stay in fp32 for numerical stability
+            # Note that the dimensions are vastly reduced when compared to scaled_dot_product
+            k_prime = self._maybe_promote(k_prime)
+            q_prime = self._maybe_promote(q_prime)
 
-        # Catch overflow, this is technically fine
-        att_raw = self._maybe_ceil_fp16(att_raw)
-        att_normalization = self._maybe_ceil_fp16(att_normalization)
+            if not self.causal:
+                att_normalization = q_prime @ (
+                    k_prime.transpose(-2, -1) @ torch.ones_like(v)
+                )
+                att_raw = q_prime @ (k_prime.transpose(-2, -1) @ v)
+            else:
+                # Actually compute attention
+                att_raw, att_normalization = self._causal_attention(k_prime, q_prime, v)
 
-        # Normalize
-        att = att_raw / att_normalization
-
-        if torch.isnan(att).any() or torch.isinf(att).any():
-            exit(-1)
+            # Normalize
+            att = att_raw / att_normalization
 
         if self.attn_drop is not None:
             att = self.attn_drop(att)

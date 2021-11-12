@@ -28,7 +28,7 @@ class GPT(pl.LightningModule):
         vocab_size,
         weight_decay=0.1,
         betas=(0.9, 0.95),
-        learning_rate=6e-4,
+        learning_rate=1e-4,
         n_embd=512,
         block_size=128,
         n_layer=4,
