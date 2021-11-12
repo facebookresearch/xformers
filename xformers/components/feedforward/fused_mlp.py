@@ -19,7 +19,7 @@ from xformers.components.feedforward import (
 
 if torch.cuda.is_available():
     try:
-        from xformers.triton import FusedLinear
+        from xformers.triton import FusedDropoutBias
 
         @dataclass
         class FusedMlpConfig(FeedforwardConfig):
@@ -44,18 +44,19 @@ if torch.cuda.is_available():
             ):
                 super().__init__()
 
+                dim_mlp = hidden_layer_multiplier * dim_model
+
                 self.mlp = nn.Sequential(
+                    nn.Linear(in_features=dim_model, out_features=dim_mlp, bias=False),
                     # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize
                     # the `FusedLinear` import.
-                    FusedLinear(
-                        in_features=dim_model,
-                        out_features=hidden_layer_multiplier * dim_model,
-                        activation=activation,
-                        bias=True,
+                    FusedDropoutBias(
+                        p=dropout, bias_shape=dim_mlp, activation=activation
                     ),
-                    nn.Dropout(dropout),
-                    nn.Linear(hidden_layer_multiplier * dim_model, dim_model),
-                    nn.Dropout(dropout),
+                    nn.Linear(in_features=dim_mlp, out_features=dim_model, bias=False),
+                    # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize
+                    # the `FusedLinear` import.
+                    FusedDropoutBias(p=dropout, bias_shape=dim_model, activation=None),
                 )
                 self.requires_cuda = True
 

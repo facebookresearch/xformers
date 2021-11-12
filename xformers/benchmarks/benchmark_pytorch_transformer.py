@@ -132,7 +132,7 @@ def bench_pytorch_encoder(
                                 "dim_model": emb,
                             },
                             "feedforward_config": {
-                                "name": "MLP",
+                                "name": "FusedMLP",
                                 "dropout": dropout,
                                 "activation": activation,
                                 "hidden_layer_multiplier": 4,

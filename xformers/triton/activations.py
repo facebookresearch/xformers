@@ -63,7 +63,9 @@ def relu(x):
 
     .. _ReLU: https://pytorch.org/docs/stable/generated/torch.nn.ReLU.html
     """
-    return tl.where(x >= 0, x, 0.0)
+    zero = 0.0
+    zero = zero.to(x.dtype)
+    return tl.where(x >= 0, x, zero)
 
 
 @triton.jit
@@ -73,7 +75,9 @@ def relu_grad(x):
     # here the input is the downstream gradient, and we return the upstream gradient directly
     zero = 0.0
     zero = zero.to(x.dtype)
-    return tl.where(x >= 0, x, zero)
+    one = 1.0
+    one = one.to(x.dtype)
+    return tl.where(x >= 0, one, zero)
 
 
 @triton.jit
