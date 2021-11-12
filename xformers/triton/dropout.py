@@ -26,34 +26,39 @@ from xformers.triton.sum_strided import sum_2d_dim_0
 class _dropout(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16)
-    def forward(ctx, x, p, bias, activation, activation_grad):
+    def forward(ctx, x, p, bias, activation, activation_grad, trainable_bias):
         # Soft-flatten an hypothetical 3rd dimension
         x_ = x.reshape(-1, x.shape[-1]).contiguous()
         y = torch.empty_like(x_)
-        _, N = x_.shape
+        M, N = x_.shape
 
-        assert bias is None or bias.dtype == x.dtype, bias
+        assert bias is None or (bias.dtype == x.dtype and bias.shape[0] == N)
 
         # Generate one seed per sample
         # seed max is int32 max for positive numbers: 2**16
-        seeds = torch.randint(65536, (x_.shape[0],), device=x.device).to(torch.int32)
+        # FIXME: adjust the number of seeds needed
+        seeds = torch.randint(65536, (N,), device=x.device).to(torch.int32)
 
-        # SPMD launch grid
         def grid(meta):
             return (
-                x_.shape[0],
-                triton.cdiv(x_.shape[1], meta["BLOCK_SIZE"]),
+                triton.cdiv(M, meta["BLOCK_M"] * 4),
+                triton.cdiv(N, meta["BLOCK_N"]),
             )
+
+        GROUP_M = 16
+        BLOCK_M = GROUP_M // 4
 
         # fmt: off
         k_dropout_fw[grid](
-            y, x_, bias if bias is not None else x_,
+            y, x_,
+            bias if bias is not None else x_,
             seeds,
             y.stride(0),
-            N,
+            M, N,
             p,
             USE_BIAS=bias is not None,
-            ACTIVATION=activation
+            ACTIVATION=activation,
+            BLOCK_M=BLOCK_M
         )
         # fmt: on
 
@@ -61,7 +66,8 @@ class _dropout(torch.autograd.Function):
             ctx.save_for_backward(seeds, bias, x)
         else:
             ctx.save_for_backward(seeds, bias, None)
-        ctx.trainable_bias = bias is not None
+
+        ctx.trainable_bias = bias is not None and trainable_bias
         ctx.activation_grad = activation_grad
         ctx.p = p
 
@@ -76,7 +82,7 @@ class _dropout(torch.autograd.Function):
         grad_out_ = grad_out.reshape(-1, grad_out.shape[-1]).contiguous()
         grad_in = torch.empty_like(grad_out_)
 
-        _, N = grad_out_.shape
+        M, N = grad_out_.shape
 
         # Optional inputs to compute the activation contribution to the gradient
         assert inputs is not None or ctx.activation_grad is None
@@ -84,32 +90,50 @@ class _dropout(torch.autograd.Function):
         if inputs is None:
             inputs = grad_out_
         elif inputs.ndim > 2:
-            inputs = inputs.reshape(-1, grad_out.shape[-1])
+            inputs = inputs.reshape(-1, N)
 
-        # SPMD launch grid
-        def grid(meta):
-            return (
-                grad_out_.shape[0],
-                triton.cdiv(grad_out_.shape[1], meta["BLOCK_SIZE"]),
-            )
-
-        # fmt: off
-        k_dropout_bw[grid](
-            grad_in, grad_out_, inputs, bias if bias is not None else inputs,
-            seeds,
-            grad_out_.stride(0), inputs.stride(0),
-            N,
-            ctx.p,
-            USE_BIAS=bias is not None,
-            ACTIVATION_GRAD=ctx.activation_grad)
-        # fmt: on
+        GROUP_M = 16 if M > 512 else M // 4
+        BLOCK_M = GROUP_M // 4
+        BLOCK_N = 128
+        N_BLOCK_M = triton.cdiv(M, GROUP_M)
+        N_BLOCK_N = triton.cdiv(N, BLOCK_N)
 
         if ctx.trainable_bias:
-            grad_bias: Optional[torch.Tensor] = sum_2d_dim_0(grad_in)
+            grad_bias = torch.empty(
+                (
+                    N_BLOCK_M,
+                    N,
+                ),
+                device=grad_in.device,
+                dtype=grad_in.dtype,
+            )
         else:
-            grad_bias = None
+            grad_bias = grad_in  # will not be used
 
-        return grad_in.reshape_as(grad_out), None, grad_bias, None, None
+        # fmt: off
+        k_dropout_bw[(N_BLOCK_M, N_BLOCK_N)](
+            grad_in, grad_bias, grad_out_,
+            inputs, bias if bias is not None else inputs,
+            seeds,
+            grad_out_.stride(0), inputs.stride(0),
+            M, N,
+            ctx.p,
+            USE_BIAS=bias is not None,
+            ACTIVATION_GRAD=ctx.activation_grad,
+            TRAINABLE_BIAS=ctx.trainable_bias,
+            BLOCK_M=BLOCK_M,
+            BLOCK_N=BLOCK_N
+        )
+        # fmt: on
+
+        return (
+            grad_in.reshape_as(grad_out),
+            None,
+            sum_2d_dim_0(grad_bias) if ctx.trainable_bias else None,
+            None,
+            None,
+            None,
+        )
 
 
 def dropout(
@@ -129,7 +153,14 @@ def dropout(
 
     act_kernel = get_triton_activation_kernel(activation)
     act_grad_kernel = get_triton_activation_bwd_kernel(activation)
-    return _dropout.apply(x, p, bias, act_kernel, act_grad_kernel)
+    return _dropout.apply(
+        x,
+        p,
+        bias,
+        act_kernel,
+        act_grad_kernel,
+        bias is not None and bias.requires_grad,
+    )
 
 
 class FusedDropoutBias(torch.nn.Module):
@@ -142,8 +173,10 @@ class FusedDropoutBias(torch.nn.Module):
         super().__init__()
         self.p = p
         self.activation_type = activation
-        self.register_buffer(
-            "bias", torch.zeros(bias_shape) if bias_shape is not None else None
+        self.bias = (
+            torch.zeros(bias_shape, requires_grad=True)
+            if bias_shape is not None
+            else None
         )
         self.activation = get_triton_activation_kernel(activation)
         self.activation_grad = get_triton_activation_bwd_kernel(activation)
@@ -160,5 +193,8 @@ class FusedDropoutBias(torch.nn.Module):
             x = activation(x)
             return torch.nn.functional.dropout(x, self.p)
 
+        # The normal, Triton-backed path
         p = self.p if self.training else 0.0
-        return _dropout.apply(x, p, self.bias, self.activation, self.activation_grad)
+        return _dropout.apply(
+            x, p, self.bias, self.activation, self.activation_grad, True
+        )

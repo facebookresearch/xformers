@@ -4,144 +4,243 @@
 # LICENSE file in the root directory of this source tree.
 
 
-# CREDITS: This comes almost as-is from the Triton dropout tutorial
+# CREDITS: This was initially inspired by the Triton dropout tutorial
 # https://raw.githubusercontent.com/openai/triton/master/python/tutorials/04-low-memory-dropout.py
 
 import triton
 import triton.language as tl
 
-_k_configs = [
-    triton.Config({"BLOCK_SIZE": 128}, num_warps=1),
-    triton.Config({"BLOCK_SIZE": 512}, num_warps=2),
-    triton.Config({"BLOCK_SIZE": 1024}, num_warps=4),
-    triton.Config({"BLOCK_SIZE": 2048}, num_warps=8),
-    triton.Config({"BLOCK_SIZE": 4096}, num_warps=16),
-]
-
-
-@triton.jit
-def _drop_and_scale(SEEDS, row, p, offsets, x):
-    # randomly prune the weights
-    seed = SEEDS + row
-    random = tl.rand(seed.to(tl.int32), offsets)
-    x_keep = random > p
-
-    zero = 0.0
-    zero = zero.to(x.dtype)
-
-    # prune and normalize in one go
-    return tl.where(x_keep, (x / (1 - p)).to(x.dtype), zero)
-
 
 # fmt: off
+@triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
 @triton.autotune(
-    configs=_k_configs,
-    key=["N"],
+    configs=[
+        triton.Config({"BLOCK_N": 32}, num_warps=1),
+        triton.Config({"BLOCK_N": 64}, num_warps=2),
+        triton.Config({"BLOCK_N": 128}, num_warps=4),
+        triton.Config({"BLOCK_N": 256}, num_warps=8),
+    ],
+    key=["M", "N"],
 )
 @triton.jit
 def k_dropout_fw(
     Y, X, BIAS, SEEDS,
     stride,
-    N,
+    M, N,
     p,
-    **META,
+    **meta,
 ):
     """
     Apply dropout on an input tensor
-    Y : Output (M, N)
-    X : Input (M, N)
-    S : Seeds (M,)
+    Y : Output  (M, N)
+    X : Input   (M, N)
+    BIAS        (N,)
+    SEEDS       (M,)
     p : dropout probability
+
+    This kernel goes through the tensor columns (N dimension), per block (to keep memory parallelism).
+    This allows the backward pass to follow the same path, with the same seeds,
+    and start reducing on the gradient bias.
     """
     # fmt: on
 
-    BLOCK_SIZE = META["BLOCK_SIZE"]
-    row = tl.program_id(axis=0)
-    col = tl.program_id(axis=1)
+    BLOCK_M = meta["BLOCK_M"]
+    BLOCK_N = meta["BLOCK_N"]
+    SIZE_RAND_BLOCK = meta["SIZE_RAND_BLOCK"]
 
-    # compute memory offsets of elements handled by this instance
-    offsets = row * stride + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-    mask = col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE) < N
+    row_id = tl.program_id(axis=0)
+    rows = row_id * BLOCK_M * 4 + tl.arange(0, BLOCK_M)
 
-    # load data from x
-    x_ptrs = X + offsets
-    x = tl.load(x_ptrs, mask=mask)
+    col_id = tl.program_id(axis=1)
+    cols = col_id * BLOCK_N + tl.arange(0, BLOCK_N)
+    seed = SEEDS + col_id  # FIXME index the seed properly
 
-    # optionally apply a fused bias
-    if META["USE_BIAS"]:
-        b_ptrs = BIAS + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        b = tl.load(b_ptrs, mask=mask)
-        x += b
+    # pointers starting point
+    x_ptrs = X + rows[:, None] * stride + cols[None, :]
+    y_ptrs = Y + rows[:, None] * stride + cols[None, :]
 
-    # optional: fused activation (while the data is in shared memory)
-    if META["ACTIVATION"]:
-        x = META["ACTIVATION"](x)
+    # go over all the tiles, one by one
+    rand_offsets = tl.arange(0, SIZE_RAND_BLOCK) + row_id * BLOCK_M * 4
+    rand1, rand2, rand3, rand4 = tl.randint4x(seed.to(tl.int32), rand_offsets)
+    threshold = ((p - 0.5) * 2147483648.).to(tl.int32)
 
-    # randomly prune it
-    if p > 0.:
-        output = _drop_and_scale(SEEDS, row, p, offsets, x)
-    else:
-        output = x
+    # binarize masks, save registers
+    rand_mask1 = rand1 > threshold
+    rand_mask2 = rand2 > threshold
+    rand_mask3 = rand3 > threshold
+    rand_mask4 = rand4 > threshold
 
-    y_ptrs = Y + offsets
-    tl.store(y_ptrs, output, mask=mask)
+    col_mask = cols[None, :] < N
+    p_scale = 1 / (1 - p) if p < 1. else 1.
+    zero = 0.0
+
+    if meta["USE_BIAS"]:
+        b_ptrs = BIAS + cols[None, :]
+        bias = tl.load(b_ptrs, mask=cols[None, :] < N, other=0.)
+
+    for i in range(4):
+        # cycle through the binary masks (workaround / no indexing)
+        if i == 0:
+            rand_mask = rand_mask1
+        elif i == 1:
+            rand_mask = rand_mask2
+        elif i == 2:
+            rand_mask = rand_mask3
+        else:
+            rand_mask = rand_mask4
+
+        block_mask = (rows[:, None] < M) & col_mask
+        x = tl.load(x_ptrs, mask=block_mask, other=0.)
+
+        # optionally apply a fused bias
+        if meta["USE_BIAS"]:
+            x += bias
+
+        # optional: fused activation (while the data is in shared memory)
+        if meta["ACTIVATION"]:
+            x = meta["ACTIVATION"](x)
+
+        # randomly prune and scale
+        if p > 0.:
+            # generate all the random numbers for the block at once, then reshape
+            keep = tl.reshape(rand_mask, x.shape)
+
+            # prune and normalize in one go
+            output = tl.where(keep, (x * p_scale).to(x.dtype), zero.to(x.dtype))
+        else:
+            output = x
+
+        tl.store(y_ptrs, output, mask=block_mask)
+
+        # Update the pointers
+        rows += BLOCK_M  # needs to be updated for the mask to be correct
+        x_ptrs += BLOCK_M * stride
+        y_ptrs += BLOCK_M * stride
 
 
 # fmt: off
-@triton.autotune(
-    configs=_k_configs,
-    key=["N"],
-)
+@triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
 @triton.jit
 def k_dropout_bw(
-    GRAD_IN, GRAD_OUT, INPUTS, BIAS, SEEDS,
+    GRAD_IN, GRAD_BIAS, GRAD_OUT,
+    INPUTS, BIAS, SEEDS,
     stride_grad, stride_inputs,
-    N,
+    M, N,
     p,
-    **META,
+    **meta,
 ):
     """
     Apply dropout on an input tensor
     GRAD_OUT    (M, N)
+    GRAD_BIAS   (N,)
     GRAD_IN     (M, N)
     BIAS        (N,)
-    SEEDS       (M,)
+    SEEDS       (N,)
     p : dropout probability
     """
     # fmt: on
 
-    BLOCK_SIZE = META["BLOCK_SIZE"]
-    row = tl.program_id(axis=0)
-    col = tl.program_id(axis=1)
+    BLOCK_M = meta["BLOCK_M"]
+    BLOCK_N = meta["BLOCK_N"]
+    SIZE_RAND_BLOCK = meta["SIZE_RAND_BLOCK"]
+    TRAINABLE_BIAS = meta["TRAINABLE_BIAS"]
 
-    # compute memory offsets of elements handled by this instance
-    grad_offsets = row * stride_grad + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-    mask = col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE) < N
+    rows = tl.arange(0, BLOCK_M)
+    row_id = tl.program_id(axis=0)
+    rows = row_id * BLOCK_M * 4 + tl.arange(0, BLOCK_M)
 
-    # load data from x
-    grad_out_ptrs = GRAD_OUT + grad_offsets
-    grad_out = tl.load(grad_out_ptrs, mask=mask)
+    col_id = tl.program_id(axis=1)
+    cols = col_id * BLOCK_N + tl.arange(0, BLOCK_N)
+    seed = SEEDS + col_id  # FIXME index the seed properly
 
-    # optional: fused activation (while the data is in shared memory)
-    if META["ACTIVATION_GRAD"]:
-        input_ptrs = INPUTS + row * stride_inputs + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        inputs = tl.load(input_ptrs, mask=mask)
+    # pointers starting point
+    grad_out_ptrs = GRAD_OUT + rows[:, None] * stride_grad + cols[None, :]
+    grad_in_ptrs = GRAD_IN + rows[:, None] * stride_grad + cols[None, :]
+    input_ptrs = INPUTS + rows[:, None] * stride_inputs + cols[None, :]
 
-        # optionally apply a fused bias
-        if META["USE_BIAS"]:
-            b_ptrs = BIAS + col * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-            b = tl.load(b_ptrs, mask=mask)
-            inputs += b
+    # random binary masks, save registers
+    rand_offsets = tl.arange(0, SIZE_RAND_BLOCK) + row_id * BLOCK_M * 4
+    rand1, rand2, rand3, rand4 = tl.randint4x(seed.to(tl.int32), rand_offsets)
+    threshold = ((p - 0.5) * 2147483648.).to(tl.int32)
 
-        act_grad = META["ACTIVATION_GRAD"](inputs)
-        grad_out *= act_grad
+    rand_mask1 = rand1 > threshold
+    rand_mask2 = rand2 > threshold
+    rand_mask3 = rand3 > threshold
+    rand_mask4 = rand4 > threshold
+    rand_mask = rand_mask1
 
-    # randomly prune it
-    if p > 0.:
-        output = _drop_and_scale(SEEDS, row, p, grad_offsets, grad_out)
-    else:
-        output = grad_out
+    # now go over the tiles
+    grad_bias = tl.zeros((BLOCK_N,), dtype=tl.float32)
+    col_mask = cols[None, :] < N
+    zero = 0.0
+    p_scale = 1 / (1 - p) if p < 1. else 1.
 
-    # write-back
-    y_ptrs = GRAD_IN + grad_offsets
-    tl.store(y_ptrs, output, mask=mask)
+    if meta["USE_BIAS"]:
+        b_ptrs = BIAS + cols[None, :]
+        bias = tl.load(b_ptrs, mask=col_mask, other=0.)
+
+    for i in range(4):
+        # cycle through the binary masks (workaround / no indexing)
+        if i == 0:
+            rand_mask = rand_mask1
+        elif i == 1:
+            rand_mask = rand_mask2
+        elif i == 2:
+            rand_mask = rand_mask3
+        else:
+            rand_mask = rand_mask4
+
+        block_mask = (rows[:, None] < M) & col_mask
+        grad_out = tl.load(grad_out_ptrs, mask=block_mask, other=0.)
+
+        # optional: fused activation (while the data is in shared memory)
+        if meta["ACTIVATION_GRAD"]:
+            inputs = tl.load(input_ptrs, mask=block_mask, other=0.)
+
+            # optionally apply a fused bias
+            if meta["USE_BIAS"]:
+                inputs += bias
+
+            act_grad = meta["ACTIVATION_GRAD"](inputs).to(grad_out.dtype)
+            grad_out *= act_grad
+
+        # randomly prune and scale
+        if p > 0.:
+            # generate all the random numbers for the block at once, then reshape
+            keep = tl.reshape(rand_mask, grad_out.shape)
+
+            # prune and normalize in one go
+            output = tl.where(
+                keep,
+                (grad_out * p_scale).to(grad_out.dtype),
+                zero.to(grad_out.dtype)
+            )
+        else:
+            output = grad_out
+
+        # write-back
+        tl.store(grad_in_ptrs, output, mask=block_mask)
+
+        # optionally accumulate the bias gradient
+        if TRAINABLE_BIAS:
+            grad_bias += tl.sum(output, axis=0)
+
+        # Update the pointers
+        rows += BLOCK_M  # needs to be updated for the mask to be correct
+        grad_out_ptrs += BLOCK_M * stride_grad
+        input_ptrs += BLOCK_M * stride_inputs
+        grad_in_ptrs += BLOCK_M * stride_grad
+
+        # cycle through the binary masks
+        if i == 0:
+            rand_mask = rand_mask2
+        elif i == 1:
+            rand_mask = rand_mask3
+        elif i == 2:
+            rand_mask = rand_mask4
+        else:
+            rand_mask = rand_mask1
+
+    if TRAINABLE_BIAS:
+        grad_bias_ptr = GRAD_BIAS + row_id * N + cols
+        tl.store(grad_bias_ptr, grad_bias, mask=cols < N)

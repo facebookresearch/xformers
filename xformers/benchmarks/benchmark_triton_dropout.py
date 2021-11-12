@@ -62,12 +62,14 @@ def bench_dropout(bias: bool, backward: bool, activation: Optional[Activation]):
                     y = torch_act(y)
 
                 if backward:
+                    y.grad = None
                     torch.norm(y).backward()
                 return y
 
             def triton_step(x):
                 y = triton_dropout(x)
                 if backward:
+                    y.grad = None
                     torch.norm(y).backward()
                 return y
 
@@ -105,7 +107,7 @@ def bench_dropout(bias: bool, backward: bool, activation: Optional[Activation]):
         )
 
 
-for activation in [Activation.GeLU, None]:
+for activation in [Activation.GeLU, None, Activation.SquaredReLU]:
     for bw in [True, False]:
         for bias in [True, False]:
             bench_dropout(bias, bw, activation)
