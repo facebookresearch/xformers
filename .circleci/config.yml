@@ -78,6 +78,10 @@ install_dep_190: &install_dep_190
         python -m torch.utils.collect_env
         wget -O /home/circleci/venv/check_version.py https://raw.githubusercontent.com/min-xu-ai/check_verion/main/check_version.py
 
+        # install clang-format here, so that it gets cached
+        sudo apt-get update
+        sudo apt-get install clang-format
+
 install_repo: &install_repo
   - run:
       name: Install Repository
@@ -115,10 +119,7 @@ run_clang_format: &run_clang_format
   - run:
       name: Run Linter (clang-format)
       command: |
-        curl https://oss-clang-format.s3.us-east-2.amazonaws.com/linux64/clang-format-linux64 -o clang-format
-        chmod +x clang-format
-        sudo mv clang-format /opt/clang-format
-        ./.circleci/run-clang-format.py -r xformers/components/attention/csrc --clang-format-executable /opt/clang-format
+        ./.circleci/run-clang-format.py -r xformers/components/attention/csrc
 
 run_coverage: &run_coverage
   - run:
