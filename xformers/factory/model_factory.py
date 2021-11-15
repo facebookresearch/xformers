@@ -29,7 +29,7 @@ class xFormerConfig:
         for config in stack_configs:
             if config["block_type"] == "encoder":
                 self.stack_configs.append(xFormerEncoderConfig(**config))
-            else: 
+            else:
                 self.stack_configs.append(xFormerDecoderConfig(**config))
         # Check that the reversible setting is not alternating, which
         # - makes little sense, since you loose all the reversible benefits

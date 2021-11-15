@@ -100,7 +100,7 @@ class xFormerBlockConfig:
     layer_norm_style: LayerNormStyle
     layer_position: LayerPosition
     use_triton: bool
-    reversible: bool 
+    reversible: bool
     num_layers: int
 
     def __init__(

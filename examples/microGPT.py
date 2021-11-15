@@ -49,7 +49,10 @@ class GPT(pl.LightningModule):
         # A list of the encoder or decoder blocks which constitute the Transformer.
         xformer_config = [
             {
+<<<<<<< HEAD
                 "reversible": False,  # Turn on to test the effect of using reversible layers
+=======
+>>>>>>> 0512194 (fix lints)
                 "block_type": "encoder",
                 "num_layers": self.hparams.n_layer,
                 "dim_model": self.hparams.n_embd,
