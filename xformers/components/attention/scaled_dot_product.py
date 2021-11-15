@@ -74,9 +74,15 @@ class ScaledDotProduct(Attention):
                     - If the mask has the float type, then an additive mask is expected (masked values are -inf)
 
         """
+
+        # Handle a possibly deferred causal mask handling
+        if self.causal and self.mask is None:
+            self.mask = self._get_causal_mask(q.shape[-2], q.shape[-2])
+            self.mask.requires_grad = False
+
         # Mask-aware attention
         if self.mask is not None:
-            self.mask = self.mask.to(q.dtype)
+            self.mask = self.mask.to(dtype=q.dtype, device=q.device)
 
             if att_mask is not None:
                 if att_mask.ndim == 2:
@@ -91,7 +97,11 @@ class ScaledDotProduct(Attention):
                     # additive mask
                     att_mask = self.mask + att_mask
 
-                att_mask = att_mask.to(q.dtype)
+            else:
+                # If no additional mask is being passed, causal mask prevails
+                att_mask = self.mask
+
+            att_mask = att_mask.to(q.dtype)
 
         # Self-attend: (B x nh, S, hs) x (B x nh, hs, S) -> (B x nh, S, S)
         y = scaled_dot_product_attention(

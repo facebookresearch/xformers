@@ -29,7 +29,15 @@ GLOBAL_ATTENTION_RATIO = (
 assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
 
 
-def _get_multihead(attention_name, attn_dropout, res_dropout, causal, heads, device):
+def _get_multihead(
+    attention_name,
+    attn_dropout,
+    res_dropout,
+    causal,
+    heads,
+    device,
+    skip_output_projection=False,
+):
     test_config = {
         "name": attention_name,
         "dropout": attn_dropout,
@@ -40,6 +48,13 @@ def _get_multihead(attention_name, attn_dropout, res_dropout, causal, heads, dev
         "num_heads": heads,
         "dim_head": MODEL / heads,
     }
+
+    if skip_output_projection:
+
+        def noop(x):
+            return x
+
+        test_config["out_proj"] = noop
 
     # Add some blocksparse layout to test the corresponding attention
     block_size = 16
@@ -81,7 +96,9 @@ def test_order_invariance(
     )
 
     # Check that a shuffled input produces the same results
-    seqs = [SEQ, SEQ - 16] if attention_name != "blocksparse" else [SEQ]
+    seqs = (
+        [SEQ, SEQ - 16] if (attention_name != "blocksparse" and not causal) else [SEQ]
+    )
 
     for seq in seqs:
         # Check that we can pass a smaller sequence
@@ -169,6 +186,60 @@ def test_different_kq_dimensions(
 
     res = multi_head(query=q, key=k, value=v)
     assert res.shape == torch.Size([BATCH, seq_q, MODEL])
+
+
+@pytest.mark.parametrize("heads", [1, 4])
+@pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
+@pytest.mark.skipif(torch.cuda.is_available(), reason="requires a CUDA gpu")
+def test_scaled_dot_product_causal(
+    attention_name: str,
+    heads: int,
+):
+    """
+    Make sure that the causal flag is respected.
+    The input data is orthogonal by design if causal is respected, but if the attention looks ahead this will fail
+    """
+
+    device = torch.device("cuda")
+
+    multi_head = _get_multihead(
+        attention_name,
+        0.0,
+        0.0,
+        causal=True,
+        heads=heads,
+        device=device,
+        skip_output_projection=True,
+    )
+
+    k = (
+        torch.tril(torch.ones((SEQ, SEQ), device=device), diagonal=0)
+        .unsqueeze(0)
+        .expand(1, -1, -1)
+    )
+    q = (
+        torch.triu(torch.ones((SEQ, SEQ), device=device), diagonal=1)
+        .unsqueeze(0)
+        .expand(1, -1, -1)
+    )
+    v = (
+        torch.arange(SEQ, device=device)
+        .float()
+        .unsqueeze(0)
+        .unsqueeze(-1)
+        .expand(1, -1, SEQ)
+    )
+
+    # Make sure that we don´t project, to keep the embeddings orthogonal
+    multi_head.attention.requires_input_projection = False
+
+    res = multi_head(query=q, key=k, value=v).squeeze(0)
+
+    # Consolidate along the embedding, if causal was respected the amplitude should be sorted already
+    res_sum = torch.sum(res, dim=1)
+    assert torch.allclose(torch.sort(res_sum)[0], res_sum) or torch.allclose(
+        torch.sort(res_sum, descending=True)[0], res_sum
+    ), res_sum
 
 
 # TODO: way more unit tests..

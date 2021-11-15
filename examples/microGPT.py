@@ -271,11 +271,12 @@ def sample(model, x, steps, temperature=1.0, sample=False, top_k=None):
 if __name__ == "__main__":
     seed_everything(42)
     REF_BATCH = 512
-    BATCH = 64  # adjust depending on the avaiable memory on your machine
+    BATCH = 128  # adjust depending on the avaiable memory on your machine
     WORKERS = 8
     EPOCHS = 1
     BLOCK = 128
     WARMUP = 20
+    LR = 1e-4
 
     if not os.path.exists("input.txt"):
         os.system(
@@ -298,8 +299,9 @@ if __name__ == "__main__":
     model = GPT(
         vocab_size=train_dataset.vocab_size,
         block_size=train_dataset.block_size,
-        attention="favor",
+        attention="scaled_dot_product",
         warmup_tokens=REF_BATCH * WARMUP,
+        learning_rate=LR,
         final_tokens=EPOCHS * len(train_dataset) * BLOCK,
     )
     print(model)

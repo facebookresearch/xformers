@@ -66,7 +66,7 @@ def _plot_distribution(ortho_feature_map):
 
 def _get_rng_data(device):
     emb = 10
-    batch_size = 1
+    batch_size = 2
     seq_len = 20
     num_heads = 1
 
@@ -125,7 +125,7 @@ def test_feature_map_redraw():
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("normalize_inputs", [True, False])
 @pytest.mark.parametrize("device", [_device])
-def test_approximation_accuracy(feature, causal, normalize_inputs, device):
+def test_favor_approximation_accuracy(feature, causal, normalize_inputs, device):
     # Run two attentions in parallel, the normal scaled dot product and the favor approximation
 
     torch.random.manual_seed(0)
@@ -134,6 +134,9 @@ def test_approximation_accuracy(feature, causal, normalize_inputs, device):
         _get_rng_data(device),
         _get_rng_data(device),
     )
+
+    for x in (query, key, value):
+        x.requires_grad = True
 
     # Build the two attention heads
     sdp_attention = ScaledDotProduct(dropout=0.0, causal=causal).to(device)
@@ -159,6 +162,9 @@ def test_approximation_accuracy(feature, causal, normalize_inputs, device):
             assert mismatch < 0.5
         else:
             assert mismatch < 0.23
+
+        # Check trainability
+        torch.sum(approx_attention_result).backward()
 
 
 if __name__ == "__main__":

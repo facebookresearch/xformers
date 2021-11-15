@@ -24,6 +24,7 @@ from xformers.components.attention.feature_maps import (
 
 @dataclass
 class FavorAttentionConfig(AttentionConfig):
+    causal: Optional[bool]
     dim_features: Optional[int] = None  # The dimensions of the random features
     dim_head: Optional[
         int
@@ -109,33 +110,28 @@ class FavorAttention(Attention):
     def _causal_attention(
         k_prime: torch.Tensor, q_prime: torch.Tensor, v: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # TODO(@lefaudeux): Rewrite as suggested in
-        # https://github.com/fairinternal/xformers/pull/61#discussion_r628420093
         # Algorithm 1 in the paper
-        ref_v = torch.ones_like(v[:, 0, :].unsqueeze(1))
+        ref_v = torch.ones_like(v.unsqueeze(2))  # BATCH x SEQ x 1 x EMB
+        Gps = k_prime.unsqueeze(3) * v.unsqueeze(2)
+        Grenorm = k_prime.unsqueeze(3) * ref_v
 
-        Gps = k_prime[:, 0, :].unsqueeze(2) * v[:, 0, :].unsqueeze(1)
-        Grenorm = k_prime[:, 0, :].unsqueeze(2) * ref_v
+        # Consolidate against the feature dimension
+        att_raw = torch.einsum("bcfe,bcf->bce", Gps, q_prime)
+        att_norm = torch.einsum("bcfe,bcf->bce", Grenorm, q_prime)
 
-        att_raw = [torch.bmm(q_prime[:, 0, :].unsqueeze(1), Gps)]
-        att_norm = [torch.bmm(q_prime[:, 0, :].unsqueeze(1), Grenorm)]
+        # Cumulative sum over the sequence
+        att_raw = att_raw.cumsum(2)
+        att_norm = att_norm.cumsum(2)
 
-        for i in range(1, k_prime.shape[1]):
-            Gps += k_prime[:, i, :].unsqueeze(2) * v[:, i, :].unsqueeze(1)
-            Grenorm += k_prime[:, i, :].unsqueeze(2) * ref_v
-
-            att_raw.append(torch.bmm(q_prime[:, i, :].unsqueeze(1), Gps))
-            att_norm.append(torch.bmm(q_prime[:, i, :].unsqueeze(1), Grenorm))
-
-        return torch.cat(att_raw, dim=1), torch.cat(att_norm, dim=1)
+        return att_raw, att_norm
 
     def forward(
         self,
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        *args,
-        **kwargs,
+        *_,
+        **__,
     ):
 
         # Project key and queries onto the feature map space
