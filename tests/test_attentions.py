@@ -198,6 +198,8 @@ def test_causal(
     The input data is orthogonal by design if causal is respected, but if the attention looks ahead this will fail
     """
 
+    torch.random.manual_seed(42)
+
     device = torch.device("cuda")
 
     multi_head = _get_multihead(
@@ -234,9 +236,10 @@ def test_causal(
     res = multi_head(query=q, key=k, value=v).squeeze(0)
 
     # Consolidate along the embedding, if causal was respected the amplitude should be sorted already
-    res_sum = torch.sum(res, dim=1)
-    assert torch.allclose(torch.sort(res_sum)[0], res_sum) or torch.allclose(
-        torch.sort(res_sum, descending=True)[0], res_sum
+    res_sum = torch.sum(res, dim=1).cpu()
+
+    assert torch.allclose(torch.sort(res_sum)[1], torch.arange(SEQ)) or torch.allclose(
+        torch.sort(res_sum, descending=True)[1], torch.arange(SEQ)
     ), res_sum
 
 
