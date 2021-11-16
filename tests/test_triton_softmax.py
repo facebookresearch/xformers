@@ -38,13 +38,20 @@ SHAPES = [
 @pytest.mark.parametrize("log", [False, True])
 @pytest.mark.parametrize("masking", [True, False])
 @pytest.mark.parametrize("causal", [True, False])
-def test_softmax_parity(shape, amp, log, masking, causal):
+@pytest.mark.parametrize("contiguous", [True, False])
+def test_softmax_parity(shape, amp, log, masking, causal, contiguous):
     """Check that PyTorch and Triton softmax give the same result"""
     torch.random.manual_seed(0)
 
     # Check the result of a FW pass
-    X = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
-    X_ = X.detach().clone()
+    X = torch.normal(0, 1, size=shape, device="cuda", requires_grad=False)
+
+    if not contiguous:
+        # Make sure that the buffer is not contiguous
+        X = X.transpose(-2, -1).contiguous().transpose(-2, -1)
+
+    X_ = X.clone()
+    X.requires_grad = True
     X_.requires_grad = True
 
     seq = shape[1]
