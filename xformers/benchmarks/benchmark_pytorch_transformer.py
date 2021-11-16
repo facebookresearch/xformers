@@ -138,7 +138,6 @@ def bench_pytorch_encoder(
                             "dim_model": emb,
                         },
                     },
-
                 ]
             )
         ).to(device)
