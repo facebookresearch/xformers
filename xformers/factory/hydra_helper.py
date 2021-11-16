@@ -1,11 +1,15 @@
 # register components configs into Hydra ConfigStore
 # component config classes could be used to validate configs
+import logging
+
 from hydra.core.config_store import ConfigStore
 from omegaconf.errors import ValidationError
 
 from xformers.components.attention import ATTENTION_REGISTRY
 from xformers.components.feedforward import FEEDFORWARD_REGISTRY
 from xformers.components.positional_embedding import POSITION_EMBEDDING_REGISTRY
+
+log = logging.getLogger(__name__)
 
 
 def import_xformer_config_schema():
@@ -24,4 +28,4 @@ def import_xformer_config_schema():
             try:
                 cs.store(name=f"{kk}_schema", node=v[kk].config, group=f"xformers/{k}")
             except ValidationError as e:
-                print(f"Error registering {kk}_schema, error: {e}")
+                log.debug(f"Error registering {kk}_schema, error: {e}")
