@@ -23,77 +23,73 @@ test_configs = [
     [
         {
             "reversible": False,
-            "block_config": {
-                "block_type": "encoder",
-                "dim_model": 384,
-                "position_encoding_config": {
-                    "name": "vocab",
-                    "seq_len": SEQ,
-                    "vocab_size": 64,
-                    "dim_model": EMB,
-                },
-                "num_layers": 3,
-                "multi_head_config": {
-                    "num_heads": 4,
-                    "residual_dropout": 0,
-                    "attention": {
-                        "name": "linformer",
-                        "dropout": 0,
-                        "causal": True,
-                        "seq_len": 512,
-                    },
-                    "dim_model": EMB,
-                },
-                "feedforward_config": {
-                    "name": "MLP",
+            "block_type": "encoder",
+            "dim_model": 384,
+            "position_encoding_config": {
+                "name": "vocab",
+                "seq_len": SEQ,
+                "vocab_size": 64,
+                "dim_model": EMB,
+            },
+            "num_layers": 3,
+            "multi_head_config": {
+                "num_heads": 4,
+                "residual_dropout": 0,
+                "attention": {
+                    "name": "linformer",
                     "dropout": 0,
-                    "activation": "relu",
-                    "hidden_layer_multiplier": 4,
-                    "dim_model": EMB,
+                    "causal": True,
+                    "seq_len": 512,
                 },
+                "dim_model": EMB,
+            },
+            "feedforward_config": {
+                "name": "MLP",
+                "dropout": 0,
+                "activation": "relu",
+                "hidden_layer_multiplier": 4,
+                "dim_model": EMB,
             },
         },
         {
-            "block_config": {
-                "block_type": "decoder",
-                "dim_model": 384,
-                "position_encoding_config": {
-                    "name": "vocab",
-                    "seq_len": SEQ,
-                    "vocab_size": 64,
-                    "dim_model": EMB,
-                },
-                "num_layers": 2,
-                "multi_head_config_masked": {
-                    "num_heads": 4,
-                    "residual_dropout": 0,
-                    "dim_model": EMB,
-                    "attention": {
-                        "name": "linformer",
-                        "dropout": 0,
-                        "causal": True,
-                        "seq_len": 512,
-                    },
-                },
-                "multi_head_config_cross": {
-                    "num_heads": 4,
-                    "residual_dropout": 0,
-                    "dim_model": EMB,
-                    "attention": {
-                        "name": "linformer",
-                        "dropout": 0,
-                        "causal": True,
-                        "seq_len": 512,
-                    },
-                },
-                "feedforward_config": {
-                    "name": "MLP",
+            "block_type": "decoder",
+            "dim_model": 384,
+            "position_encoding_config": {
+                "name": "vocab",
+                "seq_len": SEQ,
+                "vocab_size": 64,
+                "dim_model": EMB,
+            },
+            "num_layers": 2,
+            "multi_head_config_masked": {
+                "num_heads": 4,
+                "residual_dropout": 0,
+                "dim_model": EMB,
+                "attention": {
+                    "name": "linformer",
                     "dropout": 0,
-                    "activation": "relu",
-                    "hidden_layer_multiplier": 4,
-                    "dim_model": EMB,
+                    "causal": True,
+                    "seq_len": 512,
                 },
-            }
+            },
+            "multi_head_config_cross": {
+                "num_heads": 4,
+                "residual_dropout": 0,
+                "dim_model": EMB,
+                "attention": {
+                    "name": "linformer",
+                    "dropout": 0,
+                    "causal": True,
+                    "seq_len": 512,
+                },
+            },
+            "feedforward_config": {
+                "name": "MLP",
+                "dropout": 0,
+                "activation": "relu",
+                "hidden_layer_multiplier": 4,
+                "dim_model": EMB,
+            },
         },
     ]
 ]

@@ -151,7 +151,7 @@ class xFormerEncoderConfig(xFormerBlockConfig):
         position_encoding_config: Optional[Dict[str, Any]] = None,
         layer_norm_style: str = "post",
         use_triton: bool = True,
-        **_,
+        **kwargs,
     ):
         # Convenience, fill in duplicated field
         try:
@@ -170,13 +170,15 @@ class xFormerEncoderConfig(xFormerBlockConfig):
         except AttributeError:
             # A config instance was passed in, this is fine
             pass
-
+        if "block_type" in kwargs:
+            assert kwargs["block_type"] == "encoder"
+        kwargs["block_type"] = BlockType("encoder")
         super().__init__(
             dim_model=dim_model,
             feedforward_config=feedforward_config,
             position_encoding_config=position_encoding_config,
             layer_norm_style=LayerNormStyle(layer_norm_style),
-            block_type=BlockType("encoder"),
+            **kwargs,
         )
 
         self.multi_head_config = multi_head_config
@@ -197,7 +199,7 @@ class xFormerDecoderConfig(xFormerBlockConfig):
         position_encoding_config: Optional[Dict[str, Any]] = None,
         layer_norm_style: str = "post",
         use_triton: bool = True,
-        **_,
+        **kwargs,
     ):
 
         # Convenience, fill in duplicated field
@@ -219,13 +221,16 @@ class xFormerDecoderConfig(xFormerBlockConfig):
         except AttributeError:
             # A config instance was passed in, this is fine
             pass
+        if "block_type" in kwargs.keys():
+            assert kwargs["block_type"] == "decoder"
+        kwargs["block_type"] = BlockType("decoder")
 
         super().__init__(
             dim_model=dim_model,
             feedforward_config=feedforward_config,
             position_encoding_config=position_encoding_config,
             layer_norm_style=LayerNormStyle(layer_norm_style),
-            block_type=BlockType("decoder"),
+            **kwargs,
         )
 
         self.multi_head_config_masked = multi_head_config_masked

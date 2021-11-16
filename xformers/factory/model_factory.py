@@ -127,6 +127,7 @@ class xFormer(torch.nn.Module):
     ):
         if isinstance(stack_configs, xFormerBlockConfig):
             stack_configs = [stack_configs]
+
         reversible = [
             c.reversible
             for c in filter(lambda x: x.block_type == "encoder", stack_configs)
