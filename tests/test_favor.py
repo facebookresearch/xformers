@@ -159,7 +159,7 @@ def test_favor_approximation_accuracy(feature, causal, normalize_inputs, device)
         if causal:
             # FIXME(@lefaudeux) the causal case seems significantly worse, not obvious why,
             # could be worth investigating
-            assert mismatch < 0.5
+            assert mismatch < 0.6
         else:
             assert mismatch < 0.23
 

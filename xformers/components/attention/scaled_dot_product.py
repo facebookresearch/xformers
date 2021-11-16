@@ -90,9 +90,15 @@ class ScaledDotProduct(Attention):
 
                 if att_mask.dtype == torch.bool:
                     # bool mask
-                    att_mask_ = self.mask
-                    att_mask_[~att_mask] = float("-inf")
-                    att_mask = att_mask_
+                    mask_merge = self.mask.clone()
+                    batch = att_mask.shape[0]
+                    if mask_merge.shape[0] != batch:
+                        # Note that we need to repeat here,
+                        # because the mask could differ in between batchs
+                        mask_merge = mask_merge.repeat(batch, 1, 1)
+
+                    mask_merge.masked_fill_(~att_mask, float("-inf"))
+                    att_mask = mask_merge
                 else:
                     # additive mask
                     att_mask = self.mask + att_mask

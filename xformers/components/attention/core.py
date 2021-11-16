@@ -229,7 +229,7 @@ def scaled_dot_product_attention(
     if (
         att_mask is not None
         and q.shape[-2] == k.shape[-2]
-        and q.shape[-2] < att_mask.shape[0]
+        and q.shape[-2] < att_mask.shape[1]
     ):
         seq = q.shape[-2]
         if att_mask.ndim == 2:

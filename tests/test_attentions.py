@@ -96,9 +96,7 @@ def test_order_invariance(
     )
 
     # Check that a shuffled input produces the same results
-    seqs = (
-        [SEQ, SEQ - 16] if (attention_name != "blocksparse" and not causal) else [SEQ]
-    )
+    seqs = [SEQ, SEQ - 16] if (attention_name != "blocksparse") else [SEQ]
 
     for seq in seqs:
         # Check that we can pass a smaller sequence
@@ -189,9 +187,9 @@ def test_different_kq_dimensions(
 
 
 @pytest.mark.parametrize("heads", [1, 4])
-@pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
-@pytest.mark.skipif(torch.cuda.is_available(), reason="requires a CUDA gpu")
-def test_scaled_dot_product_causal(
+@pytest.mark.parametrize("attention_name", ["scaled_dot_product", "favor"])
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA gpu")
+def test_causal(
     attention_name: str,
     heads: int,
 ):
@@ -218,7 +216,7 @@ def test_scaled_dot_product_causal(
         .expand(1, -1, -1)
     )
     q = (
-        torch.triu(torch.ones((SEQ, SEQ), device=device), diagonal=1)
+        torch.triu(torch.ones((SEQ, SEQ), device=device), diagonal=0)
         .unsqueeze(0)
         .expand(1, -1, -1)
     )
