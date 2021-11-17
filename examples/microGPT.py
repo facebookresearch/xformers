@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.utilities import rank_zero_info
+from pytorch_lightning.utilities.meta import init_meta_context
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, RandomSampler
 
@@ -296,18 +297,21 @@ if __name__ == "__main__":
         pin_memory=True,
     )
 
-    model = GPT(
-        vocab_size=train_dataset.vocab_size,
-        block_size=train_dataset.block_size,
-        attention="nystrom",
-        warmup_tokens=REF_BATCH * WARMUP,
-        learning_rate=LR,
-        final_tokens=EPOCHS * len(train_dataset) * BLOCK,
-    )
+    with init_meta_context():  # enable scaling to very large model without raising OOM.
+        model = GPT(
+            vocab_size=train_dataset.vocab_size,
+            block_size=train_dataset.block_size,
+            attention="nystrom",
+            warmup_tokens=REF_BATCH * WARMUP,
+            learning_rate=LR,
+            final_tokens=EPOCHS * len(train_dataset) * BLOCK,
+        )
     print(model)
 
     trainer = Trainer(
-        gpus=1,
+        devices="auto",
+        accelerator="gpu",
+        strategy="ddp",
         max_epochs=EPOCHS,
         precision=16,
         gradient_clip_val=1,
