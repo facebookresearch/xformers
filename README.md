@@ -31,6 +31,7 @@ There are two ways you can install it:
   ```bash
   conda create --name xformer_env
   conda activate xformer_env
+  pip install torch
   pip install xformers
   ```
 

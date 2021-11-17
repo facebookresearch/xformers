@@ -89,29 +89,34 @@ def get_extensions():
 
     sources = [os.path.join(extensions_dir, s) for s in sources]
 
-    ext_modules = [
-        extension(
-            "xformers._C",
-            sorted(sources),
-            include_dirs=include_dirs,
-            define_macros=define_macros,
-            extra_compile_args=extra_compile_args,
-        )
-    ]
+    # Make sure that we soft-fail if the source files are not present
+    if len(sources) > 0:
+        ext_modules = [
+            extension(
+                "xformers._C",
+                sorted(sources),
+                include_dirs=include_dirs,
+                define_macros=define_macros,
+                extra_compile_args=extra_compile_args,
+            )
+        ]
+    else:
+        ext_modules = []
 
     return ext_modules
 
 
 class clean(distutils.command.clean.clean):  # type: ignore
     def run(self):
-        with open(".gitignore", "r") as f:
-            ignores = f.read()
-            for wildcard in filter(None, ignores.split("\n")):
-                for filename in glob.glob(wildcard):
-                    try:
-                        os.remove(filename)
-                    except OSError:
-                        shutil.rmtree(filename, ignore_errors=True)
+        if os.path.exists(".gitignore"):
+            with open(".gitignore", "r") as f:
+                ignores = f.read()
+                for wildcard in filter(None, ignores.split("\n")):
+                    for filename in glob.glob(wildcard):
+                        try:
+                            os.remove(filename)
+                        except OSError:
+                            shutil.rmtree(filename, ignore_errors=True)
 
         # It's an old-style class in Python 2.7...
         distutils.command.clean.clean.run(self)
