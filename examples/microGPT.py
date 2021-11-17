@@ -297,7 +297,9 @@ if __name__ == "__main__":
         pin_memory=True,
     )
 
-    with init_meta_context():  # enable scaling to very large model without raising OOM.
+    # enable scaling to very large model without raising OOM.
+    #  the entire model will be create on meta device
+    with init_meta_context():
         model = GPT(
             vocab_size=train_dataset.vocab_size,
             block_size=train_dataset.block_size,
