@@ -6,7 +6,7 @@
 import logging
 
 # Please update the doc version in docs/source/conf.py as well.
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 
 _is_sparse_available = True
 
