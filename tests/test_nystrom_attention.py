@@ -13,7 +13,7 @@ from xformers.components.attention.utils import maybe_merge_masks
 
 @pytest.mark.parametrize("pinverse_original_init", [True, False])
 @pytest.mark.parametrize("use_razavi_pinverse", [True, False])
-@pytest.mark.parametrize("num_landmarks", [30, 33])
+@pytest.mark.parametrize("num_landmarks", [30, 33, 905])
 def test_nystrom_attention(
     pinverse_original_init: bool,
     use_razavi_pinverse: bool,
@@ -85,13 +85,14 @@ def test_nystrom_attention(
         assert torch.allclose(r_nystrom, r_sdp, rtol=0.005, atol=1e-2)
 
     def test_masking():
-        nystrom_config["causal"] = True
-        sdp_config["causal"] = True
+        # FIXME
+        # nystrom_config["causal"] = True
+        # sdp_config["causal"] = True
 
         nystrom_attention = NystromAttention(**nystrom_config)
         sdp_attention = ScaledDotProduct(**sdp_config)
 
-        key_padding_mask = torch.randint(0, 2, (b // num_heads, s)).to(dtype=torch.bool)
+        key_padding_mask = torch.rand((b // num_heads, s)) > 0.1
         att_mask = None
         mask = maybe_merge_masks(
             att_mask,

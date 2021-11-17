@@ -59,8 +59,9 @@ class Attention(nn.Module, metaclass=ABCMeta):
         # Cache a mask so that multiple instances would reuse the same
         causal_mask = self._causal_mask
         if not causal_mask:
-            causal_mask = torch.tril(torch.ones(seq_len, to_seq_len), diagonal=0)
-            causal_mask[self._causal_mask == 1] = -float("inf")
+            causal_mask = torch.triu(
+                torch.ones(seq_len, to_seq_len) * float("-inf"), diagonal=1
+            )
             causal_mask.unsqueeze_(0)  # batch dimension
             self._causal_mask = causal_mask
 

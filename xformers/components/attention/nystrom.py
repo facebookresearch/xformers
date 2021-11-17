@@ -194,7 +194,7 @@ class NystromAttention(Attention):
             mask: Optional[torch.Tensor] = None
 
             if self.causal:
-                mask = self._tril_mask(batched_dim, seq_len, seq_len, **tt)
+                mask = self._triu_mask(batched_dim, seq_len, seq_len, **tt)
 
             if key_padding_mask is not None:
                 mask = key_padding_mask if mask is None else mask + key_padding_mask
@@ -210,13 +210,13 @@ class NystromAttention(Attention):
                 or (batched_dim, seq_len, self.num_landmarks)
                 != self.causal_mask_1.size()
             ):
-                self.causal_mask_1 = self._tril_mask(
+                self.causal_mask_1 = self._triu_mask(
                     batched_dim, seq_len, self.num_landmarks, **tt
                 )
-                self.causal_mask_2 = self._tril_mask(
+                self.causal_mask_2 = self._triu_mask(
                     batched_dim, self.num_landmarks, self.num_landmarks, **tt
                 )
-                self.causal_mask_3 = self._tril_mask(
+                self.causal_mask_3 = self._triu_mask(
                     batched_dim, self.num_landmarks, seq_len, **tt
                 )
 
@@ -266,7 +266,7 @@ class NystromAttention(Attention):
         x = self.attn_drop(x)
         return x
 
-    def _tril_mask(self, dim_1: int, dim_2: int, dim_3: int, **kwargs) -> torch.Tensor:
+    def _triu_mask(self, dim_1: int, dim_2: int, dim_3: int, **kwargs) -> torch.Tensor:
         device = kwargs["device"]
         dtype = kwargs["dtype"]
 
