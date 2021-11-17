@@ -15,8 +15,6 @@ from .attention import Attention, build_attention  # noqa
 from .multi_head_dispatch import MultiHeadDispatch, MultiHeadDispatchConfig  # noqa
 from .residual import LayerNormStyle, PostNorm, PreNorm, Residual  # noqa
 
-__all__ = ["MultiHeadDispatch", "Activation"]
-
 # automatically import any Python files in the directory
 import_all_modules(str(Path(__file__).parent), "xformers.components")
 

@@ -16,6 +16,7 @@ from xformers.utils import (
 )
 
 from ._sputnik_sparse import SparseCS
+from .attention_mask import AttentionMask
 from .base import Attention, AttentionConfig  # noqa
 
 # CREDITS: Classy Vision registry mechanism
@@ -77,10 +78,11 @@ register_attention: Callable[[str, Any], Callable[[Any], Any]] = get_registry_de
 )
 
 
-def maybe_sparsify(matrix):
+def maybe_sparsify(matrix) -> Any:
     # Sparsify if that makes sense
     if torch.count_nonzero(matrix).item() / matrix.numel() > _DENSITY_THRESHOLD:
-        return matrix
+        # If not sparse, then AttentionMask is the reference type
+        return AttentionMask.from_bool(matrix)
 
     return sparsify(matrix)
 
@@ -110,6 +112,7 @@ __all__ = [
     "GlobalAttention",
     "FavorAttention",
     "Attention",
+    "AttentionMask",
     "build_attention",
     "register_attention",
 ]

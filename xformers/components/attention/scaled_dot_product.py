@@ -4,12 +4,17 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 from torch import nn
 
-from xformers.components.attention import Attention, AttentionConfig, register_attention
+from xformers.components.attention import (
+    Attention,
+    AttentionConfig,
+    AttentionMask,
+    register_attention,
+)
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
@@ -29,7 +34,7 @@ class ScaledDotProduct(Attention):
     .. _`Attention is all you need`: https://arxiv.org/abs/1706.03762v5
     """
 
-    mask: Optional[torch.Tensor]
+    mask: Optional[AttentionMask]
 
     def __init__(
         self,
@@ -46,8 +51,7 @@ class ScaledDotProduct(Attention):
         self.seq_len = seq_len
 
         if causal and seq_len is not None:
-            mask = self._get_causal_mask(seq_len, to_seq_len if to_seq_len else seq_len)
-            self.register_buffer("mask", mask)
+            self.mask = AttentionMask.make_causal(seq_len, to_seq_len)
         else:
             self.mask = None
 
@@ -56,7 +60,7 @@ class ScaledDotProduct(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
+        att_mask: Optional[Union[AttentionMask, torch.Tensor]] = None,
         *args,
         **kwargs,
     ) -> torch.Tensor:
@@ -75,42 +79,32 @@ class ScaledDotProduct(Attention):
 
         """
 
+        # Convenience, create an attention mask if a tensor was passed
+        if att_mask is not None and isinstance(att_mask, torch.Tensor):
+            # By default we don't know of the causality, and a check would be expensive
+            att_mask = (
+                AttentionMask.from_bool(att_mask)
+                if att_mask.dtype == torch.bool
+                else AttentionMask(att_mask, is_causal=False)
+            )
+
         # Handle a possibly deferred causal mask handling
         if self.causal and self.mask is None:
-            self.mask = self._get_causal_mask(q.shape[-2], q.shape[-2])
-            self.mask.requires_grad = False
+            self.mask = AttentionMask.make_causal(
+                seq_len=q.shape[-2],
+                to_seq_len=q.shape[-2],
+                device=q.device,
+                dtype=q.dtype,
+            )
 
         # Mask-aware attention
         if self.mask is not None:
             self.mask = self.mask.to(dtype=q.dtype, device=q.device)
 
-            if att_mask is not None:
-                if att_mask.ndim == 2:
-                    att_mask.unsqueeze_(0)
-
-                if att_mask.dtype == torch.bool:
-                    # bool mask
-                    mask_merge = self.mask.clone()
-                    batch = att_mask.shape[0]
-                    if mask_merge.shape[0] != batch:
-                        # Note that we need to repeat here,
-                        # because the mask could differ in between batchs
-                        mask_merge = mask_merge.repeat(batch, 1, 1)
-
-                    mask_merge.masked_fill_(~att_mask, float("-inf"))
-                    att_mask = mask_merge
-                else:
-                    # additive mask
-                    att_mask = self.mask + att_mask
-
-            else:
-                # If no additional mask is being passed, causal mask prevails
-                att_mask = self.mask
-
-            att_mask = att_mask.to(q.dtype)
+            att_mask = att_mask + self.mask if att_mask is not None else self.mask
 
         # Self-attend: (B x nh, S, hs) x (B x nh, hs, S) -> (B x nh, S, S)
         y = scaled_dot_product_attention(
-            q=q, k=k, v=v, att_mask=att_mask, dropout=self.attn_drop, causal=self.causal
+            q=q, k=k, v=v, att_mask=att_mask, dropout=self.attn_drop
         )
         return y
