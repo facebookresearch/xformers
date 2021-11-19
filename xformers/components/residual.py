@@ -10,19 +10,10 @@ from typing import List, Union
 import torch
 import torch.nn as nn
 
-# NOTE: The Triton layernorm can be activated/deactivated from here
-_is_triton_available = torch.cuda.is_available()
+from xformers import _is_triton_available
 
 if _is_triton_available:
-    try:
-        from xformers.triton.layer_norm import FusedLayerNorm
-    except ImportError as e:
-        import logging
-
-        logging.warning(
-            f"Triton is not available, some optimizations will not be enabled.\n{e}"
-        )
-        _is_triton_available = False
+    from xformers.triton.layer_norm import FusedLayerNorm
 
 
 def _to_tensor_list(
