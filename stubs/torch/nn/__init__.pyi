@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 import builtins
 from typing import (
     Any,
@@ -42,21 +47,15 @@ class Module:
     training: bool = ...
 
 class LSTMCell(Module, Generic[InputSize, HiddenSize]):
-    def __init__(
-        self, input_size: InputSize, hidden_size: HiddenSize, bias: bool = ...
-    ) -> None: ...
+    def __init__(self, input_size: InputSize, hidden_size: HiddenSize, bias: bool = ...) -> None: ...
     def __call__(
         self,
         input: Tensor[DType, Batch, InputSize],
-        hidden: Tuple[
-            Tensor[DType, Batch, HiddenSize], Tensor[DType, Batch, HiddenSize]
-        ] = ...,
+        hidden: Tuple[Tensor[DType, Batch, HiddenSize], Tensor[DType, Batch, HiddenSize]] = ...,
     ) -> Tuple[Tensor[DType, Batch, HiddenSize], Tensor[DType, Batch, HiddenSize]]: ...
 
 class Linear(Module, Generic[InputSize, OutputSize]):
-    def __init__(
-        self, in_features: InputSize, out_features: OutputSize, bias: bool = ...
-    ) -> None: ...
+    def __init__(self, in_features: InputSize, out_features: OutputSize, bias: bool = ...) -> None: ...
     def __call__(
         self,
         input: Tensor[DType, N, Unpack[Ts], InputSize],
@@ -123,13 +122,7 @@ class ReflectionPad2d(Module, Generic[Padding]):
     def __call__(
         self,
         input: Tensor[DType, Batch, Channels, Height, Width],
-    ) -> Tensor[
-        DType,
-        Batch,
-        Channels,
-        Add[Add[Height, Padding], Padding],
-        Add[Add[Width, Padding], Padding],
-    ]: ...
+    ) -> Tensor[DType, Batch, Channels, Add[Add[Height, Padding], Padding], Add[Add[Width, Padding], Padding],]: ...
 
 class InstanceNorm2d(Generic[Channels]):
     def __init__(self, num_features: Channels, affine: bool = False) -> None: ...
@@ -139,9 +132,7 @@ class InstanceNorm2d(Generic[Channels]):
 
 class LeakyReLU(Module):
     def __init__(self, negative_slope: float = ..., inplace: bool = ...) -> None: ...
-    def __call__(
-        self, input: Tensor[DType, N, Unpack[Ts]]
-    ) -> Tensor[DType, N, Unpack[Ts]]: ...
+    def __call__(self, input: Tensor[DType, N, Unpack[Ts]]) -> Tensor[DType, N, Unpack[Ts]]: ...
 
 class ReLU(Module):
     def __call__(
@@ -155,9 +146,7 @@ class GELU(Module):
 
 class Dropout(Module):
     def __init__(self, p: float, inplace: bool = ...) -> None: ...
-    def __call__(
-        self, input: Tensor[DType, Unpack[Ts]]
-    ) -> Tensor[DType, Unpack[Ts]]: ...
+    def __call__(self, input: Tensor[DType, Unpack[Ts]]) -> Tensor[DType, Unpack[Ts]]: ...
 
 class Embedding(Module, Generic[N, EmbeddingDimension]):
     def __init__(
@@ -194,12 +183,8 @@ class Embedding(Module, Generic[N, EmbeddingDimension]):
         scale_grad_by_freq: bool = False,
         sparse: bool = False,
     ) -> Embedding[N, EmbeddingDimension]: ...
-    def forward(
-        self, x: Tensor[DType, Unpack[Ts]]
-    ) -> Tensor[DType, Unpack[Ts], EmbeddingDimension]: ...
-    def __call__(
-        self, x: Tensor[DType, Unpack[Ts]]
-    ) -> Tensor[DType, Unpack[Ts], EmbeddingDimension]: ...
+    def forward(self, x: Tensor[DType, Unpack[Ts]]) -> Tensor[DType, Unpack[Ts], EmbeddingDimension]: ...
+    def __call__(self, x: Tensor[DType, Unpack[Ts]]) -> Tensor[DType, Unpack[Ts], EmbeddingDimension]: ...
 
 _shape_t = Union[int, List[int], Tuple[Any, ...]]
 
@@ -256,8 +241,6 @@ class ModuleList(Module):
     def __len__(self) -> int: ...
 
 class Parameter(Tensor[DType, Unpack[Ts]]):
-    def __init__(
-        self, data: Tensor[DType, Unpack[Ts]] = ..., requires_grad: builtins.bool = ...
-    ) -> None: ...
+    def __init__(self, data: Tensor[DType, Unpack[Ts]] = ..., requires_grad: builtins.bool = ...) -> None: ...
 
 Sequential: Any = ...

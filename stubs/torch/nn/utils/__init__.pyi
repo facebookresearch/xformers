@@ -1,7 +1,12 @@
-from typing import Iterable, TypeVar, Union, overload
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
 
-from pyre_extensions import TypeVarTuple, Unpack
-from torch import Tensor, complex64
+from typing import Iterable, TypeVar, Union
+
+from pyre_extensions import TypeVarTuple
+from torch import Tensor
 
 DType = TypeVar("DType")
 
