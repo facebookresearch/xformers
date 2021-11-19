@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from dataclasses import dataclass
 from typing import Optional, Union
 
@@ -97,11 +98,26 @@ class ScaledDotProduct(Attention):
                 dtype=q.dtype,
             )
 
-        # Mask-aware attention
+        # Merge the optional causal mask and the user-provided mask
         if self.mask is not None:
             self.mask = self.mask.to(dtype=q.dtype, device=q.device)
 
             att_mask = att_mask + self.mask if att_mask is not None else self.mask
+
+        # Try to handle a case where the sequence is smaller than the mask
+        if (
+            att_mask is not None
+            and q.shape[-2] == k.shape[-2]
+            and q.shape[-2] < att_mask.shape[1]
+        ):
+            if isinstance(att_mask, AttentionMask):
+                att_mask = att_mask.make_crop(seq_len=q.shape[-2])
+            else:
+                logging.error(
+                    "Mismatching sparse attention mask and sequence length."
+                    + " Please pad the inputs or adjust the attention mask"
+                )
+                raise NotImplementedError
 
         # Self-attend: (B x nh, S, hs) x (B x nh, hs, S) -> (B x nh, S, S)
         y = scaled_dot_product_attention(

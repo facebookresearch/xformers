@@ -200,7 +200,7 @@ def scaled_query_key_softmax(
     # Self-attend: (N, S, hs) x (N, hs, S) -> (N, S, S)
     q = q / math.sqrt(k.size(-1))
 
-    # Matmul with mask, if boolean
+    # Matmul with mask
     if att_mask is not None and isinstance(att_mask, AttentionMask):
         # Additive mask
         mask: Optional[Union[SparseCS, torch.Tensor]] = att_mask.values
@@ -210,7 +210,7 @@ def scaled_query_key_softmax(
     att = _matmul_with_mask(q, k.transpose(-2, -1), mask)
 
     # Softmax to get the attention probabilities
-    is_causal = att_mask.is_causal if isinstance(att_mask, AttentionMask) else False
+    is_causal = isinstance(att_mask, AttentionMask) and att_mask.is_causal
     att = _softmax(att, causal=is_causal)
     return att
 
@@ -228,24 +228,6 @@ def scaled_dot_product_attention(
         or (att_mask is not None and att_mask.is_sparse)
     )
 
-    # Try to handle a case where the sequence is smaller than the mask
-    if (
-        att_mask is not None
-        and q.shape[-2] == k.shape[-2]
-        and q.shape[-2] < att_mask.shape[1]
-    ):
-        if isinstance(att_mask, AttentionMask):
-            att_mask = att_mask.make_crop(seq_len=q.shape[-2])
-        else:
-            assert isinstance(att_mask, SparseCS) or att_mask.is_sparse, att_mask
-
-            logging.error(
-                "Mismatching sparse attention mask and sequence length."
-                + " Please pad the inputs or adjust the attention mask"
-            )
-            raise NotImplementedError
-
-    # The actual attention
     with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
         if autocast_disabled:
             q, k, v = q.float(), k.float(), v.float()

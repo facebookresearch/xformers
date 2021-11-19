@@ -29,6 +29,10 @@ SHAPES = [(128, 256), (8, 384, 128), (8, 784, 512)]
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
+@pytest.mark.skipif(
+    not _triton_available or gpu_capabilities_older_than_70(),
+    reason="Triton requires a SM70+ GPU",
+)
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize(
     "dtype", [torch.float32]
