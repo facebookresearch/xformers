@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 from typing import (
     Any,
     Container,
@@ -50,13 +55,9 @@ class ndarray(_ArrayOrScalarCommon[DType, Unpack[Ts]], Iterable, Sized, Containe
         order: Optional[str] = ...,
     ) -> None: ...
     @overload
-    def __getitem__(
-        self: ndarray[DType, A1, A2], key: Literal[0]
-    ) -> ndarray[DType, A2]: ...
+    def __getitem__(self: ndarray[DType, A1, A2], key: Literal[0]) -> ndarray[DType, A2]: ...
     @overload
-    def __getitem__(
-        self: ndarray[DType, A1, A2], key: Literal[1]
-    ) -> ndarray[DType, A1]: ...
+    def __getitem__(self: ndarray[DType, A1, A2], key: Literal[1]) -> ndarray[DType, A1]: ...
     def __setitem__(self, key, value): ...
     @property
     def shape(self) -> Tuple[Unpack[Ts]]: ...
@@ -81,15 +82,11 @@ class ndarray(_ArrayOrScalarCommon[DType, Unpack[Ts]], Iterable, Sized, Containe
 # ===== BEGIN `empty` =====
 # `shape` as tuple, dtype="int64"
 @overload
-def empty(
-    shape: Tuple[Unpack[Ts]], dtype: Literal["int64"]
-) -> ndarray[int64, Unpack[Ts]]: ...
+def empty(shape: Tuple[Unpack[Ts]], dtype: Literal["int64"]) -> ndarray[int64, Unpack[Ts]]: ...
 
 # `shape` as tuple, dtype as e.g. np.float32
 @overload
-def empty(
-    shape: Tuple[Unpack[Ts]], dtype: Type[DType]
-) -> ndarray[DType, Unpack[Ts]]: ...
+def empty(shape: Tuple[Unpack[Ts]], dtype: Type[DType]) -> ndarray[DType, Unpack[Ts]]: ...
 
 # `shape` as integer, dtype as e.g. np.float32
 @overload

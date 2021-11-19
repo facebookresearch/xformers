@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 from typing import Optional, Tuple, TypeVar, overload
 
 from pyre_extensions import TypeVarTuple, Unpack
@@ -32,9 +37,7 @@ def qr(
     mode: L["complete"],
     *,
     out: Optional[Tensor] = ...,
-) -> Tuple[
-    Tensor[FloatOrDouble, Unpack[Ts], M, M], Tensor[FloatOrDouble, Unpack[Ts], M, N]
-]: ...
+) -> Tuple[Tensor[FloatOrDouble, Unpack[Ts], M, M], Tensor[FloatOrDouble, Unpack[Ts], M, N]]: ...
 
 # The return type should use k=min(m, n), but we don't have that operator yet.
 # Assume that M <= N for now.
@@ -44,10 +47,6 @@ def qr(
     mode: L["reduced"] = ...,
     *,
     out: Optional[Tensor] = ...,
-) -> Tuple[
-    Tensor[FloatOrDouble, Unpack[Ts], M, M], Tensor[FloatOrDouble, Unpack[Ts], M, N]
-]: ...
+) -> Tuple[Tensor[FloatOrDouble, Unpack[Ts], M, M], Tensor[FloatOrDouble, Unpack[Ts], M, N]]: ...
 @overload
-def norm(
-    A: Tensor[DType, Unpack[Ts], N, M], dim: Tuple[L[-2], L[-1]]
-) -> Tensor[DType, Unpack[Ts]]: ...
+def norm(A: Tensor[DType, Unpack[Ts], N, M], dim: Tuple[L[-2], L[-1]]) -> Tensor[DType, Unpack[Ts]]: ...
