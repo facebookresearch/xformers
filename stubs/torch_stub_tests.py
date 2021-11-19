@@ -272,9 +272,13 @@ def test_arange(n: N) -> None:
     y_float2: Tensor[torch.float32, L[2]] = torch.arange(1, 6, 2, dtype=torch.float32)
 
     device: torch.device
-    y_generic: Tensor[torch.float32, N] = torch.arange(0, n, device=device, dtype=torch.float32)
+    y_generic: Tensor[torch.float32, N] = torch.arange(
+        0, n, device=device, dtype=torch.float32
+    )
     # pyre-fixme[9]: Expected error.
-    y_generic_error: Tensor[torch.float32, L[99]] = torch.arange(0, n, device=device, dtype=torch.float32)
+    y_generic_error: Tensor[torch.float32, L[99]] = torch.arange(
+        0, n, device=device, dtype=torch.float32
+    )
 
 
 def test_embedding() -> None:
@@ -360,7 +364,9 @@ def test_reshape() -> None:
 def test_transpose() -> None:
     x: Tensor[torch.float32, L[2], L[3], L[4], L[5], L[6]]
     y: Tensor[torch.float32, L[2], L[3], L[4], L[6], L[5]] = x.transpose(-2, -1)
-    y_function: Tensor[torch.float32, L[2], L[3], L[4], L[6], L[5]] = torch.transpose(x, -2, -1)
+    y_function: Tensor[torch.float32, L[2], L[3], L[4], L[6], L[5]] = torch.transpose(
+        x, -2, -1
+    )
     # pyre-fixme[9]: y_error has type `Tensor[torch.float32, typing_extensions.Litera...
     y_error: Tensor[torch.float32, L[2], L[4], L[99]] = x.transpose(-2, -1)
 
@@ -443,8 +449,12 @@ def test_empty() -> None:
     result4: torch.Tensor[torch.float32, L[1], L[2], L[3]] = torch.empty(x)
     result5: torch.Tensor[torch.float32, L[4]] = torch.empty(4)
 
-    result6: torch.Tensor[torch.int64, L[1], L[2], L[3]] = torch.empty(x, dtype=torch.int64)
-    result7: torch.Tensor[torch.int64, L[1], L[2], L[3]] = torch.empty(*x, dtype=torch.int64)
+    result6: torch.Tensor[torch.int64, L[1], L[2], L[3]] = torch.empty(
+        x, dtype=torch.int64
+    )
+    result7: torch.Tensor[torch.int64, L[1], L[2], L[3]] = torch.empty(
+        *x, dtype=torch.int64
+    )
 
 
 def test_empty_like() -> None:
@@ -491,8 +501,12 @@ def test_randn() -> None:
     result4: torch.Tensor[torch.float32, L[1], L[2], L[3]] = torch.randn(x)
     result5: torch.Tensor[torch.float32, L[4]] = torch.randn(4)
 
-    result6: torch.Tensor[torch.int64, L[1], L[2], L[3]] = torch.randn(x, dtype=torch.int64)
-    result7: torch.Tensor[torch.int64, L[1], L[2], L[3]] = torch.randn(*x, dtype=torch.int64)
+    result6: torch.Tensor[torch.int64, L[1], L[2], L[3]] = torch.randn(
+        x, dtype=torch.int64
+    )
+    result7: torch.Tensor[torch.int64, L[1], L[2], L[3]] = torch.randn(
+        *x, dtype=torch.int64
+    )
 
 
 def test_all() -> None:
@@ -513,7 +527,9 @@ def test_where() -> None:
     x: torch.Tensor[torch.float32, L[2], L[3]]
 
     good: Tuple[torch.LongTensor[int, int], torch.LongTensor[int, int]] = torch.where(x)
-    bad: Tuple[torch.LongTensor[int, int], torch.LongTensor[int, int], L[99]] = torch.where(x)
+    bad: Tuple[
+        torch.LongTensor[int, int], torch.LongTensor[int, int], L[99]
+    ] = torch.where(x)
 
     y: torch.Tensor[torch.float32, L[2], L[1]]
     not_broadcastable: torch.Tensor[torch.float32, L[2], L[99]]
@@ -676,9 +692,13 @@ def test_argsort() -> None:
     # pyre-fixme[9]: bad2 has type `LongTensor[torch.float32, typing_extensions.Liter...
     bad2: torch.Tensor[torch.float32, L[99], L[3], L[4]] = torch.argsort(x, dim=0)
 
-    good3: torch.Tensor[torch.float32, L[2], L[3], L[4]] = torch.argsort(x, descending=True)
+    good3: torch.Tensor[torch.float32, L[2], L[3], L[4]] = torch.argsort(
+        x, descending=True
+    )
     # pyre-fixme[9]: bad3 has type `LongTensor[torch.float32, typing_extensions.Liter...
-    bad3: torch.Tensor[torch.float32, L[99], L[3], L[4]] = torch.argsort(x, descending=True)
+    bad3: torch.Tensor[torch.float32, L[99], L[3], L[4]] = torch.argsort(
+        x, descending=True
+    )
     good4: torch.Tensor[torch.float32, L[2], L[3], L[4]] = x.argsort(dim=-1)
 
 
@@ -687,7 +707,9 @@ def test_functional_pad() -> None:
 
     good: torch.Tensor[torch.float32, L[2], L[3], L[5]] = nn.functional.pad(x, (1, 0))
     bad: torch.Tensor[torch.float32, L[99], L[3], L[5]] = nn.functional.pad(x, (1, 0))
-    good2: torch.Tensor[torch.float32, L[2], L[10], L[7]] = nn.functional.pad(x, (1, 2, 3, 4), "constant", value=0.0)
+    good2: torch.Tensor[torch.float32, L[2], L[10], L[7]] = nn.functional.pad(
+        x, (1, 2, 3, 4), "constant", value=0.0
+    )
 
 
 def test_allclose() -> None:
@@ -706,19 +728,25 @@ def test_new_ones() -> None:
     y: torch.Tensor[torch.float32, L[8], L[9]] = x.new_ones((8, 9))
     # pyre-fixme[9]: Expected error.
     y_error: torch.Tensor[torch.float32, L[8], L[99]] = x.new_ones((8, 9))
-    y2: torch.Tensor[torch.int64, L[8], L[9]] = x.new_ones((8, 9), dtype=torch.int64, device="cuda", requires_grad=True)
+    y2: torch.Tensor[torch.int64, L[8], L[9]] = x.new_ones(
+        (8, 9), dtype=torch.int64, device="cuda", requires_grad=True
+    )
 
 
 def test_ones_like() -> None:
     x: torch.Tensor[torch.float32, L[2], L[3]]
     device: torch.device
 
-    good: torch.Tensor[torch.int64, L[2], L[3]] = torch.ones_like(x, dtype=torch.int64, device=device)
+    good: torch.Tensor[torch.int64, L[2], L[3]] = torch.ones_like(
+        x, dtype=torch.int64, device=device
+    )
     # pyre-fixme[9]: bad has type `Tensor[torch.int64,
     #  typing_extensions.Literal[99], typing_extensions.Literal[3]]`; used as
     #  `Tensor[torch.int64, typing_extensions.Literal[2],
     #  typing_extensions.Literal[3]]`.
-    bad: torch.Tensor[torch.int64, L[99], L[3]] = torch.ones_like(x, dtype=torch.int64, device=device)
+    bad: torch.Tensor[torch.int64, L[99], L[3]] = torch.ones_like(
+        x, dtype=torch.int64, device=device
+    )
     bad2: torch.Tensor[torch.float32, L[2], L[3]] = torch.ones_like(
         x,
     )
@@ -733,7 +761,9 @@ def test_sparse_softmax() -> None:
     #  typing_extensions.Literal[3]]`.
     y_error: torch.Tensor[torch.float32, L[99], L[3]] = torch.sparse.softmax(x, dim=-1)
     dtype: torch.int64
-    y2: torch.Tensor[torch.int64, L[2], L[3]] = torch.sparse.softmax(x, dim=-1, dtype=dtype)
+    y2: torch.Tensor[torch.int64, L[2], L[3]] = torch.sparse.softmax(
+        x, dim=-1, dtype=dtype
+    )
 
 
 def test_eye() -> None:
@@ -942,7 +972,9 @@ def test_linalg_pinv() -> None:
     torch.linalg.pinv(x, hermitian=True)
     # Last two dimensions have to be equal.
     x_square: torch.Tensor[torch.float32, L[2], L[3], L[4], L[4]]
-    y2: torch.Tensor[torch.float32, L[2], L[3], L[4], L[4]] = torch.linalg.pinv(x_square, hermitian=True)
+    y2: torch.Tensor[torch.float32, L[2], L[3], L[4], L[4]] = torch.linalg.pinv(
+        x_square, hermitian=True
+    )
 
 
 def test_linalg_qr() -> None:
@@ -997,7 +1029,9 @@ def test_torch_profiler() -> None:
 def test_mse_loss() -> None:
     x: torch.Tensor[torch.float32, L[2], L[3]]
     x2: torch.Tensor[torch.float32, L[2], L[3]]
-    y: torch.Tensor[torch.float32] = nn.MSELoss(size_average=True, reduce=True, reduction="mean")(x, x2)
+    y: torch.Tensor[torch.float32] = nn.MSELoss(
+        size_average=True, reduce=True, reduction="mean"
+    )(x, x2)
     # pyre-fixme[9]: y_error has type `Tensor[torch.float32,
     #  typing_extensions.Literal[99]]`; used as `Tensor[torch.float32]`.
     y_error: torch.Tensor[torch.float32, L[99]] = nn.MSELoss()(x, x2)
@@ -1005,10 +1039,14 @@ def test_mse_loss() -> None:
 
 def test_clip_grad_norm() -> None:
     x: torch.Tensor[torch.float32, L[2], L[3]]
-    y: torch.Tensor = nn.utils.clip_grad_norm_(x, max_norm=0.0, norm_type=0.0, error_if_nonfinite=True)
+    y: torch.Tensor = nn.utils.clip_grad_norm_(
+        x, max_norm=0.0, norm_type=0.0, error_if_nonfinite=True
+    )
     # pyre-fixme[9]: y_error has type `int`; used as `Tensor[typing.Any,
     #  *Tuple[typing.Any, ...]]`.
-    y_error: int = nn.utils.clip_grad_norm_(x, max_norm=0.0, norm_type=0.0, error_if_nonfinite=True)
+    y_error: int = nn.utils.clip_grad_norm_(
+        x, max_norm=0.0, norm_type=0.0, error_if_nonfinite=True
+    )
 
 
 def test_clip_grad_value() -> None:
@@ -1088,7 +1126,9 @@ def test_unbind() -> None:
     #  typing_extensions.Literal[2], typing_extensions.Literal[99]], ...]`; used as
     #  `Tuple[Tensor[torch.float32, typing_extensions.Literal[2],
     #  typing_extensions.Literal[4]], ...]`.
-    y_error: Tuple[torch.Tensor[torch.float32, L[2], L[99]], ...] = torch.unbind(x, dim=1)
+    y_error: Tuple[torch.Tensor[torch.float32, L[2], L[99]], ...] = torch.unbind(
+        x, dim=1
+    )
     y2: Tuple[torch.Tensor[torch.float32, L[2], L[3]], ...] = torch.unbind(x, dim=-1)
     y3: Tuple[torch.Tensor[torch.float32, L[3], L[4]], ...] = torch.unbind(x)
     y4: Tuple[torch.Tensor[torch.float32, L[3], L[4]], ...] = x.unbind()
@@ -1119,7 +1159,9 @@ def test_stack(
     y_error: torch.Tensor[torch.float32, L[2], L[3], L[4], L[99]] = torch.stack((x, x))
     y_incompatible_tensors: torch.Tensor = torch.stack((x, x_incompatible))
     y2: torch.Tensor[torch.float32, L[3], L[2], L[4], L[5]] = torch.stack((x, x), dim=1)
-    y3: torch.Tensor[torch.float32, L[3], L[3], L[4], L[5]] = torch.stack((x, x, x), dim=1)
+    y3: torch.Tensor[torch.float32, L[3], L[3], L[4], L[5]] = torch.stack(
+        (x, x, x), dim=1
+    )
     y4: torch.Tensor[torch.float32, L[3], L[3], L[4], L[5]] = torch.stack((x, x, x))
 
     # Arbitrary-length tuples make it return an arbitrary Tensor.
@@ -1135,13 +1177,21 @@ def test_repeat_interleave() -> None:
     #  typing_extensions.Literal[99]]`; used as `Tensor[torch.float32,
     #  typing_extensions.Literal[72]]`.
     y_error: torch.Tensor[torch.float32, L[99]] = torch.repeat_interleave(x, 3)
-    y2: torch.Tensor[torch.float32, L[4], L[3], L[4]] = torch.repeat_interleave(x, 2, dim=0)
-    y3: torch.Tensor[torch.float32, L[2], L[6], L[4]] = torch.repeat_interleave(x, 2, dim=1)
-    y4: torch.Tensor[torch.float32, L[2], L[3], L[8]] = torch.repeat_interleave(x, 2, dim=-1)
+    y2: torch.Tensor[torch.float32, L[4], L[3], L[4]] = torch.repeat_interleave(
+        x, 2, dim=0
+    )
+    y3: torch.Tensor[torch.float32, L[2], L[6], L[4]] = torch.repeat_interleave(
+        x, 2, dim=1
+    )
+    y4: torch.Tensor[torch.float32, L[2], L[3], L[8]] = torch.repeat_interleave(
+        x, 2, dim=-1
+    )
 
     # Too dynamic because the output shape depends on the contents of repeats.
 
-    y5: torch.Tensor[torch.float32, L[0], L[3], L[4]] = torch.repeat_interleave(x, repeats, dim=0)
+    y5: torch.Tensor[torch.float32, L[0], L[3], L[4]] = torch.repeat_interleave(
+        x, repeats, dim=0
+    )
     y6: torch.Tensor[torch.float32, L[2], L[3], L[8]] = x.repeat_interleave(2, dim=-1)
 
 
@@ -1183,14 +1233,24 @@ def test_argmax() -> None:
     #  typing_extensions.Literal[99]]`; used as `Tensor[torch.int64]`.
     y_error: torch.LongTensor[torch.int64, L[99]] = torch.argmax(x)
     y2: torch.LongTensor[torch.int64, L[3], L[4]] = torch.argmax(x, dim=0)
-    y3: torch.LongTensor[torch.int64, L[1], L[3], L[4]] = torch.argmax(x, dim=0, keepdim=True)
+    y3: torch.LongTensor[torch.int64, L[1], L[3], L[4]] = torch.argmax(
+        x, dim=0, keepdim=True
+    )
     y4: torch.LongTensor[torch.int64, L[2], L[4]] = torch.argmax(x, dim=1)
-    y5: torch.LongTensor[torch.int64, L[2], L[1], L[4]] = torch.argmax(x, dim=1, keepdim=True)
+    y5: torch.LongTensor[torch.int64, L[2], L[1], L[4]] = torch.argmax(
+        x, dim=1, keepdim=True
+    )
     y6: torch.LongTensor[torch.int64, L[2], L[3]] = torch.argmax(x, dim=2)
-    y7: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = torch.argmax(x, dim=2, keepdim=True)
+    y7: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = torch.argmax(
+        x, dim=2, keepdim=True
+    )
     y8: torch.LongTensor[torch.int64, L[2], L[3]] = torch.argmax(x, dim=-1)
-    y9: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = torch.argmax(x, dim=-1, keepdim=True)
-    y10: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = x.argmax(dim=-1, keepdim=True)
+    y9: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = torch.argmax(
+        x, dim=-1, keepdim=True
+    )
+    y10: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = x.argmax(
+        dim=-1, keepdim=True
+    )
 
     # pyre-fixme[6]: Expected `typing_extensions.Literal[0]` for 2nd param but got
     #  `typing_extensions.Literal[3]`.
@@ -1204,14 +1264,24 @@ def test_argmin() -> None:
     #  typing_extensions.Literal[99]]`; used as `Tensor[torch.int64]`.
     y_error: torch.LongTensor[torch.int64, L[99]] = torch.argmin(x)
     y2: torch.LongTensor[torch.int64, L[3], L[4]] = torch.argmin(x, dim=0)
-    y3: torch.LongTensor[torch.int64, L[1], L[3], L[4]] = torch.argmin(x, dim=0, keepdim=True)
+    y3: torch.LongTensor[torch.int64, L[1], L[3], L[4]] = torch.argmin(
+        x, dim=0, keepdim=True
+    )
     y4: torch.LongTensor[torch.int64, L[2], L[4]] = torch.argmin(x, dim=1)
-    y5: torch.LongTensor[torch.int64, L[2], L[1], L[4]] = torch.argmin(x, dim=1, keepdim=True)
+    y5: torch.LongTensor[torch.int64, L[2], L[1], L[4]] = torch.argmin(
+        x, dim=1, keepdim=True
+    )
     y6: torch.LongTensor[torch.int64, L[2], L[3]] = torch.argmin(x, dim=2)
-    y7: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = torch.argmin(x, dim=2, keepdim=True)
+    y7: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = torch.argmin(
+        x, dim=2, keepdim=True
+    )
     y8: torch.LongTensor[torch.int64, L[2], L[3]] = torch.argmin(x, dim=-1)
-    y9: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = torch.argmin(x, dim=-1, keepdim=True)
-    y10: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = x.argmin(dim=-1, keepdim=True)
+    y9: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = torch.argmin(
+        x, dim=-1, keepdim=True
+    )
+    y10: torch.LongTensor[torch.int64, L[2], L[3], L[1]] = x.argmin(
+        dim=-1, keepdim=True
+    )
 
     # pyre-fixme[6]: Expected `typing_extensions.Literal[0]` for 2nd param but got
     #  `typing_extensions.Literal[3]`.
@@ -1225,13 +1295,21 @@ def test_mean() -> None:
     #  typing_extensions.Literal[99]]`; used as `Tensor[torch.float32]`.
     y_error: torch.Tensor[torch.float32, L[99]] = torch.mean(x)
     y2: torch.Tensor[torch.float32, L[3], L[4]] = torch.mean(x, dim=0)
-    y3: torch.Tensor[torch.float32, L[1], L[3], L[4]] = torch.mean(x, dim=0, keepdim=True)
+    y3: torch.Tensor[torch.float32, L[1], L[3], L[4]] = torch.mean(
+        x, dim=0, keepdim=True
+    )
     y4: torch.Tensor[torch.float32, L[2], L[4]] = torch.mean(x, dim=1)
-    y5: torch.Tensor[torch.float32, L[2], L[1], L[4]] = torch.mean(x, dim=1, keepdim=True)
+    y5: torch.Tensor[torch.float32, L[2], L[1], L[4]] = torch.mean(
+        x, dim=1, keepdim=True
+    )
     y6: torch.Tensor[torch.float32, L[2], L[3]] = torch.mean(x, dim=2)
-    y7: torch.Tensor[torch.float32, L[2], L[3], L[1]] = torch.mean(x, dim=2, keepdim=True)
+    y7: torch.Tensor[torch.float32, L[2], L[3], L[1]] = torch.mean(
+        x, dim=2, keepdim=True
+    )
     y8: torch.Tensor[torch.float32, L[2], L[3]] = torch.mean(x, dim=-1)
-    y9: torch.Tensor[torch.float32, L[2], L[3], L[1]] = torch.mean(x, dim=-1, keepdim=True)
+    y9: torch.Tensor[torch.float32, L[2], L[3], L[1]] = torch.mean(
+        x, dim=-1, keepdim=True
+    )
     y10: torch.Tensor[torch.float32, L[2], L[3], L[1]] = x.mean(dim=-1, keepdim=True)
 
     # pyre-fixme[6]: Expected `typing_extensions.Literal[0]` for 2nd param but got
@@ -1267,17 +1345,33 @@ def test_cat() -> None:
     # 2-element tuple.
     y: torch.Tensor[torch.float32, L[5], L[3], L[4]] = torch.cat((x1, x1_first_is_3))
     # pyre-fixme[9]: y_error has type `Tensor[torch.float32, typing_extensions.Litera...
-    y_error: torch.Tensor[torch.float32, L[99], L[3], L[4]] = torch.cat((x1, x1_first_is_3))
-    y2: torch.Tensor[torch.float32, L[2], L[7], L[4]] = torch.cat((x1, x1_second_is_4), dim=1)
-    y3: torch.Tensor[torch.float32, L[2], L[3], L[9]] = torch.cat((x1, x1_last_is_5), dim=-1)
-    y3_shape_mismatch: torch.Tensor[torch.float32, Unpack[Tuple[Any, ...]]] = torch.cat((x1, x1_second_is_4), dim=-1)
+    y_error: torch.Tensor[torch.float32, L[99], L[3], L[4]] = torch.cat(
+        (x1, x1_first_is_3)
+    )
+    y2: torch.Tensor[torch.float32, L[2], L[7], L[4]] = torch.cat(
+        (x1, x1_second_is_4), dim=1
+    )
+    y3: torch.Tensor[torch.float32, L[2], L[3], L[9]] = torch.cat(
+        (x1, x1_last_is_5), dim=-1
+    )
+    y3_shape_mismatch: torch.Tensor[torch.float32, Unpack[Tuple[Any, ...]]] = torch.cat(
+        (x1, x1_second_is_4), dim=-1
+    )
 
     # 3-element tuple.
-    y4: torch.Tensor[torch.float32, L[9], L[3], L[4]] = torch.cat((x1, x1_first_is_3, x1_first_is_4))
-    y5: torch.Tensor[torch.float32, L[2], L[12], L[4]] = torch.cat((x1, x1_second_is_4, x1_second_is_5), dim=1)
-    y6: torch.Tensor[torch.float32, L[2], L[3], L[15]] = torch.cat((x1, x1_last_is_5, x1_last_is_6), dim=-1)
+    y4: torch.Tensor[torch.float32, L[9], L[3], L[4]] = torch.cat(
+        (x1, x1_first_is_3, x1_first_is_4)
+    )
+    y5: torch.Tensor[torch.float32, L[2], L[12], L[4]] = torch.cat(
+        (x1, x1_second_is_4, x1_second_is_5), dim=1
+    )
+    y6: torch.Tensor[torch.float32, L[2], L[3], L[15]] = torch.cat(
+        (x1, x1_last_is_5, x1_last_is_6), dim=-1
+    )
 
-    y_many_element_tuple: torch.Tensor[torch.float32, Unpack[Tuple[Any, ...]]] = torch.cat((x1, x1, x1, x1))
+    y_many_element_tuple: torch.Tensor[
+        torch.float32, Unpack[Tuple[Any, ...]]
+    ] = torch.cat((x1, x1, x1, x1))
     y_list: torch.Tensor[torch.float32, Unpack[Tuple[Any, ...]]] = torch.cat([x1, x1])
 
 
@@ -1310,12 +1404,16 @@ def test_module_list() -> None:
 
 
 def test_sparse_coo_tensor() -> None:
-    y: torch.Tensor[torch.float32, L[2], L[3]] = torch.sparse_coo_tensor(torch.randn(5), [6, 7, 8], size=(2, 3))
+    y: torch.Tensor[torch.float32, L[2], L[3]] = torch.sparse_coo_tensor(
+        torch.randn(5), [6, 7, 8], size=(2, 3)
+    )
     # pyre-fixme[9]: y_error has type `Tensor[torch.float32,
     #  typing_extensions.Literal[2], typing_extensions.Literal[99]]`; used as
     #  `Tensor[torch.float32, typing_extensions.Literal[2],
     #  typing_extensions.Literal[3]]`.
-    y_error: torch.Tensor[torch.float32, L[2], L[99]] = torch.sparse_coo_tensor(torch.randn(5), [6, 7, 8], size=(2, 3))
+    y_error: torch.Tensor[torch.float32, L[2], L[99]] = torch.sparse_coo_tensor(
+        torch.randn(5), [6, 7, 8], size=(2, 3)
+    )
     y2: torch.Tensor = torch.sparse_coo_tensor(torch.randn(5), [6, 7, 8])
 
 
@@ -1326,16 +1424,28 @@ def test_max() -> None:
     y2: torch.Tensor[torch.float32, L[3], L[4]] = torch.max(x, dim=0).values
     y2_indices: torch.Tensor[torch.int64, L[3], L[4]] = torch.max(x, dim=0).indices
     y2_getitem: torch.Tensor[torch.int64, L[3], L[4]] = torch.max(x, dim=0)[1]
-    y3: torch.Tensor[torch.float32, L[1], L[3], L[4]] = torch.max(x, dim=0, keepdim=True).values
+    y3: torch.Tensor[torch.float32, L[1], L[3], L[4]] = torch.max(
+        x, dim=0, keepdim=True
+    ).values
     y4: torch.Tensor[torch.float32, L[2], L[4]] = torch.max(x, dim=1).values
-    y5: torch.Tensor[torch.float32, L[2], L[1], L[4]] = torch.max(x, dim=1, keepdim=True).values
+    y5: torch.Tensor[torch.float32, L[2], L[1], L[4]] = torch.max(
+        x, dim=1, keepdim=True
+    ).values
     y6: torch.Tensor[torch.float32, L[2], L[3]] = torch.max(x, dim=2).values
-    y7: torch.Tensor[torch.float32, L[2], L[3], L[1]] = torch.max(x, dim=2, keepdim=True).values
+    y7: torch.Tensor[torch.float32, L[2], L[3], L[1]] = torch.max(
+        x, dim=2, keepdim=True
+    ).values
     y8: torch.Tensor[torch.float32, L[2], L[3]] = torch.max(x, dim=-1).values
-    y9: torch.Tensor[torch.float32, L[2], L[3], L[1]] = torch.max(x, dim=-1, keepdim=True).values
+    y9: torch.Tensor[torch.float32, L[2], L[3], L[1]] = torch.max(
+        x, dim=-1, keepdim=True
+    ).values
     y10: torch.Tensor[torch.float32, L[2], L[4]] = torch.max(x, dim=-2).values
-    y11: torch.Tensor[torch.float32, L[2], L[1], L[4]] = torch.max(x, dim=-2, keepdim=True).values
-    y12: torch.Tensor[torch.float32, L[2], L[3], L[1]] = x.max(dim=-1, keepdim=True).values
+    y11: torch.Tensor[torch.float32, L[2], L[1], L[4]] = torch.max(
+        x, dim=-2, keepdim=True
+    ).values
+    y12: torch.Tensor[torch.float32, L[2], L[3], L[1]] = x.max(
+        dim=-1, keepdim=True
+    ).values
 
     # pyre-fixme[6]: Expected `typing_extensions.Literal[0]` for 2nd param but got
     #  `typing_extensions.Literal[3]`.
@@ -1357,16 +1467,22 @@ def test_softmax() -> None:
     y: torch.Tensor[torch.float32, L[2], L[3], L[4]] = torch.softmax(x, dim=1)
     # pyre-fixme[9]: y_error has type `Tensor[torch.float32, typing_extensions.Litera...
     y_error: torch.Tensor[torch.float32, L[2], L[3], L[99]] = torch.softmax(x, dim=1)
-    y2: torch.Tensor[torch.int64, L[2], L[3], L[4]] = torch.softmax(x, dim=1, dtype=torch.int64)
+    y2: torch.Tensor[torch.int64, L[2], L[3], L[4]] = torch.softmax(
+        x, dim=1, dtype=torch.int64
+    )
     y3: torch.Tensor[torch.float32, L[2], L[3], L[4]] = x.softmax(dim=1)
 
 
 def test_conv2d() -> None:
     x: Tensor[torch.float32, L[20], L[16], L[50], L[100]]
 
-    y7: Tensor[torch.float32, L[20], L[33], L[56], L[100]] = nn.Conv2d(16, 33, (3, 5), padding=(4, 2), bias=False)(x)
+    y7: Tensor[torch.float32, L[20], L[33], L[56], L[100]] = nn.Conv2d(
+        16, 33, (3, 5), padding=(4, 2), bias=False
+    )(x)
     # pyre-fixme[9]: y7_error has type `Tensor[torch.float32, typing_extensions.Liter...
-    y7_error: Tensor[torch.float32, L[20], L[33], L[56], L[99]] = nn.Conv2d(16, 33, (3, 5), padding=(4, 2))(x)
+    y7_error: Tensor[torch.float32, L[20], L[33], L[56], L[99]] = nn.Conv2d(
+        16, 33, (3, 5), padding=(4, 2)
+    )(x)
 
     module: nn.Module = nn.Conv2d(16, 33, (3, 5), padding=(4, 2))
 
@@ -1472,18 +1588,20 @@ def test_stride() -> None:
 def test_chunk() -> None:
     x: Tensor[torch.float32, L[2], L[3], L[4]]
 
-    y: Tuple[Tensor[torch.float32, L[2], L[3], L[2]], Tensor[torch.float32, L[2], L[3], L[2]]] = torch.chunk(
-        x, 2, dim=-1
-    )
+    y: Tuple[
+        Tensor[torch.float32, L[2], L[3], L[2]], Tensor[torch.float32, L[2], L[3], L[2]]
+    ] = torch.chunk(x, 2, dim=-1)
     # pyre-fixme[9]: Expected error.
     y_error: Tuple[
         Tensor[torch.float32, L[2], L[3], L[99]],
         Tensor[torch.float32, L[2], L[3], L[2]],
     ] = torch.chunk(x, 2, dim=-1)
-    y2: Tuple[Tensor[torch.float32, L[1], L[3], L[4]], Tensor[torch.float32, L[1], L[3], L[4]]] = torch.chunk(
-        x, 2, dim=0
-    )
-    y3: Tuple[Tensor[torch.float32, L[1], L[3], L[4]], Tensor[torch.float32, L[1], L[3], L[4]]] = x.chunk(2, dim=0)
+    y2: Tuple[
+        Tensor[torch.float32, L[1], L[3], L[4]], Tensor[torch.float32, L[1], L[3], L[4]]
+    ] = torch.chunk(x, 2, dim=0)
+    y3: Tuple[
+        Tensor[torch.float32, L[1], L[3], L[4]], Tensor[torch.float32, L[1], L[3], L[4]]
+    ] = x.chunk(2, dim=0)
 
 
 def test_abs() -> None:
@@ -1500,7 +1618,9 @@ def test_enable_grad() -> None:
 
 
 def test_normal() -> None:
-    y: Tensor[torch.float32, L[2], L[3], L[4]] = torch.normal(0, 1, size=(2, 3, 4), device="cuda", requires_grad=True)
+    y: Tensor[torch.float32, L[2], L[3], L[4]] = torch.normal(
+        0, 1, size=(2, 3, 4), device="cuda", requires_grad=True
+    )
     # pyre-fixme[9]: Expected error.
     y_error: Tensor[torch.float32, L[2], L[3], L[99]] = torch.normal(
         0, 1, size=(2, 3, 4), device="cuda", requires_grad=True
@@ -1552,7 +1672,9 @@ def test_log_softmax() -> None:
     y: Tensor[torch.float32, L[2], L[3], L[4]] = torch.log_softmax(x, dim=1)
     # pyre-fixme[9]: Expected error.
     y_error: Tensor[torch.float32, L[2], L[3], L[99]] = torch.log_softmax(x, dim=1)
-    y2: Tensor[torch.int64, L[2], L[3], L[4]] = torch.log_softmax(x, dtype=torch.int64, dim=1)
+    y2: Tensor[torch.int64, L[2], L[3], L[4]] = torch.log_softmax(
+        x, dtype=torch.int64, dim=1
+    )
 
 
 def test_masked_select() -> None:
@@ -1592,7 +1714,9 @@ def test_uniform_() -> None:
     x: Tensor[torch.float32, L[2], L[3], L[4]]
     y: Tensor[torch.float32, L[2], L[3], L[4]] = nn.init.uniform_(x, a=1.0, b=2.0)
     # pyre-fixme[9]: Expected error.
-    y_error: Tensor[torch.float32, L[2], L[3], L[99]] = nn.init.uniform_(x, a=1.0, b=2.0)
+    y_error: Tensor[torch.float32, L[2], L[3], L[99]] = nn.init.uniform_(
+        x, a=1.0, b=2.0
+    )
 
 
 def test_kaiming_uniform_() -> None:
@@ -1613,9 +1737,13 @@ def test_constant_() -> None:
 
 def test_leaky_relu() -> None:
     x: Tensor[torch.float32, L[2], L[3], L[4]]
-    y: Tensor[torch.float32, L[2], L[3], L[4]] = nn.LeakyReLU(negative_slope=1.0, inplace=True)(x)
+    y: Tensor[torch.float32, L[2], L[3], L[4]] = nn.LeakyReLU(
+        negative_slope=1.0, inplace=True
+    )(x)
     # pyre-fixme[9]: Expected error.
-    y_error: Tensor[torch.float32, L[2], L[3], L[99]] = nn.LeakyReLU(negative_slope=1.0, inplace=True)(x)
+    y_error: Tensor[torch.float32, L[2], L[3], L[99]] = nn.LeakyReLU(
+        negative_slope=1.0, inplace=True
+    )(x)
 
 
 def test_fft_fft2() -> None:
@@ -1655,7 +1783,9 @@ def test_reflection_pad2d() -> None:
 
     y: Tensor[torch.float32, L[20], L[16], L[58], L[108]] = nn.ReflectionPad2d(4)(x)
     # pyre-fixme[9]: Expected error.
-    y_error: Tensor[torch.float32, L[20], L[16], L[58], L[99]] = nn.ReflectionPad2d(4)(x)
+    y_error: Tensor[torch.float32, L[20], L[16], L[58], L[99]] = nn.ReflectionPad2d(4)(
+        x
+    )
 
 
 def test_half() -> None:
