@@ -23,8 +23,5 @@ if _triton_available:
             "FusedLayerNorm",
             "layer_norm",
         ]
-    except ImportError as e:
-        import logging
-
-        logging.warning(f"Triton components import fails with {e}")
+    except ImportError:
         __all__ = []
