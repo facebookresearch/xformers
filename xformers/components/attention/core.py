@@ -143,9 +143,9 @@ if _is_sparse_available:
 def bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     if _is_sparse_available:
         if isinstance(a, SparseCS):
-            return a.spmm(b)
+            return a.spmm(b.contiguous())
         if a.is_sparse:
-            return _sparse_bmm(a, b)
+            return _sparse_bmm(a, b.contiguous())
     return a @ b
 
 

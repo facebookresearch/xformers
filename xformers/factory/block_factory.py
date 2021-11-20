@@ -301,7 +301,7 @@ class xFormerEncoderBlock(torch.nn.Module):
             q, k, v = x, x, x
 
         # Pre/Post norms and residual paths are already handled
-        x = self.wrap_att(q, k, v, att_mask=att_mask)
+        x = self.wrap_att([q, k, v], att_mask=att_mask)
         x = self.wrap_ff(x)
 
         return x

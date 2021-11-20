@@ -271,7 +271,7 @@ def sample(model, x, steps, temperature=1.0, sample=False, top_k=None):
 if __name__ == "__main__":
     seed_everything(42)
     REF_BATCH = 512
-    BATCH = 256  # adjust depending on the avaiable memory on your machine
+    BATCH = 512  # adjust depending on the avaiable memory on your machine
     WORKERS = 8
     EPOCHS = 1
     BLOCK = 128
@@ -299,7 +299,7 @@ if __name__ == "__main__":
     model = GPT(
         vocab_size=train_dataset.vocab_size,
         block_size=train_dataset.block_size,
-        attention="nystrom",
+        attention="scaled_dot_product",
         warmup_tokens=REF_BATCH * WARMUP,
         learning_rate=LR,
         final_tokens=EPOCHS * len(train_dataset) * BLOCK,
