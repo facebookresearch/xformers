@@ -364,8 +364,8 @@ class xFormerDecoderBlock(torch.nn.Module):
         else:
             target_q, target_k, target_v = target, target, target
 
-        x = self.wrap_att([target_q, target_k, target_v], att_mask=decoder_att_mask)
-        x = self.wrap_cross([x, memory, memory], att_mask=encoder_att_mask)
+        x = self.wrap_att(target_q, target_k, target_v, att_mask=decoder_att_mask)
+        x = self.wrap_cross(x, memory, memory, att_mask=encoder_att_mask)
         x = self.wrap_ff(x)
 
         return x

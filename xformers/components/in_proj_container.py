@@ -153,17 +153,14 @@ class InProjContainer(nn.Module):
         if self.in_proj_weight is not None:
             if id(query) == id(key):
                 # Self attention, get all the projected values at once
-                # we compute everything transposed, so that q,k,v stay contiguous after splitting
+                # NOTE: the resulting buffers could be contiguous out of the box with a custom kernel
                 qkv = query @ self.in_proj_weight.transpose(-2, -1)
 
                 if self.in_proj_bias is not None:
                     qkv += self.in_proj_bias
 
-                q, k, v = map(
-                    lambda x: x.contiguous(),
-                    qkv.split(self.out_features, dim=-1),
-                )
-                return q, k, v
+                qkv = qkv.split(self.out_features, -1)
+                return qkv[0], qkv[1], qkv[2]
 
             else:
                 # Not self attention
