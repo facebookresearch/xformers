@@ -1,6 +1,10 @@
-from typing import Optional, Type, TypeVar, overload
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
 
-from numpy import ndarray
+from typing import Optional, TypeVar, overload
+
 from pyre_extensions import TypeVarTuple, Unpack
 from torch import Tensor
 from typing_extensions import Literal as L

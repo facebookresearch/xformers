@@ -11,22 +11,14 @@ from typing import Optional, Union
 
 import torch
 
-from xformers import _is_sparse_available
+from xformers import _is_sparse_available, _is_triton_available
 from xformers.components.attention.attention_mask import AttentionMask
 
 if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
 
-# NOTE: Could do with a better option on when to use triton and not
-_use_triton = torch.cuda.is_available()
-if _use_triton:
-    try:
-        from xformers.triton.softmax import softmax as triton_softmax
-    except ImportError:
-        logging.warning(
-            "Triton is not available, some optimizations will not be enabled."
-        )
-        _use_triton = False
+if _is_triton_available:
+    from xformers.triton.softmax import softmax as triton_softmax
 
 
 def _create_random_sparsity(matrix, sparsity, divisible_by=4):
@@ -109,7 +101,7 @@ def _softmax(a: torch.Tensor, causal: bool = False) -> torch.Tensor:
     if a.is_sparse:
         return torch.sparse.softmax(a, dim=a.ndim - 1)
 
-    if _use_triton:
+    if _is_triton_available:
         return triton_softmax(a, mask=None, causal=causal)
     else:
         return torch.softmax(a, dim=a.ndim - 1)

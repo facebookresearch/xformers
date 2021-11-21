@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.abspath("../.."))
 # -- Project information -----------------------------------------------------
 
 project = "xFormers"
-copyright = "2021, Facebook AI Research"
+copyright = "Copyright © 2021 Meta Platforms, Inc"
 author = "Facebook AI Research"
 
 # The full version, including alpha/beta/rc tags

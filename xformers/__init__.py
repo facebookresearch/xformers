@@ -5,10 +5,13 @@
 
 import logging
 
+import torch
+
 # Please update the doc version in docs/source/conf.py as well.
 __version__ = "0.0.6"
 
 _is_sparse_available = True
+_is_triton_available = torch.cuda.is_available()
 
 
 def _register_extensions():
@@ -54,12 +57,23 @@ def _register_extensions():
     torch.ops.load_library(ext_specs.origin)
 
 
-try:
-    _register_extensions()
-except (ImportError, OSError) as e:
-    print(e)
-    logging.warning(
-        f"WARNING: {e}\nNeed to compile C++ extensions to get sparse attention suport."
-        + " Please run python setup.py build develop"
-    )
-    _is_sparse_available = False
+if _is_sparse_available:
+    try:
+        _register_extensions()
+    except (ImportError, OSError) as e:
+        print(e)
+        logging.warning(
+            f"WARNING: {e}\nNeed to compile C++ extensions to get sparse attention suport."
+            + " Please run python setup.py build develop"
+        )
+        _is_sparse_available = False
+
+
+if _is_triton_available:
+    try:
+        from xformers.triton.softmax import softmax as triton_softmax  # noqa
+    except ImportError as e:
+        logging.warning(
+            f"Triton is not available, some optimizations will not be enabled.\nError {e}"
+        )
+        _is_triton_available = False

@@ -12,35 +12,28 @@ from typing import Optional
 import torch
 from torch import nn
 
+from xformers import _is_triton_available
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.attention.utils import bool_mask_to_additive
 
 _mask_type_warning = True
 
-_use_triton = torch.cuda.is_available()
-if _use_triton:
-    try:
-        from triton.ops.blocksparse import matmul as blocksparse_matmul
-        from triton.ops.blocksparse import softmax as blocksparse_softmax
+if _is_triton_available:
+    from triton.ops.blocksparse import matmul as blocksparse_matmul
+    from triton.ops.blocksparse import softmax as blocksparse_softmax
 
-        from xformers.triton.softmax import MaskType
-        from xformers.triton.utils import gpu_capabilities_older_than_70
+    from xformers.triton.softmax import MaskType
+    from xformers.triton.utils import gpu_capabilities_older_than_70
 
-        # Blocksparse requires Tensor cores
-        if gpu_capabilities_older_than_70():
-            logging.warning(
-                "Blocksparse is not available: the current GPU does not expose Tensor cores"
-            )
-            _use_triton = False
-
-    except ImportError as e:
+    # Blocksparse requires Tensor cores
+    if gpu_capabilities_older_than_70():
         logging.warning(
-            f"Triton is not available: {e}.\nBlockSparse attention will not be available"
+            "Blocksparse is not available: the current GPU does not expose Tensor cores"
         )
-        _use_triton = False
+        _is_triton_available = False
 
 
-if _use_triton:
+if _is_triton_available:
 
     @dataclass
     class BlockSparseAttentionConfig(AttentionConfig):
