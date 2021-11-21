@@ -55,14 +55,18 @@ class Attention(nn.Module, metaclass=ABCMeta):
     ) -> torch.Tensor:
         raise NotImplementedError
 
-    def _get_causal_mask(self, seq_len: int, to_seq_len: int) -> torch.Tensor:
-        # Cache a mask so that multiple instances would reuse the same
-        causal_mask = self._causal_mask
-        if not causal_mask:
-            causal_mask = torch.triu(
-                torch.ones(seq_len, to_seq_len) * float("-inf"), diagonal=1
+    @staticmethod
+    def _maybe_pad_sequence(x: torch.Tensor, mask: torch.Tensor):
+        """
+        If the sequence is shorter than the mask, return a padded view
+        """
+        if x.shape[-2] != mask.shape[-1]:
+            assert x.shape[-2] < mask.shape[-1], (
+                "Sequence is bigger than the provided mask, cannot infer what to do with it."
+                " Please update your attention mask"
             )
-            causal_mask.unsqueeze_(0)  # batch dimension
-            self._causal_mask = causal_mask
 
-        return causal_mask
+            pad_size = (0, 0, 0, mask.shape[-1] - x.shape[-2], 0, 0)
+            return torch.nn.functional.pad(x, pad_size, mode="constant", value=0.0)
+
+        return x

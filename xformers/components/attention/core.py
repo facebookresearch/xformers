@@ -4,14 +4,14 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import logging
 import math
 from contextlib import nullcontext
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 
 from xformers import _is_sparse_available, _is_triton_available
+from xformers.components.attention.attention_mask import AttentionMask
 
 if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
@@ -61,12 +61,12 @@ def _broadcast_batch(mask, batch_size):
 
 
 def _matmul_with_mask(
-    a: torch.Tensor, b: torch.Tensor, mask: Optional[torch.Tensor]
+    a: torch.Tensor, b: torch.Tensor, mask: Optional[Union[torch.Tensor, "SparseCS"]]
 ) -> torch.Tensor:
     if mask is None:
         return a @ b
 
-    if _is_sparse_available:
+    if _is_sparse_available and mask.dtype == torch.bool:
         if isinstance(mask, SparseCS):
             return mask.matmul_with_mask(a, b)
         if mask.is_sparse:
@@ -79,6 +79,8 @@ def _matmul_with_mask(
         return torch.ops.xformers.matmul_with_mask(a, b, mask)
 
     # Non optimized codepath
+    assert not isinstance(mask, SparseCS)
+
     att = a @ b
     if mask.dtype == torch.bool:
         if mask.ndim == 2:
@@ -181,8 +183,7 @@ def _apply_dropout(att, dropout):
 def scaled_query_key_softmax(
     q: torch.Tensor,
     k: torch.Tensor,
-    att_mask: Optional[torch.Tensor],
-    causal: bool = False,
+    att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
 ) -> torch.Tensor:
     # TODO assume we have (N, S, hs) instead of (B, nh, S, hs), with N = B x nh
     # this is needed due to limitations in sparse_bmm for now
@@ -190,16 +191,18 @@ def scaled_query_key_softmax(
     # Self-attend: (N, S, hs) x (N, hs, S) -> (N, S, S)
     q = q / math.sqrt(k.size(-1))
 
-    # Matmul with mask, if boolean
-    is_bool_mask = att_mask is not None and att_mask.dtype == torch.bool
-    att = _matmul_with_mask(q, k.transpose(-2, -1), att_mask if is_bool_mask else None)
+    # Matmul with mask
+    if att_mask is not None and isinstance(att_mask, AttentionMask):
+        # Additive mask
+        mask: Optional[Union[SparseCS, torch.Tensor]] = att_mask.values
+    else:
+        mask = att_mask
 
-    # Could also be that the mask was additive
-    if att_mask is not None and att_mask.dtype != torch.bool:
-        att = att + att_mask
+    att = _matmul_with_mask(q, k.transpose(-2, -1), mask)
 
     # Softmax to get the attention probabilities
-    att = _softmax(att, causal=causal)
+    is_causal = isinstance(att_mask, AttentionMask) and att_mask.is_causal
+    att = _softmax(att, causal=is_causal)
     return att
 
 
@@ -207,9 +210,8 @@ def scaled_dot_product_attention(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
-    att_mask: Optional[torch.Tensor],
+    att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
     dropout: Optional[torch.nn.Module] = None,
-    causal: bool = False,
 ) -> torch.Tensor:
     autocast_disabled = (
         _is_sparse_available
@@ -217,36 +219,11 @@ def scaled_dot_product_attention(
         or (att_mask is not None and att_mask.is_sparse)
     )
 
-    # Try to handle a case where the sequence is smaller than the mask
-    if (
-        att_mask is not None
-        and q.shape[-2] == k.shape[-2]
-        and q.shape[-2] < att_mask.shape[1]
-    ):
-        seq = q.shape[-2]
-        if att_mask.ndim == 2:
-
-            if not att_mask.is_sparse:
-                att_mask = att_mask[:seq, :seq]
-            else:
-                logging.warning(
-                    "Mismatching attention mask and sequence length. On the fly correction but this will be slow"
-                )
-                # Loosing sparsity on purpose,
-                # expectation is that moving back and forth dense/sparse will negate the speedup
-                att_mask = att_mask.to_dense().squeeze(0)[:seq, :seq]
-        else:
-            assert (
-                not att_mask.is_sparse
-            ), "Sparse masks with a batch dimension are not supported for now"
-            att_mask = att_mask[:, :seq, :seq]
-
-    # The actual attention
     with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
         if autocast_disabled:
             q, k, v = q.float(), k.float(), v.float()
 
-        att = scaled_query_key_softmax(q, k, att_mask=att_mask, causal=causal)
+        att = scaled_query_key_softmax(q, k, att_mask=att_mask)
 
         #  Optional dropout, could be part of the masking in the future
         att = _apply_dropout(att, dropout)

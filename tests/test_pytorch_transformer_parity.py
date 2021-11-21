@@ -114,7 +114,6 @@ def test_pytorch_encoder_parity(device=torch.device("cuda")):
             dim_feedforward=4 * EMB,
             dropout=DROP,
             activation=ACTIVATION,
-            layer_norm_eps=1e-05,
             batch_first=True,  # (batch, seq, feature)
             device=device,
         ),
