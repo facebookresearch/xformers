@@ -35,8 +35,8 @@ class LSHGlobalAttention(Attention):
         num_hash: int = 4,
         seq_len: int = 4096,
         dropout: float = 0.0,
+        chunk_length: int = 16,
         num_buckets: int = None,
-        chunk_length: int = None,
         *args,
         **kwargs,
     ):

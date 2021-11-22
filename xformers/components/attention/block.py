@@ -11,9 +11,6 @@ Simple non-ovelapping local block attention. To test how strong are the locality
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-
-import logging
-import math
 from dataclasses import dataclass
 from typing import Optional
 

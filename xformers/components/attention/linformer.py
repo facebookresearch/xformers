@@ -23,7 +23,7 @@ class LinformerAttention(Attention):
         dropout: float, 
         num_heads: int,
         max_seq_len: int = 4096, 
-        compress: int = 4, 
+        compress: int = 8, 
         *args, **kwargs
     ):
         """
