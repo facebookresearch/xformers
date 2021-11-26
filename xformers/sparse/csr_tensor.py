@@ -33,8 +33,11 @@ class SparseCSRTensor(torch.Tensor):
         self.__values = values.contiguous()
 
         self.__transp_info = _get_transpose_info(
-            self.shape[1], self.shape[2],
-            self.__row_indices, self.__row_offsets, self.__column_indices
+            self.shape[1],
+            self.shape[2],
+            self.__row_indices,
+            self.__row_offsets,
+            self.__column_indices,
         )
 
     def __repr__(self):
@@ -42,7 +45,9 @@ class SparseCSRTensor(torch.Tensor):
 
     @classmethod
     def from_dense(cls, matrix):
-        values, row_indices, row_offsets, column_indices = _dense3d_to_sparse(matrix, matrix.device)
+        values, row_indices, row_offsets, column_indices = _dense3d_to_sparse(
+            matrix, matrix.device
+        )
         return cls(row_offsets, column_indices, values, matrix.shape)
 
     @classmethod
@@ -111,7 +116,7 @@ class SparseCSRTensor(torch.Tensor):
     def _softmax(cls, arg0, dim):
         if not (dim == -1 or dim == 2):
             return NotImplemented
-        
+
         self = arg0
         _, m, n = self.shape
         row_indices = self.__row_indices
@@ -122,7 +127,12 @@ class SparseCSRTensor(torch.Tensor):
             m, n, row_indices, values, row_offsets, column_indices
         )
         return cls._wrap(
-            self.shape, out, row_indices, row_offsets, column_indices, self.__transp_info
+            self.shape,
+            out,
+            row_indices,
+            row_offsets,
+            column_indices,
+            self.__transp_info,
         )
 
     @classmethod
@@ -174,7 +184,12 @@ class SparseCSRTensor(torch.Tensor):
         )
         # TODO add bias here
         return cls._wrap(
-            mask.shape, out, row_indices, row_offsets, column_indices, mask.__transp_info
+            mask.shape,
+            out,
+            row_indices,
+            row_offsets,
+            column_indices,
+            mask.__transp_info,
         )
 
     @classmethod
@@ -205,7 +220,9 @@ class SparseCSRTensor(torch.Tensor):
 
     @classmethod
     def _binary_op(cls, func, arg0, arg1):
-        if not (isinstance(arg0, (cls, int, float)) and isinstance(arg1, (cls, int, float))):
+        if not (
+            isinstance(arg0, (cls, int, float)) and isinstance(arg1, (cls, int, float))
+        ):
             return NotImplemented
         v0, v1 = arg0, arg1
         if isinstance(arg0, cls):
@@ -216,7 +233,12 @@ class SparseCSRTensor(torch.Tensor):
         # TODO add cheap assert for indices
         out = func(v0, v1)
         return cls._wrap(
-            arg0.shape, out, arg0.__row_indices, arg0.__row_offsets, arg0.__column_indices, arg0.__transp_info
+            arg0.shape,
+            out,
+            arg0.__row_indices,
+            arg0.__row_offsets,
+            arg0.__column_indices,
+            arg0.__transp_info,
         )
 
     @classmethod
@@ -250,9 +272,13 @@ class SparseCSRTensor(torch.Tensor):
             return cls._masked_matmul(args[0], args[1], args[2])
 
         if func in [
-                torch.Tensor.add, torch.add, torch.Tensor.__add__,
-                torch.Tensor.mul, torch.mul, torch.Tensor.__mul__,
-            ]:
+            torch.Tensor.add,
+            torch.add,
+            torch.Tensor.__add__,
+            torch.Tensor.mul,
+            torch.mul,
+            torch.Tensor.__mul__,
+        ]:
             assert len(args) == 2
             return cls._binary_op(func, args[0], args[1])
 
@@ -265,13 +291,18 @@ class SparseCSRTensor(torch.Tensor):
             values = x.__values.clone()
             values = func(values, *args[1:], **kwargs)
             return cls._wrap(
-                x.shape, values, x.__row_indices, x.__row_offsets, x.__column_indices, x.__transp_info
+                x.shape,
+                values,
+                x.__row_indices,
+                x.__row_offsets,
+                x.__column_indices,
+                x.__transp_info,
             )
 
         if func == torch.Tensor.to:
             assert len(args) == 2
             return cls._to(args[0], args[1])
-            #return cls._to(args[0], kwargs["device"])
+            # return cls._to(args[0], kwargs["device"])
 
         if func == torch.Tensor.to_dense:
             assert len(args) == 1
@@ -280,7 +311,12 @@ class SparseCSRTensor(torch.Tensor):
         if func == torch.Tensor.detach:
             x = args[0]
             return cls._wrap(
-                x.shape, x.__values.detach(), x.__row_indices, x.__row_offsets, x.__column_indices, x.__transp_info
+                x.shape,
+                x.__values.detach(),
+                x.__row_indices,
+                x.__row_offsets,
+                x.__column_indices,
+                x.__transp_info,
             )
 
         if func in [torch.Tensor.grad.__get__, torch.Tensor._grad.__get__]:
@@ -288,7 +324,12 @@ class SparseCSRTensor(torch.Tensor):
             assert len(kwargs) == 0
             x = args[0]
             return cls._wrap(
-                x.shape, x.__values.grad, x.__row_indices, x.__row_offsets, x.__column_indices, x.__transp_info
+                x.shape,
+                x.__values.grad,
+                x.__row_indices,
+                x.__row_offsets,
+                x.__column_indices,
+                x.__transp_info,
             )
 
         if func == torch.Tensor.requires_grad_:

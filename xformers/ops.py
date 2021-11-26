@@ -3,7 +3,9 @@ import torch
 
 def masked_matmul(a, b, mask=None):
     if torch.overrides.has_torch_function((a, b, mask)):
-        return torch.overrides.handle_torch_function(masked_matmul, (a, b, mask), a, b, mask)
+        return torch.overrides.handle_torch_function(
+            masked_matmul, (a, b, mask), a, b, mask
+        )
 
     att = a @ b
 

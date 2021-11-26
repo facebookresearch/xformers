@@ -47,7 +47,6 @@ def test_sparse_binary_ops(func, device):
     assert torch.allclose(res, res_gt)
 
 
-
 @pytest.mark.parametrize("device", _devices)
 def test_sparse_softmax(device):
     B, L = 8, 30
