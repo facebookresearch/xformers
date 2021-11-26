@@ -41,6 +41,17 @@ class SparseCSRTensor(torch.Tensor):
         return cls(row_offsets, column_indices, values, matrix.shape)
 
     @classmethod
+    def from_sparse_coo(cls, arg0):
+        """
+        assert arg0.is_sparse
+        x = arg0.coalesce()
+        rows, cols = x.indices().unbind(0)
+        vals = x.values()
+        _coo_to_csr()
+        """
+        pass
+
+    @classmethod
     def _wrap(
         cls, shape, values, row_indices, row_offsets, column_indices, _transp_info
     ):
@@ -189,13 +200,18 @@ class SparseCSRTensor(torch.Tensor):
 
     @classmethod
     def _binary_op(cls, func, arg0, arg1):
-        if not (isinstance(arg0, cls) and isinstance(arg1, cls)):
+        if not (isinstance(arg0, (cls, int, float)) and isinstance(arg1, (cls, int, float))):
             return NotImplemented
-        assert arg0.shape == arg1.shape
+        v0, v1 = arg0, arg1
+        if isinstance(arg0, cls):
+            v0 = arg0.__values
+        if isinstance(arg1, cls):
+            v1 = arg1.__values
+        # assert arg0.shape == arg1.shape
         # TODO add cheap assert for indices
-        out = func(arg0.__values, arg1.__values)
+        out = func(v0, v1)
         return cls._wrap(
-            arg0.shape, out, arg0.__row_indices, arg0.__row_offsets, arg0.__column_indices, self.__transp_info
+            arg0.shape, out, arg0.__row_indices, arg0.__row_offsets, arg0.__column_indices, arg0.__transp_info
         )
 
     @classmethod
@@ -228,9 +244,12 @@ class SparseCSRTensor(torch.Tensor):
             assert len(args) == 3
             return cls._masked_matmul(args[0], args[1], args[2])
 
-        if func in [torch.Tensor.add, torch.add]:
+        if func in [
+                torch.Tensor.add, torch.add, torch.Tensor.__add__,
+                torch.Tensor.mul, torch.mul, torch.Tensor.__mul__,
+            ]:
             assert len(args) == 2
-            return cls._binary_op(args[0], args[1])
+            return cls._binary_op(func, args[0], args[1])
 
         if func in [torch.Tensor.logical_and, torch.logical_and, torch.Tensor.__and__]:
             assert len(args) == 2

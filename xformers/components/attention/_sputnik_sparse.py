@@ -65,15 +65,8 @@ class SparseCS:
         return matrix
 
     def __mul__(self, other):
-        out = self.values * other
-        return type(self).wrap(
-            self.shape,
-            out,
-            self.row_indices,
-            self.row_offsets,
-            self.column_indices,
-            self._transp_info,
-        )
+        assert isinstance(other, (int, float))
+        return type(self)._wrap(self._mat * other)
 
     def __add__(self, other):
         assert isinstance(other, type(self))
