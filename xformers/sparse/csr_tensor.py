@@ -18,8 +18,8 @@ class SparseCSRTensor(torch.Tensor):
         return torch.Tensor._make_wrapper_subclass(cls, shape, **kwargs)
 
     def __init__(self, row_offsets, column_indices, values, shape):
-        assert row_offsets.ndim == 2
-        assert column_indices.ndim == 2
+        assert row_offsets.ndim == 1
+        assert column_indices.ndim == 1
         assert values.ndim == 2
 
         self.__row_offsets = row_offsets.contiguous()
@@ -163,6 +163,8 @@ class SparseCSRTensor(torch.Tensor):
 
     @classmethod
     def _to(cls, arg0, device):
+        if isinstance(device, str):
+            device = torch.device(device)
         assert isinstance(device, torch.device)
         return cls._wrap(
             arg0.shape,
