@@ -9,7 +9,7 @@ from xformers.sparse import SparseCSRTensor
 from xformers.ops import masked_matmul
 
 # TODO: this is here for BC
-from xformers.sparse.utils import _csr_to_coo
+from xformers.sparse.utils import _csr_to_coo, _dense_to_sparse
 
 
 class SparseCS:
