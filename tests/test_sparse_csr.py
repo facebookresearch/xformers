@@ -8,7 +8,8 @@ import torch
 
 # needed to register custom ops
 import xformers  # noqa: F401
-from xformers.sparse.csr_tensor import SparseCSRTensor
+import xformers.components.attention
+from xformers.sparse import SparseCSRTensor
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
@@ -26,6 +27,25 @@ def _create_random_sparsity(matrix, sparsity, divisible_by=4):
     bdim = torch.arange(matrix.shape[0], device=matrix.device)[:, None]
     output[bdim, i, j] = matrix[bdim, i, j]
     return output
+
+
+@pytest.mark.parametrize("device", _devices)
+@pytest.mark.parametrize("func", [torch.add, torch.mul])
+def test_sparse_binary_ops(func, device):
+    B, L = 8, 30
+    prob = 0.5
+    a = _create_random_sparsity(torch.rand(B, L, L, device=device), prob)
+
+    a_csr = SparseCSRTensor.from_dense(a)
+
+    b = 5
+
+    res = func(a_csr, b).to_dense()
+    res_gt = func(a, b)
+    res_gt[a == 0] = 0
+
+    assert torch.allclose(res, res_gt)
+
 
 
 @pytest.mark.parametrize("device", _devices)
