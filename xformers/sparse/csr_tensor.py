@@ -236,6 +236,14 @@ class SparseCSRTensor(torch.Tensor):
             assert len(args) == 2
             return cls._binary_op_slow(func, args[0], args[1])
 
+        if func in [torch.nn.functional.dropout, torch.dropout, torch.dropout_]:
+            x = args[0]
+            values = x.__values.clone()
+            values = func(values, *args[1:], **kwargs)
+            return cls._wrap(
+                x.shape, values, x.__row_indices, x.__row_offsets, x.__column_indices, x.__transp_info
+            )
+
         if func == torch.Tensor.to:
             assert len(args) == 2
             return cls._to(args[0], args[1])
