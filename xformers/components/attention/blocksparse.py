@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from typing import Optional
 
 import torch
-from torch import nn
 
 from xformers import _is_triton_available
 from xformers.components.attention import Attention, AttentionConfig, register_attention
@@ -80,7 +79,7 @@ if _is_triton_available:
             assert block_size >= 16, "Minimum block size is 16, for now at least"
 
             super().__init__()
-            self.attn_drop = nn.Dropout(dropout, inplace=False)
+            self.attn_drop = torch.nn.Dropout(dropout, inplace=False)
 
             # Pure blocksparse data
             self.layout = layout
@@ -192,6 +191,8 @@ if _is_triton_available:
                 key_padding_mask_mode=MaskType.ADD,
                 attn_mask_mode=MaskType.ADD,
             )
+
+            sparse_att_mat = self.attn_drop(sparse_att_mat)
 
             # - then (dense) attention is (sparse) attention matrix * dense (value)
             a = self.sparse_dot_dsd(sparse_att_mat, v)

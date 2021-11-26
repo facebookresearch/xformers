@@ -77,7 +77,7 @@ def _get_multihead(
     return multi_head
 
 
-@pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
+@pytest.mark.parametrize("attn_dropout", [0.0, 0.5])
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 4])
@@ -110,7 +110,12 @@ def test_order_invariance(
         torch.allclose(results[:, shuffle, :], results_shuffled)
 
         # Test the non-self-attention codepath
-        _ = multi_head(inputs, inputs_shuffled, inputs)
+        att = multi_head(inputs, inputs_shuffled, inputs)
+
+        # Check that dropout actually drops some values
+        if attn_dropout > 0:
+            att_2 = multi_head(inputs, inputs_shuffled, inputs)
+            assert (att != att_2).any()
 
 
 @pytest.mark.parametrize("heads", [1, 4])
