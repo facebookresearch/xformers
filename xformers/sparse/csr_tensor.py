@@ -238,7 +238,7 @@ class SparseCSRTensor(torch.Tensor):
             assert len(args) == 2
             return cls._bmm(args[0], args[1])
 
-        if func in [torch.Tensor.softmax, torch.nn.functional.softmax]:
+        if func in [torch.Tensor.softmax, torch.nn.functional.softmax, torch.softmax]:
             return cls._softmax(args[0], kwargs["dim"])
 
         if func in [torch.Tensor.transpose, torch.transpose]:
@@ -276,7 +276,13 @@ class SparseCSRTensor(torch.Tensor):
         if func == torch.Tensor.to_dense:
             assert len(args) == 1
             return cls._to_dense(args[0])
-        
+
+        if func == torch.Tensor.detach:
+            x = args[0]
+            return cls._wrap(
+                x.shape, x.__values.detach(), x.__row_indices, x.__row_offsets, x.__column_indices, x.__transp_info
+            )
+
         if func in [torch.Tensor.grad.__get__, torch.Tensor._grad.__get__]:
             assert len(args) == 1
             assert len(kwargs) == 0
