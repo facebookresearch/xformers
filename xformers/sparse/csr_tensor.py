@@ -1,32 +1,14 @@
 import torch
-from .utils import _diffsort, _get_transpose_info, _transpose_with_info, _csr_to_coo, _dense3d_to_sparse
-from . import _csr_ops
 
+from xformers.sparse.utils import _diffsort, _get_transpose_info, _transpose_with_info, _csr_to_coo, _dense3d_to_sparse
+from xformers.sparse import _csr_ops
 
-def masked_matmul(a, b, mask=None):
-    if torch.overrides.has_torch_function((a, b, mask)):
-        return torch.overrides.handle_torch_function(masked_matmul, (a, b, mask), a, b, mask)
-
-    att = a @ b
-
-    if mask is None:
-        return att
-
-    if mask.dtype == torch.bool:
-        if mask.ndim == 2:
-            mask = mask.unsqueeze(0).expand(att.shape[0], -1, -1)
-        # mask is presumed false == ignore
-        att[~mask] = float("-inf")
-    else:
-        # mask is presumed additive
-        att += mask
-    return att
+from xformers.ops import masked_matmul
 
 
 class SparseCSRTensor(torch.Tensor):
     @staticmethod
     def __new__(cls, row_offsets, column_indices, values, shape):
-        # Use a Tensor that of the give size for the wrapper.
         kwargs = {}
         kwargs["device"] = values.device
         kwargs["dtype"] = values.dtype
@@ -36,6 +18,10 @@ class SparseCSRTensor(torch.Tensor):
         return torch.Tensor._make_wrapper_subclass(cls, shape, **kwargs)
 
     def __init__(self, row_offsets, column_indices, values, shape):
+        assert row_offsets.ndim == 2
+        assert column_indices.ndim == 2
+        assert values.ndim == 2
+
         self.__row_offsets = row_offsets.contiguous()
         self.__row_indices = _diffsort(row_offsets).to(row_offsets.dtype)
         self.__column_indices = column_indices.contiguous()
@@ -277,7 +263,6 @@ class SparseCSRTensor(torch.Tensor):
 
         return NotImplemented
 
-    
     @classmethod
     def __torch_dispatch__(cls, func, types, args, kwargs):
         return NotImplemented
