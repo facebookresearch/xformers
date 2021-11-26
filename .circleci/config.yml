@@ -72,7 +72,7 @@ install_dep_190: &install_dep_190
         # if [ -f /home/circleci/venv/check_version.py ]; then python /home/circleci/venv/check_version.py torch eq 1.9 && exit 0; fi
         # start installing
         # pip install --progress-bar off torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
-        #
+        # d
         pip install --progress-bar off --pre torch -f https://download.pytorch.org/whl/nightly/cu113/torch_nightly.html
         pip install --progress-bar off -r requirements-benchmark.txt
 
