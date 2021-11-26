@@ -1,9 +1,14 @@
 import torch
 
-from xformers.sparse.utils import _diffsort, _get_transpose_info, _transpose_with_info, _csr_to_coo, _dense3d_to_sparse
-from xformers.sparse import _csr_ops
-
 from xformers.ops import masked_matmul
+from xformers.sparse import _csr_ops
+from xformers.sparse.utils import (
+    _csr_to_coo,
+    _dense3d_to_sparse,
+    _diffsort,
+    _get_transpose_info,
+    _transpose_with_info,
+)
 
 
 class SparseCSRTensor(torch.Tensor):

@@ -8,9 +8,7 @@ import torch
 
 # needed to register custom ops
 import xformers  # noqa: F401
-
 from xformers.sparse.csr_tensor import SparseCSRTensor
-
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
