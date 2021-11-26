@@ -1,5 +1,5 @@
 import torch
-from .utils import _diffsort, _get_transpose_info, _transpose_with_info, _csr_to_coo
+from .utils import _diffsort, _get_transpose_info, _transpose_with_info, _csr_to_coo, _dense3d_to_sparse
 from . import _csr_ops
 
 
@@ -23,47 +23,6 @@ def masked_matmul(a, b, mask=None):
     return att
 
 
-
-class _SparseSoftmax(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x):
-        print(x)
-        _, m, n = x.shape
-        row_indices = x._csr_row_indices
-        values = x._csr_values
-        row_offsets = x._csr_row_offsets
-        column_indices = x._csr_column_indices
-        out = torch.ops.xformers.sparse_softmax_sputnik(
-            m, n, row_indices, values, row_offsets, column_indices
-        )
-        res = SparseCSRTensor._wrap(x.shape, values, row_indices, row_offsets, column_indices, x._csr_transp_info)
-        # note: save out and not values, as an optimization step
-        ctx.save_for_backward(res)
-        #ctx.save_for_backward(row_indices, out, row_offsets, column_indices)
-        #ctx.size = (m, n)
-        return res
-
-    @staticmethod
-    def backward(ctx, grad):
-        x, = ctx.saved_tensors
-
-        _, m, n = x.shape
-        row_indices = x._csr_row_indices
-        values = x._csr_values
-        row_offsets = x._csr_row_offsets
-        column_indices = x._csr_column_indices
-
-        # gradients w.r.t. values
-        grad = grad.__values.contiguous()
-        ga = torch.ops.xformers.sparse_softmax_backward_sputnik(
-            m, n, row_indices, out, grad, row_offsets, column_indices
-        )
-
-        res = SparseCSRTensor._wrap(res.shape, ga, row_indices, row_offsets, column_indices, res._csr_transp_info)
-
-        return res
-
-
 class SparseCSRTensor(torch.Tensor):
     @staticmethod
     def __new__(cls, row_offsets, column_indices, values, shape):
@@ -73,6 +32,7 @@ class SparseCSRTensor(torch.Tensor):
         kwargs["dtype"] = values.dtype
         kwargs["layout"] = values.layout
         kwargs["requires_grad"] = values.requires_grad
+        assert len(shape) == 3
         return torch.Tensor._make_wrapper_subclass(cls, shape, **kwargs)
 
     def __init__(self, row_offsets, column_indices, values, shape):
@@ -88,6 +48,11 @@ class SparseCSRTensor(torch.Tensor):
 
     def __repr__(self):
         return f"sparse_csr_tensor(shape={self.shape}, values={self.__values})"
+
+    @classmethod
+    def from_dense(cls, matrix):
+        values, row_indices, row_offsets, column_indices = _dense3d_to_sparse(matrix, matrix.device)
+        return cls(row_offsets, column_indices, values, matrix.shape)
 
     @classmethod
     def _wrap(
@@ -144,7 +109,6 @@ class SparseCSRTensor(torch.Tensor):
     def _softmax(cls, arg0, dim):
         if not (dim == -1 or dim == 2):
             return NotImplemented
-        #return _SparseSoftmax.apply(arg0)
         
         self = arg0
         _, m, n = self.shape
@@ -158,7 +122,6 @@ class SparseCSRTensor(torch.Tensor):
         return cls._wrap(
             self.shape, out, row_indices, row_offsets, column_indices, self.__transp_info
         )
-        
 
     @classmethod
     def _transpose(cls, arg0, dim0, dim1):
@@ -248,8 +211,18 @@ class SparseCSRTensor(torch.Tensor):
         )
 
     @classmethod
+    def _binary_op_slow(cls, func, arg0, arg1):
+        assert arg0.shape == arg1.shape
+        v0, v1 = arg0, arg1
+        if isinstance(arg0, cls):
+            v0 = arg0.to_dense()
+        if isinstance(arg1, cls):
+            v1 = arg1.to_dense()
+        out = func(v0, v1)
+        return cls.from_dense(out)
+
+    @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
-        # print('here', func)
         if kwargs is None:
             kwargs = {}
         if func in [torch.Tensor.bmm, torch.bmm]:
@@ -271,6 +244,10 @@ class SparseCSRTensor(torch.Tensor):
             assert len(args) == 2
             return cls._binary_op(args[0], args[1])
 
+        if func in [torch.Tensor.logical_and, torch.logical_and, torch.Tensor.__and__]:
+            assert len(args) == 2
+            return cls._binary_op_slow(func, args[0], args[1])
+
         if func == torch.Tensor.to:
             assert len(args) == 2
             return cls._to(args[0], args[1])
@@ -288,8 +265,10 @@ class SparseCSRTensor(torch.Tensor):
                 x.shape, x.__values.grad, x.__row_indices, x.__row_offsets, x.__column_indices, x.__transp_info
             )
 
+        if func == torch.Tensor.requires_grad_:
+            func(args[0].__values)
+
         with torch._C.DisableTorchFunction():
-        #with no_dispatch():
             ret = func(*args, **kwargs)
             # TODO: check this
             if func in torch.overrides.get_default_nowrap_functions():
@@ -301,32 +280,4 @@ class SparseCSRTensor(torch.Tensor):
     
     @classmethod
     def __torch_dispatch__(cls, func, types, args, kwargs):
-        """
-        if func in [torch.ops.aten._softmax]:
-            print(args, kwargs)
-            #return cls._softmax(args[0], kwargs["dim"])
-            return cls._softmax(args[0], args[1])
-
-        if func == torch.ops.aten.detach:
-            assert len(args) == 1
-            assert len(kwargs) == 0
-            x = args[0]
-            return cls._wrap(
-                x.shape, x.__values.detach(), x.__row_indices, x.__row_offsets, x.__column_indices, x.__transp_info
-            )
-
-        if func == torch.ops.aten._softmax_backward_data:
-            print("what are you doing here?")
-        """
         return NotImplemented
-    
-
-
-import contextlib
-@contextlib.contextmanager
-def no_dispatch():
-    guard = torch._C._DisableTorchDispatch()  # type: ignore[attr-defined]
-    try:
-        yield
-    finally:
-        del guard
