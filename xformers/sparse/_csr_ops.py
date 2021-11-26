@@ -1,6 +1,6 @@
 import torch
 
-from .utils import _coo_to_csr, _csr_to_coo, _transpose_with_info
+from .utils import _csr_to_coo, _transpose_with_info
 
 
 def _should_use_coo(a, sparsity):

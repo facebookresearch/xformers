@@ -56,7 +56,9 @@ def test_sparse_softmax(device):
     a_csr = SparseCSRTensor.from_dense(a)
 
     fn = xformers.components.attention.core._softmax
-    fn2 = lambda x: torch.nn.functional.softmax(x, -1)
+
+    def fn2(x):
+        return torch.nn.functional.softmax(x, -1)
 
     a = a.to_sparse()
 
@@ -79,7 +81,9 @@ def test_sparse_softmax_backward(device):
     a_csr = SparseCSRTensor.from_dense(a)
 
     fn = xformers.components.attention.core._softmax
-    fn2 = lambda x: torch.nn.functional.softmax(x, -1)
+
+    def fn2(x):
+        return torch.nn.functional.softmax(x, -1)
 
     a = a.to_sparse()
 
