@@ -96,6 +96,7 @@ def test_sparse_softmax_backward(device):
         grad_a, a.grad.coalesce().values().reshape_as(grad_a), atol=1e-7
     )
 
+
 @pytest.mark.parametrize("device", _devices)
 def test_deepcopy(device):
     import copy
@@ -135,5 +136,5 @@ def test_module_buffer(device):
 
     module.load_state_dict(state_dict)
 
-    module.load_state_dict({'a_csr': b_csr})
+    module.load_state_dict({"a_csr": b_csr})
     assert torch.equal(module.a_csr, b_csr)

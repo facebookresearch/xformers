@@ -377,7 +377,7 @@ class SparseCSRTensor(torch.Tensor):
                 x.__row_indices.__deepcopy__(memo),
                 x.__row_offsets.__deepcopy__(memo),
                 x.__column_indices.__deepcopy__(memo),
-                tuple(v.__deepcopy__(memo) for v in x.__transp_info)
+                tuple(v.__deepcopy__(memo) for v in x.__transp_info),
             )
 
         if func in [torch.Tensor.grad.__get__, torch.Tensor._grad.__get__]:
