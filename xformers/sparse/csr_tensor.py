@@ -98,6 +98,9 @@ class SparseCSRTensor(torch.Tensor):
         if not (isinstance(arg0, cls) and type(arg1) == torch.Tensor):
             return NotImplemented
 
+        assert arg0.ndim == 3
+        assert arg1.ndim == 3
+
         self = arg0
         b = arg1
 
@@ -207,6 +210,37 @@ class SparseCSRTensor(torch.Tensor):
         )
 
     @classmethod
+    def _copy(cls, arg0, arg1):
+        if not (isinstance(arg0, cls) and isinstance(arg1, cls)):
+            return NotImplemented
+        assert arg0.shape == arg1.shape
+        av0, av1 = arg0.__values, arg1.__values
+        av0.resize_as_(av1).copy_(av1)
+        av0, av1 = arg0.__row_indices, arg1.__row_indices
+        av0.resize_as_(av1).copy_(av1)
+        av0, av1 = arg0.__row_offsets, arg1.__row_offsets
+        av0.resize_as_(av1).copy_(av1)
+        av0, av1 = arg0.__column_indices, arg1.__column_indices
+        av0.resize_as_(av1).copy_(av1)
+        for v0, v1 in zip(arg0.__transp_info, arg1.__transp_info):
+            v0.resize_as_(v1).copy_(v1)
+        return arg0
+
+    @classmethod
+    def _equal(cls, arg0, arg1):
+        if not (isinstance(arg0, cls) and isinstance(arg1, cls)):
+            return NotImplemented
+        if arg0.shape != arg1.shape:
+            return False
+        if not torch.equal(arg0.__values, arg1.__values):
+            return False
+        if not torch.equal(arg0.__row_offsets, arg1.__row_offsets):
+            return False
+        if not torch.equal(arg0.__column_indices, arg1.__column_indices):
+            return False
+        return True
+
+    @classmethod
     def _to_dense(cls, arg0):
         _, m, n = arg0.shape
         shape = arg0.shape
@@ -256,7 +290,13 @@ class SparseCSRTensor(torch.Tensor):
     def __torch_function__(cls, func, types, args=(), kwargs=None):
         if kwargs is None:
             kwargs = {}
-        if func in [torch.Tensor.bmm, torch.bmm]:
+        if func in [
+            torch.Tensor.bmm,
+            torch.bmm,
+            torch.Tensor.__matmul__,
+            torch.matmul,
+            torch.Tensor.matmul,
+        ]:
             assert len(args) == 2
             return cls._bmm(args[0], args[1])
 
@@ -300,9 +340,18 @@ class SparseCSRTensor(torch.Tensor):
             )
 
         if func == torch.Tensor.to:
-            assert len(args) == 2
+            # print(args, kwargs)
+            assert len(args) >= 2
             return cls._to(args[0], args[1])
             # return cls._to(args[0], kwargs["device"])
+
+        if func in [torch.Tensor.copy_]:
+            assert len(args) == 2
+            return cls._copy(args[0], args[1])
+
+        if func in [torch.Tensor.equal, torch.equal]:
+            assert len(args) == 2
+            return cls._equal(args[0], args[1])
 
         if func == torch.Tensor.to_dense:
             assert len(args) == 1
@@ -317,6 +366,18 @@ class SparseCSRTensor(torch.Tensor):
                 x.__row_offsets,
                 x.__column_indices,
                 x.__transp_info,
+            )
+
+        if func == torch.Tensor.__deepcopy__:
+            x = args[0]
+            memo = args[1]
+            return cls._wrap(
+                x.shape,
+                x.__values.__deepcopy__(memo),
+                x.__row_indices.__deepcopy__(memo),
+                x.__row_offsets.__deepcopy__(memo),
+                x.__column_indices.__deepcopy__(memo),
+                tuple(v.__deepcopy__(memo) for v in x.__transp_info)
             )
 
         if func in [torch.Tensor.grad.__get__, torch.Tensor._grad.__get__]:

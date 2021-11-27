@@ -95,3 +95,45 @@ def test_sparse_softmax_backward(device):
     assert torch.allclose(
         grad_a, a.grad.coalesce().values().reshape_as(grad_a), atol=1e-7
     )
+
+@pytest.mark.parametrize("device", _devices)
+def test_deepcopy(device):
+    import copy
+
+    B, L = 8, 30
+    prob = 0.3
+    a = _create_random_sparsity(torch.rand(B, L, L), prob)
+    a_csr = SparseCSRTensor.from_dense(a)
+
+    b_csr = copy.deepcopy(a_csr)
+    assert torch.equal(a_csr, b_csr)
+
+
+@pytest.mark.parametrize("device", _devices)
+def test_module_buffer(device):
+    B, L = 8, 30
+    prob = 0.3
+    a = _create_random_sparsity(torch.rand(B, L, L), prob)
+    a_csr = SparseCSRTensor.from_dense(a)
+
+    prob = 0.5
+    b = _create_random_sparsity(torch.rand(B, L, L), prob)
+    b_csr = SparseCSRTensor.from_dense(a)
+
+    module = torch.nn.Module()
+    # test that register_buffer works
+    module.register_buffer("a_csr", a_csr)
+
+    assert module.a_csr is a_csr
+
+    module.to(device)
+    assert module.a_csr.device == torch.device(device)
+
+    state_dict = module.state_dict()
+    assert "a_csr" in state_dict
+    assert torch.equal(a_csr, state_dict["a_csr"])
+
+    module.load_state_dict(state_dict)
+
+    module.load_state_dict({'a_csr': b_csr})
+    assert torch.equal(module.a_csr, b_csr)
