@@ -245,40 +245,40 @@ def test_causal(
 
 # TODO: way more unit tests..
 
-@pytest.mark.parametrize("heads", [2])
-@pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
-@pytest.mark.parametrize("device", DEVICES)
-def test_torchscript_ability(
-    attention_name: str,
-    heads: int,
-    device: torch.device,
-):
+# @pytest.mark.parametrize("heads", [2])
+# @pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
+# @pytest.mark.parametrize("device", DEVICES)
+# def test_torchscript_ability(
+#     attention_name: str,
+#     heads: int,
+#     device: torch.device,
+# ):
 
-    # device = torch.device("cpu")
+#     # device = torch.device("cpu")
 
-    multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
-
-
-    seq_q = SEQ - 16
+#     multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
 
 
-    # input for tracing
-    q = torch.rand((BATCH, seq_q, MODEL), device=device)
-    k = torch.rand((BATCH, seq_q, MODEL), device=device)
-    v = torch.rand((BATCH, seq_q, MODEL), device=device)
+#     seq_q = SEQ - 16
 
 
-    # tracing the attention module
-    traced_multi_head = torch.jit.trace(multi_head,(q, k, v))
-
-    # create new random inputs for testing the eager model and traced model
-    q = torch.rand((BATCH, seq_q, MODEL), device=device)
-    k = torch.rand((BATCH, seq_q, MODEL), device=device)
-    v = torch.rand((BATCH, seq_q, MODEL), device=device)
+#     # input for tracing
+#     q = torch.rand((BATCH, seq_q, MODEL), device=device)
+#     k = torch.rand((BATCH, seq_q, MODEL), device=device)
+#     v = torch.rand((BATCH, seq_q, MODEL), device=device)
 
 
-    res = multi_head(query=q, key=k, value=v)
-    res_traced = traced_multi_head(query=q, key=k, value=v)
+#     # tracing the attention module
+#     traced_multi_head = torch.jit.trace(multi_head,(q, k, v))
+
+#     # create new random inputs for testing the eager model and traced model
+#     q = torch.rand((BATCH, seq_q, MODEL), device=device)
+#     k = torch.rand((BATCH, seq_q, MODEL), device=device)
+#     v = torch.rand((BATCH, seq_q, MODEL), device=device)
 
 
-    assert torch.allclose(res, res_traced)
+#     res = multi_head(query=q, key=k, value=v)
+#     res_traced = traced_multi_head(query=q, key=k, value=v)
+
+
+#     assert torch.allclose(res, res_traced)
