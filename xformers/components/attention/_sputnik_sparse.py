@@ -58,6 +58,10 @@ class SparseCS:
     def row_offsets(self):
         return self._mat._csr_row_offsets
 
+    @property
+    def _transp_info(self):
+        return self._mat._csr_transp_info
+
     @classmethod
     def wrap(
         cls, shape, values, row_indices, row_offsets, column_indices, _transp_info
