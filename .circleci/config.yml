@@ -15,12 +15,13 @@ cpu_py38: &cpu_py38
     - image: cimg/python:3.8
   resource_class: large
 
-gpu_cu112: &gpu_cu112
+gpu_cu102: &gpu_cu102
   environment:
-    CUDA_VERSION: "11.2"
-    CUDA_HOME: /usr/local/cuda-11.2
+    CUDA_VERSION: "10.2"
+    CUDA_HOME: /usr/local/cuda-10.2
   machine:
-    image: ubuntu-2004-cuda-11.2:202103-01
+    # image: ubuntu-2004-cuda-11.2:202103-01
+    image: ubuntu-1604-cuda-10.2:202012-01
     resource_class: gpu.nvidia.medium
 
 
@@ -73,7 +74,7 @@ install_dep_190: &install_dep_190
         # start installing
         # pip install --progress-bar off torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
         # d2
-        pip install --progress-bar off --pre torch -f https://download.pytorch.org/whl/nightly/cu113/torch_nightly.html
+        pip install --progress-bar off --pre torch -f https://download.pytorch.org/whl/nightly/cu102/torch_nightly.html
         pip install --progress-bar off -r requirements-benchmark.txt
 
         pip install cmake # build time dependency for triton
@@ -222,7 +223,7 @@ jobs:
 
 
   gpu_tests_190:
-    <<: *gpu_cu112
+    <<: *gpu_cu102
 
     working_directory: ~/xformers
 
