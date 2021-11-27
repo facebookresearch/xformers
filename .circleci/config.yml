@@ -15,9 +15,9 @@ cpu_py38: &cpu_py38
     - image: cimg/python:3.8
   resource_class: large
 
-gpu_cu102: &gpu_cu102
+gpu_cu111: &gpu_cu111
   environment:
-    CUDA_VERSION: "10.2"
+    CUDA_VERSION: "11.1"
     CUDA_HOME: /usr/local/cuda-11.1
   machine:
     # image: ubuntu-2004-cuda-11.2:202103-01
@@ -74,7 +74,7 @@ install_dep_190: &install_dep_190
         # start installing
         # pip install --progress-bar off torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
         # d2
-        pip install --progress-bar off --pre torch -f https://download.pytorch.org/whl/nightly/cu102/torch_nightly.html
+        pip install --progress-bar off --pre torch -f https://download.pytorch.org/whl/nightly/cu111/torch_nightly.html
         pip install --progress-bar off -r requirements-benchmark.txt
 
         pip install --progress-bar off triton
@@ -224,7 +224,7 @@ jobs:
 
 
   gpu_tests_190:
-    <<: *gpu_cu102
+    <<: *gpu_cu111
 
     working_directory: ~/xformers
 
