@@ -59,6 +59,18 @@ class SparseCS:
         return self._mat._csr_row_offsets
 
     @classmethod
+    def wrap(
+        cls, shape, values, row_indices, row_offsets, column_indices, _transp_info
+    ):
+        matrix = cls.__new__(cls)
+        _shape = (values.shape[0],) + shape
+        csr_matrix = SparseCSRTensor._wrap(
+            _shape, values, row_indices, row_offsets, column_indices, _transp_info
+        )
+        matrix._mat = csr_matrix
+        return matrix
+
+    @classmethod
     def _wrap(cls, csr_matrix):
         assert isinstance(csr_matrix, SparseCSRTensor)
         matrix = cls.__new__(cls)
