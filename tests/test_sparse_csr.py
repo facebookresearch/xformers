@@ -12,8 +12,8 @@ import xformers.components.attention
 from xformers.sparse import SparseCSRTensor
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-_devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
-_devices = [torch.device(d) for d in _devices]
+_devices_str = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+_devices = [torch.device(d) for d in _devices_str]
 
 
 def _create_random_sparsity(matrix, sparsity, divisible_by=4):
