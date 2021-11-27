@@ -119,7 +119,7 @@ def test_module_buffer(device):
 
     prob = 0.5
     b = _create_random_sparsity(torch.rand(B, L, L), prob)
-    b_csr = SparseCSRTensor.from_dense(a)
+    b_csr = SparseCSRTensor.from_dense(b)
 
     module = torch.nn.Module()
     # test that register_buffer works
