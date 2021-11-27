@@ -271,7 +271,7 @@ def test_torchscript_ability(
     # tracing the attention module
     traced_multi_head = torch.jit.trace(multi_head,(q, k, v))
 
-    # creat new random inputs for testing the eager model and traced model
+    # create new random inputs for testing the eager model and traced model
     q = torch.rand((BATCH, seq_q, MODEL), device=device)
     k = torch.rand((BATCH, seq_q, MODEL), device=device)
     v = torch.rand((BATCH, seq_q, MODEL), device=device)
