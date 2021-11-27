@@ -277,7 +277,7 @@ class SparseCSRTensor(torch.Tensor):
 
     @classmethod
     def _binary_op_slow(cls, func, arg0, arg1):
-        assert arg0.shape == arg1.shape
+        # assert arg0.shape == arg1.shape
         v0, v1 = arg0, arg1
         if isinstance(arg0, cls):
             v0 = arg0.to_dense()
