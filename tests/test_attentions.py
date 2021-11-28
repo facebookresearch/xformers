@@ -7,13 +7,9 @@ import pytest
 import torch
 
 from xformers.components import MultiHeadDispatch
-
 # Automatically test all the registered attentions
-from xformers.components.attention import (
-    _DENSITY_THRESHOLD,
-    ATTENTION_REGISTRY,
-    build_attention,
-)
+from xformers.components.attention import (_DENSITY_THRESHOLD,
+                                           ATTENTION_REGISTRY, build_attention)
 
 DEVICES = (
     [torch.device("cpu")] if not torch.cuda.is_available() else [torch.device("cuda")]
@@ -50,6 +46,7 @@ def _get_multihead(
     }
 
     if skip_output_projection:
+
         def noop(x):
             return x
 
@@ -212,20 +209,20 @@ def test_causal(
 
     k = (
         torch.tril(torch.ones((SEQ, SEQ), device=device), diagonal=0)
-            .unsqueeze(0)
-            .expand(1, -1, -1)
+        .unsqueeze(0)
+        .expand(1, -1, -1)
     )
     q = (
         torch.triu(torch.ones((SEQ, SEQ), device=device), diagonal=0)
-            .unsqueeze(0)
-            .expand(1, -1, -1)
+        .unsqueeze(0)
+        .expand(1, -1, -1)
     )
     v = (
         torch.arange(SEQ, device=device)
-            .float()
-            .unsqueeze(0)
-            .unsqueeze(-1)
-            .expand(1, -1, SEQ)
+        .float()
+        .unsqueeze(0)
+        .unsqueeze(-1)
+        .expand(1, -1, SEQ)
     )
 
     # Make sure that we don´t project, to keep the embeddings orthogonal
@@ -243,6 +240,7 @@ def test_causal(
 
 # TODO: way more unit tests..
 
+
 @pytest.mark.parametrize("heads", [2])
 @pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
 @pytest.mark.parametrize("device", DEVICES)
@@ -251,8 +249,6 @@ def test_torch_script_ability(
     heads: int,
     device: torch.device,
 ):
-    # device = torch.device("cpu")
-
     multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
 
     seq_q = SEQ - 16
