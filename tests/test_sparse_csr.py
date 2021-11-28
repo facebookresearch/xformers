@@ -132,7 +132,7 @@ def test_module_buffer(device):
 
     state_dict = module.state_dict()
     assert "a_csr" in state_dict
-    assert torch.equal(a_csr.to(device)), state_dict["a_csr"])
+    assert torch.equal(a_csr.to(device), state_dict["a_csr"])
 
     module.load_state_dict(state_dict)
 
