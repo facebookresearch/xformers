@@ -7,9 +7,13 @@ import pytest
 import torch
 
 from xformers.components import MultiHeadDispatch
+
 # Automatically test all the registered attentions
-from xformers.components.attention import (_DENSITY_THRESHOLD,
-                                           ATTENTION_REGISTRY, build_attention)
+from xformers.components.attention import (
+    _DENSITY_THRESHOLD,
+    ATTENTION_REGISTRY,
+    build_attention,
+)
 
 DEVICES = (
     [torch.device("cpu")] if not torch.cuda.is_available() else [torch.device("cuda")]
