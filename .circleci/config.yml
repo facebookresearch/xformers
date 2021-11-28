@@ -20,7 +20,7 @@ gpu_cu111: &gpu_cu111
     CUDA_VERSION: "11.1"
     CUDA_HOME: /usr/local/cuda-11.1
   machine:
-    image: ubuntu-2004-cuda-11.2:202103-01
+    image: ubuntu-1604-cuda-11.1:202012-01
     resource_class: gpu.nvidia.medium
 
 
