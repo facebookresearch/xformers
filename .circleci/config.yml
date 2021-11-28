@@ -66,7 +66,7 @@ setup_venv: &setup_venv
 
 install_dep_190: &install_dep_190
   - run:
-      name: Install Dependencies with torch 1.9.0
+      name: Install Dependencies with torch nightly
       command: |
         # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
         if [ -f /home/circleci/venv/check_version.py ]; then python /home/circleci/venv/check_version.py torch gt 1.10 && exit 0; fi
