@@ -246,7 +246,7 @@ def test_causal(
 
 
 @pytest.mark.parametrize("heads", [2])
-@pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
+@pytest.mark.parametrize("attention_name", ["fourier_mix", "linformer", "nystrom", "orthoformer","lambda", "fourier_mix"])
 @pytest.mark.parametrize("device", DEVICES)
 def test_torch_script_ability(
     attention_name: str,
