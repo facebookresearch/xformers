@@ -50,7 +50,6 @@ def _get_multihead(
     }
 
     if skip_output_projection:
-
         def noop(x):
             return x
 
@@ -121,7 +120,6 @@ def test_kqv_ordering(
     heads: int,
     device: torch.device,
 ):
-
     multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
 
     # Check kqv are not flipped
@@ -214,20 +212,20 @@ def test_causal(
 
     k = (
         torch.tril(torch.ones((SEQ, SEQ), device=device), diagonal=0)
-        .unsqueeze(0)
-        .expand(1, -1, -1)
+            .unsqueeze(0)
+            .expand(1, -1, -1)
     )
     q = (
         torch.triu(torch.ones((SEQ, SEQ), device=device), diagonal=0)
-        .unsqueeze(0)
-        .expand(1, -1, -1)
+            .unsqueeze(0)
+            .expand(1, -1, -1)
     )
     v = (
         torch.arange(SEQ, device=device)
-        .float()
-        .unsqueeze(0)
-        .unsqueeze(-1)
-        .expand(1, -1, SEQ)
+            .float()
+            .unsqueeze(0)
+            .unsqueeze(-1)
+            .expand(1, -1, SEQ)
     )
 
     # Make sure that we don´t project, to keep the embeddings orthogonal
@@ -245,40 +243,34 @@ def test_causal(
 
 # TODO: way more unit tests..
 
-# @pytest.mark.parametrize("heads", [2])
-# @pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
-# @pytest.mark.parametrize("device", DEVICES)
-# def test_torchscript_ability(
-#     attention_name: str,
-#     heads: int,
-#     device: torch.device,
-# ):
+@pytest.mark.parametrize("heads", [2])
+@pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
+@pytest.mark.parametrize("device", DEVICES)
+def test_torch_script_ability(
+    attention_name: str,
+    heads: int,
+    device: torch.device,
+):
+    # device = torch.device("cpu")
 
-#     # device = torch.device("cpu")
+    multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
 
-#     multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
+    seq_q = SEQ - 16
 
+    # input for tracing
+    q = torch.rand((BATCH, seq_q, MODEL), device=device)
+    k = torch.rand((BATCH, seq_q, MODEL), device=device)
+    v = torch.rand((BATCH, seq_q, MODEL), device=device)
 
-#     seq_q = SEQ - 16
+    # tracing the attention module
+    traced_multi_head = torch.jit.trace(multi_head, (q, k, v))
 
+    # create new random inputs for testing the eager model and traced model
+    q = torch.rand((BATCH, seq_q, MODEL), device=device)
+    k = torch.rand((BATCH, seq_q, MODEL), device=device)
+    v = torch.rand((BATCH, seq_q, MODEL), device=device)
 
-#     # input for tracing
-#     q = torch.rand((BATCH, seq_q, MODEL), device=device)
-#     k = torch.rand((BATCH, seq_q, MODEL), device=device)
-#     v = torch.rand((BATCH, seq_q, MODEL), device=device)
+    res = multi_head(query=q, key=k, value=v)
+    res_traced = traced_multi_head(query=q, key=k, value=v)
 
-
-#     # tracing the attention module
-#     traced_multi_head = torch.jit.trace(multi_head,(q, k, v))
-
-#     # create new random inputs for testing the eager model and traced model
-#     q = torch.rand((BATCH, seq_q, MODEL), device=device)
-#     k = torch.rand((BATCH, seq_q, MODEL), device=device)
-#     v = torch.rand((BATCH, seq_q, MODEL), device=device)
-
-
-#     res = multi_head(query=q, key=k, value=v)
-#     res_traced = traced_multi_head(query=q, key=k, value=v)
-
-
-#     assert torch.allclose(res, res_traced)
+    assert torch.allclose(res, res_traced)
