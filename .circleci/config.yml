@@ -20,8 +20,7 @@ gpu_cu111: &gpu_cu111
     CUDA_VERSION: "11.1"
     CUDA_HOME: /usr/local/cuda-11.1
   machine:
-    # image: ubuntu-2004-cuda-11.2:202103-01
-    image: ubuntu-1604-cuda-10.2:202012-01
+    image: ubuntu-2004-cuda-11.2:202103-01
     resource_class: gpu.nvidia.medium
 
 
@@ -70,19 +69,13 @@ install_dep_190: &install_dep_190
       name: Install Dependencies with torch 1.9.0
       command: |
         # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
-        # if [ -f /home/circleci/venv/check_version.py ]; then python /home/circleci/venv/check_version.py torch eq 1.9 && exit 0; fi
+        if [ -f /home/circleci/venv/check_version.py ]; then python /home/circleci/venv/check_version.py torch gt 1.10 && exit 0; fi
         # start installing
-        # pip install --progress-bar off torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
-        # d2
-        pip install --progress-bar off --pre torch -f https://download.pytorch.org/whl/nightly/cu111/torch_nightly.html
+        pip install --progress-bar off --pre torch torchvision -f https://download.pytorch.org/whl/nightly/cu111/torch_nightly.html
         pip install --progress-bar off -r requirements-benchmark.txt
 
-        pip install --progress-bar off triton
-        #pip install cmake # build time dependency for triton
-        #pip install --progress-bar off 'git+https://github.com/openai/triton.git#subdirectory=python'
-
         python -c 'import torch; print("Torch version:", torch.__version__)'
-        # python -c 'import torch; assert torch.__version__.split(".")[:2] == ["1", "9"], "wrong torch version"'
+        python -c 'import torch; assert torch.__version__ > (1, 10), "wrong torch version"'
         python -m torch.utils.collect_env
         wget -O /home/circleci/venv/check_version.py https://raw.githubusercontent.com/min-xu-ai/check_verion/main/check_version.py
 
