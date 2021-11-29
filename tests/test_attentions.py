@@ -242,20 +242,22 @@ def test_causal(
     ), res_sum
 
 
-# TODO: way more unit tests..
-
-
 @pytest.mark.parametrize("heads", [2])
-@pytest.mark.parametrize(
-    "attention_name",
-    ["fourier_mix", "linformer", "nystrom", "orthoformer", "lambda", "fourier_mix"],
-)
+@pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("device", DEVICES)
 def test_torch_script_ability(
     attention_name: str,
     heads: int,
     device: torch.device,
 ):
+    if attention_name in {
+        "favor",
+        "global",
+        "local",
+        "random",
+    }:
+        # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
+        pytest.skip(f"{attention_name} does not support scripting yet.")
     multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
 
     seq_q = SEQ - 16
@@ -277,3 +279,6 @@ def test_torch_script_ability(
     res_traced = traced_multi_head(query=q, key=k, value=v)
 
     assert torch.allclose(res, res_traced)
+
+
+# TODO: way more unit tests..
