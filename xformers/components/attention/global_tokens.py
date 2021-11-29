@@ -111,5 +111,7 @@ class GlobalAttention(Attention):
             q=q_, k=k_, v=v_, att_mask=mask, dropout=self.attn_drop
         )
 
+        att = self.attn_drop(att)
+
         # Take into account an hypothetical padding
         return att[:, :seq_len, :]

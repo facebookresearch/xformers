@@ -37,6 +37,7 @@ class LinformerAttention(Attention):
         if k is None:
             k = seq_len // 4
 
+        print("dropout ", dropout)
         self.k = k
         self.E = nn.Linear(seq_len, k, bias=False)
         self.F = nn.Linear(seq_len, k, bias=False)
@@ -61,4 +62,7 @@ class LinformerAttention(Attention):
         y = scaled_dot_product_attention(
             q=q, k=k_projected, v=v_projected, att_mask=None, dropout=self.attn_drop
         )
+
+        y = self.attn_drop(y)
+
         return y[:, :-padding, :] if padding > 0 else y
