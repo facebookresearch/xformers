@@ -37,7 +37,6 @@ class LinformerAttention(Attention):
         if k is None:
             k = seq_len // 4
 
-        print("dropout ", dropout)
         self.k = k
         self.E = nn.Linear(seq_len, k, bias=False)
         self.F = nn.Linear(seq_len, k, bias=False)

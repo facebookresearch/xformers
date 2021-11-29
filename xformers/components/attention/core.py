@@ -180,7 +180,6 @@ def _apply_dropout(att, dropout):
         return att
 
     # Non optimized vanilla dropout
-    print(att - dropout(att))
     att = dropout(att)
     return att
 
