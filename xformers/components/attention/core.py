@@ -154,6 +154,7 @@ def bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 def _apply_dropout(att, dropout):
     if dropout is None:
         return att
+
     # Dropout chokes on sparse tensors
     if _is_sparse_available:
         if isinstance(att, SparseCS):
@@ -172,10 +173,14 @@ def _apply_dropout(att, dropout):
             values = att.values().clone()  # protect against in-place dropout
             values = dropout(values)
             att = torch.sparse_coo_tensor(att.indices(), values, att.shape)
+        else:
+            # Simple dense case
+            att = dropout(att)
 
         return att
 
     # Non optimized vanilla dropout
+    print(att - dropout(att))
     att = dropout(att)
     return att
 

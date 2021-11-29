@@ -47,6 +47,7 @@ class ScaledDotProduct(Attention):
         **kwargs,
     ):
         super().__init__()
+
         self.attn_drop = nn.Dropout(dropout, inplace=False)
         self.causal = causal
         self.seq_len = seq_len
@@ -119,7 +120,7 @@ class ScaledDotProduct(Attention):
                 )
                 raise NotImplementedError
 
-        # Self-attend: (B x nh, S, hs) x (B x nh, hs, S) -> (B x nh, S, S)
+        # Attend: (B x nh, S, hs) x (B x nh, hs, S) -> (B x nh, S, S)
         y = scaled_dot_product_attention(
             q=q, k=k, v=v, att_mask=att_mask, dropout=self.attn_drop
         )

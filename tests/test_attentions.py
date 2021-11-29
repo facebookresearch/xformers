@@ -77,7 +77,7 @@ def _get_multihead(
     return multi_head
 
 
-@pytest.mark.parametrize("attn_dropout", [0.0, 0.9])
+@pytest.mark.parametrize("attn_dropout", [0.0, 0.3])
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 4])
@@ -91,6 +91,9 @@ def test_order_invariance(
     causal: bool,
     device: torch.device,
 ):
+
+    torch.manual_seed(42)
+
     multi_head = _get_multihead(
         attention_name, attn_dropout, residual_dropout, causal, heads, device
     )
