@@ -279,9 +279,9 @@ class SparseCSRTensor(torch.Tensor):
             if not arg0.__values.shape == arg1.__values.shape:
                 raise NotImplementedError(msg)
             # TODO this is not always true, but is a fast approximation for now
-            if not arg0.__row_offsets is arg1.__row_offsets:
+            if arg0.__row_offsets is not arg1.__row_offsets:
                 raise NotImplementedError(msg)
-            if not arg0.__column_indices is arg1.__column_indices:
+            if arg0.__column_indices is not arg1.__column_indices:
                 raise NotImplementedError(msg)
         out = func(v0, v1)
         return cls._wrap(
