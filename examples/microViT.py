@@ -151,11 +151,11 @@ class VisionTransformer(pl.LightningModule):
         x = x.flatten(2, 3).transpose(1, 2).contiguous()  # B HW C
 
         if self.hparams.classifier == Classifier.TOKEN:
-            # prepend classification token
+            # prepend classification token to the sequence
             clf_token = (
-                torch.ones(1, batch, self.hparams.dim, device=x.device) * self.clf_token
+                torch.ones(batch, 1, self.hparams.dim, device=x.device) * self.clf_token
             )
-            x = torch.cat([clf_token, x[:-1, :, :]], axis=0)
+            x = torch.cat([clf_token, x], axis=1)
 
         # add position embedding
         x += self.pos_emb.expand_as(x)
@@ -196,10 +196,10 @@ class VisionTransformer(pl.LightningModule):
             self.log(f"{stage}_loss", loss, prog_bar=True)
             self.log(f"{stage}_acc", acc, prog_bar=True)
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, _):
         self.evaluate(batch, "val")
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, _):
         self.evaluate(batch, "test")
 
 
@@ -250,6 +250,7 @@ if __name__ == "__main__":
         image_size=image_size,
         num_classes=num_classes,
         attention="scaled_dot_product",
+        classifier=Classifier.TOKEN,
     )
     trainer = pl.Trainer(
         gpus=GPUS, max_epochs=MAX_EPOCHS, detect_anomaly=True, precision=16
