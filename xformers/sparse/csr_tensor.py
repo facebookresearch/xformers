@@ -270,7 +270,19 @@ class SparseCSRTensor(torch.Tensor):
         if isinstance(arg1, cls):
             v1 = arg1.__values
         # assert arg0.shape == arg1.shape
-        # TODO add cheap assert for indices
+        if isinstance(arg0, cls) and isinstance(arg1, cls):
+            msg = f"arg0 and arg1 need to have the same sparsity pattern in {func} (for now)"
+            if not arg0.__row_offsets.shape == arg1.__row_offsets.shape:
+                raise NotImplementedError(msg)
+            if not arg0.__column_indices.shape == arg1.__column_indices.shape:
+                raise NotImplementedError(msg)
+            if not arg0.__values.shape == arg1.__values.shape:
+                raise NotImplementedError(msg)
+            # TODO this is not always true, but is a fast approximation for now
+            if not arg0.__row_offsets is arg1.__row_offsets:
+                raise NotImplementedError(msg)
+            if not arg0.__column_indices is arg1.__column_indices:
+                raise NotImplementedError(msg)
         out = func(v0, v1)
         return cls._wrap(
             arg0.shape,
@@ -321,6 +333,15 @@ class SparseCSRTensor(torch.Tensor):
             torch.Tensor.add,
             torch.add,
             torch.Tensor.__add__,
+        ]:
+            assert len(args) == 2
+            if not (isinstance(args[0], cls) and isinstance(args[1], cls)):
+                raise NotImplementedError(
+                    f"{func} with {type(args[0])} and {type(args[1])} not implemented"
+                )
+            return cls._binary_op(func, args[0], args[1])
+
+        if func in [
             torch.Tensor.mul,
             torch.mul,
             torch.Tensor.__mul__,
