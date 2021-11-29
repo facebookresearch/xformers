@@ -38,11 +38,11 @@ def test_sparse_binary_ops(func, device):
 
     a_csr = SparseCSRTensor.from_dense(a)
 
-    b = 5
+    b = a
+    b_csr = a_csr
 
-    res = func(a_csr, b).to_dense()
+    res = func(a_csr, b_csr).to_dense()
     res_gt = func(a, b)
-    res_gt[a == 0] = 0
 
     assert torch.allclose(res, res_gt)
 
