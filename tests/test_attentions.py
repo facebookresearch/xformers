@@ -245,7 +245,7 @@ def test_causal(
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("heads", [2])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
-@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("device", [torch.device("cpu")])
 def test_torch_script_ability(
     attention_name: str,
     heads: int,
