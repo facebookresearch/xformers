@@ -262,7 +262,7 @@ def test_torch_script_ability(
         pytest.skip(f"{attention_name} does not support scripting yet.")
     multi_head = _get_multihead(attention_name, attn_dropout, 0.0, False, heads, device)
 
-    # input for tracing
+    # input for tracing the function
     q = torch.rand((BATCH, SEQ, MODEL), device=device)
     k = torch.rand((BATCH, SEQ, MODEL), device=device)
     v = torch.rand((BATCH, SEQ, MODEL), device=device)
