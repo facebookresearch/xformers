@@ -33,14 +33,15 @@ class VisionTransformer(pl.LightningModule):
     def __init__(
         self,
         steps,
-        learning_rate=1e-2,
-        weight_decay=0.0001,
+        learning_rate=1e-3,
+        betas=(0.9, 0.99),
+        weight_decay=0.03,
         image_size=32,
         num_classes=10,
         patch_size=4,
-        dim=256,
+        dim=768,
         n_layer=12,
-        n_head=8,
+        n_head=12,
         resid_pdrop=0.1,
         attn_pdrop=0.1,
         mlp_pdrop=0.1,
@@ -79,7 +80,7 @@ class VisionTransformer(pl.LightningModule):
                         },
                     },
                     "feedforward_config": {
-                        "name": "MLP",  # Use FusedMLP for speed if Triton is available
+                        "name": "FusedMLP",  # Use MLP if Triton is not available
                         "dropout": mlp_pdrop,
                         "activation": "gelu",
                         "hidden_layer_multiplier": hidden_layer_multiplier,
@@ -123,10 +124,10 @@ class VisionTransformer(pl.LightningModule):
         return fn
 
     def configure_optimizers(self):
-        optimizer = torch.optim.SGD(
+        optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.hparams.learning_rate,
-            momentum=0.9,
+            betas=self.hparams.betas,
             weight_decay=self.hparams.weight_decay,
         )
 
@@ -163,7 +164,7 @@ class VisionTransformer(pl.LightningModule):
         x = self.ln(x)
 
         if self.hparams.classifier == Classifier.TOKEN:
-            x = x[:, 0]
+            x = x[:, 0]  # only consider the token, we're classifying anyway
         elif self.hparams.classifier == Classifier.GAP:
             x = x.mean(dim=1)  # mean over sequence len
 
@@ -205,8 +206,9 @@ class VisionTransformer(pl.LightningModule):
 
 if __name__ == "__main__":
     pl.seed_everything(42)
-    BATCH_SIZE = 512
-    MAX_EPOCHS = 10
+    REF_BATCH = 4096
+    BATCH = 256  # adjust depending on the avaiable memory on your machine
+    MAX_EPOCHS = 20
     NUM_WORKERS = 4
     GPUS = 1
 
@@ -231,7 +233,7 @@ if __name__ == "__main__":
     # for a full tutorial
     dm = CIFAR10DataModule(
         data_dir="data",
-        batch_size=BATCH_SIZE,
+        batch_size=BATCH,
         num_workers=NUM_WORKERS,
         pin_memory=True,
         train_transforms=train_transforms,
@@ -243,7 +245,7 @@ if __name__ == "__main__":
     num_classes = dm.num_classes  # 10 for CIFAR
 
     # compute total number of steps
-    batch_size = BATCH_SIZE * GPUS
+    batch_size = BATCH * GPUS
     steps = dm.num_samples // batch_size * MAX_EPOCHS
     lm = VisionTransformer(
         steps=steps,
@@ -253,7 +255,11 @@ if __name__ == "__main__":
         classifier=Classifier.TOKEN,
     )
     trainer = pl.Trainer(
-        gpus=GPUS, max_epochs=MAX_EPOCHS, detect_anomaly=True, precision=16
+        gpus=GPUS,
+        max_epochs=MAX_EPOCHS,
+        detect_anomaly=True,
+        precision=16,
+        accumulate_grad_batches=REF_BATCH // BATCH,
     )
     trainer.fit(lm, dm)
 

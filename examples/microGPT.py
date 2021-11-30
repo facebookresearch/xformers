@@ -71,7 +71,7 @@ class GPT(pl.LightningModule):
                         },
                     },
                     "feedforward_config": {
-                        "name": "MLP",  # Use FusedMLP for speed if Triton is available
+                        "name": "FusedMLP",  # Use MLP if Triton is not available
                         "dropout": self.hparams.mlp_pdrop,
                         "activation": "gelu",
                         "hidden_layer_multiplier": self.hparams.hidden_layer_multiplier,
