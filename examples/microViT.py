@@ -67,7 +67,6 @@ class VisionTransformer(pl.LightningModule):
                 "block_type": "encoder",
                 "num_layers": n_layer,
                 "dim_model": dim,
-                "seq_len": num_patches,
                 "layer_norm_style": "pre",
                 "multi_head_config": {
                     "num_heads": n_head,

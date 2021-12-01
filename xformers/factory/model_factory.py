@@ -21,20 +21,26 @@ from xformers.factory.block_factory import (
 
 @dataclass(init=False)
 class xFormerConfig:
-    stack_configs: List[xFormerBlockConfig]
+    stack_configs: Union[List[xFormerBlockConfig], Dict[str, xFormerBlockConfig]]
 
-    def __init__(self, stack_configs: List[Dict[str, Any]]):
+    def __init__(
+        self, stack_configs: Union[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]
+    ):
         # Type all the configurations. Possible typos are caught here
-        self.stack_configs = []
-        for config in stack_configs:
-            if config["block_type"] == "encoder":
-                self.stack_configs.append(xFormerEncoderConfig(**config))
-            else:
-                self.stack_configs.append(xFormerDecoderConfig(**config))
-        # Check that the reversible setting is not alternating, which
-        # - makes little sense, since you loose all the reversible benefits
-        # - may break
-        # Reversible is only allowed on the encoder side
+        if isinstance(stack_configs, dict):
+            self.stack_configs = {}
+            for k, config in stack_configs.items():
+                if config["block_type"] == "encoder":
+                    self.stack_configs[k] = xFormerEncoderConfig(**config)
+                else:
+                    self.stack_configs[k] = xFormerDecoderConfig(**config)
+        else:
+            self.stack_configs = []
+            for config in stack_configs:
+                if config["block_type"] == "encoder":
+                    self.stack_configs.append(xFormerEncoderConfig(**config))
+                else:
+                    self.stack_configs.append(xFormerDecoderConfig(**config))
 
 
 class xFormer(torch.nn.Module):
@@ -49,8 +55,14 @@ class xFormer(torch.nn.Module):
         This is only a helper and can easily be bypassed
         """
         super().__init__()
+
         if isinstance(stack_configs, Dict):
             stack_configs = list(stack_configs.values())
+
+        # Convenience, users can pass either a list of configs or a single one
+        if not isinstance(stack_configs, List):
+            stack_configs = [stack_configs]
+
         self._verify_reversible(stack_configs)
 
         encoders: List[torch.nn.Module] = []
@@ -59,10 +71,6 @@ class xFormer(torch.nn.Module):
         self.reversible_encoder = False
         self.enc_pose_encoding = None
         self.dec_pose_encoding = None
-
-        # Convenience, users can pass either a list of configs or a single one
-        if not isinstance(stack_configs, List):
-            stack_configs = [stack_configs]
 
         # Unroll the configs and build the model
         for config in stack_configs:
@@ -122,12 +130,7 @@ class xFormer(torch.nn.Module):
             if p.dim() > 1:
                 torch.nn.init.xavier_uniform_(p)
 
-    def _verify_reversible(
-        self, stack_configs: Union[xFormerBlockConfig, List[xFormerBlockConfig]]
-    ):
-        if isinstance(stack_configs, xFormerBlockConfig):
-            stack_configs = [stack_configs]
-
+    def _verify_reversible(self, stack_configs: List[xFormerBlockConfig]):
         reversible = [
             c.reversible
             for c in filter(lambda x: x.block_type == "encoder", stack_configs)

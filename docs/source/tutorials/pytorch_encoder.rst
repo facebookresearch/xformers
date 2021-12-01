@@ -98,7 +98,7 @@ Building full models
 ====================
 
 
- Now let's build a full Tranformer/xFormer model. Please note that this is just an example, because building the whole model from explicit parts is always an option, from pure PyTorch building blocks or adding some xFormers primitives.
+ Now let's build a full Tranformers/xFormer model. Please note that this is just an example, because building the whole model from explicit parts is always an option, from pure PyTorch building blocks or adding some xFormers primitives.
 
 PyTorch Transformer
 -------------------
@@ -260,7 +260,10 @@ Build an `xFormer` model with Hydra
 Alternatively, you can use [Hydra](https://hydra.cc/) to build an xFormer model. 
 We've included an example [here](https://github.com/facebookresearch/xformers/tree/main/examples/build_model).
 The example replicates the model from the above example and demonstrates one way to use Hydra to minimize config duplication. 
-
+The example is built on top of some more advanced Hydra features. If you are new to Hydra, you can start these docs:  
+[basic tutorials](https://hydra.cc/docs/tutorials/intro/), [extending configs](https://hydra.cc/docs/patterns/extending_configs/), 
+[Hydra packages](https://hydra.cc/docs/advanced/overriding_packages/) and 
+[instantiation API](https://hydra.cc/docs/advanced/instantiate_objects/overview/)
 
 
 .. code-block:: yaml
