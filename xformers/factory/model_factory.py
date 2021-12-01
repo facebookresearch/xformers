@@ -172,15 +172,14 @@ class xFormer(torch.nn.Module):
         # Encode to latent space if encoder is present
         if len(list(self.encoders.parameters())) > 0:
             encoders = self.encoders
+            memory = src.clone()
             if isinstance(encoders, torch.nn.ModuleList):
-                memory = src.clone()
                 for encoder in encoders:
                     memory = encoder(memory, input_mask=encoder_input_mask)
             else:
                 if self.enc_pose_encoding:
                     memory = self.enc_pose_encoding(src)
 
-                # pyre-fixme[61]: `memory` is not always initialized here.
                 # Reversible Encoder
                 x = torch.cat([memory, memory], dim=-1)
 

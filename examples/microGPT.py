@@ -49,6 +49,7 @@ class GPT(pl.LightningModule):
         # A list of the encoder or decoder blocks which constitute the Transformer.
         xformer_config = [
             {
+                "reversible": False,  # Turn on to test the effect of using reversible layers
                 "block_config": {
                     "block_type": "encoder",
                     "num_layers": self.hparams.n_layer,
@@ -76,7 +77,7 @@ class GPT(pl.LightningModule):
                         "activation": "gelu",
                         "hidden_layer_multiplier": self.hparams.hidden_layer_multiplier,
                     },
-                }
+                },
             }
         ]
 
@@ -270,8 +271,12 @@ def sample(model, x, steps, temperature=1.0, sample=False, top_k=None):
 
 if __name__ == "__main__":
     seed_everything(42)
+
+    # Adjust batch depending on the available memory on your machine.
+    # You can also use reversible layers to save memory
     REF_BATCH = 512
-    BATCH = 256  # adjust depending on the avaiable memory on your machine
+    BATCH = 256
+
     WORKERS = 4
     EPOCHS = 1
     BLOCK = 128
@@ -316,8 +321,8 @@ if __name__ == "__main__":
 
     trainer.fit(model, train_loader)
 
-    # sample from the model
-    context = "Friends of my soul"  # Prime with something
+    # Sample from the model, let it predict a paragraph
+    context = "Friends of my soul"  # prime with something
     x = train_dataset.to_tokens(context, model.device)
     y = sample(model, x, steps=1000, temperature=1.0, sample=True, top_k=10)
 
