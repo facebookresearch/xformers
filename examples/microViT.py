@@ -63,6 +63,7 @@ class VisionTransformer(pl.LightningModule):
         # A list of the encoder or decoder blocks which constitute the Transformer.
         xformer_config = [
             {
+                "reversible": False,  # Turn on to test the effect of using reversible layers
                 "block_config": {
                     "block_type": "encoder",
                     "num_layers": n_layer,
@@ -85,7 +86,7 @@ class VisionTransformer(pl.LightningModule):
                         "activation": "gelu",
                         "hidden_layer_multiplier": hidden_layer_multiplier,
                     },
-                }
+                },
             }
         ]
 
@@ -206,8 +207,12 @@ class VisionTransformer(pl.LightningModule):
 
 if __name__ == "__main__":
     pl.seed_everything(42)
+
+    # Adjust batch depending on the available memory on your machine.
+    # You can also use reversible layers to save memory
     REF_BATCH = 4096
-    BATCH = 256  # adjust depending on the avaiable memory on your machine
+    BATCH = 512
+
     MAX_EPOCHS = 20
     NUM_WORKERS = 4
     GPUS = 1
