@@ -129,7 +129,6 @@ def test_kqv_ordering(
     heads: int,
     device: torch.device,
 ):
-
     multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
 
     # Check kqv are not flipped
@@ -249,6 +248,54 @@ def test_causal(
     assert torch.allclose(torch.sort(res_sum)[1], torch.arange(SEQ)) or torch.allclose(
         torch.sort(res_sum, descending=True)[1], torch.arange(SEQ)
     ), res_sum
+
+
+@pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
+@pytest.mark.parametrize("heads", [2])
+@pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
+@pytest.mark.skipif(torch.cuda.is_available(), reason="CUDA gpu not supported yet")
+def test_torch_script_ability(
+    attention_name: str,
+    heads: int,
+    attn_dropout: float,
+):
+    if attention_name in {
+        "favor",
+        "global",
+        "local",
+        "random",
+    }:
+        # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
+        pytest.skip(f"{attention_name} does not support scripting yet.")
+
+    device = torch.device("cpu")
+
+    multi_head = _get_multihead(attention_name, attn_dropout, 0.0, False, heads, device)
+
+    # input for tracing the function
+    q = torch.rand((BATCH, SEQ, MODEL), device=device)
+    k = torch.rand((BATCH, SEQ, MODEL), device=device)
+    v = torch.rand((BATCH, SEQ, MODEL), device=device)
+
+    # to make sure dropout behaves deterministically
+    torch.random.manual_seed(42)
+    # tracing the attention module
+    traced_multi_head = torch.jit.trace(multi_head, (q, k, v))
+
+    # create new random inputs for testing the eager model and traced model
+    q = torch.rand((BATCH, SEQ, MODEL), device=device)
+    k = torch.rand((BATCH, SEQ, MODEL), device=device)
+    v = torch.rand((BATCH, SEQ, MODEL), device=device)
+
+    # to make sure dropout behaves deterministically need to set the seed again
+    torch.random.manual_seed(42)
+    res = multi_head(query=q, key=k, value=v)
+
+    # to make sure dropout behaves deterministically need to set the seed again
+    torch.random.manual_seed(42)
+    res_traced = traced_multi_head(query=q, key=k, value=v)
+
+    assert torch.allclose(res, res_traced)
 
 
 # TODO: way more unit tests..
