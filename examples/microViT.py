@@ -64,28 +64,25 @@ class VisionTransformer(pl.LightningModule):
         xformer_config = [
             {
                 "reversible": False,  # Turn on to test the effect of using reversible layers
-                "block_config": {
-                    "block_type": "encoder",
-                    "num_layers": n_layer,
-                    "dim_model": dim,
-                    "seq_len": num_patches,
-                    "layer_norm_style": "pre",
-                    "multi_head_config": {
-                        "num_heads": n_head,
-                        "residual_dropout": resid_pdrop,
-                        "use_rotary_embeddings": True,
-                        "attention": {
-                            "name": attention,
-                            "dropout": attn_pdrop,
-                            "causal": False,
-                        },
+                "block_type": "encoder",
+                "num_layers": n_layer,
+                "dim_model": dim,
+                "layer_norm_style": "pre",
+                "multi_head_config": {
+                    "num_heads": n_head,
+                    "residual_dropout": resid_pdrop,
+                    "use_rotary_embeddings": True,
+                    "attention": {
+                        "name": attention,
+                        "dropout": attn_pdrop,
+                        "causal": False,
                     },
-                    "feedforward_config": {
-                        "name": "FusedMLP",  # Use MLP if Triton is not available
-                        "dropout": mlp_pdrop,
-                        "activation": "gelu",
-                        "hidden_layer_multiplier": hidden_layer_multiplier,
-                    },
+                },
+                "feedforward_config": {
+                    "name": "FusedMLP",
+                    "dropout": mlp_pdrop,
+                    "activation": "gelu",
+                    "hidden_layer_multiplier": hidden_layer_multiplier,
                 },
             }
         ]

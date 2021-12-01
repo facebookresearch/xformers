@@ -16,3 +16,6 @@ pytest-cov == 2.10.0
 pytest-mpi == 0.4
 pytest-timeout == 1.4.2
 timm >= 0.4.5
+
+# Dependency for factory
+hydra-core >= 1.1

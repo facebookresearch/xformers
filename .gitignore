@@ -47,3 +47,8 @@ my_runs.md
 # examples demo files
 examples/input.txt
 examples/lightning_logs
+examples/data
+
+# Hydra default output dir
+multirun
+outputs

@@ -31,25 +31,23 @@
             "xformer": [
                 {
                     "reversible": false,
-                    "block_config": {
-                        "block_type": "encoder",
-                        "num_layers": 6,
-                        "layer_norm_style": "post",
-                        "position_encoding_config": {
-                            "name": "vocab"
-                        },
-                        "multi_head_config": {
-                            "residual_dropout": 0.1,
-                            "attention": {
-                                "name": "generic",
-                                "causal": false
-                            }
-                        },
-                        "feedforward_config": {
-                            "name": "MLP",
-                            "activation": "gelu",
-                            "hidden_layer_multiplier": 4
+                    "block_type": "encoder",
+                    "num_layers": 6,
+                    "layer_norm_style": "post",
+                    "position_encoding_config": {
+                        "name": "vocab"
+                    },
+                    "multi_head_config": {
+                        "residual_dropout": 0.1,
+                        "attention": {
+                            "name": "generic",
+                            "causal": false
                         }
+                    },
+                    "feedforward_config": {
+                        "name": "MLP",
+                        "activation": "gelu",
+                        "hidden_layer_multiplier": 4
                     }
                 }
             ]
@@ -98,25 +96,23 @@
             "xformer": [
                 {
                     "reversible": true,
-                    "block_config": {
-                        "block_type": "encoder",
-                        "num_layers": 2,
-                        "layer_norm_style": "post",
-                        "position_encoding_config": {
-                            "name": "vocab"
-                        },
-                        "multi_head_config": {
-                            "residual_dropout": 0.1,
-                            "attention": {
-                                "name": "generic",
-                                "causal": false
-                            }
-                        },
-                        "feedforward_config": {
-                            "name": "MLP",
-                            "activation": "gelu",
-                            "hidden_layer_multiplier": 2
+                    "block_type": "encoder",
+                    "num_layers": 2,
+                    "layer_norm_style": "post",
+                    "position_encoding_config": {
+                        "name": "vocab"
+                    },
+                    "multi_head_config": {
+                        "residual_dropout": 0.1,
+                        "attention": {
+                            "name": "generic",
+                            "causal": false
                         }
+                    },
+                    "feedforward_config": {
+                        "name": "MLP",
+                        "activation": "gelu",
+                        "hidden_layer_multiplier": 2
                     }
                 }
             ],
@@ -165,25 +161,23 @@
             "xformer": [
                 {
                     "reversible": false,
-                    "block_config": {
-                        "block_type": "encoder",
-                        "num_layers": 4,
-                        "layer_norm_style": "post",
-                        "position_encoding_config": {
-                            "name": "vocab"
-                        },
-                        "multi_head_config": {
-                            "residual_dropout": 0.1,
-                            "attention": {
-                                "name": "generic",
-                                "causal": false
-                            }
-                        },
-                        "feedforward_config": {
-                            "name": "MLP",
-                            "activation": "gelu",
-                            "hidden_layer_multiplier": 4
+                    "block_type": "encoder",
+                    "num_layers": 4,
+                    "layer_norm_style": "post",
+                    "position_encoding_config": {
+                        "name": "vocab"
+                    },
+                    "multi_head_config": {
+                        "residual_dropout": 0.1,
+                        "attention": {
+                            "name": "generic",
+                            "causal": false
                         }
+                    },
+                    "feedforward_config": {
+                        "name": "MLP",
+                        "activation": "gelu",
+                        "hidden_layer_multiplier": 4
                     }
                 }
             ],
@@ -227,25 +221,23 @@
             "xformer": [
                 {
                     "reversible": true,
-                    "block_config": {
-                        "block_type": "encoder",
-                        "num_layers": 2,
-                        "layer_norm_style": "post",
-                        "position_encoding_config": {
-                            "name": "vocab"
-                        },
-                        "multi_head_config": {
-                            "residual_dropout": 0.1,
-                            "attention": {
-                                "name": "generic",
-                                "causal": false
-                            }
-                        },
-                        "feedforward_config": {
-                            "name": "MLP",
-                            "activation": "gelu",
-                            "hidden_layer_multiplier": 2
+                    "block_type": "encoder",
+                    "num_layers": 2,
+                    "layer_norm_style": "post",
+                    "position_encoding_config": {
+                        "name": "vocab"
+                    },
+                    "multi_head_config": {
+                        "residual_dropout": 0.1,
+                        "attention": {
+                            "name": "generic",
+                            "causal": false
                         }
+                    },
+                    "feedforward_config": {
+                        "name": "MLP",
+                        "activation": "gelu",
+                        "hidden_layer_multiplier": 2
                     }
                 }
             ],
@@ -294,25 +286,23 @@
             "xformer": [
                 {
                     "reversible": true,
-                    "block_config": {
-                        "block_type": "encoder",
-                        "num_layers": 2,
-                        "layer_norm_style": "post",
-                        "position_encoding_config": {
-                            "name": "vocab"
-                        },
-                        "multi_head_config": {
-                            "residual_dropout": 0.1,
-                            "attention": {
-                                "name": "generic",
-                                "causal": false
-                            }
-                        },
-                        "feedforward_config": {
-                            "name": "MLP",
-                            "activation": "gelu",
-                            "hidden_layer_multiplier": 2
+                    "block_type": "encoder",
+                    "num_layers": 2,
+                    "layer_norm_style": "post",
+                    "position_encoding_config": {
+                        "name": "vocab"
+                    },
+                    "multi_head_config": {
+                        "residual_dropout": 0.1,
+                        "attention": {
+                            "name": "generic",
+                            "causal": false
                         }
+                    },
+                    "feedforward_config": {
+                        "name": "MLP",
+                        "activation": "gelu",
+                        "hidden_layer_multiplier": 2
                     }
                 }
             ],
