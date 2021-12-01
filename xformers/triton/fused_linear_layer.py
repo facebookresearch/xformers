@@ -11,7 +11,7 @@ import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 from xformers.components.activations import Activation
-from xformers.triton.activations import (
+from xformers.triton.k_activations import (
     get_triton_activation_bwd_kernel,
     get_triton_activation_kernel,
 )

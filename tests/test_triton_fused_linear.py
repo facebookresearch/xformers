@@ -15,7 +15,7 @@ _triton_available = torch.cuda.is_available()
 if _triton_available:
     try:
         from xformers.triton import FusedLinear
-        from xformers.triton.activations import get_triton_activation_kernel
+        from xformers.triton.k_activations import get_triton_activation_kernel
         from xformers.triton.k_fused_matmul_fw import fused_matmul
         from xformers.triton.utils import gpu_capabilities_older_than_70
 
