@@ -28,11 +28,11 @@ class GPT(pl.LightningModule):
         vocab_size,
         weight_decay=0.1,
         betas=(0.9, 0.95),
-        learning_rate=1e-4,
+        learning_rate=6e-4,
         n_embd=512,
         block_size=128,
-        n_layer=4,
-        n_head=4,
+        n_layer=8,
+        n_head=8,
         resid_pdrop=0.1,
         attn_pdrop=0.1,
         mlp_pdrop=0.1,
@@ -71,7 +71,7 @@ class GPT(pl.LightningModule):
                         },
                     },
                     "feedforward_config": {
-                        "name": "MLP",
+                        "name": "FusedMLP",  # Use MLP if Triton is not available
                         "dropout": self.hparams.mlp_pdrop,
                         "activation": "gelu",
                         "hidden_layer_multiplier": self.hparams.hidden_layer_multiplier,
@@ -272,11 +272,10 @@ if __name__ == "__main__":
     seed_everything(42)
     REF_BATCH = 512
     BATCH = 256  # adjust depending on the avaiable memory on your machine
-    WORKERS = 8
+    WORKERS = 4
     EPOCHS = 1
     BLOCK = 128
     WARMUP = 20
-    LR = 5e-5
 
     if not os.path.exists("input.txt"):
         os.system(
@@ -299,9 +298,8 @@ if __name__ == "__main__":
     model = GPT(
         vocab_size=train_dataset.vocab_size,
         block_size=train_dataset.block_size,
-        attention="nystrom",
+        attention="scaled_dot_product",
         warmup_tokens=REF_BATCH * WARMUP,
-        learning_rate=LR,
         final_tokens=EPOCHS * len(train_dataset) * BLOCK,
     )
     print(model)
