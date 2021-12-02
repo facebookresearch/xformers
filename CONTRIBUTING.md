@@ -56,7 +56,7 @@ Two options to make sure that the code is formatted and linted properly:
 ```bash
 black .
 isort . --profile black
-flake8
+flake8 --config .flake8
 mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ --exclude stubs/ .
 ```
 

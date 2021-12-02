@@ -110,7 +110,7 @@ run_flake8: &run_flake8
   - run:
       name: Run Linter (flake8)
       command: |
-        flake8 --show-source --statistics
+        flake8 --config .flake8 --show-source --statistics
 
 run_clang_format: &run_clang_format
   - run:
