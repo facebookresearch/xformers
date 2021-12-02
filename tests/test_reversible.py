@@ -22,77 +22,73 @@ DEVICES = (
 
 _test_config_encoder = {
     "reversible": False,
-    "block_config": {
-        "block_type": "encoder",
+    "block_type": "encoder",
+    "dim_model": EMB,
+    "position_encoding_config": {
+        "name": "vocab",
+        "seq_len": SEQ,
+        "vocab_size": VOCAB,
         "dim_model": EMB,
-        "position_encoding_config": {
-            "name": "vocab",
-            "seq_len": SEQ,
-            "vocab_size": VOCAB,
-            "dim_model": EMB,
-        },
-        "num_layers": 3,
-        "multi_head_config": {
-            "num_heads": 4,
-            "residual_dropout": 0,
-            "attention": {
-                "name": "linformer",
-                "dropout": 0,
-                "causal": True,
-                "seq_len": SEQ,
-            },
-            "dim_model": EMB,
-        },
-        "feedforward_config": {
-            "name": "MLP",
+    },
+    "num_layers": 3,
+    "multi_head_config": {
+        "num_heads": 4,
+        "residual_dropout": 0,
+        "attention": {
+            "name": "linformer",
             "dropout": 0,
-            "activation": "relu",
-            "hidden_layer_multiplier": 4,
-            "dim_model": EMB,
+            "causal": True,
+            "seq_len": SEQ,
         },
+        "dim_model": EMB,
+    },
+    "feedforward_config": {
+        "name": "MLP",
+        "dropout": 0,
+        "activation": "relu",
+        "hidden_layer_multiplier": 4,
+        "dim_model": EMB,
     },
 }
 
 _test_config_decoder = {
-    "block_config": {
-        "block_type": "decoder",
+    "block_type": "decoder",
+    "dim_model": EMB,
+    "position_encoding_config": {
+        "name": "vocab",
+        "seq_len": SEQ,
+        "vocab_size": VOCAB,
         "dim_model": EMB,
-        "position_encoding_config": {
-            "name": "vocab",
-            "seq_len": SEQ,
-            "vocab_size": VOCAB,
-            "dim_model": EMB,
-        },
-        "num_layers": 2,
-        "multi_head_config_masked": {
-            "num_heads": 4,
-            "residual_dropout": 0,
-            "dim_model": EMB,
-            "attention": {
-                "name": "linformer",
-                "dropout": 0,
-                "causal": True,
-                "seq_len": SEQ,
-            },
-        },
-        "multi_head_config_cross": {
-            "num_heads": 4,
-            "residual_dropout": 0,
-            "dim_model": EMB,
-            "attention": {
-                "name": "linformer",
-                "dropout": 0,
-                "causal": True,
-                "seq_len": SEQ,
-            },
-        },
-        "feedforward_config": {
-            "name": "MLP",
+    },
+    "num_layers": 2,
+    "multi_head_config_masked": {
+        "num_heads": 4,
+        "residual_dropout": 0,
+        "dim_model": EMB,
+        "attention": {
+            "name": "linformer",
             "dropout": 0,
-            "activation": "relu",
-            "hidden_layer_multiplier": 4,
-            "dim_model": EMB,
+            "causal": True,
+            "seq_len": SEQ,
         },
+    },
+    "multi_head_config_cross": {
+        "num_heads": 4,
+        "residual_dropout": 0,
+        "dim_model": EMB,
+        "attention": {
+            "name": "linformer",
+            "dropout": 0,
+            "causal": True,
+            "seq_len": SEQ,
+        },
+    },
+    "feedforward_config": {
+        "name": "MLP",
+        "dropout": 0,
+        "activation": "relu",
+        "hidden_layer_multiplier": 4,
+        "dim_model": EMB,
     },
 }
 
@@ -105,7 +101,7 @@ _test_configs = [
 
 def _rev_config(config, flag: bool):
     for c in filter(
-        lambda x: x["block_config"]["block_type"] == "encoder",
+        lambda x: x["block_type"] == "encoder",
         config,
     ):
         c["reversible"] = flag

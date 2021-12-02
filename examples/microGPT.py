@@ -28,11 +28,11 @@ class GPT(pl.LightningModule):
         vocab_size,
         weight_decay=0.1,
         betas=(0.9, 0.95),
-        learning_rate=1e-4,
+        learning_rate=6e-4,
         n_embd=512,
         block_size=128,
-        n_layer=4,
-        n_head=4,
+        n_layer=8,
+        n_head=8,
         resid_pdrop=0.1,
         attn_pdrop=0.1,
         mlp_pdrop=0.1,
@@ -49,34 +49,33 @@ class GPT(pl.LightningModule):
         # A list of the encoder or decoder blocks which constitute the Transformer.
         xformer_config = [
             {
-                "block_config": {
-                    "block_type": "encoder",
-                    "num_layers": self.hparams.n_layer,
-                    "dim_model": self.hparams.n_embd,
-                    "layer_norm_style": "pre",
-                    "position_encoding_config": {
-                        "name": "vocab",
+                "reversible": False,  # Turn on to test the effect of using reversible layers
+                "block_type": "encoder",
+                "num_layers": self.hparams.n_layer,
+                "dim_model": self.hparams.n_embd,
+                "layer_norm_style": "pre",
+                "position_encoding_config": {
+                    "name": "vocab",
+                    "seq_len": self.hparams.block_size,
+                    "vocab_size": self.hparams.vocab_size,
+                },
+                "multi_head_config": {
+                    "num_heads": self.hparams.n_head,
+                    "residual_dropout": self.hparams.resid_pdrop,
+                    "use_rotary_embeddings": True,
+                    "attention": {
+                        "name": self.hparams.attention,
+                        "dropout": self.hparams.attn_pdrop,
+                        "causal": True,
                         "seq_len": self.hparams.block_size,
-                        "vocab_size": self.hparams.vocab_size,
                     },
-                    "multi_head_config": {
-                        "num_heads": self.hparams.n_head,
-                        "residual_dropout": self.hparams.resid_pdrop,
-                        "use_rotary_embeddings": True,
-                        "attention": {
-                            "name": self.hparams.attention,
-                            "dropout": self.hparams.attn_pdrop,
-                            "causal": True,
-                            "seq_len": self.hparams.block_size,
-                        },
-                    },
-                    "feedforward_config": {
-                        "name": "MLP",
-                        "dropout": self.hparams.mlp_pdrop,
-                        "activation": "gelu",
-                        "hidden_layer_multiplier": self.hparams.hidden_layer_multiplier,
-                    },
-                }
+                },
+                "feedforward_config": {
+                    "name": "FusedMLP",  # Use MLP if Triton is not available
+                    "dropout": self.hparams.mlp_pdrop,
+                    "activation": "gelu",
+                    "hidden_layer_multiplier": self.hparams.hidden_layer_multiplier,
+                },
             }
         ]
 
@@ -270,13 +269,16 @@ def sample(model, x, steps, temperature=1.0, sample=False, top_k=None):
 
 if __name__ == "__main__":
     seed_everything(42)
+
+    # Adjust batch depending on the available memory on your machine.
+    # You can also use reversible layers to save memory
     REF_BATCH = 512
-    BATCH = 256  # adjust depending on the avaiable memory on your machine
-    WORKERS = 8
+    BATCH = 256
+
+    WORKERS = 4
     EPOCHS = 1
     BLOCK = 128
     WARMUP = 20
-    LR = 5e-5
 
     if not os.path.exists("input.txt"):
         os.system(
@@ -299,9 +301,8 @@ if __name__ == "__main__":
     model = GPT(
         vocab_size=train_dataset.vocab_size,
         block_size=train_dataset.block_size,
-        attention="nystrom",
+        attention="scaled_dot_product",
         warmup_tokens=REF_BATCH * WARMUP,
-        learning_rate=LR,
         final_tokens=EPOCHS * len(train_dataset) * BLOCK,
     )
     print(model)
@@ -318,8 +319,8 @@ if __name__ == "__main__":
 
     trainer.fit(model, train_loader)
 
-    # sample from the model
-    context = "Friends of my soul"  # Prime with something
+    # Sample from the model, let it predict a paragraph
+    context = "Friends of my soul"  # prime with something
     x = train_dataset.to_tokens(context, model.device)
     y = sample(model, x, steps=1000, temperature=1.0, sample=True, top_k=10)
 

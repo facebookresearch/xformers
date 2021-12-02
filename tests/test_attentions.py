@@ -6,7 +6,7 @@
 import pytest
 import torch
 
-from xformers.components import MultiHeadDispatch
+from xformers.components import InProjContainer, InProjParams, MultiHeadDispatch
 
 # Automatically test all the registered attentions
 from xformers.components.attention import (
@@ -77,7 +77,7 @@ def _get_multihead(
     return multi_head
 
 
-@pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
+@pytest.mark.parametrize("attn_dropout", [0.0, 0.3])
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 4])
@@ -91,6 +91,9 @@ def test_order_invariance(
     causal: bool,
     device: torch.device,
 ):
+
+    torch.manual_seed(42)
+
     multi_head = _get_multihead(
         attention_name, attn_dropout, residual_dropout, causal, heads, device
     )
@@ -110,7 +113,12 @@ def test_order_invariance(
         torch.allclose(results[:, shuffle, :], results_shuffled)
 
         # Test the non-self-attention codepath
-        _ = multi_head(inputs, inputs_shuffled, inputs)
+        att = multi_head(inputs, inputs_shuffled, inputs)
+
+        # Check that dropout actually drops some values
+        if attn_dropout > 0:
+            att_2 = multi_head(inputs, inputs_shuffled, inputs)
+            assert (att != att_2).any()
 
 
 @pytest.mark.parametrize("heads", [1, 4])
@@ -121,7 +129,6 @@ def test_kqv_ordering(
     heads: int,
     device: torch.device,
 ):
-
     multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
 
     # Check kqv are not flipped
@@ -155,6 +162,71 @@ def test_kqv_ordering(
     # Flip qkv, and check that we invert the above check properly
     res_false = multi_head(query=v, key=k, value=q)
     assert torch.allclose(res_false[0, :, :], res_false[1, :, :])
+
+
+@pytest.mark.parametrize("small_init", [False, True])
+@pytest.mark.parametrize("proj_bias", [False, True])
+@pytest.mark.parametrize("same_sizes", [False, True])
+@pytest.mark.parametrize("same_settings", [False, True])
+def test_inproj(
+    small_init: bool, proj_bias: bool, same_sizes: bool, same_settings: bool
+):
+
+    test_config = {
+        "name": "scaled_dot_product",
+        "dropout": 0.1,
+        "causal": False,
+        "seq_len": SEQ,
+        "window_size": SEQ // 8 + 1,
+        "num_heads": 1,
+        "dim_head": MODEL,
+    }
+
+    attention = build_attention(test_config)
+
+    # Construct the initial projection, test different options
+    in_params = InProjParams(MODEL, MODEL, proj_bias, small_init)
+
+    if same_settings:
+        in_proj = InProjContainer(in_params, None, None)
+    else:
+        out_features = MODEL if same_sizes else MODEL - 16
+        in_params_flip = InProjParams(MODEL, out_features, not proj_bias, small_init)
+        in_proj = InProjContainer(in_params, in_params_flip, in_params_flip)
+
+    # build a multi head dispatch to test this attention mechanism
+    multi_head = MultiHeadDispatch(
+        seq_len=SEQ,
+        dim_model=MODEL,
+        residual_dropout=0.1,
+        num_heads=1,
+        attention=attention,
+        in_proj_container=in_proj,
+    )
+
+    # Check kqv are not flipped
+    # this will not catch all issues, but would catch a V being misplaced
+    # make k and q complimentary, so that QKt is all zero and attention is uniform
+
+    q = torch.cat(
+        (
+            torch.rand((1, MODEL // 2)),
+            torch.zeros((1, MODEL // 2)),
+        ),
+        dim=1,
+    ).expand((BATCH, SEQ, MODEL))
+
+    k = torch.cat(
+        (
+            torch.zeros((1, MODEL // 2)),
+            torch.rand((1, MODEL // 2)),
+        ),
+        dim=1,
+    ).expand((BATCH, SEQ, MODEL))
+    v = torch.rand(BATCH, SEQ, MODEL)
+
+    # just check that a FW does not assert out
+    _ = multi_head(query=q, key=k, value=v)
 
 
 @pytest.mark.parametrize("heads", [1, 4])
@@ -241,6 +313,54 @@ def test_causal(
     assert torch.allclose(torch.sort(res_sum)[1], torch.arange(SEQ)) or torch.allclose(
         torch.sort(res_sum, descending=True)[1], torch.arange(SEQ)
     ), res_sum
+
+
+@pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
+@pytest.mark.parametrize("heads", [2])
+@pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
+@pytest.mark.skipif(torch.cuda.is_available(), reason="CUDA gpu not supported yet")
+def test_torch_script_ability(
+    attention_name: str,
+    heads: int,
+    attn_dropout: float,
+):
+    if attention_name in {
+        "favor",
+        "global",
+        "local",
+        "random",
+    }:
+        # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
+        pytest.skip(f"{attention_name} does not support scripting yet.")
+
+    device = torch.device("cpu")
+
+    multi_head = _get_multihead(attention_name, attn_dropout, 0.0, False, heads, device)
+
+    # input for tracing the function
+    q = torch.rand((BATCH, SEQ, MODEL), device=device)
+    k = torch.rand((BATCH, SEQ, MODEL), device=device)
+    v = torch.rand((BATCH, SEQ, MODEL), device=device)
+
+    # to make sure dropout behaves deterministically
+    torch.random.manual_seed(42)
+    # tracing the attention module
+    traced_multi_head = torch.jit.trace(multi_head, (q, k, v))
+
+    # create new random inputs for testing the eager model and traced model
+    q = torch.rand((BATCH, SEQ, MODEL), device=device)
+    k = torch.rand((BATCH, SEQ, MODEL), device=device)
+    v = torch.rand((BATCH, SEQ, MODEL), device=device)
+
+    # to make sure dropout behaves deterministically need to set the seed again
+    torch.random.manual_seed(42)
+    res = multi_head(query=q, key=k, value=v)
+
+    # to make sure dropout behaves deterministically need to set the seed again
+    torch.random.manual_seed(42)
+    res_traced = traced_multi_head(query=q, key=k, value=v)
+
+    assert torch.allclose(res, res_traced)
 
 
 # TODO: way more unit tests..

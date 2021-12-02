@@ -22,72 +22,68 @@ ACTIVATION = "relu"
 
 
 _test_config_encoder = {
-    "block_config": {
-        "block_type": "encoder",
-        "dim_model": EMB,
-        "num_layers": LAYERS,
-        "layer_norm_style": "post",
-        "multi_head_config": {
-            "num_heads": HEADS,
-            "residual_dropout": DROP,
-            "bias": True,
-            "attention": {
-                "name": "scaled_dot_product",
-                "dropout": DROP,
-                "causal": False,
-                "seq_len": SEQ,
-            },
-            "dim_model": EMB,
-        },
-        "feedforward_config": {
-            "name": "MLP",
+    "block_type": "encoder",
+    "dim_model": EMB,
+    "num_layers": LAYERS,
+    "layer_norm_style": "post",
+    "multi_head_config": {
+        "num_heads": HEADS,
+        "residual_dropout": DROP,
+        "bias": True,
+        "attention": {
+            "name": "scaled_dot_product",
             "dropout": DROP,
-            "activation": ACTIVATION,
-            "hidden_layer_multiplier": 4,
-            "dim_model": EMB,
+            "causal": False,
+            "seq_len": SEQ,
         },
+        "dim_model": EMB,
+    },
+    "feedforward_config": {
+        "name": "MLP",
+        "dropout": DROP,
+        "activation": ACTIVATION,
+        "hidden_layer_multiplier": 4,
+        "dim_model": EMB,
     },
 }
 
 
 _test_config_decoder = {
-    "block_config": {
-        "block_type": "decoder",
+    "block_type": "decoder",
+    "dim_model": EMB,
+    "num_layers": LAYERS,
+    "layer_norm_style": "post",
+    "multi_head_config_masked": {
+        "num_heads": HEADS,
+        "residual_dropout": DROP,
         "dim_model": EMB,
-        "num_layers": LAYERS,
-        "layer_norm_style": "post",
-        "multi_head_config_masked": {
-            "num_heads": HEADS,
-            "residual_dropout": DROP,
-            "dim_model": EMB,
-            "bias": True,
-            "attention": {
-                "name": "scaled_dot_product",
-                "dropout": DROP,
-                "causal": False,
-                "seq_len": SEQ,
-            },
-        },
-        "multi_head_config_cross": {
-            "num_heads": HEADS,
-            "residual_dropout": DROP,
-            "dim_model": EMB,
-            "bias": True,
-            "attention": {
-                "name": "scaled_dot_product",
-                "dropout": DROP,
-                "causal": False,
-                "seq_len": SEQ,
-            },
-        },
-        "feedforward_config": {
-            "name": "MLP",
+        "bias": True,
+        "attention": {
+            "name": "scaled_dot_product",
             "dropout": DROP,
-            "activation": ACTIVATION,
-            "hidden_layer_multiplier": 4,
-            "dim_model": EMB,
+            "causal": False,
+            "seq_len": SEQ,
         },
-    }
+    },
+    "multi_head_config_cross": {
+        "num_heads": HEADS,
+        "residual_dropout": DROP,
+        "dim_model": EMB,
+        "bias": True,
+        "attention": {
+            "name": "scaled_dot_product",
+            "dropout": DROP,
+            "causal": False,
+            "seq_len": SEQ,
+        },
+    },
+    "feedforward_config": {
+        "name": "MLP",
+        "dropout": DROP,
+        "activation": ACTIVATION,
+        "hidden_layer_multiplier": 4,
+        "dim_model": EMB,
+    },
 }
 
 _test_config = [_test_config_encoder, _test_config_decoder]

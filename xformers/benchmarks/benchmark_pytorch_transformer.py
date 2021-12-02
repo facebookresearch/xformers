@@ -113,33 +113,31 @@ def bench_pytorch_encoder(
             xFormerConfig(
                 [
                     {
-                        "block_config": {
-                            "block_type": "encoder",
-                            "dim_model": emb,
-                            "num_layers": layers,
-                            "layer_norm_style": "post",
-                            "multi_head_config": {
-                                "num_heads": n_heads,
-                                "residual_dropout": dropout,
-                                "use_separate_proj_weight": True,
-                                "bias": True,
-                                "attention": {
-                                    "name": "scaled_dot_product",
-                                    "dropout": dropout,
-                                    "causal": False,
-                                    "seq_len": seq,
-                                },
-                                "dim_model": emb,
-                            },
-                            "feedforward_config": {
-                                "name": "FusedMLP",
+                        "block_type": "encoder",
+                        "dim_model": emb,
+                        "num_layers": layers,
+                        "layer_norm_style": "post",
+                        "multi_head_config": {
+                            "num_heads": n_heads,
+                            "residual_dropout": dropout,
+                            "use_separate_proj_weight": True,
+                            "bias": True,
+                            "attention": {
+                                "name": "scaled_dot_product",
                                 "dropout": dropout,
-                                "activation": activation,
-                                "hidden_layer_multiplier": 4,
-                                "dim_model": emb,
+                                "causal": False,
+                                "seq_len": seq,
                             },
+                            "dim_model": emb,
                         },
-                    }
+                        "feedforward_config": {
+                            "name": "FusedMLP",
+                            "dropout": dropout,
+                            "activation": activation,
+                            "hidden_layer_multiplier": 4,
+                            "dim_model": emb,
+                        },
+                    },
                 ]
             )
         ).to(device)

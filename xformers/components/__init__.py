@@ -12,6 +12,7 @@ from xformers.utils import import_all_modules
 
 from .activations import Activation, build_activation  # noqa
 from .attention import Attention, build_attention  # noqa
+from .in_proj_container import InProjContainer, InProjParams  # noqa
 from .multi_head_dispatch import MultiHeadDispatch, MultiHeadDispatchConfig  # noqa
 from .residual import LayerNormStyle, PostNorm, PreNorm, Residual  # noqa
 
@@ -46,7 +47,10 @@ def build_multi_head_attention(
                     "num_heads"
                 ]
 
-            if "dim_features" not in multi_head_config["attention"]:
+            if (
+                "dim_features" not in multi_head_config["attention"]
+                or multi_head_config["attention"]["dim_features"] is None
+            ):
                 multi_head_config["attention"]["dim_features"] = (
                     multi_head_config["dim_model"] // multi_head_config["num_heads"]
                 )
