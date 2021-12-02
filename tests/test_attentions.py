@@ -6,7 +6,7 @@
 import pytest
 import torch
 
-from xformers.components import MultiHeadDispatch
+from xformers.components import InProjContainer, InProjParams, MultiHeadDispatch
 
 # Automatically test all the registered attentions
 from xformers.components.attention import (
@@ -162,6 +162,71 @@ def test_kqv_ordering(
     # Flip qkv, and check that we invert the above check properly
     res_false = multi_head(query=v, key=k, value=q)
     assert torch.allclose(res_false[0, :, :], res_false[1, :, :])
+
+
+@pytest.mark.parametrize("small_init", [False, True])
+@pytest.mark.parametrize("proj_bias", [False, True])
+@pytest.mark.parametrize("same_sizes", [False, True])
+@pytest.mark.parametrize("same_settings", [False, True])
+def test_inproj(
+    small_init: bool, proj_bias: bool, same_sizes: bool, same_settings: bool
+):
+
+    test_config = {
+        "name": "scaled_dot_product",
+        "dropout": 0.1,
+        "causal": False,
+        "seq_len": SEQ,
+        "window_size": SEQ // 8 + 1,
+        "num_heads": 1,
+        "dim_head": MODEL,
+    }
+
+    attention = build_attention(test_config)
+
+    # Construct the initial projection, test different options
+    in_params = InProjParams(MODEL, MODEL, proj_bias, small_init)
+
+    if same_settings:
+        in_proj = InProjContainer(in_params, None, None)
+    else:
+        out_features = MODEL if same_sizes else MODEL - 16
+        in_params_flip = InProjParams(MODEL, out_features, not proj_bias, small_init)
+        in_proj = InProjContainer(in_params, in_params_flip, in_params_flip)
+
+    # build a multi head dispatch to test this attention mechanism
+    multi_head = MultiHeadDispatch(
+        seq_len=SEQ,
+        dim_model=MODEL,
+        residual_dropout=0.1,
+        num_heads=1,
+        attention=attention,
+        in_proj_container=in_proj,
+    )
+
+    # Check kqv are not flipped
+    # this will not catch all issues, but would catch a V being misplaced
+    # make k and q complimentary, so that QKt is all zero and attention is uniform
+
+    q = torch.cat(
+        (
+            torch.rand((1, MODEL // 2)),
+            torch.zeros((1, MODEL // 2)),
+        ),
+        dim=1,
+    ).expand((BATCH, SEQ, MODEL))
+
+    k = torch.cat(
+        (
+            torch.zeros((1, MODEL // 2)),
+            torch.rand((1, MODEL // 2)),
+        ),
+        dim=1,
+    ).expand((BATCH, SEQ, MODEL))
+    v = torch.rand(BATCH, SEQ, MODEL)
+
+    # just check that a FW does not assert out
+    _ = multi_head(query=q, key=k, value=v)
 
 
 @pytest.mark.parametrize("heads", [1, 4])
