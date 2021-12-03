@@ -34,65 +34,6 @@ def _create_random_sparsity(matrix, sparsity, divisible_by=4):
     return output
 
 
-def _broadcast_batch(mask, batch_size):
-    if mask.ndim == 3:
-        return mask
-    assert mask.ndim == 2
-
-    mask = mask.coalesce()
-    values = mask.values()
-    indices = mask.indices()
-    nnz = len(values)
-    # strategy: repeat the indices and append the extra batch dimension to the indices
-    indices = indices.repeat(1, batch_size)
-    # now create the batch indices
-    batch_indices = torch.arange(batch_size, device=indices.device)
-    batch_indices = batch_indices[:, None].expand(batch_size, nnz).flatten()
-
-    # put them together
-    indices = torch.cat([batch_indices[None, :], indices], dim=0)
-
-    # now repeat the values
-    values = values.repeat(batch_size)
-
-    size = (batch_size,) + mask.shape
-
-    return torch.sparse_coo_tensor(indices, values, size)
-
-
-def _matmul_with_mask(
-    a: torch.Tensor, b: torch.Tensor, mask: Optional[Union[torch.Tensor, "SparseCS"]]
-) -> torch.Tensor:
-    if mask is None:
-        return a @ b
-
-    if _is_sparse_available and mask.dtype == torch.bool:
-        if isinstance(mask, SparseCS):
-            return mask.matmul_with_mask(a, b)
-        if mask.is_sparse:
-            # perform broadcasting if needed
-            mask = _broadcast_batch(mask, a.shape[0])
-
-            # coalesced is not implemented for bool tensors, so need to cast
-            mask = mask.to(dtype=a.dtype)  # type: ignore  # mypy is missing the catch above
-
-        return torch.ops.xformers.matmul_with_mask(a, b, mask)
-
-    # Non optimized codepath
-    assert not isinstance(mask, SparseCS)
-
-    att = a @ b
-    if mask.dtype == torch.bool:
-        if mask.ndim == 2:
-            mask = mask.unsqueeze(0).expand(att.shape[0], -1, -1)
-        # mask is presumed false == ignore
-        att[~mask] = float("-inf")
-    else:
-        # mask is presumed additive
-        att += mask
-    return att
-
-
 def _softmax(a: torch.Tensor, causal: bool = False) -> torch.Tensor:
     if _is_sparse_available and isinstance(a, SparseCS):
         return a.softmax()
@@ -104,84 +45,6 @@ def _softmax(a: torch.Tensor, causal: bool = False) -> torch.Tensor:
         return triton_softmax(a, mask=None, causal=causal)
     else:
         return torch.softmax(a, dim=a.ndim - 1)
-
-
-if _is_sparse_available:
-
-    class SparseBMM(torch.autograd.Function):
-        @staticmethod
-        def forward(ctx, a, b):
-            a = a.coalesce()
-            r = torch.bmm(a, b)
-            ctx.save_for_backward(a, b)
-            return r
-
-        @staticmethod
-        def backward(ctx, grad):
-            a, b = ctx.saved_tensors
-
-            # gradients w.r.t. a
-            ga = None
-            if ctx.needs_input_grad[0]:
-                ga = torch.ops.xformers.matmul_with_mask(grad, b.transpose(-2, -1), a)
-
-            # gradients w.r.t. b
-            gb = None
-            if ctx.needs_input_grad[1]:
-                gb = a.transpose(1, 2).bmm(grad)
-
-            return ga, gb
-
-    def _sparse_bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        """
-        Batch matrix multiply between a sparse matrix and a dense matrix
-        """
-        assert a.ndim == b.ndim == 3
-        assert a.shape[0] == b.shape[0]
-        assert a.shape[2] == b.shape[1]
-        return SparseBMM.apply(a, b)
-
-
-def bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    if _is_sparse_available:
-        if isinstance(a, SparseCS):
-            return a.spmm(b)
-        if a.is_sparse:
-            return _sparse_bmm(a, b)
-    return a @ b
-
-
-def _apply_dropout(att, dropout):
-    if dropout is None:
-        return att
-
-    # Dropout chokes on sparse tensors
-    if _is_sparse_available:
-        if isinstance(att, SparseCS):
-            values = att.values.clone()
-            values = dropout(values)
-            att = SparseCS.wrap(
-                att.shape,
-                values,
-                att.row_indices,
-                att.row_offsets,
-                att.column_indices,
-                att._transp_info,
-            )
-        elif att.is_sparse:
-            att = att.coalesce()
-            values = att.values().clone()  # protect against in-place dropout
-            values = dropout(values)
-            att = torch.sparse_coo_tensor(att.indices(), values, att.shape)
-        else:
-            # Simple dense case
-            att = dropout(att)
-
-        return att
-
-    # Non optimized vanilla dropout
-    att = dropout(att)
-    return att
 
 
 def scaled_query_key_softmax(
@@ -230,9 +93,10 @@ def scaled_dot_product_attention(
         att = scaled_query_key_softmax(q, k, att_mask=att_mask)
 
         #  Optional dropout, could be part of the masking in the future
-        att = _apply_dropout(att, dropout)
+        if dropout is not None:
+            att = dropout(att)
 
         # Get to the predicted values, for all heads
         # y = att @ v  # (N, S, S) x (N, S, hs) -> (N, S, hs)
-        y = bmm(att, v)
+        y = torch.bmm(att, v)
     return y
