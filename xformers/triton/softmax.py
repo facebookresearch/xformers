@@ -202,4 +202,7 @@ def _softmax_dispatch(
     if mask is not None:
         x += mask
 
-    return torch.softmax(x, dim=-1)
+    if log:
+        return torch.log_softmax(x, dim=-1)
+    else:
+        return torch.softmax(x, dim=-1)
