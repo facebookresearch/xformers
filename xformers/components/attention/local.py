@@ -75,6 +75,7 @@ class LocalAttention(Attention):
 
         self.window_size = window_size
         self.attention_mask: Optional[torch.Tensor] = None
+        self.requires_same_k_q_dimensions = True
 
     def _get_local_mask(self, shape: torch.Size) -> torch.Tensor:
         window_size = self.window_size * 2 + 1 if self.causal else self.window_size

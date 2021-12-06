@@ -42,6 +42,7 @@ class LinformerAttention(Attention):
         self.F = nn.Linear(seq_len, k, bias=False)
         self.attn_drop = nn.Dropout(dropout, inplace=False)
         self.seq_len = seq_len
+        self.requires_same_k_q_dimensions = True
 
     def forward(
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs

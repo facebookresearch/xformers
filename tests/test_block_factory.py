@@ -211,3 +211,7 @@ def test_xformer_decoder_block(
 
     encoded = encoder_block(inputs)
     _ = decoder_block(inputs, encoded, encoder_att_mask=att_mask, input_mask=input_mask)
+
+    # Test different sequence lengths when encoding and decoding
+    if not causal and not decoder_block.mha.attention.requires_same_k_q_dimensions:
+        _ = decoder_block(inputs[:, :-16], encoded)

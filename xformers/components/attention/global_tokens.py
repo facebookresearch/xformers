@@ -78,6 +78,8 @@ class GlobalAttention(Attention):
             else maybe_sparsify(self.attention_mask)
         )
 
+        self.requires_same_k_q_dimensions = True
+
     def forward(
         self,
         q: torch.Tensor,

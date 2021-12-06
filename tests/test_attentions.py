@@ -237,17 +237,12 @@ def test_different_kq_dimensions(
     heads: int,
     device: torch.device,
 ):
-    if attention_name in {
-        "global",
-        "local",
-        "random",
-        "lambda",
-        "linformer",
-        "blocksparse",
-    }:
+
+    multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
+
+    if multi_head.attention.requires_same_k_q_dimensions:
         # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
         pytest.skip(f"{attention_name} does not support different k, q dimensions yet.")
-    multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
 
     seq_q = SEQ - 16
     q = torch.rand((BATCH, seq_q, MODEL), device=device)
