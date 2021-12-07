@@ -152,6 +152,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 - [Sine](xformers/components/positional_embedding/sine.py)
 - [Vocabulary](xformers/components/positional_embedding/vocab.py)
+- [Rotary](xformers/components/positional_embedding/rotary.py)
 
 </p></details>
 
