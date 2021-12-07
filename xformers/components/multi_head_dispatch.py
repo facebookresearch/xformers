@@ -146,6 +146,13 @@ class MultiHeadDispatch(nn.Module):
         B, S_Q, _ = query.size()  # Batch x Sequence x Embedding (latent)
         _, S_K, _ = key.size()  # K, Q's sequence length could differ
 
+        # Catch different query and key length but a causal attention
+        if hasattr(self.attention, "causal"):
+            assert not self.attention.causal or S_Q == S_K, (
+                "Causal attention is not supported when key and query have different sequence lengths.\n"
+                + "In that case causality is ill-determined. Please pad your sequences accordingly"
+            )
+
         # Calculate query, key, values for all heads in batch
         if self.attention.requires_input_projection:
             q, k, v = self.in_proj_container(query=query, key=key, value=value)
