@@ -34,10 +34,18 @@ class Attention(nn.Module, metaclass=ABCMeta):
     @abstractmethod
     def __init__(self, dropout: Optional[float] = None, *args, **kwargs):
         super().__init__()
+
+        # Requires the inputs to be projected
         self.requires_input_projection = True
+
+        # Whether the head dimension needs to be present (if not it can be folded into the batch dimension)
         self.requires_head_dimension = False
+
         # key padding mask and attention mask must be passed in as separate arguments instead of a merged attention mask
         self.requires_separate_masks = False
+
+        # Requires that K and Q have the same sequence length
+        self.requires_same_k_q_dimensions = False
 
     @classmethod
     def from_config(cls: Type[Self], config: AttentionConfig) -> Self:

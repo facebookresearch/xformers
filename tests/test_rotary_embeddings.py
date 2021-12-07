@@ -43,6 +43,9 @@ def test_rotary_embeddings(device):
         0, 0, 0, 0
     ].clone()  # all diagonal elements will have the same value
     att_rot = (
-        att_rot <= 1e-5
+        att_rot <= 1e-4
     )  # all non diagonal elements had lower attention than diagonal (+ float tolerance)
     assert torch.all(att_rot)
+
+    # Test that different sequence lengths is ok
+    _, _ = rotary(q[:, :, :-16, :], k)

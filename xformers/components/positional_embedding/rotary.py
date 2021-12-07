@@ -18,9 +18,14 @@ def rotate_half(x):
 
 
 @torch.jit.script
-def apply_rotary_pos_emb(q, k, cos, sin):
+def apply_rotary_pos_emb(x, cos, sin):
     # NOTE: This could probably be moved to Triton
-    return (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
+
+    # Handle a possible sequence length mismatch in between q and k
+    cos = cos[:, :, : x.shape[-2], :]
+    sin = sin[:, :, : x.shape[-2], :]
+
+    return (x * cos) + (rotate_half(x) * sin)
 
 
 class RotaryEmbedding(torch.nn.Module):
@@ -73,7 +78,10 @@ class RotaryEmbedding(torch.nn.Module):
         self, q: torch.Tensor, k: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         self._cos_cached, self._sin_cached = self._update_cos_sin_tables(
-            q, seq_dimension=-2
+            k, seq_dimension=-2
         )
 
-        return apply_rotary_pos_emb(q, k, self._cos_cached, self._sin_cached)
+        return (
+            apply_rotary_pos_emb(q, self._cos_cached, self._sin_cached),
+            apply_rotary_pos_emb(k, self._cos_cached, self._sin_cached),
+        )

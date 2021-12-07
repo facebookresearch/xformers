@@ -108,7 +108,9 @@ if _is_triton_available:
             # key padding mask and attention mask must be passed in separately
             self.requires_separate_masks = True
 
-        def update_mask_type(self, mask: torch.Tensor, to_dtype: torch.dtype):
+            self.requires_same_k_q_dimensions = True
+
+        def update_mask_type(self, mask: torch.Tensor):
             global _mask_type_warning
             if _mask_type_warning:
                 logging.warning(
@@ -141,9 +143,9 @@ if _is_triton_available:
             # initial attention setup
 
             if att_mask is not None and att_mask.dtype == torch.bool:
-                self.update_mask_type(att_mask, q.dtype)
+                self.update_mask_type(att_mask)
             if key_padding_mask is not None and key_padding_mask.dtype == torch.bool:
-                self.update_mask_type(key_padding_mask, q.dtype)
+                self.update_mask_type(key_padding_mask)
 
             assert (
                 att_mask is None or att_mask.dim() == 2

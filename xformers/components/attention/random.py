@@ -68,6 +68,7 @@ class RandomAttention(Attention):
         self.rand_attention_mask: Optional[torch.Tensor] = None
         self.constant_masking = constant_masking
         self.force_sparsity = force_sparsity
+        self.requires_same_k_q_dimensions = True
 
     def _get_rand_mask(self, shape: torch.Size) -> torch.Tensor:
         sparsity = 1 - self.r

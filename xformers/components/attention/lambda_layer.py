@@ -44,6 +44,7 @@ class LambdaLayer(Attention):
         )
         self.rel_pos = calc_rel_pos(seq_len)
         self.attn_drop = torch.nn.Dropout(dropout, inplace=True)
+        self.requires_same_k_q_dimensions = True
 
     def forward(
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs
