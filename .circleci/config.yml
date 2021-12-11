@@ -73,11 +73,14 @@ install_dep_190: &install_dep_190
         # start installing
         pip install --progress-bar off --pre torch torchvision -f https://download.pytorch.org/whl/nightly/cu111/torch_nightly.html
         pip install --progress-bar off -r requirements-benchmark.txt
+        pip install pytorch-lightning
 
         python -c 'import torch; print("Torch version:", torch.__version__)'
         python -c 'import torch; assert torch.__version__ > (1, 10), "wrong torch version"'
         python -m torch.utils.collect_env
         wget -O /home/circleci/venv/check_version.py https://raw.githubusercontent.com/min-xu-ai/check_verion/main/check_version.py
+
+
 
 install_repo: &install_repo
   - run:

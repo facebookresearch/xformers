@@ -147,7 +147,6 @@ class VisionTransformer(pl.LightningModule):
                 num_heads=n_head,
                 mlp_ratio=hidden_layer_multiplier,
                 qkv_bias=True,
-                distilled=False,
                 drop_rate=resid_pdrop,
                 attn_drop_rate=attn_pdrop,
                 drop_path_rate=0,
