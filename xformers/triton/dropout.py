@@ -13,7 +13,7 @@ import torch
 import triton
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from xformers.components.activations import Activation
+from xformers.components.activations import Activation, build_activation
 from xformers.triton.k_activations import (
     get_triton_activation_bwd_kernel,
     get_triton_activation_kernel,
@@ -140,7 +140,7 @@ class FusedDropoutBias(torch.nn.Module):
     ) -> None:
         super().__init__()
         self.p = p
-        self.activation = activation
+        self.activation_type = activation
         self.register_buffer(
             "bias", torch.zeros(bias_shape) if bias_shape is not None else None
         )
@@ -151,6 +151,13 @@ class FusedDropoutBias(torch.nn.Module):
         # Convenience, catch a possible type or device mismatch
         if self.bias is not None:  # type: ignore
             self.bias = self.bias.to(dtype=x.dtype, device=x.device)  # type: ignore
+
+        # Catch a non-cuda setup, fallback to pytorch
+        if not x.is_cuda:
+            activation = build_activation(self.activation_type)
+            x = x + self.bias if self.bias is not None else x
+            x = activation(x)
+            return torch.nn.functional.dropout(x, self.p)
 
         p = self.p if self.training else 0.0
         return _dropout.apply(x, p, self.bias, self.activation, self.activation_grad)
