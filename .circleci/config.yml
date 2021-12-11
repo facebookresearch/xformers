@@ -149,6 +149,14 @@ run_pytorch_benchmark: &run_pytorch_benchmark
       command: |
         python3 xformers/benchmarks/benchmark_pytorch_transformer.py
 
+run_pytorch_benchmark: &run_vit_benchmark
+  - run:
+      name: Run ViT Timm benchmark
+      command: |
+        python3 xformers/benchmarks/benchmark_vit_timm.py
+        python3 xformers/benchmarks/benchmark_vit_timm.py --timm
+
+
 run_doc_build: &run_doc_build
    - run:
        name: Testing doc build

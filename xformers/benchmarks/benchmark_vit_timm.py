@@ -160,28 +160,26 @@ class VisionTransformer(pl.LightningModule):
             # A list of the encoder or decoder blocks which constitute the Transformer.
             xformer_config = [
                 {
-                    "block_config": {
-                        "block_type": "encoder",
-                        "num_layers": n_layer,
-                        "dim_model": dim,
-                        "seq_len": num_patches,
-                        "layer_norm_style": "pre",
-                        "multi_head_config": {
-                            "num_heads": n_head,
-                            "residual_dropout": resid_pdrop,
-                            "attention": {
-                                "name": attention,
-                                "dropout": attn_pdrop,
-                                "causal": False,
-                            },
+                    "block_type": "encoder",
+                    "num_layers": n_layer,
+                    "dim_model": dim,
+                    "layer_norm_style": "pre",
+                    "multi_head_config": {
+                        "num_heads": n_head,
+                        "residual_dropout": resid_pdrop,
+                        "attention": {
+                            "name": attention,
+                            "dropout": attn_pdrop,
+                            "causal": False,
+                            "seq_len": num_patches,
                         },
-                        "feedforward_config": {
-                            "name": "FusedMLP",
-                            "dropout": mlp_pdrop,
-                            "activation": "gelu",
-                            "hidden_layer_multiplier": hidden_layer_multiplier,
-                        },
-                    }
+                    },
+                    "feedforward_config": {
+                        "name": "FusedMLP",
+                        "dropout": mlp_pdrop,
+                        "activation": "gelu",
+                        "hidden_layer_multiplier": hidden_layer_multiplier,
+                    },
                 }
             ]
 
