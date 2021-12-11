@@ -149,7 +149,7 @@ run_pytorch_benchmark: &run_pytorch_benchmark
       command: |
         python3 xformers/benchmarks/benchmark_pytorch_transformer.py
 
-run_pytorch_benchmark: &run_vit_benchmark
+run_vit_benchmark: &run_vit_benchmark
   - run:
       name: Run ViT Timm benchmark
       command: |
@@ -258,6 +258,8 @@ jobs:
       - <<: *run_benchmarks
 
       - <<: *run_pytorch_benchmark
+
+      - <<: *run_vit_benchmark
 
       - store_test_results:
           path: test-results

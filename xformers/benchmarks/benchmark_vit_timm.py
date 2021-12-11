@@ -334,6 +334,14 @@ if __name__ == "__main__":
         default=False,
     )
 
+    parser.add_argument(
+        "-samples",
+        "--samples",
+        help="Number of random samples to generate",
+        type=int,
+        default=128,
+    )
+
     args = parser.parse_args()
 
     pl.seed_everything(42)
@@ -342,7 +350,7 @@ if __name__ == "__main__":
     NUM_WORKERS = 4
     GPUS = 1
     IMG_SIZE = 224
-    NUM_SAMPLES = 128
+    NUM_SAMPLES = args.samples
     NUM_CLASSES = 10
     N_LAYERS = 4
 
