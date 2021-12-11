@@ -11,6 +11,7 @@ import torch
 from torch.cuda.amp.autocast_mode import autocast
 
 from xformers.components import Activation, build_activation
+from xformers.triton.dropout import FusedDropoutBias
 
 _triton_available = torch.cuda.is_available()
 
@@ -36,6 +37,12 @@ SHAPES = [
     (2, 16, 4096),
     (1, 16, 12288),
 ]
+
+
+def test_dropout_cpu():
+    triton_dropout = FusedDropoutBias(p=0.1, bias_shape=None)
+    x = torch.normal(0, 1, size=(16, 16), device="cpu")
+    _ = triton_dropout(x)
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
