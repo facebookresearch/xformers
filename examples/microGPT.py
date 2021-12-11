@@ -73,7 +73,7 @@ class GPT(pl.LightningModule):
                 "feedforward_config": {
                     "name": "FusedMLP",  # Use MLP if Triton is not available
                     "dropout": self.hparams.mlp_pdrop,
-                    "activation": "gelu",
+                    "activation": "squared_relu",  # Similar accuracy and significantly faster than gelu
                     "hidden_layer_multiplier": self.hparams.hidden_layer_multiplier,
                 },
             }
@@ -278,7 +278,7 @@ if __name__ == "__main__":
     WORKERS = 4
     EPOCHS = 1
     BLOCK = 128
-    WARMUP = 20
+    WARMUP = 40
 
     if not os.path.exists("input.txt"):
         os.system(
@@ -311,9 +311,9 @@ if __name__ == "__main__":
         gpus=1,
         max_epochs=EPOCHS,
         precision=16,
-        gradient_clip_val=1,
+        gradient_clip_val=1,  # 1 - recommended when experimenting
         log_every_n_steps=1,
-        detect_anomaly=True,
+        detect_anomaly=False,  # True - recommended when experimenting
         accumulate_grad_batches=REF_BATCH // BATCH,
     )
 

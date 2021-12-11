@@ -39,9 +39,9 @@ class VisionTransformer(pl.LightningModule):
         image_size=32,
         num_classes=10,
         patch_size=4,
-        dim=768,
-        n_layer=12,
-        n_head=12,
+        dim=512,
+        n_layer=8,
+        n_head=8,
         resid_pdrop=0.1,
         attn_pdrop=0.1,
         mlp_pdrop=0.1,
@@ -79,9 +79,9 @@ class VisionTransformer(pl.LightningModule):
                     },
                 },
                 "feedforward_config": {
-                    "name": "FusedMLP",
+                    "name": "FusedMLP",  # Use "MLP" if triton is not available
                     "dropout": mlp_pdrop,
-                    "activation": "gelu",
+                    "activation": "squared_relu",
                     "hidden_layer_multiplier": hidden_layer_multiplier,
                 },
             }
@@ -210,7 +210,7 @@ if __name__ == "__main__":
     REF_BATCH = 4096
     BATCH = 512
 
-    MAX_EPOCHS = 20
+    MAX_EPOCHS = 40
     NUM_WORKERS = 4
     GPUS = 1
 
@@ -259,7 +259,7 @@ if __name__ == "__main__":
     trainer = pl.Trainer(
         gpus=GPUS,
         max_epochs=MAX_EPOCHS,
-        detect_anomaly=True,
+        detect_anomaly=False,  # Set to true when experimenting with new settings
         precision=16,
         accumulate_grad_batches=REF_BATCH // BATCH,
     )
