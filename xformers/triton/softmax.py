@@ -200,7 +200,7 @@ def _softmax_dispatch(
         _triton_registered_warnings = True
 
     if mask is not None:
-        x += mask
+        x = x + mask
 
     if log:
         return torch.log_softmax(x, dim=-1)
