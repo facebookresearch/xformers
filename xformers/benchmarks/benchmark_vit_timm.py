@@ -147,7 +147,6 @@ class VisionTransformer(pl.LightningModule):
                 num_heads=n_head,
                 mlp_ratio=hidden_layer_multiplier,
                 qkv_bias=True,
-                distilled=False,
                 drop_rate=resid_pdrop,
                 attn_drop_rate=attn_pdrop,
                 drop_path_rate=0,
@@ -160,28 +159,26 @@ class VisionTransformer(pl.LightningModule):
             # A list of the encoder or decoder blocks which constitute the Transformer.
             xformer_config = [
                 {
-                    "block_config": {
-                        "block_type": "encoder",
-                        "num_layers": n_layer,
-                        "dim_model": dim,
-                        "seq_len": num_patches,
-                        "layer_norm_style": "pre",
-                        "multi_head_config": {
-                            "num_heads": n_head,
-                            "residual_dropout": resid_pdrop,
-                            "attention": {
-                                "name": attention,
-                                "dropout": attn_pdrop,
-                                "causal": False,
-                            },
+                    "block_type": "encoder",
+                    "num_layers": n_layer,
+                    "dim_model": dim,
+                    "layer_norm_style": "pre",
+                    "multi_head_config": {
+                        "num_heads": n_head,
+                        "residual_dropout": resid_pdrop,
+                        "attention": {
+                            "name": attention,
+                            "dropout": attn_pdrop,
+                            "causal": False,
+                            "seq_len": num_patches,
                         },
-                        "feedforward_config": {
-                            "name": "FusedMLP",
-                            "dropout": mlp_pdrop,
-                            "activation": "gelu",
-                            "hidden_layer_multiplier": hidden_layer_multiplier,
-                        },
-                    }
+                    },
+                    "feedforward_config": {
+                        "name": "FusedMLP",
+                        "dropout": mlp_pdrop,
+                        "activation": "gelu",
+                        "hidden_layer_multiplier": hidden_layer_multiplier,
+                    },
                 }
             ]
 
@@ -336,6 +333,14 @@ if __name__ == "__main__":
         default=False,
     )
 
+    parser.add_argument(
+        "-samples",
+        "--samples",
+        help="Number of random samples to generate",
+        type=int,
+        default=128,
+    )
+
     args = parser.parse_args()
 
     pl.seed_everything(42)
@@ -344,7 +349,7 @@ if __name__ == "__main__":
     NUM_WORKERS = 4
     GPUS = 1
     IMG_SIZE = 224
-    NUM_SAMPLES = 128
+    NUM_SAMPLES = args.samples
     NUM_CLASSES = 10
     N_LAYERS = 4
 
