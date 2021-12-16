@@ -110,11 +110,11 @@ def test_presets(config, reversible, device):
     modelConfig = xFormerConfig(config)
     if isinstance(modelConfig.stack_configs, dict):
         for k, blockConfig in modelConfig.stack_configs.items():
-            assert(blockConfig.layer_position)
+            assert blockConfig.layer_position
     else:
         for blockConfig in modelConfig.stack_configs:
-            assert(blockConfig.layer_position)
-    
+            assert blockConfig.layer_position
+
     model = xFormer.from_config(modelConfig).to(device)
 
     # Dummy inputs, test a forward
