@@ -78,17 +78,12 @@ def test_softmax_parity(shape, amp, log, masking, causal, contiguous):
 
         assert torch.allclose(y_torch, y_triton, equal_nan=True)
 
-        print(y_torch)
-
         # Check that BW also gives the same result
         loss_torch = torch.norm(y_torch.transpose(-2, -1) @ y_torch)
         loss_torch.backward()
 
         loss_triton = torch.norm(y_triton.transpose(-2, -1) @ y_triton)
         loss_triton.backward()
-
-        print(X.grad)
-        print(X_.grad)
 
         assert torch.allclose(
             torch.norm(X.grad), torch.norm(X_.grad), equal_nan=True, atol=1e-5
@@ -146,17 +141,12 @@ def test_softmax_parity_fallback(log, masking, causal, contiguous):
 
     assert torch.allclose(y_torch, y_triton, equal_nan=True)
 
-    print(y_torch)
-
     # Check that BW also gives the same result
     loss_torch = torch.norm(y_torch.transpose(-2, -1) @ y_torch)
     loss_torch.backward()
 
     loss_triton = torch.norm(y_triton.transpose(-2, -1) @ y_triton)
     loss_triton.backward()
-
-    print(X.grad)
-    print(X_.grad)
 
     assert torch.allclose(
         torch.norm(X.grad), torch.norm(X_.grad), equal_nan=True, atol=1e-5
