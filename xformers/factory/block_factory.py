@@ -112,7 +112,9 @@ class xFormerBlockConfig:
         layer_norm_style: LayerNormStyle = LayerNormStyle("post"),
         reversible: bool = False,
         num_layers: int = 1,
+        layer_position: Optional[LayerPosition] = None,
     ):
+
         self.dim_model = dim_model
         self.block_type = block_type
         self.layer_norm_style = layer_norm_style
@@ -135,7 +137,10 @@ class xFormerBlockConfig:
         )
 
         # Default is that this layer is the only one, so both first and last
-        self.layer_position = LayerPosition()
+        if layer_position:
+            self.layer_position = layer_position
+        else:
+            self.layer_position = LayerPosition()
 
 
 @dataclass(init=False)

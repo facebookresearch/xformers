@@ -107,7 +107,15 @@ def test_presets(config, reversible, device):
     else:
         config["encoder"]["reversible"] = reversible
 
-    model = xFormer.from_config(xFormerConfig(config)).to(device)
+    modelConfig = xFormerConfig(config)
+    if isinstance(modelConfig.stack_configs, dict):
+        for k, blockConfig in modelConfig.stack_configs.items():
+            assert blockConfig.layer_position
+    else:
+        for blockConfig in modelConfig.stack_configs:
+            assert blockConfig.layer_position
+
+    model = xFormer.from_config(modelConfig).to(device)
 
     # Dummy inputs, test a forward
     inputs = (torch.rand((BATCH, SEQ), device=device) * 10).abs().to(torch.int)
