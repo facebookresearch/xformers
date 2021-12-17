@@ -167,7 +167,6 @@ def k_dropout_bw(
     rand_mask2 = rand2 > threshold
     rand_mask3 = rand3 > threshold
     rand_mask4 = rand4 > threshold
-    rand_mask = rand_mask1
 
     # now go over the tiles
     grad_bias = tl.zeros((BLOCK_N,), dtype=tl.float32)
@@ -230,16 +229,6 @@ def k_dropout_bw(
         grad_out_ptrs += BLOCK_M * stride_grad
         input_ptrs += BLOCK_M * stride_inputs
         grad_in_ptrs += BLOCK_M * stride_grad
-
-        # cycle through the binary masks
-        if i == 0:
-            rand_mask = rand_mask2
-        elif i == 1:
-            rand_mask = rand_mask3
-        elif i == 2:
-            rand_mask = rand_mask4
-        else:
-            rand_mask = rand_mask1
 
     if TRAINABLE_BIAS:
         grad_bias_ptr = GRAD_BIAS + row_id * N + cols

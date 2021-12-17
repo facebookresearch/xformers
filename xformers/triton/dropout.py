@@ -92,11 +92,18 @@ class _dropout(torch.autograd.Function):
         elif inputs.ndim > 2:
             inputs = inputs.reshape(-1, N)
 
-        GROUP_M = 16 if M > 512 else M // 4
+        # We split the problem in tiles:
+        # - over M there will be a follow up reduction
+        # - over M, we go by 4 tiles at at time (consequence of the random number generation)
+        # - over N we compromise in between trying to use as much memory paralellism as possible,
+        # (fill in the warps, there are 32 threads per warps, and 4 warps default), and not being too
+        # big because of register spilling
+        GROUP_M = 16 if M > 512 else max(M // 4, 16)
         BLOCK_M = GROUP_M // 4
-        BLOCK_N = 128
+        BLOCK_N = 128 if M > 2048 else 64
         N_BLOCK_M = triton.cdiv(M, GROUP_M)
         N_BLOCK_N = triton.cdiv(N, BLOCK_N)
+        num_warps = 4 if M > 2048 else 2
 
         if ctx.trainable_bias:
             grad_bias = torch.empty(
@@ -122,14 +129,23 @@ class _dropout(torch.autograd.Function):
             ACTIVATION_GRAD=ctx.activation_grad,
             TRAINABLE_BIAS=ctx.trainable_bias,
             BLOCK_M=BLOCK_M,
-            BLOCK_N=BLOCK_N
+            BLOCK_N=BLOCK_N,
+            num_warps=num_warps
         )
         # fmt: on
+
+        if ctx.trainable_bias:
+            if grad_bias.shape[0] == 1:
+                grad_bias.squeeze_(0)
+            else:
+                grad_bias = sum_2d_dim_0(grad_bias)
+        else:
+            grad_bias = None
 
         return (
             grad_in.reshape_as(grad_out),
             None,
-            sum_2d_dim_0(grad_bias) if ctx.trainable_bias else None,
+            grad_bias,
             None,
             None,
             None,
