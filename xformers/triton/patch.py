@@ -7,7 +7,7 @@ import torch.nn.functional
 from xformers.triton.dropout import dropout
 from xformers.triton.fused_linear_layer import FusedLinear
 from xformers.triton.layer_norm import FusedLayerNorm
-from xformers.triton.softmax import softmax, log_softmax
+from xformers.triton.softmax import log_softmax, softmax
 
 
 def _softmax(input: torch.Tensor, dim: int = -1, dtype=torch.float32):
