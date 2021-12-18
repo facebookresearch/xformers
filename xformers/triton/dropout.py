@@ -19,6 +19,11 @@ from xformers.triton.k_activations import (
     get_triton_activation_kernel,
 )
 from xformers.triton.k_dropout import k_dropout_bw, k_dropout_fw
+from xformers.triton.sum_strided import sum_2d_dim_0
+
+GROUP_M = 16
+BLOCK_M = GROUP_M // 4
+BLOCK_N = 128
 
 
 # Helper to handle the SPMD launch grid and error cases
@@ -33,19 +38,18 @@ class _dropout(torch.autograd.Function):
 
         assert bias is None or (bias.dtype == x.dtype and bias.shape[0] == N)
 
-        # Generate one seed per sample
-        # seed max is int32 max for positive numbers: 2**16
-        # FIXME: adjust the number of seeds needed
-        seeds = torch.randint(65536, (N,), device=x.device).to(torch.int32)
-
         def grid(meta):
             return (
                 triton.cdiv(M, meta["BLOCK_M"] * 4),
                 triton.cdiv(N, meta["BLOCK_N"]),
             )
 
-        GROUP_M = 16
-        BLOCK_M = GROUP_M // 4
+        N_BLOCK_N = triton.cdiv(N, BLOCK_N)
+
+        # Generate one seed per sample
+        # seed max is int32 max for positive numbers: 2**16
+        # FIXME: adjust the number of seeds needed
+        seeds = torch.randint(65536, (N_BLOCK_N,), device=x.device).to(torch.int32)
 
         # fmt: off
         k_dropout_fw[grid](
@@ -57,7 +61,8 @@ class _dropout(torch.autograd.Function):
             p,
             USE_BIAS=bias is not None,
             ACTIVATION=activation,
-            BLOCK_M=BLOCK_M
+            BLOCK_M=BLOCK_M,
+            BLOCK_N=BLOCK_N
         )
         # fmt: on
 
@@ -97,24 +102,18 @@ class _dropout(torch.autograd.Function):
         # - over N we compromise in between trying to use as much memory paralellism as possible,
         # (fill in the warps, there are 32 threads per warps, and 4 warps default), and not being too
         # big because of register spilling
-        GROUP_M = max(min(M // 8, 64), 16)
-
-        # We're mostly register limited, and fp16 takes less space
-        if grad_in.dtype == torch.float16 and ctx.trainable_bias:
-            GROUP_M *= 2
-
-        BLOCK_M = GROUP_M // 4
-        N_BLOCK_M = triton.cdiv(M, GROUP_M)
+        N_BLOCKS_M = triton.cdiv(M, GROUP_M)
 
         if ctx.trainable_bias:
             grad_bias = torch.empty(
                 (
+                    N_BLOCKS_M,
                     N,
-                    N_BLOCK_M,
                 ),
                 device=grad_in.device,
                 dtype=grad_in.dtype,
             )
+
         else:
             grad_bias = grad_in  # will not be used
 
@@ -136,22 +135,15 @@ class _dropout(torch.autograd.Function):
             ACTIVATION_GRAD=ctx.activation_grad,
             TRAINABLE_BIAS=ctx.trainable_bias,
             BLOCK_M=BLOCK_M,
-            N_BLOCK_M=N_BLOCK_M,
+            BLOCK_N=BLOCK_N,
+            num_warps=8
         )
         # fmt: on
-
-        if ctx.trainable_bias:
-            if grad_bias.shape[1] == 1:
-                grad_bias.squeeze_()
-            else:
-                grad_bias = torch.sum(grad_bias, dim=1)
-        else:
-            grad_bias = None
 
         return (
             grad_in.reshape_as(grad_out),
             None,
-            grad_bias,
+            sum_2d_dim_0(grad_bias) if ctx.trainable_bias else None,
             None,
             None,
             None,

@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-# CREDITS: This was initially inspired by the Triton dropout tutorial
+# CREDITS: This comes almost as-is from the Triton dropout tutorial
 # https://raw.githubusercontent.com/openai/triton/master/python/tutorials/04-low-memory-dropout.py
 
 import triton
@@ -13,15 +13,6 @@ import triton.language as tl
 
 # fmt: off
 @triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
-@triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_N": 32}, num_warps=1),
-        triton.Config({"BLOCK_N": 64}, num_warps=2),
-        triton.Config({"BLOCK_N": 128}, num_warps=4),
-        triton.Config({"BLOCK_N": 256}, num_warps=8),
-    ],
-    key=["M", "N"],
-)
 @triton.jit
 def k_dropout_fw(
     Y, X, BIAS, SEEDS,
@@ -37,10 +28,6 @@ def k_dropout_fw(
     BIAS        (N,)
     SEEDS       (M,)
     p : dropout probability
-
-    This kernel goes through the tensor columns (N dimension), per block (to keep memory parallelism).
-    This allows the backward pass to follow the same path, with the same seeds,
-    and start reducing on the gradient bias.
     """
     # fmt: on
 
@@ -120,18 +107,6 @@ def k_dropout_fw(
 
 # fmt: off
 @triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
-@triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_N": 32}, num_warps=1),
-        triton.Config({"BLOCK_N": 32}, num_warps=2),
-        triton.Config({"BLOCK_N": 64}, num_warps=2),
-        triton.Config({"BLOCK_N": 128}, num_warps=4),
-        triton.Config({"BLOCK_N": 128}, num_warps=8),
-        triton.Config({"BLOCK_N": 256}, num_warps=8),
-        triton.Config({"BLOCK_N": 256}, num_warps=16),
-    ],
-    key=["M", "N"],
-)
 @triton.jit
 def k_dropout_bw(
     GRAD_IN, GRAD_BIAS, GRAD_OUT,
@@ -154,7 +129,6 @@ def k_dropout_bw(
 
     BLOCK_M = meta["BLOCK_M"]
     BLOCK_N = meta["BLOCK_N"]
-    N_BLOCK_M = meta["N_BLOCK_M"]
     SIZE_RAND_BLOCK = meta["SIZE_RAND_BLOCK"]
     TRAINABLE_BIAS = meta["TRAINABLE_BIAS"]
 
@@ -244,5 +218,5 @@ def k_dropout_bw(
         grad_in_ptrs += BLOCK_M * stride_grad
 
     if TRAINABLE_BIAS:
-        grad_bias_ptr = GRAD_BIAS + cols * N_BLOCK_M + row_id
+        grad_bias_ptr = GRAD_BIAS + row_id * N + cols
         tl.store(grad_bias_ptr, grad_bias, mask=cols < N)
