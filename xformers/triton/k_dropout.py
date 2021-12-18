@@ -120,6 +120,18 @@ def k_dropout_fw(
 
 # fmt: off
 @triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_N": 32}, num_warps=1),
+        triton.Config({"BLOCK_N": 32}, num_warps=2),
+        triton.Config({"BLOCK_N": 64}, num_warps=2),
+        triton.Config({"BLOCK_N": 128}, num_warps=4),
+        triton.Config({"BLOCK_N": 128}, num_warps=8),
+        triton.Config({"BLOCK_N": 256}, num_warps=8),
+        triton.Config({"BLOCK_N": 256}, num_warps=16),
+    ],
+    key=["M", "N"],
+)
 @triton.jit
 def k_dropout_bw(
     GRAD_IN, GRAD_BIAS, GRAD_OUT,

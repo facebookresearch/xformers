@@ -19,7 +19,6 @@ from xformers.triton.k_activations import (
     get_triton_activation_kernel,
 )
 from xformers.triton.k_dropout import k_dropout_bw, k_dropout_fw
-from xformers.triton.sum_strided import sum_2d_dim_0
 
 
 # Helper to handle the SPMD launch grid and error cases
@@ -98,12 +97,14 @@ class _dropout(torch.autograd.Function):
         # - over N we compromise in between trying to use as much memory paralellism as possible,
         # (fill in the warps, there are 32 threads per warps, and 4 warps default), and not being too
         # big because of register spilling
-        GROUP_M = max(min(M // 8, 256), 16)
+        GROUP_M = max(min(M // 8, 64), 16)
+
+        # We're mostly register limited, and fp16 takes less space
+        if grad_in.dtype == torch.float16 and ctx.trainable_bias:
+            GROUP_M *= 2
+
         BLOCK_M = GROUP_M // 4
-        BLOCK_N = 128
         N_BLOCK_M = triton.cdiv(M, GROUP_M)
-        N_BLOCK_N = triton.cdiv(N, BLOCK_N)
-        num_warps = 4 if M <= 2048 else 8
 
         if ctx.trainable_bias:
             grad_bias = torch.empty(
@@ -117,8 +118,14 @@ class _dropout(torch.autograd.Function):
         else:
             grad_bias = grad_in  # will not be used
 
+        def grid(meta):
+            return (
+                triton.cdiv(M, meta["BLOCK_M"] * 4),
+                triton.cdiv(N, meta["BLOCK_N"]),
+            )
+
         # fmt: off
-        k_dropout_bw[(N_BLOCK_M, N_BLOCK_N)](
+        k_dropout_bw[grid](
             grad_in, grad_bias, grad_out_,
             inputs, bias if bias is not None else inputs,
             seeds,
@@ -129,9 +136,7 @@ class _dropout(torch.autograd.Function):
             ACTIVATION_GRAD=ctx.activation_grad,
             TRAINABLE_BIAS=ctx.trainable_bias,
             BLOCK_M=BLOCK_M,
-            BLOCK_N=BLOCK_N,
             N_BLOCK_M=N_BLOCK_M,
-            num_warps=num_warps
         )
         # fmt: on
 

@@ -173,6 +173,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 5. Hackable
    1. Not using monolithic CUDA kernels, composable building blocks
    2. Using [Triton](https://triton-lang.org/) for some optimized parts, explicit, pythonic and user-accessible
+   3. Native support for SquaredReLU (on top of ReLU, LeakyReLU, GeLU, ..), extensible activations
 
 ### FAQ ?
 
