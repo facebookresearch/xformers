@@ -142,6 +142,7 @@ def k_dropout_bw(
 
     BLOCK_M = meta["BLOCK_M"]
     BLOCK_N = meta["BLOCK_N"]
+    N_BLOCK_M = meta["N_BLOCK_M"]
     SIZE_RAND_BLOCK = meta["SIZE_RAND_BLOCK"]
     TRAINABLE_BIAS = meta["TRAINABLE_BIAS"]
 
@@ -231,5 +232,5 @@ def k_dropout_bw(
         grad_in_ptrs += BLOCK_M * stride_grad
 
     if TRAINABLE_BIAS:
-        grad_bias_ptr = GRAD_BIAS + row_id * N + cols
+        grad_bias_ptr = GRAD_BIAS + cols * N_BLOCK_M + row_id
         tl.store(grad_bias_ptr, grad_bias, mask=cols < N)

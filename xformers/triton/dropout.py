@@ -98,18 +98,18 @@ class _dropout(torch.autograd.Function):
         # - over N we compromise in between trying to use as much memory paralellism as possible,
         # (fill in the warps, there are 32 threads per warps, and 4 warps default), and not being too
         # big because of register spilling
-        GROUP_M = 16 if M > 512 else max(M // 4, 16)
+        GROUP_M = max(min(M // 8, 256), 16)
         BLOCK_M = GROUP_M // 4
-        BLOCK_N = 128 if M > 2048 else 64
+        BLOCK_N = 128
         N_BLOCK_M = triton.cdiv(M, GROUP_M)
         N_BLOCK_N = triton.cdiv(N, BLOCK_N)
-        num_warps = 4 if M > 2048 else 2
+        num_warps = 4 if M <= 2048 else 8
 
         if ctx.trainable_bias:
             grad_bias = torch.empty(
                 (
-                    N_BLOCK_M,
                     N,
+                    N_BLOCK_M,
                 ),
                 device=grad_in.device,
                 dtype=grad_in.dtype,
@@ -130,15 +130,16 @@ class _dropout(torch.autograd.Function):
             TRAINABLE_BIAS=ctx.trainable_bias,
             BLOCK_M=BLOCK_M,
             BLOCK_N=BLOCK_N,
+            N_BLOCK_M=N_BLOCK_M,
             num_warps=num_warps
         )
         # fmt: on
 
         if ctx.trainable_bias:
-            if grad_bias.shape[0] == 1:
-                grad_bias.squeeze_(0)
+            if grad_bias.shape[1] == 1:
+                grad_bias.squeeze_()
             else:
-                grad_bias = sum_2d_dim_0(grad_bias)
+                grad_bias = torch.sum(grad_bias, dim=1)
         else:
             grad_bias = None
 
