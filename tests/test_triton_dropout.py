@@ -53,7 +53,8 @@ def test_dropout_cpu():
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [False, True])
 @pytest.mark.parametrize("bias", [False, True])
-def test_dropout(shape, amp, bias):
+@pytest.mark.parametrize("p", [0, 0.1, 0.5])
+def test_dropout(shape, amp, bias, p):
     """
     Check some basic dropout properties
     """
@@ -98,8 +99,9 @@ def test_dropout(shape, amp, bias):
         )
 
         # Check that the drop probability is about right
-        drop_p = (y_a.numel() - y_a.count_nonzero()) / y_a.numel()
-        assert drop_p < 0.55 and drop_p > 0.45
+        y = triton_dropout(x, p=p)
+        drop_p = (y.numel() - y.count_nonzero()) / y.numel()
+        assert abs(drop_p - p) < 0.1
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")

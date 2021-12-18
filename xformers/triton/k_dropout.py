@@ -49,13 +49,14 @@ def k_dropout_fw(
     # go over all the tiles, one by one
     rand_offsets = tl.arange(0, SIZE_RAND_BLOCK) + row_id * BLOCK_M * 4
     rand1, rand2, rand3, rand4 = tl.randint4x(seed.to(tl.int32), rand_offsets)
-    threshold = ((p - 0.5) * 2147483648.).to(tl.int32)
 
     # binarize masks, save registers
-    rand_mask1 = rand1 > threshold
-    rand_mask2 = rand2 > threshold
-    rand_mask3 = rand3 > threshold
-    rand_mask4 = rand4 > threshold
+    # NOTE: Should have been possible to do with a int threshold instead, but seems numerically wrong
+    # threshold = ((p - 0.5) * 2147483648.).to(tl.int32)
+    rand_mask1 = tl.uint32_to_uniform_float(rand1) > p
+    rand_mask2 = tl.uint32_to_uniform_float(rand2) > p
+    rand_mask3 = tl.uint32_to_uniform_float(rand3) > p
+    rand_mask4 = tl.uint32_to_uniform_float(rand4) > p
 
     col_mask = cols[None, :] < N
     p_scale = 1 / (1 - p) if p < 1. else 1.
@@ -148,12 +149,12 @@ def k_dropout_bw(
     # random binary masks, save registers
     rand_offsets = tl.arange(0, SIZE_RAND_BLOCK) + row_id * BLOCK_M * 4
     rand1, rand2, rand3, rand4 = tl.randint4x(seed.to(tl.int32), rand_offsets)
-    threshold = ((p - 0.5) * 2147483648.).to(tl.int32)
 
-    rand_mask1 = rand1 > threshold
-    rand_mask2 = rand2 > threshold
-    rand_mask3 = rand3 > threshold
-    rand_mask4 = rand4 > threshold
+    # NOTE: Should have been possible to do with a int threshold instead, but seems numerically wrong
+    rand_mask1 = tl.uint32_to_uniform_float(rand1) > p
+    rand_mask2 = tl.uint32_to_uniform_float(rand2) > p
+    rand_mask3 = tl.uint32_to_uniform_float(rand3) > p
+    rand_mask4 = tl.uint32_to_uniform_float(rand4) > p
 
     # now go over the tiles
     grad_bias = tl.zeros((BLOCK_N,), dtype=tl.float32)
