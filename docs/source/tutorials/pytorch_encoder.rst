@@ -37,7 +37,7 @@ Similarly, the attention masks conventions are different: in PyTorch, the mask i
 Block factory
 -------------
 
-We don't have the exact same interfaces, but we have something fairly close to PyTorch with the [model_factory](xformers/factory/model_factory.py). Please note that, similarly to the attention example above, you can also directly import the `xFormerEncoderBlock` and construct it from there, but we'll assume here that you could be interested in systematic evaluation of different architectures, and that as such something which can be easily automated is preferred, so the "factory" path is the one put forward.
+We don't have the exact same interfaces, but we have something fairly close to PyTorch with the model_factory_. Please note that, similarly to the attention example above, you can also directly import the `xFormerEncoderBlock` and construct it from there, but we'll assume here that you could be interested in systematic evaluation of different architectures, and that as such something which can be easily automated is preferred, so the "factory" path is the one put forward.
 
 The equivalent to the PyTorch example above would look like the following. You can think of it  as a declaration of the sequence of blocks that you would like instantiated. We're trying to:
 
@@ -232,11 +232,15 @@ There's also an added flexibility with xFormers in that attention mechanisms can
     print(y)
 
 
-Note that this exposes quite a few more knobs than the PyTorch Transformer interface, but in turn is probably a little more flexible. There are a couple of repeated settings here (dimensions mostly), this is taken care of in the [LRA benchmarking config](benchmarks/LRA/code/config.json)
+Note that this exposes quite a few more knobs than the PyTorch Transformer interface, but in turn is probably a little more flexible. There are a couple of repeated settings here (dimensions mostly), this is taken care of in the `LRA benchmarking config`_.
 
-You can compare the speed and memory use of the vanilla PyTorch Transformer Encoder and an equivalent from xFormers, there is an existing benchmark for that ([see](xformers/benchmarks/benchmark_pytorch_transformer.py)).
+.. _LRA benchmarking config: https://github.com/facebookresearch/xformers/blob/main/xformers/benchmarks/LRA/code/config.json
+
+You can compare the speed and memory use of the vanilla PyTorch Transformer Encoder and an equivalent from xFormers, there is an existing benchmark for that (see_).
 It can be run with `python3 xformers/benchmarks/benchmark_pytorch_transformer.py`, and returns the loss values for every step along with the training time for a couple of shapes that you can customize.
 Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xFormers 0.0.2):
+
+.. _see: https://github.com/facebookresearch/xformers/blob/main/xformers/benchmarks/benchmark_pytorch_transformer.py
 
 .. code-block:: bash
 
@@ -257,14 +261,15 @@ Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xForm
 Build an `xFormer` model with Hydra
 -----------------------------------
 
-Alternatively, you can use [Hydra](https://hydra.cc/) to build an xFormer model. 
-We've included an example [here](https://github.com/facebookresearch/xformers/tree/main/examples/build_model).
+Alternatively, you can use Hydra_ to build an xFormer model. 
+We've included an example `here <https://github.com/facebookresearch/xformers/tree/main/examples/build_model/>`_.
 The example replicates the model from the above example and demonstrates one way to use Hydra to minimize config duplication. 
 The example is built on top of some more advanced Hydra features. If you are new to Hydra, you can start these docs:  
-[basic tutorials](https://hydra.cc/docs/tutorials/intro/), [extending configs](https://hydra.cc/docs/patterns/extending_configs/), 
-[Hydra packages](https://hydra.cc/docs/advanced/overriding_packages/) and 
-[instantiation API](https://hydra.cc/docs/advanced/instantiate_objects/overview/)
+`basic tutorials <https://hydra.cc/docs/tutorials/intro/>`_, `extending configs <https://hydra.cc/docs/patterns/extending_configs/>`_, 
+`Hydra packages <https://hydra.cc/docs/advanced/overriding_packages/>`_ and 
+`instantiation API <https://hydra.cc/docs/advanced/instantiate_objects/overview/>`_.
 
+.. _Hydra: https://hydra.cc/
 
 .. code-block:: yaml
 
