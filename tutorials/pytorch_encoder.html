@@ -258,7 +258,7 @@
 </section>
 <section id="block-factory">
 <h2>Block factory<a class="headerlink" href="#block-factory" title="Permalink to this headline">¶</a></h2>
-<p>We don’t have the exact same interfaces, but we have something fairly close to PyTorch with the [model_factory](xformers/factory/model_factory.py). Please note that, similarly to the attention example above, you can also directly import the <cite>xFormerEncoderBlock</cite> and construct it from there, but we’ll assume here that you could be interested in systematic evaluation of different architectures, and that as such something which can be easily automated is preferred, so the “factory” path is the one put forward.</p>
+<p>We don’t have the exact same interfaces, but we have something fairly close to PyTorch with the <a class="reference external" href="https://github.com/facebookresearch/xformers/blob/main/xformers/factory/model_factory.py">model_factory</a>. Please note that, similarly to the attention example above, you can also directly import the <cite>xFormerEncoderBlock</cite> and construct it from there, but we’ll assume here that you could be interested in systematic evaluation of different architectures, and that as such something which can be easily automated is preferred, so the “factory” path is the one put forward.</p>
 <p>The equivalent to the PyTorch example above would look like the following. You can think of it  as a declaration of the sequence of blocks that you would like instantiated. We’re trying to:</p>
 <ul class="simple">
 <li><p>make it very explicit what is in this block</p></li>
@@ -439,8 +439,8 @@ There’s also an added flexibility with xFormers in that attention mechanisms c
 <span class="nb">print</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Note that this exposes quite a few more knobs than the PyTorch Transformer interface, but in turn is probably a little more flexible. There are a couple of repeated settings here (dimensions mostly), this is taken care of in the [LRA benchmarking config](benchmarks/LRA/code/config.json)</p>
-<p>You can compare the speed and memory use of the vanilla PyTorch Transformer Encoder and an equivalent from xFormers, there is an existing benchmark for that ([see](xformers/benchmarks/benchmark_pytorch_transformer.py)).
+<p>Note that this exposes quite a few more knobs than the PyTorch Transformer interface, but in turn is probably a little more flexible. There are a couple of repeated settings here (dimensions mostly), this is taken care of in the <a class="reference external" href="https://github.com/facebookresearch/xformers/blob/main/xformers/benchmarks/LRA/code/config.json">LRA benchmarking config</a>.</p>
+<p>You can compare the speed and memory use of the vanilla PyTorch Transformer Encoder and an equivalent from xFormers, there is an existing benchmark for that (<a class="reference external" href="https://github.com/facebookresearch/xformers/blob/main/xformers/benchmarks/benchmark_pytorch_transformer.py">see</a>).
 It can be run with <cite>python3 xformers/benchmarks/benchmark_pytorch_transformer.py</cite>, and returns the loss values for every step along with the training time for a couple of shapes that you can customize.
 Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xFormers 0.0.2):</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>--- Transformer training benchmark - runtime ---
@@ -459,13 +459,13 @@ Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xForm
 </section>
 <section id="build-an-xformer-model-with-hydra">
 <h2>Build an <cite>xFormer</cite> model with Hydra<a class="headerlink" href="#build-an-xformer-model-with-hydra" title="Permalink to this headline">¶</a></h2>
-<p>Alternatively, you can use [Hydra](<a class="reference external" href="https://hydra.cc/">https://hydra.cc/</a>) to build an xFormer model.
-We’ve included an example [here](<a class="reference external" href="https://github.com/facebookresearch/xformers/tree/main/examples/build_model">https://github.com/facebookresearch/xformers/tree/main/examples/build_model</a>).
+<p>Alternatively, you can use <a class="reference external" href="https://hydra.cc/">Hydra</a> to build an xFormer model.
+We’ve included an example <a class="reference external" href="https://github.com/facebookresearch/xformers/tree/main/examples/build_model/">here</a>.
 The example replicates the model from the above example and demonstrates one way to use Hydra to minimize config duplication.
 The example is built on top of some more advanced Hydra features. If you are new to Hydra, you can start these docs:
-[basic tutorials](<a class="reference external" href="https://hydra.cc/docs/tutorials/intro/">https://hydra.cc/docs/tutorials/intro/</a>), [extending configs](<a class="reference external" href="https://hydra.cc/docs/patterns/extending_configs/">https://hydra.cc/docs/patterns/extending_configs/</a>),
-[Hydra packages](<a class="reference external" href="https://hydra.cc/docs/advanced/overriding_packages/">https://hydra.cc/docs/advanced/overriding_packages/</a>) and
-[instantiation API](<a class="reference external" href="https://hydra.cc/docs/advanced/instantiate_objects/overview/">https://hydra.cc/docs/advanced/instantiate_objects/overview/</a>)</p>
+<a class="reference external" href="https://hydra.cc/docs/tutorials/intro/">basic tutorials</a>, <a class="reference external" href="https://hydra.cc/docs/patterns/extending_configs/">extending configs</a>,
+<a class="reference external" href="https://hydra.cc/docs/advanced/overriding_packages/">Hydra packages</a> and
+<a class="reference external" href="https://hydra.cc/docs/advanced/instantiate_objects/overview/">instantiation API</a>.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">defaults</span><span class="p">:</span>
     <span class="p p-Indicator">-</span> <span class="nt">/stack@xformer.stack_configs</span><span class="p">:</span>
         <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">encoder_local</span>
