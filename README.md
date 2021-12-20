@@ -46,6 +46,8 @@ There are two ways you can install it:
   cd xformers
   pip install -r requirements.txt
   pip install -e .
+  # or, for OSX
+  MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ pip install -e .
   ```
 
 #### Sparse attention kernels
