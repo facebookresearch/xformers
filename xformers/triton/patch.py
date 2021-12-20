@@ -30,9 +30,16 @@ def _dropout(
     return input * p
 
 
-def _layer_norm_wrapper(normalized_shape: typing.List[int], eps: float = 1e-5, elementwise_affine: bool = True,
-                        device=None, dtype=None):
-    return FusedLayerNorm(normalized_shape, elementwise_affine, eps).to(device=device, dtype=dtype)
+def _layer_norm_wrapper(
+    normalized_shape: typing.List[int],
+    eps: float = 1e-5,
+    elementwise_affine: bool = True,
+    device=None,
+    dtype=None,
+):
+    return FusedLayerNorm(normalized_shape, elementwise_affine, eps).to(
+        device=device, dtype=dtype
+    )
 
 
 def patch_torch():
