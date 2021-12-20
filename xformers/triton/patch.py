@@ -22,7 +22,9 @@ def _log_softmax(input: torch.Tensor, dim: int = -1, dtype=torch.float32):
     return log_softmax(input.transpose(-1, dim)).transpose(-1, dim).to(dtype=dtype)
 
 
-def _dropout(input: torch.Tensor, p: float = 0.5, training: bool = True, inplace: bool = False):
+def _dropout(
+    input: torch.Tensor, p: float = 0.5, training: bool = True, inplace: bool = False
+):
     if training:
         return dropout(input, p)
     return input * p
