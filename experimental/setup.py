@@ -7,10 +7,10 @@
 from setuptools import setup
 
 setup(
-    name="ragged_inference",
+    name="xformers_experimental",
     author="Facebook AI Research",
-    version="0.0.0",
-    packages=["ragged_inference"],
+    version="0.0.1",
+    packages=["ragged_inference", "mem_efficient_attention"],
     install_requires=[],
     scripts=[],
     python_requires=">=3.6",

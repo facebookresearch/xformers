@@ -5,14 +5,17 @@ The kernels in this folder are experimental, and for now not tied to the rest of
 ## Requirements
 
 - Either:
---  Checkout the [Triton v2.0 branch](git@github.com:openai/triton.git)
+    --  Checkout the [Triton v2.0 branch](git@github.com:openai/triton.git)
 `git clone git@github.com:openai/triton.git; cd triton; git checkout v2.0`
 
---  Install it in a dedicated environement. Note that you will need pytorch, and a matching GCC/G++/CUDA
+    --  Install it in a dedicated environement. Note that you will need pytorch, and a matching GCC/G++/CUDA
 `cd triton/python; pip install -e .`
 
+    -- if the system GCC is too recent, you may have to install an older one, and use instead
+`CC=${path_to_correct_gcc} CXX=${path_to_correct_g++} python3 setup.py develop`
+
 - or install the Triton 2 dev wheel:
--- `pip install -r requirements.txt`
+    -- `pip install -r requirements.txt`
 
 - (Optional) install the kernels present here by running `pip install -e .` in this folder
 
