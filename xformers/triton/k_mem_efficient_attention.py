@@ -126,7 +126,7 @@ def mem_efficient_fw(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, bias: Op
     B, M, L = q_.shape
     B, N, L = k_.shape
 
-    BLOCK_M = 4
+    BLOCK_M = 8
     BLOCK_N = min(triton.next_power_of_2(N), 1024)  # increase the ceiling to save more memory
     BLOCK_L = 8
 
@@ -144,7 +144,7 @@ def mem_efficient_fw(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, bias: Op
         maxes_n = torch.empty((tiles_n, M), dtype=q.dtype, device=q.device)
         weights_n = torch.empty((tiles_n, M), dtype=q.dtype, device=q.device)
     else:
-        assert BLOCK_N >= N
+        assert BLOCK_N >= N, "The buffer is too large over N, we cannot use the fused normalization"
         maxes_n = out_n     # placeholder, will not be used
         weights_n = out_n   # placeholder, will not be used
 
