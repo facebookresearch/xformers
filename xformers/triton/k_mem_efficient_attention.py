@@ -11,7 +11,7 @@ import triton
 import triton.language as tl
 
 _DEBUG = 0  # 1 to see the kernel PTX assembly
-_FUSED_NORMALIZATION = False  # FIXME: rounding error, but should work eventually
+_FUSED_NORMALIZATION = True  # FIXME: rounding error, but should work eventually
 
 
 # fmt: off
@@ -126,8 +126,8 @@ def mem_efficient_fw(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, bias: Op
     B, M, L = q_.shape
     B, N, L = k_.shape
 
-    BLOCK_M = 8
-    BLOCK_N = min(triton.next_power_of_2(N), 512)  # increase the ceiling to save more memory
+    BLOCK_M = 4
+    BLOCK_N = min(triton.next_power_of_2(N), 1024)  # increase the ceiling to save more memory
     BLOCK_L = 8
 
     tiles_n = triton.cdiv(N, BLOCK_N)
@@ -138,9 +138,15 @@ def mem_efficient_fw(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, bias: Op
             tiles_n
         )
 
-    maxes_n = torch.empty((tiles_n, M), dtype=q.dtype, device=q.device)
-    weights_n = torch.empty((tiles_n, M), dtype=q.dtype, device=q.device)
     out_n = torch.empty((tiles_n, M, L), dtype=q.dtype, device=q.device)
+
+    if not _FUSED_NORMALIZATION:
+        maxes_n = torch.empty((tiles_n, M), dtype=q.dtype, device=q.device)
+        weights_n = torch.empty((tiles_n, M), dtype=q.dtype, device=q.device)
+    else:
+        assert BLOCK_N >= N
+        maxes_n = out_n     # placeholder, will not be used
+        weights_n = out_n   # placeholder, will not be used
 
     # FIXME: handle bias
     # FIXME: improve on the batch dimension handling ?
