@@ -1,4 +1,4 @@
-# Copyright (c) Meta, Inc. and its affiliates. All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 #
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
@@ -143,7 +143,7 @@ def mem_efficient_fw(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, bias: Op
 
         # Epilogue
         if tiles_n > 1:
-            # There were tilse over the N dimension,
+            # There were tiles over the N dimension,
             # so the weights were not correct in real time.
 
             # Let's fix that:
@@ -162,6 +162,7 @@ def mem_efficient_fw(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, bias: Op
         else:
             weights = weights_n
 
+        # TODO: do this in the kernel if it owns the whole line
         qkv = out / weights.unsqueeze(-1)
         qkvs.append(qkv)
 
