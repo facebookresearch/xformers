@@ -11,6 +11,7 @@ import triton
 import triton.language as tl
 
 _DEBUG = 0  # 1 to see the kernel PTX assembly
+_FUSED_NORMALIZATION = False  # FIXME: rounding error, but should work eventually
 
 
 # fmt: off
@@ -28,7 +29,8 @@ def k_me_attention_fw(
     # extract metaparameters
     BLOCK_M = META["BLOCK_M"]
     BLOCK_N, BLOCK_L = META["BLOCK_N"], META["BLOCK_L"]
-    SINGLE_ROW_TILE = META["SINGLE_ROW_TILE"]
+    FUSED_NORMALIZATION = META["FUSED_NORMALIZATION"]
+
     scale = META["SCALE"]
 
     # *within groups*, programs are ordered in a column-major order
@@ -65,41 +67,40 @@ def k_me_attention_fw(
     max_ptrs = MAXES + pid_n * stride_maxes + rm        # (BLOCK_M)
 
     # Save so that an eventual mismatch can be fixed post-hoc
-    tl.store(max_ptrs, max_qkt, mask=(rm < M))
+    if FUSED_NORMALIZATION is False:
+        tl.store(max_ptrs, max_qkt, mask=(rm < M))
 
     # Exponentiate the neutralized results
-    exp_acc = tl.exp(qkt - max_qkt[:, None])            # (BLOCK_M, BLOCK_N)
+    exp_qkt = tl.exp(qkt - max_qkt[:, None])            # (BLOCK_M, BLOCK_N)
 
-    # Softmax normalization constant, save so that an eventual mismatch can be fixed
-    weights = tl.sum(exp_acc, axis=1)                   # (BLOCK_M)
-    weights_ptrs = WEIGHTS + pid_n * stride_weights + rm
-    tl.store(weights_ptrs, weights, mask=(rm < M))
+    # Softmax normalization constant
+    weights = tl.sum(exp_qkt, axis=1)                   # (BLOCK_M)
 
-    # If not posterior re-normalization, fuse it
-    if SINGLE_ROW_TILE:
-        exp_qkt = exp_acc / weights[:, None]
+    if FUSED_NORMALIZATION:
+        exp_qkt = exp_qkt / weights[:, None]
     else:
-        exp_qkt = exp_acc
+        # Save, global max will be fixed post-hoc
+        weights_ptrs = WEIGHTS + pid_n * stride_weights + rm
+        tl.store(weights_ptrs, weights, mask=(rm < M))
 
-    # Now pre-compute exp_acc against V.
+    # Now pre-compute exp_qkt against V.
     # We proceed per chunk over L, and save as we go
     i = 0
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     rl = tl.arange(0, BLOCK_L)
 
-    v_ptrs = V + rn[:, None] * L + rl[None, :]          # (BLOCK_N, BLOCK_L)
-    out_ptrs = OUT + pid_n * stride_out_tile + rm[:, None] * stride_out_m + rl[None, :]     # (BLOCK_M, BLOCK_L)
+    v_ptrs = V + rn[:, None] * L + rl[None, :]  # (BLOCK_N, BLOCK_L)
+    out_ptrs = (
+        OUT + pid_n * stride_out_tile + rm[:, None] * stride_out_m + rl[None, :]
+    )  # (BLOCK_M, BLOCK_L)
 
     for _ in range(L, 0, -BLOCK_L):
         rl_i = rl + i * BLOCK_L  # Useful to keep track of the masking
 
         v = tl.load(v_ptrs, mask=((rn[:, None] < N) & (rl_i[None, :] < L)), other=0.0)
+        qkv = tl.dot(exp_qkt, v).to(tl.float32)                # (BLOCK_M, BLOCK_L)
 
-        # FIXME: to(tl.float32) should not be needed
-        qkv = tl.dot(exp_qkt, v).to(tl.float32)                        # (BLOCK_M, BLOCK_L)
-
-        # FIXME: This is most probably super slow
         tl.store(out_ptrs, qkv, mask=(rm[:, None] < M) & (rl_i[None, :] < L))
 
         i += 1
@@ -126,7 +127,7 @@ def mem_efficient_fw(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, bias: Op
     B, N, L = k_.shape
 
     BLOCK_M = 8
-    BLOCK_N = min(triton.next_power_of_2(N), 1024)  # increase the ceiling to save more memory
+    BLOCK_N = min(triton.next_power_of_2(N), 512)  # increase the ceiling to save more memory
     BLOCK_L = 8
 
     tiles_n = triton.cdiv(N, BLOCK_N)
@@ -146,22 +147,20 @@ def mem_efficient_fw(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, bias: Op
     qkvs = []
     for i_b in range(B):
 
-        print(v.stride())
-        print(v.shape)
-
         # Use a dedicated kernel to process the attention by blocks
         # fmt: off
         bin = k_me_attention_fw[grid](
-            out_n, maxes_n, weights_n,        # outputs
-            q_[i_b], k_[i_b], v_[i_b],         # inputs
-            M, N, L,                        # dimensions
+            out_n, maxes_n, weights_n,          # outputs
+            q_[i_b], k_[i_b], v_[i_b],          # inputs
+            M, N, L,                            # dimensions
             out_n.stride(0), out_n.stride(1), maxes_n.stride(0), weights_n.stride(0),
             BLOCK_M=BLOCK_M,
             BLOCK_N=BLOCK_N,
             BLOCK_L=BLOCK_L,
             BIAS=False,
             SCALE=1. / math.sqrt(L),
-            SINGLE_ROW_TILE=False   # FIXME: This should work:  tiles_n == 1
+            FUSED_NORMALIZATION=_FUSED_NORMALIZATION,
+            num_warps=1
         )
         # fmt: onx
 
@@ -190,8 +189,11 @@ def mem_efficient_fw(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, bias: Op
             qkv = out / weights.unsqueeze(-1)
 
         else:
-            # FIXME: The result should already be normalized
-            qkv = out_n / weights_n.unsqueeze(-1)
+            # with fused normalization this should just work
+            if _FUSED_NORMALIZATION:
+                qkv = out_n.squeeze()
+            else:
+                qkv = out_n / weights_n.unsqueeze(-1)
 
         qkvs.append(qkv)
 
