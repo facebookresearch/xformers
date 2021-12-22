@@ -12,6 +12,7 @@ if _triton_available:
         from .dropout import FusedDropoutBias, dropout  # noqa
         from .fused_linear_layer import FusedLinear  # noqa
         from .layer_norm import FusedLayerNorm, layer_norm  # noqa
+        from .outer_product_mean import outer_product_mean  # noqa
         from .softmax import log_softmax, softmax  # noqa
 
         __all__ = [
@@ -22,6 +23,7 @@ if _triton_available:
             "FusedLinear",
             "FusedLayerNorm",
             "layer_norm",
+            "outer_product_mean",
         ]
     except ImportError:
         __all__ = []

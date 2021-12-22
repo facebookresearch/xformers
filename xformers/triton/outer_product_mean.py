@@ -29,6 +29,9 @@ def outer_product_mean(a, b, average: bool = True):
 
     The notations are preserved, in that we'll compute the outer product in between
     A(s, i) and B(s, j), and then mean over s
+
+    average: compute the average
+        (if not the results of the outer product are passed as is)
     """
 
     # Make sure that we're in the known [i, s] and [j, s] configuration
