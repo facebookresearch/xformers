@@ -44,6 +44,15 @@ def test_dropout_cpu():
     x = torch.normal(0, 1, size=(16, 16), device="cpu")
     _ = triton_dropout(x)
 
+    # Check eval means no dropout
+    triton_dropout.eval()
+    y = triton_dropout(x)
+    assert y.count_nonzero() == y.numel()
+
+    triton_dropout.train()
+    y = triton_dropout(x)
+    assert y.count_nonzero() != y.numel()
+
 
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
 @pytest.mark.skipif(

@@ -21,9 +21,11 @@ from xformers.triton.k_activations import (
 from xformers.triton.k_dropout import k_dropout_bw, k_dropout_fw
 from xformers.triton.sum_strided import sum_2d_dim_0
 
+# NOTE: GROUP_M and BLOCK_N need to be kept low (<16x64)
+# for the random numbers to be good enough
 GROUP_M = 16
 BLOCK_M = GROUP_M // 4
-BLOCK_N = 128
+BLOCK_N = 64
 
 
 # Helper to handle the SPMD launch grid and error cases
@@ -61,7 +63,8 @@ class _dropout(torch.autograd.Function):
             USE_BIAS=bias is not None,
             ACTIVATION=activation,
             BLOCK_M=BLOCK_M,
-            BLOCK_N=BLOCK_N
+            BLOCK_N=BLOCK_N,
+            num_warps=2
         )
         # fmt: on
 
@@ -135,7 +138,7 @@ class _dropout(torch.autograd.Function):
             TRAINABLE_BIAS=ctx.trainable_bias,
             BLOCK_M=BLOCK_M,
             BLOCK_N=BLOCK_N,
-            num_warps=8
+            num_warps=2
         )
         # fmt: on
 
@@ -200,6 +203,9 @@ class FusedDropoutBias(torch.nn.Module):
         if self.bias is not None:  # type: ignore
             self.bias = self.bias.to(dtype=x.dtype, device=x.device)  # type: ignore
 
+        # Train/inference
+        p = self.p if self.training else 0.0
+
         # This kernel is slower than pytorch for small buffers, bypassing it in that case
         perf_check = x.shape[-1] > 512
 
@@ -207,10 +213,9 @@ class FusedDropoutBias(torch.nn.Module):
         if not x.is_cuda or not perf_check:
             x = x + self.bias if self.bias is not None else x
             x = self.pytorch_activation(x)
-            return torch.nn.functional.dropout(x, self.p)
+            return torch.nn.functional.dropout(x, p)
 
         # The normal, Triton-backed path
-        p = self.p if self.training else 0.0
         return _dropout.apply(
             x, p, self.bias, self.activation, self.activation_grad, True
         )
