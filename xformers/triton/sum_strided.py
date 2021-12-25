@@ -36,10 +36,10 @@ def sum_2d_dim_0(x: torch.Tensor):
     )
 
     BLOCK_M = min(triton.next_power_of_2(M), 2048)
-    BLOCK_N = 32
+    BLOCK_N = 48
     if BLOCK_M > 256:
         BLOCK_N = 16
-    if BLOCK_M > 1024:
+    if BLOCK_M >= 1024:
         BLOCK_N = 8
 
     def grid(meta):
@@ -53,7 +53,6 @@ def sum_2d_dim_0(x: torch.Tensor):
         x.dtype == torch.float16,
         BLOCK_M=BLOCK_M,
         BLOCK_N=BLOCK_N,
-        num_stages=4,
     )
     # fmt: on
 

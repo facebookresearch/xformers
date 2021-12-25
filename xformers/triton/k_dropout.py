@@ -10,15 +10,28 @@
 import triton
 import triton.language as tl
 
+_configs = [
+    triton.Config({}, num_warps=1),
+    triton.Config({}, num_warps=2),
+    triton.Config({}, num_warps=4),
+    triton.Config({}, num_warps=8),
+    triton.Config({}, num_warps=16),
+]
+
 
 # fmt: off
 @triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
+@triton.autotune(
+    configs=_configs,
+    key=["M", "N", "is_fp16"],
+)
 @triton.jit
 def k_dropout_fw(
     Y, X, BIAS, SEEDS,
     stride,
     M, N,
     p,
+    is_fp16,  # autotune
     **meta,
 ):
     """
@@ -108,6 +121,10 @@ def k_dropout_fw(
 
 # fmt: off
 @triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
+@triton.autotune(
+    configs=_configs,
+    key=["M", "N", "is_fp16"],
+)
 @triton.jit
 def k_dropout_bw(
     GRAD_IN, GRAD_BIAS, GRAD_OUT,
@@ -115,6 +132,7 @@ def k_dropout_bw(
     stride_grad, stride_inputs,
     M, N,
     p,
+    is_fp16,  # autotune
     **meta,
 ):
     """

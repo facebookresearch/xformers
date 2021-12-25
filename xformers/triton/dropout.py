@@ -23,9 +23,9 @@ from xformers.triton.sum_strided import sum_2d_dim_0
 
 # NOTE: GROUP_M and BLOCK_N need to be kept low (<16x64)
 # for the random numbers to be good enough
-GROUP_M = 16
+GROUP_M = 8
 BLOCK_M = GROUP_M // 4
-BLOCK_N = 64
+BLOCK_N = 128
 
 
 # Helper to handle the SPMD launch grid and error cases
@@ -60,11 +60,11 @@ class _dropout(torch.autograd.Function):
             y.stride(0),
             M, N,
             p,
+            x.dtype == torch.float16,
             USE_BIAS=bias is not None,
             ACTIVATION=activation,
             BLOCK_M=BLOCK_M,
             BLOCK_N=BLOCK_N,
-            num_warps=2
         )
         # fmt: on
 
@@ -133,12 +133,12 @@ class _dropout(torch.autograd.Function):
             grad_out_.stride(0), inputs.stride(0),
             M, N,
             ctx.p,
+            grad_in.dtype == torch.float16,
             USE_BIAS=bias is not None,
             ACTIVATION_GRAD=ctx.activation_grad,
             TRAINABLE_BIAS=ctx.trainable_bias,
             BLOCK_M=BLOCK_M,
             BLOCK_N=BLOCK_N,
-            num_warps=2
         )
         # fmt: on
 

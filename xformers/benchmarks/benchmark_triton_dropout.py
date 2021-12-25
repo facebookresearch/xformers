@@ -87,7 +87,9 @@ def bench_dropout(bias: bool, backward: bool, activation: Optional[Activation]):
                     ),
                 ),
             ]:
-                time = triton.testing.do_bench(lambda: testcase.function(a))[0]
+                time = triton.testing.do_bench(
+                    lambda: testcase.function(a), grad_to_none=[a, b]
+                )[0]
                 key = f"B={B}, M={M}, K={K}"
                 if key not in results:
                     results[key] = {}
