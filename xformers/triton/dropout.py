@@ -19,13 +19,10 @@ from xformers.triton.k_activations import (
     get_triton_activation_kernel,
 )
 from xformers.triton.k_dropout import k_dropout_bw, k_dropout_fw
-from xformers.triton.sum_strided import sum_2d_dim_0
 
-# NOTE: GROUP_M and BLOCK_N need to be kept low (<16x64)
-# for the random numbers to be good enough
-GROUP_M = 8
+GROUP_M = 32  # 32
 BLOCK_M = GROUP_M // 4
-BLOCK_N = 128
+BLOCK_N = 128  # 128
 
 
 # Helper to handle the SPMD launch grid and error cases
@@ -145,7 +142,7 @@ class _dropout(torch.autograd.Function):
         return (
             grad_in.reshape_as(grad_out),
             None,
-            sum_2d_dim_0(grad_bias) if ctx.trainable_bias else None,
+            torch.sum(grad_bias, dim=0) if ctx.trainable_bias else None,
             None,
             None,
             None,

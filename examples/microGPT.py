@@ -73,7 +73,7 @@ class GPT(pl.LightningModule):
                 "feedforward_config": {
                     "name": "FusedMLP",  # Use MLP if Triton is not available
                     "dropout": self.hparams.mlp_pdrop,
-                    "activation": "squared_relu",
+                    "activation": "gelu",
                     "hidden_layer_multiplier": self.hparams.hidden_layer_multiplier,
                 },
             }
@@ -273,7 +273,7 @@ if __name__ == "__main__":
     # Adjust batch depending on the available memory on your machine.
     # You can also use reversible layers to save memory
     REF_BATCH = 512
-    BATCH = 128
+    BATCH = 256
 
     WORKERS = 4
     EPOCHS = 1
