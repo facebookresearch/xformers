@@ -466,15 +466,15 @@ The example is built on top of some more advanced Hydra features. If you are new
 <a class="reference external" href="https://hydra.cc/docs/tutorials/intro/">basic tutorials</a>, <a class="reference external" href="https://hydra.cc/docs/patterns/extending_configs/">extending configs</a>,
 <a class="reference external" href="https://hydra.cc/docs/advanced/overriding_packages/">Hydra packages</a> and
 <a class="reference external" href="https://hydra.cc/docs/advanced/instantiate_objects/overview/">instantiation API</a>.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">defaults</span><span class="p">:</span>
-    <span class="p p-Indicator">-</span> <span class="nt">/stack@xformer.stack_configs</span><span class="p">:</span>
-        <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">encoder_local</span>
-        <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">encoder_random</span>
-        <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">decoder_nystrom_favor</span>
-    <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">_self_</span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">defaults</span><span class="p">:</span><span class="w"></span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">/stack@xformer.stack_configs</span><span class="p">:</span><span class="w"></span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">encoder_local</span><span class="w"></span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">encoder_random</span><span class="w"></span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">decoder_nystrom_favor</span><span class="w"></span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">_self_</span><span class="w"></span>
 
-<span class="nt">xformer</span><span class="p">:</span>
-    <span class="nt">_target_</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">xformers.factory.model_factory.xFormer</span>
+<span class="nt">xformer</span><span class="p">:</span><span class="w"></span>
+<span class="w">    </span><span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">xformers.factory.model_factory.xFormer</span><span class="w"></span>
 </pre></div>
 </div>
 <p>Building a model this way makes it possible for you to leverage many features Hydra has to offer.
