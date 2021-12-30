@@ -39,8 +39,8 @@ Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py 
 
 ### Fused softmax
 
-You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_softmax.py`. The units are GB/s. These results are for a nVidia V100, Triton 1.1 and PyTorch 1.9.
-Note that in the Triton case the slowdowns at extreme sizes are because of register spilling, A100s get much better performance.
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_softmax.py`. The units are GB/s. These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.
+
 
 ![Softmax throughput in fp16 - inference](docs/plots/fused_softmax/Softmax_Bandwidth_FW_fp16.png)
 
