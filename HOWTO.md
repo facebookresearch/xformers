@@ -210,78 +210,78 @@ We provide a small helper (this is just maxpooling) to convert in between a per 
 Let's look at an example:
 
 ```python
-    import torch
+import torch
 
-    from xformers.components import MultiHeadDispatch
-    from xformers.components.attention import BlockSparseAttention
+from xformers.components import MultiHeadDispatch
+from xformers.components.attention import BlockSparseAttention
 
-    BATCH = 2
-    HEADS = 8
-    SEQ = 2048
-    EMB = 1024
-    BLOCK_SIZE = 32
-    DROPOUT = 0.1
-    dtype = torch.float16
+BATCH = 2
+HEADS = 8
+SEQ = 2048
+EMB = 1024
+BLOCK_SIZE = 32
+DROPOUT = 0.1
+dtype = torch.float16
 
-    # Let's try out a causal mask, but really it could be anything "block sparse enough"
-    causal_mask = torch.tril(torch.ones((SEQ, SEQ), device=torch.device("cuda"), dtype=dtype))
+# Let's try out a causal mask, but really it could be anything "block sparse enough"
+causal_mask = torch.tril(torch.ones((SEQ, SEQ), device=torch.device("cuda"), dtype=dtype))
 
-    blocks = SEQ // BLOCK_SIZE
-    causal_layout = torch.tril(torch.ones([HEADS, blocks, blocks]))
+blocks = SEQ // BLOCK_SIZE
+causal_layout = torch.tril(torch.ones([HEADS, blocks, blocks]))
 
-    # Let's build our blocksparse attention. Please note that the layout can be
-    # [SEQ//BLOCK_SIZE, SEQ//BLOCK_SIZE] or  [HEADS, SEQ//BLOCK_SIZE, SEQ//BLOCK_SIZE]
-    # so that _you can pass a different layout per head_
-    attention = BlockSparseAttention(layout=causal_layout, block_size=BLOCK_SIZE, dropout=DROPOUT, num_heads=HEADS)
+# Let's build our blocksparse attention. Please note that the layout can be
+# [SEQ//BLOCK_SIZE, SEQ//BLOCK_SIZE] or  [HEADS, SEQ//BLOCK_SIZE, SEQ//BLOCK_SIZE]
+# so that _you can pass a different layout per head_
+attention = BlockSparseAttention(layout=causal_layout, block_size=BLOCK_SIZE, dropout=DROPOUT, num_heads=HEADS)
 
-    # Out of commodity, let's build our multihead attention now
-    # "multi_head" will be responsible for the forward
-    multi_head = (
-        MultiHeadDispatch(
-            seq_len=SEQ,
-            dim_model=EMB,
-            residual_dropout=DROPOUT,
-            num_heads=HEADS,
-            attention=attention,
-        )
-        .cuda()
-        .half()
+# Out of commodity, let's build our multihead attention now
+# "multi_head" will be responsible for the forward
+multi_head = (
+    MultiHeadDispatch(
+        seq_len=SEQ,
+        dim_model=EMB,
+        residual_dropout=DROPOUT,
+        num_heads=HEADS,
+        attention=attention,
     )
+    .cuda()
+    .half()
+)
 
-    # Now FW some random data
-    # Note that passing a per-coefficient mask makes it possible to remove extra coefficients,
-    # which where required by the blockification
-    query = torch.randn((BATCH, SEQ, EMB), requires_grad=True, device=torch.device("cuda"), dtype=dtype)
+# Now FW some random data
+# Note that passing a per-coefficient mask makes it possible to remove extra coefficients,
+# which where required by the blockification
+query = torch.randn((BATCH, SEQ, EMB), requires_grad=True, device=torch.device("cuda"), dtype=dtype)
 
-    # Self attention in this particular example, no limitations really
-    att_val = multi_head(query=query, key=query, value=query, att_mask=causal_mask)
+# Self attention in this particular example, no limitations really
+att_val = multi_head(query=query, key=query, value=query, att_mask=causal_mask)
 
-    #########################################
-    # Bonus: compare the memory use vs dense:
-    def mem_use(fn, kwargs, title):
-        # bookeeping
-        import time
+#########################################
+# Bonus: compare the memory use vs dense:
+def mem_use(fn, kwargs, title):
+    # bookeeping
+    import time
 
-        start = time.time()
-        torch.cuda.empty_cache()
-        torch.cuda.reset_peak_memory_stats()
+    start = time.time()
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
 
-        # actually run the function
-        fn(**kwargs)
-        torch.cuda.synchronize()
-        stop = time.time()
+    # actually run the function
+    fn(**kwargs)
+    torch.cuda.synchronize()
+    stop = time.time()
 
-        # now report
-        max_memory = torch.cuda.max_memory_allocated() // 2 ** 20
-        print(f"{title} - Peak memory use: {max_memory}MB - {round((stop-start)*1e6)/1e3}ms")
+    # now report
+    max_memory = torch.cuda.max_memory_allocated() // 2 ** 20
+    print(f"{title} - Peak memory use: {max_memory}MB - {round((stop-start)*1e6)/1e3}ms")
 
 
-    pytorch_multihead = torch.nn.MultiheadAttention(
-        EMB, HEADS, batch_first=True, device=torch.device("cuda"), dtype=torch.float16
-    )
+pytorch_multihead = torch.nn.MultiheadAttention(
+    EMB, HEADS, batch_first=True, device=torch.device("cuda"), dtype=torch.float16
+)
 
-    mem_use(multi_head, {"query": query, "key": query, "value": query, "att_mask": causal_mask}, "Blocksparse")
-    mem_use(pytorch_multihead, {"query": query, "key": query, "value": query, "attn_mask": causal_mask}, "PyTorch")
+mem_use(multi_head, {"query": query, "key": query, "value": query, "att_mask": causal_mask}, "Blocksparse")
+mem_use(pytorch_multihead, {"query": query, "key": query, "value": query, "attn_mask": causal_mask}, "PyTorch")
 ```
 
 On a V100, with PyTorch 1.9, Triton 1.1 and xFormers 0.0.2 this reports something along the lines of:
@@ -302,13 +302,13 @@ There are two paths to do this:
 - Either you import the attention mechanisms that you're interested in directly in your code base, their API should be very similar and you would own everything. The dimension expectations are explained in [Understand the dimension conventions](#understand-the-dimension-conventions).
 
 ```python
-    import torch
-    from xformers.components.attention import ScaledDotProduct
+import torch
+from xformers.components.attention import ScaledDotProduct
 
-    attention = ScaledDotProduct().cuda()
-    inputs = torch.rand((16, 1024, 1024), device=torch.device("cuda"))
-    mask = (torch.rand((1024, 1024)) < 0.9).cuda()
-    self_attention = attention(q=inputs, k=inputs, v=inputs, mask=mask)
+attention = ScaledDotProduct().cuda()
+inputs = torch.rand((16, 1024, 1024), device=torch.device("cuda"))
+mask = (torch.rand((1024, 1024)) < 0.9).cuda()
+self_attention = attention(q=inputs, k=inputs, v=inputs, mask=mask)
 ```
 
 Any of the other attention mechanisms can be instantiated and called in a similar way.
@@ -316,33 +316,33 @@ Any of the other attention mechanisms can be instantiated and called in a simila
 - Alternatively, a `build_attention` helper is provided, which takes a dict as an input. In that case, you defer a lot of the instantiation work to xFormers, which makes it a little more obscure although the parameters are hopefully straightforward. This was initially built for internal use in xFormers, to make sure that we can programatically build and test all possible combinations. In turn this should allow you to do sweeps or architecture search, given that the multihead attention definition becomes something like:
 
 ```python
-  from xformers.components import MultiHeadDispatch, build_attention
-  SEQ = 1024
-  MODEL = 384
-  HEADS = 16
-  DROPOUT = 0.1
+from xformers.components import MultiHeadDispatch, build_attention
+SEQ = 1024
+MODEL = 384
+HEADS = 16
+DROPOUT = 0.1
 
-  my_config = {
-      "name": attention_name,  # you can easily make this dependent on a file, sweep,..
-      "dropout": DROPOUT,
-      "seq_len": SEQ,
-      # add any extra parameter that this specific attention would require
-      # this can be a superset of all the parameters if you're sweeping, useless parameters will be ignored
-  }
+my_config = {
+    "name": attention_name,  # you can easily make this dependent on a file, sweep,..
+    "dropout": DROPOUT,
+    "seq_len": SEQ,
+    # add any extra parameter that this specific attention would require
+    # this can be a superset of all the parameters if you're sweeping, useless parameters will be ignored
+}
 
-  attention = build_attention(my_config)
+attention = build_attention(my_config)
 
-  # build a multi head dispatch to test this attention mechanism
-  multi_head = MultiHeadDispatch(
-      seq_len=SEQ,
-      dim_model=MODEL,
-      residual_dropout=DROPOUT,
-      num_heads=HEADS,
-      attention=attention,
-  ).to(device)
+# build a multi head dispatch to test this attention mechanism
+multi_head = MultiHeadDispatch(
+    seq_len=SEQ,
+    dim_model=MODEL,
+    residual_dropout=DROPOUT,
+    num_heads=HEADS,
+    attention=attention,
+).to(device)
 
-  # do something with my new multi-head attention
-  #...
+# do something with my new multi-head attention
+#...
 ```
 
 Please note that this approach is not restricted to the attention, you can always import directly and work with `xformers.components.MultiHeadDispatch`, or `xformers.components.feedforward.FusedMLP`, or even `xformers.factory.xFormerEncoderBlock`.
@@ -358,18 +358,18 @@ Let's now walk up the hierarchy, and consider a whole encoder block. You may be 
 PyTorch already exposes a [TransformerEncoderLayer](https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html?highlight=encoder#torch.nn.TransformerEncoderLayer). Its constructor is:
 
 ```python
-    TransformerEncoderLayer(
-        d_model,
-        nhead,
-        dim_feedforward=2048,
-        dropout=0.1,
-        activation='relu',
-        layer_norm_eps=1e-05,
-        batch_first=False,
-        device=None,
-        dtype=None
-        ):
-        ...
+TransformerEncoderLayer(
+    d_model,
+    nhead,
+    dim_feedforward=2048,
+    dropout=0.1,
+    activation='relu',
+    layer_norm_eps=1e-05,
+    batch_first=False,
+    device=None,
+    dtype=None
+    ):
+    ...
 ```
 
 Note that you cannot change the attention mechanism, so this example will use the "Scaled Dot Product", as proposed by Vaswani et al., but in the xFormers case this is a free floating parameter.
@@ -393,49 +393,49 @@ The equivalent to the PyTorch example above would look like the following. You c
 With this said, you can build an encoder directly as follows:
 
 ```python
-    from xformers.factory import xFormerEncoderBlock, xFormerEncoderConfig
-    import torch
+from xformers.factory import xFormerEncoderBlock, xFormerEncoderConfig
+import torch
 
-    BATCH = 8
-    SEQ = 1024
-    EMB = 384
-    VOCAB = 64
+BATCH = 8
+SEQ = 1024
+EMB = 384
+VOCAB = 64
 
-    encoder_config = {
-        "dim_model": EMB,
-        "layer_norm_style": "pre",  # Optional, pre/post
-        "position_encoding_config": {
-            "name": "vocab",  # whatever position encodinhg makes sense
-            "seq_len": SEQ,
-            "vocab_size": VOCAB,
-        },
-        "multi_head_config": {
-            "num_heads": 4,
-            "residual_dropout": 0,
-            "attention": {
-                "name": "linformer",  # whatever attention mechanism
-                "dropout": 0,
-                "seq_len": SEQ,
-            },
-        },
-        "feedforward_config": {
-            "name": "MLP",
+encoder_config = {
+    "dim_model": EMB,
+    "layer_norm_style": "pre",  # Optional, pre/post
+    "position_encoding_config": {
+        "name": "vocab",  # whatever position encodinhg makes sense
+        "seq_len": SEQ,
+        "vocab_size": VOCAB,
+    },
+    "multi_head_config": {
+        "num_heads": 4,
+        "residual_dropout": 0,
+        "attention": {
+            "name": "linformer",  # whatever attention mechanism
             "dropout": 0,
-            "activation": "relu",
-            "hidden_layer_multiplier": 4,
+            "seq_len": SEQ,
         },
-    }
+    },
+    "feedforward_config": {
+        "name": "MLP",
+        "dropout": 0,
+        "activation": "relu",
+        "hidden_layer_multiplier": 4,
+    },
+}
 
-    # "constructing" the config will lead to a lot of type checking,
-    # which could catch some errors early on
-    config = xFormerEncoderConfig(**encoder_config)
+# "constructing" the config will lead to a lot of type checking,
+# which could catch some errors early on
+config = xFormerEncoderConfig(**encoder_config)
 
-    encoder = xFormerEncoderBlock(config)
+encoder = xFormerEncoderBlock(config)
 
-    #  Test out with dummy inputs
-    x = (torch.rand((BATCH, SEQ)) * VOCAB).abs().to(torch.int)
-    y = encoder(x, x, x)
-    print(y)
+#  Test out with dummy inputs
+x = (torch.rand((BATCH, SEQ)) * VOCAB).abs().to(torch.int)
+y = encoder(x, x, x)
+print(y)
 ```
 
 ### Fair enough, now I just want to build models and be done with it
@@ -484,72 +484,68 @@ The equivalent to the PyTorch example above would look like the following. You c
         # Note that a sequence of different encoder blocks can be used, same for decoders
         {
             "reversible": False,  # Optionally make these layers reversible, to save memory
-            "block_config": {
-                "block_type": "encoder",
-                "num_layers": 3,  # Optional, this means that this config will repeat N times
-                "dim_model": EMB,
-                "layer_norm_style": "pre",  # Optional, pre/post
-                "position_encoding_config": {
-                    "name": "vocab",  # whatever position encodinhg makes sense
-                    "seq_len": 1024,
-                    "vocab_size": VOCAB,
-                },
-                "multi_head_config": {
-                    "num_heads": 4,
-                    "residual_dropout": 0,
-                    "attention": {
-                        "name": "linformer",  # whatever attention mechanism
-                        "dropout": 0,
-                        "causal": False,
-                        "seq_len": SEQ,
-                    },
-                },
-                "feedforward_config": {
-                    "name": "MLP",
+            "block_type": "encoder",
+            "num_layers": 3,  # Optional, this means that this config will repeat N times
+            "dim_model": EMB,
+            "layer_norm_style": "pre",  # Optional, pre/post
+            "position_encoding_config": {
+                "name": "vocab",  # whatever position encodinhg makes sense
+                "seq_len": 1024,
+                "vocab_size": VOCAB,
+            },
+            "multi_head_config": {
+                "num_heads": 4,
+                "residual_dropout": 0,
+                "attention": {
+                    "name": "linformer",  # whatever attention mechanism
                     "dropout": 0,
-                    "activation": "relu",
-                    "hidden_layer_multiplier": 4,
+                    "causal": False,
+                    "seq_len": SEQ,
                 },
+            },
+            "feedforward_config": {
+                "name": "MLP",
+                "dropout": 0,
+                "activation": "relu",
+                "hidden_layer_multiplier": 4,
             },
         },
         {
             "reversible": False,  # Optionally make these layers reversible, to save memory
-            "block_config": {
-                "block_type": "decoder",
-                "num_layers": 3,  # Optional, this means that this config will repeat N times
-                "dim_model": EMB,
-                "layer_norm_style": "pre",  # Optional, pre/post
-                "position_encoding_config": {
-                    "name": "vocab",  # whatever position encodinhg makes sense
-                    "seq_len": SEQ,
-                    "vocab_size": VOCAB,
-                },
-                "multi_head_config_masked": {
-                    "num_heads": 4,
-                    "residual_dropout": 0,
-                    "attention": {
-                        "name": "nystrom",  # whatever attention mechanism
-                        "dropout": 0,
-                        "causal": True,
-                        "seq_len": SEQ,
-                    },
-                },
-                "multi_head_config_cross": {
-                    "num_heads": 4,
-                    "residual_dropout": 0,
-                    "attention": {
-                        "name": "favor",  # whatever attention mechanism
-                        "dropout": 0,
-                        "causal": True,
-                        "seq_len": SEQ,
-                    },
-                },
-                "feedforward_config": {
-                    "name": "MLP",
+            "block_type": "decoder",
+            "num_layers": 3,  # Optional, this means that this config will repeat N times
+            "dim_model": EMB,
+            "layer_norm_style": "pre",  # Optional, pre/post
+            "position_encoding_config": {
+                "name": "vocab",  # whatever position encodinhg makes sense
+                "seq_len": SEQ,
+                "vocab_size": VOCAB,
+            },
+            "multi_head_config_masked": {
+                "num_heads": 4,
+                "residual_dropout": 0,
+                "attention": {
+                    "name": "nystrom",  # whatever attention mechanism
                     "dropout": 0,
-                    "activation": "relu",
-                    "hidden_layer_multiplier": 4,
+                    "causal": True,
+                    "seq_len": SEQ,
                 },
+            },
+            "multi_head_config_cross": {
+                "num_heads": 4,
+                "residual_dropout": 0,
+                "attention": {
+                    "name": "favor",  # whatever attention mechanism
+                    "dropout": 0,
+                    "causal": True,
+                    "seq_len": SEQ,
+                },
+            },
+            "feedforward_config": {
+                "name": "MLP",
+                "dropout": 0,
+                "activation": "relu",
+                "hidden_layer_multiplier": 4,
             },
         },
     ]
