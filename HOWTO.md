@@ -484,72 +484,68 @@ The equivalent to the PyTorch example above would look like the following. You c
         # Note that a sequence of different encoder blocks can be used, same for decoders
         {
             "reversible": False,  # Optionally make these layers reversible, to save memory
-            "block_config": {
-                "block_type": "encoder",
-                "num_layers": 3,  # Optional, this means that this config will repeat N times
-                "dim_model": EMB,
-                "layer_norm_style": "pre",  # Optional, pre/post
-                "position_encoding_config": {
-                    "name": "vocab",  # whatever position encodinhg makes sense
-                    "seq_len": 1024,
-                    "vocab_size": VOCAB,
-                },
-                "multi_head_config": {
-                    "num_heads": 4,
-                    "residual_dropout": 0,
-                    "attention": {
-                        "name": "linformer",  # whatever attention mechanism
-                        "dropout": 0,
-                        "causal": False,
-                        "seq_len": SEQ,
-                    },
-                },
-                "feedforward_config": {
-                    "name": "MLP",
+            "block_type": "encoder",
+            "num_layers": 3,  # Optional, this means that this config will repeat N times
+            "dim_model": EMB,
+            "layer_norm_style": "pre",  # Optional, pre/post
+            "position_encoding_config": {
+                "name": "vocab",  # whatever position encodinhg makes sense
+                "seq_len": 1024,
+                "vocab_size": VOCAB,
+            },
+            "multi_head_config": {
+                "num_heads": 4,
+                "residual_dropout": 0,
+                "attention": {
+                    "name": "linformer",  # whatever attention mechanism
                     "dropout": 0,
-                    "activation": "relu",
-                    "hidden_layer_multiplier": 4,
+                    "causal": False,
+                    "seq_len": SEQ,
                 },
+            },
+            "feedforward_config": {
+                "name": "MLP",
+                "dropout": 0,
+                "activation": "relu",
+                "hidden_layer_multiplier": 4,
             },
         },
         {
             "reversible": False,  # Optionally make these layers reversible, to save memory
-            "block_config": {
-                "block_type": "decoder",
-                "num_layers": 3,  # Optional, this means that this config will repeat N times
-                "dim_model": EMB,
-                "layer_norm_style": "pre",  # Optional, pre/post
-                "position_encoding_config": {
-                    "name": "vocab",  # whatever position encodinhg makes sense
-                    "seq_len": SEQ,
-                    "vocab_size": VOCAB,
-                },
-                "multi_head_config_masked": {
-                    "num_heads": 4,
-                    "residual_dropout": 0,
-                    "attention": {
-                        "name": "nystrom",  # whatever attention mechanism
-                        "dropout": 0,
-                        "causal": True,
-                        "seq_len": SEQ,
-                    },
-                },
-                "multi_head_config_cross": {
-                    "num_heads": 4,
-                    "residual_dropout": 0,
-                    "attention": {
-                        "name": "favor",  # whatever attention mechanism
-                        "dropout": 0,
-                        "causal": True,
-                        "seq_len": SEQ,
-                    },
-                },
-                "feedforward_config": {
-                    "name": "MLP",
+            "block_type": "decoder",
+            "num_layers": 3,  # Optional, this means that this config will repeat N times
+            "dim_model": EMB,
+            "layer_norm_style": "pre",  # Optional, pre/post
+            "position_encoding_config": {
+                "name": "vocab",  # whatever position encodinhg makes sense
+                "seq_len": SEQ,
+                "vocab_size": VOCAB,
+            },
+            "multi_head_config_masked": {
+                "num_heads": 4,
+                "residual_dropout": 0,
+                "attention": {
+                    "name": "nystrom",  # whatever attention mechanism
                     "dropout": 0,
-                    "activation": "relu",
-                    "hidden_layer_multiplier": 4,
+                    "causal": True,
+                    "seq_len": SEQ,
                 },
+            },
+            "multi_head_config_cross": {
+                "num_heads": 4,
+                "residual_dropout": 0,
+                "attention": {
+                    "name": "favor",  # whatever attention mechanism
+                    "dropout": 0,
+                    "causal": True,
+                    "seq_len": SEQ,
+                },
+            },
+            "feedforward_config": {
+                "name": "MLP",
+                "dropout": 0,
+                "activation": "relu",
+                "hidden_layer_multiplier": 4,
             },
         },
     ]
