@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
@@ -75,8 +76,7 @@ class xFormer(torch.nn.Module):
         decoders: List[torch.nn.Module] = []
 
         self.reversible_encoder = False
-        self.enc_pose_encoding = None
-        self.dec_pose_encoding = None
+        self.rev_enc_pose_encoding = None
 
         # Unroll the configs and build the model
         for config in stack_configs:
@@ -105,13 +105,29 @@ class xFormer(torch.nn.Module):
                     # WARNING: only one pose encoding is saved here (not Focal Transformer compatible for instance)
                     assert isinstance(config, xFormerEncoderConfig)
                     if block.pose_encoding is not None:
-                        self.enc_pose_encoding = block.pose_encoding
+                        self.rev_enc_pose_encoding = block.pose_encoding
                     self.reversible_encoder = True
 
                     f, g = xFormerEncoderBlock.get_reversible_layer(config)
                     recipient.append(torch.nn.ModuleList([f, g]))
                 else:
                     recipient.append(block)  # type: ignore
+
+        # Tie embedding weights, if requested and possible
+        assert (
+            not tie_embedding_weights or not self.reversible_encoder
+        ), "Reversible layers and  tied embeddings is not supported for now"
+
+        if (
+            tie_embedding_weights
+            and encoders
+            and encoders[0].pose_encoding
+            and decoders
+            and decoders[0].pose_encoding
+            and not config.reversible
+        ):
+            logging.info("Tying encoder and decoder embeddings, as requested")
+            encoders[0].pose_encoding = decoders[0].pose_encoding
 
         self.encoders: torch.nn.Module = (
             rv.ReversibleSequence(torch.nn.ModuleList(encoders))
@@ -123,14 +139,6 @@ class xFormer(torch.nn.Module):
         if len(self.decoders) > 0:
             # Use Xavier init for encoding/decoding tasks
             self._reset_parameters()
-
-            # Tie embedding weights, if requested
-            if (
-                tie_embedding_weights
-                and self.enc_pose_encoding
-                and self.dec_pose_encoding
-            ):
-                self.enc_pose_encoding = self.dec_pose_encoding
 
     @classmethod
     def from_config(cls, config: xFormerConfig):
@@ -172,8 +180,8 @@ class xFormer(torch.nn.Module):
                 for encoder in encoders:
                     memory = encoder(memory, input_mask=encoder_input_mask)
             else:
-                if self.enc_pose_encoding:
-                    memory = self.enc_pose_encoding(src)
+                if self.rev_enc_pose_encoding:
+                    memory = self.rev_enc_pose_encoding(src)
 
                 # Reversible Encoder
                 x = torch.cat([memory, memory], dim=-1)
