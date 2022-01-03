@@ -19,6 +19,38 @@ _configs = [
 ]
 
 
+@triton.jit
+def _get_4_bin_masks(seed, rand_offsets, p):
+    rand1, rand2, rand3, rand4 = tl.randint4x(seed.to(tl.int32), rand_offsets)
+
+    # binarize masks, save registers
+    # NOTE: Ideally we should be able to keep them integers and threshold from there
+    #   but this hard crashs at JIT compilation time with Triton as of Jan 2022
+    # threshold = (2 ** 31 * (2 * p - 1.0)).to(tl.int32)  # or a variation thereof
+    # rand_mask1 = rand1 > threshold
+    # ...
+
+    rand_mask1 = tl.uint32_to_uniform_float(rand1) > p
+    rand_mask2 = tl.uint32_to_uniform_float(rand2) > p
+    rand_mask3 = tl.uint32_to_uniform_float(rand3) > p
+    rand_mask4 = tl.uint32_to_uniform_float(rand4) > p
+    return rand_mask1, rand_mask2, rand_mask3, rand_mask4
+
+
+@triton.jit
+def _random_prune_and_scale(x, rand_mask, p, p_scale):
+    zero = 0.0
+
+    if p > 0.0:
+        # generate all the random numbers for the block at once, then reshape
+        keep = tl.reshape(rand_mask, x.shape)
+
+        # prune and normalize in one go
+        return tl.where(keep, (x * p_scale).to(x.dtype), zero.to(x.dtype))
+    else:
+        return x
+
+
 # fmt: off
 @triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
 @triton.autotune(
@@ -61,15 +93,7 @@ def k_dropout_fw(
 
     # go over all the tiles, one by one
     rand_offsets = tl.arange(0, SIZE_RAND_BLOCK) + row_id * BLOCK_M * 4
-    rand1, rand2, rand3, rand4 = tl.randint4x(seed.to(tl.int32), rand_offsets)
-
-    # binarize masks, save registers
-    # NOTE: Should have been possible to do with a int threshold instead, but seems numerically wrong
-    # threshold = ((p - 0.5) * 2147483648.).to(tl.int32)
-    rand_mask1 = tl.uint32_to_uniform_float(rand1) > p
-    rand_mask2 = tl.uint32_to_uniform_float(rand2) > p
-    rand_mask3 = tl.uint32_to_uniform_float(rand3) > p
-    rand_mask4 = tl.uint32_to_uniform_float(rand4) > p
+    rand_mask1, rand_mask2, rand_mask3, rand_mask4 = _get_4_bin_masks(seed, rand_offsets, p)
 
     col_mask = cols[None, :] < N
     p_scale = 1 / (1 - p) if p < 1. else 1.
@@ -101,13 +125,21 @@ def k_dropout_fw(
         if meta["ACTIVATION"]:
             x = meta["ACTIVATION"](x)
 
-        # randomly prune and scale
+        # randomly prune (and scale) the resulting buffer, possibly a no-op
+
+        # NOTE: the following factorization SIGSEV as of Jan 2022, but should work eventually
+        # output = _random_prune_and_scale(x, rand_mask, p, p_scale)
+
         if p > 0.:
             # generate all the random numbers for the block at once, then reshape
             keep = tl.reshape(rand_mask, x.shape)
 
             # prune and normalize in one go
-            output = tl.where(keep, (x * p_scale).to(x.dtype), zero.to(x.dtype))
+            output = tl.where(
+                keep,
+                (x * p_scale).to(x.dtype),
+                zero.to(x.dtype)
+            )
         else:
             output = x
 
@@ -166,19 +198,13 @@ def k_dropout_bw(
 
     # random binary masks, save registers
     rand_offsets = tl.arange(0, SIZE_RAND_BLOCK) + row_id * BLOCK_M * 4
-    rand1, rand2, rand3, rand4 = tl.randint4x(seed.to(tl.int32), rand_offsets)
-
-    # NOTE: Should have been possible to do with a int threshold instead, but seems numerically wrong
-    rand_mask1 = tl.uint32_to_uniform_float(rand1) > p
-    rand_mask2 = tl.uint32_to_uniform_float(rand2) > p
-    rand_mask3 = tl.uint32_to_uniform_float(rand3) > p
-    rand_mask4 = tl.uint32_to_uniform_float(rand4) > p
+    rand_mask1, rand_mask2, rand_mask3, rand_mask4 = _get_4_bin_masks(seed, rand_offsets, p)
 
     # now go over the tiles
     grad_bias = tl.zeros((BLOCK_N,), dtype=tl.float32)
     col_mask = cols[None, :] < N
-    zero = 0.0
     p_scale = 1 / (1 - p) if p < 1. else 1.
+    zero = 0.0
 
     if meta["USE_BIAS"]:
         b_ptrs = BIAS + cols[None, :]
@@ -209,7 +235,11 @@ def k_dropout_bw(
             act_grad = meta["ACTIVATION_GRAD"](inputs).to(grad_out.dtype)
             grad_out *= act_grad
 
-        # randomly prune and scale
+        # randomly prune (and scale) the resulting buffer, possibly a no-op
+        # note that even if we did not save the mask from the FW pass, it is generated
+        # from the same seeds, so the same drop mask is applied here
+        # output = _random_prune_and_scale(grad_out, rand_mask, p, p_scale)
+
         if p > 0.:
             # generate all the random numbers for the block at once, then reshape
             keep = tl.reshape(rand_mask, grad_out.shape)

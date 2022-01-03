@@ -20,9 +20,9 @@ from xformers.triton.k_activations import (
 )
 from xformers.triton.k_dropout import k_dropout_bw, k_dropout_fw
 
-GROUP_M = 32  # 32
+GROUP_M = 32
 BLOCK_M = GROUP_M // 4
-BLOCK_N = 128  # 128
+BLOCK_N = 128
 
 
 # Helper to handle the SPMD launch grid and error cases
@@ -38,6 +38,9 @@ class _dropout(torch.autograd.Function):
         assert bias is None or (bias.dtype == x.dtype and bias.shape[0] == N)
 
         def grid(meta):
+            # NOTE: We use Triton Philox random number generator, which optimally generates 4 blocks for
+            # a given seed and offsets. "BLOCK_M" here describes the size of one of these blocks
+            # but we need to take this factor of 4 into account when scheduling all the kernels
             return (
                 triton.cdiv(M, meta["BLOCK_M"] * 4),
                 triton.cdiv(N, meta["BLOCK_N"]),
@@ -117,6 +120,9 @@ class _dropout(torch.autograd.Function):
             grad_bias = grad_in  # will not be used
 
         def grid(meta):
+            # NOTE: We use Triton Philox random number generator, which optimally generates 4 blocks for
+            # a given seed and offsets. "BLOCK_M" here describes the size of one of these blocks
+            # but we need to take this factor of 4 into account when scheduling all the kernels
             return (
                 triton.cdiv(M, meta["BLOCK_M"] * 4),
                 triton.cdiv(N, meta["BLOCK_N"]),
