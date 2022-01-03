@@ -44,6 +44,15 @@ def test_dropout_cpu():
     x = torch.normal(0, 1, size=(16, 16), device="cpu")
     _ = triton_dropout(x)
 
+    # Check eval means no dropout
+    triton_dropout.eval()
+    y = triton_dropout(x)
+    assert y.count_nonzero() == y.numel()
+
+    triton_dropout.train()
+    y = triton_dropout(x)
+    assert y.count_nonzero() != y.numel()
+
 
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
 @pytest.mark.skipif(
@@ -53,7 +62,8 @@ def test_dropout_cpu():
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [False, True])
 @pytest.mark.parametrize("bias", [False, True])
-def test_dropout(shape, amp, bias):
+@pytest.mark.parametrize("p", [0, 0.1, 0.5])
+def test_dropout(shape, amp, bias, p):
     """
     Check some basic dropout properties
     """
@@ -97,6 +107,11 @@ def test_dropout(shape, amp, bias):
             == y.shape[1]
         )
 
+        # Check that the drop probability is about right
+        y = triton_dropout(x, p=p)
+        drop_p = (y.numel() - y.count_nonzero()) / y.numel()
+        assert abs(drop_p - p) < 0.01
+
 
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
 @pytest.mark.skipif(
@@ -107,7 +122,7 @@ def test_dropout(shape, amp, bias):
 @pytest.mark.parametrize("amp", [False, True])
 @pytest.mark.parametrize("bias", [True, False])
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
-@pytest.mark.parametrize("p", [0, 0.001, 0.5])
+@pytest.mark.parametrize("p", [0, 0.01, 0.5])
 def test_dropout_parity(shape, amp, bias, activation, p):
     """
     Check some basic dropout properties
@@ -158,4 +173,4 @@ def test_dropout_parity(shape, amp, bias, activation, p):
             if bias:
                 assert torch.allclose(
                     torch.norm(b.grad), torch.norm(b_.grad), rtol=0.01
-                ), f"{b.grad.norm()}\n{b_.grad.norm()}"
+                ), f"{b.grad.norm()} - {b_.grad.norm()}"
