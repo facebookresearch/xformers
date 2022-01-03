@@ -68,6 +68,7 @@ def test_dropout(shape, amp, bias, p):
     Check some basic dropout properties
     """
     torch.random.manual_seed(0)
+    torch.cuda.manual_seed_all(0)
 
     x = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
     b = (
