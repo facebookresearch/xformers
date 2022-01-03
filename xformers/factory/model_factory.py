@@ -22,9 +22,12 @@ from xformers.factory.block_factory import (
 @dataclass(init=False)
 class xFormerConfig:
     stack_configs: Union[List[xFormerBlockConfig], Dict[str, xFormerBlockConfig]]
+    tie_embedding_weights: bool = False
 
     def __init__(
-        self, stack_configs: Union[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]
+        self,
+        stack_configs: Union[List[Dict[str, Any]], Dict[str, Dict[str, Any]]],
+        tie_embedding_weights: bool = False,
     ):
         # Type all the configurations. Possible typos are caught here
         if isinstance(stack_configs, dict):
@@ -42,6 +45,8 @@ class xFormerConfig:
                 else:
                     self.stack_configs.append(xFormerDecoderConfig(**config))
 
+        self.tie_embedding_weights = tie_embedding_weights
+
 
 class xFormer(torch.nn.Module):
     def __init__(
@@ -49,6 +54,7 @@ class xFormer(torch.nn.Module):
         stack_configs: Union[
             xFormerBlockConfig, List[xFormerBlockConfig], Dict[str, xFormerBlockConfig]
         ],
+        tie_embedding_weights: bool = False,
     ):
         """
         Given a serialized configuration, generate the corresponding model.
@@ -118,9 +124,17 @@ class xFormer(torch.nn.Module):
             # Use Xavier init for encoding/decoding tasks
             self._reset_parameters()
 
+            # Tie embedding weights, if requested
+            if (
+                tie_embedding_weights
+                and self.enc_pose_encoding
+                and self.dec_pose_encoding
+            ):
+                self.enc_pose_encoding = self.dec_pose_encoding
+
     @classmethod
     def from_config(cls, config: xFormerConfig):
-        return cls(config.stack_configs)
+        return cls(config.stack_configs, config.tie_embedding_weights)
 
     def _reset_parameters(self):
         r"""Initiate parameters in the transformer model

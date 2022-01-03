@@ -99,15 +99,16 @@ test_configs_dict = {"encoder": encoder_configs, "decoder": decoder_configs}
 
 @pytest.mark.parametrize("config", [test_configs_list, test_configs_dict])
 @pytest.mark.parametrize("reversible", [True, False])
+@pytest.mark.parametrize("tie_embedding_weights", [True, False])
 @pytest.mark.parametrize("device", DEVICES)
-def test_presets(config, reversible, device):
+def test_presets(config, reversible, tie_embedding_weights, device):
     # Build the model
     if isinstance(config, list):
         config[0]["reversible"] = reversible
     else:
         config["encoder"]["reversible"] = reversible
 
-    modelConfig = xFormerConfig(config)
+    modelConfig = xFormerConfig(config, tie_embedding_weights)
     if isinstance(modelConfig.stack_configs, dict):
         for k, blockConfig in modelConfig.stack_configs.items():
             assert blockConfig.layer_position
