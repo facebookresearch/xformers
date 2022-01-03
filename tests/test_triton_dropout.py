@@ -28,7 +28,7 @@ if _triton_available:
 
 # Testing odd (non-power-of-two for instance) shapes on purpose
 SHAPES = [
-    (384, 128),
+    (384, 512),
     (8, 384, 128),
     (8, 784, 512),
     (4, 16, 384),
