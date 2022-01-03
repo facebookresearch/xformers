@@ -27,12 +27,10 @@ def _get_4_bin_masks(seed, rand_offsets, p):
     # NOTE: We keep the random numbers as is there (integers over int32),
     # and convert the threshold instead, for speed
 
-    # The initial distribution is -2**31 / 2**31
-    # so our float threshold in between [0, 1]
-    # The full computation is:
-    # 2 ** 32 * p - 2 ** 31 => full range * p - half range (to offset in between -2**31 and 2 **31)
-    threshold = 2147483648.0 * (2.0 * p - 1.0)
-    threshold = threshold.to(tl.int32)
+    # The initial distribution is -2**31 / 2**31 -1
+    # and our float threshold  is in between [0, 1]
+    # The full computation is: `start_point + full range * p`
+    threshold = (-2147483648.0 + 4294967295.0 * p).to(tl.int32)
     rand_mask1 = rand1 > threshold
     rand_mask2 = rand2 > threshold
     rand_mask3 = rand3 > threshold

@@ -58,7 +58,7 @@ You can reproduce these numbers locally by running `python3 xformers/benchmarks/
 
 ![Fused linear layers throughput in fp16 - inference](docs/plots/fused_linear/FusedLinear_fp16_FW_gelu.png)
 
-![Fused linear layers throughput in fp16 - training](docs/plots/fused_linea/FusedLinear_fp16_FW_BW_gelu.png)
+![Fused linear layers throughput in fp16 - training](docs/plots/fused_linear/FusedLinear_fp16_FW_BW_gelu.png)
 
 ![Fused linear layers throughput in fp16 - inference](docs/plots/fused_linear/FusedLinear_fp16_FW_relu.png)
 
@@ -74,7 +74,7 @@ You can reproduce these numbers locally by running `python3 xformers/benchmarks/
 
 ![Fused linear layers throughput in fp16 - inference](docs/plots/fused_linear/FusedLinear_fp16_FW_none.png)
 
-![Fused linear layers throughput in fp16 - training](docs/plots/fused_line/FusedLinear_fp16_FW_BW_none.png)
+![Fused linear layers throughput in fp16 - training](docs/plots/fused_linear/FusedLinear_fp16_FW_BW_none.png)
 
 ### Fused layer norm
 
