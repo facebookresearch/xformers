@@ -447,20 +447,20 @@ This is the last example in the series, and goes one level up again, so that we 
 Am implementation of a full Transformer is supported directly by PyTorch, see the [doc](https://pytorch.org/docs/stable/generated/torch.nn.Transformer.html?highlight=transformer#torch.nn.Transformer) for more options.
 
 ```python
-    Transformer(
-        d_model=512,
-        nhead=8,
-        num_encoder_layers=6,
-        num_decoder_layers=6,
-        dim_feedforward=2048,
-        dropout=0.1,
-        activation='relu',
-        custom_encoder=None, # the xFormers exemple below defines that
-        custom_decoder=None, # Same
-        layer_norm_eps=1e-05,
-        batch_first=False,
-        device=None,
-        dtype=None):
+Transformer(
+    d_model=512,
+    nhead=8,
+    num_encoder_layers=6,
+    num_decoder_layers=6,
+    dim_feedforward=2048,
+    dropout=0.1,
+    activation='relu',
+    custom_encoder=None, # the xFormers exemple below defines that
+    custom_decoder=None, # Same
+    layer_norm_eps=1e-05,
+    batch_first=False,
+    device=None,
+    dtype=None):
         .
 ```
 
@@ -471,94 +471,94 @@ We don't have the exact same interfaces, but we have something to propose with t
 The equivalent to the PyTorch example above would look like the following. You can think of it  as a declaration of the sequence of blocks that you would like instantiated. This is not really apples to apples, because we define a custom encoder and decoder here. There's also an added flexibility with xFormers in that attention mechanisms can be chosen at will, on a per-layer basis.
 
 ```python
-    from xformers.factory.model_factory import xFormer, xFormerConfig
-    import torch
+from xformers.factory.model_factory import xFormer, xFormerConfig
+import torch
 
-    EMB = 384
-    SEQ = 1024
-    BATCH = 16
-    VOCAB = 64
+EMB = 384
+SEQ = 1024
+BATCH = 16
+VOCAB = 64
 
-    my_config = [
-        # A list of the encoder or decoder blocks which constitute the Transformer.
-        # Note that a sequence of different encoder blocks can be used, same for decoders
-        {
-            "reversible": False,  # Optionally make these layers reversible, to save memory
-            "block_type": "encoder",
-            "num_layers": 3,  # Optional, this means that this config will repeat N times
-            "dim_model": EMB,
-            "layer_norm_style": "pre",  # Optional, pre/post
-            "position_encoding_config": {
-                "name": "vocab",  # whatever position encodinhg makes sense
-                "seq_len": 1024,
-                "vocab_size": VOCAB,
-            },
-            "multi_head_config": {
-                "num_heads": 4,
-                "residual_dropout": 0,
-                "attention": {
-                    "name": "linformer",  # whatever attention mechanism
-                    "dropout": 0,
-                    "causal": False,
-                    "seq_len": SEQ,
-                },
-            },
-            "feedforward_config": {
-                "name": "MLP",
-                "dropout": 0,
-                "activation": "relu",
-                "hidden_layer_multiplier": 4,
-            },
+my_config = [
+    # A list of the encoder or decoder blocks which constitute the Transformer.
+    # Note that a sequence of different encoder blocks can be used, same for decoders
+    {
+        "reversible": False,  # Optionally make these layers reversible, to save memory
+        "block_type": "encoder",
+        "num_layers": 3,  # Optional, this means that this config will repeat N times
+        "dim_model": EMB,
+        "layer_norm_style": "pre",  # Optional, pre/post
+        "position_encoding_config": {
+            "name": "vocab",  # whatever position encodinhg makes sense
+            "seq_len": 1024,
+            "vocab_size": VOCAB,
         },
-        {
-            "reversible": False,  # Optionally make these layers reversible, to save memory
-            "block_type": "decoder",
-            "num_layers": 3,  # Optional, this means that this config will repeat N times
-            "dim_model": EMB,
-            "layer_norm_style": "pre",  # Optional, pre/post
-            "position_encoding_config": {
-                "name": "vocab",  # whatever position encodinhg makes sense
+        "multi_head_config": {
+            "num_heads": 4,
+            "residual_dropout": 0,
+            "attention": {
+                "name": "linformer",  # whatever attention mechanism
+                "dropout": 0,
+                "causal": False,
                 "seq_len": SEQ,
-                "vocab_size": VOCAB,
-            },
-            "multi_head_config_masked": {
-                "num_heads": 4,
-                "residual_dropout": 0,
-                "attention": {
-                    "name": "nystrom",  # whatever attention mechanism
-                    "dropout": 0,
-                    "causal": True,
-                    "seq_len": SEQ,
-                },
-            },
-            "multi_head_config_cross": {
-                "num_heads": 4,
-                "residual_dropout": 0,
-                "attention": {
-                    "name": "favor",  # whatever attention mechanism
-                    "dropout": 0,
-                    "causal": True,
-                    "seq_len": SEQ,
-                },
-            },
-            "feedforward_config": {
-                "name": "MLP",
-                "dropout": 0,
-                "activation": "relu",
-                "hidden_layer_multiplier": 4,
             },
         },
-    ]
+        "feedforward_config": {
+            "name": "MLP",
+            "dropout": 0,
+            "activation": "relu",
+            "hidden_layer_multiplier": 4,
+        },
+    },
+    {
+        "reversible": False,  # Optionally make these layers reversible, to save memory
+        "block_type": "decoder",
+        "num_layers": 3,  # Optional, this means that this config will repeat N times
+        "dim_model": EMB,
+        "layer_norm_style": "pre",  # Optional, pre/post
+        "position_encoding_config": {
+            "name": "vocab",  # whatever position encodinhg makes sense
+            "seq_len": SEQ,
+            "vocab_size": VOCAB,
+        },
+        "multi_head_config_masked": {
+            "num_heads": 4,
+            "residual_dropout": 0,
+            "attention": {
+                "name": "nystrom",  # whatever attention mechanism
+                "dropout": 0,
+                "causal": True,
+                "seq_len": SEQ,
+            },
+        },
+        "multi_head_config_cross": {
+            "num_heads": 4,
+            "residual_dropout": 0,
+            "attention": {
+                "name": "favor",  # whatever attention mechanism
+                "dropout": 0,
+                "causal": True,
+                "seq_len": SEQ,
+            },
+        },
+        "feedforward_config": {
+            "name": "MLP",
+            "dropout": 0,
+            "activation": "relu",
+            "hidden_layer_multiplier": 4,
+        },
+    },
+]
 
-    # This part of xFormers is entirely type checked and needs a config object,
-    # could be changed in the future
-    config = xFormerConfig(my_config)
-    model = xFormer.from_config(config)
+# This part of xFormers is entirely type checked and needs a config object,
+# could be changed in the future
+config = xFormerConfig(my_config)
+model = xFormer.from_config(config)
 
-    #  Test out with dummy inputs
-    x = (torch.rand((BATCH, SEQ)) * VOCAB).abs().to(torch.int)
-    y = model(src=x, tgt=x)
-    print(y)
+#  Test out with dummy inputs
+x = (torch.rand((BATCH, SEQ)) * VOCAB).abs().to(torch.int)
+y = model(src=x, tgt=x)
+print(y)
 ```
 
 Note that this exposes quite a few more knobs than the PyTorch Transformer interface, but in turn is probably a little more flexible. There are a couple of repeated settings here (dimensions mostly), this is taken care of in the [LRA benchmarking config](benchmarks/LRA/code/config.json)
