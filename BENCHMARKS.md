@@ -52,9 +52,8 @@ You can reproduce these numbers locally by running `python3 xformers/benchmarks/
 
 ### Fused linear layer
 
-You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_fused_linear_layer.py`. The units are TFlops/s. These results are for a nVidia V100, Triton 1.1 and PyTorch 1.9.
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_fused_linear_layer.py`. The units are TFlops/s. These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.
 
-**As of October 2021, these Triton kernels are only competitive with Pytorch in float16, this is a work in progress**.
 
 ![Fused linear layers throughput in fp16 - inference](docs/plots/fused_linear/FusedLinear_fp16_FW_gelu.png)
 
@@ -78,8 +77,7 @@ You can reproduce these numbers locally by running `python3 xformers/benchmarks/
 
 ### Fused layer norm
 
-You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_layernorm.py`. The units are GB/s. These results are for a nVidia V100, Triton 1.1 and PyTorch 1.9.
-Note that in the Triton case the slowdowns at extreme sizes are because of register spilling, A100s get much better performance.
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_layernorm.py`. The units are GB/s. These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.
 
 ![Fused layer norm throughput in fp16 - inference](docs/plots/layer_norm/LayerNorm_FW_torch.float16.png)
 
