@@ -247,218 +247,10 @@ Log-softmax is also available. The actual Triton kernel is very similar to <cite
 </pre></div>
 </div>
 <p>The expected throughput, when compared to PyTorch and on a nVidia V100, is along these lines</p>
-<table class="docutils align-default">
-<colgroup>
-<col style="width: 19%" />
-<col style="width: 12%" />
-<col style="width: 11%" />
-<col style="width: 11%" />
-<col style="width: 12%" />
-<col style="width: 11%" />
-<col style="width: 11%" />
-<col style="width: 14%" />
-</colgroup>
-<thead>
-<tr class="row-odd"><th class="head"><p>torch.float16</p></th>
-<th class="head"><p>Unit: GB/s</p></th>
-<th class="head"></th>
-<th class="head"></th>
-<th class="head"></th>
-<th class="head"></th>
-<th class="head"></th>
-<th class="head"></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td></td>
-<td><p>B=8, M=384, K=128</p></td>
-<td><p>B=8, M=784, K=512</p></td>
-<td><p>B=4, M=2048, K=384</p></td>
-<td><p>B=4, M=3136, K=1024</p></td>
-<td><p>B=2, M=1024, K=2048</p></td>
-<td><p>B=2, M=2048, K=4096</p></td>
-<td><p>B=2, M=4096, K=4096</p></td>
-</tr>
-<tr class="row-odd"><td><p>pytorch - fw</p></td>
-<td><p>170.7</p></td>
-<td><p>501.8</p></td>
-<td><p>512.0</p></td>
-<td><p>597.3</p></td>
-<td><p>399.6</p></td>
-<td><p>524.3</p></td>
-<td><p>553.0</p></td>
-</tr>
-<tr class="row-even"><td><p>triton  - fw</p></td>
-<td><p>153.6</p></td>
-<td><p>522.7</p></td>
-<td><p>512.0</p></td>
-<td><p>716.8</p></td>
-<td><p>606.8</p></td>
-<td><p>736.4</p></td>
-<td><p>775.6</p></td>
-</tr>
-<tr class="row-odd"><td><p>pytorch - log - fw</p></td>
-<td><p>192.0</p></td>
-<td><p>545.4</p></td>
-<td><p>534.3</p></td>
-<td><p>669.0</p></td>
-<td><p>496.5</p></td>
-<td><p>601.2</p></td>
-<td><p>615.4</p></td>
-</tr>
-<tr class="row-even"><td><p>triton  - log - fw</p></td>
-<td><p>153.6</p></td>
-<td><p>570.2</p></td>
-<td><p>558.5</p></td>
-<td><p>748.9</p></td>
-<td><p>682.7</p></td>
-<td><p>780.2</p></td>
-<td><p>799.2</p></td>
-</tr>
-<tr class="row-odd"><td><p>pytorch - fw+bw</p></td>
-<td><p>71.4</p></td>
-<td><p>170.7</p></td>
-<td><p>168.3</p></td>
-<td><p>205.6</p></td>
-<td><p>164.7</p></td>
-<td><p>196.5</p></td>
-<td><p>203.5</p></td>
-</tr>
-<tr class="row-even"><td><p>triton  - fw+bw</p></td>
-<td><p>69.8</p></td>
-<td><p>218.2</p></td>
-<td><p>211.9</p></td>
-<td><p>264.8</p></td>
-<td><p>224.4</p></td>
-<td><p>271.4</p></td>
-<td><p>284.3</p></td>
-</tr>
-<tr class="row-odd"><td><p>pytorch - log - fw+bw</p></td>
-<td><p>78.8</p></td>
-<td><p>207.3</p></td>
-<td><p>204.8</p></td>
-<td><p>255.3</p></td>
-<td><p>206.1</p></td>
-<td><p>247.3</p></td>
-<td><p>255.5</p></td>
-</tr>
-<tr class="row-even"><td><p>triton  - log - fw+bw</p></td>
-<td><p>71.4</p></td>
-<td><p>220.1</p></td>
-<td><p>213.7</p></td>
-<td><p>266.9</p></td>
-<td><p>229.1</p></td>
-<td><p>273.6</p></td>
-<td><p>285.6</p></td>
-</tr>
-</tbody>
-</table>
-<table class="docutils align-default">
-<colgroup>
-<col style="width: 19%" />
-<col style="width: 12%" />
-<col style="width: 11%" />
-<col style="width: 11%" />
-<col style="width: 12%" />
-<col style="width: 11%" />
-<col style="width: 11%" />
-<col style="width: 14%" />
-</colgroup>
-<thead>
-<tr class="row-odd"><th class="head"><p>torch.float32</p></th>
-<th class="head"><p>Unit: GB/s</p></th>
-<th class="head"></th>
-<th class="head"></th>
-<th class="head"></th>
-<th class="head"></th>
-<th class="head"></th>
-<th class="head"></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td></td>
-<td><p>B=8, M=384, K=128</p></td>
-<td><p>B=8, M=784, K=512</p></td>
-<td><p>B=4, M=2048, K=384</p></td>
-<td><p>B=4, M=3136, K=1024</p></td>
-<td><p>B=2, M=1024, K=2048</p></td>
-<td><p>B=2, M=2048, K=4096</p></td>
-<td><p>B=2, M=4096, K=4096</p></td>
-</tr>
-<tr class="row-odd"><td><p>pytorch - fw</p></td>
-<td><p>341.3</p></td>
-<td><p>660.2</p></td>
-<td><p>682.7</p></td>
-<td><p>760.2</p></td>
-<td><p>555.4</p></td>
-<td><p>636.3</p></td>
-<td><p>650.5</p></td>
-</tr>
-<tr class="row-even"><td><p>triton  - fw</p></td>
-<td><p>307.2</p></td>
-<td><p>678.1</p></td>
-<td><p>682.7</p></td>
-<td><p>784.0</p></td>
-<td><p>712.3</p></td>
-<td><p>789.6</p></td>
-<td><p>809.1</p></td>
-</tr>
-<tr class="row-odd"><td><p>pytorch - log - fw</p></td>
-<td><p>384.0</p></td>
-<td><p>696.9</p></td>
-<td><p>702.2</p></td>
-<td><p>777.9</p></td>
-<td><p>537.2</p></td>
-<td><p>541.6</p></td>
-<td><p>543.9</p></td>
-</tr>
-<tr class="row-even"><td><p>triton  - log - fw</p></td>
-<td><p>307.2</p></td>
-<td><p>696.9</p></td>
-<td><p>702.2</p></td>
-<td><p>796.4</p></td>
-<td><p>744.7</p></td>
-<td><p>799.2</p></td>
-<td><p>814.1</p></td>
-</tr>
-<tr class="row-odd"><td><p>pytorch - fw+bw</p></td>
-<td><p>133.6</p></td>
-<td><p>203.1</p></td>
-<td><p>204.0</p></td>
-<td><p>229.9</p></td>
-<td><p>193.9</p></td>
-<td><p>211.1</p></td>
-<td><p>215.3</p></td>
-</tr>
-<tr class="row-even"><td><p>triton  - fw+bw</p></td>
-<td><p>136.5</p></td>
-<td><p>254.7</p></td>
-<td><p>257.3</p></td>
-<td><p>290.9</p></td>
-<td><p>263.2</p></td>
-<td><p>294.5</p></td>
-<td><p>301.0</p></td>
-</tr>
-<tr class="row-odd"><td><p>pytorch - log - fw+bw</p></td>
-<td><p>149.9</p></td>
-<td><p>252.1</p></td>
-<td><p>252.1</p></td>
-<td><p>289.6</p></td>
-<td><p>234.1</p></td>
-<td><p>251.6</p></td>
-<td><p>254.5</p></td>
-</tr>
-<tr class="row-even"><td><p>triton  - log - fw+bw</p></td>
-<td><p>136.5</p></td>
-<td><p>257.3</p></td>
-<td><p>258.7</p></td>
-<td><p>291.7</p></td>
-<td><p>265.3</p></td>
-<td><p>295.2</p></td>
-<td><p>301.3</p></td>
-</tr>
-</tbody>
-</table>
+<a class="reference internal image-reference" href="../_images/Softmax_Bandwidth_FW_fp16.png"><img alt="Softmax throughput in fp16 - inference" src="../_images/Softmax_Bandwidth_FW_fp16.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/Softmax_Bandwidth_FW_BW_fp16.png"><img alt="Softmax throughput in fp16 - training" src="../_images/Softmax_Bandwidth_FW_BW_fp16.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/Softmax_Bandwidth_FW_fp32.png"><img alt="Softmax throughput in fp32 - inference" src="../_images/Softmax_Bandwidth_FW_fp32.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/Softmax_Bandwidth_FW_BW_fp32.png"><img alt="Softmax throughput in fp32 - training" src="../_images/Softmax_Bandwidth_FW_BW_fp32.png" style="width: 600px;" /></a>
 </section>
 <section id="fused-linear-layer">
 <h2>Fused linear layer<a class="headerlink" href="#fused-linear-layer" title="Permalink to this headline">¶</a></h2>
@@ -474,63 +266,35 @@ Log-softmax is also available. The actual Triton kernel is very similar to <cite
 </div>
 <p>It is possible to skip either the bias or the activation (just use <cite>None</cite> in that case). As of September 2021, this layer is <strong>faster than PyTorch for non-sigmoid activations and fp16</strong>.
 In all other usecases, you will be better served using PyTorch.</p>
-<p>The following is an example of the measured performance on a nVidia V100.</p>
-<table class="docutils align-default">
-<colgroup>
-<col style="width: 28%" />
-<col style="width: 15%" />
-<col style="width: 14%" />
-<col style="width: 14%" />
-<col style="width: 15%" />
-<col style="width: 14%" />
-</colgroup>
-<thead>
-<tr class="row-odd"><th class="head"><p>torch.float16</p></th>
-<th class="head"><p>Unit: TFlops</p></th>
-<th class="head"></th>
-<th class="head"></th>
-<th class="head"></th>
-<th class="head"></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td></td>
-<td><p>B=8, M=256, K=512</p></td>
-<td><p>B=8, M=512, K=1024</p></td>
-<td><p>B=4, M=1024, K=1024</p></td>
-<td><p>B=2, M=2048, K=2048</p></td>
-<td><p>B=2, M=4096, K=4096</p></td>
-</tr>
-<tr class="row-odd"><td><p>pytorch - squared_relu -  bias - fw</p></td>
-<td><p>6.3</p></td>
-<td><p>12.4</p></td>
-<td><p>12.3</p></td>
-<td><p>17.1</p></td>
-<td><p>19.0</p></td>
-</tr>
-<tr class="row-even"><td><p>triton  - squared_relu -  bias - fw</p></td>
-<td><p>13.8</p></td>
-<td><p>18.9</p></td>
-<td><p>18.9</p></td>
-<td><p>21.9</p></td>
-<td><p>21.7</p></td>
-</tr>
-<tr class="row-odd"><td><p>pytorch - squared_relu -  bias - fw+bw</p></td>
-<td><p>4.0</p></td>
-<td><p>7.6</p></td>
-<td><p>7.7</p></td>
-<td><p>10.7</p></td>
-<td><p>12.6</p></td>
-</tr>
-<tr class="row-even"><td><p>triton  - squared_relu -  bias - fw+bw</p></td>
-<td><p>8.4</p></td>
-<td><p>13.5</p></td>
-<td><p>13.3</p></td>
-<td><p>15.9</p></td>
-<td><p>16.8</p></td>
-</tr>
-</tbody>
-</table>
+<p>The following is an example of the measured performance on a laptop nVidia 3080, using Triton 1.1 and PyTorch 1.10.</p>
+<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_gelu.png"><img alt="Fused linear layers throughput in fp16 - inference - GeLU" src="../_images/FusedLinear_fp16_FW_gelu.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_BW_gelu.png"><img alt="Fused linear layers throughput in fp16 - training - GeLU" src="../_images/FusedLinear_fp16_FW_BW_gelu.png" style="width: 600px;" /></a>
+<p>–</p>
+<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_leaky_relu.png"><img alt="Fused linear layers throughput in fp16 - inference - LeakyReLU" src="../_images/FusedLinear_fp16_FW_leaky_relu.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_BW_leaky_relu.png"><img alt="Fused linear layers throughput in fp16 - training - LeakyReLU" src="../_images/FusedLinear_fp16_FW_BW_leaky_relu.png" style="width: 600px;" /></a>
+<p>–</p>
+<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_squared_relu.png"><img alt="Fused linear layers throughput in fp16 - inference - Squared ReLU" src="../_images/FusedLinear_fp16_FW_squared_relu.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_BW_squared_relu.png"><img alt="Fused linear layers throughput in fp16 - training - Squared ReLU" src="../_images/FusedLinear_fp16_FW_BW_squared_relu.png" style="width: 600px;" /></a>
+<p>–</p>
+<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_relu.png"><img alt="Fused linear layers throughput in fp16 - inference - ReLU" src="../_images/FusedLinear_fp16_FW_relu.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_BW_relu.png"><img alt="Fused linear layers throughput in fp16 - training - ReLU" src="../_images/FusedLinear_fp16_FW_BW_relu.png" style="width: 600px;" /></a>
+</section>
+<section id="fused-layer-norm">
+<h2>Fused layer norm<a class="headerlink" href="#fused-layer-norm" title="Permalink to this headline">¶</a></h2>
+<p>You can reproduce these numbers locally by running <cite>python3 xformers/benchmarks/benchmark_triton_layernorm.py</cite>. The units are GB/s. These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.</p>
+<a class="reference internal image-reference" href="../_images/LayerNorm_FW_torch.float16.png"><img alt="Fused layer norm throughput in fp16 - inference" src="../_images/LayerNorm_FW_torch.float16.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/LayerNorm_FW+BW_torch.float16.png"><img alt="Fused layer norm throughput in fp16 - training" src="../_images/LayerNorm_FW+BW_torch.float16.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/LayerNorm_FW_torch.float32.png"><img alt="Fused layer norm throughput in fp32 - inference" src="../_images/LayerNorm_FW_torch.float32.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/LayerNorm_FW+BW_torch.float32.png"><img alt="Fused layer norm throughput in fp32 - training" src="../_images/LayerNorm_FW+BW_torch.float32.png" style="width: 600px;" /></a>
+</section>
+<section id="fused-dropout-bias-activation">
+<h2>Fused dropout + bias + activation<a class="headerlink" href="#fused-dropout-bias-activation" title="Permalink to this headline">¶</a></h2>
+<p>You can reproduce these numbers locally by running <cite>python3 xformers/benchmarks/benchmark_triton_dropout.py</cite>. The units are GB/s.
+These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.</p>
+<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW_torch.float16_Act:_gelu.png"><img alt="Fused dropout+ bias throughput in fp16 - inference - GeLU" src="../_images/Dropout_Bias_True_FW_torch.float16_Act:_gelu.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act:_gelu.png"><img alt="Fused dropout+ bias throughput in fp16 - training - GeLU" src="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act:_gelu.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW_torch.float16_Act:_squared_relu.png"><img alt="Fused dropout+ bias throughput in fp16 - inference - Squared ReLU" src="../_images/Dropout_Bias_True_FW_torch.float16_Act:_squared_relu.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act:_squared_relu.png"><img alt="Fused dropout+ bias throughput in fp16 - training - Squared ReLU" src="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act:_squared_relu.png" style="width: 600px;" /></a>
 </section>
 </section>
 
@@ -580,6 +344,8 @@ In all other usecases, you will be better served using PyTorch.</p>
 <li><a class="reference internal" href="#">Using Triton-based layers</a><ul>
 <li><a class="reference internal" href="#fused-softmax-layer">Fused softmax layer</a></li>
 <li><a class="reference internal" href="#fused-linear-layer">Fused linear layer</a></li>
+<li><a class="reference internal" href="#fused-layer-norm">Fused layer norm</a></li>
+<li><a class="reference internal" href="#fused-dropout-bias-activation">Fused dropout + bias + activation</a></li>
 </ul>
 </li>
 </ul>
