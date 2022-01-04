@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Much faster fused dropout [#164]
 
+### Added
+- Embedding weight tying option [#172]
+
 ## [0.0.7] - 2021-11-30
 ### Fixed
 - Dropout setting not properly passed in many attentions [#123]

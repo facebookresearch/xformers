@@ -22,6 +22,17 @@ from xformers.factory.block_factory import (
 
 @dataclass(init=False)
 class xFormerConfig:
+    """
+    The configuration structure to define a full Transformer.
+    This can include a stack of encoder layers, and a stack of decoder layers.
+
+    It is optionally possible to share the embedding weights in between
+    the encoder and decoder positional encoding, as proposed for instance by
+    `Using the Output Embedding to Improve Language Models`, Press et al.
+
+    .. _`Using the Output Embedding to Improve Language Models`: https://arxiv.org/pdf/1608.05859.pdf
+    """
+
     stack_configs: Union[List[xFormerBlockConfig], Dict[str, xFormerBlockConfig]]
     tie_embedding_weights: bool = False
 

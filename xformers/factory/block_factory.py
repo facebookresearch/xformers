@@ -93,6 +93,14 @@ def _get_ln_factory(
 
 @dataclass(init=False)  # handle constructors explicitly to force type changes
 class xFormerBlockConfig:
+    """
+    The configuration structure to define a Transformer block.
+    This base class is applicable to both encoder and decoder definitions.
+
+    This completely defines each of the blocks, for instance in terms of dimensions,
+    position encoding, pre or post layer norms or reversibility.
+    """
+
     dim_model: int
     feedforward_config: FeedforwardConfig
     position_encoding_config: Optional[PositionEmbeddingConfig]
@@ -145,6 +153,10 @@ class xFormerBlockConfig:
 
 @dataclass(init=False)
 class xFormerEncoderConfig(xFormerBlockConfig):
+    """
+    The configuration structure for an encoder block
+    """
+
     multi_head_config: Dict[str, Any]
     use_triton: bool
 
@@ -192,6 +204,13 @@ class xFormerEncoderConfig(xFormerBlockConfig):
 
 @dataclass(init=False)
 class xFormerDecoderConfig(xFormerBlockConfig):
+    """
+    The configuration structure for a decoder block.
+
+    This specifically defines the masked and cross attention mechanisms,
+    on top of the settings defining all blocks.
+    """
+
     multi_head_config_masked: Dict[str, Any]  # prior to encoder output
     multi_head_config_cross: Dict[str, Any]  # cross attention, takes encoder output
 
