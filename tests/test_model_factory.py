@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+from contextlib import nullcontext
+
 import pytest
 import torch
 
@@ -99,27 +101,45 @@ test_configs_dict = {"encoder": encoder_configs, "decoder": decoder_configs}
 
 @pytest.mark.parametrize("config", [test_configs_list, test_configs_dict])
 @pytest.mark.parametrize("reversible", [True, False])
+@pytest.mark.parametrize("tie_embedding_weights", [True, False])
 @pytest.mark.parametrize("device", DEVICES)
-def test_presets(config, reversible, device):
+def test_presets(config, reversible, tie_embedding_weights, device):
     # Build the model
     if isinstance(config, list):
         config[0]["reversible"] = reversible
     else:
         config["encoder"]["reversible"] = reversible
 
-    modelConfig = xFormerConfig(config)
+    modelConfig = xFormerConfig(config, tie_embedding_weights)
     if isinstance(modelConfig.stack_configs, dict):
-        for k, blockConfig in modelConfig.stack_configs.items():
+        for _, blockConfig in modelConfig.stack_configs.items():
             assert blockConfig.layer_position
     else:
         for blockConfig in modelConfig.stack_configs:
             assert blockConfig.layer_position
 
-    model = xFormer.from_config(modelConfig).to(device)
+    context = (
+        pytest.raises(AssertionError)
+        if reversible and tie_embedding_weights
+        else nullcontext()
+    )
 
-    # Dummy inputs, test a forward
-    inputs = (torch.rand((BATCH, SEQ), device=device) * 10).abs().to(torch.int)
+    with context:
+        model = xFormer.from_config(modelConfig).to(device)
 
-    input_mask = torch.randn(SEQ, dtype=torch.float, device=device)
-    input_mask[input_mask < 0.0] = -float("inf")
-    _ = model(inputs, encoder_input_mask=input_mask, decoder_input_mask=input_mask)
+        # Dummy inputs, test a forward
+        inputs = (torch.rand((BATCH, SEQ), device=device) * 10).abs().to(torch.int)
+
+        input_mask = torch.randn(SEQ, dtype=torch.float, device=device)
+        input_mask[input_mask < 0.0] = -float("inf")
+        outputs = model(
+            inputs, encoder_input_mask=input_mask, decoder_input_mask=input_mask
+        )
+
+        # Test a BW
+        loss = torch.sum(torch.abs(outputs))
+        loss.backward()
+
+        # If we requested tied embedding weights, check that this is the case indeed
+        if tie_embedding_weights and not reversible:
+            assert model.encoders[0].pose_encoding == model.decoders[0].pose_encoding
