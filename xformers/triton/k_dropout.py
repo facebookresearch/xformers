@@ -21,7 +21,8 @@ _configs = [
 
 @triton.jit
 def _get_4_bin_masks(seed, rand_offsets, p):
-    rand1, rand2, rand3, rand4 = tl.randint4x(seed.to(tl.int32), rand_offsets)
+    seed = tl.load(seed)
+    rand1, rand2, rand3, rand4 = tl.randint4x(seed, rand_offsets)
 
     # binarize masks, save registers
     # NOTE: We keep the random numbers as is there (integers over int32),
