@@ -30,6 +30,43 @@ class xFormerConfig:
     the encoder and decoder positional encoding, as proposed for instance by
     `Using the Output Embedding to Improve Language Models`, Press et al.
 
+    A full config example is for instance as follows:
+
+    ::
+
+        xformer_config = [
+            {
+                "reversible": False,  # Turn on to test the effect of using reversible layers
+                "block_type": "encoder",
+                "num_layers": LAYERS,
+                "dim_model": EMB,
+                "layer_norm_style": "pre",
+                "position_encoding_config": {
+                    "name": "vocab",
+                    "seq_len": CONTEXT,
+                    "vocab_size": VOCAB_SIZE,
+                },
+                "multi_head_config": {
+                    "num_heads": NUM_HEADS,
+                    "residual_dropout": RES_DROP,
+                    "use_rotary_embeddings": True,
+                    "attention": {
+                        "name": ATTENTION_MECHANISM_STR,
+                        "dropout": ATTN_DROP,
+                        "causal": True,
+                        "seq_len": CONTEXT,
+                    },
+                },
+                "feedforward_config": {
+                    "name": "FusedMLP",  # Use MLP if Triton is not available
+                    "dropout": MLP_DROP,
+                    "activation": "gelu",
+                    "hidden_layer_multiplier": MLP_MULTIPLIER,
+                },
+            }
+        ]
+
+
     .. _`Using the Output Embedding to Improve Language Models`: https://arxiv.org/pdf/1608.05859.pdf
     """
 
