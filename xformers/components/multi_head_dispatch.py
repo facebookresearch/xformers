@@ -127,6 +127,7 @@ class MultiHeadDispatch(nn.Module):
         key: Optional[torch.Tensor] = None,
         value: Optional[torch.Tensor] = None,
         att_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Expected input dimensions are [batch size, sequence length, embed dim]
@@ -164,6 +165,11 @@ class MultiHeadDispatch(nn.Module):
         else:
             k, q, v = key, query, value
 
+        if self.attention.requires_skip_multi_head:
+            return self.attention(
+                q, k, v, att_mask=att_mask, key_padding_mask=key_padding_mask
+            )
+
         # Optional: rotary embedding, add relative positioning information
         if self.rotary_embeddings:
             # rotary requires the head dimension
@@ -187,7 +193,9 @@ class MultiHeadDispatch(nn.Module):
             v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
 
         # Self-attend
-        y = self.attention(q=q, k=k, v=v, att_mask=att_mask)
+        y = self.attention(
+            q=q, k=k, v=v, att_mask=att_mask, key_padding_mask=key_padding_mask
+        )
 
         # Re-assemble all head outputs side by side
         y = (

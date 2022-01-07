@@ -68,6 +68,8 @@ class GPT(pl.LightningModule):
                         "dropout": self.hparams.attn_pdrop,
                         "causal": True,
                         "seq_len": self.hparams.block_size,
+                        "dim_head": self.hparams.n_embd // self.hparams.n_head,
+                        "num_rules": 2 * self.hparams.n_head,
                     },
                 },
                 "feedforward_config": {
@@ -273,7 +275,7 @@ if __name__ == "__main__":
     # Adjust batch depending on the available memory on your machine.
     # You can also use reversible layers to save memory
     REF_BATCH = 512
-    BATCH = 256
+    BATCH = 64
 
     WORKERS = 4
     EPOCHS = 1
@@ -301,9 +303,10 @@ if __name__ == "__main__":
     model = GPT(
         vocab_size=train_dataset.vocab_size,
         block_size=train_dataset.block_size,
-        attention="scaled_dot_product",
+        attention="compositional",
         warmup_tokens=REF_BATCH * WARMUP,
         final_tokens=EPOCHS * len(train_dataset) * BLOCK,
+        n_head=4,  # 8 if not compositional, typically
     )
     print(model)
 

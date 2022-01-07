@@ -49,7 +49,7 @@ class AttentionMask:
         """
         assert x.dtype == torch.bool
 
-        additive_mask = torch.empty_like(x, dtype=torch.float)
+        additive_mask = torch.empty_like(x, dtype=torch.float, device=x.device)
         additive_mask.masked_fill_(x, 0.0)
         additive_mask.masked_fill_(~x, float("-inf"))
 
@@ -62,7 +62,7 @@ class AttentionMask:
         """
         assert not x.dtype == torch.bool
 
-        additive_mask = torch.empty_like(x, dtype=torch.float)
+        additive_mask = torch.empty_like(x, dtype=torch.float, device=x.device)
         x = x.bool()
 
         additive_mask.masked_fill_(x, 0.0)

@@ -11,6 +11,8 @@ from typing import Optional, Type, TypeVar
 import torch
 import torch.nn as nn
 
+from xformers.components.attention import AttentionMask
+
 
 @dataclass
 class AttentionConfig:
@@ -29,7 +31,7 @@ Self = TypeVar("Self", bound="Attention")
 class Attention(nn.Module, metaclass=ABCMeta):
     r"""The base Attention mechanism, which is typically a sub-part of the multi-head attention"""
 
-    _causal_mask: Optional[torch.Tensor] = None
+    _causal_mask: Optional[AttentionMask] = None
 
     @abstractmethod
     def __init__(self, dropout: Optional[float] = None, *args, **kwargs):
@@ -46,6 +48,10 @@ class Attention(nn.Module, metaclass=ABCMeta):
 
         # Requires that K and Q have the same sequence length
         self.requires_same_k_q_dimensions = False
+
+        # Whether the attention owns the single head/multihead mechanism
+        # so that the MHA wrapper should skip it
+        self.requires_skip_multi_head = False
 
     @classmethod
     def from_config(cls: Type[Self], config: AttentionConfig) -> Self:
