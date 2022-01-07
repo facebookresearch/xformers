@@ -113,6 +113,17 @@ def test_dropout(shape, amp, bias, p):
         drop_p = (y.numel() - y.count_nonzero()) / y.numel()
         assert abs(drop_p - p) < 0.01
 
+        # Check that the same seeds lead to the same dropout
+        torch.manual_seed(0)
+        torch.cuda.manual_seed(0)
+        y_1 = triton_dropout(x, p=0.5)
+
+        torch.manual_seed(0)
+        torch.cuda.manual_seed(0)
+        y_2 = triton_dropout(x, p=0.5)
+
+        assert torch.allclose(y_1, y_2)
+
 
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
 @pytest.mark.skipif(
