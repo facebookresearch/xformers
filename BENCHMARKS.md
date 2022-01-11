@@ -11,7 +11,7 @@ Please note that:
 - These numbers are dependent of hyperparameters (dimensions chosen for Linformer, sparsity of the pattern), they are mostly an illustration
 - The sparse attention patterns tested here are just presets, as explained in the linked notebook generating any new sparse attention pattern should be relatively easy, while keeping the benefits of optimized computations.
 
-Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 256 -bs 32 -heads 16`
+Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 256 -bs 8 -heads 4`
 
 ![Memory use for different attentions](docs/plots/memory_vs_attention.png)  ![Runtime for different attentions](docs/plots/runtime_vs_attention.png)
 

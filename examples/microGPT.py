@@ -69,7 +69,7 @@ class GPT(pl.LightningModule):
                         "causal": True,
                         "seq_len": self.hparams.block_size,
                         "dim_head": self.hparams.n_embd // self.hparams.n_head,
-                        "num_rules": 2 * self.hparams.n_head,
+                        "num_rules": self.hparams.n_head,
                     },
                 },
                 "feedforward_config": {
@@ -275,7 +275,7 @@ if __name__ == "__main__":
     # Adjust batch depending on the available memory on your machine.
     # You can also use reversible layers to save memory
     REF_BATCH = 512
-    BATCH = 64
+    BATCH = 128
 
     WORKERS = 4
     EPOCHS = 1
@@ -306,7 +306,6 @@ if __name__ == "__main__":
         attention="compositional",
         warmup_tokens=REF_BATCH * WARMUP,
         final_tokens=EPOCHS * len(train_dataset) * BLOCK,
-        n_head=4,  # 8 if not compositional, typically
     )
     print(model)
 
