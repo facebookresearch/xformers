@@ -24,7 +24,7 @@ class AttentionMask:
     """
 
     def __init__(self, additive_mask: torch.Tensor, is_causal: bool = False):
-        assert additive_mask.is_floating_point()
+        assert additive_mask.is_floating_point(), additive_mask.dtype
         assert not additive_mask.requires_grad
 
         if additive_mask.ndim == 2:
