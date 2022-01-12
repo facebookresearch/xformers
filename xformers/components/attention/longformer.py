@@ -48,7 +48,8 @@ class LongformerAttention(Attention):
 
         assert key_padding_mask is not None
         attention_mask = key_padding_mask.to(q)
-        attention_mask[:,0] = -1
+
+        # attention_mask[:,0] = -1
 
         # input q size (bsz*heads, seq_len, head_dim)
         def _pad_to_window_size(x, window_size, pad):

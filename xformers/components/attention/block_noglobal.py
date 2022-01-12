@@ -1,19 +1,13 @@
-
-
-
-
-"""
-Simple non-ovelapping local block attention. To test how strong are the locality inductive bias in these tasks
-"""
-
 # Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 #
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+"""
+Simple non-ovelapping local block attention. To test how strong are the locality inductive bias in these tasks
+"""
 
-import logging
-import math
+
 from dataclasses import dataclass
 from typing import Optional
 

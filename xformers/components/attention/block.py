@@ -37,7 +37,7 @@ class BlockAttention(Attention):
         self, 
         dropout: float, 
         num_heads: int,
-        window_size: int = 256, # 
+        window_size: int = 512, # 
         *args, **kwargs
     ):
 
@@ -61,9 +61,10 @@ class BlockAttention(Attention):
         bsz = bh // self.num_head
         head_dim = q.size(-1)
 
+
         assert key_padding_mask is not None
         key_padding_mask = key_padding_mask.to(q)
-        key_padding_mask[:,0] = -1
+        # key_padding_mask[:,0] = -1
 
         # pad the input length to factors of bucket size
         def _pad_to_window_size(x, window_size):
@@ -139,12 +140,16 @@ class BlockAttention(Attention):
         del mask
         
         block_attn_weights = dots.view(bsz*self.num_head, -1, self.bucket_size)
-
-        attn_weights_over_g_tokens  = attn_weights_over_g_tokens.view(bsz*self.num_head, -1, max_num_extra_indices_per_batch)
-        all_attn = torch.cat([block_attn_weights, attn_weights_over_g_tokens], dim=-1)
+        
+        if extra_attention_mask is not None:
+            attn_weights_over_g_tokens  = attn_weights_over_g_tokens.view(bsz*self.num_head, -1, max_num_extra_indices_per_batch)
+            all_attn = torch.cat([block_attn_weights, attn_weights_over_g_tokens], dim=-1)
+        else:
+            all_attn = block_attn_weights
 
         all_attn_probs = all_attn.softmax(dim=-1)
         all_attn_probs = self.drop_attn(all_attn_probs)
+
 
         C = 0
         # calculate block attention
