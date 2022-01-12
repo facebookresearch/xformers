@@ -36,6 +36,8 @@ assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
 @pytest.mark.parametrize("q_compose", [False, True])
 @pytest.mark.parametrize("dim_selection", [MODEL // 2, None])
 @pytest.mark.parametrize("bias", [True, False])
+@pytest.mark.parametrize("qk_rule", [True, False])
+@pytest.mark.parametrize("nonlinear", [True, False])
 @pytest.mark.parametrize("device", DEVICES)
 def test_build_and_run(
     heads: int,
@@ -45,6 +47,8 @@ def test_build_and_run(
     q_compose: bool,
     dim_selection: int,
     bias: bool,
+    qk_rule: bool,
+    nonlinear: bool,
     device: torch.device,
 ):
 
@@ -64,6 +68,8 @@ def test_build_and_run(
         "rules": rules,
         "dim_selection": dim_selection,
         "bias": bias,
+        "qk_rule": qk_rule,
+        "nonlinear": nonlinear,
     }
 
     # Add some blocksparse layout to test the corresponding attention

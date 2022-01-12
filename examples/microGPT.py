@@ -275,7 +275,7 @@ if __name__ == "__main__":
     # Adjust batch depending on the available memory on your machine.
     # You can also use reversible layers to save memory
     REF_BATCH = 512
-    BATCH = 128
+    BATCH = 256
 
     WORKERS = 4
     EPOCHS = 1
@@ -303,7 +303,7 @@ if __name__ == "__main__":
     model = GPT(
         vocab_size=train_dataset.vocab_size,
         block_size=train_dataset.block_size,
-        attention="compositional",
+        attention="scaled_dot_product",
         warmup_tokens=REF_BATCH * WARMUP,
         final_tokens=EPOCHS * len(train_dataset) * BLOCK,
     )
