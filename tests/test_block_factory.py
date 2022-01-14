@@ -58,6 +58,7 @@ def test_xformer_encoder_block(
         "window_size": SEQ // 8 + 1,
         "seq_len": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
+        "dim_model": MODEL,
         "num_heads": heads,
         "dim_head": MODEL // heads,
         "layout": torch.eye(SEQ // block_size, SEQ // block_size, dtype=torch.long),
@@ -147,9 +148,8 @@ def test_xformer_decoder_block(
         "causal": causal,
         "window_size": SEQ // 8 + 1,
         "seq_len": SEQ,
+        "dim_head": MODEL // heads,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
-        "num_heads": heads,
-        "dim_head": MODEL / heads,
         "layout": torch.eye(SEQ // block_size, SEQ // block_size, dtype=torch.long),
         "block_size": block_size,
         "num_rules": 2,  # Compositional Attention

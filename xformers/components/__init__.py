@@ -48,6 +48,11 @@ def build_multi_head_attention(
                     "num_heads"
                 ]
 
+            if "dim_model" not in multi_head_config["attention"]:
+                multi_head_config["attention"]["dim_model"] = multi_head_config[
+                    "dim_model"
+                ]
+
             if (
                 "dim_features" not in multi_head_config["attention"]
                 or multi_head_config["attention"]["dim_features"] is None

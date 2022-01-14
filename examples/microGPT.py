@@ -68,7 +68,6 @@ class GPT(pl.LightningModule):
                         "dropout": self.hparams.attn_pdrop,
                         "causal": True,
                         "seq_len": self.hparams.block_size,
-                        "dim_head": self.hparams.n_embd // self.hparams.n_head,
                         "num_rules": self.hparams.n_head,
                     },
                 },

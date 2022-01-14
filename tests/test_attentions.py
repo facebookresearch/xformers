@@ -45,8 +45,9 @@ def _get_multihead(
         "seq_len": SEQ,
         "window_size": SEQ // 8 + 1,  # local attention
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
+        "dim_model": MODEL,
         "num_heads": heads,
-        "dim_head": MODEL // heads,
+        "dim_head": MODEL / heads,
         "num_rules": 2,  # Compositional Attention
     }
 

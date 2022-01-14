@@ -159,16 +159,16 @@ class MultiHeadDispatch(nn.Module):
                     + "In that case causality is ill-determined. Please pad your sequences accordingly"
                 )
 
+        if self.attention.requires_skip_multi_head:
+            return self.attention(
+                query, key, value, att_mask=att_mask, key_padding_mask=key_padding_mask
+            )
+
         # Calculate query, key, values for all heads in batch
         if self.attention.requires_input_projection:
             q, k, v = self.in_proj_container(query=query, key=key, value=value)
         else:
             k, q, v = key, query, value
-
-        if self.attention.requires_skip_multi_head:
-            return self.attention(
-                q, k, v, att_mask=att_mask, key_padding_mask=key_padding_mask
-            )
 
         # Optional: rotary embedding, add relative positioning information
         if self.rotary_embeddings:
