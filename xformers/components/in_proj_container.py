@@ -52,8 +52,15 @@ class InProjParams:
     small_init: bool = False
 
 
-def _init_from_params(params: InProjParams):
-    return small_init_ if params.small_init else xavier_uniform_
+def _init_from_params(params: InProjParams, gain: float = 1.0):
+    def init_method(x):
+        return (
+            small_init_(x, gain=gain)
+            if params.small_init
+            else xavier_uniform_(x, gain=gain)
+        )
+
+    return init_method
 
 
 class InProjContainer(nn.Module):
@@ -102,7 +109,11 @@ class InProjContainer(nn.Module):
             self.register_parameter("q_proj_weight", None)
             self.register_parameter("k_proj_weight", None)
             self.register_parameter("v_proj_weight", None)
-            self.weight_init = _init_from_params(query_proj_params)
+
+            # 1/sqrt(2) init is empirically beneficial in that case
+            self.weight_init = _init_from_params(
+                query_proj_params, gain=1.0 / math.sqrt(2)
+            )
         else:
             # The dimensions are different, use seperate buffers
             self.q_proj_weight = nn.Parameter(
