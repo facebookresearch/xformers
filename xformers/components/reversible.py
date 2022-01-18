@@ -22,7 +22,7 @@ class Deterministic(nn.Module):
     def __init__(self, net: nn.Module):
         super().__init__()
         self.net = net
-        self.cpu_state: torch.Tensor
+        self.cpu_state: torch.Tensor = torch.get_rng_state()
         self.cuda_in_fwd: bool = False
         self.gpu_devices: List[int] = []
         self.gpu_states: List[torch.Tensor] = []
@@ -68,7 +68,9 @@ class ReversibleBlock(nn.Module):
 
         return torch.cat([y1, y2], dim=self.split_dim)
 
-    def backward_pass(self, y: torch.Tensor, dy: torch.Tensor, f_args={}, g_args={}):
+    def backward_pass(
+        self, y: torch.Tensor, dy: torch.Tensor, f_args={}, g_args={}
+    ):  # pragma: no cover  # this is covered, but called directly from C++
         y1, y2 = torch.chunk(y, 2, dim=self.split_dim)
         del y
 
@@ -118,7 +120,9 @@ class _ReversibleFunction(Function):
         return x
 
     @staticmethod
-    def backward(ctx, dy):
+    def backward(
+        ctx, dy
+    ):  # pragma: no cover # this is covered, but called directly from C++
         y = ctx.y
         kwargs = ctx.kwargs
         for block in ctx.blocks[::-1]:
