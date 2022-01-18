@@ -57,7 +57,7 @@ class FavorAttention(Attention):
         Args:
             dropout (float): the probability of an output to be randomly dropped at training time
             dim_features (int): the dimension of the random features space
-            iter_before_redraw (int): the number of iterations before a redraw of the features
+            iter_before_redraw (int): the number of steps (forward calls) before a redraw of the features
             feature_map_type (FeatureMapType): the type of feature map being used,
             for instance orthogonal random features.
 
@@ -67,7 +67,11 @@ class FavorAttention(Attention):
         super().__init__()
 
         self.causal = causal
-        self.iter_before_redraw = iter_before_redraw
+        self.iter_before_redraw = (
+            (2 * iter_before_redraw)
+            if iter_before_redraw is not None
+            else iter_before_redraw
+        )  # This will be used for both key and query
         self.normalize_inputs = normalize_inputs
         self.feature_map_type = feature_map_type
         self.attn_drop = nn.Dropout(dropout, inplace=True)
