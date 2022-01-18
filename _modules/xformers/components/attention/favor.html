@@ -284,7 +284,7 @@
 <span class="sd">        Args:</span>
 <span class="sd">            dropout (float): the probability of an output to be randomly dropped at training time</span>
 <span class="sd">            dim_features (int): the dimension of the random features space</span>
-<span class="sd">            iter_before_redraw (int): the number of iterations before a redraw of the features</span>
+<span class="sd">            iter_before_redraw (int): the number of steps (forward calls) before a redraw of the features</span>
 <span class="sd">            feature_map_type (FeatureMapType): the type of feature map being used,</span>
 <span class="sd">            for instance orthogonal random features.</span>
 
@@ -294,7 +294,11 @@
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">causal</span> <span class="o">=</span> <span class="n">causal</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">iter_before_redraw</span> <span class="o">=</span> <span class="n">iter_before_redraw</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">iter_before_redraw</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">iter_before_redraw</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">iter_before_redraw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="n">iter_before_redraw</span>
+        <span class="p">)</span>  <span class="c1"># This will be used for both key and query</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">normalize_inputs</span> <span class="o">=</span> <span class="n">normalize_inputs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">feature_map_type</span> <span class="o">=</span> <span class="n">feature_map_type</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">attn_drop</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="n">dropout</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -325,8 +329,7 @@
             <span class="s2">&quot;normalize_inputs&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">normalize_inputs</span><span class="p">,</span>
         <span class="p">}</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">feature_map_query</span><span class="p">:</span> <span class="n">FeatureMap</span> <span class="o">=</span> <span class="n">feature_map_constructor</span><span class="p">(</span><span class="o">**</span><span class="n">feature_settings</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">feature_map_key</span><span class="p">:</span> <span class="n">FeatureMap</span> <span class="o">=</span> <span class="n">feature_map_constructor</span><span class="p">(</span><span class="o">**</span><span class="n">feature_settings</span><span class="p">)</span>  <span class="c1"># type: ignore</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">feature_map</span><span class="p">:</span> <span class="n">FeatureMap</span> <span class="o">=</span> <span class="n">feature_map_constructor</span><span class="p">(</span><span class="o">**</span><span class="n">feature_settings</span><span class="p">)</span>  <span class="c1"># type: ignore</span></div>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span> <span class="nf">_maybe_promote</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
@@ -362,8 +365,8 @@
     <span class="p">):</span>
 
         <span class="c1"># Project key and queries onto the feature map space</span>
-        <span class="n">k_prime</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">feature_map_key</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
-        <span class="n">q_prime</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">feature_map_query</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="n">k_prime</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">feature_map</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+        <span class="n">q_prime</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">feature_map</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
 
         <span class="k">with</span> <span class="n">autocast</span><span class="p">(</span><span class="n">enabled</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
             <span class="c1"># The softmax kernel approximation for Favor will easily overflow</span>
