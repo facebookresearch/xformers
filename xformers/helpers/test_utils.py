@@ -14,7 +14,7 @@ _DTYPE_PRECISIONS = {
 def _get_default_rtol_and_atol(
     actual: torch.Tensor, expected: torch.Tensor
 ) -> Tuple[float, float]:
-    expected_rtol = expected_atol = actual_rtol = actual_atol = 0
+    expected_rtol = expected_atol = actual_rtol = actual_atol = 0.0
     if isinstance(actual, torch.Tensor):
         actual_rtol, actual_atol = _DTYPE_PRECISIONS.get(actual.dtype, (0.0, 0.0))
     if isinstance(expected, torch.Tensor):
