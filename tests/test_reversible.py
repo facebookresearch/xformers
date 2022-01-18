@@ -140,7 +140,7 @@ def test_reversible_no_alternate(device):
         _ = xFormer.from_config(xFormerConfig([rev, non_rev])).to(device)
 
 
-@pytest.mark.parametrize("config", [_test_configs[1]])
+@pytest.mark.parametrize("config", _test_configs)
 @pytest.mark.parametrize("device", DEVICES)
 def test_reversible_train(config, device):
     torch.manual_seed(0)
@@ -212,5 +212,6 @@ def test_reversible_train(config, device):
     # Arbitrary threshold
     eval_stop_rev = evaluate(model_reversible)
     eval_stop_non_rev = evaluate(model_non_reversible)
-    assert eval_start_rev / eval_stop_rev > 3
-    assert eval_start_non_rev / eval_stop_non_rev > 3
+    if len(config) < 2:  # only check the encoder case
+        assert eval_start_rev / eval_stop_rev > 3
+        assert eval_start_non_rev / eval_stop_non_rev > 3
