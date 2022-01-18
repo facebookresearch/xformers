@@ -8,7 +8,6 @@ import time
 from functools import lru_cache
 from typing import List, Tuple
 
-import pytest
 import torch
 
 from xformers.helpers.test_utils import assert_eq
@@ -217,13 +216,14 @@ def test_garbage_pad_seq_kv_cache_correctness():
     assert_eq(padded_values[1, :3, :], seq_kv_cache[1].values)
     assert_eq(padded_values[2, :7, :], seq_kv_cache[2].values)
 
-def _make_seq(n_ctx:int, value:int, d_model:int):
+
+def _make_seq(n_ctx: int, value: int, d_model: int):
     return torch.full([n_ctx, d_model], value, **bf16_cuda())
+
 
 def test_garbage_pad_active_queries_correctness():
     d_model = 6
     seqs = [
-
         _make_seq(n_ctx=1, value=33, d_model=d_model),
         _make_seq(n_ctx=3, value=42, d_model=d_model),
         _make_seq(n_ctx=7, value=55, d_model=d_model),
@@ -235,7 +235,6 @@ def test_garbage_pad_active_queries_correctness():
     assert_eq(padded_queries[0, :1, :], seqs[0])
     assert_eq(padded_queries[1, :3, :], seqs[1])
     assert_eq(padded_queries[2, :7, :], seqs[2])
-
 
 
 def test_extend_kv_caches_correctness():
@@ -440,7 +439,6 @@ def calculate_scores_via_qk_dotprod(
 ) -> torch.Tensor:
     padded_keys = garbage_pad_keys(seq_kv_cache)
     padded_active_queries = active_queries.to_garbage_padded()
-
     return torch.einsum("bkd,bqd->bkq", padded_keys, padded_active_queries)
 
 
@@ -460,9 +458,12 @@ def test_calculate_scores_via_qk_dotprod_throughput(
             for _ in range(n_seqs)
         ]
     )
-    assert (
-        n_key_ctx_per_seq > n_active_query_ctx_per_seq * 10
-    ), f"n_active_query_ctx_per_seq must be much larger than n_key_ctx_per_seq for our simulator to be useful because we round the HBM memory bandwidth for the active_queries and for the scores down to zero"
+    assert n_key_ctx_per_seq > n_active_query_ctx_per_seq * 10, (
+        "n_active_query_ctx_per_seq must be much larger than "
+        "n_key_ctx_per_seq for our simulator to be useful because "
+        "we round the HBM memory bandwidth for the active_queries and "
+        "for the scores down to zero"
+    )
 
     bytes_in_keys_per_seq = n_key_ctx_per_seq * d_model_per_gpu * 2  # 2 from bf16
     bytes_in_keys_total = bytes_in_keys_per_seq * n_seqs
