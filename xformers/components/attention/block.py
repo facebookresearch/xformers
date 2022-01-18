@@ -61,10 +61,9 @@ class BlockAttention(Attention):
         bsz = bh // self.num_head
         head_dim = q.size(-1)
 
-
         assert key_padding_mask is not None
         key_padding_mask = key_padding_mask.to(q)
-        # key_padding_mask[:,0] = -1
+        key_padding_mask[:,0] = -1
 
         # pad the input length to factors of bucket size
         def _pad_to_window_size(x, window_size):
