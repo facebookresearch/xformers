@@ -247,7 +247,7 @@
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">net</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="n">net</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">cpu_state</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpu_state</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">get_rng_state</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">cuda_in_fwd</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">gpu_devices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">gpu_states</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
@@ -293,7 +293,9 @@
 
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">y1</span><span class="p">,</span> <span class="n">y2</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">split_dim</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="ReversibleBlock.backward_pass"><a class="viewcode-back" href="../../../components/reversible.html#xformers.components.reversible.ReversibleBlock.backward_pass">[docs]</a>    <span class="k">def</span> <span class="nf">backward_pass</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">dy</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">f_args</span><span class="o">=</span><span class="p">{},</span> <span class="n">g_args</span><span class="o">=</span><span class="p">{}):</span>
+<div class="viewcode-block" id="ReversibleBlock.backward_pass"><a class="viewcode-back" href="../../../components/reversible.html#xformers.components.reversible.ReversibleBlock.backward_pass">[docs]</a>    <span class="k">def</span> <span class="nf">backward_pass</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">dy</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">f_args</span><span class="o">=</span><span class="p">{},</span> <span class="n">g_args</span><span class="o">=</span><span class="p">{}</span>
+    <span class="p">):</span>  <span class="c1"># pragma: no cover  # this is covered, but called directly from C++</span>
         <span class="n">y1</span><span class="p">,</span> <span class="n">y2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">chunk</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">split_dim</span><span class="p">)</span>
         <span class="k">del</span> <span class="n">y</span>
 
@@ -343,7 +345,9 @@
         <span class="k">return</span> <span class="n">x</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">dy</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">backward</span><span class="p">(</span>
+        <span class="n">ctx</span><span class="p">,</span> <span class="n">dy</span>
+    <span class="p">):</span>  <span class="c1"># pragma: no cover # this is covered, but called directly from C++</span>
         <span class="n">y</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">y</span>
         <span class="n">kwargs</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">kwargs</span>
         <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">ctx</span><span class="o">.</span><span class="n">blocks</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
