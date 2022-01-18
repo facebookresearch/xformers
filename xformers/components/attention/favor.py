@@ -98,8 +98,7 @@ class FavorAttention(Attention):
             "normalize_inputs": self.normalize_inputs,
         }
 
-        self.feature_map_query: FeatureMap = feature_map_constructor(**feature_settings)  # type: ignore
-        self.feature_map_key: FeatureMap = feature_map_constructor(**feature_settings)  # type: ignore
+        self.feature_map: FeatureMap = feature_map_constructor(**feature_settings)  # type: ignore
 
     @staticmethod
     def _maybe_promote(x: torch.Tensor) -> torch.Tensor:
@@ -135,8 +134,8 @@ class FavorAttention(Attention):
     ):
 
         # Project key and queries onto the feature map space
-        k_prime = self.feature_map_key(k)
-        q_prime = self.feature_map_query(q)
+        k_prime = self.feature_map(k)
+        q_prime = self.feature_map(q)
 
         with autocast(enabled=False):
             # The softmax kernel approximation for Favor will easily overflow

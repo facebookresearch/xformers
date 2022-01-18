@@ -85,8 +85,8 @@ def test_feature_map_shape():
     )
     _ = att(batch, batch, batch)
 
-    assert att.feature_map_key.features.shape[0] == batch.shape[-1]
-    assert att.feature_map_key.features.shape[1] == nb_random_features
+    assert att.feature_map.features.shape[0] == batch.shape[-1]
+    assert att.feature_map.features.shape[1] == nb_random_features
 
 
 def test_feature_map_redraw():
@@ -102,20 +102,16 @@ def test_feature_map_redraw():
             iter_before_redraw=1 if should_redraw else 100,
         )
         v0 = att(batch, batch, batch)
-        assert att.feature_map_query is not None
-        assert att.feature_map_key is not None
+        assert att.feature_map is not None
 
-        fq0 = att.feature_map_query.features
-        fk0 = att.feature_map_key.features
+        f0 = att.feature_map.features
 
         v1 = att(batch, batch, batch)
-        fq1 = att.feature_map_query.features
-        fk1 = att.feature_map_key.features
+        f1 = att.feature_map.features
 
         # There should not have been a redraw after v0
         assert should_redraw != torch.allclose(v0, v1)
-        assert should_redraw != torch.allclose(fq0, fq1)  # type: ignore
-        assert should_redraw != torch.allclose(fk0, fk1)  # type: ignore
+        assert should_redraw != torch.allclose(f0, f1)  # type: ignore
 
     check(should_redraw=True)
     check(should_redraw=False)
