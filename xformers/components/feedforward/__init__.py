@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 from pathlib import Path
 from typing import Any, Callable, Dict, Set, Union
 
@@ -9,7 +15,7 @@ from xformers.utils import (
 
 from .base import Feedforward, FeedforwardConfig  # noqa
 
-# Credits: Classy Vision registry mechanism
+# CREDITS: Classy Vision registry mechanism
 
 FEEDFORWARD_REGISTRY: Dict[str, Any] = {}
 FEEDFORWARD_CLASS_NAMES: Set[str] = set()
@@ -43,6 +49,7 @@ def build_feedforward(config: Union[Dict[str, Any], FeedforwardConfig]):
     subclass, like this:
 
     .. code-block:: python
+
         @dataclass
         class MyConfig:
             ...
@@ -58,6 +65,12 @@ register_feedforward: Callable[
     FEEDFORWARD_REGISTRY, FEEDFORWARD_CLASS_NAMES, Feedforward, FeedforwardConfig
 )
 
+try:
+    from .fused_mlp import FusedMLP  # noqa
+
+    _fused_mlp_available = True
+except ImportError:
+    _fused_mlp_available = False
 from .mlp import MLP  # noqa
 
 __all__ = [
@@ -66,6 +79,9 @@ __all__ = [
     "build_feedforward",
     "register_feedforward",
 ]
+
+if _fused_mlp_available:
+    __all__ += ["FusedMLP"]
 
 # automatically import any Python files in the directory
 import_all_modules(str(Path(__file__).parent), "xformers.components.feedforward")

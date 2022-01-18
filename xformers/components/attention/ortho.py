@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -47,13 +53,17 @@ class OrthoFormerAttention(Attention):
         **kwargs,
     ):
         """
-        Orthoformer attention mechanism, from
-        "
-        Keeping Your Eye on the Ball: Trajectory Attention in Video Transformers
-        Patrick, M., Campbell, D., Asano, Y., Misra, I., Metze, F., Feichtenhofer, C., Vedaldi, A., Henriques, J. (2021)
-        "
-        ArXiv: https://arxiv.org/abs/2106.05392
-        Reference repository: https://github.com/facebookresearch/Motionformer
+        Orthoformer_ attention mechanism.
+        ::
+
+            "Keeping Your Eye on the Ball: Trajectory Attention in Video Transformers"
+            Patrick, M., Campbell, D., Asano, Y., Misra, I., Metze, F., Feichtenhofer,
+            C., Vedaldi, A., Henriques, J. (2021)
+
+            Reference codebase: https://github.com/facebookresearch/Motionformer
+
+        .. _Orthoformer: https://arxiv.org/abs/2106.05392
+
         """
         super().__init__()
 
@@ -97,7 +107,12 @@ class OrthoFormerAttention(Attention):
                 )
                 # FIXME: Should we still accept a mask in that case ?
                 att_mask = None
+
+            # pyre-ignore[61]: TODO(T103337542): `landmarks` mistakenly seems
+            # like it could be uninitialized.
             kernel_1 = scaled_query_key_softmax(q, landmarks, att_mask)
+            # pyre-ignore[61]: TODO(T103337542): `landmarks` mistakenly seems
+            # like it could be uninitialized.
             kernel_2 = scaled_query_key_softmax(landmarks, k, att_mask)
             x = torch.matmul(kernel_1, torch.matmul(kernel_2, v))
         x = self.attn_drop(x)

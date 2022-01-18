@@ -1,3 +1,12 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
+import math
+from typing import List
+
 import numpy as np
 import torch
 
@@ -153,3 +162,99 @@ def dilated_2d_pattern(H, W, k=2):
     d_w = local_nd_distance(H, W, p=1, weights=(0, 1))
     d = (d_h.floor() % k == 0) & (d_w.floor() % k == 0)
     return d
+
+
+# Block sparse utils
+def block_sparsify_tensor(x, mask, block_size):
+    """
+    Block sparsify a tensor, given a mask and block size
+    """
+    ret = torch.empty(
+        (x.size(0), mask.sum(), block_size, block_size), dtype=x.dtype, device=x.device
+    )
+
+    for idx, (h, i, j) in enumerate(zip(*mask.nonzero(as_tuple=True))):
+        ret[:, idx, :, :] = x[
+            :,
+            h,
+            i * block_size : (i + 1) * block_size,
+            j * block_size : (j + 1) * block_size,
+        ]
+    return ret
+
+
+def pattern_to_layout(mask: torch.Tensor, block_size: int) -> torch.Tensor:
+    r"""
+    Given a mask pattern and blocksize, return the corresponding layout
+    which makes sure that all the positives in the mask are covered
+    """
+    assert mask.ndim >= 2, "We're expecting [Heads, Seq, Seq] or [Seq, Seq]"
+    _should_squeeze = False
+
+    if mask.ndim == 2:
+        mask = mask.unsqueeze(0)
+        _should_squeeze = True
+
+    assert (
+        mask.shape[1] % block_size == 0 and mask.shape[2] % block_size == 0
+    ), "We're only handling masks divisible by block_size"
+
+    # Now mark the mask
+    layout = torch.nn.functional.max_pool2d(
+        mask.to(torch.float), kernel_size=block_size, stride=block_size
+    )
+    layout = layout.to(torch.int)
+
+    if _should_squeeze:
+        layout.squeeze_(0)
+
+    return layout
+
+
+def alibi_pattern(threshold: float, mask_shape: torch.Size) -> torch.Tensor:
+    r"""
+    Use the additive bias computation from ALiBi_ to generate a mask.
+    Note that this mask can in turn be used to generate a blocksparse attention computation layout
+
+    .. note: mask_shape is expected to hold the [heads, seq, seq] dimensions
+
+    .. _ALiBi: https://arxiv.org/pdf/2108.12409.pdf
+    """
+
+    # CREDITS: code snippet from Ofir Press, one of the authors
+
+    def get_slopes(n: int):
+        def get_slopes_power_of_2(n: int) -> List[float]:
+            start = 2 ** (-(2 ** -(math.log2(n) - 3)))
+            ratio = start
+            return [start * ratio ** i for i in range(n)]
+
+        # In the paper, we only train models that have 2^a heads for some a. This function has
+        # some good properties that only occur when the input is a power of 2. To maintain that even
+        # when the number of heads is not a power of 2, we use this workaround.
+        if math.log2(n).is_integer():
+            return get_slopes_power_of_2(n)
+        else:
+            closest_power_of_2 = 2 ** math.floor(math.log2(n))
+            return (
+                get_slopes_power_of_2(closest_power_of_2)
+                + get_slopes(2 * closest_power_of_2)[0::2][: n - closest_power_of_2]
+            )
+
+    maxpos = mask_shape[1]
+    attn_heads = mask_shape[0]
+    slopes = torch.Tensor(get_slopes(attn_heads))
+
+    # In the next line, the part after the * is what constructs the diagonal matrix
+    # (right matrix in Figure 3 in the paper).
+    # If you run it you'll see that it doesn't exactly print out the same matrix as we have in Figure 3,
+    # but one where all rows are identical.
+    # This works because the softmax operation is invariant to translation,
+    # and our bias functions are always linear.
+    alibi = slopes.unsqueeze(1).unsqueeze(1) * torch.arange(maxpos).unsqueeze(
+        0
+    ).unsqueeze(0).expand(attn_heads, -1, -1)
+    alibi = alibi.view(attn_heads, 1, maxpos)
+
+    # Now threshold arbitrarily, report the mask
+    return alibi < threshold

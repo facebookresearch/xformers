@@ -1,10 +1,18 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 from abc import ABCMeta, abstractmethod
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Optional, Type, TypeVar
 
 import torch.nn as nn
 
 from xformers.components import Activation
+
+Self = TypeVar("Self", bound="Feedforward")
 
 
 @dataclass
@@ -27,9 +35,10 @@ class Feedforward(nn.Module, metaclass=ABCMeta):
         **kwargs,
     ):
         super().__init__()
+        self.requires_cuda = False
 
     @classmethod
-    def from_config(cls, config: FeedforwardConfig) -> "Feedforward":
+    def from_config(cls: Type[Self], config: FeedforwardConfig) -> Self:
         # Generate the class inputs from the config
         fields = asdict(config)
 

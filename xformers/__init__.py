@@ -3,8 +3,12 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+
 # Please update the doc version in docs/source/conf.py as well.
 __version__ = "0.0.1"
+
+_is_sparse_available = True
 
 
 def _register_extensions():
@@ -54,6 +58,8 @@ try:
     _register_extensions()
 except (ImportError, OSError) as e:
     print(e)
-    raise ImportError(
-        f"ERROR: {e}\nNeed to compile C++ extensions. Run python setup.py build develop"
+    logging.error(
+        f"ERROR: {e}\nNeed to compile C++ extensions to get sparse attention suport."
+        + "Please run python setup.py build develop"
     )
+    _is_sparse_available = False

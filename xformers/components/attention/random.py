@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -90,6 +96,7 @@ class RandomAttention(Attention):
         mask = (
             self.rand_attention_mask
             if att_mask is None
+            # pyre-ignore[58]: Pyre mistakenly thinks `self.rand_attention_mask` may be None.
             else self.rand_attention_mask & att_mask
         )
 

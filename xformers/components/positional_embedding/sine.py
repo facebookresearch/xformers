@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 import math
 
 import torch
@@ -27,9 +33,13 @@ class SinePositionalEmbedding(PositionEmbedding):
             .unsqueeze(0)
             .repeat(seq_len, 1)
         )
-        div = torch.exp(-math.log(10000) * (2 * (dim // 2) / seq_len))
+        div = torch.exp(-math.log(10000) * (2 * (dim // 2) / self.dim_model))
         pos *= div
         pos[:, 0::2] = torch.sin(pos[:, 0::2])
         pos[:, 1::2] = torch.cos(pos[:, 1::2])
 
-        return x.unsqueeze(-1) + pos.unsqueeze(0)
+        if x.ndim == 2:
+            # Handle a non-existing embedding dimension
+            x = x.unsqueeze(-1)
+
+        return x + pos.unsqueeze(0)

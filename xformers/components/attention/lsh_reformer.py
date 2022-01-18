@@ -1,8 +1,5 @@
 from dataclasses import dataclass
 from typing import Optional
-from functools import partial, reduce
-from inspect import isfunction
-from operator import mul
 
 import torch
 import torch.nn as nn
@@ -12,9 +9,6 @@ from torch import Tensor
 from xformers.components.attention import ATTENTION_REGISTRY, Attention, AttentionConfig, register_attention
 from transformers.models.reformer.modeling_reformer import LSHSelfAttention, ReformerConfig, ReverseSort
 
-"""
-using implementation from huggingface transformers
-"""
 
 @dataclass
 class LSHSelfAttentionConfig(AttentionConfig):
@@ -27,7 +21,16 @@ class LSHSelfAttentionConfig(AttentionConfig):
 
 @register_attention("lsh_reformer", LSHSelfAttentionConfig)
 class LSHAttention(Attention):
-
+    """
+    Using implementation from huggingface transformers
+    LSH attention mechanism, from
+    "
+    Reformer: The Efficient Transformer
+    Nikita Kitaev, Łukasz Kaiser, Anselm Levskaya (2020)
+    "
+    ArXiv: https://arxiv.org/abs/2001.04451
+    Reference repository: https://huggingface.co/transformers/model_doc/reformer.html
+    """
     def __init__(
         self,
         num_heads: int,
@@ -138,7 +141,7 @@ class ReformerAttention(LSHSelfAttention):
         if not do_standard_self_attention:
             # set `num_buckets` on the fly, recommended way to do it
             if self.num_buckets is None:
-                self._set_num_buckets(sequence_length)
+                self._set_num_buckets(sequence_length.item())
 
             # hash query key vectors into buckets
             buckets = self._hash_vectors(query_key_vectors, num_hashes, attention_mask)

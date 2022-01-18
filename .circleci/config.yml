@@ -5,22 +5,22 @@
 # Adopted from
 # https://github.com/facebookresearch/detectron2/blob/master/.circleci/config.yml
 
-version: 2
+version: 2.1
 
 # -------------------------------------------------------------------------------------
 # Environments to run the jobs in
 # -------------------------------------------------------------------------------------
 cpu_py38: &cpu_py38
   docker:
-    - image: circleci/python:3.8
+    - image: cimg/python:3.8
   resource_class: large
 
-gpu: &gpu
+gpu_cu112: &gpu_cu112
   environment:
-    CUDA_VERSION: "11.1"
-    CUDA_HOME: /usr/local/cuda-11.1
+    CUDA_VERSION: "11.2"
+    CUDA_HOME: /usr/local/cuda-11.2
   machine:
-    image: ubuntu-1604-cuda-11.1:202012-01
+    image: ubuntu-2004-cuda-11.2:202103-01
   resource_class: gpu.large
 
 # -------------------------------------------------------------------------------------
@@ -113,7 +113,37 @@ run_benchmarks: &run_benchmarks
   - run:
       name: Run Benchmarks
       command: |
-        CUDA_LAUNCH_BLOCKING=1 python3 xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 128 -bs 16 -heads 16
+        CUDA_LAUNCH_BLOCKING=1 python3 xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 128 -bs 16 -heads 4
+
+run_pytorch_benchmark: &run_pytorch_benchmark
+  - run:
+      name: Run Pytorch benchmark
+      command: |
+        python3 xformers/benchmarks/benchmark_pytorch_transformer.py
+
+run_doc_build: &run_doc_build
+   - run:
+       name: Testing doc build
+       command: |
+         cd docs
+         pip install --progress-bar off -r requirements.txt
+         make help
+         make singlehtml | tee make.out
+         ! tail make.out | grep -q warning
+
+commands:
+   setup_pyenv:
+     parameters:
+       version:
+         type: string
+     steps:
+       - run:
+           name: Setup pyenv
+           command: |
+             git clone git://github.com/pyenv/pyenv-update.git $(pyenv root)/plugins/pyenv-update
+             pyenv update
+             pyenv install -f <<parameters.version>>
+             pyenv global <<parameters.version>>
 
 # -------------------------------------------------------------------------------------
 # Jobs to run
@@ -133,14 +163,14 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}
+            - cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_dep_190
 
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}
+          key: cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_repo
 
@@ -150,13 +180,14 @@ jobs:
       - <<: *run_flake8
       - <<: *run_clang_format
       - <<: *run_unittests
+      - <<: *run_doc_build
 
       - store_test_results:
           path: test-results
 
 
   gpu_tests_190:
-    <<: *gpu
+    <<: *gpu_cu112
 
     working_directory: ~/xformers
 
@@ -165,27 +196,30 @@ jobs:
 
       - run: nvidia-smi
 
-      - run: pyenv global 3.8.6
+      - setup_pyenv:
+          version: 3.8.6
 
       - <<: *setup_venv
 
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-190-386-{{ checksum "requirements-test.txt"}}
+            - cache-key-gpu-112-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_dep_190
 
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-gpu-190-386-{ checksum "requirements-test.txt"}}
+          key: cache-key-gpu-112-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_repo
 
       - <<: *run_coverage
 
       - <<: *run_benchmarks
+
+      - <<: *run_pytorch_benchmark
 
       - store_test_results:
           path: test-results

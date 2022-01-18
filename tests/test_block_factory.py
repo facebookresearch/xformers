@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 import pytest
 import torch
 
@@ -17,19 +22,12 @@ SEQ = 128
 MODEL = 96
 DROPOUT = 0.5
 GLOBAL_ATTENTION_RATIO = 0.1  # 10% of the tokens have a global view
-DEVICES = (
-    [torch.device("cpu")]
-    if not torch.cuda.is_available()
-    else [
-        torch.device("cuda")
-    ]  # save a bit on CI for now, we have seperate cpu and gpu jobs
-)
+DEVICES = [torch.device("cuda")]
 VOCAB_SIZE = 32
 
 
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
-@pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 3])
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
@@ -37,28 +35,33 @@ VOCAB_SIZE = 32
 @pytest.mark.parametrize("layer_norm_style", ["pre", "post"])
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("reversible", [True, False])
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="This test requires a CUDA device"
+)
 def test_xformer_encoder_block(
     attention_name: str,
     feedforward_name: str,
     heads: int,
     attn_dropout: float,
     residual_dropout: float,
-    causal: bool,
     activation: Activation,
     layer_norm_style: str,
     device: torch.device,
     reversible: bool,
 ):
+    block_size = 16
 
     attention_config = {
         "name": attention_name,
         "dropout": attn_dropout,
-        "causal": causal,
+        "causal": False,
         "window_size": SEQ // 8 + 1,
         "seq_len": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
         "dim_head": MODEL / heads,
+        "layout": torch.eye(SEQ // block_size, SEQ // block_size, dtype=torch.long),
+        "block_size": block_size,
     }
 
     multi_head_config = {
@@ -118,6 +121,9 @@ def test_xformer_encoder_block(
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
 @pytest.mark.parametrize("layer_norm_style", ["pre", "post"])
 @pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="This test requires a CUDA device"
+)
 def test_xformer_decoder_block(
     attention_name: str,
     feedforward_name: str,
@@ -130,6 +136,8 @@ def test_xformer_decoder_block(
     device: torch.device,
 ):
 
+    block_size = 16
+
     attention_config = {
         "name": attention_name,
         "dropout": attn_dropout,
@@ -139,6 +147,8 @@ def test_xformer_decoder_block(
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
         "num_heads": heads,
         "dim_head": MODEL / heads,
+        "layout": torch.eye(SEQ // block_size, SEQ // block_size, dtype=torch.long),
+        "block_size": block_size,
     }
 
     multi_head_config = {
@@ -168,6 +178,7 @@ def test_xformer_decoder_block(
         multi_head_config=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
+        layer_norm_style=layer_norm_style,
     )
 
     decoder_block_config = xFormerDecoderConfig(
@@ -176,6 +187,7 @@ def test_xformer_decoder_block(
         multi_head_config_cross=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
+        layer_norm_style=layer_norm_style,
     )
 
     # Test that the whole block can be instantiated
@@ -187,7 +199,7 @@ def test_xformer_decoder_block(
     encoded = encoder_block(inputs)
     _ = decoder_block(
         inputs, encoded
-    )  # FIXME: does not make a lot of sense, just checking dimensions
+    )  # NOTE: does not make a lot of sense, just checking dimensions
 
     # Check that we support masking, at least interface wise (do not check correctness yet)
     att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)

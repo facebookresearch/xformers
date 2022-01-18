@@ -1,4 +1,10 @@
-# Credits: adapted from the Nystromformer repo
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
+# CREDITS: adapted from the Nystromformer repo
 # https://github.com/mlpen/Nystromformer
 
 from enum import Enum
