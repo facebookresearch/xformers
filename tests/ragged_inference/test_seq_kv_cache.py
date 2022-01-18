@@ -5,7 +5,7 @@ from typing import List, Tuple
 import pytest
 import torch
 
-from xformers.tests.utils import assert_eq
+from xformers.helpers.test_utils import assert_eq
 
 
 def bf16_cuda():

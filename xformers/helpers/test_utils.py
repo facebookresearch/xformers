@@ -1,12 +1,32 @@
+from typing import Tuple
+
+import numpy as np
+import torch
+
+_DTYPE_PRECISIONS = {
+    torch.float16: (1e-3, 1e-3),
+    torch.bfloat16: (1e-1, 1e-3),
+    torch.float32: (1e-4, 1e-5),
+    torch.float64: (1e-5, 1e-8),
+}
+
+
+def _get_default_rtol_and_atol(
+    actual: torch.Tensor, expected: torch.Tensor
+) -> Tuple[float, float]:
+    expected_rtol = expected_atol = actual_rtol = actual_atol = 0
+    if isinstance(actual, torch.Tensor):
+        actual_rtol, actual_atol = _DTYPE_PRECISIONS.get(actual.dtype, (0.0, 0.0))
+    if isinstance(expected, torch.Tensor):
+        expected_rtol, expected_atol = _DTYPE_PRECISIONS.get(expected.dtype, (0.0, 0.0))
+    return max(actual_rtol, expected_rtol), max(actual_atol, expected_atol)
+
+
 def assert_eq(actual, expected, msg="", rtol=None, atol=None):
     """Asserts two things are equal with nice support for lists and tensors
 
     It also gives prettier error messages than assert a == b
     """
-    # This does a lot of CPU work even when running in PYTHONOPTIMIZE mode otherwise
-    if not __debug__:
-        return
-
     if not msg:
         msg = f"Values are not equal: \n\ta={actual} \n\tb={expected}"
 
