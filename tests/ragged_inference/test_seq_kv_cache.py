@@ -53,8 +53,9 @@ class RaggedActivations:
         idx_so_far = 0
         for seq_idx, n_ctx_in_this_seq in enumerate(self.n_ctx_per_seq):
             this_seq = self.raw_tensor[idx_so_far : idx_so_far + n_ctx_in_this_seq]
-            idx_so_far += n_ctx_in_this_seq
             padded_acts[seq_idx, :n_ctx_in_this_seq, :] = this_seq
+            idx_so_far += n_ctx_in_this_seq
+
         return padded_acts
 
 
@@ -215,6 +216,26 @@ def test_garbage_pad_seq_kv_cache_correctness():
     assert_eq(padded_values[0, :1, :], seq_kv_cache[0].values)
     assert_eq(padded_values[1, :3, :], seq_kv_cache[1].values)
     assert_eq(padded_values[2, :7, :], seq_kv_cache[2].values)
+
+def _make_seq(n_ctx:int, value:int, d_model:int):
+    return torch.full([n_ctx, d_model], value, **bf16_cuda())
+
+def test_garbage_pad_active_queries_correctness():
+    d_model = 6
+    seqs = [
+
+        _make_seq(n_ctx=1, value=33, d_model=d_model),
+        _make_seq(n_ctx=3, value=42, d_model=d_model),
+        _make_seq(n_ctx=7, value=55, d_model=d_model),
+    ]
+    active_queries = RaggedActivations.from_list(seqs)
+    padded_queries = active_queries.to_garbage_padded()
+
+    # Check that the non-garbage portion of each is correct
+    assert_eq(padded_queries[0, :1, :], seqs[0])
+    assert_eq(padded_queries[1, :3, :], seqs[1])
+    assert_eq(padded_queries[2, :7, :], seqs[2])
+
 
 
 def test_extend_kv_caches_correctness():
