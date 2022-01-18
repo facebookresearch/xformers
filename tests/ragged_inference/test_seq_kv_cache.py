@@ -37,6 +37,26 @@ class RaggedActivations:
             yield self.raw_tensor[idx_so_far : idx_so_far + n_ctx_in_this_seq]
             idx_so_far += n_ctx_in_this_seq
 
+    def to_garbage_padded(self) -> torch.Tensor:
+        """
+        Create a tensor of shape (n_seqs, n_ctx_max, d_model) where the
+        sequences are right-padded with garbage data
+        """
+        n_seqs = len(self.n_ctx_per_seq)
+        n_ctx_max = max(self.n_ctx_per_seq)
+
+        n_dim = self.raw_tensor.shape[-1]
+        padded_acts = torch.empty(
+            n_seqs, n_ctx_max, n_dim, dtype=self.raw_tensor.dtype, device="cuda"
+        )
+
+        idx_so_far = 0
+        for seq_idx, n_ctx_in_this_seq in enumerate(self.n_ctx_per_seq):
+            this_seq = self.raw_tensor[idx_so_far : idx_so_far + n_ctx_in_this_seq]
+            idx_so_far += n_ctx_in_this_seq
+            padded_acts[seq_idx, :n_ctx_in_this_seq, :] = this_seq
+        return padded_acts
+
 
 class SingleSeqKVCache:
     def __init__(self, keys: torch.Tensor, values: torch.Tensor):
@@ -134,6 +154,31 @@ def garbage_pad_seq_kv_cache(
     return (padded_keys, padded_values)
 
 
+def garbage_pad_keys(
+    seq_kv_cache: List[SingleSeqKVCache],
+) -> torch.Tensor:
+    assert seq_kv_cache[0].is_cuda
+    dtype = seq_kv_cache[0].dtype
+    n_ctx_per_kv_cache = [seq.n_ctx for seq in seq_kv_cache]
+
+    # Create a view so that the output is (n_seqs, n_ctx_max, d_model)
+    # This should not incur an extra memcopy
+    n_seqs = len(n_ctx_per_kv_cache)
+    n_ctx_max = max(n_ctx_per_kv_cache)
+
+    padded_keys = torch.empty(
+        n_seqs,
+        n_ctx_max,
+        seq_kv_cache[0].d_model_per_gpu,
+        dtype=dtype,
+        device="cuda",
+    )
+
+    for seq_idx, seq in enumerate(seq_kv_cache):
+        padded_keys[seq_idx, : seq.n_ctx, :] = seq.keys
+    return padded_keys
+
+
 @lru_cache(maxsize=1)  # Memoize because we repeat this for consecutive resblocks
 def _create_indices(n_ctx_per_kv_cache):
     """
@@ -153,7 +198,6 @@ def _create_indices(n_ctx_per_kv_cache):
     return torch.tensor(indices_list, device="cuda")
 
 
-@pytest.mark.n_gpus(2)
 def test_garbage_pad_seq_kv_cache_correctness():
     seq_kv_cache = [
         _single_seq_kv_cache(n_ctx=1, value=33, d_model=2),
@@ -173,7 +217,6 @@ def test_garbage_pad_seq_kv_cache_correctness():
     assert_eq(padded_values[2, :7, :], seq_kv_cache[2].values)
 
 
-@pytest.mark.n_gpus(2)
 def test_extend_kv_caches_correctness():
     d_model = 6
     seq_kv_cache = [
@@ -210,7 +253,6 @@ def test_extend_kv_caches_correctness():
     assert_eq(new_cache[2].values[:, 0].cpu(), [55, 55, 55, 55, 55, 55, 55, 2])
 
 
-@pytest.mark.n_gpus(2)
 def test_index_select_throughput():
     n_ctx_per_seq = 8192
     n_seqs = 100
@@ -263,21 +305,20 @@ def test_index_select_throughput():
         )
 
 
-@pytest.mark.n_gpus(2)
-def test_garbage_pad_seq_kv_cache_throughput(n_ctx_per_seq=1024):
-    n_seqs = 20
+def test_garbage_pad_keys_throughput(n_ctx_per_seq=1024):
+    n_seqs = 100
     d_model_per_gpu = 12 * 1024 // 8
     seq_kv_cache = [
         _single_seq_kv_cache(n_ctx=n_ctx_per_seq, value=42, d_model=d_model_per_gpu)
         for _ in range(n_seqs)
     ]
 
-    bytes_per_key_cache = n_ctx_per_seq * d_model_per_gpu * 2  # 2 from bf16
-    bytes_per_kv_cache_seq = bytes_per_key_cache * 2  # Keys and values
+    bytes_in_keys_per_seq = n_ctx_per_seq * d_model_per_gpu * 2  # 2 from bf16
+    bytes_in_keys_total = bytes_in_keys_per_seq * n_seqs
     hbm_bw_bytes_per_gpu = 1555e9  # 1.5TB/s
 
     # If we just read the bytes directly from memory
-    theor_load_micros_per_seq = bytes_per_kv_cache_seq / hbm_bw_bytes_per_gpu * 1e6
+    theor_load_micros_per_seq = bytes_in_keys_per_seq / hbm_bw_bytes_per_gpu * 1e6
 
     # Doing our operation should be slower than the theoretical minimum because we
     # do the following to the items
@@ -287,13 +328,13 @@ def test_garbage_pad_seq_kv_cache_throughput(n_ctx_per_seq=1024):
     expected_micros_per_seq = theor_load_micros_per_seq * 2
 
     # warmup
-    garbage_pad_seq_kv_cache(seq_kv_cache)
+    garbage_pad_keys(seq_kv_cache)
 
     torch.cuda.synchronize()
     started_at = time.time()
     n_iters = 10
     for _ in range(n_iters):
-        garbage_pad_seq_kv_cache(seq_kv_cache)
+        garbage_pad_keys(seq_kv_cache)
 
     torch.cuda.synchronize()
     elapsed_micros = (time.time() - started_at) * 1e6
@@ -303,7 +344,8 @@ def test_garbage_pad_seq_kv_cache_throughput(n_ctx_per_seq=1024):
     print(
         f"""
 # Theoretical
-{bytes_per_kv_cache_seq/1e6=:.2f}MB
+{bytes_in_keys_total/1e9=:.3f}GB
+{bytes_in_keys_per_seq/1e6=:.2f}MB
 {theor_load_micros_per_seq=:.1f}µs per seq (to just load once from memory)
 {expected_micros_per_seq=:.1f}µs per seq
 
@@ -314,3 +356,144 @@ def test_garbage_pad_seq_kv_cache_throughput(n_ctx_per_seq=1024):
 {micros_per_seq/expected_micros_per_seq:.1f}x the expected HBM-bandwidth bound time
 """
     )
+
+
+def test_garbage_pad_active_queries_throughput(n_active_ctx_per_seq=5):
+    n_seqs = 100
+    d_model_per_gpu = 12 * 1024 // 8
+    active_queries = RaggedActivations.from_list(
+        [
+            torch.ones(n_active_ctx_per_seq, d_model_per_gpu, **bf16_cuda()) * 2
+            for _ in range(n_seqs)
+        ]
+    )
+
+    bytes_in_queries_per_seq = n_active_ctx_per_seq * d_model_per_gpu * 2  # 2 from bf16
+    bytes_in_queries_total = bytes_in_queries_per_seq * n_seqs
+    hbm_bw_bytes_per_gpu = 1555e9  # 1.5TB/s
+
+    # If we just read the bytes directly from memory
+    theor_load_micros_per_seq = bytes_in_queries_per_seq / hbm_bw_bytes_per_gpu * 1e6
+
+    # Doing our operation should be slower than the theoretical minimum because we
+    # do the following to the items
+    #
+    # 1. Read them from the per-seq areas
+    # 2. Write them back into the buffer
+    expected_micros_per_seq = theor_load_micros_per_seq * 2
+
+    # warmup
+    active_queries.to_garbage_padded()
+
+    torch.cuda.synchronize()
+    started_at = time.time()
+    n_iters = 10
+    for _ in range(n_iters):
+        active_queries.to_garbage_padded()
+
+    torch.cuda.synchronize()
+    elapsed_micros = (time.time() - started_at) * 1e6
+
+    micros_per_mb = elapsed_micros / n_iters
+    micros_per_seq = micros_per_mb / n_seqs
+    print(
+        f"""
+# Theoretical
+{bytes_in_queries_total/1e9=:.3f}GB
+{bytes_in_queries_per_seq/1e6=:.2f}MB
+{theor_load_micros_per_seq=:.1f}µs per seq (to just load once from memory)
+{expected_micros_per_seq=:.1f}µs per seq
+
+# Actual
+{micros_per_mb=:.1f}µs per microbatch
+{micros_per_seq=:.1f}µs per seq
+
+{micros_per_seq/expected_micros_per_seq:.1f}x the expected HBM-bandwidth bound time
+"""
+    )
+
+
+def calculate_scores_via_qk_dotprod(
+    seq_kv_cache: List[SingleSeqKVCache],  # These have already been extended
+    active_queries: RaggedActivations,
+) -> torch.Tensor:
+    padded_keys = garbage_pad_keys(seq_kv_cache)
+    padded_active_queries = active_queries.to_garbage_padded()
+
+    return torch.einsum("bkd,bqd->bkq", padded_keys, padded_active_queries)
+
+
+def test_calculate_scores_via_qk_dotprod_throughput(
+    n_key_ctx_per_seq=1024, n_active_query_ctx_per_seq=5
+):
+    n_seqs = 100
+    d_model_per_gpu = 12 * 1024 // 8
+    seq_kv_cache = [
+        _single_seq_kv_cache(n_ctx=n_key_ctx_per_seq, value=42, d_model=d_model_per_gpu)
+        for _ in range(n_seqs)
+    ]
+
+    active_queries = RaggedActivations.from_list(
+        [
+            torch.ones(n_active_query_ctx_per_seq, d_model_per_gpu, **bf16_cuda()) * 2
+            for _ in range(n_seqs)
+        ]
+    )
+    assert (
+        n_key_ctx_per_seq > n_active_query_ctx_per_seq * 10
+    ), f"n_active_query_ctx_per_seq must be much larger than n_key_ctx_per_seq for our simulator to be useful because we round the HBM memory bandwidth for the active_queries and for the scores down to zero"
+
+    bytes_in_keys_per_seq = n_key_ctx_per_seq * d_model_per_gpu * 2  # 2 from bf16
+    bytes_in_keys_total = bytes_in_keys_per_seq * n_seqs
+    hbm_bw_bytes_per_gpu = 1555e9  # 1.5TB/s
+
+    # If we just read the bytes directly from memory
+    theor_load_micros_per_seq = bytes_in_keys_per_seq / hbm_bw_bytes_per_gpu * 1e6
+
+    # Doing our operation should be slower than the theoretical minimum because we
+    # do the following to the items
+    #
+    # 1. Read them from the per-seq areas
+    # 2. Write them back into the buffer
+    expected_micros_per_seq = theor_load_micros_per_seq * 2
+
+    # warmup
+    calculate_scores_via_qk_dotprod(seq_kv_cache, active_queries)
+
+    torch.cuda.synchronize()
+    started_at = time.time()
+    n_iters = 10
+    for _ in range(n_iters):
+        calculate_scores_via_qk_dotprod(seq_kv_cache, active_queries)
+
+    torch.cuda.synchronize()
+    elapsed_micros = (time.time() - started_at) * 1e6
+
+    micros_per_mb = elapsed_micros / n_iters
+    micros_per_seq = micros_per_mb / n_seqs
+    print(
+        f"""
+# Theoretical
+{bytes_in_keys_total/1e9=:.3f}GB
+{bytes_in_keys_per_seq/1e6=:.2f}MB
+{theor_load_micros_per_seq=:.1f}µs per seq (to just load once from memory)
+{expected_micros_per_seq=:.1f}µs per seq
+
+# Actual
+{micros_per_mb=:.1f}µs per microbatch
+{micros_per_seq=:.1f}µs per seq
+
+{micros_per_seq/expected_micros_per_seq:.1f}x the expected HBM-bandwidth bound time
+"""
+    )
+
+
+"""
+# Run tests with the following
+pytest -vsx tests/ragged_inference/test_seq_kv_cache.py
+
+
+# Profile with the following
+pytest -vsx tests/ragged_inference/test_seq_kv_cache.py -k test_calculate_scores_via_qk_dotprod_throughput
+
+"""
