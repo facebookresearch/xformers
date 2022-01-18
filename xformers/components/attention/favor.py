@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 import logging
 import math
 from dataclasses import dataclass
@@ -43,7 +48,8 @@ class FavorAttention(Attention):
         **__,
     ):
         r"""
-        Kernelized attention, as proposed in Performers_
+        Kernelized attention, as proposed in Performers_.
+
         FAVOR stands for "Fast Attention Via positive Orthogonal Random features"
 
         Args:
@@ -53,8 +59,8 @@ class FavorAttention(Attention):
             feature_map_type (FeatureMapType): the type of feature map being used,
             for instance orthogonal random features.
 
-        _Performers: "Rethinking attention with performers." K. Choromanski et al. (2020).
-        https://arxiv.org/pdf/2009.14794v1.pdf
+        .. _Performers: "Rethinking attention with performers." K. Choromanski et al. (2020).
+            https://arxiv.org/pdf/2009.14794v1.pdf
         """
         super().__init__()
 
@@ -132,12 +138,10 @@ class FavorAttention(Attention):
             att_normalization = q_prime @ (
                 k_prime.transpose(-2, -1) @ torch.ones_like(v)
             )
-
-        # Actually compute attention
-        if self.causal:
-            att_raw, att_normalization = self._causal_attention(k_prime, q_prime, v)
-        else:
             att_raw = q_prime @ (k_prime.transpose(-2, -1) @ v)
+        else:
+            # Actually compute attention
+            att_raw, att_normalization = self._causal_attention(k_prime, q_prime, v)
 
         # Normalize
         att = att_raw / att_normalization

@@ -1,41 +1,59 @@
-.. fairscale documentation master file, created by
-   sphinx-quickstart on Tue Sep  8 16:19:17 2020.
-   You can adapt this file completely to your liking,
-   but it should at least contain the root `toctree`
-   directive.
 
-Welcome to template's documentation!
+Welcome to xFormers's documentation!
 =====================================
 
+*xFormers* is a PyTorch based library which hosts flexible Transformers parts.
+They are interoperable and optimized building blocks, which can be optionally be combined
+to create some state of the art models.
+
 .. toctree::
-   :maxdepth: 3
-   :caption: Contents:
+   :maxdepth: 2
+   :caption: Index
    :hidden:
 
-   subfolder/index
-   another_subfolder/index
+   what_is_xformers
 
-*temnplate* is a PyTorch extension library to do something really, really interesting.
+|
+|
 
+.. toctree::
+   :maxdepth: 2
+   :caption: Components Documentation
 
-Components
-----------
+   components/index
 
-* This:
-   * `My Class Name - or arbitrary title <../../en/latest/this/is/a/hierarchy/classname.html>`_
+|
+|
 
-* That:
-    * `Another arbitrary title or class name <../../en/latest/this/is/another/hierarchy/classname.html>`_
+.. toctree::
+   :maxdepth: 2
+   :caption: Factory
 
+   factory/index
 
-.. warning::
-    This library is under active development.
-    Please be mindful and create an
-    `issue <https://github.com/fairinternal/template/issues>`_
-    if you have any trouble and/or suggestion.
+|
+|
 
+.. toctree::
+   :maxdepth: 2
+   :caption: Tutorials
 
-Reference
-=========
+   tutorials/index
 
-:ref:`genindex` | :ref:`modindex` | :ref:`search`
+|
+|
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Tools
+
+   triton/index
+
+|
+|
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Tools
+
+   tools/index

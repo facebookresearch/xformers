@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
@@ -137,20 +143,22 @@ class xFormer(torch.nn.Module):
 
         # Encode to latent space if encoder is present
         if len(list(self.encoders.parameters())) > 0:
-            if isinstance(self.encoders, torch.nn.ModuleList):
+            encoders = self.encoders
+            if isinstance(encoders, torch.nn.ModuleList):
                 memory = src.clone()
-                for encoder in self.encoders:
+                for encoder in encoders:
                     memory = encoder(memory, input_mask=encoder_input_mask)
             else:
                 if self.enc_pose_encoding:
                     memory = self.enc_pose_encoding(src)
 
+                # pyre-fixme[61]: `memory` is not always initialized here.
                 # Reversible Encoder
                 x = torch.cat([memory, memory], dim=-1)
 
                 # TODO: pass in key and value independently.
                 kwargs = {"att_mask": encoder_input_mask}
-                x = self.encoders(x, **kwargs)
+                x = encoders(x, **kwargs)
                 memory = torch.stack(x.chunk(2, dim=-1)).mean(dim=0)
 
             if not self.decoders:
@@ -163,6 +171,7 @@ class xFormer(torch.nn.Module):
             for decoder in self.decoders:
                 tgt = decoder(
                     target=tgt,
+                    # pyre-fixme[61]: `memory` is not always initialized here.
                     memory=memory,
                     input_mask=decoder_input_mask,
                 )

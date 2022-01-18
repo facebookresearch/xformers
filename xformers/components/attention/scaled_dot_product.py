@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 from typing import Optional
 
 import torch
@@ -11,8 +16,12 @@ from xformers.components.attention.core import scaled_dot_product_attention
 class ScaledDotProduct(Attention):
     r"""
     Implementing the Scaled Dot-Product attention proposed in
-    "Attention is all you need", Vaswani et al. https://arxiv.org/abs/1706.03762v5
+    `Attention is all you need`_, Vaswani et al.
+
+    .. _`Attention is all you need`: https://arxiv.org/abs/1706.03762v5
     """
+
+    mask: Optional[torch.Tensor]
 
     def __init__(
         self,
@@ -49,14 +58,6 @@ class ScaledDotProduct(Attention):
 
         # Self-attend: (B x nh, S, hs) x (B x nh, hs, S) -> (B x nh, S, S)
         y = scaled_dot_product_attention(
-<<<<<<< HEAD
-            q=q, k=k, v=v, att_mask=att_mask, dropout=self.attn_drop if self.training else None
-=======
-            q=q,
-            k=k,
-            v=v,
-            att_mask=att_mask,
-            dropout=self.attn_drop,
->>>>>>> fd759a5500051d9e08e6358a6af005e8a684fd7e
+            q=q, k=k, v=v, att_mask=att_mask, dropout=self.attn_drop, causal=self.causal
         )
         return y

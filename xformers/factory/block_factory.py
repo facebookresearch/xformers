@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -19,6 +25,20 @@ from xformers.components.positional_embedding import (
 from xformers.utils import generate_matching_config
 
 from xformers.components.attention.utils import merge_masks
+# NOTE: The Triton layernorm can be activated/deactivated from here
+_is_triton_available = False
+
+if _is_triton_available:
+    try:
+        from xformers.triton.layer_norm import FusedLayerNorm
+    except ImportError as e:
+        import logging
+
+        logging.warning(
+            f"Triton is not available, some optimizations will not be enabled.\n{e}"
+        )
+        _is_triton_available = False
+
 
 def _to_tensor_list(
     inputs: Union[torch.Tensor, List[torch.Tensor]]
@@ -68,7 +88,7 @@ class LayerNormStyle(str, Enum):
     Post = "post"
 
 
-# Credits: the following is inspired by FastAI's Transformer implementation
+# CREDITS: the following is inspired by FastAI's Transformer implementation
 class Residual(nn.Module):
     """Object-oriented handling of the residual path"""
 
@@ -87,9 +107,13 @@ class PreNorm(nn.Module):
 
     ..Note: If a list of inputs is passed, all of them get normalized"""
 
-    def __init__(self, d_model: int, sublayer: nn.Module):
+    def __init__(self, d_model: int, sublayer: nn.Module, use_triton: bool = True):
         super().__init__()
-        self.norm = nn.LayerNorm(d_model)
+        if _is_triton_available and use_triton:
+            self.norm: Union[nn.LayerNorm, FusedLayerNorm] = FusedLayerNorm(d_model)
+        else:
+            self.norm = nn.LayerNorm(d_model)
+
         self.sublayer = sublayer
 
     def forward(self, inputs: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs):
@@ -102,9 +126,13 @@ class PreNorm(nn.Module):
 class PostNorm(nn.Module):
     """Adds LayerNorm after computing attention"""
 
-    def __init__(self, d_model: int, sublayer: nn.Module):
+    def __init__(self, d_model: int, sublayer: nn.Module, use_triton: bool = True):
         super().__init__()
-        self.norm = nn.LayerNorm(d_model)
+        if _is_triton_available and use_triton:
+            self.norm: Union[nn.LayerNorm, FusedLayerNorm] = FusedLayerNorm(d_model)
+        else:
+            self.norm = nn.LayerNorm(d_model)
+
         self.sublayer = sublayer
 
     def forward(self, inputs: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs):
@@ -115,7 +143,10 @@ class PostNorm(nn.Module):
 
 
 def _get_ln_factory(
-    d_model: int, layer_norm_style: Optional[LayerNormStyle], residual: bool = True
+    d_model: int,
+    layer_norm_style: Optional[LayerNormStyle],
+    residual: bool = True,
+    use_triton: bool = True,
 ):
     def get_layer_wrapper(
         d_model: int,
@@ -125,14 +156,14 @@ def _get_ln_factory(
     ):
         if residual:
             return (
-                Residual(PreNorm(d_model, sublayer))
+                Residual(PreNorm(d_model, sublayer, use_triton))
                 if layer_norm_style == LayerNormStyle.Pre
-                else PostNorm(d_model, Residual(sublayer))
+                else PostNorm(d_model, Residual(sublayer), use_triton)
             )
         return (
-            PreNorm(d_model, sublayer)
+            PreNorm(d_model, sublayer, use_triton)
             if layer_norm_style == LayerNormStyle.Pre
-            else PostNorm(d_model, sublayer)
+            else PostNorm(d_model, sublayer, use_triton)
         )
 
     def ln_factory(sublayer: nn.Module):
@@ -149,6 +180,7 @@ class xFormerBlockConfig:
     block_type: BlockType
     layer_norm_style: LayerNormStyle
     layer_position: LayerPosition
+    use_triton: bool
 
     def __init__(
         self,
@@ -157,6 +189,7 @@ class xFormerBlockConfig:
         position_encoding_config: Optional[Dict[str, Any]],
         block_type: BlockType,
         layer_norm_style: LayerNormStyle = LayerNormStyle("post"),
+        use_triton: bool = True,
     ):
         self.dim_model = dim_model
         self.block_type = block_type

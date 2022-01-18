@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, Set, Union
 
@@ -12,7 +18,7 @@ from xformers.utils import (
 from ._sputnik_sparse import SparseCS
 from .base import Attention, AttentionConfig  # noqa
 
-# Credits: Classy Vision registry mechanism
+# CREDITS: Classy Vision registry mechanism
 
 ATTENTION_REGISTRY: Dict[str, Any] = {}
 ATTENTION_CLASS_NAMES: Set[str] = set()
@@ -32,9 +38,14 @@ def build_attention(config: Union[Dict[str, Any], AttentionConfig]):
     (see :func:`register_attention`) and call .from_config on it."""
 
     if not isinstance(config, AttentionConfig):
-        config_instance = generate_matching_config(
-            config, ATTENTION_REGISTRY[config["name"]].config
-        )
+        try:
+            config_instance = generate_matching_config(
+                config, ATTENTION_REGISTRY[config["name"]].config
+            )
+        except KeyError as e:
+            name = config["name"]
+            logging.warning(f"{name} not available among {ATTENTION_REGISTRY.keys()}")
+            raise e
     else:
         config_instance = config
 
@@ -51,6 +62,7 @@ def build_attention(config: Union[Dict[str, Any], AttentionConfig]):
     subclass, like this:
 
     .. code-block:: python
+
         @dataclass
         class MyConfig:
             ...
@@ -107,6 +119,15 @@ __all__ = [
     "LSHAttention",
     "LongShortAttention"
 ]
+
+# Optionally expose the BlockSparse attention
+try:
+    from .blocksparse import BlockSparseAttention  # noqa
+
+    __all__ += ["BlockSparseAttention"]
+except ImportError:
+    pass
+
 
 # automatically import any Python files in the directory
 import_all_modules(str(Path(__file__).parent), "xformers.components.attention")

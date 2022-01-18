@@ -1,10 +1,16 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, Union
 
 from xformers.utils import import_all_modules
 
-from .activations import Activation
+from .activations import Activation, build_activation  # noqa
 from .attention import Attention, build_attention  # noqa
 from .multi_head_dispatch import MultiHeadDispatch, MultiHeadDispatchConfig  # noqa
 

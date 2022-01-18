@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 import math
 from enum import Enum, auto
 from typing import Optional
@@ -6,10 +12,6 @@ import torch
 from torch.autograd.profiler import record_function
 
 from .base import FeatureMap
-
-# TODO: Handle different input normalization if key/query ?
-# norm = xprime.max(dim=-1, keepdim=True) if is_query else xprime.max()
-
 
 """
 A set of feature maps which approximate the softmax kernel, as per the Performers_ paper.
@@ -57,6 +59,12 @@ class SoftMaxPositiveEstimators(FeatureMap):
                 self.features = self._get_feature_map(
                     x.shape[-1], self.dim_feature_map, x.device
                 )
+
+            features = self.features
+            assert features is not None
+
+            if features.dtype != x.dtype:
+                self.features = features.to(x.dtype)
 
             self._iter_counter += 1
 

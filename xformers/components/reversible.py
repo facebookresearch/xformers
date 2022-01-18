@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 from typing import List
 
 import torch
@@ -5,12 +11,13 @@ import torch.nn as nn
 from torch.autograd.function import Function
 from torch.utils.checkpoint import get_device_states, set_device_states
 
-# Code adopted from
+# CREDITS: Code adapted from
 # https://github.com/lucidrains/reformer-pytorch/blob/master/reformer_pytorch/reversible.py
 # https://github.com/RobinBruegger/RevTorch/blob/master/revtorch/revtorch.py,
 # https://pytorch.org/docs/stable/_modules/torch/utils/checkpoint.html
 
 
+# pyre-fixme[13]: `cpu_state` is not initialized in the constructor.
 class Deterministic(nn.Module):
     def __init__(self, net: nn.Module):
         super().__init__()

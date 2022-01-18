@@ -1,3 +1,10 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
+import logging as log
 from dataclasses import dataclass
 from typing import Optional
 
@@ -46,6 +53,40 @@ class NystromSelfAttentionConfig(AttentionConfig):
     use_razavi_pinverse: Optional[bool]
 
 
+def get_avg_pool(n: int):
+    def avg_pool(x: torch.Tensor):
+        # Average independently for every segment in the sequence dimension
+        seq_len = x.shape[1]
+        head_dim = x.shape[2]
+        segments = seq_len // n
+
+        # Dimensions are a match
+        if seq_len % n == 0:
+            return x.reshape(
+                -1,
+                n,
+                segments,
+                head_dim,
+            ).mean(dim=-2)
+
+        # Handle the last segment boundary being off
+        n_round = n - seq_len % n
+
+        x_avg_round = (
+            x[:, : n_round * segments, :]
+            .reshape(-1, n_round, segments, head_dim)
+            .mean(dim=-2)
+        )
+        x_avg_off = (
+            x[:, n_round * segments :, :]
+            .reshape(-1, n - n_round, segments + 1, head_dim)
+            .mean(dim=-2)
+        )
+        return torch.cat((x_avg_round, x_avg_off), dim=-2)
+
+    return avg_pool
+
+
 @register_attention("nystrom", NystromSelfAttentionConfig)
 class NystromAttention(Attention):
     # TODO: update defaults for use_razavi_pinverse and inv_iterations
@@ -65,16 +106,20 @@ class NystromAttention(Attention):
         **kwargs,
     ):
         """
-        Nystrom attention mechanism, from
-        "
-        Nystromformer: A Nystrom-based Algorithm for Approximating Self-Attention.
-        Xiong, Y., Zeng, Z., Chakraborty, R., Tan, M., Fung, G., Li, Y., Singh, V. (2021)
-        "
-        ArXiv: https://arxiv.org/pdf/2102.03902.pdf
-        Code: https://github.com/mlpen/Nystromformer
+        Nystrom attention mechanism, from Nystromformer_.
+        ::
+
+            "A Nystrom-based Algorithm for Approximating Self-Attention."
+            Xiong, Y., Zeng, Z., Chakraborty, R., Tan, M., Fung, G., Li, Y., Singh, V. (2021)
+
+            Reference codebase: https://github.com/mlpen/Nystromformer
+
+        .. _Nystromformer: https://arxiv.org/pdf/2102.03902.pdf
+
         """
         super().__init__()
 
+        self.accepts_att_mask = False
         self.num_landmarks = num_landmarks
         # TODO: should be able to not have to pass in num_heads
         self.num_heads = num_heads
@@ -98,9 +143,7 @@ class NystromAttention(Attention):
         if landmark_pooling is not None:
             self.landmark_pooling = landmark_pooling
         else:
-            self.landmark_pooling = torch.nn.AdaptiveAvgPool2d(
-                (self.num_landmarks, None)
-            )
+            self.landmark_pooling = get_avg_pool(self.num_landmarks)
 
         # Optional lower triangular masks for causal attention
         self.causal_mask_1: Optional[torch.Tensor] = None
@@ -108,15 +151,38 @@ class NystromAttention(Attention):
         self.causal_mask_3: Optional[torch.Tensor] = None
 
     def forward(
-        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        att_mask: Optional[torch.Tensor] = None,
+        *args,
+        **kwargs,
     ):
         batched_dim = k.size(0)
         seq_len = k.size(-2)
 
+        if att_mask is not None:
+            assert att_mask.dtype == torch.bool
+
+            if att_mask.size() != (
+                batched_dim,
+                1,
+                seq_len,
+            ):
+                log.warning(
+                    "att_mask invalid dimensions, nystrom \
+                    does not accept seq_len x seq_len \
+                    attention masking. Ignoring attn mask."
+                )
+                att_mask = None
+
         if self.num_landmarks >= seq_len:
-            mask = None
+            mask: Optional[torch.Tensor] = None
             if self.causal:
                 mask = self._tril_mask(batched_dim, seq_len, seq_len)
+            if att_mask is not None:
+                mask = att_mask if mask is None else mask.logical_and(att_mask)
             x = scaled_dot_product_attention(q=q, k=k, v=v, att_mask=mask)
 
         else:
@@ -138,12 +204,23 @@ class NystromAttention(Attention):
                     batched_dim, self.num_landmarks, seq_len
                 ).to(q.device)
 
-            kernel_1 = scaled_query_key_softmax(q, k_landmarks, self.causal_mask_1)
+            mask_1: Optional[torch.Tensor] = self.causal_mask_1
+            mask_2: Optional[torch.Tensor] = self.causal_mask_2
+            mask_3: Optional[torch.Tensor] = self.causal_mask_3
+            if att_mask is not None:
+                mask_1 = (
+                    att_mask.transpose(-2, -1)
+                    if mask_1 is None
+                    else mask_1.logical_and(att_mask.transpose(-2, -1))
+                )
+                mask_3 = att_mask if mask_3 is None else mask_3.logical_and(att_mask)
+
+            kernel_1 = scaled_query_key_softmax(q=q, k=k_landmarks, att_mask=mask_1)
             kernel_2 = scaled_query_key_softmax(
-                q_landmarks, k_landmarks, self.causal_mask_2
+                q=q_landmarks, k=k_landmarks, att_mask=mask_2
             )
             kernel_3 = scaled_dot_product_attention(
-                q=q_landmarks, k=k, v=v, att_mask=self.causal_mask_3
+                q=q_landmarks, k=k, v=v, att_mask=mask_3
             )
 
             kernel_2_inv = (

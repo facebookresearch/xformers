@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 from typing import Callable
 
 import torch
@@ -88,6 +93,7 @@ def iterative_pinv_analysis(
                 break
 
 
-iterative_pinv_analysis()
-bench_inverse(iterative_pinv)
-bench_inverse(torch.linalg.pinv)
+if __name__ == "__main__":
+    iterative_pinv_analysis()
+    bench_inverse(iterative_pinv)
+    bench_inverse(torch.linalg.pinv)

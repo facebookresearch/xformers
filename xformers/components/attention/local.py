@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -49,14 +55,12 @@ class LocalAttention(Attention):
                 distributed on both sides of each query
 
 
-        _RoutingTransformer: "Efficient Content-Based Sparse Attention with Routing Transformers", A. Roy et al.
-        https://arxiv.org/pdf/2003.05997.pdf
+        .. _RoutingTransformer: https://arxiv.org/pdf/2003.05997.pdf
 
-        _BigBird: "Big Bird: Transformers for Longer Sequences" M. Zaheer et al
-        https://arxiv.org/pdf/2007.14062.pdf
+        .. _BigBird: https://arxiv.org/pdf/2007.14062.pdf
 
-        _Longformer: "Longformer: The Long-Document Transformer.", I. Beltagy et al
-        https://arxiv.org/pdf/2004.05150.pdf
+        .. _Longformer: https://arxiv.org/pdf/2004.05150.pdf
+
         """
         super().__init__()
 
@@ -98,7 +102,10 @@ class LocalAttention(Attention):
 
         # Take into account the optional user mask
         mask = (
-            self.attention_mask if att_mask is None else self.attention_mask & att_mask
+            self.attention_mask
+            if att_mask is None
+            # pyre-ignore[58]: Pyre mistakenly thinks `self.attention_mask` may be None.
+            else self.attention_mask & att_mask
         )
 
         return scaled_dot_product_attention(

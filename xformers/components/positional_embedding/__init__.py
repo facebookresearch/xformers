@@ -1,3 +1,9 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 from pathlib import Path
 from typing import Any, Callable, Dict, Set, Union
 
@@ -9,7 +15,7 @@ from xformers.utils import (
 
 from .base import PositionEmbedding, PositionEmbeddingConfig  # noqa
 
-# Credits: Classy Vision registry mechanism
+# CREDITS: Classy Vision registry mechanism
 
 POSITION_EMBEDDING_REGISTRY: Dict[str, Any] = {}
 POSITION_EMBEDDING_CLASS_NAMES: Set[str] = set()
@@ -43,6 +49,7 @@ def build_positional_embedding(config: Union[Dict[str, Any], PositionEmbeddingCo
     subclass, like this:
 
     .. code-block:: python
+
         @dataclass
         class MyConfig:
             ...

@@ -36,3 +36,12 @@ xformers/benchmarks/LRA/logs
 >>>>>>> fd759a5500051d9e08e6358a6af005e8a684fd7e
 
 my_runs.md
+
+# Triton cache
+.cache
+
+# JetBrains PyCharm IDE
+.idea/
+
+# Pyre cache.
+.pyre/

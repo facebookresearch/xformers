@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 import math
 
 import pytest
@@ -59,20 +64,20 @@ def _plot_distribution(ortho_feature_map):
     plt.savefig("kde.png")
 
 
-def _get_rng_data():
+def _get_rng_data(device):
     emb = 10
     batch_size = 1
     seq_len = 20
     num_heads = 1
 
     shape = (batch_size * num_heads, seq_len, emb)
-    return torch.randn(shape)
+    return torch.randn(shape, device=device)
 
 
 def test_feature_map_shape():
     # Check the delayed initialization of the feature map
     nb_random_features = 1000
-    batch = _get_rng_data()
+    batch = _get_rng_data(_device)
     att = FavorAttention(
         dropout=0.0,
         dim_features=nb_random_features,
@@ -87,7 +92,7 @@ def test_feature_map_shape():
 def test_feature_map_redraw():
     # Check the delayed initialization of the feature map
     nb_random_features = 1000
-    batch = _get_rng_data()
+    batch = _get_rng_data(_device)
 
     def check(should_redraw: bool):
         att = FavorAttention(
@@ -119,34 +124,41 @@ def test_feature_map_redraw():
 @pytest.mark.parametrize("feature", ["sm_orf", "sm_hyp", "sm_reg"])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("normalize_inputs", [True, False])
-def test_approximation_accuracy(feature, causal, normalize_inputs):
+@pytest.mark.parametrize("device", [_device])
+def test_approximation_accuracy(feature, causal, normalize_inputs, device):
     # Run two attentions in parallel, the normal scaled dot product and the favor approximation
 
     torch.random.manual_seed(0)
-    query, key, value = _get_rng_data(), _get_rng_data(), _get_rng_data()
+    query, key, value = (
+        _get_rng_data(device),
+        _get_rng_data(device),
+        _get_rng_data(device),
+    )
 
     # Build the two attention heads
-    sdp_attention = ScaledDotProduct(dropout=0.0, causal=causal)
+    sdp_attention = ScaledDotProduct(dropout=0.0, causal=causal).to(device)
     approx_attention = FavorAttention(
         dropout=0.0,
         causal=causal,
         dim_head=10,
         feature_map_type=FeatureMapType(feature),
         normalize_inputs=normalize_inputs,
-    )
+    ).to(device)
 
-    standard_attention_result = sdp_attention(query, key, value)
-    approx_attention_result = approx_attention(query, key, value)
+    with torch.cuda.amp.autocast(enabled=_device.type == "cuda"):
+        standard_attention_result = sdp_attention(query, key, value)
+        approx_attention_result = approx_attention(query, key, value)
 
-    mismatch = torch.mean(
-        (standard_attention_result - approx_attention_result) ** 2
-    ).item()
-    if causal:
-        # FIXME(@lefaudeux) the causal case seems significantly worse, not obvious why,
-        # could be worth investigating
-        assert mismatch < 0.5
-    else:
-        assert mismatch < 0.22
+        mismatch = torch.mean(
+            (standard_attention_result - approx_attention_result) ** 2
+        ).item()
+
+        if causal:
+            # FIXME(@lefaudeux) the causal case seems significantly worse, not obvious why,
+            # could be worth investigating
+            assert mismatch < 0.5
+        else:
+            assert mismatch < 0.23
 
 
 if __name__ == "__main__":

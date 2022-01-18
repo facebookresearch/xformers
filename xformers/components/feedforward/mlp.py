@@ -1,9 +1,15 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
 
-from xformers.components import Activation
+from xformers.components import Activation, build_activation
 from xformers.components.feedforward import Feedforward, FeedforwardConfig
 
 from . import register_feedforward
@@ -27,14 +33,9 @@ class MLP(Feedforward):
     ):
         super().__init__()
 
-        activation_layer: nn.Module = {
-            Activation.ReLU: nn.ReLU,
-            Activation.GeLU: nn.GELU,
-        }[activation]()
-
         self.mlp = nn.Sequential(
             nn.Linear(dim_model, hidden_layer_multiplier * dim_model),
-            activation_layer,
+            build_activation(activation),
             nn.Dropout(dropout),
             nn.Linear(hidden_layer_multiplier * dim_model, dim_model),
             nn.Dropout(dropout),
