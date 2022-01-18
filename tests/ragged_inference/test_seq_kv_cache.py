@@ -19,7 +19,7 @@ class RaggedActivations:
 
     @classmethod
     def from_list(cls, tensors: List[torch.Tensor]):
-        """Tensors must all be of shape [n_ctx, d_model]"""
+        """Tensors must all be of shape [n_ctx, d_model]."""
         return cls(
             raw_tensor=torch.cat(tensors),
             n_ctx_per_seq=[tensor.shape[0] for tensor in tensors],
