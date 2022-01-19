@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Compositional Attention [#41]
 
+### Fixed
+- bugfix Favor, single feature map [#183]
+
 ## [0.0.8] - 2022-01-07
 ### Fixed
 - Much faster fused dropout [#164]
