@@ -9,6 +9,7 @@ import torch
 from xformers.components import Activation
 from xformers.components.feedforward import FEEDFORWARD_REGISTRY, build_feedforward
 from xformers.components.feedforward.mixture_of_experts import GateConfig
+from xformers.helpers.test_utils import init_torch_distributed_local
 
 BATCH = 4
 SEQ = 512
@@ -36,8 +37,11 @@ def test_feedforward(
         "activation": activation,
         "hidden_layer_multiplier": 4,
         "number_of_experts": 4,  # MoE
-        "gate_config": "top_2",  # MoE
+        "gate": "top_2",  # MoE
     }
+
+    if feedforward_name == "MixtureOfExperts":
+        init_torch_distributed_local()
 
     # dummy, just check construction and dimensions in the FW pass
     ffw = build_feedforward(test_config)
@@ -69,9 +73,11 @@ def test_moe(gate, number_of_local_experts, expert_constructor):
         "hidden_layer_multiplier": 4,
         "number_of_experts": 4,
         "number_of_local_experts": number_of_local_experts,
-        "gate_config": gate,
+        "gate": gate,
         "expert_constructor": expert_constructor,
     }
+
+    init_torch_distributed_local()
 
     # dummy, just check construction and dimensions in the FW pass
     ffw = build_feedforward(test_config)

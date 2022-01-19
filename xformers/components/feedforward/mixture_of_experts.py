@@ -5,10 +5,9 @@
 
 
 import logging
-import tempfile
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 import torch
 
@@ -63,7 +62,7 @@ if _is_fairscale_available:
     @dataclass
     class MoEConfig(FeedforwardConfig):
         number_of_experts: int
-        gate_config: GateConfig
+        gate: GateConfig
         number_of_local_experts: Optional[int] = None
         expert_constructor: Optional[Any] = None
         hidden_layer_multiplier: Optional[int] = None
@@ -87,7 +86,7 @@ if _is_fairscale_available:
             dropout: float,
             activation: Activation,
             number_of_experts: int,
-            gate_config: GateConfig,
+            gate: Union[GateConfig, torch.nn.Module],
             number_of_local_experts: Optional[int] = None,
             expert_constructor: Optional[Callable[[], torch.nn.Module]] = None,
             hidden_layer_multiplier: Optional[int] = None,
@@ -98,24 +97,9 @@ if _is_fairscale_available:
             super().__init__()
 
             # Handle a possibly uninitialized process group
-            if group is None and not dist.is_initialized():
-                logging.warning(
-                    "Torch Distributed is not initialized, please do so before instantiating MoE"
-                )
-                logging.warning("Attempting fallback initialization")
-
-                init_url = "file://" + tempfile.mkstemp()[1]
-                backend = (
-                    dist.Backend.NCCL
-                    if torch.cuda.is_available()
-                    else dist.Backend.GLOO
-                )
-                dist.init_process_group(
-                    backend=backend,
-                    rank=0,
-                    world_size=1,
-                    init_method=init_url,
-                )
+            assert (
+                dist.is_initialized()
+            ), "Mixture of Experts require torch distributed to be initialized"
 
             if number_of_local_experts is not None:
                 assert number_of_experts >= number_of_local_experts
@@ -128,12 +112,15 @@ if _is_fairscale_available:
                     number_of_local_experts = 1
 
             # Programatically handle the gating technique
-            gate_constructor = {
-                GateConfig.RoundRobin: RoundRobinGate,
-                GateConfig.Top2: Top2Gate,
-            }[gate_config]
+            if not isinstance(gate, torch.nn.Module):
+                gate_constructor = {
+                    GateConfig.RoundRobin: RoundRobinGate,
+                    GateConfig.Top2: Top2Gate,
+                }[gate]
 
-            self.gate = gate_constructor(dim_model, number_of_experts)
+                self.gate = gate_constructor(dim_model, number_of_experts)
+            else:
+                self.gate = gate
 
             # Programatically handle the experts
             if expert_constructor is None:

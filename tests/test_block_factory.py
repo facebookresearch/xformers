@@ -16,6 +16,7 @@ from xformers.factory import (
     xFormerEncoderBlock,
     xFormerEncoderConfig,
 )
+from xformers.helpers.test_utils import init_torch_distributed_local
 
 BATCH = 4
 SEQ = 128
@@ -80,8 +81,11 @@ def test_xformer_encoder_block(
         "activation": activation,
         "hidden_layer_multiplier": 4,
         "number_of_experts": 4,
-        "gate_config": "top_2",
+        "gate": "top_2",
     }
+
+    if feedforward_name == "MixtureOfExperts":
+        init_torch_distributed_local()
 
     position_encoding_config = {
         "name": "sine",
@@ -172,8 +176,11 @@ def test_xformer_decoder_block(
         "activation": activation,
         "hidden_layer_multiplier": 4,
         "number_of_experts": 4,
-        "gate_config": "top_2",
+        "gate": "top_2",
     }
+
+    if feedforward_name == "MixtureOfExperts":
+        init_torch_distributed_local()
 
     position_encoding_config = {
         "name": "sine",

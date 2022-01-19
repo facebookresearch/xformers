@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import tempfile
 from typing import Tuple
 
 import numpy as np
@@ -82,3 +83,21 @@ def assert_eq(actual, expected, msg="", rtol=None, atol=None):
 
 def bf16_cuda():
     return dict(device="cuda", dtype=torch.bfloat16)
+
+
+def init_torch_distributed_local():
+    if torch.distributed.is_initialized():
+        return
+
+    init_url = "file://" + tempfile.mkstemp()[1]
+    backend = (
+        torch.distributed.Backend.NCCL
+        if torch.cuda.is_available()
+        else torch.distributed.Backend.GLOO
+    )
+    torch.distributed.init_process_group(
+        backend=backend,
+        rank=0,
+        world_size=1,
+        init_method=init_url,
+    )
