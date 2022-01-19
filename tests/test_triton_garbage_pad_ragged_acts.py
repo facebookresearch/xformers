@@ -15,7 +15,7 @@ def _make_seq(n_ctx: int, value: int, d_model: int):
 
 
 def test_garbage_pad_active_queries_correctness():
-    d_model = 6
+    d_model = 256
     seqs = [
         _make_seq(n_ctx=1, value=33, d_model=d_model),
         _make_seq(n_ctx=3, value=42, d_model=d_model),
@@ -23,6 +23,22 @@ def test_garbage_pad_active_queries_correctness():
     ]
     active_queries = RaggedActivations.from_list(seqs)
     padded_queries = active_queries.to_garbage_padded()
+
+    # Check that the non-garbage portion of each is correct
+    assert_eq(padded_queries[0, :1, :], seqs[0])
+    assert_eq(padded_queries[1, :3, :], seqs[1])
+    assert_eq(padded_queries[2, :7, :], seqs[2])
+
+
+def test_triton_garbage_pad_active_queries_correctness():
+    d_model = 256
+    seqs = [
+        _make_seq(n_ctx=1, value=33, d_model=d_model),
+        _make_seq(n_ctx=3, value=42, d_model=d_model),
+        _make_seq(n_ctx=7, value=55, d_model=d_model),
+    ]
+    active_queries = RaggedActivations.from_list(seqs)
+    padded_queries = active_queries.triton_to_garbage_padded()
 
     # Check that the non-garbage portion of each is correct
     assert_eq(padded_queries[0, :1, :], seqs[0])
@@ -46,5 +62,6 @@ def test_add_kernel():
 
 
 """
-pytest -vsx --tb=native tests/test_triton_garbage_pad_ragged_acts.py -k test_add_kernel
+pytest -vsx --tb=native tests/test_triton_garbage_pad_ragged_acts.py \
+    -k test_triton_garbage_pad_active_queries_correctness
 """
