@@ -49,6 +49,8 @@ encoder_configs = {
         "activation": "relu",
         "hidden_layer_multiplier": 4,
         "dim_model": EMB,
+        "number_of_experts": 4,
+        "gate_config": "top_2",
     },
 }
 

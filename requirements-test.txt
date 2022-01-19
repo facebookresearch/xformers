@@ -20,3 +20,6 @@ git+git://github.com/rwightman/pytorch-image-models@v0.4.5#egg=timm
 
 # Dependency for factory
 hydra-core >= 1.1
+
+# Dependency for Mixture of Experts
+fairscale >= 0.4.5

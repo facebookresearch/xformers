@@ -17,7 +17,7 @@ from xformers.factory import (
     xFormerEncoderConfig,
 )
 
-BATCH = 20
+BATCH = 4
 SEQ = 128
 MODEL = 96
 DROPOUT = 0.5
@@ -79,6 +79,8 @@ def test_xformer_encoder_block(
         "dropout": DROPOUT,
         "activation": activation,
         "hidden_layer_multiplier": 4,
+        "number_of_experts": 4,
+        "gate_config": "top_2",
     }
 
     position_encoding_config = {
@@ -169,6 +171,8 @@ def test_xformer_decoder_block(
         "dropout": DROPOUT,
         "activation": activation,
         "hidden_layer_multiplier": 4,
+        "number_of_experts": 4,
+        "gate_config": "top_2",
     }
 
     position_encoding_config = {
