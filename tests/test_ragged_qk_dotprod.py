@@ -22,13 +22,15 @@ _triton_available = True
 
 
 # Testing odd shapes on purpose
+# Shapes correspond to (B, M&N, L)
+# TODO: test with M & N different from each other
 SHAPES = [
     (1, 384, 128),
     (8, 384, 128),
     (8, 784, 512),
     (16, 1024, 1024),
     (2, 2048, 384),
-    # (4, 3136, 1024), # FIXME
+    # (1, 18, 128), # FIXME
 ]
 
 
@@ -52,7 +54,7 @@ def test_mem_efficient_attention_parity(shape, dtype):
 
     res_pytorch = attention_pytorch(q, k)
     res_me = mem_efficient_fw(q=q, k=k)
-
+    # print(res_me)
     assert torch.mean(torch.abs(res_pytorch - res_me)) < 0.2
 
     # assert torch.allclose(res_pytorch, res_me, rtol=1e-1) FIXME

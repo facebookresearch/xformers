@@ -62,9 +62,6 @@ def k_me_attention_fw(
         i += 1
 
     # Final output tile is [BLOCK_M, BLOCK_N]
-    # qkt = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32) + 1
-
-    # scores_ptrs = OUT + pid_n * stride_m + rm[:, None] * stride_n + rn[None, :]
     m_offset = rm[:, None] * stride_m
     n_offset = rn[None, :] * stride_n
     scores_ptrs = OUT + m_offset + n_offset
@@ -83,18 +80,23 @@ def mem_efficient_fw(q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
 
     # TODO: autotune these
     BLOCK_M = 8
-    BLOCK_N = min(triton.next_power_of_2(N), 1024)  # increase the ceiling to save more memory
+    BLOCK_N = 8
+    # BLOCK_N = min(triton.next_power_of_2(N), 1024)  # increase the ceiling to save more memory
     BLOCK_L = 8
 
     tiles_n = triton.cdiv(N, BLOCK_N)
+    tiles_m = triton.cdiv(M, BLOCK_M)
+    # print(f"{tiles_m=}, {tiles_n=}") # 3, 1
 
     # We put parameters into the grid() function to allow for auto-tuning
     def grid(META):
+        # tiles_m = triton.cdiv(M, META["BLOCK_M"])
         return (
-            triton.cdiv(M, META["BLOCK_M"]),
+            tiles_m,
             tiles_n
         )
 
+    # out_scores = torch.ones((B, M, N), dtype=q.dtype, device=q.device) * 55
     out_scores = torch.empty((B, M, N), dtype=q.dtype, device=q.device)
 
     # TODO: improve on the batch dimension handling ?
