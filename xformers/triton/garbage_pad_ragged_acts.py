@@ -202,3 +202,29 @@ class RaggedActivations:
             n_ctx_max=n_ctx_max,
         )
         return padded_acts
+
+
+"""
+
+# TODO: Build LUT
+seq_idx = 1
+ctx_idx = 0
+
+ragged_offset = 1
+
+# How to do a list of tensors?
+#
+
+# TODO: Add the QK dotprod to get scores
+#  - Start with a ragged tensor for the keys also
+#  - Using a list of tensors as the Keys
+#  - Using sequences
+
+# 16x16x256
+
+
+# scores [n_seq, n_ctx_keys_max, n_ctx_queries_max]
+
+
+# final_out [n_seq, n_ctx_keys_max, d_model]
+"""

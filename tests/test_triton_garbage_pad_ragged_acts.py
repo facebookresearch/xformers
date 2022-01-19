@@ -15,7 +15,7 @@ def _make_seq(n_ctx: int, value: int, d_model: int):
 
 
 def test_garbage_pad_active_queries_correctness():
-    d_model = 256
+    d_model = 1
     seqs = [
         _make_seq(n_ctx=1, value=33, d_model=d_model),
         _make_seq(n_ctx=3, value=42, d_model=d_model),
