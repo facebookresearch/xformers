@@ -11,31 +11,8 @@ from typing import List, Tuple
 import pytest
 import torch
 
-from xformers.helpers.test_utils import assert_eq
-
-
-def bf16_cuda():
-    return dict(device="cuda", dtype=torch.bfloat16)
-
-
-class RaggedActivations:
-    def __init__(self, raw_tensor: torch.Tensor, n_ctx_per_seq: List[int]):
-        self.raw_tensor = raw_tensor
-        self.n_ctx_per_seq = n_ctx_per_seq
-
-    @classmethod
-    def from_list(cls, tensors: List[torch.Tensor]):
-        """Tensors must all be of shape [n_ctx, d_model]."""
-        return cls(
-            raw_tensor=torch.cat(tensors),
-            n_ctx_per_seq=[tensor.shape[0] for tensor in tensors],
-        )
-
-    def iter_full_tensors(self):
-        idx_so_far = 0
-        for n_ctx_in_this_seq in self.n_ctx_per_seq:
-            yield self.raw_tensor[idx_so_far : idx_so_far + n_ctx_in_this_seq]
-            idx_so_far += n_ctx_in_this_seq
+from xformers.helpers.test_utils import assert_eq, bf16_cuda
+from xformers.triton.garbage_pad_ragged_acts import RaggedActivations
 
 
 class SingleSeqKVCache:
