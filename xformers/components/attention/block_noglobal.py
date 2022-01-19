@@ -60,8 +60,6 @@ class BlockNoglobalAttention(Attention):
         assert key_padding_mask is not None
         key_padding_mask = key_padding_mask.to(q)
 
-        breakpoint()
-
         # pad the input length to factors of bucket size
         def _pad_to_window_size(x, window_size):
             seq_len = x.size(-2)
