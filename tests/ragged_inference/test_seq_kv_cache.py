@@ -10,52 +10,8 @@ from typing import List, Tuple
 
 import torch
 
-from xformers.helpers.test_utils import assert_eq
-
-
-def bf16_cuda():
-    return dict(device="cuda", dtype=torch.bfloat16)
-
-
-class RaggedActivations:
-    def __init__(self, raw_tensor: torch.Tensor, n_ctx_per_seq: List[int]):
-        self.raw_tensor = raw_tensor
-        self.n_ctx_per_seq = n_ctx_per_seq
-
-    @classmethod
-    def from_list(cls, tensors: List[torch.Tensor]):
-        """Tensors must all be of shape [n_ctx, d_model]."""
-        return cls(
-            raw_tensor=torch.cat(tensors),
-            n_ctx_per_seq=[tensor.shape[0] for tensor in tensors],
-        )
-
-    def iter_full_tensors(self):
-        idx_so_far = 0
-        for n_ctx_in_this_seq in self.n_ctx_per_seq:
-            yield self.raw_tensor[idx_so_far : idx_so_far + n_ctx_in_this_seq]
-            idx_so_far += n_ctx_in_this_seq
-
-    def to_garbage_padded(self) -> torch.Tensor:
-        """
-        Create a tensor of shape (n_seqs, n_ctx_max, d_model) where the
-        sequences are right-padded with garbage data
-        """
-        n_seqs = len(self.n_ctx_per_seq)
-        n_ctx_max = max(self.n_ctx_per_seq)
-
-        n_dim = self.raw_tensor.shape[-1]
-        padded_acts = torch.empty(
-            n_seqs, n_ctx_max, n_dim, dtype=self.raw_tensor.dtype, device="cuda"
-        )
-
-        idx_so_far = 0
-        for seq_idx, n_ctx_in_this_seq in enumerate(self.n_ctx_per_seq):
-            this_seq = self.raw_tensor[idx_so_far : idx_so_far + n_ctx_in_this_seq]
-            padded_acts[seq_idx, :n_ctx_in_this_seq, :] = this_seq
-            idx_so_far += n_ctx_in_this_seq
-
-        return padded_acts
+from xformers.helpers.test_utils import assert_eq, bf16_cuda
+from xformers.triton.garbage_pad_ragged_acts import RaggedActivations
 
 
 class SingleSeqKVCache:
@@ -215,26 +171,6 @@ def test_garbage_pad_seq_kv_cache_correctness():
     assert_eq(padded_values[0, :1, :], seq_kv_cache[0].values)
     assert_eq(padded_values[1, :3, :], seq_kv_cache[1].values)
     assert_eq(padded_values[2, :7, :], seq_kv_cache[2].values)
-
-
-def _make_seq(n_ctx: int, value: int, d_model: int):
-    return torch.full([n_ctx, d_model], value, **bf16_cuda())
-
-
-def test_garbage_pad_active_queries_correctness():
-    d_model = 6
-    seqs = [
-        _make_seq(n_ctx=1, value=33, d_model=d_model),
-        _make_seq(n_ctx=3, value=42, d_model=d_model),
-        _make_seq(n_ctx=7, value=55, d_model=d_model),
-    ]
-    active_queries = RaggedActivations.from_list(seqs)
-    padded_queries = active_queries.to_garbage_padded()
-
-    # Check that the non-garbage portion of each is correct
-    assert_eq(padded_queries[0, :1, :], seqs[0])
-    assert_eq(padded_queries[1, :3, :], seqs[1])
-    assert_eq(padded_queries[2, :7, :], seqs[2])
 
 
 def test_extend_kv_caches_correctness():
