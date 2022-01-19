@@ -7,7 +7,7 @@
 import torch
 
 from xformers.helpers.test_utils import assert_eq, bf16_cuda
-from xformers.triton.garbage_pad_ragged_acts import RaggedActivations
+from xformers.triton.garbage_pad_ragged_acts import RaggedActivations, add
 
 
 def _make_seq(n_ctx: int, value: int, d_model: int):
@@ -31,4 +31,20 @@ def test_garbage_pad_active_queries_correctness():
 
 
 def test_add_kernel():
-    pass
+    torch.manual_seed(0)
+    size = 98432
+    x = torch.rand(size, device="cuda")
+    y = torch.rand(size, device="cuda")
+    output_torch = x + y
+    output_triton = add(x, y)
+    print(output_torch)
+    print(output_triton)
+    print(
+        f"The maximum difference between torch and triton is "
+        f"{torch.max(torch.abs(output_torch - output_triton))}"
+    )
+
+
+"""
+pytest -vsx --tb=native tests/test_triton_garbage_pad_ragged_acts.py -k test_add_kernel
+"""
