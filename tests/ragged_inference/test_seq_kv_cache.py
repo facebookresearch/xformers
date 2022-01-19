@@ -153,7 +153,9 @@ def _create_indices(n_ctx_per_kv_cache):
     return torch.tensor(indices_list, device="cuda")
 
 
-@pytest.mark.n_gpus(2)
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="This test requires a CUDA device"
+)
 def test_garbage_pad_seq_kv_cache_correctness():
     seq_kv_cache = [
         _single_seq_kv_cache(n_ctx=1, value=33, d_model=2),
@@ -173,7 +175,9 @@ def test_garbage_pad_seq_kv_cache_correctness():
     assert_eq(padded_values[2, :7, :], seq_kv_cache[2].values)
 
 
-@pytest.mark.n_gpus(2)
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="This test requires a CUDA device"
+)
 def test_extend_kv_caches_correctness():
     d_model = 6
     seq_kv_cache = [
@@ -210,10 +214,12 @@ def test_extend_kv_caches_correctness():
     assert_eq(new_cache[2].values[:, 0].cpu(), [55, 55, 55, 55, 55, 55, 55, 2])
 
 
-@pytest.mark.n_gpus(2)
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="This test requires a CUDA device"
+)
 def test_index_select_throughput():
-    n_ctx_per_seq = 8192
-    n_seqs = 100
+    n_ctx_per_seq = 4096
+    n_seqs = 20
     d_model_per_gpu = 12 * 1024 // 8
 
     keys = _single_seq_kv_cache(
@@ -263,7 +269,9 @@ def test_index_select_throughput():
         )
 
 
-@pytest.mark.n_gpus(2)
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="This test requires a CUDA device"
+)
 def test_garbage_pad_seq_kv_cache_throughput(n_ctx_per_seq=1024):
     n_seqs = 20
     d_model_per_gpu = 12 * 1024 // 8
