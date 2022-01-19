@@ -78,3 +78,7 @@ def assert_eq(actual, expected, msg="", rtol=None, atol=None):
         assert (
             abs(actual - expected) <= atol + expected * rtol
         ), f"{actual} != {expected}"
+
+
+def bf16_cuda():
+    return dict(device="cuda", dtype=torch.bfloat16)
