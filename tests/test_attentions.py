@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Tuple
+
 import pytest
 import torch
 
@@ -14,8 +16,6 @@ from xformers.components.attention import (
     ATTENTION_REGISTRY,
     build_attention,
 )
-
-from typing import Tuple
 
 DEVICES = (
     [torch.device("cpu")] if not torch.cuda.is_available() else [torch.device("cuda")]
