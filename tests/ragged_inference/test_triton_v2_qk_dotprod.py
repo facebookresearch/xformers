@@ -7,6 +7,7 @@ import torch
 
 from xformers.helpers.test_utils import assert_eq, bf16_cuda
 from xformers.triton.ragged_inference.triton_v2_qk_dotprod import qk_dotprod
+from xformers.triton.ragged_inference.triton_v2_ragged_qk_dotprod import qk_dotprod_v2
 
 
 def _make_seq(n_ctx: int, value: int, d_model: int):
@@ -44,6 +45,18 @@ def test_qk_dotprod(shape, dtype):
     assert_eq(out, torch_out, rtol=0.05, atol=0.05)
 
 
+@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+def test_qk_dotprod_v2(shape, dtype):
+    a = torch.randn(shape, dtype=dtype, device="cuda")
+    b = torch.randn(shape, dtype=dtype, device="cuda")
+
+    out = qk_dotprod_v2(a, b)
+
+    torch_out = qk_dotprod_single_head_pytorch(a, b)
+    assert_eq(out, torch_out, rtol=0.05, atol=0.05)
+
+
 def test_simple_qk_dotprod():
     dtype = torch.float32
     shape = (8, 8)
@@ -66,5 +79,5 @@ def test_simple_qk_dotprod():
 
 
 """
-pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_qk_dotprod.py -k test_qk_dotprod
+pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_qk_dotprod.py -k test_qk_dotprod_v2
 """

@@ -176,8 +176,7 @@ def qk_dotprod(query, key):
     if key.stride(0) > 1 and key.stride(1) > 1:
         key = key.contiguous()
 
-    # checks constraints
-
+    # check constraints
     n_ctx_q, d_model = query.shape
     n_ctx_k, d_model_k = key.shape
     assert d_model == d_model_k, f"{query.shape=} {key.shape=}"
