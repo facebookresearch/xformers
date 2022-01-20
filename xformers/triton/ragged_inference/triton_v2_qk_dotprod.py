@@ -84,7 +84,7 @@ def get_all_configs():
 def get_fast_dev_configs():
     return [
         triton.Config(
-            {"BLOCK_M": 64, "BLOCK_N": 32, "BLOCK_K": 32},
+            {"BLOCK_Q": 64, "BLOCK_N": 32, "BLOCK_K": 32},
             num_stages=5,
             num_warps=2,
         )
@@ -114,7 +114,7 @@ def _kernel(
     stride_d,  # Stride along the d_model_per_head dim
     stride_out_q,
     stride_out_k,
-    BLOCK_M: tl.constexpr,
+    BLOCK_Q: tl.constexpr,
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
 ):
@@ -129,16 +129,16 @@ def _kernel(
     pid_n = pid % grid_n
 
     # do matrix multiplication
-    rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    rm = pid_m * BLOCK_Q + tl.arange(0, BLOCK_Q)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    ram = tl.max_contiguous(tl.multiple_of(rm % n_ctx_q, BLOCK_M), BLOCK_M)
+    ram = tl.max_contiguous(tl.multiple_of(rm % n_ctx_q, BLOCK_Q), BLOCK_Q)
     rbn = tl.max_contiguous(tl.multiple_of(rn % n_ctx_k, BLOCK_N), BLOCK_N)
     rk = tl.arange(0, BLOCK_K)
 
     # pointers
     query_ptr = query_ptr + (ram[:, None] * stride_ctx_q + rk[None, :] * stride_d)
     key_ptr = key_ptr + (rk[:, None] * stride_d + rbn[None, :] * stride_ctx_k)
-    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+    acc = tl.zeros((BLOCK_Q, BLOCK_N), dtype=tl.float32)
     for k in range(n_dim, 0, -BLOCK_K):
 
         a = tl.load(query_ptr, mask=rk[None, :] < k, other=0.0)
@@ -150,7 +150,7 @@ def _kernel(
     acc = acc.to(scores_out_ptr.dtype.element_ty)
 
     # rematerialize rm and rn to save registers
-    rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    rm = pid_m * BLOCK_Q + tl.arange(0, BLOCK_Q)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     scores_out_ptr = scores_out_ptr + (
         rm[:, None] * stride_out_q + rn[None, :] * stride_out_k
