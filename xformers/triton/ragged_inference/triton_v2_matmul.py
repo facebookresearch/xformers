@@ -91,11 +91,7 @@ def get_fast_dev_configs():
     ]
 
 
-@triton.heuristics(
-    {
-        "EVEN_K": lambda nargs: nargs["K"] % (nargs["BLOCK_K"]) == 0,
-    }
-)
+
 @triton.autotune(
     # configs=get_all_configs(),
     configs=get_fast_dev_configs(),
@@ -124,7 +120,6 @@ def _kernel(
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
-    EVEN_K: tl.constexpr,
 ):
 
     # matrix multiplication
@@ -151,12 +146,10 @@ def _kernel(
     B = B + (rk[:, None] * stride_bk + rbn[None, :] * stride_bn)
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     for k in range(K, 0, -BLOCK_K):
-        if EVEN_K:
-            a = tl.load(A)
-            b = tl.load(B)
-        else:
-            a = tl.load(A, mask=rk[None, :] < k, other=0.0)
-            b = tl.load(B, mask=rk[:, None] < k, other=0.0)
+
+        a = tl.load(A)
+        b = tl.load(B)
+
         acc += tl.dot(a, b)
         A += BLOCK_K * stride_ak
         B += BLOCK_K * stride_bk
@@ -177,18 +170,20 @@ def matmul(a, b):
         a = a.contiguous()
     if b.stride(0) > 1 and b.stride(1) > 1:
         b = b.contiguous()
+
     # checks constraints
-    assert a.shape[1] == b.shape[0], "incompatible dimensions"
+    assert a.shape[1] == b.shape[0], f"incompatible dimensions, {a.shape=} {b.shape=}"
+    assert a.shape[1] % 128 == 0, f"Inner dim must be multiple of 128, got {a.shape[1]}"
+
     M, K = a.shape
     _, N = b.shape
+
     # allocates output
     c = torch.empty((M, N), device=device, dtype=a.dtype)
 
     # launch kernel
     def grid(META):
-        return (
-            triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]), 1
-        )
+        return (triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]), 1)
 
     _kernel[grid](
         a,
