@@ -125,15 +125,12 @@ def _kernel(
     # matrix multiplication
     pid = tl.program_id(0)
 
-    grid_m = (M + BLOCK_M - 1) // BLOCK_M
+    # Determine the number of blocks in the grid
     grid_n = (N + BLOCK_N - 1) // BLOCK_N
 
-    # re-order program ID for better L2 performance
-    width = GROUP_M * grid_n
-    group_id = pid // width
-    group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
-    pid_m = group_id * GROUP_M + (pid % group_size)
-    pid_n = (pid % width) // (group_size)
+
+    pid_m = pid // grid_n
+    pid_n = pid % grid_n
 
     # do matrix multiplication
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
@@ -141,6 +138,7 @@ def _kernel(
     ram = tl.max_contiguous(tl.multiple_of(rm % M, BLOCK_M), BLOCK_M)
     rbn = tl.max_contiguous(tl.multiple_of(rn % N, BLOCK_N), BLOCK_N)
     rk = tl.arange(0, BLOCK_K)
+
     # pointers
     A = A + (ram[:, None] * stride_am + rk[None, :] * stride_ak)
     B = B + (rk[:, None] * stride_bk + rbn[None, :] * stride_bn)
