@@ -103,9 +103,9 @@ def get_fast_dev_configs():
 )
 @triton.jit
 def _kernel(
-    query_ptr,
-    key_ptr,
-    scores_out_ptr,
+    q_ptr_tile,
+    k_ptr_tile,
+    scores_ptr,
     n_ctx_q,
     n_ctx_k,  # N
     d_model,
@@ -136,31 +136,32 @@ def _kernel(
     rk = tl.max_contiguous(tl.multiple_of(rk % n_ctx_k, BLOCK_K), BLOCK_K)
 
     # Iterate through blocks of the d_model dimension and accumulate values into acc
-    acc = tl.zeros((BLOCK_Q, BLOCK_K), dtype=tl.float32)
+    acc_tile = tl.zeros((BLOCK_Q, BLOCK_K), dtype=tl.float32)
     rd = tl.arange(0, BLOCK_D)
 
-    query_ptr = query_ptr + (rq[:, None] * stride_ctx_q + rd[None, :] * stride_d)
-    key_ptr = key_ptr + (rd[:, None] * stride_d + rk[None, :] * stride_ctx_k)
+    q_ptr_tile = q_ptr_tile + (rq[:, None] * stride_ctx_q + rd[None, :] * stride_d)
+    k_ptr_tile = k_ptr_tile + (rd[:, None] * stride_d + rk[None, :] * stride_ctx_k)
     for d_max_offset in range(d_model, 0, -BLOCK_D):
-        a = tl.load(query_ptr, mask=rd[None, :] < d_max_offset, other=0.0)
-        b = tl.load(key_ptr, mask=rd[:, None] < d_max_offset, other=0.0)
+        q_tile = tl.load(q_ptr_tile, mask=rd[None, :] < d_max_offset, other=0.0)
+        k_tile = tl.load(k_ptr_tile, mask=rd[:, None] < d_max_offset, other=0.0)
 
-        acc += tl.dot(a, b)
-        query_ptr += BLOCK_D * stride_d
-        key_ptr += BLOCK_D * stride_d
+        acc_tile += tl.dot(q_tile, k_tile)
+        q_ptr_tile += BLOCK_D * stride_d
+        k_ptr_tile += BLOCK_D * stride_d
 
-    acc = acc.to(scores_out_ptr.dtype.element_ty)
+    acc_tile = acc_tile.to(scores_ptr.dtype.element_ty)
 
     # We rematerialize rq and rk here because it allows them to be deallocated above
     # instead of being kept in registers throughout the inner for-loop
     rq = pid_q * BLOCK_Q + tl.arange(0, BLOCK_Q)
     rk = pid_k * BLOCK_K + tl.arange(0, BLOCK_K)
-    scores_out_ptr = scores_out_ptr + (
-        rq[:, None] * stride_out_q + rk[None, :] * stride_out_k
-    )
+
+    scores_offset_tile = (rq[:, None] * stride_out_q + rk[None, :] * stride_out_k)
+    scores_ptr_tile = scores_ptr + scores_offset_tile
+
     mask = (rq < n_ctx_q)[:, None] & (rk < n_ctx_k)[None, :]
 
-    tl.store(scores_out_ptr, acc, mask=mask)
+    tl.store(scores_ptr_tile, acc_tile, mask=mask)
 
 
 def qk_dotprod(query, key):
