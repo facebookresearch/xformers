@@ -75,39 +75,46 @@ def _qk_dotprod_kernel(
     rk = k_in_token_offset + tl.arange(0, BLOCK_K)
 
     # Annotate things for compiler performance
-    # TODO(TC): ask Phil why these are useful
+    # TODO(TC): ask Phil why these are useful, are they correct after we did
+    #  a transpose of the inputs from the default matmul?
     rq = tl.max_contiguous(tl.multiple_of(rq % n_ctx_q, BLOCK_Q), BLOCK_Q)
     rk = tl.max_contiguous(tl.multiple_of(rk % n_ctx_k, BLOCK_K), BLOCK_K)
 
-    # Iterate through blocks of the d_head dimension and accumulate values into acc
-    acc_tile = tl.zeros((BLOCK_Q, BLOCK_K), dtype=tl.float32)
-    rd = tl.arange(0, BLOCK_D)
 
+    # We will accumulate all the d_head items into acc
+    acc_tile = tl.zeros((BLOCK_Q, BLOCK_K), dtype=tl.float32)
+
+    rd = tl.arange(0, BLOCK_D)  # rd indexes into the d_head dimension
+
+    # We use broadcasting to convert our 1D ranges into 2D tiles
     q_ptr_tile = q_ptr + (rq[:, None] * stride_ctx_q + rd[None, :])
     k_ptr_tile = k_ptr + (rd[:, None] + rk[None, :] * stride_ctx_k)
 
+    # After we have profiling, see if we can rewrite this to be more readable by
+    # just updating rd += BLOCK_D
     for d_max_offset in range(d_head, 0, -BLOCK_D):
         q_tile = tl.load(q_ptr_tile, mask=rd[None, :] < d_max_offset, other=0.0)
         k_tile = tl.load(k_ptr_tile, mask=rd[:, None] < d_max_offset, other=0.0)
 
-        # In einsum notation, the following does: qd,dk->qk
+        # In einsum notation, the tl.dot does: qd,dk->qk
+        # This should use tensorcores, so the inputs might be fp16, but the outputs
+        # and all the internal accumulators are fp32
         acc_tile += tl.dot(q_tile, k_tile)
 
         q_ptr_tile += BLOCK_D
         k_ptr_tile += BLOCK_D
 
-    acc_tile = acc_tile.to(scores_ptr.dtype.element_ty)
+    # Figure out the output blocks
+    rq_out = out_q_block * BLOCK_Q + tl.arange(0, BLOCK_Q)
+    rk_out = out_k_block * BLOCK_K + tl.arange(0, BLOCK_K)
 
-    # We rematerialize rq and rk here because it allows them to be deallocated above
-    # instead of being kept in registers throughout the inner for-loop
-    rq = out_q_block * BLOCK_Q + tl.arange(0, BLOCK_Q)
-    rk = out_k_block * BLOCK_K + tl.arange(0, BLOCK_K)
-
-    scores_offset_tile = rq[:, None] * stride_out_q + rk[None, :] * stride_out_k
+    scores_offset_tile = rq_out[:, None] * stride_out_q + rk_out[None, :] * stride_out_k
     scores_ptr_tile = scores_ptr + scores_offset_tile
 
-    mask = (rq < n_ctx_q)[:, None] & (rk < n_ctx_k)[None, :]
+    mask = (rq_out < n_ctx_q)[:, None] & (rk_out < n_ctx_k)[None, :]
 
+    # Cast back to lower precision immediately before storing
+    acc_tile = acc_tile.to(scores_ptr.dtype.element_ty)
     tl.store(scores_ptr_tile, acc_tile, mask=mask)
 
 
