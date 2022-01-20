@@ -8,9 +8,9 @@ def init_to_zero(name):
     return lambda nargs: nargs[name].zero_()
 
 
-BLOCK_Q = 64
-BLOCK_K = 32
-BLOCK_D = 32
+BLOCK_Q = 16
+BLOCK_K = 16
+BLOCK_D = 64
 
 
 def get_fast_dev_configs():
@@ -123,9 +123,11 @@ def qk_dotprod_v2(query, key):
     grid = (triton.cdiv(n_ctx_q, BLOCK_Q) * triton.cdiv(n_ctx_k, BLOCK_K),)
 
     # Create lookup tables
-    pid_to_query_input_offset = [0, 4, 5, 8, 12]
-    pid_to_key_input_offset = ...
+    pid_to_query_input_token_offset = [0, 4, 5, 8, 12]
+    pid_to_key_input_token_offset = ...
     # pid_to_seq_idx = [0, 0, 1, 2, 2]
+
+    # pid_to_output_k_block
 
     _kernel[grid](
         query,
