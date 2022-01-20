@@ -38,7 +38,7 @@ def _qk_dotprod_kernel(
     # Pointers to our tensors
     q_ptr,
     k_ptr,
-    scores_ptr,
+    scores_ptr,  # Rectangular output tensor
     # Pointers to lookup tables (sometimes referred to as a "lut")
     pid_to_q_in_token_offset_ptr,
     pid_to_k_in_token_offset_ptr,
@@ -57,6 +57,9 @@ def _qk_dotprod_kernel(
     BLOCK_K: tl.constexpr,
     BLOCK_D: tl.constexpr,
 ):
+    """
+    Adapted from https://github.com/openai/triton/blob/v2.0/python/triton/ops/matmul.py
+    """
 
     # matrix multiplication
     pid = tl.program_id(0)
@@ -66,13 +69,14 @@ def _qk_dotprod_kernel(
     q_in_token_offset = tl.load(pid_to_q_in_token_offset_ptr + pid)
     k_in_token_offset = tl.load(pid_to_k_in_token_offset_ptr + pid)
 
-
-    # Define pointer ranges, we follow the triton convention of prefixing
-    # with "r" to denote a range, like "rq" is the range for queries
+    # Define indices ranges, we follow the triton convention of prefixing
+    # with "r" to denote a range like "rq" is the range for queries below
     rq = q_in_token_offset + tl.arange(0, BLOCK_Q)
-    rq = tl.max_contiguous(tl.multiple_of(rq % n_ctx_q, BLOCK_Q), BLOCK_Q)
-
     rk = k_in_token_offset + tl.arange(0, BLOCK_K)
+
+    # Annotate things for compiler performance
+    # TODO(TC): ask Phil why these are useful
+    rq = tl.max_contiguous(tl.multiple_of(rq % n_ctx_q, BLOCK_Q), BLOCK_Q)
     rk = tl.max_contiguous(tl.multiple_of(rk % n_ctx_k, BLOCK_K), BLOCK_K)
 
     # Iterate through blocks of the d_head dimension and accumulate values into acc
@@ -132,7 +136,6 @@ def qk_dotprod_v2(query, key):
 
 
     # Create lookup tables for rectangular tensors
-
     grid_q = triton.cdiv(n_ctx_q, BLOCK_Q)
     grid_k = triton.cdiv(n_ctx_k, BLOCK_K)
     n_pids_total = grid_q * grid_k
@@ -156,7 +159,6 @@ def qk_dotprod_v2(query, key):
 
 
     # pid_to_seq_idx = [0, 0, 1, 2, 2]
-
     grid = (n_pids_total,)
     _qk_dotprod_kernel[grid](
         q_ptr=query,
