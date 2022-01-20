@@ -39,17 +39,17 @@ def _qk_dotprod_kernel(
     k_ptr,
     scores_ptr,
     n_ctx_q,
-    n_ctx_k,  # N
+    n_ctx_k,
     d_head,
     stride_ctx_q,
     stride_ctx_k,
     stride_out_q,
     stride_out_k,
     # These are lookup tables (sometimes referred to as a "lut")
-    # pid_to_q_in_token_offset,
-    # pid_to_k_in_token_offset,
-    # pid_to_out_q_block,
-    # pid_to_out_k_block,
+    pid_to_q_in_token_offset,
+    pid_to_k_in_token_offset,
+    pid_to_out_q_block,
+    pid_to_out_k_block,
     # These get populated from the triton.Config
     BLOCK_Q: tl.constexpr,
     BLOCK_K: tl.constexpr,
@@ -144,10 +144,10 @@ def qk_dotprod_v2(query, key):
     grid_k = triton.cdiv(n_ctx_k, BLOCK_K)
     n_pids_total = grid_q * grid_k
 
-    pid_to_q_in_token_offset = torch.zeros(n_pids_total)
-    pid_to_k_in_token_offset = torch.zeros(n_pids_total)
-    pid_to_out_q_block = torch.zeros(n_pids_total)
-    pid_to_out_k_block = torch.zeros(n_pids_total)
+    pid_to_q_in_token_offset = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
+    pid_to_k_in_token_offset = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
+    pid_to_out_q_block = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
+    pid_to_out_k_block = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
 
     for pid in range(n_pids_total):
         q_block_idx = pid // grid_k
@@ -166,19 +166,20 @@ def qk_dotprod_v2(query, key):
 
     grid = (n_pids_total,)
     _qk_dotprod_kernel[grid](
-        query,
-        key,
-        scores_out,
-        n_ctx_q,
-        n_ctx_k,
-        d_head,
-        # pid_to_q_in_token_offset.cuda(),
-        # pid_to_k_in_token_offset.cuda(),
-        # pid_to_out_q_block.cuda(),
-        # pid_to_out_k_block.cuda(),
-        query.stride(0),  # stride_ctx_q
-        key.stride(0),  # stride_ctx_k
-        scores_out.stride(0),  # stride_out_q
-        scores_out.stride(1),  # stride_out_k
+        q_ptr=query,
+        k_ptr=key,
+        scores_ptr=scores_out,
+        n_ctx_q=n_ctx_q,
+        n_ctx_k=n_ctx_k,
+        d_head=d_head,
+        stride_ctx_q=query.stride(0),
+        stride_ctx_k=key.stride(0),
+        stride_out_q=scores_out.stride(0),
+        stride_out_k=scores_out.stride(1),
+        # These are lookup tables (sometimes referred to as a "lut")
+        pid_to_q_in_token_offset=pid_to_q_in_token_offset,
+        pid_to_k_in_token_offset=pid_to_k_in_token_offset,
+        pid_to_out_q_block=pid_to_out_q_block,
+        pid_to_out_k_block=pid_to_out_k_block,
     )
     return scores_out
