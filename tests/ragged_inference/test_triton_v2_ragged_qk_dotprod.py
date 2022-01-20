@@ -31,8 +31,11 @@ def test_ragged_qk_dotprod():
             _make_seq(n_ctx=3, value=55, d_model=d_model),
         ]
     )
-    scores = scores_via_qk_dotprod(query, key)
-    print(scores)
+    torch_scores = scores_via_qk_dotprod(query, key)
+    print(torch_scores)
+
+    scores = qk_dotprod_v2(query, key)
+    assert_eq(torch_scores, scores)
 
 """
 pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_ragged_qk_dotprod.py

@@ -23,7 +23,7 @@ SHAPES = [
 
 
 @pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
 def test_matmul(shape, dtype):
     a = torch.randn(shape, dtype=dtype, device="cuda")
     b = torch.randn(shape, dtype=dtype, device="cuda").T
@@ -31,8 +31,16 @@ def test_matmul(shape, dtype):
     out = matmul(a, b)
 
     torch_out = torch.matmul(a, b)
-    assert_eq(out, torch_out, rtol=0.10, atol=0.10)
-
+    assert_eq(out, torch_out, rtol=0.01, atol=0.2)
+    #
+    # try:
+    # except:
+    #     print(f"{torch.max(out-torch_out)=}")
+    #     print(f"{torch.max(out)=}")
+    #     print(f"{torch.max(torch_out)=}")
+    #
+    #     [breakpoint()]
+    #
 
 """
 pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_matmul.py -k test_matmul

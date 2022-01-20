@@ -34,7 +34,7 @@ def qk_dotprod_single_head_pytorch(q, k):
 
 
 @pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
 def test_qk_dotprod(shape, dtype):
     a = torch.randn(shape, dtype=dtype, device="cuda")
     b = torch.randn(shape, dtype=dtype, device="cuda")
@@ -42,11 +42,11 @@ def test_qk_dotprod(shape, dtype):
     out = qk_dotprod(a, b)
 
     torch_out = qk_dotprod_single_head_pytorch(a, b)
-    assert_eq(out, torch_out, rtol=0.05, atol=0.05)
+    assert_eq(out, torch_out, rtol=0.01, atol=0.2)
 
 
 @pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
 def test_qk_dotprod_v2(shape, dtype):
     a = torch.randn(shape, dtype=dtype, device="cuda")
     b = torch.randn(shape, dtype=dtype, device="cuda")
@@ -54,7 +54,7 @@ def test_qk_dotprod_v2(shape, dtype):
     out = qk_dotprod_v2(a, b)
 
     torch_out = qk_dotprod_single_head_pytorch(a, b)
-    assert_eq(out, torch_out, rtol=0.05, atol=0.05)
+    assert_eq(out, torch_out, rtol=0.01, atol=0.2)
 
 
 def test_simple_qk_dotprod():
@@ -75,7 +75,7 @@ def test_simple_qk_dotprod():
     out = qk_dotprod(q, k)
 
     torch_out = qk_dotprod_single_head_pytorch(q, k)
-    assert_eq(out, torch_out, rtol=0.05, atol=0.05)
+    assert_eq(out, torch_out, rtol=0.01, atol=0.2)
 
 
 """
