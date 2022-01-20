@@ -19,7 +19,7 @@ def get_configs_io_bound():
                         triton.Config(
                             {
                                 "BLOCK_M": block_m,
-                                "BLOCK_N": block_n,
+                                "BLOCK_K": block_n,
                                 "BLOCK_D": block_k,
                             },
                             num_stages=num_stages,
@@ -34,47 +34,47 @@ def get_all_configs():
     return [
         # basic configs for compute-bound matmuls
         triton.Config(
-            {"BLOCK_M": 128, "BLOCK_N": 256, "BLOCK_D": 32},
+            {"BLOCK_M": 128, "BLOCK_K": 256, "BLOCK_D": 32},
             num_stages=3,
             num_warps=8,
         ),
         triton.Config(
-            {"BLOCK_M": 256, "BLOCK_N": 128, "BLOCK_D": 32},
+            {"BLOCK_M": 256, "BLOCK_K": 128, "BLOCK_D": 32},
             num_stages=3,
             num_warps=8,
         ),
         triton.Config(
-            {"BLOCK_M": 256, "BLOCK_N": 64, "BLOCK_D": 32},
+            {"BLOCK_M": 256, "BLOCK_K": 64, "BLOCK_D": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 64, "BLOCK_N": 256, "BLOCK_D": 32},
+            {"BLOCK_M": 64, "BLOCK_K": 256, "BLOCK_D": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 128, "BLOCK_N": 128, "BLOCK_D": 32},
+            {"BLOCK_M": 128, "BLOCK_K": 128, "BLOCK_D": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 128, "BLOCK_N": 64, "BLOCK_D": 32},
+            {"BLOCK_M": 128, "BLOCK_K": 64, "BLOCK_D": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 64, "BLOCK_N": 128, "BLOCK_D": 32},
+            {"BLOCK_M": 64, "BLOCK_K": 128, "BLOCK_D": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 128, "BLOCK_N": 32, "BLOCK_D": 32},
+            {"BLOCK_M": 128, "BLOCK_K": 32, "BLOCK_D": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 64, "BLOCK_N": 32, "BLOCK_D": 32},
+            {"BLOCK_M": 64, "BLOCK_K": 32, "BLOCK_D": 32},
             num_stages=5,
             num_warps=2,
         ),
@@ -84,7 +84,7 @@ def get_all_configs():
 def get_fast_dev_configs():
     return [
         triton.Config(
-            {"BLOCK_Q": 64, "BLOCK_N": 32, "BLOCK_D": 32},
+            {"BLOCK_Q": 64, "BLOCK_K": 32, "BLOCK_D": 32},
             num_stages=5,
             num_warps=2,
         )
@@ -108,14 +108,14 @@ def _kernel(
     scores_out_ptr,
     n_ctx_q,
     n_ctx_k,  # N
-    d_model,  # K => D
+    d_model,
     stride_ctx_q,
     stride_ctx_k,
     stride_d,  # Stride along the d_model_per_head dim
     stride_out_q,
     stride_out_k,
     BLOCK_Q: tl.constexpr,
-    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
     BLOCK_D: tl.constexpr,
 ):
 
@@ -123,7 +123,7 @@ def _kernel(
     pid = tl.program_id(0)
 
     # Determine the number of blocks in the grid
-    grid_n = (n_ctx_k + BLOCK_N - 1) // BLOCK_N
+    grid_n = (n_ctx_k + BLOCK_K - 1) // BLOCK_K
 
     pid_q = pid // grid_n
     pid_n = pid % grid_n
@@ -132,12 +132,12 @@ def _kernel(
     rq = pid_q * BLOCK_Q + tl.arange(0, BLOCK_Q)
     rq = tl.max_contiguous(tl.multiple_of(rq % n_ctx_q, BLOCK_Q), BLOCK_Q)
 
-    rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    rbn = tl.max_contiguous(tl.multiple_of(rn % n_ctx_k, BLOCK_N), BLOCK_N)
+    rn = pid_n * BLOCK_K + tl.arange(0, BLOCK_K)
+    rbn = tl.max_contiguous(tl.multiple_of(rn % n_ctx_k, BLOCK_K), BLOCK_K)
     rd = tl.arange(0, BLOCK_D)
 
     # Iterate through blocks of the d_model dimension and accumulate values into acc
-    acc = tl.zeros((BLOCK_Q, BLOCK_N), dtype=tl.float32)
+    acc = tl.zeros((BLOCK_Q, BLOCK_K), dtype=tl.float32)
 
     query_ptr = query_ptr + (rq[:, None] * stride_ctx_q + rd[None, :] * stride_d)
     key_ptr = key_ptr + (rd[:, None] * stride_d + rbn[None, :] * stride_ctx_k)
@@ -154,7 +154,7 @@ def _kernel(
     # We rematerialize rq and rn here because it allows them to be deallocated above
     # instead of being kept in registers throughout the inner for-loop
     rq = pid_q * BLOCK_Q + tl.arange(0, BLOCK_Q)
-    rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    rn = pid_n * BLOCK_K + tl.arange(0, BLOCK_K)
     scores_out_ptr = scores_out_ptr + (
         rq[:, None] * stride_out_q + rn[None, :] * stride_out_k
     )
@@ -192,7 +192,7 @@ def qk_dotprod(query, key):
     def grid(META):
         return (
             triton.cdiv(n_ctx_q, META["BLOCK_Q"])
-            * triton.cdiv(n_ctx_k, META["BLOCK_N"]),
+            * triton.cdiv(n_ctx_k, META["BLOCK_K"]),
         )
 
     _kernel[grid](
