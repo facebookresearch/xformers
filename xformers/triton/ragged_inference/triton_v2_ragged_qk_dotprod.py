@@ -39,6 +39,11 @@ def _qk_dotprod_kernel(
     q_ptr,
     k_ptr,
     scores_ptr,
+    # Pointers to lookup tables (sometimes referred to as a "lut")
+    pid_to_q_in_token_offset_ptr,
+    pid_to_k_in_token_offset_ptr,
+    pid_to_out_q_block_ptr,
+    pid_to_out_k_block_ptr,
     # Integers
     n_ctx_q,
     n_ctx_k,
@@ -47,11 +52,6 @@ def _qk_dotprod_kernel(
     stride_ctx_k,
     stride_out_q,
     stride_out_k,
-    # These are pointers to lookup tables (sometimes referred to as a "lut")
-    pid_to_q_in_token_offset_ptr,
-    pid_to_k_in_token_offset_ptr,
-    pid_to_out_q_block_ptr,
-    pid_to_out_k_block_ptr,
     # These get populated from the triton.Config
     BLOCK_Q: tl.constexpr,
     BLOCK_K: tl.constexpr,
@@ -162,6 +162,12 @@ def qk_dotprod_v2(query, key):
         q_ptr=query,
         k_ptr=key,
         scores_ptr=scores_out,
+        # Lookup tables (sometimes referred to as a "lut")
+        pid_to_q_in_token_offset_ptr=pid_to_q_in_token_offset,
+        pid_to_k_in_token_offset_ptr=pid_to_k_in_token_offset,
+        pid_to_out_q_block_ptr=pid_to_out_q_block,
+        pid_to_out_k_block_ptr=pid_to_out_k_block,
+        # Integers
         n_ctx_q=n_ctx_q,
         n_ctx_k=n_ctx_k,
         d_head=d_head,
@@ -169,11 +175,7 @@ def qk_dotprod_v2(query, key):
         stride_ctx_k=key.stride(0),
         stride_out_q=scores_out.stride(0),
         stride_out_k=scores_out.stride(1),
-        # These are lookup tables (sometimes referred to as a "lut")
-        pid_to_q_in_token_offset_ptr=pid_to_q_in_token_offset,
-        pid_to_k_in_token_offset_ptr=pid_to_k_in_token_offset,
-        pid_to_out_q_block_ptr=pid_to_out_q_block,
-        pid_to_out_k_block_ptr=pid_to_out_k_block,
+
     )
     return scores_out
 
