@@ -60,18 +60,13 @@ def _qk_dotprod_kernel(
     pid = tl.program_id(0)
 
     # Determine the number of blocks in the grid
-    grid_k = (n_ctx_k + BLOCK_K - 1) // BLOCK_K
 
-    q_block_idx = pid // grid_k
-    k_block_idx = pid % grid_k
+    out_q_block = tl.load(pid_to_out_q_block + pid)
+    out_k_block = tl.load(pid_to_out_k_block + pid)
 
-    # TODO: Use a LUT here instead
-    out_k_block = k_block_idx
-    out_q_block = q_block_idx
+    q_in_token_offset = tl.load(pid_to_q_in_token_offset + pid)
+    k_in_token_offset = tl.load(pid_to_k_in_token_offset + pid)
 
-    # TODO: Use a LUT here instead
-    q_in_token_offset = q_block_idx * BLOCK_Q
-    k_in_token_offset = k_block_idx * BLOCK_K
 
     # Define pointer ranges, we follow the triton convention of prefixing
     # with "r" to denote a range, like "rq" is the range for queries
