@@ -147,8 +147,8 @@ def _kernel(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     for k in range(K, 0, -BLOCK_K):
 
-        a = tl.load(A)
-        b = tl.load(B)
+        a = tl.load(A, mask=rk[None, :] < k, other=0.)
+        b = tl.load(B, mask=rk[:, None] < k, other=0.)
 
         acc += tl.dot(a, b)
         A += BLOCK_K * stride_ak
@@ -173,7 +173,6 @@ def matmul(a, b):
 
     # checks constraints
     assert a.shape[1] == b.shape[0], f"incompatible dimensions, {a.shape=} {b.shape=}"
-    assert a.shape[1] % 128 == 0, f"Inner dim must be multiple of 128, got {a.shape[1]}"
 
     M, K = a.shape
     _, N = b.shape

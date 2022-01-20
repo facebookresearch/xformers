@@ -14,6 +14,7 @@ def _make_seq(n_ctx: int, value: int, d_model: int):
 
 
 SHAPES = [
+    (3, 7),
     (384, 128),
     (784, 512),
     (1024, 1024),
