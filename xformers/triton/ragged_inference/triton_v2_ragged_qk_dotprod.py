@@ -35,9 +35,11 @@ def get_fast_dev_configs():
 )
 @triton.jit
 def _qk_dotprod_kernel(
+    # Pointers to our tensors
     q_ptr,
     k_ptr,
     scores_ptr,
+    # Integers
     n_ctx_q,
     n_ctx_k,
     d_head,
@@ -45,11 +47,11 @@ def _qk_dotprod_kernel(
     stride_ctx_k,
     stride_out_q,
     stride_out_k,
-    # These are lookup tables (sometimes referred to as a "lut")
-    pid_to_q_in_token_offset,
-    pid_to_k_in_token_offset,
-    pid_to_out_q_block,
-    pid_to_out_k_block,
+    # These are pointers to lookup tables (sometimes referred to as a "lut")
+    pid_to_q_in_token_offset_ptr,
+    pid_to_k_in_token_offset_ptr,
+    pid_to_out_q_block_ptr,
+    pid_to_out_k_block_ptr,
     # These get populated from the triton.Config
     BLOCK_Q: tl.constexpr,
     BLOCK_K: tl.constexpr,
@@ -59,13 +61,10 @@ def _qk_dotprod_kernel(
     # matrix multiplication
     pid = tl.program_id(0)
 
-    # Determine the number of blocks in the grid
-
-    out_q_block = tl.load(pid_to_out_q_block + pid)
-    out_k_block = tl.load(pid_to_out_k_block + pid)
-
-    q_in_token_offset = tl.load(pid_to_q_in_token_offset + pid)
-    k_in_token_offset = tl.load(pid_to_k_in_token_offset + pid)
+    out_q_block = tl.load(pid_to_out_q_block_ptr + pid)
+    out_k_block = tl.load(pid_to_out_k_block_ptr + pid)
+    q_in_token_offset = tl.load(pid_to_q_in_token_offset_ptr + pid)
+    k_in_token_offset = tl.load(pid_to_k_in_token_offset_ptr + pid)
 
 
     # Define pointer ranges, we follow the triton convention of prefixing
@@ -134,7 +133,6 @@ def qk_dotprod_v2(query, key):
 
     # Create lookup tables for rectangular tensors
 
-
     grid_q = triton.cdiv(n_ctx_q, BLOCK_Q)
     grid_k = triton.cdiv(n_ctx_k, BLOCK_K)
     n_pids_total = grid_q * grid_k
@@ -172,9 +170,10 @@ def qk_dotprod_v2(query, key):
         stride_out_q=scores_out.stride(0),
         stride_out_k=scores_out.stride(1),
         # These are lookup tables (sometimes referred to as a "lut")
-        pid_to_q_in_token_offset=pid_to_q_in_token_offset,
-        pid_to_k_in_token_offset=pid_to_k_in_token_offset,
-        pid_to_out_q_block=pid_to_out_q_block,
-        pid_to_out_k_block=pid_to_out_k_block,
+        pid_to_q_in_token_offset_ptr=pid_to_q_in_token_offset,
+        pid_to_k_in_token_offset_ptr=pid_to_k_in_token_offset,
+        pid_to_out_q_block_ptr=pid_to_out_q_block,
+        pid_to_out_k_block_ptr=pid_to_out_k_block,
     )
     return scores_out
+
