@@ -95,7 +95,7 @@ def get_fast_dev_configs():
 @triton.autotune(
     # configs=get_all_configs(),
     configs=get_fast_dev_configs(),
-    key=["M", "N", "K"],
+    key=["n_ctx_q", "n_ctx_k", "n_dim"],
     prune_configs_by={
         "prune_num_stages_by": prune_num_stages,
         "perf_model": estimate_matmul_time,
@@ -104,12 +104,12 @@ def get_fast_dev_configs():
 )
 @triton.jit
 def _kernel(
-    A,
-    B,
-    C,
-    M,
-    N,
-    K,
+    query_ptr,
+    key_ptr,
+    scores_out_ptr,
+    n_ctx_q, # M
+    n_ctx_k, # N
+    n_dim, # K
     stride_am,
     stride_ak,
     stride_bk,
@@ -125,7 +125,7 @@ def _kernel(
     pid = tl.program_id(0)
 
     # Determine the number of blocks in the grid
-    grid_n = (N + BLOCK_N - 1) // BLOCK_N
+    grid_n = (n_ctx_k + BLOCK_N - 1) // BLOCK_N
 
     pid_m = pid // grid_n
     pid_n = pid % grid_n
@@ -133,68 +133,68 @@ def _kernel(
     # do matrix multiplication
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    ram = tl.max_contiguous(tl.multiple_of(rm % M, BLOCK_M), BLOCK_M)
-    rbn = tl.max_contiguous(tl.multiple_of(rn % N, BLOCK_N), BLOCK_N)
+    ram = tl.max_contiguous(tl.multiple_of(rm % n_ctx_q, BLOCK_M), BLOCK_M)
+    rbn = tl.max_contiguous(tl.multiple_of(rn % n_ctx_k, BLOCK_N), BLOCK_N)
     rk = tl.arange(0, BLOCK_K)
 
     # pointers
-    A = A + (ram[:, None] * stride_am + rk[None, :] * stride_ak)
-    B = B + (rk[:, None] * stride_bk + rbn[None, :] * stride_bn)
+    query_ptr = query_ptr + (ram[:, None] * stride_am + rk[None, :] * stride_ak)
+    key_ptr = key_ptr + (rk[:, None] * stride_bk + rbn[None, :] * stride_bn)
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-    for k in range(K, 0, -BLOCK_K):
+    for k in range(n_dim, 0, -BLOCK_K):
 
-        a = tl.load(A, mask=rk[None, :] < k, other=0.)
-        b = tl.load(B, mask=rk[:, None] < k, other=0.)
+        a = tl.load(query_ptr, mask=rk[None, :] < k, other=0.)
+        b = tl.load(key_ptr, mask=rk[:, None] < k, other=0.)
 
         acc += tl.dot(a, b)
-        A += BLOCK_K * stride_ak
-        B += BLOCK_K * stride_bk
-    acc = acc.to(C.dtype.element_ty)
+        query_ptr += BLOCK_K * stride_ak
+        key_ptr += BLOCK_K * stride_bk
+    acc = acc.to(scores_out_ptr.dtype.element_ty)
 
     # rematerialize rm and rn to save registers
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    C = C + (rm[:, None] * stride_cm + rn[None, :] * stride_cn)
-    mask = (rm < M)[:, None] & (rn < N)[None, :]
+    scores_out_ptr = scores_out_ptr + (rm[:, None] * stride_cm + rn[None, :] * stride_cn)
+    mask = (rm < n_ctx_q)[:, None] & (rn < n_ctx_k)[None, :]
 
-    tl.store(C, acc, mask=mask)
+    tl.store(scores_out_ptr, acc, mask=mask)
 
 
 def qk_dotprod(query, key):
     device = query.device
-    key = key.T
+    key_T = key.T
 
     # handle non-contiguous inputs if necessary
     if query.stride(0) > 1 and query.stride(1) > 1:
         query = query.contiguous()
-    if key.stride(0) > 1 and key.stride(1) > 1:
-        key = key.contiguous()
+    if key_T.stride(0) > 1 and key_T.stride(1) > 1:
+        key_T = key_T.contiguous()
 
     # checks constraints
-    assert query.shape[1] == key.shape[0], f"incompatible dimensions, {query.shape=} {key.shape=}"
+    assert query.shape[1] == key_T.shape[0], f"incompatible dimensions, {query.shape=} {key_T.shape=}"
 
-    M, K = query.shape
-    _, N = key.shape
+    n_ctx_q, n_dim = query.shape
+    _, n_ctx_k = key_T.shape
 
     # allocates output
-    c = torch.empty((M, N), device=device, dtype=query.dtype)
+    scores_out = torch.empty((n_ctx_q, n_ctx_k), device=device, dtype=query.dtype)
 
     # launch kernel
     def grid(META):
-        return (triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),)
+        return (triton.cdiv(n_ctx_q, META["BLOCK_M"]) * triton.cdiv(n_ctx_k, META["BLOCK_N"]),)
 
     _kernel[grid](
         query,
-        key,
-        c,
-        M,
-        N,
-        K,
+        key_T,
+        scores_out,
+        n_ctx_q,
+        n_ctx_k,
+        n_dim,
         query.stride(0),
         query.stride(1),
-        key.stride(0),
-        key.stride(1),
-        c.stride(0),
-        c.stride(1),
+        key_T.stride(0),
+        key_T.stride(1),
+        scores_out.stride(0),
+        scores_out.stride(1),
     )
-    return c
+    return scores_out
