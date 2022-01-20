@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import torch
 import triton
 import triton.language as tl
@@ -8,9 +9,9 @@ def init_to_zero(name):
     return lambda nargs: nargs[name].zero_()
 
 
-BLOCK_Q = 32
-BLOCK_K = 32
-BLOCK_D = 64
+BLOCK_Q = 16
+BLOCK_K = 256
+BLOCK_D = 32
 
 
 def get_fast_dev_configs():
@@ -117,8 +118,42 @@ def _qk_dotprod_kernel(
     acc_tile = acc_tile.to(scores_ptr.dtype.element_ty)
     tl.store(scores_ptr_tile, acc_tile, mask=mask)
 
+@dataclass
+class RaggedQkPidLookupTable:
+    # TODO: link to a drawing of what these tensors are
+    # All cuda tensors
+    pid_to_q_in_token_offset: torch.Tensor
+    pid_to_k_in_token_offset: torch.Tensor
+    pid_to_out_q_block: torch.Tensor
+    pid_to_out_k_block: torch.Tensor
+    n_pids_total: int
 
-def qk_dotprod_v2(query, key):
+    @staticmethod
+    def from_single_seq(n_ctx_q: int, n_ctx_k: int) -> "RaggedQkPidLookupTable":
+        grid_q = triton.cdiv(n_ctx_q, BLOCK_Q)
+        grid_k = triton.cdiv(n_ctx_k, BLOCK_K)
+        n_pids_total = grid_q * grid_k
+
+        pid_to_q_in_token_offset = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
+        pid_to_k_in_token_offset = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
+        pid_to_out_q_block = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
+        pid_to_out_k_block = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
+
+        for pid in range(n_pids_total):
+            q_block_idx = pid // grid_k
+            k_block_idx = pid % grid_k
+
+            q_in_token_offset = q_block_idx * BLOCK_Q
+            k_in_token_offset = k_block_idx * BLOCK_K
+
+            pid_to_out_q_block[pid] = q_block_idx
+            pid_to_out_k_block[pid] = k_block_idx
+            pid_to_q_in_token_offset[pid] = q_in_token_offset
+            pid_to_k_in_token_offset[pid] = k_in_token_offset
+
+        return RaggedQkPidLookupTable(pid_to_q_in_token_offset=pid_to_q_in_token_offset, pid_to_k_in_token_offset=pid_to_k_in_token_offset, pid_to_out_q_block=pid_to_out_q_block, pid_to_out_k_block=pid_to_out_k_block, n_pids_total=n_pids_total)
+
+def ragged_qk_dotprod(query: torch.Tensor, key: torch.Tensor, lut: RaggedQkPidLookupTable) -> torch.Tensor:
     device = query.device
 
     # handle non-contiguous inputs if necessary
@@ -139,43 +174,17 @@ def qk_dotprod_v2(query, key):
     assert query.stride(1) == 1, f"{query.stride(1)}"
     assert key.stride(1) == 1, f"{key.stride(1)}"
 
-    # We need to know the grid to make our lookup tables
-
-
-    # Create lookup tables for rectangular tensors
-    grid_q = triton.cdiv(n_ctx_q, BLOCK_Q)
-    grid_k = triton.cdiv(n_ctx_k, BLOCK_K)
-    n_pids_total = grid_q * grid_k
-
-    pid_to_q_in_token_offset = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
-    pid_to_k_in_token_offset = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
-    pid_to_out_q_block = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
-    pid_to_out_k_block = torch.zeros(n_pids_total, dtype=torch.int32, device='cuda')
-
-    for pid in range(n_pids_total):
-        q_block_idx = pid // grid_k
-        k_block_idx = pid % grid_k
-
-        q_in_token_offset = q_block_idx * BLOCK_Q
-        k_in_token_offset = k_block_idx * BLOCK_K
-
-        pid_to_out_q_block[pid] = q_block_idx
-        pid_to_out_k_block[pid] = k_block_idx
-        pid_to_q_in_token_offset[pid] = q_in_token_offset
-        pid_to_k_in_token_offset[pid] = k_in_token_offset
-
-
     # pid_to_seq_idx = [0, 0, 1, 2, 2]
-    grid = (n_pids_total,)
+    grid = (lut.n_pids_total,)
     _qk_dotprod_kernel[grid](
         q_ptr=query,
         k_ptr=key,
         scores_ptr=scores_out,
         # Lookup tables (sometimes referred to as a "lut")
-        pid_to_q_in_token_offset_ptr=pid_to_q_in_token_offset,
-        pid_to_k_in_token_offset_ptr=pid_to_k_in_token_offset,
-        pid_to_out_q_block_ptr=pid_to_out_q_block,
-        pid_to_out_k_block_ptr=pid_to_out_k_block,
+        pid_to_q_in_token_offset_ptr=lut.pid_to_q_in_token_offset,
+        pid_to_k_in_token_offset_ptr=lut.pid_to_k_in_token_offset,
+        pid_to_out_q_block_ptr=lut.pid_to_out_q_block,
+        pid_to_out_k_block_ptr=lut.pid_to_out_k_block,
         # Integers
         n_ctx_q=n_ctx_q,
         n_ctx_k=n_ctx_k,

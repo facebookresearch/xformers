@@ -10,7 +10,7 @@ from xformers.triton.garbage_pad_ragged_acts import RaggedActivations
 from xformers.triton.ragged_inference.seq_kv_cache import _single_seq_kv_cache, \
     scores_via_qk_dotprod
 from xformers.triton.ragged_inference.triton_v2_qk_dotprod import qk_dotprod
-from xformers.triton.ragged_inference.triton_v2_ragged_qk_dotprod import qk_dotprod_v2
+from xformers.triton.ragged_inference.triton_v2_ragged_qk_dotprod import ragged_qk_dotprod
 
 
 def _make_seq(n_ctx: int, value: int, d_model: int):
@@ -34,7 +34,7 @@ def test_ragged_qk_dotprod():
     torch_scores = scores_via_qk_dotprod(query, key)
     print(torch_scores)
 
-    scores = qk_dotprod_v2(query, key)
+    scores = ragged_qk_dotprod(query, key)
     assert_eq(torch_scores, scores)
 
 """
