@@ -150,7 +150,6 @@ def _kernel(
     q_ptr_tile = q_ptr + (rq[:, None] * stride_ctx_q + rd[None, :] * stride_d)
     k_ptr_tile = k_ptr + (rd[:, None] * stride_d + rk[None, :] * stride_ctx_k)
 
-    # acc_tile = tl.load(k_ptr_tile)
 
     for d_max_offset in range(d_model, 0, -BLOCK_D):
         q_tile = tl.load(q_ptr_tile, mask=rd[None, :] < d_max_offset, other=0.0)

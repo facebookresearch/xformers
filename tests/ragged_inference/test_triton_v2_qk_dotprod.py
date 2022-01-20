@@ -33,7 +33,7 @@ def qk_dotprod_single_head_pytorch(q, k):
 
 
 @pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
 def test_qk_dotprod(shape, dtype):
     a = torch.randn(shape, dtype=dtype, device="cuda")
     b = torch.randn(shape, dtype=dtype, device="cuda")
