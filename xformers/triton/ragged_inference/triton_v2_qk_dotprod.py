@@ -180,7 +180,6 @@ def _kernel(
 def qk_dotprod(query, key):
     device = query.device
 
-
     # handle non-contiguous inputs if necessary
     if query.stride(0) > 1 and query.stride(1) > 1:
         query = query.contiguous()

@@ -43,6 +43,7 @@ def test_qk_dotprod(shape, dtype):
     torch_out = qk_dotprod_single_head_pytorch(a, b)
     assert_eq(out, torch_out, rtol=0.05, atol=0.05)
 
+
 def test_simple_qk_dotprod():
     dtype = torch.float32
     shape = (8, 8)

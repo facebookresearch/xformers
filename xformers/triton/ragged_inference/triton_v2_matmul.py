@@ -91,7 +91,6 @@ def get_fast_dev_configs():
     ]
 
 
-
 @triton.autotune(
     # configs=get_all_configs(),
     configs=get_fast_dev_configs(),
@@ -143,8 +142,8 @@ def _kernel(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     for k in range(K, 0, -BLOCK_K):
 
-        a = tl.load(A, mask=rk[None, :] < k, other=0.)
-        b = tl.load(B, mask=rk[:, None] < k, other=0.)
+        a = tl.load(A, mask=rk[None, :] < k, other=0.0)
+        b = tl.load(B, mask=rk[:, None] < k, other=0.0)
 
         acc += tl.dot(a, b)
         A += BLOCK_K * stride_ak
