@@ -8,8 +8,20 @@ import math
 import pytest
 import torch
 
+from xformers.helpers.test_utils import assert_eq, bf16_cuda, fp16_cuda
+from xformers.triton.garbage_pad_ragged_acts import (
+    RaggedActivations,
+    add,
+    get_acts_offset_per_seq,
+)
 from xformers.triton.k_ragged_qk_dotprod import mem_efficient_fw
+from xformers.triton.k_ragged_qk_dotprod_v2 import matmul
 from xformers.triton.utils import gpu_capabilities_older_than_70
+
+
+def _make_seq(n_ctx: int, value: int, d_model: int):
+    return torch.full([n_ctx, d_model], value, **bf16_cuda())
+
 
 _triton_available = True
 # except ImportError as e:
@@ -100,6 +112,41 @@ def test_mem_efficient_attention_memory_use(shape, dtype):
     assert max_memory_me <= max_memory_torch * fudge_factor
 
 
+
+def test_matmul():
+    K = 128
+    M = 16
+    N = 8
+    a = torch.randn( M,K, **bf16_cuda())
+    b = torch.randn(K, N, **bf16_cuda())
+    out = matmul(a, b)
+
+    torch_out = torch.matmul(a,b)
+    assert_eq(out, torch_out)
+
+def test_create_ragged_qk_lookup_tables():
+    d_model = 16
+
+    queries = RaggedActivations.from_list(
+        [
+            _make_seq(n_ctx=1, value=10, d_model=d_model),
+            _make_seq(n_ctx=2, value=11, d_model=d_model),
+        ]
+    )
+
+    keys = RaggedActivations.from_list(
+        [
+            _make_seq(n_ctx=1, value=21, d_model=d_model),
+            _make_seq(n_ctx=3, value=22, d_model=d_model),
+        ]
+    )
+
+    key_acts_offset_per_seq = get_acts_offset_per_seq(keys.n_ctx_per_seq)
+    query_acts_offset_per_seq = get_acts_offset_per_seq(queries.n_ctx_per_seq)
+
+
+
+
 """
-pytest -vxs --tb=native tests/test_ragged_qk_dotprod.py
+pytest -vxs --tb=native tests/test_ragged_qk_dotprod.py -k test_matmul
 """

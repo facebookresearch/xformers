@@ -121,6 +121,14 @@ class RaggedActivations:
         self.raw_tensor = raw_tensor
         self.n_ctx_per_seq = n_ctx_per_seq
 
+    @property
+    def n_seqs(self):
+        return len(self.n_ctx_per_seq)
+
+    @property
+    def max_n_ctx_per_seq(self):
+        return max(self.n_ctx_per_seq)
+
     @classmethod
     def from_list(cls, tensors: List[torch.Tensor]):
         """Tensors must all be of shape [n_ctx, d_model]."""
@@ -176,8 +184,8 @@ class RaggedActivations:
         assert d_model % 32 == 0, f"bad {d_model=}"
 
         # We use numpy here because it's a bit faster
-        n_ctx_per_seq_shifted = np.array([0] + self.n_ctx_per_seq[:-1])
-        ragged_acts_offset_per_seq = n_ctx_per_seq_shifted.cumsum(axis=0)
+        n_ctx_per_seq = self.n_ctx_per_seq
+        ragged_acts_offset_per_seq = get_acts_offset_per_seq(n_ctx_per_seq)
 
         # The SPMD launch grid denotes the number of kernel instances that run in parallel.
         # It is analogous to CUDA launch grids. It can be either Tuple[int], or
@@ -202,6 +210,12 @@ class RaggedActivations:
             n_ctx_max=n_ctx_max,
         )
         return padded_acts
+
+
+def get_acts_offset_per_seq(n_ctx_per_seq):
+    n_ctx_per_seq_shifted = np.array([0] + n_ctx_per_seq[:-1])
+    ragged_acts_offset_per_seq = n_ctx_per_seq_shifted.cumsum(axis=0)
+    return ragged_acts_offset_per_seq
 
 
 """
