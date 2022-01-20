@@ -91,7 +91,6 @@ def get_fast_dev_configs():
     ]
 
 
-
 @triton.autotune(
     # configs=get_all_configs(),
     configs=get_fast_dev_configs(),
@@ -107,12 +106,11 @@ def _kernel(
     query_ptr,
     key_ptr,
     scores_out_ptr,
-    n_ctx_q, # M
-    n_ctx_k, # N
-    n_dim, # K
+    n_ctx_q,  # M
+    n_ctx_k,  # N
+    n_dim,  # K
     stride_ctx_q,
-    stride_d_model_for_q,
-    stride_d_model_for_k,
+    stride_d,  # Stride along the d_model_per_head dim
     stride_ctx_k,
     stride_out_ctx_q,
     stride_out_ctx_k,
@@ -138,23 +136,25 @@ def _kernel(
     rk = tl.arange(0, BLOCK_K)
 
     # pointers
-    query_ptr = query_ptr + (ram[:, None] * stride_ctx_q + rk[None, :] * stride_d_model_for_q)
-    key_ptr = key_ptr + (rk[:, None] * stride_d_model_for_k + rbn[None, :] * stride_ctx_k)
+    query_ptr = query_ptr + (ram[:, None] * stride_ctx_q + rk[None, :] * stride_d)
+    key_ptr = key_ptr + (rk[:, None] * stride_d + rbn[None, :] * stride_ctx_k)
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     for k in range(n_dim, 0, -BLOCK_K):
 
-        a = tl.load(query_ptr, mask=rk[None, :] < k, other=0.)
-        b = tl.load(key_ptr, mask=rk[:, None] < k, other=0.)
+        a = tl.load(query_ptr, mask=rk[None, :] < k, other=0.0)
+        b = tl.load(key_ptr, mask=rk[:, None] < k, other=0.0)
 
         acc += tl.dot(a, b)
-        query_ptr += BLOCK_K * stride_d_model_for_q
-        key_ptr += BLOCK_K * stride_d_model_for_k
+        query_ptr += BLOCK_K * stride_d
+        key_ptr += BLOCK_K * stride_d
     acc = acc.to(scores_out_ptr.dtype.element_ty)
 
     # rematerialize rm and rn to save registers
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    scores_out_ptr = scores_out_ptr + (rm[:, None] * stride_out_ctx_q + rn[None, :] * stride_out_ctx_k)
+    scores_out_ptr = scores_out_ptr + (
+        rm[:, None] * stride_out_ctx_q + rn[None, :] * stride_out_ctx_k
+    )
     mask = (rm < n_ctx_q)[:, None] & (rn < n_ctx_k)[None, :]
 
     tl.store(scores_out_ptr, acc, mask=mask)
@@ -171,7 +171,9 @@ def qk_dotprod(query, key):
         key_T = key_T.contiguous()
 
     # checks constraints
-    assert query.shape[1] == key_T.shape[0], f"incompatible dimensions, {query.shape=} {key_T.shape=}"
+    assert (
+        query.shape[1] == key_T.shape[0]
+    ), f"incompatible dimensions, {query.shape=} {key_T.shape=}"
 
     n_ctx_q, n_dim = query.shape
     _, n_ctx_k = key_T.shape
@@ -179,9 +181,16 @@ def qk_dotprod(query, key):
     # allocates output
     scores_out = torch.empty((n_ctx_q, n_ctx_k), device=device, dtype=query.dtype)
 
+    # Stride along the d_model dimension
+    stride_d = query.stride(1)
+    assert stride_d == key_T.stride(0), f"{stride_d=}, {key_T.stride(0)}"
+
     # launch kernel
     def grid(META):
-        return (triton.cdiv(n_ctx_q, META["BLOCK_M"]) * triton.cdiv(n_ctx_k, META["BLOCK_N"]),)
+        return (
+            triton.cdiv(n_ctx_q, META["BLOCK_M"])
+            * triton.cdiv(n_ctx_k, META["BLOCK_N"]),
+        )
 
     _kernel[grid](
         query,
@@ -190,9 +199,8 @@ def qk_dotprod(query, key):
         n_ctx_q,
         n_ctx_k,
         n_dim,
-        query.stride(0),
-        query.stride(1),
-        key_T.stride(0),
+        query.stride(0),  # stride_ctx_q
+        stride_d,
         key_T.stride(1),
         scores_out.stride(0),
         scores_out.stride(1),
