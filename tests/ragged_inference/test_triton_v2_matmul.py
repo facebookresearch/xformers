@@ -23,7 +23,7 @@ SHAPES = [
 
 
 @pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
 def test_matmul(shape, dtype):
     a = torch.randn(shape, dtype=dtype, device="cuda")
     b = torch.randn(shape, dtype=dtype, device="cuda").T
@@ -31,7 +31,7 @@ def test_matmul(shape, dtype):
     out = matmul(a, b)
 
     torch_out = torch.matmul(a, b)
-    assert_eq(out, torch_out, rtol=0.05, atol=0.05)
+    assert_eq(out, torch_out, rtol=0.10, atol=0.10)
 
 
 """
