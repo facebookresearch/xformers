@@ -81,10 +81,18 @@ def get_all_configs():
     ] + get_configs_io_bound()
 
 
+# def get_fast_dev_configs():
+#     return [
+#         triton.Config(
+#             {"BLOCK_Q": 64, "BLOCK_K": 32, "BLOCK_D": 32},
+#             num_stages=5,
+#             num_warps=2,
+#         )
+#     ]
 def get_fast_dev_configs():
     return [
         triton.Config(
-            {"BLOCK_Q": 64, "BLOCK_K": 32, "BLOCK_D": 32},
+            {"BLOCK_Q": 8, "BLOCK_K": 8, "BLOCK_D": 8},
             num_stages=5,
             num_warps=2,
         )
@@ -141,11 +149,16 @@ def _kernel(
 
     q_ptr_tile = q_ptr + (rq[:, None] * stride_ctx_q + rd[None, :] * stride_d)
     k_ptr_tile = k_ptr + (rd[:, None] * stride_d + rk[None, :] * stride_ctx_k)
+
+    # acc_tile = tl.load(k_ptr_tile)
+
     for d_max_offset in range(d_model, 0, -BLOCK_D):
         q_tile = tl.load(q_ptr_tile, mask=rd[None, :] < d_max_offset, other=0.0)
         k_tile = tl.load(k_ptr_tile, mask=rd[:, None] < d_max_offset, other=0.0)
 
+        # In einsum notation, the following does: qd,dk->qk
         acc_tile += tl.dot(q_tile, k_tile)
+
         q_ptr_tile += BLOCK_D * stride_d
         k_ptr_tile += BLOCK_D * stride_d
 
@@ -156,7 +169,7 @@ def _kernel(
     rq = pid_q * BLOCK_Q + tl.arange(0, BLOCK_Q)
     rk = pid_k * BLOCK_K + tl.arange(0, BLOCK_K)
 
-    scores_offset_tile = (rq[:, None] * stride_out_q + rk[None, :] * stride_out_k)
+    scores_offset_tile = rq[:, None] * stride_out_q + rk[None, :] * stride_out_k
     scores_ptr_tile = scores_ptr + scores_offset_tile
 
     mask = (rq < n_ctx_q)[:, None] & (rk < n_ctx_k)[None, :]
@@ -166,28 +179,26 @@ def _kernel(
 
 def qk_dotprod(query, key):
     device = query.device
-    key_T = key.T
+
 
     # handle non-contiguous inputs if necessary
     if query.stride(0) > 1 and query.stride(1) > 1:
         query = query.contiguous()
-    if key_T.stride(0) > 1 and key_T.stride(1) > 1:
-        key_T = key_T.contiguous()
+    if key.stride(0) > 1 and key.stride(1) > 1:
+        key = key.contiguous()
 
     # checks constraints
-    assert (
-        query.shape[1] == key_T.shape[0]
-    ), f"incompatible dimensions, {query.shape=} {key_T.shape=}"
 
     n_ctx_q, d_model = query.shape
-    _, n_ctx_k = key_T.shape
+    n_ctx_k, d_model_k = key.shape
+    assert d_model == d_model_k, f"{query.shape=} {key.shape=}"
 
     # allocates output
     scores_out = torch.empty((n_ctx_q, n_ctx_k), device=device, dtype=query.dtype)
 
     # Stride along the d_model dimension
     stride_d = query.stride(1)
-    assert stride_d == key_T.stride(0), f"{stride_d=}, {key_T.stride(0)}"
+    assert stride_d == key.stride(1), f"{stride_d=}, {key.stride(1)=}"
 
     # launch kernel
     def grid(META):
@@ -198,15 +209,15 @@ def qk_dotprod(query, key):
 
     _kernel[grid](
         query,
-        key_T,
+        key,
         scores_out,
         n_ctx_q,
         n_ctx_k,
         d_model,
-        query.stride(0), # stride_ctx_q
-        key_T.stride(1), # stride_ctx_k
-        stride_d, # stride_d
-        scores_out.stride(0), # stride_out_q
-        scores_out.stride(1), # stride_out_k
+        query.stride(0),  # stride_ctx_q
+        key.stride(0),  # stride_ctx_k
+        stride_d,  # stride_d
+        scores_out.stride(0),  # stride_out_q
+        scores_out.stride(1),  # stride_out_k
     )
     return scores_out

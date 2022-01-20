@@ -43,7 +43,27 @@ def test_qk_dotprod(shape, dtype):
     torch_out = qk_dotprod_single_head_pytorch(a, b)
     assert_eq(out, torch_out, rtol=0.05, atol=0.05)
 
+def test_simple_qk_dotprod():
+    dtype = torch.float32
+    shape = (8, 8)
+
+    # a = torch.zeros(shape, dtype=dtype, device="cuda")
+    # a[0,0] = 1.0
+    # b = torch.randn(shape, dtype=dtype, device="cuda")
+
+    k = torch.zeros(shape, dtype=dtype, device="cuda")
+    k[0, 0] = 1.0
+    k[0, 1] = 1.0
+    q = torch.randn(shape, dtype=dtype, device="cuda")
+
+    print(f"{q=}")
+    print(f"{k=}")
+    out = qk_dotprod(q, k)
+
+    torch_out = qk_dotprod_single_head_pytorch(q, k)
+    assert_eq(out, torch_out, rtol=0.05, atol=0.05)
+
 
 """
-pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_qk_dotprod.py
+pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_qk_dotprod.py -k test_qk_dotprod
 """
