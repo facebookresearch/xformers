@@ -7,15 +7,12 @@ import math
 
 import pytest
 import torch
-
-from xformers.helpers.test_utils import assert_eq, bf16_cuda, fp16_cuda
+from xformers.helpers.test_utils import bf16_cuda
 from xformers.triton.garbage_pad_ragged_acts import (
     RaggedActivations,
-    add,
     get_acts_offset_per_seq,
 )
 from xformers.triton.k_ragged_qk_dotprod import mem_efficient_fw
-from xformers.triton.ragged_inference import matmul
 from xformers.triton.utils import gpu_capabilities_older_than_70
 
 
@@ -110,18 +107,6 @@ def test_mem_efficient_attention_memory_use(shape, dtype):
 
     fudge_factor = 3.0
     assert max_memory_me <= max_memory_torch * fudge_factor
-
-
-def test_matmul():
-    K = 128
-    M = 16
-    N = 8
-    a = torch.randn(M, K, **bf16_cuda())
-    b = torch.randn(K, N, **bf16_cuda())
-    out = matmul(a, b)
-
-    torch_out = torch.matmul(a, b)
-    assert_eq(out, torch_out)
 
 
 def test_create_ragged_qk_lookup_tables():
