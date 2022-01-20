@@ -160,38 +160,40 @@ def _kernel(
     tl.store(C, acc, mask=mask)
 
 
-def matmul(a, b):
-    device = a.device
+def qk_dotprod(query, key):
+    device = query.device
+    key = key.T
+
     # handle non-contiguous inputs if necessary
-    if a.stride(0) > 1 and a.stride(1) > 1:
-        a = a.contiguous()
-    if b.stride(0) > 1 and b.stride(1) > 1:
-        b = b.contiguous()
+    if query.stride(0) > 1 and query.stride(1) > 1:
+        query = query.contiguous()
+    if key.stride(0) > 1 and key.stride(1) > 1:
+        key = key.contiguous()
 
     # checks constraints
-    assert a.shape[1] == b.shape[0], f"incompatible dimensions, {a.shape=} {b.shape=}"
+    assert query.shape[1] == key.shape[0], f"incompatible dimensions, {query.shape=} {key.shape=}"
 
-    M, K = a.shape
-    _, N = b.shape
+    M, K = query.shape
+    _, N = key.shape
 
     # allocates output
-    c = torch.empty((M, N), device=device, dtype=a.dtype)
+    c = torch.empty((M, N), device=device, dtype=query.dtype)
 
     # launch kernel
     def grid(META):
         return (triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),)
 
     _kernel[grid](
-        a,
-        b,
+        query,
+        key,
         c,
         M,
         N,
         K,
-        a.stride(0),
-        a.stride(1),
-        b.stride(0),
-        b.stride(1),
+        query.stride(0),
+        query.stride(1),
+        key.stride(0),
+        key.stride(1),
         c.stride(0),
         c.stride(1),
     )
