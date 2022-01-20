@@ -238,6 +238,8 @@
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
 
+<span class="kn">from</span> <span class="nn">xformers.components.attention</span> <span class="kn">import</span> <span class="n">AttentionMask</span>
+
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">AttentionConfig</span><span class="p">:</span>
@@ -256,7 +258,7 @@
 <div class="viewcode-block" id="Attention"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.Attention">[docs]</a><span class="k">class</span> <span class="nc">Attention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span> <span class="n">metaclass</span><span class="o">=</span><span class="n">ABCMeta</span><span class="p">):</span>
     <span class="sa">r</span><span class="sd">&quot;&quot;&quot;The base Attention mechanism, which is typically a sub-part of the multi-head attention&quot;&quot;&quot;</span>
 
-    <span class="n">_causal_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_causal_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AttentionMask</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@abstractmethod</span>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dropout</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
@@ -273,6 +275,10 @@
 
         <span class="c1"># Requires that K and Q have the same sequence length</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">requires_same_k_q_dimensions</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="c1"># Whether the attention owns the single head/multihead mechanism</span>
+        <span class="c1"># so that the MHA wrapper should skip it</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">requires_skip_multi_head</span> <span class="o">=</span> <span class="kc">False</span>
 
 <div class="viewcode-block" id="Attention.from_config"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.Attention.from_config">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_config</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Self</span><span class="p">],</span> <span class="n">config</span><span class="p">:</span> <span class="n">AttentionConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
