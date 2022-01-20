@@ -1,8 +1,7 @@
 import torch
-
 import triton
 import triton.language as tl
-from triton.ops.matmul_perf_model import prune_num_stages, estimate_matmul_time
+from triton.ops.matmul_perf_model import estimate_matmul_time, prune_num_stages
 
 
 def init_to_zero(name):
@@ -17,62 +16,132 @@ def get_configs_io_bound():
                 for block_n in [32, 64, 128, 256]:
                     num_warps = 2 if block_n <= 64 else 4
                     configs.append(
-                        triton.Config({'BLOCK_M': block_m, 'BLOCK_N': block_n, 'BLOCK_K': block_k, 'SPLIT_K': 1},
-                                      num_stages=num_stages, num_warps=num_warps))
+                        triton.Config(
+                            {
+                                "BLOCK_M": block_m,
+                                "BLOCK_N": block_n,
+                                "BLOCK_K": block_k,
+                                "SPLIT_K": 1,
+                            },
+                            num_stages=num_stages,
+                            num_warps=num_warps,
+                        )
+                    )
                     # split_k
                     for split_k in [2, 4, 8, 16]:
-                        configs.append(triton.Config({'BLOCK_M': block_m, 'BLOCK_N': block_n, 'BLOCK_K': block_k, 'SPLIT_K': split_k},
-                                                     num_stages=num_stages, num_warps=num_warps, pre_hook=init_to_zero('C')))
+                        configs.append(
+                            triton.Config(
+                                {
+                                    "BLOCK_M": block_m,
+                                    "BLOCK_N": block_n,
+                                    "BLOCK_K": block_k,
+                                    "SPLIT_K": split_k,
+                                },
+                                num_stages=num_stages,
+                                num_warps=num_warps,
+                                pre_hook=init_to_zero("C"),
+                            )
+                        )
     return configs
+
 
 def get_all_configs():
     return [
         # basic configs for compute-bound matmuls
-        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 256, 'BLOCK_K': 32, 'SPLIT_K': 1},
-                      num_stages=3, num_warps=8),
-        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 128, 'BLOCK_K': 32, 'SPLIT_K': 1},
-                      num_stages=3, num_warps=8),
-        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 64, 'BLOCK_K': 32, 'SPLIT_K': 1},
-                      num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 256, 'BLOCK_K': 32, 'SPLIT_K': 1},
-                      num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 128, 'BLOCK_K': 32, 'SPLIT_K': 1},
-                      num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 64, 'BLOCK_K': 32, 'SPLIT_K': 1},
-                      num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 128, 'BLOCK_K': 32, 'SPLIT_K': 1},
-                      num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 32, 'BLOCK_K': 32, 'SPLIT_K': 1},
-                      num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 32, 'BLOCK_K': 32, 'SPLIT_K': 1},
-                      num_stages=5, num_warps=2),
+        triton.Config(
+            {"BLOCK_M": 128, "BLOCK_N": 256, "BLOCK_K": 32, "SPLIT_K": 1},
+            num_stages=3,
+            num_warps=8,
+        ),
+        triton.Config(
+            {"BLOCK_M": 256, "BLOCK_N": 128, "BLOCK_K": 32, "SPLIT_K": 1},
+            num_stages=3,
+            num_warps=8,
+        ),
+        triton.Config(
+            {"BLOCK_M": 256, "BLOCK_N": 64, "BLOCK_K": 32, "SPLIT_K": 1},
+            num_stages=4,
+            num_warps=4,
+        ),
+        triton.Config(
+            {"BLOCK_M": 64, "BLOCK_N": 256, "BLOCK_K": 32, "SPLIT_K": 1},
+            num_stages=4,
+            num_warps=4,
+        ),
+        triton.Config(
+            {"BLOCK_M": 128, "BLOCK_N": 128, "BLOCK_K": 32, "SPLIT_K": 1},
+            num_stages=4,
+            num_warps=4,
+        ),
+        triton.Config(
+            {"BLOCK_M": 128, "BLOCK_N": 64, "BLOCK_K": 32, "SPLIT_K": 1},
+            num_stages=4,
+            num_warps=4,
+        ),
+        triton.Config(
+            {"BLOCK_M": 64, "BLOCK_N": 128, "BLOCK_K": 32, "SPLIT_K": 1},
+            num_stages=4,
+            num_warps=4,
+        ),
+        triton.Config(
+            {"BLOCK_M": 128, "BLOCK_N": 32, "BLOCK_K": 32, "SPLIT_K": 1},
+            num_stages=4,
+            num_warps=4,
+        ),
+        triton.Config(
+            {"BLOCK_M": 64, "BLOCK_N": 32, "BLOCK_K": 32, "SPLIT_K": 1},
+            num_stages=5,
+            num_warps=2,
+        ),
     ] + get_configs_io_bound()
 
+
 def get_fast_dev_configs():
-    return [triton.Config({'BLOCK_M': 64, 'BLOCK_N': 32, 'BLOCK_K': 32, 'SPLIT_K': 1},
-                  num_stages=5, num_warps=2)]
+    return [
+        triton.Config(
+            {"BLOCK_M": 64, "BLOCK_N": 32, "BLOCK_K": 32, "SPLIT_K": 1},
+            num_stages=5,
+            num_warps=2,
+        )
+    ]
 
 
-@triton.heuristics({
-    'EVEN_K': lambda nargs: nargs['K'] % (nargs['BLOCK_K'] * nargs['SPLIT_K']) == 0,
-})
+@triton.heuristics(
+    {
+        "EVEN_K": lambda nargs: nargs["K"] % (nargs["BLOCK_K"] * nargs["SPLIT_K"]) == 0,
+    }
+)
 @triton.autotune(
     # configs=get_all_configs(),
-    configs = get_fast_dev_configs(),
-    key=['M', 'N', 'K'],
+    configs=get_fast_dev_configs(),
+    key=["M", "N", "K"],
     prune_configs_by={
-        'prune_num_stages_by': prune_num_stages,
-        'perf_model': estimate_matmul_time,
-        'top_k': 10
+        "prune_num_stages_by": prune_num_stages,
+        "perf_model": estimate_matmul_time,
+        "top_k": 10,
     },
 )
 @triton.jit
-def _kernel(A, B, C, M, N, K,
-            stride_am, stride_ak,
-            stride_bk, stride_bn,
-            stride_cm, stride_cn,
-            BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
-            GROUP_M: tl.constexpr, SPLIT_K: tl.constexpr, EVEN_K: tl.constexpr):
+def _kernel(
+    A,
+    B,
+    C,
+    M,
+    N,
+    K,
+    stride_am,
+    stride_ak,
+    stride_bk,
+    stride_bn,
+    stride_cm,
+    stride_cn,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+    SPLIT_K: tl.constexpr,
+    EVEN_K: tl.constexpr,
+):
 
     # matrix multiplication
     pid = tl.program_id(0)
@@ -100,8 +169,8 @@ def _kernel(A, B, C, M, N, K,
             a = tl.load(A)
             b = tl.load(B)
         else:
-            a = tl.load(A, mask=rk[None, :] < k, other=0.)
-            b = tl.load(B, mask=rk[:, None] < k, other=0.)
+            a = tl.load(A, mask=rk[None, :] < k, other=0.0)
+            b = tl.load(B, mask=rk[:, None] < k, other=0.0)
         acc += tl.dot(a, b)
         A += BLOCK_K * SPLIT_K * stride_ak
         B += BLOCK_K * SPLIT_K * stride_bk
@@ -118,7 +187,6 @@ def _kernel(A, B, C, M, N, K,
         tl.atomic_add(C, acc, mask=mask)
 
 
-
 def matmul(a, b):
     device = a.device
     # handle non-contiguous inputs if necessary
@@ -133,11 +201,23 @@ def matmul(a, b):
     # allocates output
     c = torch.empty((M, N), device=device, dtype=a.dtype)
     # launch kernel
-    grid = lambda META: (triton.cdiv(M, META['BLOCK_M']) * triton.cdiv(N, META['BLOCK_N']), META['SPLIT_K'])
-    _kernel[grid](a, b, c, M, N, K,
-                  a.stride(0), a.stride(1),
-                  b.stride(0), b.stride(1),
-                  c.stride(0), c.stride(1),
-                  GROUP_M=8)
+    grid = lambda META: (
+        triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),
+        META["SPLIT_K"],
+    )
+    _kernel[grid](
+        a,
+        b,
+        c,
+        M,
+        N,
+        K,
+        a.stride(0),
+        a.stride(1),
+        b.stride(0),
+        b.stride(1),
+        c.stride(0),
+        c.stride(1),
+        GROUP_M=8,
+    )
     return c
-

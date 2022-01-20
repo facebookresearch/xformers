@@ -83,5 +83,6 @@ def assert_eq(actual, expected, msg="", rtol=None, atol=None):
 def bf16_cuda():
     return dict(device="cuda", dtype=torch.bfloat16)
 
+
 def fp16_cuda():
     return dict(device="cuda", dtype=torch.float16)
