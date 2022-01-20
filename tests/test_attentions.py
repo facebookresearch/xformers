@@ -15,6 +15,8 @@ from xformers.components.attention import (
     build_attention,
 )
 
+from typing import Tuple
+
 DEVICES = (
     [torch.device("cpu")] if not torch.cuda.is_available() else [torch.device("cuda")]
 )
@@ -251,6 +253,31 @@ def test_different_kq_dimensions(
 
     res = multi_head(query=q, key=k, value=v)
     assert res.shape == torch.Size([BATCH, seq_q, MODEL])
+
+
+@pytest.mark.parametrize("heads", [1, 4])
+@pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("batch_sizes", [(1, BATCH, BATCH), (BATCH, 1, 1)])
+def test_broadcast_batch_dimension(
+    attention_name: str,
+    heads: int,
+    device: torch.device,
+    batch_sizes: Tuple[int, int, int],
+):
+    Q_BATCH, K_BATCH, V_BATCH = batch_sizes
+    multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
+
+    if multi_head.attention.requires_same_k_q_dimensions:
+        # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
+        pytest.skip(f"{attention_name} does not support different k, q dimensions yet.")
+
+    q = torch.rand((Q_BATCH, SEQ, MODEL), device=device)
+    k = torch.rand((K_BATCH, SEQ, MODEL), device=device)
+    v = torch.rand((V_BATCH, SEQ, MODEL), device=device)
+
+    res = multi_head(query=q, key=k, value=v)
+    assert res.shape == torch.Size([BATCH, SEQ, MODEL])
 
 
 @pytest.mark.parametrize("heads", [1, 4])

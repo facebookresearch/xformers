@@ -143,6 +143,12 @@ class MultiHeadDispatch(nn.Module):
         self._check(value, "value")
         self._check(key, "key")
 
+        if query.size(0) < key.size(0):
+            query = query.expand_as(key)
+        elif query.size(0) > key.size(0):
+            key = key.expand_as(query)
+            value = value.expand_as(query)
+
         B, S_Q, _ = query.size()  # Batch x Sequence x Embedding (latent)
         _, S_K, _ = key.size()  # K, Q's sequence length could differ
 
