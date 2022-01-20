@@ -1,10 +1,12 @@
 from dataclasses import dataclass
+from typing import List, Optional
+
 import torch
 import triton
 import triton.language as tl
 from triton.ops.matmul_perf_model import estimate_matmul_time, prune_num_stages
+
 from xformers.triton.garbage_pad_ragged_acts import RaggedActivations
-from typing import List, Optional
 
 
 def init_to_zero(name):
@@ -230,7 +232,7 @@ class RaggedQkPidLookupTable:
             n_in_q_token_so_far += n_ctx_q
             n_in_k_token_so_far += n_ctx_k
 
-        args = {'dtype':torch.int32, 'device':"cuda"}
+        args = {"dtype": torch.int32, "device": "cuda"}
         return RaggedQkPidLookupTable(
             pid_to_in_q_token_offset=torch.tensor(pid_to_in_q_token_offset, **args),
             pid_to_in_k_token_offset=torch.tensor(pid_to_in_k_token_offset, **args),

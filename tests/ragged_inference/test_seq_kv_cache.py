@@ -13,12 +13,12 @@ import torch
 from xformers.helpers.test_utils import assert_eq, bf16_cuda
 from xformers.triton.garbage_pad_ragged_acts import RaggedActivations
 from xformers.triton.ragged_inference.seq_kv_cache import (
-    calculate_scores_via_qk_dotprod,
-    _single_seq_kv_cache,
-    garbage_pad_seq_kv_cache,
-    extend_kv_caches,
     _create_indices,
+    _single_seq_kv_cache,
+    calculate_scores_via_qk_dotprod,
+    extend_kv_caches,
     garbage_pad_keys,
+    garbage_pad_seq_kv_cache,
 )
 
 

@@ -2,15 +2,16 @@
 #
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
-import pytest
 import time
+
+import pytest
 import torch
 
 from xformers.helpers.test_utils import assert_eq, bf16_cuda
 from xformers.triton.ragged_inference.triton_v2_qk_dotprod import qk_dotprod
 from xformers.triton.ragged_inference.triton_v2_ragged_qk_dotprod import (
-    ragged_single_seq_qk_dotprod,
     RaggedQkPidLookupTable,
+    ragged_single_seq_qk_dotprod,
 )
 
 

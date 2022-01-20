@@ -2,6 +2,8 @@
 #
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
+import time
+
 import pytest
 import torch
 
@@ -18,28 +20,28 @@ from xformers.triton.ragged_inference.triton_v2_ragged_qk_dotprod import (
 )
 
 
-def _make_seq(n_ctx: int, value: int, d_model: int):
-    return torch.full([n_ctx, d_model], value, **bf16_cuda())
+def _make_seq(n_ctx: int, value: int, d_head: int):
+    return torch.full([n_ctx, d_head], value, **bf16_cuda())
 
 
-def _make_seq_arange(n_ctx: int, start_value: int, d_model: int):
+def _make_seq_arange(n_ctx: int, start_value: int, d_head: int):
     return (
-        torch.full([n_ctx, d_model], start_value, **bf16_cuda())
+        torch.full([n_ctx, d_head], start_value, **bf16_cuda())
         + torch.arange(n_ctx, **bf16_cuda())[:, None]
     )
 
 
 def test_ragged_qk_dotprod_single_seq():
-    d_model = 2
+    d_head = 2
 
     key = RaggedActivations.from_list(
         [
-            _make_seq(n_ctx=3, value=42, d_model=d_model),
+            _make_seq(n_ctx=3, value=42, d_head=d_head),
         ]
     )
     query = RaggedActivations.from_list(
         [
-            _make_seq(n_ctx=4, value=55, d_model=d_model),
+            _make_seq(n_ctx=4, value=55, d_head=d_head),
         ]
     )
     torch_scores = scores_via_qk_dotprod(query, key)
@@ -54,20 +56,20 @@ def test_ragged_qk_dotprod_single_seq():
 
 
 def test_ragged_qk_dotprod_multiple_seqs_lut():
-    d_model = 2
+    d_head = 2
 
     key = RaggedActivations.from_list(
         [
-            _make_seq_arange(n_ctx=5, start_value=0, d_model=d_model),
-            _make_seq_arange(n_ctx=2, start_value=5, d_model=d_model),
-            _make_seq_arange(n_ctx=3, start_value=7, d_model=d_model),
+            _make_seq_arange(n_ctx=5, start_value=0, d_head=d_head),
+            _make_seq_arange(n_ctx=2, start_value=5, d_head=d_head),
+            _make_seq_arange(n_ctx=3, start_value=7, d_head=d_head),
         ]
     )
     query = RaggedActivations.from_list(
         [
-            _make_seq_arange(n_ctx=3, start_value=0, d_model=d_model),
-            _make_seq_arange(n_ctx=2, start_value=3, d_model=d_model),
-            _make_seq_arange(n_ctx=2, start_value=5, d_model=d_model),
+            _make_seq_arange(n_ctx=3, start_value=0, d_head=d_head),
+            _make_seq_arange(n_ctx=2, start_value=3, d_head=d_head),
+            _make_seq_arange(n_ctx=2, start_value=5, d_head=d_head),
         ]
     )
 
@@ -84,21 +86,22 @@ def test_ragged_qk_dotprod_multiple_seqs_lut():
     assert_eq(lut.pid_to_out_seq_idx.cpu(), [0, 0, 0, 0, 0, 0, 1, 2, 2])
     assert_eq(lut.n_pids_total, 9)
 
+
 def test_ragged_qk_dotprod_multiple_seqs():
-    d_model = 2
+    d_head = 2
 
     key = RaggedActivations.from_list(
         [
-            _make_seq_arange(n_ctx=5, start_value=0, d_model=d_model),
-            _make_seq_arange(n_ctx=2, start_value=5, d_model=d_model),
-            _make_seq_arange(n_ctx=3, start_value=7, d_model=d_model),
+            _make_seq_arange(n_ctx=5, start_value=0, d_head=d_head),
+            _make_seq_arange(n_ctx=2, start_value=5, d_head=d_head),
+            _make_seq_arange(n_ctx=3, start_value=7, d_head=d_head),
         ]
     )
     query = RaggedActivations.from_list(
         [
-            _make_seq_arange(n_ctx=3, start_value=0, d_model=d_model),
-            _make_seq_arange(n_ctx=2, start_value=3, d_model=d_model),
-            _make_seq_arange(n_ctx=2, start_value=5, d_model=d_model),
+            _make_seq_arange(n_ctx=3, start_value=0, d_head=d_head),
+            _make_seq_arange(n_ctx=2, start_value=3, d_head=d_head),
+            _make_seq_arange(n_ctx=2, start_value=5, d_head=d_head),
         ]
     )
 
@@ -109,9 +112,77 @@ def test_ragged_qk_dotprod_multiple_seqs():
     torch_scores = scores_via_qk_dotprod(query, key)
     scores = ragged_qk_dotprod(query, key, lut)
 
-    for seq_idx, (n_ctx_q, n_ctx_k) in enumerate(zip(key.n_ctx_per_seq, query.n_ctx_per_seq)):
-        print(f'Checking {seq_idx=}')
-        assert_eq(torch_scores[seq_idx, :n_ctx_q, :n_ctx_k], scores[seq_idx, :n_ctx_q, :n_ctx_k])
+    for seq_idx, (n_ctx_q, n_ctx_k) in enumerate(
+        zip(key.n_ctx_per_seq, query.n_ctx_per_seq)
+    ):
+        print(f"Checking {seq_idx=}")
+        assert_eq(
+            torch_scores[seq_idx, :n_ctx_q, :n_ctx_k],
+            scores[seq_idx, :n_ctx_q, :n_ctx_k],
+        )
+
+
+def test_ragged_qk_dotprod_multiple_seqs_perf():
+    n_q_ctx = 5
+    n_seqs = 50
+    d_head = 256
+    n_k_ctx = 8000
+    n_iters = 10
+
+    query = RaggedActivations.from_list(
+        [
+            _make_seq_arange(n_ctx=n_q_ctx, start_value=0, d_head=d_head)
+            for _ in range(n_seqs)
+        ]
+    )
+    key = RaggedActivations.from_list(
+        [
+            _make_seq_arange(n_ctx=n_k_ctx, start_value=0, d_head=d_head)
+            for _ in range(n_seqs)
+        ]
+    )
+
+    lut = RaggedQkPidLookupTable.from_query_and_key_tokens_per_seq(
+        n_ctx_q_per_seq=query.n_ctx_per_seq,
+        n_ctx_k_per_seq=key.n_ctx_per_seq,
+    )
+
+    for _ in range(3):
+        out = ragged_qk_dotprod(query, key, lut)
+
+    torch.cuda.synchronize()
+    started_at = time.time()
+    for _ in range(n_iters):
+        out = ragged_qk_dotprod(query, key, lut)
+    torch.cuda.synchronize()
+
+    elapsed_micros = (time.time() - started_at) * 1e6
+
+    bytes_in_keys_per_seq = n_k_ctx * d_head * 2  # 2 from bf16
+    bytes_in_keys_total = bytes_in_keys_per_seq * n_seqs
+    hbm_bw_bytes_per_gpu = 1555e9  # 1.5TB/s
+
+    # If we just read the bytes directly from memory
+    theor_load_micros_per_seq = bytes_in_keys_per_seq / hbm_bw_bytes_per_gpu * 1e6
+
+    expected_micros_per_seq = theor_load_micros_per_seq
+
+    micros_per_seq = elapsed_micros / (n_iters * n_seqs)
+    print(
+        f"""
+# Theoretical
+{bytes_in_keys_total/1e9=:.3f}GB
+{bytes_in_keys_per_seq/1e6=:.2f}MB
+{theor_load_micros_per_seq=:.1f}µs per seq (to just load once from memory)
+{expected_micros_per_seq=:.1f}µs per seq
+
+# Actual
+{micros_per_seq=:.1f}µs per seq
+
+{micros_per_seq/expected_micros_per_seq:.1f}x the expected HBM-bandwidth bound time
+"""
+    )
+    assert micros_per_seq / expected_micros_per_seq < 1.5
 
 
 """
