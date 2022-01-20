@@ -123,24 +123,24 @@ def _kernel(
     pid = tl.program_id(0)
 
     # Determine the number of blocks in the grid
-    grid_n = (n_ctx_k + BLOCK_K - 1) // BLOCK_K
+    grid_k = (n_ctx_k + BLOCK_K - 1) // BLOCK_K
 
-    pid_q = pid // grid_n
-    pid_n = pid % grid_n
+    pid_q = pid // grid_k
+    pid_k = pid % grid_k
 
     # do matrix multiplication
     rq = pid_q * BLOCK_Q + tl.arange(0, BLOCK_Q)
     rq = tl.max_contiguous(tl.multiple_of(rq % n_ctx_q, BLOCK_Q), BLOCK_Q)
 
-    rn = pid_n * BLOCK_K + tl.arange(0, BLOCK_K)
-    rbn = tl.max_contiguous(tl.multiple_of(rn % n_ctx_k, BLOCK_K), BLOCK_K)
-    rd = tl.arange(0, BLOCK_D)
+    rk = pid_k * BLOCK_K + tl.arange(0, BLOCK_K)
+    rk = tl.max_contiguous(tl.multiple_of(rk % n_ctx_k, BLOCK_K), BLOCK_K)
 
     # Iterate through blocks of the d_model dimension and accumulate values into acc
     acc = tl.zeros((BLOCK_Q, BLOCK_K), dtype=tl.float32)
+    rd = tl.arange(0, BLOCK_D)
 
     query_ptr = query_ptr + (rq[:, None] * stride_ctx_q + rd[None, :] * stride_d)
-    key_ptr = key_ptr + (rd[:, None] * stride_d + rbn[None, :] * stride_ctx_k)
+    key_ptr = key_ptr + (rd[:, None] * stride_d + rk[None, :] * stride_ctx_k)
     for d_max_offset in range(d_model, 0, -BLOCK_D):
         a = tl.load(query_ptr, mask=rd[None, :] < d_max_offset, other=0.0)
         b = tl.load(key_ptr, mask=rd[:, None] < d_max_offset, other=0.0)
@@ -151,14 +151,14 @@ def _kernel(
 
     acc = acc.to(scores_out_ptr.dtype.element_ty)
 
-    # We rematerialize rq and rn here because it allows them to be deallocated above
+    # We rematerialize rq and rk here because it allows them to be deallocated above
     # instead of being kept in registers throughout the inner for-loop
     rq = pid_q * BLOCK_Q + tl.arange(0, BLOCK_Q)
-    rn = pid_n * BLOCK_K + tl.arange(0, BLOCK_K)
+    rk = pid_k * BLOCK_K + tl.arange(0, BLOCK_K)
     scores_out_ptr = scores_out_ptr + (
-        rq[:, None] * stride_out_q + rn[None, :] * stride_out_k
+        rq[:, None] * stride_out_q + rk[None, :] * stride_out_k
     )
-    mask = (rq < n_ctx_q)[:, None] & (rn < n_ctx_k)[None, :]
+    mask = (rq < n_ctx_q)[:, None] & (rk < n_ctx_k)[None, :]
 
     tl.store(scores_out_ptr, acc, mask=mask)
 
