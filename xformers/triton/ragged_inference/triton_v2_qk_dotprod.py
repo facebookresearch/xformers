@@ -110,12 +110,12 @@ def _kernel(
     n_ctx_q, # M
     n_ctx_k, # N
     n_dim, # K
-    stride_am,
-    stride_ak,
-    stride_bk,
-    stride_bn,
-    stride_cm,
-    stride_cn,
+    stride_ctx_q,
+    stride_d_model_for_q,
+    stride_d_model_for_k,
+    stride_ctx_k,
+    stride_out_ctx_q,
+    stride_out_ctx_k,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
@@ -138,8 +138,8 @@ def _kernel(
     rk = tl.arange(0, BLOCK_K)
 
     # pointers
-    query_ptr = query_ptr + (ram[:, None] * stride_am + rk[None, :] * stride_ak)
-    key_ptr = key_ptr + (rk[:, None] * stride_bk + rbn[None, :] * stride_bn)
+    query_ptr = query_ptr + (ram[:, None] * stride_ctx_q + rk[None, :] * stride_d_model_for_q)
+    key_ptr = key_ptr + (rk[:, None] * stride_d_model_for_k + rbn[None, :] * stride_ctx_k)
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     for k in range(n_dim, 0, -BLOCK_K):
 
@@ -147,14 +147,14 @@ def _kernel(
         b = tl.load(key_ptr, mask=rk[:, None] < k, other=0.)
 
         acc += tl.dot(a, b)
-        query_ptr += BLOCK_K * stride_ak
-        key_ptr += BLOCK_K * stride_bk
+        query_ptr += BLOCK_K * stride_d_model_for_q
+        key_ptr += BLOCK_K * stride_d_model_for_k
     acc = acc.to(scores_out_ptr.dtype.element_ty)
 
     # rematerialize rm and rn to save registers
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    scores_out_ptr = scores_out_ptr + (rm[:, None] * stride_cm + rn[None, :] * stride_cn)
+    scores_out_ptr = scores_out_ptr + (rm[:, None] * stride_out_ctx_q + rn[None, :] * stride_out_ctx_k)
     mask = (rm < n_ctx_q)[:, None] & (rn < n_ctx_k)[None, :]
 
     tl.store(scores_out_ptr, acc, mask=mask)
