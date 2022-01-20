@@ -6,7 +6,6 @@ import pytest
 import torch
 
 from xformers.helpers.test_utils import assert_eq, bf16_cuda
-from xformers.triton.ragged_inference.triton_v2_matmul import matmul
 from xformers.triton.ragged_inference.triton_v2_qk_dotprod import qk_dotprod
 
 
@@ -46,5 +45,5 @@ def test_qk_dotprod(shape, dtype):
 
 
 """
-pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_qk_dotprod.py -k test_matmul
+pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_qk_dotprod.py
 """
