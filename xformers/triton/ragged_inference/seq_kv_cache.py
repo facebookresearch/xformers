@@ -165,3 +165,12 @@ def calculate_scores_via_qk_dotprod(
     padded_active_queries = active_queries.to_garbage_padded()
     return torch.einsum("bkd,bqd->bkq", padded_keys, padded_active_queries)
 
+
+def scores_via_qk_dotprod(
+    query: RaggedActivations,
+    key: RaggedActivations,
+) -> torch.Tensor:
+    padded_query = query.to_garbage_padded()
+    padded_key = key.to_garbage_padded()
+    return torch.einsum("bkd,bqd->bkq", padded_key, padded_query)
+
