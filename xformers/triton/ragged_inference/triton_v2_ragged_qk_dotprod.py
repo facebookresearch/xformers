@@ -34,7 +34,7 @@ def get_fast_dev_configs():
     },
 )
 @triton.jit
-def _kernel(
+def _qk_dotprod_kernel(
     q_ptr,
     k_ptr,
     scores_ptr,
@@ -56,14 +56,22 @@ def _kernel(
     # Determine the number of blocks in the grid
     grid_k = (n_ctx_k + BLOCK_K - 1) // BLOCK_K
 
-    pid_q = pid // grid_k
-    pid_k = pid % grid_k
+    q_block_idx = pid // grid_k
+    k_block_idx = pid % grid_k
+
+    # TODO: Use a LUT here instead
+    out_k_block = k_block_idx
+    out_q_block = q_block_idx
+
+    # TODO: Use a LUT here instead
+    q_in_token_offset = q_block_idx * BLOCK_Q
+    k_in_token_offset = k_block_idx * BLOCK_K
 
     # do matrix multiplication
-    rq = pid_q * BLOCK_Q + tl.arange(0, BLOCK_Q)
+    rq = q_in_token_offset + tl.arange(0, BLOCK_Q)
     rq = tl.max_contiguous(tl.multiple_of(rq % n_ctx_q, BLOCK_Q), BLOCK_Q)
 
-    rk = pid_k * BLOCK_K + tl.arange(0, BLOCK_K)
+    rk = k_in_token_offset + tl.arange(0, BLOCK_K)
     rk = tl.max_contiguous(tl.multiple_of(rk % n_ctx_k, BLOCK_K), BLOCK_K)
 
     # Iterate through blocks of the d_head dimension and accumulate values into acc
@@ -87,8 +95,8 @@ def _kernel(
 
     # We rematerialize rq and rk here because it allows them to be deallocated above
     # instead of being kept in registers throughout the inner for-loop
-    rq = pid_q * BLOCK_Q + tl.arange(0, BLOCK_Q)
-    rk = pid_k * BLOCK_K + tl.arange(0, BLOCK_K)
+    rq = out_q_block * BLOCK_Q + tl.arange(0, BLOCK_Q)
+    rk = out_k_block * BLOCK_K + tl.arange(0, BLOCK_K)
 
     scores_offset_tile = rq[:, None] * stride_out_q + rk[None, :] * stride_out_k
     scores_ptr_tile = scores_ptr + scores_offset_tile
@@ -127,9 +135,9 @@ def qk_dotprod_v2(query, key):
     pid_to_key_input_token_offset = ...
     # pid_to_seq_idx = [0, 0, 1, 2, 2]
 
-    # pid_to_output_k_block
+    # pid_to_out_k_block
 
-    _kernel[grid](
+    _qk_dotprod_kernel[grid](
         query,
         key,
         scores_out,
