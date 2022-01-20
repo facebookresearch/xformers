@@ -129,6 +129,14 @@ class RaggedActivations:
     def max_n_ctx_per_seq(self):
         return max(self.n_ctx_per_seq)
 
+    @property
+    def dtype(self):
+        return self.raw_tensor.dtype
+
+    @property
+    def device(self):
+        return self.raw_tensor.device
+
     @classmethod
     def from_list(cls, tensors: List[torch.Tensor]):
         """Tensors must all be of shape [n_ctx, d_model]."""
@@ -152,7 +160,8 @@ class RaggedActivations:
         n_ctx_max = max(self.n_ctx_per_seq)
 
         n_dim = self.raw_tensor.shape[-1]
-        padded_acts = torch.empty(
+        # TODO: flag use zeros for garbage
+        padded_acts = torch.zeros(
             n_seqs, n_ctx_max, n_dim, dtype=self.raw_tensor.dtype, device="cuda"
         )
 

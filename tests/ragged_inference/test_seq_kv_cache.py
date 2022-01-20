@@ -12,9 +12,14 @@ import torch
 
 from xformers.helpers.test_utils import assert_eq, bf16_cuda
 from xformers.triton.garbage_pad_ragged_acts import RaggedActivations
-from xformers.triton.ragged_inference.seq_kv_cache import \
-    calculate_scores_via_qk_dotprod, _single_seq_kv_cache, garbage_pad_seq_kv_cache, \
-    extend_kv_caches, _create_indices, garbage_pad_keys
+from xformers.triton.ragged_inference.seq_kv_cache import (
+    calculate_scores_via_qk_dotprod,
+    _single_seq_kv_cache,
+    garbage_pad_seq_kv_cache,
+    extend_kv_caches,
+    _create_indices,
+    garbage_pad_keys,
+)
 
 
 def test_garbage_pad_seq_kv_cache_correctness():
@@ -230,7 +235,6 @@ def test_garbage_pad_active_queries_throughput(n_active_ctx_per_seq=5):
 {micros_per_seq/expected_micros_per_seq:.1f}x the expected HBM-bandwidth bound time
 """
     )
-
 
 
 def test_calculate_scores_via_qk_dotprod_throughput(

@@ -154,16 +154,13 @@ def _create_indices(n_ctx_per_kv_cache):
     return torch.tensor(indices_list, device="cuda")
 
 
-
-
-
 def calculate_scores_via_qk_dotprod(
     seq_kv_cache: List[SingleSeqKVCache],  # These have already been extended
     active_queries: RaggedActivations,
 ) -> torch.Tensor:
     padded_keys = garbage_pad_keys(seq_kv_cache)
     padded_active_queries = active_queries.to_garbage_padded()
-    return torch.einsum("bkd,bqd->bkq", padded_keys, padded_active_queries)
+    return torch.einsum("bkd,bqd->bqk", padded_keys, padded_active_queries)
 
 
 def scores_via_qk_dotprod(
@@ -172,5 +169,4 @@ def scores_via_qk_dotprod(
 ) -> torch.Tensor:
     padded_query = query.to_garbage_padded()
     padded_key = key.to_garbage_padded()
-    return torch.einsum("bkd,bqd->bkq", padded_key, padded_query)
-
+    return torch.einsum("bkd,bqd->bqk", padded_key, padded_query)
