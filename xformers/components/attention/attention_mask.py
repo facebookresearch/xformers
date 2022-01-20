@@ -24,7 +24,7 @@ class AttentionMask:
     """
 
     def __init__(self, additive_mask: torch.Tensor, is_causal: bool = False):
-        assert additive_mask.is_floating_point()
+        assert additive_mask.is_floating_point(), additive_mask.dtype
         assert not additive_mask.requires_grad
 
         if additive_mask.ndim == 2:
@@ -49,7 +49,7 @@ class AttentionMask:
         """
         assert x.dtype == torch.bool
 
-        additive_mask = torch.empty_like(x, dtype=torch.float)
+        additive_mask = torch.empty_like(x, dtype=torch.float, device=x.device)
         additive_mask.masked_fill_(x, 0.0)
         additive_mask.masked_fill_(~x, float("-inf"))
 
@@ -62,7 +62,7 @@ class AttentionMask:
         """
         assert not x.dtype == torch.bool
 
-        additive_mask = torch.empty_like(x, dtype=torch.float)
+        additive_mask = torch.empty_like(x, dtype=torch.float, device=x.device)
         x = x.bool()
 
         additive_mask.masked_fill_(x, 0.0)

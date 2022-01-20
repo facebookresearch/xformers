@@ -80,7 +80,7 @@
             "eval_frequency": 50,
             "num_train_steps": 10000,
             "num_eval_steps": 62,
-            "gradient_accumulation": 1
+            "gradient_accumulation": 2
         },
         "model": {
             "pooling_mode": "mean",
@@ -94,7 +94,7 @@
             },
             "xformer": [
                 {
-                    "reversible": true,
+                    "reversible": false,
                     "block_type": "encoder",
                     "num_layers": 2,
                     "layer_norm_style": "pre",

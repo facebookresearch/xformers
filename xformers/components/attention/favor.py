@@ -50,7 +50,8 @@ class FavorAttention(Attention):
         **__,
     ):
         r"""
-        Kernelized attention, as proposed in Performers_.
+        Kernelized attention, as proposed in Performers_
+        ("Rethinking attention with performers." K. Choromanski et al. (2020).).
 
         FAVOR stands for "Fast Attention Via positive Orthogonal Random features"
 
@@ -61,8 +62,7 @@ class FavorAttention(Attention):
             feature_map_type (FeatureMapType): the type of feature map being used,
             for instance orthogonal random features.
 
-        .. _Performers: "Rethinking attention with performers." K. Choromanski et al. (2020).
-            https://arxiv.org/pdf/2009.14794v1.pdf
+        .. _Performers: https://arxiv.org/pdf/2009.14794v1.pdf
         """
         super().__init__()
 
