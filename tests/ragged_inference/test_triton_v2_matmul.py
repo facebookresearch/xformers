@@ -30,7 +30,7 @@ def test_matmul(shape, dtype):
     out = matmul(a, b)
 
     torch_out = torch.matmul(a, b)
-    assert_eq(out, torch_out, rtol=0.1, atol=0.1)
+    assert_eq(out, torch_out, rtol=0.05, atol=0.05)
 
 
 """
