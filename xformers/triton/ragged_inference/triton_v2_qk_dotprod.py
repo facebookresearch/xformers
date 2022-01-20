@@ -110,10 +110,10 @@ def _kernel(
     n_ctx_k,  # N
     n_dim,  # K
     stride_ctx_q,
-    stride_d,  # Stride along the d_model_per_head dim
     stride_ctx_k,
-    stride_out_ctx_q,
-    stride_out_ctx_k,
+    stride_d,  # Stride along the d_model_per_head dim
+    stride_out_q,
+    stride_out_k,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
@@ -153,7 +153,7 @@ def _kernel(
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     scores_out_ptr = scores_out_ptr + (
-        rm[:, None] * stride_out_ctx_q + rn[None, :] * stride_out_ctx_k
+        rm[:, None] * stride_out_q + rn[None, :] * stride_out_k
     )
     mask = (rm < n_ctx_q)[:, None] & (rn < n_ctx_k)[None, :]
 
@@ -199,10 +199,10 @@ def qk_dotprod(query, key):
         n_ctx_q,
         n_ctx_k,
         n_dim,
-        query.stride(0),  # stride_ctx_q
-        stride_d,
-        key_T.stride(1),
-        scores_out.stride(0),
-        scores_out.stride(1),
+        query.stride(0), # stride_ctx_q
+        key_T.stride(1), # stride_ctx_k
+        stride_d, # stride_d
+        scores_out.stride(0), # stride_out_q
+        scores_out.stride(1), # stride_out_k
     )
     return scores_out
