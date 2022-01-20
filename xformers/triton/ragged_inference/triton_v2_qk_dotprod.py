@@ -103,8 +103,8 @@ def get_fast_dev_configs():
 )
 @triton.jit
 def _kernel(
-    q_ptr_tile,
-    k_ptr_tile,
+    q_ptr,
+    k_ptr,
     scores_ptr,
     n_ctx_q,
     n_ctx_k,  # N
@@ -139,8 +139,8 @@ def _kernel(
     acc_tile = tl.zeros((BLOCK_Q, BLOCK_K), dtype=tl.float32)
     rd = tl.arange(0, BLOCK_D)
 
-    q_ptr_tile = q_ptr_tile + (rq[:, None] * stride_ctx_q + rd[None, :] * stride_d)
-    k_ptr_tile = k_ptr_tile + (rd[:, None] * stride_d + rk[None, :] * stride_ctx_k)
+    q_ptr_tile = q_ptr + (rq[:, None] * stride_ctx_q + rd[None, :] * stride_d)
+    k_ptr_tile = k_ptr + (rd[:, None] * stride_d + rk[None, :] * stride_ctx_k)
     for d_max_offset in range(d_model, 0, -BLOCK_D):
         q_tile = tl.load(q_ptr_tile, mask=rd[None, :] < d_max_offset, other=0.0)
         k_tile = tl.load(k_ptr_tile, mask=rd[:, None] < d_max_offset, other=0.0)
