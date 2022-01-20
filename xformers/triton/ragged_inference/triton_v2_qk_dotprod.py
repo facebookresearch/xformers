@@ -106,7 +106,7 @@ def _kernel(
     query_ptr,
     key_ptr,
     scores_out_ptr,
-    n_ctx_q,  # M
+    n_ctx_q,  # M => Q
     n_ctx_k,  # N
     n_dim,  # K
     stride_ctx_q,
@@ -125,18 +125,19 @@ def _kernel(
     # Determine the number of blocks in the grid
     grid_n = (n_ctx_k + BLOCK_N - 1) // BLOCK_N
 
-    pid_m = pid // grid_n
+    pid_q = pid // grid_n
     pid_n = pid % grid_n
 
     # do matrix multiplication
-    rm = pid_m * BLOCK_Q + tl.arange(0, BLOCK_Q)
+    rq = pid_q * BLOCK_Q + tl.arange(0, BLOCK_Q)
+    rq = tl.max_contiguous(tl.multiple_of(rq % n_ctx_q, BLOCK_Q), BLOCK_Q)
+
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    ram = tl.max_contiguous(tl.multiple_of(rm % n_ctx_q, BLOCK_Q), BLOCK_Q)
     rbn = tl.max_contiguous(tl.multiple_of(rn % n_ctx_k, BLOCK_N), BLOCK_N)
     rk = tl.arange(0, BLOCK_K)
 
     # pointers
-    query_ptr = query_ptr + (ram[:, None] * stride_ctx_q + rk[None, :] * stride_d)
+    query_ptr = query_ptr + (rq[:, None] * stride_ctx_q + rk[None, :] * stride_d)
     key_ptr = key_ptr + (rk[:, None] * stride_d + rbn[None, :] * stride_ctx_k)
     acc = tl.zeros((BLOCK_Q, BLOCK_N), dtype=tl.float32)
     for k in range(n_dim, 0, -BLOCK_K):
@@ -150,12 +151,12 @@ def _kernel(
     acc = acc.to(scores_out_ptr.dtype.element_ty)
 
     # rematerialize rm and rn to save registers
-    rm = pid_m * BLOCK_Q + tl.arange(0, BLOCK_Q)
+    rq = pid_q * BLOCK_Q + tl.arange(0, BLOCK_Q)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     scores_out_ptr = scores_out_ptr + (
-        rm[:, None] * stride_out_q + rn[None, :] * stride_out_k
+        rq[:, None] * stride_out_q + rn[None, :] * stride_out_k
     )
-    mask = (rm < n_ctx_q)[:, None] & (rn < n_ctx_k)[None, :]
+    mask = (rq < n_ctx_q)[:, None] & (rn < n_ctx_k)[None, :]
 
     tl.store(scores_out_ptr, acc, mask=mask)
 
@@ -188,7 +189,7 @@ def qk_dotprod(query, key):
     # launch kernel
     def grid(META):
         return (
-            triton.cdiv(n_ctx_q, META["BLOCK_M"])
+            triton.cdiv(n_ctx_q, META["BLOCK_Q"])
             * triton.cdiv(n_ctx_k, META["BLOCK_N"]),
         )
 
