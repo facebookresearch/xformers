@@ -81,18 +81,10 @@ def get_all_configs():
     ] + get_configs_io_bound()
 
 
-# def get_fast_dev_configs():
-#     return [
-#         triton.Config(
-#             {"BLOCK_Q": 64, "BLOCK_K": 32, "BLOCK_D": 32},
-#             num_stages=5,
-#             num_warps=2,
-#         )
-#     ]
 def get_fast_dev_configs():
     return [
         triton.Config(
-            {"BLOCK_Q": 8, "BLOCK_K": 8, "BLOCK_D": 8},
+            {"BLOCK_Q": 64, "BLOCK_K": 32, "BLOCK_D": 32},
             num_stages=5,
             num_warps=2,
         )
