@@ -328,7 +328,10 @@ class CompositionalAttention(Attention):
 
         v_score = F.softmax(v_score, dim=3)
 
+        # - extracted values are the original attention (inc. all the values) weighted by value score
         attn = (attn * v_score).sum(dim=3).view(B, Sq, self.num_heads * self.value_dim)
+
+        # Final attention projection, same as other mechanisms
         attn = self.out_proj(attn)
 
         return attn
