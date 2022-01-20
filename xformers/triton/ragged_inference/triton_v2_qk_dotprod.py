@@ -150,7 +150,8 @@ def _kernel(
         key_ptr += BLOCK_K * stride_d
     acc = acc.to(scores_out_ptr.dtype.element_ty)
 
-    # rematerialize rm and rn to save registers
+    # We rematerialize rm and rn here because it allows them to be deallocated above
+    # instead of being kept in registers throughout the inner for-loop
     rq = pid_q * BLOCK_Q + tl.arange(0, BLOCK_Q)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     scores_out_ptr = scores_out_ptr + (
