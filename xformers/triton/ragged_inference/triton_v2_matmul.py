@@ -21,27 +21,12 @@ def get_configs_io_bound():
                                 "BLOCK_M": block_m,
                                 "BLOCK_N": block_n,
                                 "BLOCK_K": block_k,
-                                "SPLIT_K": 1,
                             },
                             num_stages=num_stages,
                             num_warps=num_warps,
                         )
                     )
-                    # split_k
-                    for split_k in [2, 4, 8, 16]:
-                        configs.append(
-                            triton.Config(
-                                {
-                                    "BLOCK_M": block_m,
-                                    "BLOCK_N": block_n,
-                                    "BLOCK_K": block_k,
-                                    "SPLIT_K": split_k,
-                                },
-                                num_stages=num_stages,
-                                num_warps=num_warps,
-                                pre_hook=init_to_zero("C"),
-                            )
-                        )
+
     return configs
 
 
@@ -49,47 +34,47 @@ def get_all_configs():
     return [
         # basic configs for compute-bound matmuls
         triton.Config(
-            {"BLOCK_M": 128, "BLOCK_N": 256, "BLOCK_K": 32, "SPLIT_K": 1},
+            {"BLOCK_M": 128, "BLOCK_N": 256, "BLOCK_K": 32},
             num_stages=3,
             num_warps=8,
         ),
         triton.Config(
-            {"BLOCK_M": 256, "BLOCK_N": 128, "BLOCK_K": 32, "SPLIT_K": 1},
+            {"BLOCK_M": 256, "BLOCK_N": 128, "BLOCK_K": 32},
             num_stages=3,
             num_warps=8,
         ),
         triton.Config(
-            {"BLOCK_M": 256, "BLOCK_N": 64, "BLOCK_K": 32, "SPLIT_K": 1},
+            {"BLOCK_M": 256, "BLOCK_N": 64, "BLOCK_K": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 64, "BLOCK_N": 256, "BLOCK_K": 32, "SPLIT_K": 1},
+            {"BLOCK_M": 64, "BLOCK_N": 256, "BLOCK_K": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 128, "BLOCK_N": 128, "BLOCK_K": 32, "SPLIT_K": 1},
+            {"BLOCK_M": 128, "BLOCK_N": 128, "BLOCK_K": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 128, "BLOCK_N": 64, "BLOCK_K": 32, "SPLIT_K": 1},
+            {"BLOCK_M": 128, "BLOCK_N": 64, "BLOCK_K": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 64, "BLOCK_N": 128, "BLOCK_K": 32, "SPLIT_K": 1},
+            {"BLOCK_M": 64, "BLOCK_N": 128, "BLOCK_K": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 128, "BLOCK_N": 32, "BLOCK_K": 32, "SPLIT_K": 1},
+            {"BLOCK_M": 128, "BLOCK_N": 32, "BLOCK_K": 32},
             num_stages=4,
             num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_M": 64, "BLOCK_N": 32, "BLOCK_K": 32, "SPLIT_K": 1},
+            {"BLOCK_M": 64, "BLOCK_N": 32, "BLOCK_K": 32},
             num_stages=5,
             num_warps=2,
         ),
@@ -99,7 +84,7 @@ def get_all_configs():
 def get_fast_dev_configs():
     return [
         triton.Config(
-            {"BLOCK_M": 64, "BLOCK_N": 32, "BLOCK_K": 32, "SPLIT_K": 1},
+            {"BLOCK_M": 64, "BLOCK_N": 32, "BLOCK_K": 32},
             num_stages=5,
             num_warps=2,
         )
@@ -108,7 +93,7 @@ def get_fast_dev_configs():
 
 @triton.heuristics(
     {
-        "EVEN_K": lambda nargs: nargs["K"] % (nargs["BLOCK_K"] * nargs["SPLIT_K"]) == 0,
+        "EVEN_K": lambda nargs: nargs["K"] % (nargs["BLOCK_K"]) == 0,
     }
 )
 @triton.autotune(
@@ -139,7 +124,6 @@ def _kernel(
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
-    SPLIT_K: tl.constexpr,
     EVEN_K: tl.constexpr,
 ):
 
@@ -148,12 +132,14 @@ def _kernel(
     pid_z = tl.program_id(1)
     grid_m = (M + BLOCK_M - 1) // BLOCK_M
     grid_n = (N + BLOCK_N - 1) // BLOCK_N
+
     # re-order program ID for better L2 performance
     width = GROUP_M * grid_n
     group_id = pid // width
     group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
     pid_m = group_id * GROUP_M + (pid % group_size)
     pid_n = (pid % width) // (group_size)
+
     # do matrix multiplication
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
@@ -164,7 +150,7 @@ def _kernel(
     A = A + (ram[:, None] * stride_am + rk[None, :] * stride_ak)
     B = B + (rk[:, None] * stride_bk + rbn[None, :] * stride_bn)
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-    for k in range(K, 0, -BLOCK_K * SPLIT_K):
+    for k in range(K, 0, -BLOCK_K):
         if EVEN_K:
             a = tl.load(A)
             b = tl.load(B)
@@ -172,19 +158,16 @@ def _kernel(
             a = tl.load(A, mask=rk[None, :] < k, other=0.0)
             b = tl.load(B, mask=rk[:, None] < k, other=0.0)
         acc += tl.dot(a, b)
-        A += BLOCK_K * SPLIT_K * stride_ak
-        B += BLOCK_K * SPLIT_K * stride_bk
+        A += BLOCK_K * stride_ak
+        B += BLOCK_K * stride_bk
     acc = acc.to(C.dtype.element_ty)
     # rematerialize rm and rn to save registers
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     C = C + (rm[:, None] * stride_cm + rn[None, :] * stride_cn)
     mask = (rm < M)[:, None] & (rn < N)[None, :]
-    # handles write-back with reduction-splitting
-    if SPLIT_K == 1:
-        tl.store(C, acc, mask=mask)
-    else:
-        tl.atomic_add(C, acc, mask=mask)
+
+    tl.store(C, acc, mask=mask)
 
 
 def matmul(a, b):
@@ -200,11 +183,13 @@ def matmul(a, b):
     _, N = b.shape
     # allocates output
     c = torch.empty((M, N), device=device, dtype=a.dtype)
+
     # launch kernel
-    grid = lambda META: (
-        triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),
-        META["SPLIT_K"],
-    )
+    def grid(META):
+        return (
+            triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]), 1
+        )
+
     _kernel[grid](
         a,
         b,
