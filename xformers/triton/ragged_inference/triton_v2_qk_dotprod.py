@@ -134,20 +134,21 @@ def _kernel(
 
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     rbn = tl.max_contiguous(tl.multiple_of(rn % n_ctx_k, BLOCK_N), BLOCK_N)
-    rk = tl.arange(0, BLOCK_D)
+    rd = tl.arange(0, BLOCK_D)
 
-    # pointers
-    query_ptr = query_ptr + (rq[:, None] * stride_ctx_q + rk[None, :] * stride_d)
-    key_ptr = key_ptr + (rk[:, None] * stride_d + rbn[None, :] * stride_ctx_k)
+    # Iterate through blocks of the d_model dimension and accumulate values into acc
     acc = tl.zeros((BLOCK_Q, BLOCK_N), dtype=tl.float32)
-    for k in range(d_model, 0, -BLOCK_D):
 
-        a = tl.load(query_ptr, mask=rk[None, :] < k, other=0.0)
-        b = tl.load(key_ptr, mask=rk[:, None] < k, other=0.0)
+    query_ptr = query_ptr + (rq[:, None] * stride_ctx_q + rd[None, :] * stride_d)
+    key_ptr = key_ptr + (rd[:, None] * stride_d + rbn[None, :] * stride_ctx_k)
+    for d_max_offset in range(d_model, 0, -BLOCK_D):
+        a = tl.load(query_ptr, mask=rd[None, :] < d_max_offset, other=0.0)
+        b = tl.load(key_ptr, mask=rd[:, None] < d_max_offset, other=0.0)
 
         acc += tl.dot(a, b)
         query_ptr += BLOCK_D * stride_d
         key_ptr += BLOCK_D * stride_d
+
     acc = acc.to(scores_out_ptr.dtype.element_ty)
 
     # We rematerialize rq and rn here because it allows them to be deallocated above
