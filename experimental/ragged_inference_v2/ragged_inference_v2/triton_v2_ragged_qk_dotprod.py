@@ -5,7 +5,7 @@ import torch
 import triton
 import triton.language as tl
 from triton.ops.matmul_perf_model import estimate_matmul_time, prune_num_stages
-from triton_v2_ragged_inference.garbage_pad_ragged_acts import RaggedActivations
+from ragged_inference_v2.garbage_pad_ragged_acts import RaggedActivations
 
 
 def init_to_zero(name):

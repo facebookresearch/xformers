@@ -9,8 +9,8 @@ from functools import lru_cache
 from typing import List, Tuple
 
 import torch
-from triton_v2_ragged_inference.garbage_pad_ragged_acts import RaggedActivations
-from triton_v2_ragged_inference.test_utils import assert_eq, bf16_cuda
+from ragged_inference_v2.garbage_pad_ragged_acts import RaggedActivations
+from ragged_inference_v2.test_utils import assert_eq, bf16_cuda
 
 
 class SingleSeqKVCache:

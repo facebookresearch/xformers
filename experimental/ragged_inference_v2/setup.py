@@ -1,10 +1,10 @@
 from setuptools import setup
 
 setup(
-    name="triton_v2_ragged_inference",
+    name="ragged_inference_v2",
     author="Facebook AI Research",
     version="0.0.0",
-    packages=["triton_v2_ragged_inference"],
+    packages=["ragged_inference_v2"],
     install_requires=[],
     scripts=[],
     python_requires=">=3.6",

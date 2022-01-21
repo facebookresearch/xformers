@@ -4,8 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 import pytest
 import torch
-from triton_v2_ragged_inference.test_utils import assert_eq, bf16_cuda
-from triton_v2_ragged_inference.triton_v2_matmul import matmul
+from ragged_inference_v2.test_utils import assert_eq, bf16_cuda
+from ragged_inference_v2.triton_v2_matmul import matmul
 
 
 def _make_seq(n_ctx: int, value: int, d_model: int):
