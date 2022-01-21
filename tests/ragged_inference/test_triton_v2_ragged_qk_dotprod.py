@@ -168,6 +168,7 @@ def test_ragged_qk_dotprod_multiple_seqs_perf():
     expected_micros_per_seq = theor_load_micros_per_seq
 
     micros_per_seq = elapsed_micros / (n_iters * n_seqs)
+    micros_per_mb = elapsed_micros / (n_iters)
     print(
         f"""
 # Theoretical
@@ -178,6 +179,7 @@ def test_ragged_qk_dotprod_multiple_seqs_perf():
 
 # Actual
 {micros_per_seq=:.1f}µs per seq
+{micros_per_mb=:.1f}µs per seq
 
 {micros_per_seq/expected_micros_per_seq:.1f}x the expected HBM-bandwidth bound time
 """
@@ -186,5 +188,5 @@ def test_ragged_qk_dotprod_multiple_seqs_perf():
 
 
 """
-pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_ragged_qk_dotprod.py
+pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_ragged_qk_dotprod.py -k test_ragged_qk_dotprod_multiple_seqs_perf
 """
