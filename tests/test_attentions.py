@@ -259,7 +259,15 @@ def test_different_kq_dimensions(
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize(
-    "batch_sizes", [(1, BATCH, BATCH), (BATCH, 1, 1), (BATCH, 1, BATCH)]
+    "batch_sizes",
+    [
+        (1, BATCH, BATCH),
+        (BATCH, 1, BATCH),
+        (BATCH, BATCH, 1),
+        (1, 1, BATCH),
+        (BATCH, 1, 1),
+        (1, BATCH, 1),
+    ],
 )
 def test_broadcast_batch_dimension(
     attention_name: str,
