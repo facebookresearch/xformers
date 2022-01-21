@@ -6,15 +6,12 @@ import time
 
 import torch
 from triton_v2_ragged_inference.garbage_pad_ragged_acts import RaggedActivations
-from triton_v2_ragged_inference.seq_kv_cache import (
-    scores_via_qk_dotprod,
-)
+from triton_v2_ragged_inference.seq_kv_cache import scores_via_qk_dotprod
+from triton_v2_ragged_inference.test_utils import assert_eq, bf16_cuda
 from triton_v2_ragged_inference.triton_v2_ragged_qk_dotprod import (
     RaggedQkPidLookupTable,
     ragged_qk_dotprod,
 )
-
-from triton_v2_ragged_inference.test_utils import assert_eq, bf16_cuda
 
 
 def _make_seq(n_ctx: int, value: int, d_head: int):

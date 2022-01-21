@@ -6,7 +6,6 @@ import time
 
 import pytest
 import torch
-
 from triton_v2_ragged_inference.test_utils import assert_eq, bf16_cuda
 from triton_v2_ragged_inference.triton_v2_qk_dotprod import qk_dotprod
 from triton_v2_ragged_inference.triton_v2_ragged_qk_dotprod import (

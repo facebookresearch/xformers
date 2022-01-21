@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 import pytest
 import torch
-
 from triton_v2_ragged_inference.test_utils import assert_eq, bf16_cuda
 from triton_v2_ragged_inference.triton_v2_matmul import matmul
 

@@ -10,7 +10,6 @@ from typing import List, Tuple
 
 import torch
 from triton_v2_ragged_inference.garbage_pad_ragged_acts import RaggedActivations
-
 from triton_v2_ragged_inference.test_utils import assert_eq, bf16_cuda
 
 

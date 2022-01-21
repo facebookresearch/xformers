@@ -7,8 +7,6 @@
 import time
 
 import torch
-
-from triton_v2_ragged_inference.test_utils import assert_eq, bf16_cuda
 from triton_v2_ragged_inference.garbage_pad_ragged_acts import RaggedActivations
 from triton_v2_ragged_inference.seq_kv_cache import (
     _create_indices,
@@ -18,6 +16,7 @@ from triton_v2_ragged_inference.seq_kv_cache import (
     garbage_pad_keys,
     garbage_pad_seq_kv_cache,
 )
+from triton_v2_ragged_inference.test_utils import assert_eq, bf16_cuda
 
 
 def test_garbage_pad_seq_kv_cache_correctness():
