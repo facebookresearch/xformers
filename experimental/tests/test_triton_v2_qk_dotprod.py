@@ -6,9 +6,9 @@ import time
 
 import pytest
 import torch
-from ragged_inference_v2.test_utils import assert_eq, bf16_cuda
-from ragged_inference_v2.triton_v2_qk_dotprod import qk_dotprod
-from ragged_inference_v2.triton_v2_ragged_qk_dotprod import (
+from ragged_inference.test_utils import assert_eq, bf16_cuda
+from ragged_inference.triton_v2_qk_dotprod import qk_dotprod
+from ragged_inference.triton_v2_ragged_qk_dotprod import (
     RaggedQkPidLookupTable,
     ragged_single_seq_qk_dotprod,
 )
@@ -78,12 +78,12 @@ def test_ragged_qk_dotprod_perf():
     )
 
     for _ in range(3):
-        out = ragged_single_seq_qk_dotprod(q, k, lut)
+        out = ragged_single_seq_qk_dotprod(q, k, lut)  # noqa: F841
 
     torch.cuda.synchronize()
     started_at = time.time()
     for _ in range(n_iters):
-        out = ragged_single_seq_qk_dotprod(q, k, lut)
+        out = ragged_single_seq_qk_dotprod(q, k, lut)  # noqa: F841
     torch.cuda.synchronize()
 
     elapsed_micros = (time.time() - started_at) * 1e6

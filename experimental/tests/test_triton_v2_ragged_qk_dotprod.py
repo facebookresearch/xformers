@@ -5,10 +5,10 @@
 import time
 
 import torch
-from ragged_inference_v2.garbage_pad_ragged_acts import RaggedActivations
-from ragged_inference_v2.seq_kv_cache import scores_via_qk_dotprod
-from ragged_inference_v2.test_utils import assert_eq, bf16_cuda
-from ragged_inference_v2.triton_v2_ragged_qk_dotprod import (
+from ragged_inference.garbage_pad_ragged_acts import RaggedActivations
+from ragged_inference.seq_kv_cache import scores_via_qk_dotprod
+from ragged_inference.test_utils import assert_eq, bf16_cuda
+from ragged_inference.triton_v2_ragged_qk_dotprod import (
     RaggedQkPidLookupTable,
     ragged_qk_dotprod,
 )
@@ -142,12 +142,12 @@ def test_ragged_qk_dotprod_multiple_seqs_perf():
     )
 
     for _ in range(3):
-        out = ragged_qk_dotprod(query, key, lut)
+        out = ragged_qk_dotprod(query, key, lut)  # noqa: F841
 
     torch.cuda.synchronize()
     started_at = time.time()
     for _ in range(n_iters):
-        out = ragged_qk_dotprod(query, key, lut)
+        out = ragged_qk_dotprod(query, key, lut)  # noqa: F841
     torch.cuda.synchronize()
 
     elapsed_micros = (time.time() - started_at) * 1e6
@@ -182,5 +182,5 @@ def test_ragged_qk_dotprod_multiple_seqs_perf():
 
 
 """
-pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_ragged_qk_dotprod.py -k test_ragged_qk_dotprod_multiple_seqs_perf
+pytest -vxs --tb=native tests/ragged_inference/test_triton_v2_ragged_qk_dotprod.py -k test_ragged_qk_dotprod_multiple_seqs_perf # noqa
 """

@@ -4,13 +4,12 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import time
 from functools import lru_cache
 from typing import List, Tuple
 
 import torch
-from ragged_inference_v2.garbage_pad_ragged_acts import RaggedActivations
-from ragged_inference_v2.test_utils import assert_eq, bf16_cuda
+from ragged_inference.garbage_pad_ragged_acts import RaggedActivations
+from ragged_inference.test_utils import bf16_cuda
 
 
 class SingleSeqKVCache:

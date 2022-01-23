@@ -4,7 +4,7 @@ from typing import List, Optional
 import torch
 import triton
 import triton.language as tl
-from ragged_inference_v2.garbage_pad_ragged_acts import RaggedActivations
+from ragged_inference.garbage_pad_ragged_acts import RaggedActivations
 from triton.ops.matmul_perf_model import estimate_matmul_time, prune_num_stages
 
 
@@ -307,7 +307,7 @@ def ragged_qk_dotprod(
     assert d_head == d_head_k, f"{query.raw_tensor.shape=} {key.raw_tensor.shape=}"
 
     # allocates output
-    max_n_ctx_q_across_seqs = query.max_n_ctx_per_seq
+    # max_n_ctx_q_across_seqs = query.max_n_ctx_per_seq
 
     assert query.n_seqs == key.n_seqs
     # TODO: flag use zeros for garbage
