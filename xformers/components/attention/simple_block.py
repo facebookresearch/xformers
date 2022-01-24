@@ -19,17 +19,17 @@ from operator import mul
 @dataclass
 class BlockSelfAttentionConfig(AttentionConfig):
     window_size: int
-    num_heads: int 
+    num_heads: int
 
 
 @register_attention("simple_block", BlockSelfAttentionConfig)
 class SimpleBlockAttention(Attention):
     def __init__(
-        self, 
-        dropout: float, 
-        window_size: int, 
-        num_heads: int, 
-        *args, 
+        self,
+        dropout: float,
+        window_size: int,
+        num_heads: int,
+        *args,
         **kwargs
     ):
         """
@@ -44,11 +44,11 @@ class SimpleBlockAttention(Attention):
         self.num_head = num_heads
 
     def forward(
-        self, 
-        q: torch.Tensor, 
-        k: torch.Tensor, 
-        v: torch.Tensor, 
-        att_mask: Optional[torch.Tensor] = None, 
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        att_mask: Optional[torch.Tensor] = None,
         key_padding_mask: Optional[torch.Tensor] = None,
         *args, **kwargs
     ):
@@ -65,7 +65,7 @@ class SimpleBlockAttention(Attention):
             seq_len = x.size(-2)
             pad_len = (window_size - seq_len % window_size) % window_size
             return F.pad(x, (0,0,0,pad_len), value=0), pad_len
-            
+
         q, _ = _pad_to_window_size(q, self.chunk_size)
         k, _ = _pad_to_window_size(k, self.chunk_size)
         v, _ = _pad_to_window_size(v, self.chunk_size)
@@ -73,7 +73,7 @@ class SimpleBlockAttention(Attention):
         if key_padding_mask.shape[1] % self.chunk_size != 0:
             pad_len = (self.chunk_size - key_padding_mask.shape[1] % self.chunk_size) % self.chunk_size
             key_padding_mask = torch.cat([key_padding_mask, key_padding_mask.new_ones(key_padding_mask.size(0), pad_len).to(key_padding_mask)], dim=1)
-            
+
         buckets = q.shape[1] // self.chunk_size
         b_q = bucket(buckets, q)
         b_k, b_v = map(partial(bucket, buckets), (k, v)) # BH * bct * n_b * D
@@ -92,7 +92,7 @@ class SimpleBlockAttention(Attention):
         mask = mq[:, :, :, None] * mk[:, :, None, :]
         dots.masked_fill_(~mask, mask_value)
         del mask
-        
+
         all_attn = dots.view(bsz*self.num_head, -1, self.chunk_size)
         all_attn_probs = all_attn.softmax(dim=-1)
         all_attn_probs = self.drop_attn(all_attn_probs)
