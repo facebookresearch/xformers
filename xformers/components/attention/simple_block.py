@@ -35,11 +35,11 @@ class SimpleBlockAttention(Attention):
         """
         A straightforward implementation of disjoint block attentions using native pytorch operations and supports CPU inference.
 
-        The 
+        The sequence is split into equal-length chunks and the self-attention is calculated separately in each chunk
         """
         super().__init__()
 
-        self.bucket_size = window_size
+        self.chunk_size = window_size
         self.drop_attn = nn.Dropout(dropout)
         self.num_head = num_heads
 
@@ -60,20 +60,21 @@ class SimpleBlockAttention(Attention):
         assert key_padding_mask is not None
         key_padding_mask = key_padding_mask.to(q)
 
-        # pad the input length to factors of bucket size
+        # pad the input length to factors of chunk size
         def _pad_to_window_size(x, window_size):
             seq_len = x.size(-2)
             pad_len = (window_size - seq_len % window_size) % window_size
             return F.pad(x, (0,0,0,pad_len), value=0), pad_len
-        q, _ = _pad_to_window_size(q, self.bucket_size)
-        k, _ = _pad_to_window_size(k, self.bucket_size)
-        v, _ = _pad_to_window_size(v, self.bucket_size)
+            
+        q, _ = _pad_to_window_size(q, self.chunk_size)
+        k, _ = _pad_to_window_size(k, self.chunk_size)
+        v, _ = _pad_to_window_size(v, self.chunk_size)
 
-        if key_padding_mask.shape[1] % self.bucket_size != 0:
-            pad_len = (self.bucket_size - key_padding_mask.shape[1] % self.bucket_size) % self.bucket_size
+        if key_padding_mask.shape[1] % self.chunk_size != 0:
+            pad_len = (self.chunk_size - key_padding_mask.shape[1] % self.chunk_size) % self.chunk_size
             key_padding_mask = torch.cat([key_padding_mask, key_padding_mask.new_ones(key_padding_mask.size(0), pad_len).to(key_padding_mask)], dim=1)
             
-        buckets = q.shape[1] // self.bucket_size
+        buckets = q.shape[1] // self.chunk_size
         b_q = bucket(buckets, q)
         b_k, b_v = map(partial(bucket, buckets), (k, v)) # BH * bct * n_b * D
 
@@ -92,12 +93,12 @@ class SimpleBlockAttention(Attention):
         dots.masked_fill_(~mask, mask_value)
         del mask
         
-        all_attn = dots.view(bsz*self.num_head, -1, self.bucket_size)
+        all_attn = dots.view(bsz*self.num_head, -1, self.chunk_size)
         all_attn_probs = all_attn.softmax(dim=-1)
         all_attn_probs = self.drop_attn(all_attn_probs)
 
         block_attn_probs = all_attn_probs[:, :, :all_attn.shape[-1]]
-        block_attn_probs = block_attn_probs.view(bsz*self.num_head, -1, self.bucket_size, self.bucket_size)
+        block_attn_probs = block_attn_probs.view(bsz*self.num_head, -1, self.chunk_size, self.chunk_size)
         out = block_attn_probs.matmul(b_v).view(bsz*self.num_head, -1, head_dim)
 
         out = out[:,:orig_seq_len]
