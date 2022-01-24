@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## TBD
 ### Added
 - Compositional Attention [#41]
+- Experimental Ragged attention [#189]
 
 ### Fixed
 - bugfix Favor, single feature map [#183]
