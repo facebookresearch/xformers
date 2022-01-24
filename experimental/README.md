@@ -13,3 +13,7 @@ The kernels in this folder are experimental, and for now not tied to the rest of
 - (Optional) install the kernels present here by running `pip install -e .` in this folder
 
 - (Optional) Check that the installation is successful by running `pytest tests` in this folder
+
+## If things go south, grab a backtrace as follows
+
+`gdb -batch -ex run -ex bt --args python -m pytest [..]`

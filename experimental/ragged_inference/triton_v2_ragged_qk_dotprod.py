@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -6,6 +11,9 @@ import triton
 import triton.language as tl
 from ragged_inference.garbage_pad_ragged_acts import RaggedActivations
 from triton.ops.matmul_perf_model import estimate_matmul_time, prune_num_stages
+
+# This implements a ragged attention (batched attention mechanism natively handling different sequence sizes)
+# Author: Tom B Brown
 
 
 def init_to_zero(name):
