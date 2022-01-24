@@ -3,6 +3,9 @@ import triton
 import triton.language as tl
 from triton.ops.matmul_perf_model import estimate_matmul_time, prune_num_stages
 
+# This implements a simple QKt matrix multiplication (non ragged), for reference
+# Author: Tom B Brown
+
 
 def init_to_zero(name):
     return lambda nargs: nargs[name].zero_()
@@ -91,6 +94,7 @@ def get_fast_dev_configs():
     ]
 
 
+# fmt: off
 @triton.autotune(
     # configs=get_all_configs(),
     configs=get_fast_dev_configs(),
@@ -103,21 +107,18 @@ def get_fast_dev_configs():
 )
 @triton.jit
 def _kernel(
-    q_ptr,
-    k_ptr,
-    scores_ptr,
+    q_ptr, k_ptr, scores_ptr,
     n_ctx_q,
     n_ctx_k,  # N
     d_model,
-    stride_ctx_q,
-    stride_ctx_k,
+    stride_ctx_q, stride_ctx_k,
     stride_d,  # Stride along the d_model_per_head dim
-    stride_out_q,
-    stride_out_k,
+    stride_out_q, stride_out_k,
     BLOCK_Q: tl.constexpr,
     BLOCK_K: tl.constexpr,
     BLOCK_D: tl.constexpr,
 ):
+    # fmt: on
 
     # matrix multiplication
     pid = tl.program_id(0)

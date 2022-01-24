@@ -4,13 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 import pytest
 import torch
-from ragged_inference.test_utils import assert_eq, bf16_cuda
+from ragged_inference.test_utils import assert_eq
 from ragged_inference.triton_v2_matmul import matmul
-
-
-def _make_seq(n_ctx: int, value: int, d_model: int):
-    return torch.full([n_ctx, d_model], value, **bf16_cuda())
-
 
 SHAPES = [
     (3, 7),
@@ -31,15 +26,6 @@ def test_matmul(shape, dtype):
 
     torch_out = torch.matmul(a, b)
     assert_eq(out, torch_out, rtol=0.01, atol=0.2)
-    #
-    # try:
-    # except:
-    #     print(f"{torch.max(out-torch_out)=}")
-    #     print(f"{torch.max(out)=}")
-    #     print(f"{torch.max(torch_out)=}")
-    #
-    #     [breakpoint()]
-    #
 
 
 """

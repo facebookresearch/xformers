@@ -3,6 +3,10 @@ import triton
 import triton.language as tl
 from triton.ops.matmul_perf_model import estimate_matmul_time, prune_num_stages
 
+# Credits: this comes directly from the Triton repo, authors are Da Yan and Phil Tillet
+# See https://github.com/openai/triton/blob/v2.0/python/triton/ops/matmul.py
+# copied here to help with development of new features, to be cleaned up
+
 
 def init_to_zero(name):
     return lambda nargs: nargs[name].zero_()
@@ -91,6 +95,7 @@ def get_fast_dev_configs():
     ]
 
 
+# fmt: off
 @triton.autotune(
     # configs=get_all_configs(),
     configs=get_fast_dev_configs(),
@@ -103,22 +108,15 @@ def get_fast_dev_configs():
 )
 @triton.jit
 def _kernel(
-    A,
-    B,
-    C,
-    M,
-    N,
-    K,
-    stride_am,
-    stride_ak,
-    stride_bk,
-    stride_bn,
-    stride_cm,
-    stride_cn,
+    A, B, C, M, N, K,
+    stride_am, stride_ak,
+    stride_bk, stride_bn,
+    stride_cm, stride_cn,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
 ):
+    # fmt: on
 
     # matrix multiplication
     pid = tl.program_id(0)
@@ -180,18 +178,13 @@ def matmul(a, b):
     def grid(META):
         return (triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),)
 
+    # fmt: off
     _kernel[grid](
-        a,
-        b,
-        c,
-        M,
-        N,
-        K,
-        a.stride(0),
-        a.stride(1),
-        b.stride(0),
-        b.stride(1),
-        c.stride(0),
-        c.stride(1),
+        a, b, c,
+        M, N, K,
+        a.stride(0), a.stride(1),
+        b.stride(0), b.stride(1),
+        c.stride(0), c.stride(1),
     )
+    # fmt: on
     return c

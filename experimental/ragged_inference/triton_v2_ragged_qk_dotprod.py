@@ -233,11 +233,11 @@ class RaggedQkPidLookupTable:
 
         args = {"dtype": torch.int32, "device": "cuda"}
         return RaggedQkPidLookupTable(
-            pid_to_in_q_token_offset=torch.tensor(pid_to_in_q_token_offset, **args),
-            pid_to_in_k_token_offset=torch.tensor(pid_to_in_k_token_offset, **args),
-            pid_to_out_q_block=torch.tensor(pid_to_out_q_block, **args),
-            pid_to_out_k_block=torch.tensor(pid_to_out_k_block, **args),
-            pid_to_out_seq_idx=torch.tensor(pid_to_out_seq_idx, **args),
+            pid_to_in_q_token_offset=torch.tensor(pid_to_in_q_token_offset, **args),  # type: ignore
+            pid_to_in_k_token_offset=torch.tensor(pid_to_in_k_token_offset, **args),  # type: ignore
+            pid_to_out_q_block=torch.tensor(pid_to_out_q_block, **args),  # type: ignore
+            pid_to_out_k_block=torch.tensor(pid_to_out_k_block, **args),  # type: ignore
+            pid_to_out_seq_idx=torch.tensor(pid_to_out_seq_idx, **args),  # type: ignore
             n_pids_total=len(pid_to_in_q_token_offset),
         )
 
