@@ -61,6 +61,16 @@ mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ --
 ```
 
 * or you can just install [pre-commit](https://pre-commit.com/), which will make sure that all of the above is run automatically anytime you commit 
+in that case, you would need to 
+```bash
+pip install pre-commit 
+```
+then (in the xformers repository, just once)
+```bash
+pre-commit install 
+```
+
+After these steps each of your commits will run the same linting and formatting routines as the xformers continuous integration, which greatly helps getting your PRs all green !
 
 _Read the [editorconfig](.editorconfig) file to understand the exact coding style preferences._
 
