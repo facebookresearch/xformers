@@ -104,11 +104,15 @@ Models are thus not implemented in monolithic files, which are typically complic
 │   │    └ ...                  # all the supported positional embeddings
 │   ├── activations.py          #
 │   └── multi_head_dispatch.py  # (optional) multihead wrap
-├── factory
+│
+├── factory                     # Build model programatically
 │   ├── block_factory.py        # (optional) helper to programatically generate layers
 │   └── model_factory.py        # (optional) helper to programatically generate models
-├── models
-...                             # Full models, ready to be used
+│
+├── benchmarks
+│     └ ...                     # A lot of benchmarks that you can use to test some parts
+└── triton
+      └ ...                     # (optional) all the triton parts, requires triton + CUDA gpu
 ```
 
 <details><summary> Attention mechanisms</summary><p>
@@ -171,6 +175,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
    3. fused softmax
    4. fused linear layer
    5. fused layer norm
+   6. fused dropout(activation(x+bias))
 3. Benchmarking and testing tools
    1. [micro benchnmarks](BENCHMARKS.md)
    2. transformer block benchmark
