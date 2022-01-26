@@ -150,6 +150,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 - [MLP](xformers/components/feedforward/mlp.py)
 - [Fused](xformers/components/feedforward/fused_mlp.py)
+- [Mixture of Experts](xformers/components/feedforward/mixture_of_experts.py)
 
 </p></details>
 
@@ -211,3 +212,4 @@ The following repositories are used in xFormers, either in close to original for
 * [LucidRain Reformer](https://github.com/lucidrains/reformer-pytorch)
 * [RevTorch](https://github.com/RobinBruegger/RevTorch)
 * [Nystromformer](https://github.com/mlpen/Nystromformer)
+* [FairScale](https://github.com/facebookresearch/fairscale/)

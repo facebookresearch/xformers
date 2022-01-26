@@ -29,8 +29,6 @@ if torch.cuda.is_available():
         class FusedMLP(Feedforward):
             """
             A MLP using fused linear layers.
-
-            .. warning: This is not currently competitive with PyTorch in terms of training speed
             """
 
             def __init__(
