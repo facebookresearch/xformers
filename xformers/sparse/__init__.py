@@ -5,3 +5,4 @@
 
 
 from .csr_tensor import SparseCSRTensor  # noqa: F401
+from .blocksparse_tensor import BlockSparseTensor  # noqa: F401
