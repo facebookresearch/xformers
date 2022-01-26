@@ -58,11 +58,11 @@ class LSHAttention(Attention):
         self.attn = ReformerAttention(attn_config)
 
     def forward(
-        self, 
-        q: torch.Tensor, 
-        k: torch.Tensor, 
-        v: torch.Tensor, 
-        att_mask: Optional[torch.Tensor] = None, 
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        att_mask: Optional[torch.Tensor] = None,
         key_padding_mask: Optional[Tensor] = None,
         *args, **kwargs
     ):
@@ -112,7 +112,7 @@ class ReformerAttention(LSHSelfAttention):
         if key_padding_mask.shape[1] % self.chunk_length != 0:
             pad_len = (self.chunk_length - key_padding_mask.shape[1] % self.chunk_length) % self.chunk_length
             # key padding mask: 1 means padding tokens
-            key_padding_mask = torch.cat([key_padding_mask, key_padding_mask.new_ones(key_padding_mask.size(0), pad_len).to(key_padding_mask)], dim=1) 
+            key_padding_mask = torch.cat([key_padding_mask, key_padding_mask.new_ones(key_padding_mask.size(0), pad_len).to(key_padding_mask)], dim=1)
         sequence_length = q.shape[1]
 
         batch_size = q.shape[0] // self.num_attention_heads
@@ -251,7 +251,7 @@ class ReformerAttention(LSHSelfAttention):
         # print(out_vectors.view(-1, sequence_length, head_dim).size())
         # import pdb;pdb.set_trace()
         # out_vectors = self._merge_hidden_size_dims(out_vectors, self.num_attention_heads, self.attention_head_size)
-    
+
         return out_vectors.view(-1, sequence_length, head_dim)[:,:orig_sequence_length,:].contiguous()
 
         # return LSHSelfAttentionOutput(hidden_states=out_vectors, attention_probs=attention_probs, buckets=buckets)

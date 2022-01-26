@@ -198,7 +198,7 @@ class MultiHeadDispatch(nn.Module):
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
         in_proj_container: Optional[InProjContainer] = None,
-        use_separate_proj_weight: Optional[bool] = True,
+        use_separate_proj_weight: Optional[bool] = False,
         out_proj: Optional[nn.Module] = None,
         *args,
         **kwargs,
@@ -228,13 +228,11 @@ class MultiHeadDispatch(nn.Module):
                 in_proj_container
                 if in_proj_container is not None
                 else InProjContainer(
-                    query_proj=nn.Linear(
-                        dim_model, dim_key, bias=bias
-                    ),  # NOTE: optional bias ?
-                    key_proj=nn.Linear(dim_model, dim_key, bias=bias)
+                    query_proj_params=InProjParams(dim_model, dim_key, bias=bias),
+                    key_proj_params=InProjParams(dim_model, dim_key, bias=bias)
                     if use_separate_proj_weight
                     else None,
-                    value_proj=nn.Linear(dim_model, dim_value, bias=bias)
+                    value_proj_params=InProjParams(dim_model, dim_value, bias=bias)
                     if use_separate_proj_weight
                     else None,
                 )
@@ -294,7 +292,6 @@ class MultiHeadDispatch(nn.Module):
         q = reshape_fn(q, B, S_Q, self.num_heads, self.dim_k)
         v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
 
-        # TODO: Long-short requires the inputs before projection
         # Self-attend
         key_padding_mask = kwargs.get("key_padding_mask", None)
         if self.attention.requires_orig_inputs:

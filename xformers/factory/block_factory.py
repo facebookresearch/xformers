@@ -25,7 +25,6 @@ from xformers.components.positional_embedding import (
 )
 from xformers.utils import generate_matching_config
 
-from xformers.components.attention.utils import merge_masks
 # NOTE: The Triton layernorm can be activated/deactivated from here
 _is_triton_available = False
 
@@ -335,8 +334,8 @@ class xFormerEncoderBlock(torch.nn.Module):
             q, k, v = x, x, x
 
         bsz, src_len, num_heads = q.size(0), k.size(1), self.mha.num_heads
-        att_mask = merge_masks(att_mask, input_mask, bsz, src_len, num_heads)
-        
+        att_mask = maybe_merge_masks(att_mask, input_mask, bsz, src_len, num_heads)
+
         # Pre/Post norms and residual paths are already handled
         x = self.wrap_att(q, k, v, att_mask=att_mask, key_padding_mask=~input_mask.bool())
         x = self.wrap_ff(x)

@@ -99,8 +99,6 @@ from .nystrom import NystromAttention  # noqa
 from .ortho import OrthoFormerAttention  # noqa
 from .random import RandomAttention  # noqa
 from .scaled_dot_product import ScaledDotProduct  # noqa
-# from .sinkhorn import SinkhornAttention  # noqa
-# from .longshort import LongShortAttention
 
 __all__ = [
     "ScaledDotProduct",
@@ -114,8 +112,6 @@ __all__ = [
     "Attention",
     "build_attention",
     "register_attention",
-    # "SinkhornAttention",
-    # "LongShortAttention"
 ]
 
 # Optionally expose the BlockSparse attention

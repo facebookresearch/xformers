@@ -30,8 +30,6 @@ venv.bak/
 xformers/benchmarks/LRA/datasets
 xformers/benchmarks/LRA/logs
 
-main
-
 my_runs.md
 
 # Triton cache
