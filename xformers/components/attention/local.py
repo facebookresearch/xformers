@@ -84,7 +84,6 @@ class LocalAttention(Attention):
             mask &= causal_1d_pattern(shape[1])
 
         mask = sparsify(mask) if self.force_sparsity else maybe_sparsify(mask)
-
         return mask
 
     def forward(

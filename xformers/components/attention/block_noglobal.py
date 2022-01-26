@@ -16,7 +16,6 @@ from torch import nn
 from torch import Tensor
 import torch.nn.functional as F
 from functools import partial, reduce
-from inspect import isfunction
 from operator import mul
 
 from xformers.components.attention import Attention, AttentionConfig, register_attention
@@ -31,33 +30,34 @@ class BlockNoglobalAttentionConfig(AttentionConfig):
 @register_attention("block_noglobal", BlockNoglobalAttentionConfig)
 class BlockNoglobalAttention(Attention):
     def __init__(
-        self, 
-        dropout: float, 
+        self,
+        dropout: float,
         num_heads: int,
-        window_size: int = 256, # 
+        block_size: int = 256, #
         *args, **kwargs
     ):
         super().__init__()
-        self.bucket_size = window_size
+        self.block_size = block_size
         self.drop_attn = nn.Dropout(dropout)
         self.num_head = num_heads
 
     def forward(
-        self, 
-        q: torch.Tensor, 
-        k: torch.Tensor, 
-        v: torch.Tensor, 
-        att_mask: Optional[torch.Tensor] = None, 
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        att_mask: Optional[torch.Tensor] = None,
         key_padding_mask: Optional[Tensor] = None,
         *args, **kwargs
     ):
-        # q, k, v: (B * nh, S, hs)
+        # Notation: batch size: B, sequence length: L, number of blocks: nb, number of heads: nh
+        # q, k, v: (B * nh, L, head_dim)
         bh = q.size(0)
         orig_seq_len = q.size(1)
         bsz = bh // self.num_head
         head_dim = q.size(-1)
 
-        assert key_padding_mask is not None
+        assert key_padding_mask is not None #HACK
         key_padding_mask = key_padding_mask.to(q)
 
         # pad the input length to factors of bucket size
@@ -65,74 +65,46 @@ class BlockNoglobalAttention(Attention):
             seq_len = x.size(-2)
             pad_len = (window_size - seq_len % window_size) % window_size
             return F.pad(x, (0,0,0,pad_len), value=0), pad_len
-        q, _ = _pad_to_window_size(q, self.bucket_size)
-        k, _ = _pad_to_window_size(k, self.bucket_size)
-        v, _ = _pad_to_window_size(v, self.bucket_size)
+        q, _ = _pad_to_window_size(q, self.block_size)
+        k, _ = _pad_to_window_size(k, self.block_size)
+        v, _ = _pad_to_window_size(v, self.block_size)
 
-        if key_padding_mask.shape[1] % self.bucket_size != 0:
-            pad_len = (self.bucket_size - key_padding_mask.shape[1] % self.bucket_size) % self.bucket_size
-            # key padding mask: 1 means padding tokens
+        if key_padding_mask.shape[1] % self.block_size != 0:
+            pad_len = (self.block_size - key_padding_mask.shape[1] % self.block_size) % self.block_size
             key_padding_mask = torch.cat([key_padding_mask, key_padding_mask.new_ones(key_padding_mask.size(0), pad_len).to(key_padding_mask)], dim=1)
-            
 
-        tgt_len = k.size(1)
-        buckets = q.shape[1] // self.bucket_size
-        b_q = bucket(buckets, q)
-        b_k, b_v = map(partial(bucket, buckets), (k, v)) # BH * bct * n_b * D
+        assert q.shape[1] % self.block_size == 0
+        num_blocks = q.shape[1] // self.block_size
+        b_q = blockify(num_blocks, q)
+        b_k, b_v = map(partial(blockify, num_blocks), (k, v)) # (B * nh, nb, L // nb, head_dim)
 
         dots = torch.einsum('buie,buje->buij', b_q, b_k) * (head_dim ** -0.5)
         mask_value = -10000
 
         # this model does use global token markers (-1)
-        q_mask = default(key_padding_mask != 1, lambda: torch.ones((bsz, tgt_len), device=q.device).bool())
+        q_mask = key_padding_mask != 1
 
         # 1 means not masking
         kv_mask = q_mask
-        mq, mk = bucket(buckets, q_mask), bucket(buckets, kv_mask) # B * bkt * n_b
-        expand_head_and_merge_into_batch = lambda x: merge_dims(0, 1, expand_dim(x.unsqueeze(1), 1, self.num_head))
-        mq, mk = map(expand_head_and_merge_into_batch, (mq, mk)) # BH * bkt * n_b
+        mq, mk = map(partial(blockify, num_blocks), (q_mask, kv_mask)) # (B, nb, L // nb)
         mask = mq[:, :, :, None] * mk[:, :, None, :]
 
         dots.masked_fill_(~mask, mask_value)
-        del mask
-        
-        block_attn_weights = dots.view(bsz*self.num_head, -1, self.bucket_size)
-        all_attn = block_attn_weights
 
-        all_attn_probs = all_attn.softmax(dim=-1)
+        block_attn_weights = dots.view(bsz*self.num_head, -1, self.block_size)
+
+        all_attn_probs = block_attn_weights.softmax(dim=-1)
         all_attn_probs = self.drop_attn(all_attn_probs)
 
-        C = 0
         # calculate block attention
         block_attn_probs = all_attn_probs[:, :, :block_attn_weights.shape[-1]]
-        block_attn_probs = block_attn_probs.view(bsz*self.num_head, -1, self.bucket_size, self.bucket_size)
-        C += block_attn_probs.matmul(b_v).view(bsz*self.num_head, -1, head_dim)
+        block_attn_probs = block_attn_probs.view(bsz*self.num_head, -1, self.block_size, self.block_size)
+        out = block_attn_probs.matmul(b_v).view(bsz*self.num_head, -1, head_dim)
 
-        C = C[:,:orig_seq_len]
-        return C
+        out = out[:,:orig_seq_len]
+        return out
 
-def expand_dim(t, dim, k):
-    expand_shape = [-1] * len(t.shape)
-    expand_shape[dim] = k
-    return t.expand(*expand_shape)
-
-def merge_dims(ind_from, ind_to, tensor):
-    shape = list(tensor.shape)
-    arr_slice = slice(ind_from, ind_to + 1)
-    shape[arr_slice] = [reduce(mul, shape[arr_slice])]
-    return tensor.reshape(*shape)
-
-def default(x, d):
-    if x is None:
-        return d if not isfunction(d) else d()
-    return x
-
-def bucket(buckets, t, dim=1):
+def blockify(num_blocks, t, dim=1):
     shape = list(t.shape)
-    shape[dim:dim+1] = [buckets, -1]
-    return t.reshape(*shape)
-
-def unbucket(t, dim=1):
-    shape = list(t.shape)
-    shape[dim:dim+2] = [-1]
+    shape[dim:dim+1] = [num_blocks, -1]
     return t.reshape(*shape)
