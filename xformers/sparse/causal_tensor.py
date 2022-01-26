@@ -8,7 +8,7 @@ if _is_triton_available:
 
 
 class CausalTensor(torch.Tensor):
-    __slots__ = ['elem']
+    __slots__ = ["elem"]
 
     @staticmethod
     def __new__(cls, elem):
