@@ -16,7 +16,7 @@ from xformers.components.attention.core import (
     scaled_dot_product_attention,
     scaled_query_key_softmax,
 )
-from xformers.components.attention.utils import iterative_pinv, merge_masks
+from xformers.components.attention.utils import iterative_pinv
 
 
 @dataclass
@@ -151,7 +151,7 @@ class NystromAttention(Attention):
         self.causal_mask_3: Optional[torch.Tensor] = None
 
     def forward(
-        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, 
+        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
         att_mask: Optional[torch.Tensor] = None,
         key_padding_mask: Optional[torch.Tensor] = None,
         *args, **kwargs
@@ -170,7 +170,7 @@ class NystromAttention(Attention):
                 merged_mask = causal_mask.logical_and(mask)
             else:
                 merged_mask = mask.to(torch.bool)
-    
+
             x = scaled_dot_product_attention(q=q, k=k, v=v, att_mask=merged_mask)
 
         else:
@@ -207,7 +207,7 @@ class NystromAttention(Attention):
             kernel_2 = scaled_query_key_softmax(
                 q=q_landmarks, k=k_landmarks, att_mask=mask_2
             )
-            # merge key_padding_mask and causal mask            
+            # merge key_padding_mask and causal mask
             if self.causal_mask_3 is None:
                 merged_mask = mask.to(torch.bool)
             else:
