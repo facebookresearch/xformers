@@ -4,4 +4,5 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from .coo_tensor import SparseCOOTensor  # noqa: F401
 from .csr_tensor import SparseCSRTensor  # noqa: F401

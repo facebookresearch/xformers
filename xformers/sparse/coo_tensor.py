@@ -1,7 +1,6 @@
 import torch
 from torch.utils._pytree import tree_map
 
-
 from xformers.ops import masked_matmul
 
 
@@ -31,7 +30,7 @@ def _broadcast_batch(mask, batch_size):
     return torch.sparse_coo_tensor(indices, values, size)
 
 
-class SparseBMM(torch.autograd.Function):
+class _SparseBMM(torch.autograd.Function):
     @staticmethod
     def forward(ctx, a, b):
         a = a.coalesce()
@@ -57,7 +56,7 @@ class SparseBMM(torch.autograd.Function):
 
 
 class SparseCOOTensor(torch.Tensor):
-    __slots__ = ['elem']
+    __slots__ = ["elem"]
 
     @staticmethod
     def __new__(cls, elem):
@@ -73,6 +72,10 @@ class SparseCOOTensor(torch.Tensor):
 
     def __repr__(self):
         return f"sparse_coo_tensor_wrapper({repr(self.elem)})"
+
+    @classmethod
+    def from_dense(cls, matrix):
+        return cls(matrix.to_sparse())
 
     @classmethod
     def _masked_matmul(cls, a, b, _mask):
@@ -109,7 +112,7 @@ class SparseCOOTensor(torch.Tensor):
             assert a.ndim == b.ndim == 3
             assert a.shape[0] == b.shape[0]
             assert a.shape[2] == b.shape[1]
-            return SparseBMM.apply(a.elem, b)
+            return _SparseBMM.apply(a.elem, b)
 
         if func in [torch.Tensor.softmax, torch.nn.functional.softmax, torch.softmax]:
             dim = kwargs["dim"]

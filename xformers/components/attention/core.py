@@ -12,6 +12,7 @@ import torch
 
 from xformers import _is_sparse_available, _is_triton_available
 from xformers.components.attention.attention_mask import AttentionMask
+from xformers.ops import masked_matmul
 
 if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
@@ -65,7 +66,7 @@ def scaled_query_key_softmax(
     else:
         mask = att_mask
 
-    att = _matmul_with_mask(q, k.transpose(-2, -1), mask)
+    att = masked_matmul(q, k.transpose(-2, -1), mask)
 
     # Softmax to get the attention probabilities
     is_causal = isinstance(att_mask, AttentionMask) and att_mask.is_causal

@@ -19,6 +19,11 @@ def masked_matmul(a, b, mask=None):
         return att
 
     if mask.dtype == torch.bool:
+        # TODO: replace this with
+        # torch.where(
+        #   mask,
+        #   torch.tensor(0, dtype=a.dtype, device=a.device),
+        #   torch.tensor(float('-inf'), dtype=a.dtype, device=a.device))
         if mask.ndim == 2:
             mask = mask.unsqueeze(0).expand(att.shape[0], -1, -1)
         # mask is presumed false == ignore
