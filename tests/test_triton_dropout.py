@@ -11,13 +11,14 @@ import torch
 from torch.cuda.amp.autocast_mode import autocast
 
 from xformers.components import Activation, build_activation
-from xformers.triton.dropout import FusedDropoutBias
 
-_triton_available = torch.cuda.is_available()
+_gpu_available = torch.cuda.is_available()
+_triton_available = True
 
 if _triton_available:
     try:
         from xformers.triton import dropout as triton_dropout
+        from xformers.triton.dropout import FusedDropoutBias
         from xformers.triton.utils import gpu_capabilities_older_than_70
 
     except ImportError:
@@ -39,6 +40,7 @@ SHAPES = [
 ]
 
 
+@pytest.mark.skipif(not _triton_available, reason="Triton is not available")
 def test_dropout_cpu():
     triton_dropout = FusedDropoutBias(p=0.1, bias_shape=None)
     x = torch.normal(0, 1, size=(16, 16), device="cpu")
@@ -54,6 +56,7 @@ def test_dropout_cpu():
     assert y.count_nonzero() != y.numel()
 
 
+@pytest.mark.skipif(not _gpu_available, reason="GPU is not available")
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
 @pytest.mark.skipif(
     not _triton_available or gpu_capabilities_older_than_70(),
@@ -125,6 +128,7 @@ def test_dropout(shape, amp, bias, p):
         assert torch.allclose(y_1, y_2)
 
 
+@pytest.mark.skipif(not _gpu_available, reason="GPU is not available")
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
 @pytest.mark.skipif(
     not _triton_available or gpu_capabilities_older_than_70(),
