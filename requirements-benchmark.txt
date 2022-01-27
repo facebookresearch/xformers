@@ -8,3 +8,4 @@ tqdm == 4.59.0
 pandas == 1.2.4
 seaborn == 0.11.1
 triton == 1.1.1
+pytorch-lightning >= 1.3 

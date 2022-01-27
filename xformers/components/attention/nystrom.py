@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import logging as log
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -16,7 +16,11 @@ from xformers.components.attention.core import (
     scaled_dot_product_attention,
     scaled_query_key_softmax,
 )
-from xformers.components.attention.utils import iterative_pinv
+from xformers.components.attention.utils import (
+    bool_mask_to_additive,
+    iterative_pinv,
+    reshape_key_padding_mask,
+)
 
 
 @dataclass
@@ -118,8 +122,8 @@ class NystromAttention(Attention):
 
         """
         super().__init__()
-
-        self.accepts_att_mask = False
+        # merged key padding mask and attention mask is not accepted
+        self.requires_separate_masks = True
         self.num_landmarks = num_landmarks
         # TODO: should be able to not have to pass in num_heads
         self.num_heads = num_heads
@@ -151,27 +155,51 @@ class NystromAttention(Attention):
         self.causal_mask_3: Optional[torch.Tensor] = None
 
     def forward(
-        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
         key_padding_mask: Optional[torch.Tensor] = None,
-        *args, **kwargs
+        *args,
+        **kwargs,
     ):
-        mask = ~key_padding_mask.eq(1)
-        bsz = mask.shape[0]
-        mask = mask.to(q)
+        r"""
+        key_padding_mask    Only a key padding mask is accepted here. The size must be (batch size, sequence length) or
+                            (batch size * num_heads, 1, sequence length). If dimensions are not correct, the mask will
+                            be ignored. An additive mask is expected, meaning float values using "-inf" to mask values
+        """
+
         batched_dim = k.size(0)
         seq_len = k.size(-2)
+        tt = {"dtype": q.dtype, "device": q.device}
 
-        mask = mask.view(bsz, 1, 1, seq_len).expand(-1, self.num_heads, -1, -1).reshape(bsz*self.num_heads, 1, seq_len)
+        if key_padding_mask is not None:
+            if key_padding_mask.dtype == torch.bool:
+                logging.warning(
+                    "Bool mask found, but an additive mask is expected. Converting but this is slow"
+                )
+                key_padding_mask = bool_mask_to_additive(key_padding_mask)
+
+            if key_padding_mask.ndim == 2:
+                key_padding_mask = reshape_key_padding_mask(
+                    key_padding_mask, batched_dim
+                )
+
+            assert key_padding_mask.size() == (batched_dim, 1, seq_len), (
+                f"key_padding_mask has invalid dimensions {key_padding_mask.size()}."
+                f" Must have dimensions {batched_dim, 1, seq_len} or (batch_size, {seq_len})."
+            )
 
         if self.num_landmarks >= seq_len:
-            if self.causal:
-                causal_mask = self._tril_mask(batched_dim, seq_len, seq_len)
-                merged_mask = causal_mask.logical_and(mask)
-            else:
-                merged_mask = mask.to(torch.bool)
+            mask: Optional[torch.Tensor] = None
 
-            x = scaled_dot_product_attention(q=q, k=k, v=v, att_mask=merged_mask)
+            if self.causal:
+                mask = self._triu_mask(batched_dim, seq_len, seq_len, **tt)
+
+            if key_padding_mask is not None:
+                mask = key_padding_mask if mask is None else mask + key_padding_mask
+
+            x = scaled_dot_product_attention(q=q, k=k, v=v, att_mask=mask)
 
         else:
             q_landmarks = self.landmark_pooling(q)
@@ -182,26 +210,28 @@ class NystromAttention(Attention):
                 or (batched_dim, seq_len, self.num_landmarks)
                 != self.causal_mask_1.size()
             ):
-                self.causal_mask_1 = self._tril_mask(
-                    batched_dim, seq_len, self.num_landmarks
-                ).to(q.device)
-                self.causal_mask_2 = self._tril_mask(
-                    batched_dim, self.num_landmarks, self.num_landmarks
-                ).to(q.device)
-                self.causal_mask_3 = self._tril_mask(
-                    batched_dim, self.num_landmarks, seq_len
-                ).to(q.device)
+                self.causal_mask_1 = self._triu_mask(
+                    batched_dim, seq_len, self.num_landmarks, **tt
+                )
+                self.causal_mask_2 = self._triu_mask(
+                    batched_dim, self.num_landmarks, self.num_landmarks, **tt
+                )
+                self.causal_mask_3 = self._triu_mask(
+                    batched_dim, self.num_landmarks, seq_len, **tt
+                )
 
             mask_1: Optional[torch.Tensor] = self.causal_mask_1
             mask_2: Optional[torch.Tensor] = self.causal_mask_2
             mask_3: Optional[torch.Tensor] = self.causal_mask_3
-            if att_mask is not None:
+            if key_padding_mask is not None:
                 mask_1 = (
-                    att_mask.transpose(-2, -1)
+                    key_padding_mask.transpose(-2, -1)
                     if mask_1 is None
-                    else mask_1.logical_and(att_mask.transpose(-2, -1))
+                    else mask_1 + key_padding_mask.transpose(-2, -1)
                 )
-                mask_3 = att_mask if mask_3 is None else mask_3.logical_and(att_mask)
+                mask_3 = (
+                    key_padding_mask if mask_3 is None else mask_3 + key_padding_mask
+                )
 
             kernel_1 = scaled_query_key_softmax(q=q, k=k_landmarks, att_mask=mask_1)
             kernel_2 = scaled_query_key_softmax(
@@ -242,5 +272,13 @@ class NystromAttention(Attention):
         x = self.attn_drop(x)
         return x
 
-    def _tril_mask(self, dim_1: int, dim_2: int, dim_3: int):
-        return torch.tril(torch.ones(dim_1, dim_2, dim_3, dtype=torch.bool), diagonal=0)
+    def _triu_mask(self, dim_1: int, dim_2: int, dim_3: int, **kwargs) -> torch.Tensor:
+        device = kwargs["device"]
+        dtype = kwargs["dtype"]
+
+        return torch.triu(
+            torch.ones(dim_2, dim_3, dtype=dtype, device=device) * float("-inf"),
+            diagonal=1,
+        ).expand(
+            dim_1, -1, -1
+        )  # micro optim, save memory on the batch dimension

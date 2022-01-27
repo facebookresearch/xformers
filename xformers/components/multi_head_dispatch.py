@@ -4,153 +4,16 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from collections import namedtuple
 from dataclasses import asdict, dataclass
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
-from torch.nn.init import constant_, xavier_uniform_
+from torch.nn.init import constant_
 
 from xformers.components.attention import Attention
-
-InProjParams = namedtuple("InProjParams", ["in_features", "out_features", "bias"])
-
-
-class InProjContainer(nn.Module):
-    """
-    Handle all the input projections in one go, opportunistically fuse some operations.
-
-    CREDITS: Inspired by https://github.com/pytorch/text/blob/master/torchtext/nn/modules/multiheadattention.py
-    and the MultiHeadAttention implementation from PyTorch
-    """
-
-    def __init__(
-        self,
-        query_proj_params: InProjParams,
-        key_proj_params: Optional[InProjParams],
-        value_proj_params: Optional[InProjParams],
-    ):
-
-        super().__init__()
-
-        assert (
-            query_proj_params.in_features == query_proj_params.out_features
-        ), "We assume in_features == out_features for queries, please provide your projection if this is not the case"
-
-        # If nothing is specified for key and value, use the same as query
-        if key_proj_params is None:
-            key_proj_params = query_proj_params
-
-        if value_proj_params is None:
-            value_proj_params = query_proj_params
-
-        # Catch a beneficial case, if Q,K,V dimensions are the same
-        self.same_dimensions = (
-            query_proj_params.in_features == key_proj_params.in_features
-            and value_proj_params.in_features == key_proj_params.in_features
-        )
-
-        self.out_features = query_proj_params.out_features
-
-        # - handle all the weights
-        if self.same_dimensions:
-            # We can use a single weight and bias buffer, which will speed up self attention
-            self.in_proj_weight = nn.Parameter(
-                torch.empty((3 * self.out_features, self.out_features))
-            )
-            self.register_parameter("q_proj_weight", None)
-            self.register_parameter("k_proj_weight", None)
-            self.register_parameter("v_proj_weight", None)
-        else:
-            # The dimensions are different, use seperate buffers
-            self.q_proj_weight = nn.Parameter(
-                torch.empty((self.out_features, query_proj_params.in_features))
-            )
-            self.k_proj_weight = nn.Parameter(
-                torch.empty((self.out_features, key_proj_params.in_features))
-            )
-            self.v_proj_weight = nn.Parameter(
-                torch.empty((self.out_features, value_proj_params.in_features))
-            )
-            self.register_parameter("in_proj_weight", None)
-
-        # - handle all the inputs
-        if query_proj_params.bias:
-            self.in_proj_bias = nn.Parameter(torch.empty(3 * self.out_features))
-        else:
-            self.register_parameter("in_proj_bias", None)
-
-        # - multi-head attention specific init for the weights and biases
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        if self.in_proj_weight is not None:
-            xavier_uniform_(self.in_proj_weight)
-        else:
-            xavier_uniform_(self.q_proj_weight)
-            xavier_uniform_(self.k_proj_weight)
-            xavier_uniform_(self.v_proj_weight)
-
-        if self.in_proj_bias is not None:
-            constant_(self.in_proj_bias, 0.0)
-
-    def forward(
-        self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        if self.in_proj_weight is not None:
-            if id(query) == id(key):
-                # Self attention, get all the projected values at once
-                # we compute everything transposed, so that q,k,v stay contiguous after splitting
-                qkv = query @ self.in_proj_weight.transpose(-2, -1)
-
-                if self.in_proj_bias is not None:
-                    qkv += self.in_proj_bias
-
-                q, k, v = map(
-                    lambda x: x.contiguous(),
-                    qkv.split(self.out_features, dim=-1),
-                )
-                return q, k, v
-
-            else:
-                # Not self attention
-                # - bias free projection
-                projections = self.in_proj_weight.split(self.out_features, dim=0)
-                q, k, v = map(
-                    lambda x, y: x @ y.transpose(1, 0), [query, key, value], projections
-                )
-
-                # - optionally add bias
-                if self.in_proj_bias is not None:
-                    biases = self.in_proj_bias.split(self.out_features, dim=0)
-                    q, k, v = map(lambda x, y: x + y, [q, k, v], biases)
-
-                return q, k, v
-
-        # We have a weight per input, but share a bigger bias buffer
-        assert (
-            self.q_proj_weight is not None
-            and self.k_proj_weight is not None
-            and self.v_proj_weight is not None
-        )
-
-        # - bias free projection
-        q, k, v = map(
-            lambda x, y: x @ y.transpose(1, 0),
-            [query, key, value],
-            [self.q_proj_weight, self.k_proj_weight, self.v_proj_weight],
-        )
-
-        # - optionally add bias
-        if self.in_proj_bias is not None:
-            biases = self.in_proj_bias.split(self.out_features, dim=0)
-            q, k, v = map(lambda x, y: x + y, [q, k, v], biases)
-
-        return q, k, v
+from xformers.components.in_proj_container import InProjContainer, InProjParams
+from xformers.components.positional_embedding import RotaryEmbedding
 
 
 @dataclass
@@ -164,6 +27,7 @@ class MultiHeadDispatchConfig:
     dim_value: Optional[int]
     in_proj_container: Optional[InProjContainer]
     use_separate_proj_weight: Optional[bool]
+    use_rotary_embeddings: Optional[bool]
     out_proj: Optional[nn.Module]
 
 
@@ -199,6 +63,7 @@ class MultiHeadDispatch(nn.Module):
         dim_value: Optional[int] = None,
         in_proj_container: Optional[InProjContainer] = None,
         use_separate_proj_weight: Optional[bool] = False,
+        use_rotary_embeddings: Optional[bool] = False,
         out_proj: Optional[nn.Module] = None,
         *args,
         **kwargs,
@@ -238,6 +103,11 @@ class MultiHeadDispatch(nn.Module):
                 )
             )
 
+        # Optional rotary embeddings
+        self.rotary_embeddings = (
+            RotaryEmbedding(self.dim_k) if use_rotary_embeddings else None
+        )
+
         # Regularization
         self.resid_drop = nn.Dropout(residual_dropout, inplace=False)
 
@@ -274,8 +144,30 @@ class MultiHeadDispatch(nn.Module):
         self._check(value, "value")
         self._check(key, "key")
 
+        max_batch = max((query.shape[0], key.shape[0], value.shape[0]))
+        query, key, value = map(
+            lambda x: x.expand(max_batch, -1, -1), [query, key, value]
+        )
+
         B, S_Q, _ = query.size()  # Batch x Sequence x Embedding (latent)
         _, S_K, _ = key.size()  # K, Q's sequence length could differ
+
+        # Catch different query and key length but a causal attention
+        if S_Q != S_K:
+            assert (
+                not self.attention.requires_same_k_q_dimensions
+            ), "This attention mechanism requires query and key to have the same sequence (context) lengths"
+
+            if hasattr(self.attention, "causal"):
+                assert not self.attention.causal, (
+                    "Causal attention is not supported when key and query have different sequence lengths.\n"
+                    + "In that case causality is ill-determined. Please pad your sequences accordingly"
+                )
+
+        if self.attention.requires_skip_multi_head:
+            return self.attention(
+                query, key, value, att_mask=att_mask, key_padding_mask=key_padding_mask
+            )
 
         # Calculate query, key, values for all heads in batch
         if self.attention.requires_input_projection:
@@ -283,14 +175,27 @@ class MultiHeadDispatch(nn.Module):
         else:
             k, q, v = key, query, value
 
-        # Reshape k/q/v to either expose the heads, or fold the head dimension into the batch
-        reshape_fn = (
-            _split_heads if self.attention.requires_head_dimension else _fold_heads
-        )
+        # Optional: rotary embedding, add relative positioning information
+        if self.rotary_embeddings:
+            # rotary requires the head dimension
+            q = _split_heads(q, B, S_Q, self.num_heads, self.dim_k)
+            k = _split_heads(k, B, S_K, self.num_heads, self.dim_k)
+            v = _split_heads(v, B, S_K, self.num_heads, self.dim_k)
 
-        k = reshape_fn(k, B, S_K, self.num_heads, self.dim_k)
-        q = reshape_fn(q, B, S_Q, self.num_heads, self.dim_k)
-        v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
+            q, k = self.rotary_embeddings(q=q, k=k)
+
+            if not self.attention.requires_head_dimension:
+                q, k, v = q.flatten(0, 1), k.flatten(0, 1), v.flatten(0, 1)
+
+        else:
+            # Reshape k/q/v to either expose the heads, or fold the head dimension into the batch
+            reshape_fn = (
+                _split_heads if self.attention.requires_head_dimension else _fold_heads
+            )
+
+            q = reshape_fn(q, B, S_Q, self.num_heads, self.dim_k)
+            k = reshape_fn(k, B, S_K, self.num_heads, self.dim_k)
+            v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
 
         # Self-attend
         key_padding_mask = kwargs.get("key_padding_mask", None)

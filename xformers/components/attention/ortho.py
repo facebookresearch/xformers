@@ -130,9 +130,11 @@ class OrthoFormerAttention(Attention):
         Returns near orthogonal landmarks with shape (B, M, D).
         """
 
+        num_landmarks = min(self.num_landmarks, q.shape[1])
+
         if self.subsample_fraction < 1.0:
             num_samples = max(
-                int(self.subsample_fraction * q.size(-2)), self.num_landmarks
+                int(self.subsample_fraction * q.size(-2)), num_landmarks
             )  # Need at least M/2 samples of queries and keys
             q_samples = q[:, torch.randint(q.size(-2), (num_samples,)), :]  # (B, N, D)
         else:
@@ -143,10 +145,10 @@ class OrthoFormerAttention(Attention):
                 q_samples, p=2, dim=-1
             )  # may need to change default eps to eps=1e-8 for mixed precision compatibility
             landmarks = self._kmeans_spherical(
-                q_samples_normalized, self.num_landmarks, num_iters
+                q_samples_normalized, num_landmarks, num_iters
             )
         else:
-            landmarks = self._kmeans(q_samples, self.num_landmarks, num_iters)
+            landmarks = self._kmeans(q_samples, num_landmarks, num_iters)
         return landmarks  # (B, M, D)
 
     def _kmeans(self, x: torch.Tensor, K: int, num_iters: int = 10):
@@ -158,7 +160,8 @@ class OrthoFormerAttention(Attention):
         """
 
         B, N, D = x.size()
-        assert K <= N
+        assert K <= N, f"{K} > {N}"
+
         c = x[
             :, torch.randperm(N, device=x.device)[:K], :
         ].clone()  # initialisation for the centroids
@@ -193,7 +196,7 @@ class OrthoFormerAttention(Attention):
             x: (B, N, D)
         """
         B, N, D = x.size()
-        assert K <= N
+        assert K <= N, f"{K} > {N}"
 
         # initialisation for the centroids
         c = x[:, torch.randperm(N, device=x.device)[:K], :].clone()

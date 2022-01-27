@@ -26,9 +26,9 @@ from xformers.components.attention.core import scaled_dot_product_attention
 
 @dataclass
 class LocalAttentionConfig(AttentionConfig):
-    causal: Optional[bool]
-    window_size: Optional[int]
-    force_sparsity: Optional[bool]
+    causal: Optional[bool] = None
+    window_size: Optional[int] = None
+    force_sparsity: Optional[bool] = None
 
 
 @register_attention("local", LocalAttentionConfig)
@@ -75,6 +75,7 @@ class LocalAttention(Attention):
 
         self.window_size = window_size
         self.attention_mask: Optional[torch.Tensor] = None
+        self.requires_same_k_q_dimensions = True
 
     def _get_local_mask(self, shape: torch.Size) -> torch.Tensor:
         window_size = self.window_size * 2 + 1 if self.causal else self.window_size
@@ -101,10 +102,7 @@ class LocalAttention(Attention):
 
         # Take into account the optional user mask
         mask = (
-            self.attention_mask
-            if att_mask is None
-            # pyre-ignore[58]: Pyre mistakenly thinks `self.attention_mask` may be None.
-            else self.attention_mask & att_mask
+            self.attention_mask if att_mask is None else self.attention_mask & att_mask
         )
 
         return scaled_dot_product_attention(

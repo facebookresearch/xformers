@@ -1,5 +1,4 @@
 FROM nvidia/cuda:11.0-cudnn8-devel-ubuntu18.04
-    
 # Install tools and dependencies.
 RUN apt-get -y update --fix-missing
 RUN apt-get install -y \

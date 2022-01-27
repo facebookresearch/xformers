@@ -236,7 +236,6 @@ __global__ void __launch_bounds__(Config::kBlockDimX * Config::kBlockDimY)
 	 float* __restrict__ out) {
   DepthwiseKernel<Config>::KernelFn(n, c, h, w, in, filters, bias, out);
 }
-  
 }  // namespace
 
 constexpr bool DivBy(int x, int y) { return x % y == 0 ? true : false; }

@@ -4,28 +4,20 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import logging
 import math
 from contextlib import nullcontext
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 
-from xformers import _is_sparse_available
+from xformers import _is_sparse_available, _is_triton_available
+from xformers.components.attention.attention_mask import AttentionMask
 
 if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
 
-# NOTE: Could do with a better option on when to use triton and not
-_use_triton = True
-if _use_triton:
-    try:
-        from xformers.triton.softmax import softmax as triton_softmax
-    except ImportError:
-        logging.warning(
-            "Triton is not available, some optimizations will not be enabled."
-        )
-        _use_triton = False
+if _is_triton_available:
+    from xformers.triton.softmax import softmax as triton_softmax
 
 
 def _create_random_sparsity(matrix, sparsity, divisible_by=4):
@@ -69,24 +61,35 @@ def _broadcast_batch(mask, batch_size):
 
 
 def _matmul_with_mask(
-    a: torch.Tensor, b: torch.Tensor, mask: Optional[torch.Tensor]
+    a: torch.Tensor, b: torch.Tensor, mask: Optional[Union[torch.Tensor, "SparseCS"]]
 ) -> torch.Tensor:
     if mask is None:
         return a @ b
 
-    if _is_sparse_available:
+    if _is_sparse_available and mask.dtype == torch.bool:
         if isinstance(mask, SparseCS):
             return mask.matmul_with_mask(a, b)
         if mask.is_sparse:
             # perform broadcasting if needed
             mask = _broadcast_batch(mask, a.shape[0])
+
             # coalesced is not implemented for bool tensors, so need to cast
             mask = mask.to(dtype=a.dtype)  # type: ignore  # mypy is missing the catch above
+
         return torch.ops.xformers.matmul_with_mask(a, b, mask)
 
     # Non optimized codepath
+    assert not isinstance(mask, SparseCS)
+
     att = a @ b
-    att[~mask] = float("-inf")
+    if mask.dtype == torch.bool:
+        if mask.ndim == 2:
+            mask = mask.unsqueeze(0).expand(att.shape[0], -1, -1)
+        # mask is presumed false == ignore
+        att[~mask] = float("-inf")
+    else:
+        # mask is presumed additive
+        att += mask
     return att
 
 
@@ -97,7 +100,7 @@ def _softmax(a: torch.Tensor, causal: bool = False) -> torch.Tensor:
     if a.is_sparse:
         return torch.sparse.softmax(a, dim=a.ndim - 1)
 
-    if _use_triton:
+    if _is_triton_available:
         return triton_softmax(a, mask=None, causal=causal)
     else:
         return torch.softmax(a, dim=a.ndim - 1)
@@ -136,7 +139,6 @@ if _is_sparse_available:
         assert a.ndim == b.ndim == 3
         assert a.shape[0] == b.shape[0]
         assert a.shape[2] == b.shape[1]
-        # pyre-fixme[16]: The `apply` method is not visible to Pyre.
         return SparseBMM.apply(a, b)
 
 
@@ -170,6 +172,9 @@ def _apply_dropout(att, dropout):
             values = att.values().clone()  # protect against in-place dropout
             values = dropout(values)
             att = torch.sparse_coo_tensor(att.indices(), values, att.shape)
+        else:
+            # Simple dense case
+            att = dropout(att)
 
         return att
 
@@ -181,21 +186,26 @@ def _apply_dropout(att, dropout):
 def scaled_query_key_softmax(
     q: torch.Tensor,
     k: torch.Tensor,
-    att_mask: Optional[torch.Tensor],
-    causal: bool = False,
+    att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
 ) -> torch.Tensor:
     # TODO assume we have (N, S, hs) instead of (B, nh, S, hs), with N = B x nh
     # this is needed due to limitations in sparse_bmm for now
 
     # Self-attend: (N, S, hs) x (N, hs, S) -> (N, S, S)
     q = q / math.sqrt(k.size(-1))
-    att = _matmul_with_mask(q, k.transpose(-2, -1), att_mask)
 
-    if att_mask is not None and att_mask.dtype != torch.bool:
-        att = att + att_mask
+    # Matmul with mask
+    if att_mask is not None and isinstance(att_mask, AttentionMask):
+        # Additive mask
+        mask: Optional[Union[SparseCS, torch.Tensor]] = att_mask.values
+    else:
+        mask = att_mask
+
+    att = _matmul_with_mask(q, k.transpose(-2, -1), mask)
 
     # Softmax to get the attention probabilities
-    att = _softmax(att, causal=causal)
+    is_causal = isinstance(att_mask, AttentionMask) and att_mask.is_causal
+    att = _softmax(att, causal=is_causal)
     return att
 
 
@@ -203,9 +213,8 @@ def scaled_dot_product_attention(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
-    att_mask: Optional[torch.Tensor],
+    att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
     dropout: Optional[torch.nn.Module] = None,
-    causal: bool = False,
 ) -> torch.Tensor:
     autocast_disabled = (
         _is_sparse_available
@@ -217,7 +226,7 @@ def scaled_dot_product_attention(
         if autocast_disabled:
             q, k, v = q.float(), k.float(), v.float()
 
-        att = scaled_query_key_softmax(q, k, att_mask=att_mask, causal=causal)
+        att = scaled_query_key_softmax(q, k, att_mask=att_mask)
 
         #  Optional dropout, could be part of the masking in the future
         att = _apply_dropout(att, dropout)

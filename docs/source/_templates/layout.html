@@ -94,8 +94,8 @@
 <div class="container-fluid header-holder tutorials-header" id="header-holder">
   <div class="container">
     <div class="header-container">
-      <a class="header-logo" href="{{ theme_variables.external_urls['home'] }}"><img src="_static/logo.png"
-          style="padding-right: 90px;" width="280px" height="53px"></a>
+      <a class="header-logo" href="{{ theme_variables.external_urls['home'] }}"><img
+          src="{{ pathto('_static/logo.png', 1) }}" style="padding-right: 90px;" width="280px" height="53px"></a>
 
       <div class="main-menu">
         <ul>
@@ -303,6 +303,8 @@
             <li class="list-title"><a href="{{ theme_variables.external_urls['resources'] }}">Resources</a></li>
             <li><a href="{{ theme_variables.external_urls['docs'] }}">Docs</a></li>
             <li><a href="{{ theme_variables.external_urls['github_issues'] }}" target="_blank">Github Issues</a></li>
+            <li><a href="https://opensource.facebook.com/legal/terms">Terms of Use</a></li>
+            <li><a href="https://opensource.facebook.com/legal/privacy">Privacy Policy</a></li>
           </ul>
         </div>
       </div>

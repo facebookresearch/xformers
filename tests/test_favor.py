@@ -66,7 +66,7 @@ def _plot_distribution(ortho_feature_map):
 
 def _get_rng_data(device):
     emb = 10
-    batch_size = 1
+    batch_size = 2
     seq_len = 20
     num_heads = 1
 
@@ -85,8 +85,8 @@ def test_feature_map_shape():
     )
     _ = att(batch, batch, batch)
 
-    assert att.feature_map_key.features.shape[0] == batch.shape[-1]
-    assert att.feature_map_key.features.shape[1] == nb_random_features
+    assert att.feature_map.features.shape[0] == batch.shape[-1]
+    assert att.feature_map.features.shape[1] == nb_random_features
 
 
 def test_feature_map_redraw():
@@ -102,20 +102,16 @@ def test_feature_map_redraw():
             iter_before_redraw=1 if should_redraw else 100,
         )
         v0 = att(batch, batch, batch)
-        assert att.feature_map_query is not None
-        assert att.feature_map_key is not None
+        assert att.feature_map is not None
 
-        fq0 = att.feature_map_query.features
-        fk0 = att.feature_map_key.features
+        f0 = att.feature_map.features
 
         v1 = att(batch, batch, batch)
-        fq1 = att.feature_map_query.features
-        fk1 = att.feature_map_key.features
+        f1 = att.feature_map.features
 
         # There should not have been a redraw after v0
         assert should_redraw != torch.allclose(v0, v1)
-        assert should_redraw != torch.allclose(fq0, fq1)  # type: ignore
-        assert should_redraw != torch.allclose(fk0, fk1)  # type: ignore
+        assert should_redraw != torch.allclose(f0, f1)  # type: ignore
 
     check(should_redraw=True)
     check(should_redraw=False)
@@ -125,7 +121,7 @@ def test_feature_map_redraw():
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("normalize_inputs", [True, False])
 @pytest.mark.parametrize("device", [_device])
-def test_approximation_accuracy(feature, causal, normalize_inputs, device):
+def test_favor_approximation_accuracy(feature, causal, normalize_inputs, device):
     # Run two attentions in parallel, the normal scaled dot product and the favor approximation
 
     torch.random.manual_seed(0)
@@ -134,6 +130,9 @@ def test_approximation_accuracy(feature, causal, normalize_inputs, device):
         _get_rng_data(device),
         _get_rng_data(device),
     )
+
+    for x in (query, key, value):
+        x.requires_grad = True
 
     # Build the two attention heads
     sdp_attention = ScaledDotProduct(dropout=0.0, causal=causal).to(device)
@@ -156,9 +155,12 @@ def test_approximation_accuracy(feature, causal, normalize_inputs, device):
         if causal:
             # FIXME(@lefaudeux) the causal case seems significantly worse, not obvious why,
             # could be worth investigating
-            assert mismatch < 0.5
+            assert mismatch < 0.6
         else:
             assert mismatch < 0.23
+
+        # Check trainability
+        torch.sum(approx_attention_result).backward()
 
 
 if __name__ == "__main__":

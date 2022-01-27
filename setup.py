@@ -36,8 +36,11 @@ def find_version(version_file_path):
         version_match = re.search(
             r"^__version__ = ['\"]([^'\"]*)['\"]", version_file.read(), re.M
         )
+        # The following is used to build release packages.
+        # Users should never use it.
+        suffix = os.getenv("XFORMERS_VERSION_SUFFIX", "")
         if version_match:
-            return version_match.group(1)
+            return version_match.group(1) + suffix
         raise RuntimeError("Unable to find version string.")
 
 
@@ -118,7 +121,7 @@ if __name__ == "__main__":
     setuptools.setup(
         name="xformers",
         description="XFormers: A collection of composable Transformer building blocks.",
-        version=find_version("xformers/__init__.py"),
+        version=find_version(os.path.join(this_dir, "xformers", "__init__.py")),
         setup_requires=[],
         install_requires=fetch_requirements(),
         packages=setuptools.find_packages(exclude=("tests", "tests.*")),

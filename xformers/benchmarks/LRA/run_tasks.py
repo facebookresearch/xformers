@@ -377,6 +377,12 @@ def benchmark(rank, args):
         step_max: int,
         accumulate: bool = False,
     ):
+        if step_idx > step_max:
+            logger.warning(
+                "Calling `step` beyond the training schedule, this is probably a mistake"
+            )
+            return
+
         t0 = time.time()
         batch_size = batch[list(batch.keys())[0]].size(0)
 
@@ -429,6 +435,11 @@ def benchmark(rank, args):
         summary[component]["accu"].append(accu)
         summary[component]["count"].append(cnt)
 
+        if not accumulate:
+            step_idx += 1
+
+        return loss, step_idx
+
     # Start training or evaluating
     train_step_idx = 0
     if not args.skip_train:
@@ -446,7 +457,7 @@ def benchmark(rank, args):
                         i_batch % config_training["gradient_accumulation"] != 0
                     )
 
-                    _ = step(
+                    _, train_step_idx = step(
                         batch,
                         component="train",
                         step_idx=train_step_idx,
@@ -475,9 +486,6 @@ def benchmark(rank, args):
                             logger,
                             tb_logger,
                         )
-
-                    if not grad_accumulate:
-                        train_step_idx += 1
 
                     if train_step_idx == config_training["num_train_steps"]:
                         break

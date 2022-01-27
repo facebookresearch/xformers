@@ -31,11 +31,11 @@ sys.path.insert(0, os.path.abspath("../.."))
 # -- Project information -----------------------------------------------------
 
 project = "xFormers"
-copyright = "2021, Facebook AI Research"
+copyright = "Copyright © 2021 Meta Platforms, Inc"
 author = "Facebook AI Research"
 
 # The full version, including alpha/beta/rc tags
-release = "0.0.1"
+release = "0.0.8"
 
 
 # -- General configuration ---------------------------------------------------
@@ -112,7 +112,7 @@ templates_path = ["_templates"]
 #
 html_theme_options = {
     "includehidden": True,
-    "canonical_url": "https://fairinternal.github.io/xformers",
+    "canonical_url": "https://facebookresearch.github.io/xformers",
     "pytorch_project": "docs",
     "logo_only": True,  # default = False
 }
@@ -128,7 +128,7 @@ html_context = {"css_files": ["_static/css/customize.css"]}
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = "xformersdocs"
-github_doc_root = "https://github.com/fairinternal/xformers/blob/v0.1/"
+github_doc_root = "https://github.com/facebookresearch/xformers/tree/main/docs/"
 
 
 # Over-ride PyTorch Sphinx css

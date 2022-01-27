@@ -12,9 +12,10 @@ from xformers.utils import import_all_modules
 
 from .activations import Activation, build_activation  # noqa
 from .attention import Attention, build_attention  # noqa
-from .multi_head_dispatch import MultiHeadDispatch, MultiHeadDispatchConfig  # noqa
-
-__all__ = ["MultiHeadDispatch", "Activation"]
+from .in_proj_container import InProjContainer, InProjParams  # noqa
+from .multi_head_dispatch import MultiHeadDispatch  # noqa
+from .multi_head_dispatch import MultiHeadDispatchConfig
+from .residual import LayerNormStyle, PostNorm, PreNorm, Residual  # noqa
 
 # automatically import any Python files in the directory
 import_all_modules(str(Path(__file__).parent), "xformers.components")
@@ -41,6 +42,25 @@ def build_multi_head_attention(
 
         # Could be that the attention needs to be instantiated
         if not isinstance(multi_head_config["attention"], Attention):
+            # Convenience: fill in possible missing fields
+            if "num_heads" not in multi_head_config["attention"]:
+                multi_head_config["attention"]["num_heads"] = multi_head_config[
+                    "num_heads"
+                ]
+
+            if "dim_model" not in multi_head_config["attention"]:
+                multi_head_config["attention"]["dim_model"] = multi_head_config[
+                    "dim_model"
+                ]
+
+            if (
+                "dim_features" not in multi_head_config["attention"]
+                or multi_head_config["attention"]["dim_features"] is None
+            ):
+                multi_head_config["attention"]["dim_features"] = (
+                    multi_head_config["dim_model"] // multi_head_config["num_heads"]
+                )
+
             multi_head_config["attention"] = build_attention(
                 multi_head_config["attention"]
             )

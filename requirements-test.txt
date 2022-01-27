@@ -5,13 +5,21 @@
 # Tools for static checking.
 black == 20.8b1
 flake8 == 3.8.4
+flake8-copyright
 isort == 5.7.0
 mypy == 0.812
-pyre-check == 0.9.6
+pyre-check == 0.9.8
+pyre-extensions == 0.0.23
 
 # Tools for unit tests & coverage.
 pytest == 5.4.1
 pytest-cov == 2.10.0
 pytest-mpi == 0.4
 pytest-timeout == 1.4.2
-timm >= 0.4.5
+git+git://github.com/rwightman/pytorch-image-models@v0.4.5#egg=timm
+
+# Dependency for factory
+hydra-core >= 1.1
+
+# Dependency for Mixture of Experts
+fairscale >= 0.4.5

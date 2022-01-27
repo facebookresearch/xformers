@@ -47,15 +47,30 @@ outlined on that page and do not file a public issue.
 
 ## Coding Style
 
-* In your editor, install the [editorconfig](https://editorconfig.org/) extension
-  which should ensure that you are following the same standards as us.
-* Ideally, run black and isort before opening up your PR.
+In your editor, install the [editorconfig](https://editorconfig.org/) extension
+which should ensure that you are following the same standards as us.
+
+Two options to make sure that the code is formatted and linted properly:
+* either you run black, mypy and isort before opening up your PR.
 
 ```bash
 black .
-isort
-flake8
+isort . --profile black
+flake8 --config .flake8
+mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ --exclude stubs/ .
 ```
+
+* or you can just install [pre-commit](https://pre-commit.com/), which will make sure that all of the above is run automatically anytime you commit 
+in that case, you would need to 
+```bash
+pip install pre-commit 
+```
+then (in the xformers repository, just once)
+```bash
+pre-commit install 
+```
+
+After these steps each of your commits will run the same linting and formatting routines as the xformers continuous integration, which greatly helps getting your PRs all green !
 
 _Read the [editorconfig](.editorconfig) file to understand the exact coding style preferences._
 
@@ -64,7 +79,7 @@ _Read the [editorconfig](.editorconfig) file to understand the exact coding styl
 ### Static analysis
 
 ```bash
-mypy --ignore-missing-imports --scripts-are-modules --pretty .
+mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude stubs/ .
 ```
 
 ### Unit tests

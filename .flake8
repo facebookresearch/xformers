@@ -1,0 +1,9 @@
+[flake8]
+exclude = 
+    .git
+    ,.circleci/run-clang-format.py
+max-line-length = 120
+copyright-check = True
+select = E,F,W,C
+copyright-regexp=Copyright \(c\) Facebook, Inc. and its affiliates. All Rights Reserved
+ignore=W503,E203

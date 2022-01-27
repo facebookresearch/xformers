@@ -16,8 +16,9 @@ from xformers.factory import (
     xFormerEncoderBlock,
     xFormerEncoderConfig,
 )
+from xformers.helpers.test_utils import init_torch_distributed_local
 
-BATCH = 20
+BATCH = 4
 SEQ = 128
 MODEL = 96
 DROPOUT = 0.5
@@ -58,10 +59,12 @@ def test_xformer_encoder_block(
         "window_size": SEQ // 8 + 1,
         "seq_len": SEQ,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
+        "dim_model": MODEL,
         "num_heads": heads,
-        "dim_head": MODEL / heads,
+        "dim_head": MODEL // heads,
         "layout": torch.eye(SEQ // block_size, SEQ // block_size, dtype=torch.long),
         "block_size": block_size,
+        "num_rules": 2,  # Compositional Attention
     }
 
     multi_head_config = {
@@ -77,7 +80,12 @@ def test_xformer_encoder_block(
         "dropout": DROPOUT,
         "activation": activation,
         "hidden_layer_multiplier": 4,
+        "number_of_experts": 4,
+        "gate": "top_2",
     }
+
+    if feedforward_name == "MixtureOfExperts":
+        init_torch_distributed_local()
 
     position_encoding_config = {
         "name": "sine",
@@ -117,6 +125,7 @@ def test_xformer_encoder_block(
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 3])
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
+@pytest.mark.parametrize("rotary_embeddings", [False, True])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
 @pytest.mark.parametrize("layer_norm_style", ["pre", "post"])
@@ -126,6 +135,7 @@ def test_xformer_encoder_block(
 )
 def test_xformer_decoder_block(
     attention_name: str,
+    rotary_embeddings: bool,
     feedforward_name: str,
     heads: int,
     attn_dropout: float,
@@ -144,11 +154,11 @@ def test_xformer_decoder_block(
         "causal": causal,
         "window_size": SEQ // 8 + 1,
         "seq_len": SEQ,
+        "dim_head": MODEL // heads,
         "attention_query_mask": torch.rand((SEQ, 1)) < GLOBAL_ATTENTION_RATIO,
-        "num_heads": heads,
-        "dim_head": MODEL / heads,
         "layout": torch.eye(SEQ // block_size, SEQ // block_size, dtype=torch.long),
         "block_size": block_size,
+        "num_rules": 2,  # Compositional Attention
     }
 
     multi_head_config = {
@@ -156,6 +166,7 @@ def test_xformer_decoder_block(
         "dim_model": MODEL,
         "residual_dropout": residual_dropout,
         "attention": attention_config,
+        "use_rotary_embeddings": rotary_embeddings,
     }
 
     feedforward_config = {
@@ -164,7 +175,12 @@ def test_xformer_decoder_block(
         "dropout": DROPOUT,
         "activation": activation,
         "hidden_layer_multiplier": 4,
+        "number_of_experts": 4,
+        "gate": "top_2",
     }
+
+    if feedforward_name == "MixtureOfExperts":
+        init_torch_distributed_local()
 
     position_encoding_config = {
         "name": "sine",
@@ -208,3 +224,16 @@ def test_xformer_decoder_block(
 
     encoded = encoder_block(inputs)
     _ = decoder_block(inputs, encoded, encoder_att_mask=att_mask, input_mask=input_mask)
+
+    # Test different sequence lengths when encoding and decoding
+    if not decoder_block.mha.attention.requires_same_k_q_dimensions:
+        if not causal or not hasattr(decoder_block.mha.attention, "causal"):
+            _ = decoder_block(inputs[:, :-16], encoded)
+        else:
+            # Check that we assert properly
+            with pytest.raises(AssertionError):
+                _ = decoder_block(inputs[:, :-16], encoded)
+    else:
+        # Check that we assert properly
+        with pytest.raises(AssertionError):
+            _ = decoder_block(inputs[:, :-16], encoded)

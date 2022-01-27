@@ -399,9 +399,10 @@ def test_csr_transpose():
 
 @pytest.mark.parametrize("contiguous", [True, False])
 @pytest.mark.parametrize("device", _devices)
-def test_sparse_bmm(device, contiguous):
-    B, M, N = 8, 64, 32
-    prob = 0.95
+@pytest.mark.parametrize("prob", [0.95, 0.996])  # cover > 0.995
+@pytest.mark.parametrize("N", [32, 64, 96])  # cover > 64
+def test_sparse_bmm(device, contiguous, prob, N):
+    B, M = 8, 64
     a = torch.rand(B, M, N, device=device)
     a[a < prob] = 0
     a = a.to_sparse()

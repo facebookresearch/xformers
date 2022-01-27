@@ -1,10 +1,14 @@
 <img src="./docs/assets/logo.png" width=800>
 
 ![PyPI](https://img.shields.io/pypi/v/xformers)
-[![Documentation Status](https://readthedocs.org/projects/xformers/badge/?version=latest)](https://xformers.readthedocs.io/en/latest/?badge=latest)
-[![CircleCI](https://circleci.com/gh/facebookresearch/xformers.svg?style=shield)](https://app.circleci.com/pipelines/github/facebookresearch/xformers/)
 ![PyPI - License](https://img.shields.io/pypi/l/xformers)
+[![Documentation Status](https://github.com/facebookresearch/xformers/actions/workflows/gh-pages.yml/badge.svg)](https://github.com/facebookresearch/xformers/actions/workflows/gh-pages.yml/badge.svg)
+[![CircleCI](https://circleci.com/gh/facebookresearch/xformers.svg?style=shield)](https://app.circleci.com/pipelines/github/facebookresearch/xformers/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![codecov](https://codecov.io/gh/facebookresearch/xformers/branch/main/graph/badge.svg?token=PKGKDR4JQM)](https://codecov.io/gh/facebookresearch/xformers)
+[![black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/facebookresearch/xformers/blob/main/docs/source/xformers_mingpt.ipynb)
+[![Downloads](https://pepy.tech/badge/xformers)](https://pepy.tech/project/xformers)
 --------------------------------------------------------------------------------
 
 ## Description
@@ -13,7 +17,7 @@ xFormers is a modular and field agnostic library to flexibly generate transforme
 
 ## Getting started
 
-The full [documentation](https://xformers.readthedocs.io/) contains instructions for getting started, deep dives and tutorials about the various APIs.
+The full [documentation](https://facebookresearch.github.io/xformers/) contains instructions for getting started, deep dives and tutorials about the various APIs.
 If in doubt, please check out the [HOWTO](HOWTO.md). Only some general considerations are laid out in the README.
 
 ### Installation
@@ -36,12 +40,14 @@ There are two ways you can install it:
   These commands will fetch the latest version of the code, create a dedicated `conda` environment, activate it then install xFormers from source. If you want to build the sparse attention CUDA kernels, please make sure that the next point is covered prior to running these instructions.
 
   ```bash
-  git clone git@github.com:fairinternal/xformers.git
+  git clone git@github.com:facebookresearch/xformers.git
   conda create --name xformer_env python=3.8
   conda activate xformer_env
   cd xformers
   pip install -r requirements.txt
   pip install -e .
+  # or, for OSX
+  MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ pip install -e .
   ```
 
 #### Sparse attention kernels
@@ -50,13 +56,13 @@ Installing the CUDA-based sparse attention kernels may require extra care, as th
 
 Some advices related to building these CUDA-specific components, tentatively adressing common pitfalls. Please make sure that:
 
-* NVCC and the current CUDA runtime match. You can often change the CUDA runtime with `module unload cuda module load cuda/xx.x`, possibly also `nvcc`
+* NVCC and the current CUDA runtime match. Depending on your setup, you may be able to change the CUDA runtime with `module unload cuda module load cuda/xx.x`, possibly also `nvcc`
 * the version of GCC that you're using matches the current NVCC capabilities
 * the `TORCH_CUDA_ARCH_LIST` env variable is set to the architures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;8.0;8.6"`
 
 #### Triton
 
-Some parts of xFormers use [Triton](http://www.triton-lang.org), and will only expose themselves if Triton is installed, and a compatible GPU is present (nVidia GPU with tensor cores). If Triton was not installed as part of the testing procedure, you can install it directly by running `pip install triton`. You can optionally test that the installation is successful by running one of the Triton-related benchmarks, for instance `python3 xformers/benchmarks/benchmnark_triton_softmax.py`
+Some parts of xFormers use [Triton](http://www.triton-lang.org), and will only expose themselves if Triton is installed, and a compatible GPU is present (nVidia GPU with tensor cores). If Triton was not installed as part of the testing procedure, you can install it directly by running `pip install triton`. You can optionally test that the installation is successful by running one of the Triton-related benchmarks, for instance `python3 xformers/benchmarks/benchmark_triton_softmax.py`
 
 Triton will cache the compiled kernels to `/tmp/triton` by default. If this becomes an issue, this path can be specified through the `TRITON_CACHE_DIR` environment variable.
 
@@ -90,19 +96,23 @@ Models are thus not implemented in monolithic files, which are typically complic
 
 ```bash
 ├── components                  # Parts zoo, any of which can be used directly
-│   └── attention
-│        └ ...                  # all the supported attentions
-│   └── feedforward             #
-│        └ ...                  # all the supported feedforwards
-│   └─- positional_embedding    #
-│        └ ...                  # all the supported positional embeddings
+│   ├── attention
+│   │    └ ...                  # all the supported attentions
+│   ├── feedforward             #
+│   │    └ ...                  # all the supported feedforwards
+│   ├── positional_embedding    #
+│   │    └ ...                  # all the supported positional embeddings
 │   ├── activations.py          #
 │   └── multi_head_dispatch.py  # (optional) multihead wrap
-d├── factory
+│
+├── factory                     # Build model programatically
 │   ├── block_factory.py        # (optional) helper to programatically generate layers
 │   └── model_factory.py        # (optional) helper to programatically generate models
-├── models
-...                             # Full models, ready to be used
+│
+├── benchmarks
+│     └ ...                     # A lot of benchmarks that you can use to test some parts
+└── triton
+      └ ...                     # (optional) all the triton parts, requires triton + CUDA gpu
 ```
 
 <details><summary> Attention mechanisms</summary><p>
@@ -133,6 +143,9 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
   - See BigBird, Longformers,..
 - [FourierMix](xformers/components/attention/fourier_mix.py)
   - *[FNet: Mixing Tokens with Fourier Transforms, Lee-Thorp et al.](https://arxiv.org/abs/2105.03824v1)*
+- [CompositionalAttention](xformers/components/attention/compositional.py)
+  - *[Compositional Attention: Disentangling search and retrieval, S. Mittal et al.](https://arxiv.org/pdf/2110.09419v1.pdf)*
+
 - ... add a new one [see Contribution.md](CONTRIBUTING.md)
 
 </p></details>
@@ -141,6 +154,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 - [MLP](xformers/components/feedforward/mlp.py)
 - [Fused](xformers/components/feedforward/fused_mlp.py)
+- [Mixture of Experts](xformers/components/feedforward/mixture_of_experts.py)
 
 </p></details>
 
@@ -148,6 +162,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 - [Sine](xformers/components/positional_embedding/sine.py)
 - [Vocabulary](xformers/components/positional_embedding/vocab.py)
+- [Rotary](xformers/components/positional_embedding/rotary.py)
 
 </p></details>
 
@@ -160,6 +175,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
    3. fused softmax
    4. fused linear layer
    5. fused layer norm
+   6. fused dropout(activation(x+bias))
 3. Benchmarking and testing tools
    1. [micro benchnmarks](BENCHMARKS.md)
    2. transformer block benchmark
@@ -168,6 +184,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 5. Hackable
    1. Not using monolithic CUDA kernels, composable building blocks
    2. Using [Triton](https://triton-lang.org/) for some optimized parts, explicit, pythonic and user-accessible
+   3. Native support for SquaredReLU (on top of ReLU, LeakyReLU, GeLU, ..), extensible activations
 
 ### FAQ ?
 
@@ -183,9 +200,21 @@ If you use xFormers in your publication, please cite it by using the following B
 
 ``` bibtex
 @Misc{xFormers2021,
-  author =       {Benjamin Lefaudeux, Francisco Massa, Diana Liskovich, Min Xu, Jieru Hu, Marta Tintore, Susan Zhang },
+  author =       {Benjamin Lefaudeux, Francisco Massa, Diana Liskovich, Wenhan Xiong, Vittorio Caggiano, Sean Naren, Min Xu, Jieru Hu, Marta Tintore, Susan Zhang},
   title =        {xFormers: A modular and hackable Transformer modelling library},
   howpublished = {\url{https://github.com/facebookresearch/xformers}},
   year =         {2021}
 }
 ```
+
+## Credits
+
+The following repositories are used in xFormers, either in close to original form or as an inspiration:
+
+* [Sputnik](https://github.com/google-research/sputnik)
+* [GE-SpMM](https://github.com/hgyhungry/ge-spmm)
+* [Triton](https://github.com/openai/triton)
+* [LucidRain Reformer](https://github.com/lucidrains/reformer-pytorch)
+* [RevTorch](https://github.com/RobinBruegger/RevTorch)
+* [Nystromformer](https://github.com/mlpen/Nystromformer)
+* [FairScale](https://github.com/facebookresearch/fairscale/)

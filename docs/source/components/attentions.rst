@@ -1,5 +1,5 @@
 Attention mechanisms
-========================
+====================
 
 .. automodule:: xformers.components.attention
     :members:

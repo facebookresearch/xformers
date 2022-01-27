@@ -6,37 +6,36 @@
 
 from dataclasses import dataclass
 from typing import Optional
-
 from torch import Tensor
+import torch.nn.functional as F
+
 import torch
 import torch.nn as nn
 
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.attention.core import scaled_dot_product_attention
-import torch.nn.functional as F
 
 
 @dataclass
 class LinformerSelfAttentionConfig(AttentionConfig):
-    max_seq_len: int  # dimension of the input sequence
-    num_heads: int
-    compress: int
+    seq_len: int  # dimension of the input sequence
+    k: Optional[int]  # dimension of the internal space
+
 
 @register_attention("linformer", LinformerSelfAttentionConfig)
 class LinformerAttention(Attention):
     def __init__(
-        self, 
-        dropout: float, 
+        self,
+        dropout: float,
         num_heads: int,
-        max_seq_len: int = 4096, 
-        compress: int = 8, 
+        max_seq_len: int = 4096,
+        compress: int = 8,
         *args, **kwargs
     ):
         """
         Linformer attention mechanism,
         from `Linformer: Self-Attention with Linear Complexity`_, Wang et al (2020).
         The original notation is kept as is.
-
         .. _`Linformer: Self-Attention with Linear Complexity` : https://arxiv.org/abs/2006.04768v2
         """
         super().__init__()
@@ -49,7 +48,7 @@ class LinformerAttention(Attention):
         self.attn_drop = nn.Dropout(dropout, inplace=False)
 
     def forward(
-        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, 
+        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
         key_padding_mask: Optional[Tensor] = None,
         *args, **kwargs
     ):
@@ -68,6 +67,3 @@ class LinformerAttention(Attention):
         y = y.view(bsz, self.num_heads, y.shape[1], y.shape[2])
         y = (y * mask[:,None,:,None]).view(bsz*self.num_heads, tgt_len, -1)
         return y
-
-
-    ### can we also augment Linformer with global tokens
