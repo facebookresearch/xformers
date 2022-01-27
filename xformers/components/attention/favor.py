@@ -10,6 +10,7 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
+from torch.cuda.amp import autocast
 
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.attention.feature_maps import (
@@ -23,6 +24,7 @@ from xformers.components.attention.feature_maps import (
 
 @dataclass
 class FavorAttentionConfig(AttentionConfig):
+    causal: Optional[bool]
     dim_features: Optional[int] = None  # The dimensions of the random features
     dim_head: Optional[
         int
@@ -48,24 +50,28 @@ class FavorAttention(Attention):
         **__,
     ):
         r"""
-        Kernelized attention, as proposed in Performers_.
+        Kernelized attention, as proposed in Performers_
+        ("Rethinking attention with performers." K. Choromanski et al. (2020).).
 
         FAVOR stands for "Fast Attention Via positive Orthogonal Random features"
 
         Args:
             dropout (float): the probability of an output to be randomly dropped at training time
             dim_features (int): the dimension of the random features space
-            iter_before_redraw (int): the number of iterations before a redraw of the features
+            iter_before_redraw (int): the number of steps (forward calls) before a redraw of the features
             feature_map_type (FeatureMapType): the type of feature map being used,
             for instance orthogonal random features.
 
-        .. _Performers: "Rethinking attention with performers." K. Choromanski et al. (2020).
-            https://arxiv.org/pdf/2009.14794v1.pdf
+        .. _Performers: https://arxiv.org/pdf/2009.14794v1.pdf
         """
         super().__init__()
 
         self.causal = causal
-        self.iter_before_redraw = iter_before_redraw
+        self.iter_before_redraw = (
+            (2 * iter_before_redraw)
+            if iter_before_redraw is not None
+            else iter_before_redraw
+        )  # This will be used for both key and query
         self.normalize_inputs = normalize_inputs
         self.feature_map_type = feature_map_type
         self.attn_drop = nn.Dropout(dropout, inplace=True)
@@ -96,55 +102,64 @@ class FavorAttention(Attention):
             "normalize_inputs": self.normalize_inputs,
         }
 
-        self.feature_map_query: FeatureMap = feature_map_constructor(**feature_settings)  # type: ignore
-        self.feature_map_key: FeatureMap = feature_map_constructor(**feature_settings)  # type: ignore
+        self.feature_map: FeatureMap = feature_map_constructor(**feature_settings)  # type: ignore
+
+    @staticmethod
+    def _maybe_promote(x: torch.Tensor) -> torch.Tensor:
+        # Only promote fp16 buffers, bfloat16 would be fine for instance
+        return x.float() if x.dtype == torch.float16 else x
 
     @staticmethod
     def _causal_attention(
         k_prime: torch.Tensor, q_prime: torch.Tensor, v: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # TODO(@lefaudeux): Rewrite as suggested in
-        # https://github.com/fairinternal/xformers/pull/61#discussion_r628420093
         # Algorithm 1 in the paper
-        ref_v = torch.ones_like(v[:, 0, :].unsqueeze(1))
+        ref_v = torch.ones_like(v.unsqueeze(2))  # BATCH x SEQ x 1 x EMB
+        Gps = k_prime.unsqueeze(3) * v.unsqueeze(2)
+        Grenorm = k_prime.unsqueeze(3) * ref_v
 
-        Gps = k_prime[:, 0, :].unsqueeze(2) * v[:, 0, :].unsqueeze(1)
-        Grenorm = k_prime[:, 0, :].unsqueeze(2) * ref_v
+        # Consolidate against the feature dimension
+        att_raw = torch.einsum("bcfe,bcf->bce", Gps, q_prime)
+        att_norm = torch.einsum("bcfe,bcf->bce", Grenorm, q_prime)
 
-        att_raw = [torch.bmm(q_prime[:, 0, :].unsqueeze(1), Gps)]
-        att_norm = [torch.bmm(q_prime[:, 0, :].unsqueeze(1), Grenorm)]
+        # Cumulative sum over the sequence
+        att_raw = att_raw.cumsum(2)
+        att_norm = att_norm.cumsum(2)
 
-        for i in range(1, k_prime.shape[1]):
-            Gps += k_prime[:, i, :].unsqueeze(2) * v[:, i, :].unsqueeze(1)
-            Grenorm += k_prime[:, i, :].unsqueeze(2) * ref_v
-
-            att_raw.append(torch.bmm(q_prime[:, i, :].unsqueeze(1), Gps))
-            att_norm.append(torch.bmm(q_prime[:, i, :].unsqueeze(1), Grenorm))
-
-        return torch.cat(att_raw, dim=1), torch.cat(att_norm, dim=1)
+        return att_raw, att_norm
 
     def forward(
         self,
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        *args,
-        **kwargs,
+        *_,
+        **__,
     ):
-        # Project key and queries onto the feature map space
-        k_prime = self.feature_map_key(k)
-        q_prime = self.feature_map_query(q)
-        if not self.causal:
-            att_normalization = q_prime @ (
-                k_prime.transpose(-2, -1) @ torch.ones_like(v)
-            )
-            att_raw = q_prime @ (k_prime.transpose(-2, -1) @ v)
-        else:
-            # Actually compute attention
-            att_raw, att_normalization = self._causal_attention(k_prime, q_prime, v)
 
-        # Normalize
-        att = att_raw / att_normalization
+        # Project key and queries onto the feature map space
+        k_prime = self.feature_map(k)
+        q_prime = self.feature_map(q)
+
+        with autocast(enabled=False):
+            # The softmax kernel approximation for Favor will easily overflow
+            # Force the computations here to stay in fp32 for numerical stability
+            # Note that the dimensions are vastly reduced when compared to scaled_dot_product
+            k_prime = self._maybe_promote(k_prime)
+            q_prime = self._maybe_promote(q_prime)
+            v = self._maybe_promote(v)
+
+            if not self.causal:
+                att_normalization = q_prime @ (
+                    k_prime.transpose(-2, -1) @ torch.ones_like(v)
+                )
+                att_raw = q_prime @ (k_prime.transpose(-2, -1) @ v)
+            else:
+                # Actually compute attention
+                att_raw, att_normalization = self._causal_attention(k_prime, q_prime, v)
+
+            # Normalize
+            att = att_raw / att_normalization
 
         if self.attn_drop is not None:
             att = self.attn_drop(att)

@@ -1,0 +1,29 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+from typing import Tuple, TypeVar
+
+import torch
+from pyre_extensions import TypeVarTuple, Unpack
+from torch import Tensor
+
+Ts = TypeVarTuple("Ts")
+DType = TypeVar("DType")
+
+def _calculate_fan_in_and_fan_out(tensor: Tensor) -> Tuple[int, int]: ...
+def constant_(
+    tensor: Tensor[DType, Unpack[Ts]], val: float
+) -> Tensor[DType, Unpack[Ts]]: ...
+def kaiming_uniform_(
+    tensor: Tensor[DType, Unpack[Ts]], a=0, mode="fan_in", nonlinearity="leaky_relu"
+) -> Tensor[DType, Unpack[Ts]]: ...
+def normal_(
+    tensor: Tensor[DType, Unpack[Ts]], mean: float = ..., std: float = ...
+) -> Tensor[DType, Unpack[Ts]]: ...
+def uniform_(
+    tensor: Tensor[DType, Unpack[Ts]], a: float = ..., b: float = ...
+) -> Tensor[DType, Unpack[Ts]]: ...
+def _no_grad_uniform_(tensor: Tensor, a, b): ...
+def xavier_uniform_(tensor: Tensor, gain: float = ...) -> Tensor: ...

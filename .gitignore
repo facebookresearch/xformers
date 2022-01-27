@@ -38,5 +38,17 @@ my_runs.md
 # JetBrains PyCharm IDE
 .idea/
 
-# Pyre cache.
+# Pyre cache
 .pyre/
+
+# Watchman config files
+.watchmanconfig
+
+# examples demo files
+examples/input.txt
+examples/lightning_logs
+examples/data
+
+# Hydra default output dir
+multirun
+outputs

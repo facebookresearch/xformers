@@ -27,7 +27,7 @@ to create some state of the art models.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Factory
+   :caption: Build models and blocks programatically
 
    factory/index
 
@@ -36,7 +36,7 @@ to create some state of the art models.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Tutorials
+   :caption: Tutorials and examples
 
    tutorials/index
 
@@ -45,15 +45,9 @@ to create some state of the art models.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Tools
+   :caption: Some custom parts
 
-   triton/index
+   custom_parts/index
 
 |
 |
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Tools
-
-   tools/index

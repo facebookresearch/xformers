@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
@@ -11,7 +12,7 @@ import torch
 
 from xformers.components import reversible as rv
 from xformers.factory.block_factory import (
-    BlockType,
+    xFormerBlockConfig,
     xFormerDecoderBlock,
     xFormerDecoderConfig,
     xFormerEncoderBlock,
@@ -20,63 +21,113 @@ from xformers.factory.block_factory import (
 
 
 @dataclass(init=False)
-class xFormerStackConfig:
+class xFormerConfig:
     """
-    A stack is defined by the definition of a given block, and an optional repetition factor
+    The configuration structure to define a full Transformer.
+    This can include a stack of encoder layers, and a stack of decoder layers.
+
+    It is optionally possible to share the embedding weights in between
+    the encoder and decoder positional encoding, as proposed for instance by
+    `Using the Output Embedding to Improve Language Models`, Press et al.
+
+    A full config example is for instance as follows:
+
+    ::
+
+        xformer_config = [
+            {
+                "reversible": False,  # Turn on to test the effect of using reversible layers
+                "block_type": "encoder",
+                "num_layers": LAYERS,
+                "dim_model": EMB,
+                "layer_norm_style": "pre",
+                "position_encoding_config": {
+                    "name": "vocab",
+                    "seq_len": CONTEXT,
+                    "vocab_size": VOCAB_SIZE,
+                },
+                "multi_head_config": {
+                    "num_heads": NUM_HEADS,
+                    "residual_dropout": RES_DROP,
+                    "use_rotary_embeddings": True,
+                    "attention": {
+                        "name": ATTENTION_MECHANISM_STR,
+                        "dropout": ATTN_DROP,
+                        "causal": True,
+                        "seq_len": CONTEXT,
+                    },
+                },
+                "feedforward_config": {
+                    "name": "FusedMLP",  # Use MLP if Triton is not available
+                    "dropout": MLP_DROP,
+                    "activation": "gelu",
+                    "hidden_layer_multiplier": MLP_MULTIPLIER,
+                },
+            }
+        ]
+
+
+    .. _`Using the Output Embedding to Improve Language Models`: https://arxiv.org/pdf/1608.05859.pdf
     """
 
-    block_config: Union[xFormerEncoderConfig, xFormerDecoderConfig]
-    num_layers: int
-    reversible: bool
+    stack_configs: Union[List[xFormerBlockConfig], Dict[str, xFormerBlockConfig]]
+    tie_embedding_weights: bool = False
 
     def __init__(
-        self, block_config: Dict[str, Any], reversible: bool = False, *args, **kwargs
+        self,
+        stack_configs: Union[List[Dict[str, Any]], Dict[str, Dict[str, Any]]],
+        tie_embedding_weights: bool = False,
     ):
-        if block_config["block_type"] == BlockType.Encoder:
-            self.block_config = xFormerEncoderConfig(**block_config)
-        else:
-            self.block_config = xFormerDecoderConfig(**block_config)
-
-        # Convenience: make num_layers optional, so that a stack at that point could
-        # only be defined by a given block, and no repetition
-        if "num_layers" in block_config.keys():
-            self.num_layers = block_config["num_layers"]
-        else:
-            self.num_layers = 1
-
-        self.reversible = reversible
-
-
-@dataclass(init=False)
-class xFormerConfig:
-    stack_configs: List[xFormerStackConfig]
-
-    def __init__(self, stack_configs: List[Dict[str, Any]]):
         # Type all the configurations. Possible typos are caught here
-        self.stack_configs = [xFormerStackConfig(**config) for config in stack_configs]
+        if isinstance(stack_configs, dict):
+            self.stack_configs = {}
+            for k, config in stack_configs.items():
+                if config["block_type"] == "encoder":
+                    self.stack_configs[k] = xFormerEncoderConfig(**config)
+                else:
+                    self.stack_configs[k] = xFormerDecoderConfig(**config)
+        else:
+            self.stack_configs = []
+            for config in stack_configs:
+                if config["block_type"] == "encoder":
+                    self.stack_configs.append(xFormerEncoderConfig(**config))
+                else:
+                    self.stack_configs.append(xFormerDecoderConfig(**config))
+
+        self.tie_embedding_weights = tie_embedding_weights
 
 
 class xFormer(torch.nn.Module):
     def __init__(
-        self, stack_configs: List[Union[xFormerStackConfig, xFormerStackConfig]]
+        self,
+        stack_configs: Union[
+            xFormerBlockConfig, List[xFormerBlockConfig], Dict[str, xFormerBlockConfig]
+        ],
+        tie_embedding_weights: bool = False,
     ):
         """
         Given a serialized configuration, generate the corresponding model.
         This is only a helper and can easily be bypassed
         """
-
         super().__init__()
+
+        if isinstance(stack_configs, Dict):
+            stack_configs = list(stack_configs.values())
+
+        # Convenience, users can pass either a list of configs or a single one
+        if not isinstance(stack_configs, List):
+            stack_configs = [stack_configs]
+
+        self._verify_reversible(stack_configs)
 
         encoders: List[torch.nn.Module] = []
         decoders: List[torch.nn.Module] = []
 
         self.reversible_encoder = False
-        self.enc_pose_encoding = None
-        self.dec_pose_encoding = None
+        self.rev_enc_pose_encoding = None
 
-        for stack in stack_configs:
-            config = stack.block_config
-
+        # Unroll the configs and build the model
+        for config in stack_configs:
             # Handle either Encoder or Decoder stacks
             builder = (
                 xFormerEncoderBlock.from_config
@@ -88,27 +139,43 @@ class xFormer(torch.nn.Module):
             )
 
             # Build up the stack
-            for i in range(stack.num_layers):
+            for i in range(config.num_layers):
                 # Label where this layer is in the stack
                 # (for instance useful for the positional encoding, or late layer norm)
                 if i > 0:
                     config.layer_position.mark_not_first()
-                if i < stack.num_layers - 1:
+                if i < config.num_layers - 1:
                     config.layer_position.mark_not_last()
                 block = builder(config)  # type: ignore
 
                 # If reversible: extract the reversible sub-parts, else append the block as-is
-                if stack.reversible:
+                if config.reversible:
                     # WARNING: only one pose encoding is saved here (not Focal Transformer compatible for instance)
                     assert isinstance(config, xFormerEncoderConfig)
                     if block.pose_encoding is not None:
-                        self.enc_pose_encoding = block.pose_encoding
+                        self.rev_enc_pose_encoding = block.pose_encoding
                     self.reversible_encoder = True
 
                     f, g = xFormerEncoderBlock.get_reversible_layer(config)
                     recipient.append(torch.nn.ModuleList([f, g]))
                 else:
                     recipient.append(block)  # type: ignore
+
+        # Tie embedding weights, if requested and possible
+        assert (
+            not tie_embedding_weights or not self.reversible_encoder
+        ), "Reversible layers and  tied embeddings is not supported for now"
+
+        if (
+            tie_embedding_weights
+            and encoders
+            and encoders[0].pose_encoding
+            and decoders
+            and decoders[0].pose_encoding
+            and not config.reversible
+        ):
+            logging.info("Tying encoder and decoder embeddings, as requested")
+            encoders[0].pose_encoding = decoders[0].pose_encoding
 
         self.encoders: torch.nn.Module = (
             rv.ReversibleSequence(torch.nn.ModuleList(encoders))
@@ -123,7 +190,7 @@ class xFormer(torch.nn.Module):
 
     @classmethod
     def from_config(cls, config: xFormerConfig):
-        return cls(config.stack_configs)
+        return cls(config.stack_configs, config.tie_embedding_weights)
 
     def _reset_parameters(self):
         r"""Initiate parameters in the transformer model
@@ -132,6 +199,18 @@ class xFormer(torch.nn.Module):
         for p in self.parameters():
             if p.dim() > 1:
                 torch.nn.init.xavier_uniform_(p)
+
+    def _verify_reversible(self, stack_configs: List[xFormerBlockConfig]):
+        reversible = [
+            c.reversible
+            for c in filter(lambda x: x.block_type == "encoder", stack_configs)
+        ]
+        non_reversible = [not rev for rev in reversible]
+
+        assert all(reversible) or all(non_reversible), (
+            "All layers need to have the same reversibility setting. "
+            + f"Currently {reversible}"
+        )
 
     def forward(
         self,
@@ -144,15 +223,14 @@ class xFormer(torch.nn.Module):
         # Encode to latent space if encoder is present
         if len(list(self.encoders.parameters())) > 0:
             encoders = self.encoders
+            memory = src.clone()
             if isinstance(encoders, torch.nn.ModuleList):
-                memory = src.clone()
                 for encoder in encoders:
                     memory = encoder(memory, input_mask=encoder_input_mask)
             else:
-                if self.enc_pose_encoding:
-                    memory = self.enc_pose_encoding(src)
+                if self.rev_enc_pose_encoding:
+                    memory = self.rev_enc_pose_encoding(src)
 
-                # pyre-fixme[61]: `memory` is not always initialized here.
                 # Reversible Encoder
                 x = torch.cat([memory, memory], dim=-1)
 

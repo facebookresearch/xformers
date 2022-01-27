@@ -1,5 +1,5 @@
 Feedforward mechanisms
-========================
+======================
 
 .. automodule:: xformers.components.feedforward
     :members:

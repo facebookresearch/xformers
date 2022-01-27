@@ -15,13 +15,38 @@ cpu_py38: &cpu_py38
     - image: cimg/python:3.8
   resource_class: large
 
-gpu_cu112: &gpu_cu112
+gpu_cu111: &gpu_cu111
   environment:
-    CUDA_VERSION: "11.2"
-    CUDA_HOME: /usr/local/cuda-11.2
+    CUDA_VERSION: "11.1"
+    CUDA_HOME: /usr/local/cuda-11.1
   machine:
-    image: ubuntu-2004-cuda-11.2:202103-01
-  resource_class: gpu.large
+    image: ubuntu-1604-cuda-11.1:202012-01
+    resource_class: gpu.nvidia.medium
+
+
+binary_common: &binary_common
+  parameters:
+    pytorch_version:
+      description: "PyTorch version to build against"
+      type: string
+      default: "1.10.0"
+    python_version:
+      description: "Python version to build against (e.g., 3.7)"
+      type: string
+      default: "3.8"
+    cu_version:
+      description: "CUDA version to build against, in CU format (e.g., cpu or cu100)"
+      type: string
+      default: "cu102"
+    wheel_docker_image:
+      description: "Wheel only: what docker image to use"
+      type: string
+      default: "pytorch/manylinux-cuda102"
+  environment:
+      CU_VERSION: << parameters.cu_version >>
+      PYTHON_VERSION: << parameters.python_version >>
+      PYTORCH_VERSION: << parameters.pytorch_version >>
+      XFORMERS_VERSION_SUFFIX: ""
 
 # -------------------------------------------------------------------------------------
 # Re-usable commands
@@ -41,17 +66,21 @@ setup_venv: &setup_venv
 
 install_dep_190: &install_dep_190
   - run:
-      name: Install Dependencies with torch 1.9.0
+      name: Install Dependencies with torch nightly
       command: |
         # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
-        if [ -f /home/circleci/venv/check_version.py ]; then python /home/circleci/venv/check_version.py torch eq 1.9 && exit 0; fi
+        if [ -f /home/circleci/venv/check_version.py ]; then python /home/circleci/venv/check_version.py torch gt 1.10 && exit 0; fi
         # start installing
-        pip install --progress-bar off torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
+        pip install --progress-bar off --pre torch torchvision -f https://download.pytorch.org/whl/nightly/cu111/torch_nightly.html
         pip install --progress-bar off -r requirements-benchmark.txt
+        pip install pytorch-lightning
+
         python -c 'import torch; print("Torch version:", torch.__version__)'
-        python -c 'import torch; assert torch.__version__.split(".")[:2] == ["1", "9"], "wrong torch version"'
+        python -c 'import torch; assert torch.__version__ > (1, 10), "wrong torch version"'
         python -m torch.utils.collect_env
         wget -O /home/circleci/venv/check_version.py https://raw.githubusercontent.com/min-xu-ai/check_verion/main/check_version.py
+
+
 
 install_repo: &install_repo
   - run:
@@ -78,28 +107,30 @@ run_mypy: &run_mypy
    - run:
        name: Run type-checking (mypy)
        command: |
-         mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ .
+         mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ --exclude stubs/ .
 
 run_flake8: &run_flake8
   - run:
       name: Run Linter (flake8)
       command: |
-        flake8 --show-source --statistics
+        flake8 --config .flake8 --show-source --statistics
 
 run_clang_format: &run_clang_format
   - run:
       name: Run Linter (clang-format)
       command: |
-        curl https://oss-clang-format.s3.us-east-2.amazonaws.com/linux64/clang-format-linux64 -o clang-format
-        chmod +x clang-format
-        sudo mv clang-format /opt/clang-format
-        ./.circleci/run-clang-format.py -r xformers/components/attention/csrc --clang-format-executable /opt/clang-format
+        # install clang-format here, so that it gets cached
+        sudo apt-get update
+        sudo apt-get install clang-format
+
+        # apply to our files
+        ./.circleci/run-clang-format.py -r xformers/components/attention/csrc
 
 run_coverage: &run_coverage
   - run:
       name: Run Unit Tests With Coverage
       command: |
-        pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./
+        pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./ tests
         #Uploading test coverage for Python code
         bash <(curl -s https://codecov.io/bash) -f coverage.xml -cF Python
 
@@ -107,7 +138,7 @@ run_unittests: &run_unittests
   - run:
       name: Run Unit Tests
       command: |
-        pytest --junitxml=test-results/junit.xml --verbose --timeout 600
+        pytest --junitxml=test-results/junit.xml --verbose --timeout 600 tests
 
 run_benchmarks: &run_benchmarks
   - run:
@@ -120,6 +151,14 @@ run_pytorch_benchmark: &run_pytorch_benchmark
       name: Run Pytorch benchmark
       command: |
         python3 xformers/benchmarks/benchmark_pytorch_transformer.py
+
+run_vit_benchmark: &run_vit_benchmark
+  - run:
+      name: Run ViT Timm benchmark
+      command: |
+        python3 xformers/benchmarks/benchmark_vit_timm.py
+        python3 xformers/benchmarks/benchmark_vit_timm.py --timm
+
 
 run_doc_build: &run_doc_build
    - run:
@@ -140,10 +179,12 @@ commands:
        - run:
            name: Setup pyenv
            command: |
-             git clone git://github.com/pyenv/pyenv-update.git $(pyenv root)/plugins/pyenv-update
+             git clone https://github.com/pyenv/pyenv-update.git $(pyenv root)/plugins/pyenv-update
              pyenv update
-             pyenv install -f <<parameters.version>>
-             pyenv global <<parameters.version>>
+             # figure out the latest python version given a subversion, like 3.8
+             LATEST_PY_VERSION=$(pyenv install --list | sed 's/^  //' | grep -E '^[0-9].[0-9].[0-9]' | grep <<parameters.version>> | tail -1)
+             pyenv install -f $LATEST_PY_VERSION
+             pyenv global $LATEST_PY_VERSION
 
 # -------------------------------------------------------------------------------------
 # Jobs to run
@@ -163,14 +204,14 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+            - cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_dep_190
 
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-cpu-py38-190-386-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_repo
 
@@ -187,7 +228,7 @@ jobs:
 
 
   gpu_tests_190:
-    <<: *gpu_cu112
+    <<: *gpu_cu111
 
     working_directory: ~/xformers
 
@@ -204,7 +245,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-112-190-386-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+            - cache-key-gpu-112-190-386-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_dep_190
 
@@ -221,13 +262,111 @@ jobs:
 
       - <<: *run_pytorch_benchmark
 
+      - <<: *run_vit_benchmark
+
       - store_test_results:
           path: test-results
 
+  binary_linux_wheel:
+    <<: *binary_common
+    docker:
+      - image: << parameters.wheel_docker_image >>
+    resource_class: 2xlarge+
+    steps:
+      - checkout
+      - run: packaging/build_wheel.sh
+      - store_artifacts:
+          path: wheels
+      - persist_to_workspace:
+          root: wheels
+          paths:
+            - "*"
+
+  test_binary:
+    machine:
+      image: ubuntu-2004-cuda-11.2:202103-01
+      resource_class: gpu.nvidia.medium
+    <<: *binary_common
+    steps:
+      - attach_workspace:
+          at: ~/workspace
+      - setup_pyenv:
+          version: << parameters.python_version >>
+
+      - <<: *setup_venv
+      - run:
+          name: Install dependencies + xformers from binary
+          command: |
+            set -ex
+            echo "torch==${PYTORCH_VERSION}+${CU_VERSION}"
+            export PYTORCH_CONSTRAINT="torch==${PYTORCH_VERSION}+${CU_VERSION}"
+            pip install --progress-bar off "${PYTORCH_CONSTRAINT}" -f https://download.pytorch.org/whl/torch_stable.html
+            pip install --progress-bar off numpy pytest
+            echo $(ls ~/workspace)
+            pip install --progress-bar off $(ls -d ~/workspace/*)
+
+      - checkout
+
+      - run:
+          name: Smoke test binary
+          command: |
+            set -ex
+            pytest --import-mode=importlib tests/test_custom_ops.py
 
 workflows:
   version: 2
   build:
     jobs:
-      - cpu_tests_py38
-      - gpu_tests_190
+      - cpu_tests_py38:
+        filters:
+          branches:
+            ignore:
+              - gh-pages
+
+      - gpu_tests_190:
+        filters:
+          branches:
+            ignore:
+              - gh-pages
+      - binary_linux_wheel:
+          python_version: "3.7"
+          name: binary_linux_wheel_py37_cu102
+          filters:
+            branches:
+              only: binaries_job
+      - test_binary:
+          python_version: "3.7"
+          name: test_binary_linux_wheel_py37_cu102
+          requires:
+            - binary_linux_wheel_py37_cu102
+          filters:
+            branches:
+              only: binaries_job
+      - binary_linux_wheel:
+          python_version: "3.8"
+          name: binary_linux_wheel_py38_cu102
+          filters:
+            branches:
+              only: binaries_job
+      - test_binary:
+          python_version: "3.8"
+          name: test_binary_linux_wheel_py38_cu102
+          requires:
+            - binary_linux_wheel_py38_cu102
+          filters:
+            branches:
+              only: binaries_job
+      - binary_linux_wheel:
+          python_version: "3.9"
+          name: binary_linux_wheel_py39_cu102
+          filters:
+            branches:
+              only: binaries_job
+      - test_binary:
+          python_version: "3.9"
+          name: test_binary_linux_wheel_py39_cu102
+          requires:
+            - binary_linux_wheel_py39_cu102
+          filters:
+            branches:
+              only: binaries_job

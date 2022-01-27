@@ -9,19 +9,19 @@ import torch
 _triton_available = torch.cuda.is_available()
 if _triton_available:
     try:
+        from .dropout import FusedDropoutBias, dropout  # noqa
         from .fused_linear_layer import FusedLinear  # noqa
         from .layer_norm import FusedLayerNorm, layer_norm  # noqa
         from .softmax import log_softmax, softmax  # noqa
 
         __all__ = [
+            "dropout",
             "softmax",
             "log_softmax",
+            "FusedDropoutBias",
             "FusedLinear",
             "FusedLayerNorm",
             "layer_norm",
         ]
-    except ImportError as e:
-        import logging
-
-        logging.warning(f"Triton components import fails with {e}")
+    except ImportError:
         __all__ = []

@@ -42,6 +42,7 @@ class LinformerAttention(Attention):
         self.F = nn.Linear(seq_len, k, bias=False)
         self.attn_drop = nn.Dropout(dropout, inplace=False)
         self.seq_len = seq_len
+        self.requires_same_k_q_dimensions = True
 
     def forward(
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, **kwargs
@@ -61,4 +62,7 @@ class LinformerAttention(Attention):
         y = scaled_dot_product_attention(
             q=q, k=k_projected, v=v_projected, att_mask=None, dropout=self.attn_drop
         )
+
+        y = self.attn_drop(y)
+
         return y[:, :-padding, :] if padding > 0 else y

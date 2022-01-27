@@ -9,6 +9,28 @@ from typing import Optional
 import torch
 
 
+# Reshapes key padding mask from (batch_size, src_len) -> (batch_size * num_heads 1, src_len)
+def reshape_key_padding_mask(
+    key_padding_mask: torch.Tensor, batched_dim: int
+) -> torch.Tensor:
+    assert key_padding_mask.ndim == 2
+    batch_size, src_len = key_padding_mask.size()
+    num_heads = batched_dim // batch_size
+    return _reshape_key_padding_mask(key_padding_mask, batch_size, src_len, num_heads)
+
+
+def _reshape_key_padding_mask(
+    key_padding_mask: torch.Tensor, batch_size: int, src_len: int, num_heads: int
+) -> torch.Tensor:
+    assert key_padding_mask.shape == (batch_size, src_len)
+    key_padding_mask = (
+        key_padding_mask.view(batch_size, 1, 1, src_len)
+        .expand(-1, num_heads, -1, -1)
+        .reshape(batch_size * num_heads, 1, src_len)
+    )
+    return key_padding_mask
+
+
 # Combine the attention mask and key padding mask into a single mask
 # Taken from https://github.com/pytorch/pytorch/blob/master/torch/nn/functional.py
 # Additive masking not yet supported
@@ -18,18 +40,23 @@ def maybe_merge_masks(
     batch_size: int,
     src_len: int,
     num_heads: int,
+    tgt_len: Optional[int] = None,
 ) -> Optional[torch.Tensor]:
+    if tgt_len is None:
+        tgt_len = src_len
     if key_padding_mask is not None:
         assert key_padding_mask.shape == (batch_size, src_len)
-        key_padding_mask = (
-            key_padding_mask.view(batch_size, 1, 1, src_len)
-            .expand(-1, num_heads, -1, -1)
-            .reshape(batch_size * num_heads, 1, src_len)
+        key_padding_mask = _reshape_key_padding_mask(
+            key_padding_mask, batch_size, src_len, num_heads
         )
         if att_mask is None:
-            att_mask = key_padding_mask
+            # make sure dimensions of key padding mask are the same as those expected for att_mask
+            att_mask = key_padding_mask.expand(-1, tgt_len, -1)
         # Assumption is that False means to mask.
-        att_mask = att_mask.logical_and(key_padding_mask)
+        elif att_mask.dtype == torch.bool:
+            att_mask = att_mask.logical_and(key_padding_mask)
+        else:
+            att_mask = att_mask.masked_fill(~key_padding_mask, float("-inf"))
 
     return att_mask
 
@@ -67,3 +94,15 @@ def iterative_pinv(softmax_mat: torch.Tensor, n_iter=6, pinverse_original_init=F
             13 * i - torch.matmul(kv, 15 * i - torch.matmul(kv, 7 * i - kv)),
         )
     return v
+
+
+def bool_mask_to_additive(
+    mask: torch.Tensor, dtype: Optional[torch.dtype] = torch.float32
+) -> torch.Tensor:
+    assert (
+        mask.dtype == torch.bool
+    ), "This util is meant to convert in between bool masks and additive ones"
+
+    mask_ = torch.zeros_like(mask, dtype=dtype)
+    mask_[~mask] = float("-inf")
+    return mask_

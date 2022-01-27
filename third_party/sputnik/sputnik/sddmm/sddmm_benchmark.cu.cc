@@ -26,7 +26,6 @@ void ReportThroughput(benchmark::State& state) {
       static_cast<int64_t>(state.iterations()) *
       state.range(3) * state.range(1) * 2);
 }
-  
 void BenchmarkArgs(benchmark::internal::Benchmark* b) {
   std::vector<int> dims = {512, 1024, 2048, 4096, 8192};
   std::vector<float> sparsities = {.25f, .2f, .15f, .1f, .05f};

@@ -13,6 +13,7 @@ import torch.nn as nn
 from xformers.components.attention import (
     Attention,
     AttentionConfig,
+    AttentionMask,
     maybe_sparsify,
     register_attention,
     sparsify,
@@ -77,6 +78,8 @@ class GlobalAttention(Attention):
             else maybe_sparsify(self.attention_mask)
         )
 
+        self.requires_same_k_q_dimensions = True
+
     def forward(
         self,
         q: torch.Tensor,
@@ -91,10 +94,26 @@ class GlobalAttention(Attention):
             self.attention_mask = self.attention_mask.to(q.device)
 
         # Mask-aware attention
-        mask = (
-            self.attention_mask if att_mask is None else self.attention_mask & att_mask
+        if att_mask is not None:
+            if att_mask.dtype == torch.bool and isinstance(
+                self.attention_mask, AttentionMask
+            ):
+                mask = self.attention_mask + AttentionMask.from_bool(att_mask)
+            else:
+                mask = self.attention_mask & att_mask
+        else:
+            mask = self.attention_mask
+
+        # Handle q/k/v which would not fit the mask
+        seq_len = q.shape[-2]
+        q_, k_, v_ = map(lambda x: self._maybe_pad_sequence(x, mask), (q, k, v))
+
+        # Normal attention with the global tokens mask
+        att = scaled_dot_product_attention(
+            q=q_, k=k_, v=v_, att_mask=mask, dropout=self.attn_drop
         )
 
-        return scaled_dot_product_attention(
-            q=q, k=k, v=v, att_mask=mask, dropout=self.attn_drop
-        )
+        att = self.attn_drop(att)
+
+        # Take into account an hypothetical padding
+        return att[:, :seq_len, :]

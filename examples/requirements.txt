@@ -1,0 +1,2 @@
+hydra-core>1.1
+lightning-bolts

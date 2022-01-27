@@ -203,7 +203,7 @@ def pattern_to_layout(mask: torch.Tensor, block_size: int) -> torch.Tensor:
     layout = torch.nn.functional.max_pool2d(
         mask.to(torch.float), kernel_size=block_size, stride=block_size
     )
-    layout = layout.to(torch.int)
+    layout = layout.to(torch.long)
 
     if _should_squeeze:
         layout.squeeze_(0)

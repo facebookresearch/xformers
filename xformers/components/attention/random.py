@@ -13,6 +13,7 @@ import torch.nn as nn
 from xformers.components.attention import (
     Attention,
     AttentionConfig,
+    AttentionMask,
     maybe_sparsify,
     register_attention,
     sparsify,
@@ -67,6 +68,7 @@ class RandomAttention(Attention):
         self.rand_attention_mask: Optional[torch.Tensor] = None
         self.constant_masking = constant_masking
         self.force_sparsity = force_sparsity
+        self.requires_same_k_q_dimensions = True
 
     def _get_rand_mask(self, shape: torch.Size) -> torch.Tensor:
         sparsity = 1 - self.r
@@ -93,13 +95,24 @@ class RandomAttention(Attention):
             self.rand_attention_mask = self._get_rand_mask(q.shape).to(q.device)
 
         # Mask-aware attention
-        mask = (
-            self.rand_attention_mask
-            if att_mask is None
-            # pyre-ignore[58]: Pyre mistakenly thinks `self.rand_attention_mask` may be None.
-            else self.rand_attention_mask & att_mask
+        if att_mask is not None:
+            if att_mask.dtype == torch.bool and isinstance(
+                self.rand_attention_mask, AttentionMask
+            ):
+                mask = self.rand_attention_mask + AttentionMask.from_bool(att_mask)
+            else:
+                mask = self.rand_attention_mask & att_mask
+        else:
+            mask = self.rand_attention_mask
+
+        # Handle q/k/v which would not fit the mask
+        seq_len = q.shape[-2]
+        q_, k_, v_ = map(lambda x: self._maybe_pad_sequence(x, mask), (q, k, v))
+
+        # Normal attention with the random mask
+        att = scaled_dot_product_attention(
+            q=q_, k=k_, v=v_, att_mask=mask, dropout=self.attn_drop
         )
 
-        return scaled_dot_product_attention(
-            q=q, k=k, v=v, att_mask=mask, dropout=self.attn_drop
-        )
+        # Take into account an hypothetical padding
+        return att[:, :seq_len, :]

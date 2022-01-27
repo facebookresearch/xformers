@@ -52,8 +52,7 @@ def patch_model_config(config, attention_name):
     except KeyError:
         extra_attention_settings = None
 
-    for b in config["xformer"]:
-        bc = b["block_config"]
+    for bc in config["xformer"]:
         bc["dim_model"] = commons["dim_model"]
         bc["position_encoding_config"].update(commons)
         bc["feedforward_config"].update(commons)
@@ -129,9 +128,7 @@ class ModelTrunk(nn.Module):
         self.model = xFormer.from_config(xFormerConfig(config_model["xformer"]))
         self.norm = nn.LayerNorm(self.config_model["common"]["dim_model"])
 
-        ff_config = self.config_model["xformer"][0]["block_config"][
-            "feedforward_config"
-        ]
+        ff_config = self.config_model["xformer"][0]["feedforward_config"]
         self.dim_mlp = (
             self.config_model["common"]["dim_model"]
             * ff_config["hidden_layer_multiplier"]

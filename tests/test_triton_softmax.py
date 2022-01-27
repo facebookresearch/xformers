@@ -21,6 +21,7 @@ except ImportError as e:
     _triton_available = False
 
 SHAPES = [
+    (384, 384),
     (2, 384, 384),
     (1, 784, 784),
     (1, 1024, 1024),
@@ -37,13 +38,20 @@ SHAPES = [
 @pytest.mark.parametrize("log", [False, True])
 @pytest.mark.parametrize("masking", [True, False])
 @pytest.mark.parametrize("causal", [True, False])
-def test_softmax_parity(shape, amp, log, masking, causal):
+@pytest.mark.parametrize("contiguous", [True, False])
+def test_softmax_parity(shape, amp, log, masking, causal, contiguous):
     """Check that PyTorch and Triton softmax give the same result"""
     torch.random.manual_seed(0)
 
     # Check the result of a FW pass
-    X = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
-    X_ = X.detach().clone()
+    X = torch.normal(0, 1, size=shape, device="cuda", requires_grad=False)
+
+    if not contiguous:
+        # Make sure that the buffer is not contiguous
+        X = X.transpose(-2, -1).contiguous().transpose(-2, -1)
+
+    X_ = X.clone()
+    X.requires_grad = True
     X_.requires_grad = True
 
     seq = shape[1]
@@ -70,17 +78,12 @@ def test_softmax_parity(shape, amp, log, masking, causal):
 
         assert torch.allclose(y_torch, y_triton, equal_nan=True)
 
-        print(y_torch)
-
         # Check that BW also gives the same result
         loss_torch = torch.norm(y_torch.transpose(-2, -1) @ y_torch)
         loss_torch.backward()
 
         loss_triton = torch.norm(y_triton.transpose(-2, -1) @ y_triton)
         loss_triton.backward()
-
-        print(X.grad)
-        print(X_.grad)
 
         assert torch.allclose(
             torch.norm(X.grad), torch.norm(X_.grad), equal_nan=True, atol=1e-5
@@ -95,3 +98,56 @@ def test_softmax_fp16(dtype):
 
     a = torch.rand(b, s, d, device="cuda", dtype=dtype)
     triton_softmax(a)
+
+
+@pytest.mark.skipif(not _triton_available, reason="Triton is not available")
+@pytest.mark.parametrize("log", [False, True])
+@pytest.mark.parametrize("masking", [True, False])
+@pytest.mark.parametrize("causal", [True, False])
+@pytest.mark.parametrize("contiguous", [True, False])
+def test_softmax_parity_fallback(log, masking, causal, contiguous):
+    """Check that the fallback paths are correct"""
+    torch.random.manual_seed(0)
+
+    shape = (16, 16)
+
+    # Check the result of a FW pass
+    X = torch.normal(0, 1, size=shape, device="cpu", requires_grad=False)
+
+    if not contiguous:
+        # Make sure that the buffer is not contiguous
+        X = X.transpose(-2, -1).contiguous().transpose(-2, -1)
+
+    X_ = X.clone()
+    X.requires_grad = True
+    X_.requires_grad = True
+
+    seq = shape[1]
+    mask = torch.zeros((seq, seq))
+    if masking:
+        mask[torch.rand((seq, seq)) > 0.8] = -float("inf")
+
+    if causal:
+        mask[~torch.tril(torch.ones_like(mask)).bool()] = -float("inf")
+
+    y_torch = (
+        torch.log_softmax(X + mask, dim=-1) if log else torch.softmax(X + mask, dim=-1)
+    )
+    y_triton = (
+        triton_log_softmax(X_, mask, causal)
+        if log
+        else triton_softmax(X_, mask, causal)
+    )
+
+    assert torch.allclose(y_torch, y_triton, equal_nan=True)
+
+    # Check that BW also gives the same result
+    loss_torch = torch.norm(y_torch.transpose(-2, -1) @ y_torch)
+    loss_torch.backward()
+
+    loss_triton = torch.norm(y_triton.transpose(-2, -1) @ y_triton)
+    loss_triton.backward()
+
+    assert torch.allclose(
+        torch.norm(X.grad), torch.norm(X_.grad), equal_nan=True, atol=1e-5
+    ), f"{torch.norm(X.grad)}, {torch.norm(X_.grad)}"

@@ -11,7 +11,7 @@ Please note that:
 - These numbers are dependent of hyperparameters (dimensions chosen for Linformer, sparsity of the pattern), they are mostly an illustration
 - The sparse attention patterns tested here are just presets, as explained in the linked notebook generating any new sparse attention pattern should be relatively easy, while keeping the benefits of optimized computations.
 
-Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 256 -bs 32 -heads 16`
+Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 256 -bs 8 -heads 4`
 
 ![Memory use for different attentions](docs/plots/memory_vs_attention.png)  ![Runtime for different attentions](docs/plots/runtime_vs_attention.png)
 
@@ -39,42 +39,73 @@ Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py 
 
 ### Fused softmax
 
-You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_softmax.py`. The units are GB/s. These results are for a nVidia V100, Triton 1.1 and PyTorch 1.9.
-Note that in the Triton case the slowdowns at extreme sizes are because of register spilling, A100s get much better performance.
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_softmax.py`. The units are GB/s. These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.
 
-![Softmax throughput in fp16 - inference](docs/plots/Softmax_Bandwidth_FW_fp16.png)
 
-![Softmax throughput in fp16 - training](docs/plots/Softmax_Bandwidth_FW_BW_fp16.png)
+![Softmax throughput in fp16 - inference](docs/plots/fused_softmax/Softmax_Bandwidth_FW_fp16.png)
 
-![Softmax throughput in fp32 - inference](docs/plots/Softmax_Bandwidth_FW_fp32.png)
+![Softmax throughput in fp16 - training](docs/plots/fused_softmax/Softmax_Bandwidth_FW_BW_fp16.png)
 
-![Softmax throughput in fp32 - training](docs/plots/Softmax_Bandwidth_FW_BW_fp32.png)
+![Softmax throughput in fp32 - inference](docs/plots/fused_softmax/Softmax_Bandwidth_FW_fp32.png)
+
+![Softmax throughput in fp32 - training](docs/plots/fused_softmax/Softmax_Bandwidth_FW_BW_fp32.png)
 
 ### Fused linear layer
 
-You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_fused_linear_layer.py`. The units are TFlops/s. These results are for a nVidia V100, Triton 1.1 and PyTorch 1.9.
-**As of October 2021, these Triton kernelsonly competitive with Pytorch for float16 inference, this is a work in progress**.
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_fused_linear_layer.py`. The units are TFlops/s. These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.
 
-![Fused linear layers throughput in fp16 - inference](docs/plots/FusedLinear_fp16_FW.png)
 
-![Fused linear layers throughput in fp16 - training](docs/plots/FusedLinear_fp16_FW_BW.png)
+![Fused linear layers throughput in fp16 - inference](docs/plots/fused_linear/FusedLinear_fp16_FW_gelu.png)
 
-![Fused linear layers throughput in fp32 - inference](docs/plots/FusedLinear_fp32_FW.png)
+![Fused linear layers throughput in fp16 - training](docs/plots/fused_linear/FusedLinear_fp16_FW_BW_gelu.png)
 
-![Fused linear layers throughput in fp32 - training](docs/plots/FusedLinear_fp32_FW_BW.png)
+![Fused linear layers throughput in fp16 - inference](docs/plots/fused_linear/FusedLinear_fp16_FW_relu.png)
+
+![Fused linear layers throughput in fp16 - training](docs/plots/fused_linear/FusedLinear_fp16_FW_BW_relu.png)
+
+![Fused linear layers throughput in fp16 - inference](docs/plots/fused_linear/FusedLinear_fp16_FW_leaky_relu.png)
+
+![Fused linear layers throughput in fp16 - training](docs/plots/fused_linear/FusedLinear_fp16_FW_BW_leaky_relu.png)
+
+![Fused linear layers throughput in fp16 - inference](docs/plots/fused_linear/FusedLinear_fp16_FW_squared_relu.png)
+
+![Fused linear layers throughput in fp16 - training](docs/plots/fused_linear/FusedLinear_fp16_FW_BW_squared_relu.png)
+
+![Fused linear layers throughput in fp16 - inference](docs/plots/fused_linear/FusedLinear_fp16_FW_none.png)
+
+![Fused linear layers throughput in fp16 - training](docs/plots/fused_linear/FusedLinear_fp16_FW_BW_none.png)
 
 ### Fused layer norm
 
-You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_layernorm.py`. The units are TFlops/s. These results are for a nVidia V100, Triton 1.1 and PyTorch 1.9.
-Note that in the Triton case the slowdowns at extreme sizes are because of register spilling, A100s get much better performance.
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_layernorm.py`. The units are GB/s. These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.
 
-![Fused layer norm throughput in fp16 - inference](docs/plots/LayerNorm_FW_torch.float16.png)
+![Fused layer norm throughput in fp16 - inference](docs/plots/layer_norm/LayerNorm_FW_torch.float16.png)
 
-![Fused layer norm throughput in fp16 - training](docs/plots/LayerNorm_FW+BW_torch.float16.png))
+![Fused layer norm throughput in fp16 - training](docs/plots/layer_norm/LayerNorm_FW+BW_torch.float16.png))
 
-![Fused layer norm throughput in fp32 - inference](docs/plots/LayerNorm_FW_torch.float32.png))
+![Fused layer norm throughput in fp32 - inference](docs/plots/layer_norm/LayerNorm_FW_torch.float32.png))
 
-![Fused layer norm throughput in fp32 - training](docs/plots/LayerNorm_FW+BW_torch.float32.png))
+![Fused layer norm throughput in fp32 - training](docs/plots/layer_norm/LayerNorm_FW+BW_torch.float32.png))
+
+### Fused dropout + bias + activation
+
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_dropout.py`. The units are GB/s. These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.
+
+![Fused dropout+ bias throughput in fp16 - inference](docs/plots/fused_dropout/Dropout_Bias_True_FW_torch.float16_Act:_gelu.png)
+
+![Fused dropout+ bias throughput in fp16 - training](docs/plots/fused_dropout/Dropout_Bias_True_FW+BW_torch.float16_Act:_gelu.png))
+
+![Fused dropout+ bias throughput in fp32 - inference](docs/plots/fused_dropout/Dropout_Bias_True_FW+BW_torch.float32_Act:_gelu.png))
+
+![Fused dropout+ bias throughput in fp32 - training](docs/plots/fused_dropout/Dropout_Bias_True_FW+BW_torch.float32_Act:_gelu.png))
+
+![Fused dropout+ bias throughput in fp16 - inference](docs/plots/fused_dropout/Dropout_Bias_True_FW_torch.float16_Act:_squared_relu.png)
+
+![Fused dropout+ bias throughput in fp16 - training](docs/plots/fused_dropout/Dropout_Bias_True_FW+BW_torch.float16_Act:_squared_relu.png))
+
+![Fused dropout+ bias throughput in fp32 - inference](docs/plots/fused_dropout/Dropout_Bias_True_FW+BW_torch.float32_Act:_squared_relu.png))
+
+![Fused dropout+ bias throughput in fp32 - training](docs/plots/fused_dropout/Dropout_Bias_True_FW+BW_torch.float32_Act:_squared_relu.png))
 
 ## LRA
 

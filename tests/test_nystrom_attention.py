@@ -13,7 +13,7 @@ from xformers.components.attention.utils import maybe_merge_masks
 
 @pytest.mark.parametrize("pinverse_original_init", [True, False])
 @pytest.mark.parametrize("use_razavi_pinverse", [True, False])
-@pytest.mark.parametrize("num_landmarks", [30, 33])
+@pytest.mark.parametrize("num_landmarks", [30, 33, 905])
 def test_nystrom_attention(
     pinverse_original_init: bool,
     use_razavi_pinverse: bool,
@@ -69,8 +69,31 @@ def test_nystrom_attention(
         nystrom_attention = NystromAttention(**nystrom_config)
         sdp_attention = ScaledDotProduct(**sdp_config)
 
-        key_padding_mask = torch.randint(0, 2, (b // num_heads, s)).to(dtype=torch.bool)
+        key_padding_mask = None
         att_mask = torch.randint(0, 2, (s, s)).to(dtype=torch.bool)
+        sdp_mask = maybe_merge_masks(
+            att_mask=None,
+            key_padding_mask=key_padding_mask,
+            batch_size=b // num_heads,
+            src_len=s,
+            num_heads=num_heads,
+        )
+        r_nystrom = nystrom_attention(
+            a, a, a, att_mask=att_mask, key_padding_mask=key_padding_mask
+        )
+        r_sdp = sdp_attention(a, a, a, att_mask=sdp_mask)
+        assert torch.allclose(r_nystrom, r_sdp, rtol=0.005, atol=1e-2)
+
+    def test_masking():
+        # FIXME
+        # nystrom_config["causal"] = True
+        # sdp_config["causal"] = True
+
+        nystrom_attention = NystromAttention(**nystrom_config)
+        sdp_attention = ScaledDotProduct(**sdp_config)
+
+        key_padding_mask = torch.rand((b // num_heads, s)) > 0.1
+        att_mask = None
         mask = maybe_merge_masks(
             att_mask,
             key_padding_mask,
@@ -78,26 +101,7 @@ def test_nystrom_attention(
             src_len=s,
             num_heads=num_heads,
         )
-        r_nystrom = nystrom_attention(a, a, a, att_mask=mask)
-        r_sdp = sdp_attention(a, a, a, att_mask=None)
-        assert torch.allclose(r_nystrom, r_sdp, rtol=0.005, atol=1e-2)
-
-    def test_masking():
-        nystrom_config["causal"] = True
-        sdp_config["causal"] = True
-
-        nystrom_attention = NystromAttention(**nystrom_config)
-        sdp_attention = ScaledDotProduct(**sdp_config)
-
-        key_padding_mask = torch.randint(0, 2, (b // num_heads, s)).to(dtype=torch.bool)
-        mask = maybe_merge_masks(
-            None,
-            key_padding_mask,
-            batch_size=b // num_heads,
-            src_len=s,
-            num_heads=num_heads,
-        )
-        r_nystrom = nystrom_attention(a, a, a, att_mask=mask)
+        r_nystrom = nystrom_attention(a, a, a, key_padding_mask=key_padding_mask)
         r_sdp = sdp_attention(a, a, a, att_mask=mask)
         # account for when nan != nan
         if r_nystrom.isnan().any() or r_sdp.isnan().any():
@@ -109,6 +113,11 @@ def test_nystrom_attention(
         assert torch.allclose(
             r_nystrom, r_sdp, rtol=0.1, atol=0.5
         ), f"max diff {torch.max(torch.abs(r_nystrom-r_sdp))}"
+
+        # Error when key padding mask doesn't have expected dimensions.
+        key_padding_mask = torch.randint(0, 2, (s, b)).to(dtype=torch.bool)
+        with pytest.raises(AssertionError):
+            nystrom_attention(a, a, a, key_padding_mask=key_padding_mask)
 
     test_close_to_sdp()
     test_att_mask_ignored()
