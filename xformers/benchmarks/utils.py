@@ -59,7 +59,9 @@ def pretty_plot(results, title, units: str, filename=None, dash_key=""):
         filename = title + ".png"
 
     # Sanitize the filename
-    filename = filename.replace(" ", "_").replace("/", "_").replace("-", "_")
+    filename = (
+        filename.replace(" ", "_").replace("/", "_").replace("-", "_").replace(":", "")
+    )
 
     # Gather all the results in "collumns"
     workloads: Dict[str, Any] = {k: [] for v in results.values() for k in v.keys()}
