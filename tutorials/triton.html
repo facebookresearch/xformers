@@ -291,10 +291,10 @@ In all other usecases, you will be better served using PyTorch.</p>
 <h2>Fused dropout + bias + activation<a class="headerlink" href="#fused-dropout-bias-activation" title="Permalink to this headline">¶</a></h2>
 <p>You can reproduce these numbers locally by running <cite>python3 xformers/benchmarks/benchmark_triton_dropout.py</cite>. The units are GB/s.
 These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.</p>
-<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW_torch.float16_Act:_gelu.png"><img alt="Fused dropout+ bias throughput in fp16 - inference - GeLU" src="../_images/Dropout_Bias_True_FW_torch.float16_Act:_gelu.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act:_gelu.png"><img alt="Fused dropout+ bias throughput in fp16 - training - GeLU" src="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act:_gelu.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW_torch.float16_Act:_squared_relu.png"><img alt="Fused dropout+ bias throughput in fp16 - inference - Squared ReLU" src="../_images/Dropout_Bias_True_FW_torch.float16_Act:_squared_relu.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act:_squared_relu.png"><img alt="Fused dropout+ bias throughput in fp16 - training - Squared ReLU" src="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act:_squared_relu.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW_torch.float16_Act_gelu.png"><img alt="Fused dropout+ bias throughput in fp16 - inference - GeLU" src="../_images/Dropout_Bias_True_FW_torch.float16_Act_gelu.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act_gelu.png"><img alt="Fused dropout+ bias throughput in fp16 - training - GeLU" src="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act_gelu.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW_torch.float16_Act_squared_relu.png"><img alt="Fused dropout+ bias throughput in fp16 - inference - Squared ReLU" src="../_images/Dropout_Bias_True_FW_torch.float16_Act_squared_relu.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act_squared_relu.png"><img alt="Fused dropout+ bias throughput in fp16 - training - Squared ReLU" src="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act_squared_relu.png" style="width: 600px;" /></a>
 </section>
 </section>
 
