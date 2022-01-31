@@ -133,19 +133,19 @@ You can reproduce these numbers locally by running `python3 xformers/benchmarks/
 These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.
 
 
-.. image:: ../../plots/fused_dropout/Dropout_Bias_True_FW_torch.float16_Act:_gelu.png
+.. image:: ../../plots/fused_dropout/Dropout_Bias_True_FW_torch.float16_Act_gelu.png
     :width: 600
     :alt: Fused dropout+ bias throughput in fp16 - inference - GeLU
 
-.. image:: ../../plots/fused_dropout/Dropout_Bias_True_FW+BW_torch.float16_Act:_gelu.png
+.. image:: ../../plots/fused_dropout/Dropout_Bias_True_FW+BW_torch.float16_Act_gelu.png
     :width: 600
     :alt: Fused dropout+ bias throughput in fp16 - training - GeLU
 
-.. image:: ../../plots/fused_dropout/Dropout_Bias_True_FW_torch.float16_Act:_squared_relu.png
+.. image:: ../../plots/fused_dropout/Dropout_Bias_True_FW_torch.float16_Act_squared_relu.png
     :width: 600
     :alt: Fused dropout+ bias throughput in fp16 - inference - Squared ReLU
 
-.. image:: ../../plots/fused_dropout/Dropout_Bias_True_FW+BW_torch.float16_Act:_squared_relu.png
+.. image:: ../../plots/fused_dropout/Dropout_Bias_True_FW+BW_torch.float16_Act_squared_relu.png
     :width: 600
     :alt: Fused dropout+ bias throughput in fp16 - training - Squared ReLU
 
