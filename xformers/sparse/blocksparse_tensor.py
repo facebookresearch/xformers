@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 import torch
 from triton.ops.blocksparse import matmul as blocksparse_matmul
 from triton.ops.blocksparse import softmax as blocksparse_softmax
