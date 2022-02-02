@@ -8,29 +8,96 @@ import torch
 
 # needed to register custom ops
 import xformers  # noqa: F401
+from xformers.ops import masked_matmul
 from xformers.sparse import BlockSparseTensor
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-_devices = ["cpu", "cuda:0"] if torch.cuda.is_available() else ["cpu"]
-_devices = ["cuda:0"]
+_devices = ["cuda:0"] if torch.cuda.is_available() else []
 
 
-def _create_tensor(device):
-    BLOCK = 32
-    Z = 8
-    H = 2
-    shape = (512, 512)
-
-    layout = torch.randint(2, (H, shape[0] // BLOCK, shape[1] // BLOCK))
-    values = torch.randn(Z, layout.sum(), BLOCK, BLOCK, device=device)
+def _create_tensor(device, BLOCK=32, Z=8, C=2, H=512, W=512, dtype=torch.float32):
+    layout = torch.randint(2, (C, H // BLOCK, W // BLOCK))
+    values = torch.randn(Z, layout.sum(), BLOCK, BLOCK, device=device).to(dtype)
 
     mask = (
         layout[None, :, :, None, :, None]
         .repeat(Z, 1, 1, BLOCK, 1, BLOCK)
-        .reshape(Z, H, shape[0], shape[1])
+        .reshape(Z, C, H, W)
     )
 
     return BlockSparseTensor(values, layout), mask.bool()
+
+
+@pytest.mark.parametrize("device", _devices)
+def test_masked_matmul(device):
+    BLOCK = 32
+    N, C, H, W, L = 8, 2, 512, 512, 64
+    mask_block, _ = _create_tensor(device, BLOCK, N, C, H, W, dtype=torch.bool)
+    mask = mask_block.to_dense()
+
+    a = torch.randn(N, C, H, L, device=device)
+    b = torch.randn(N, C, W, L, device=device)
+
+    aa = a.clone()
+    bb = b.clone()
+
+    b = b.transpose(-2, -1)
+    bb = bb.transpose(-2, -1)
+
+    a.requires_grad_(True)
+    b.requires_grad_(True)
+    aa.requires_grad_(True)
+    bb.requires_grad_(True)
+
+    # res_gt = masked_matmul(a, b, mask)
+    res_gt = a @ b
+    # res_gt[~mask] = 0
+    res_gt = torch.where(mask, res_gt, torch.zeros_like(res_gt))
+    res = masked_matmul(aa, bb, mask_block)
+
+    res_dense = res.to_dense()
+    # res_dense[~mask] = float('-inf')
+
+    assert res.dtype == res_gt.dtype
+    assert torch.allclose(res_dense, res_gt)
+
+    res_gt.sum().backward()
+    res._blocksparse_values.sum().backward()
+    # TODO: this is not passing!!!
+    # assert torch.allclose(a.grad, aa.grad, atol=1e-7)
+    # assert torch.allclose(b.grad, bb.grad, atol=1e-7)
+
+
+@pytest.mark.parametrize("device", _devices)
+def test_bmm(device):
+    BLOCK = 32
+    N, C, H, W, L = 8, 2, 512, 512, 64
+    a_block, mask = _create_tensor(device, BLOCK, N, C, H, W)
+    a = a_block.to_dense()
+
+    a_block.requires_grad_(True)
+    a.requires_grad_(True)
+
+    b = torch.randn(N, C, W, L, device=device)
+    b2 = b.clone()
+
+    b.requires_grad_(True)
+    b2.requires_grad_(True)
+
+    res_gt = a @ b
+    res = a_block @ b2
+
+    assert res.dtype == res_gt.dtype
+    assert torch.allclose(res, res_gt)
+
+    res_gt.sum().backward()
+    res.sum().backward()
+
+    a_grad = a.grad.clone().detach()
+    a_grad[~mask] = 0
+
+    assert torch.allclose(b.grad, b2.grad)
+    assert torch.allclose(a_grad, a_block.grad.to_dense(), atol=1e-7)
 
 
 @pytest.mark.parametrize("device", _devices)

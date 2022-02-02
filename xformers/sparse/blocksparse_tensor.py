@@ -163,7 +163,13 @@ class BlockSparseTensor(torch.Tensor):
     def __torch_function__(cls, func, types, args=(), kwargs=None):
         if kwargs is None:
             kwargs = {}
-        if func in [torch.Tensor.bmm, torch.bmm]:
+        if func in [
+            torch.Tensor.bmm,
+            torch.bmm,
+            torch.Tensor.__matmul__,
+            torch.matmul,
+            torch.Tensor.matmul,
+        ]:
             assert len(args) == 2
             return cls._bmm(args[0], args[1])
 
