@@ -8,7 +8,6 @@ import torch
 
 # needed to register custom ops
 import xformers  # noqa: F401
-import xformers.components.attention
 from xformers.sparse import BlockSparseTensor
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
