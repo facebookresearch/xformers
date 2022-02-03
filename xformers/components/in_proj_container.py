@@ -52,17 +52,6 @@ class InProjParams:
     small_init: bool = False
 
 
-def _init_from_params(params: InProjParams, gain: float = 1.0):
-    def init_method(x):
-        return (
-            small_init_(x, gain=gain)
-            if params.small_init
-            else xavier_uniform_(x, gain=gain)
-        )
-
-    return init_method
-
-
 class InProjContainer(nn.Module):
     """
     Handle all the input projections in one go, opportunistically fuse some operations.
@@ -98,6 +87,9 @@ class InProjContainer(nn.Module):
         )
 
         self.out_features = query_proj_params.out_features
+        self.q_p_params = query_proj_params
+        self.k_p_params = key_proj_params
+        self.v_p_params = value_proj_params
 
         # - handle all the weights
         # save the requested init method
@@ -109,11 +101,6 @@ class InProjContainer(nn.Module):
             self.register_parameter("q_proj_weight", None)
             self.register_parameter("k_proj_weight", None)
             self.register_parameter("v_proj_weight", None)
-
-            # 1/sqrt(2) init is empirically beneficial in that case
-            self.weight_init = _init_from_params(
-                query_proj_params, gain=1.0 / math.sqrt(2)
-            )
         else:
             # The dimensions are different, use seperate buffers
             self.q_proj_weight = nn.Parameter(
@@ -127,13 +114,6 @@ class InProjContainer(nn.Module):
             )
             self.register_parameter("in_proj_weight", None)
 
-            self.weight_init = list(
-                map(
-                    _init_from_params,
-                    [query_proj_params, key_proj_params, value_proj_params],
-                )
-            )
-
         # - handle all the inputs
         if query_proj_params.bias:
             self.in_proj_bias = nn.Parameter(torch.empty(3 * self.out_features))
@@ -145,15 +125,31 @@ class InProjContainer(nn.Module):
 
     def _reset_parameters(self):
         if self.in_proj_weight is not None:
-            self.weight_init(self.in_proj_weight)
-        else:
-            weights = [self.q_proj_weight, self.k_proj_weight, self.v_proj_weight]
+            # 1/sqrt(2) init is empirically beneficial in that case
+            self.in_proj_weight = self._init_weights(
+                self.q_p_params, self.in_proj_weight, gain=1.0 / math.sqrt(2)
+            )
 
-            for init, weight in zip(self.weight_init, weights):
-                init(weight)
+        else:
+            self.q_proj_weight = self._init_weights(
+                self.q_p_params, self.q_proj_weight, gain=1.0
+            )
+            self.k_proj_weight = self._init_weights(
+                self.k_p_params, self.k_proj_weight, gain=1.0
+            )
+            self.v_proj_weight = self._init_weights(
+                self.v_p_params, self.v_proj_weight, gain=1.0
+            )
 
         if self.in_proj_bias is not None:
             constant_(self.in_proj_bias, 0.0)
+
+    @staticmethod
+    def _init_weights(params: InProjParams, weights: torch.tensor, gain: float):
+        if params.small_init:
+            return small_init_(weights, gain=gain)
+        else:
+            return xavier_uniform_(weights, gain=gain)
 
     def forward(
         self,
