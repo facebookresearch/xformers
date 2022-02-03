@@ -30,7 +30,7 @@ test_config = [
             },
         },
         "feedforward_config": {
-            "name": "FusedMLP",
+            "name": "MLP",  # FIXME: Test with FusedMLP also
             "dropout": 0.1,
             "activation": "gelu",
             "hidden_layer_multiplier": 4,

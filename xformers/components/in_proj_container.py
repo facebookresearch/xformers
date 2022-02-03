@@ -145,7 +145,7 @@ class InProjContainer(nn.Module):
             constant_(self.in_proj_bias, 0.0)
 
     @staticmethod
-    def _init_weights(params: InProjParams, weights: torch.tensor, gain: float):
+    def _init_weights(params: InProjParams, weights: torch.Tensor, gain: float):
         if params.small_init:
             return small_init_(weights, gain=gain)
         else:

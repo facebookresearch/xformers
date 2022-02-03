@@ -18,8 +18,8 @@ from xformers.components.attention.utils import bool_mask_to_additive
 _mask_type_warning = True
 
 if _is_triton_available:
-    from triton.ops.blocksparse import matmul as blocksparse_matmul
-    from triton.ops.blocksparse import softmax as blocksparse_softmax
+    from triton.ops.blocksparse import matmul as blocksparse_matmul  # type: ignore
+    from triton.ops.blocksparse import softmax as blocksparse_softmax  # type: ignore
 
     from xformers.triton.softmax import MaskType
     from xformers.triton.utils import gpu_capabilities_older_than_70
