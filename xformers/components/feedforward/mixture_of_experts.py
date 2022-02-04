@@ -22,7 +22,7 @@ _is_fairscale_available = True
 
 try:
     import torch.distributed as dist
-    from fairscale.nn import MOELayer, Top2Gate
+    from fairscale.nn import MOELayer, Top2Gate  # type: ignore
 
     from xformers.components.feedforward import MLP
 
