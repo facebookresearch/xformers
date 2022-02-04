@@ -15,8 +15,10 @@ cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires C
 _devices = ["cuda:0"] if torch.cuda.is_available() else []
 
 
-def _create_tensor(device, BLOCK=32, Z=8, C=2, H=512, W=512, dtype=torch.float32):
+def _create_tensor(device, BLOCK=32, Z=8, C=2, H=64, W=64, dtype=torch.float32):
     layout = torch.randint(2, (C, H // BLOCK, W // BLOCK))
+    layout[:, :, 0] = 1
+    layout[:, 0, :] = 1
     values = torch.randn(Z, layout.sum(), BLOCK, BLOCK, device=device).to(dtype)
 
     mask = (
@@ -30,8 +32,8 @@ def _create_tensor(device, BLOCK=32, Z=8, C=2, H=512, W=512, dtype=torch.float32
 
 @pytest.mark.parametrize("device", _devices)
 def test_masked_matmul(device):
-    BLOCK = 32
-    N, C, H, W, L = 8, 2, 512, 512, 64
+    BLOCK = 16
+    N, C, H, W, L = 8, 2, 64, 64, 32
     mask_block, _ = _create_tensor(device, BLOCK, N, C, H, W, dtype=torch.bool)
     mask = mask_block.to_dense()
 
@@ -70,8 +72,8 @@ def test_masked_matmul(device):
 
 @pytest.mark.parametrize("device", _devices)
 def test_bmm(device):
-    BLOCK = 32
-    N, C, H, W, L = 8, 2, 512, 512, 64
+    BLOCK = 16
+    N, C, H, W, L = 8, 2, 64, 64, 32
     a_block, mask = _create_tensor(device, BLOCK, N, C, H, W)
     a = a_block.to_dense()
 
@@ -127,8 +129,11 @@ def test_sparse_softmax_backward(device):
     res_gt = torch.softmax(a, dim=-1)
     res_block = torch.softmax(a_block, dim=-1)
 
-    res_block._blocksparse_values.sum().backward()
-    res_gt.sum().backward()
+    # WARNING: gradients are modified in-place!
+    res_block._blocksparse_values.backward(
+        torch.ones_like(res_block._blocksparse_values)
+    )
+    res_gt.backward(torch.ones_like(res_gt))
 
     assert torch.allclose(a.grad, a_block.grad.to_dense(), atol=1e-7)
 
