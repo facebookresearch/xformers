@@ -12,7 +12,6 @@ from xformers.ops import masked_matmul
 from xformers.sparse import BlockSparseTensor
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-_devices = ["cuda:0"] if torch.cuda.is_available() else []
 _devices = ["cpu", "cuda:0"] if torch.cuda.is_available() else ["cpu"]
 
 
