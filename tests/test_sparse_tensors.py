@@ -13,6 +13,7 @@ from xformers.sparse import BlockSparseTensor
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cuda:0"] if torch.cuda.is_available() else []
+_devices = ["cpu", "cuda:0"] if torch.cuda.is_available() else ["cpu"]
 
 
 def _create_tensor(device, BLOCK=32, Z=8, C=2, H=64, W=64, dtype=torch.float32):
@@ -43,19 +44,19 @@ def test_masked_matmul(device):
     aa = a.clone()
     bb = b.clone()
 
-    b = b.transpose(-2, -1)
-    bb = bb.transpose(-2, -1)
-
     a.requires_grad_(True)
     b.requires_grad_(True)
     aa.requires_grad_(True)
     bb.requires_grad_(True)
 
+    bt = b.transpose(-2, -1)
+    bbt = bb.transpose(-2, -1)
+
     # res_gt = masked_matmul(a, b, mask)
-    res_gt = a @ b
+    res_gt = a @ bt
     # res_gt[~mask] = 0
     res_gt = torch.where(mask, res_gt, torch.zeros_like(res_gt))
-    res = masked_matmul(aa, bb, mask_block)
+    res = masked_matmul(aa, bbt, mask_block)
 
     res_dense = res.to_dense()
     # res_dense[~mask] = float('-inf')
@@ -63,8 +64,9 @@ def test_masked_matmul(device):
     assert res.dtype == res_gt.dtype
     assert torch.allclose(res_dense, res_gt)
 
-    res_gt.sum().backward()
-    res._blocksparse_values.sum().backward()
+    # try to workaround non-contiguous issues with triton for now
+    res_gt.backward(torch.ones_like(res_gt))
+    res._blocksparse_values.backward(torch.ones_like(res._blocksparse_values))
     # TODO: this is not passing!!!
     # assert torch.allclose(a.grad, aa.grad, atol=1e-7)
     # assert torch.allclose(b.grad, bb.grad, atol=1e-7)
@@ -90,7 +92,7 @@ def test_bmm(device):
     res = a_block @ b2
 
     assert res.dtype == res_gt.dtype
-    assert torch.allclose(res, res_gt)
+    assert torch.allclose(res, res_gt, atol=1e-5)
 
     res_gt.sum().backward()
     res.sum().backward()
@@ -98,7 +100,7 @@ def test_bmm(device):
     a_grad = a.grad.clone().detach()
     a_grad[~mask] = 0
 
-    assert torch.allclose(b.grad, b2.grad)
+    assert torch.allclose(b.grad, b2.grad, atol=1e-5)
     assert torch.allclose(a_grad, a_block.grad.to_dense(), atol=1e-7)
 
 
@@ -135,7 +137,7 @@ def test_sparse_softmax_backward(device):
     )
     res_gt.backward(torch.ones_like(res_gt))
 
-    assert torch.allclose(a.grad, a_block.grad.to_dense(), atol=1e-7)
+    assert torch.allclose(a.grad, a_block.grad.to_dense(), atol=2e-7)
 
 
 @pytest.mark.parametrize("device", _devices)

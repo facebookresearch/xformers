@@ -10,6 +10,66 @@ from triton.ops.blocksparse import softmax as blocksparse_softmax
 from xformers.ops import masked_matmul
 
 
+def _spmm(b, layout, values):
+    N, nnz, _, block_size = values.shape
+    br = b.reshape(
+        b.shape[0], b.shape[1], b.shape[2] // block_size, block_size, b.shape[3]
+    )
+    # perform matmul on blocks
+    h, r, c = layout.nonzero(as_tuple=True)
+    temp = values @ br[:, h, c, :]
+
+    linear_idx = h * (b.shape[2] // block_size) + r
+    out = torch.zeros(
+        N,
+        b.shape[1] * layout.shape[-2],
+        block_size,
+        b.shape[3],
+        dtype=b.dtype,
+        device=b.device,
+    )
+    # now aggregate the results of the different blocks
+    out.index_add_(1, linear_idx.to(b.device), temp)
+    out = out.reshape(N, b.shape[1], -1, b.shape[3])
+    return out
+
+
+def _softmax(layout, values):
+    h, r, c = layout.nonzero(as_tuple=True)
+    norms = torch.logsumexp(values, dim=-1, keepdim=True)
+    linear_idx = h * layout.shape[1] + r
+
+    out_t = torch.zeros(
+        norms.shape[0],
+        layout.shape[0] * layout.shape[1],
+        norms.shape[2],
+        norms.shape[3],
+        dtype=norms.dtype,
+        device=norms.device,
+    )
+    max_val = norms.max()
+    out_t.index_add_(
+        1, linear_idx.to(values.device), (norms - max_val).exp()
+    ).clamp_min_(1e-24).log_().add_(max_val)
+    out = torch.exp(values - out_t[:, linear_idx])
+    return out
+
+
+def _sddmm(a, b, layout):
+    block_size = a.shape[-2] // layout.shape[-2]
+    a = a.reshape(
+        a.shape[0], a.shape[1], a.shape[2] // block_size, block_size, a.shape[3]
+    )
+    b = b.reshape(
+        b.shape[0], b.shape[1], b.shape[2] // block_size, block_size, b.shape[3]
+    )
+
+    h, r, c = layout.nonzero(as_tuple=True)
+
+    out = torch.einsum("nhik,nhjk->nhij", a[:, h, r, :, :], b[:, h, c, :, :])
+    return out
+
+
 class BlockSparseTensor(torch.Tensor):
     @staticmethod
     def __new__(cls, values, layout):
@@ -82,7 +142,10 @@ class BlockSparseTensor(torch.Tensor):
     def _bmm(cls, arg0, arg1):
         if not (isinstance(arg0, cls) and type(arg1) == torch.Tensor):
             return NotImplemented
-        res = arg0.__sparse_dot_dsd(arg0.__values, arg1)
+        if arg1.device.type == "cpu":
+            res = _spmm(arg1, arg0.__layout, arg0.__values)
+        else:
+            res = arg0.__sparse_dot_dsd(arg0.__values, arg1)
         return res
 
     @classmethod
@@ -91,16 +154,22 @@ class BlockSparseTensor(torch.Tensor):
             return NotImplemented
         b = b.transpose(-2, -1)
         assert b.is_contiguous()
-        res = mask.__sparse_dot_sdd(a, b)
+        if a.device.type == "cpu":
+            res = _sddmm(a, b, mask.__layout)
+        else:
+            res = mask.__sparse_dot_sdd(a, b)
         return cls._wrap(res, mask)
 
     @classmethod
     def _softmax(cls, arg0, dim):
         if not (dim == -1 or dim == 2):
             return NotImplemented
-        # TODO triton softmax performs an in-place operation
-        # res = arg0.__sparse_softmax(arg0.__values)
-        res = arg0.__sparse_softmax(arg0.__values.clone())
+        if arg0.device.type == "cpu":
+            res = _softmax(arg0.__layout, arg0.__values)
+        else:
+            # TODO triton softmax performs an in-place operation
+            # res = arg0.__sparse_softmax(arg0.__values)
+            res = arg0.__sparse_softmax(arg0.__values.clone())
         return cls._wrap(res, arg0)
 
     @classmethod
