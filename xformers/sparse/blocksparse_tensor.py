@@ -114,8 +114,7 @@ class BlockSparseTensor(torch.Tensor):
     def __repr__(self):
         return f"block_sparse_tensor(shape={self.shape}, values={self.__values})"
 
-    @property
-    def _blocksparse_values(self):
+    def values(self):
         return self.__values
 
     @classmethod

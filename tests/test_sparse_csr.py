@@ -88,8 +88,8 @@ def test_sparse_softmax_backward(device):
     a = a.to_sparse()
 
     a_csr.requires_grad_(True)
-    fn2(a_csr)._csr_values.sum().backward()
-    grad_a = a_csr._csr_values.grad.clone()
+    fn2(a_csr).values().sum().backward()
+    grad_a = a_csr.values().grad.clone()
     a.requires_grad_(True)
     fn(a).coalesce().values().sum().backward()
     assert torch.allclose(

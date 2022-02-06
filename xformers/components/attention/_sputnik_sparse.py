@@ -44,7 +44,7 @@ class SparseCS:
 
     @property
     def values(self):
-        return self._mat._csr_values
+        return self._mat.values()
 
     @property
     def row_indices(self):
