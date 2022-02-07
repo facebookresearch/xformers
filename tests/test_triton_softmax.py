@@ -28,6 +28,8 @@ SHAPES = [
     (1, 2048, 2048),
     (1, 3136, 3136),
     (1, 4096, 4096),
+    (2, 2, 384, 384),
+    (2, 2, 2, 384, 384),
 ]
 
 
@@ -54,7 +56,7 @@ def test_softmax_parity(shape, amp, log, masking, causal, contiguous):
     X.requires_grad = True
     X_.requires_grad = True
 
-    seq = shape[1]
+    seq = shape[-1]
     mask = torch.zeros((seq, seq)).cuda()
     if masking:
         mask[torch.rand((seq, seq)) > 0.8] = -float("inf")
