@@ -56,7 +56,7 @@ def test_softmax_parity(shape, amp, log, masking, causal, contiguous):
     X.requires_grad = True
     X_.requires_grad = True
 
-    seq = shape[1]
+    seq = shape[-1]
     mask = torch.zeros((seq, seq)).cuda()
     if masking:
         mask[torch.rand((seq, seq)) > 0.8] = -float("inf")
