@@ -12,13 +12,17 @@ import torch
 
 from xformers import _is_sparse_available, _is_triton_available
 from xformers.components.attention.attention_mask import AttentionMask
-from xformers.ops import masked_matmul
+from xformers.ops import masked_matmul, softmax
+from xformers.sparse import (
+    BlockSparseTensor,
+    CausalTensor,
+    SparseCOOTensor,
+    SparseCSRTensor,
+)
 
-if _is_sparse_available:
-    from ._sputnik_sparse import SparseCS
-
-if _is_triton_available:
-    from xformers.triton.softmax import softmax as triton_softmax
+MaskType = Union[
+    torch.Tensor, BlockSparseTensor, SparseCSRTensor, SparseCOOTensor, CausalTensor
+]
 
 
 def _create_random_sparsity(matrix, sparsity, divisible_by=4):
@@ -35,23 +39,10 @@ def _create_random_sparsity(matrix, sparsity, divisible_by=4):
     return output
 
 
-def _softmax(a: torch.Tensor, causal: bool = False) -> torch.Tensor:
-    if _is_sparse_available and isinstance(a, SparseCS):
-        return a.softmax()
-
-    if a.is_sparse:
-        return torch.sparse.softmax(a, dim=a.ndim - 1)
-
-    if _is_triton_available:
-        return triton_softmax(a, mask=None, causal=causal)
-    else:
-        return torch.softmax(a, dim=a.ndim - 1)
-
-
 def scaled_query_key_softmax(
     q: torch.Tensor,
     k: torch.Tensor,
-    att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
+    att_mask: Optional[MaskType],
 ) -> torch.Tensor:
     # TODO assume we have (N, S, hs) instead of (B, nh, S, hs), with N = B x nh
     # this is needed due to limitations in sparse_bmm for now
@@ -62,15 +53,13 @@ def scaled_query_key_softmax(
     # Matmul with mask
     if att_mask is not None and isinstance(att_mask, AttentionMask):
         # Additive mask
-        mask: Optional[Union[SparseCS, torch.Tensor]] = att_mask.values
+        mask: Optional[MaskType] = att_mask.values
     else:
         mask = att_mask
 
     att = masked_matmul(q, k.transpose(-2, -1), mask)
 
-    # Softmax to get the attention probabilities
-    is_causal = isinstance(att_mask, AttentionMask) and att_mask.is_causal
-    att = _softmax(att, causal=is_causal)
+    att = softmax(att)
     return att
 
 
@@ -78,12 +67,13 @@ def scaled_dot_product_attention(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
-    att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
+    att_mask: Optional[MaskType],
     dropout: Optional[torch.nn.Module] = None,
 ) -> torch.Tensor:
     autocast_disabled = (
         _is_sparse_available
-        and isinstance(att_mask, SparseCS)
+        and type(att_mask)
+        not in [type(None), torch.Tensor, BlockSparseTensor, CausalTensor]
         or (att_mask is not None and att_mask.is_sparse)
     )
 
@@ -98,6 +88,5 @@ def scaled_dot_product_attention(
             att = dropout(att)
 
         # Get to the predicted values, for all heads
-        # y = att @ v  # (N, S, S) x (N, S, hs) -> (N, S, hs)
-        y = torch.bmm(att, v)
+        y = att @ v  # (N, S, S) x (N, S, hs) -> (N, S, hs)
     return y

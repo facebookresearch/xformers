@@ -5,5 +5,6 @@
 
 
 from .blocksparse_tensor import BlockSparseTensor  # noqa: F401
+from .causal_tensor import CausalTensor  # noqa: F401
 from .coo_tensor import SparseCOOTensor  # noqa: F401
 from .csr_tensor import SparseCSRTensor  # noqa: F401

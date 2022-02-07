@@ -26,6 +26,9 @@ class CausalTensor(torch.Tensor):
     def __repr__(self):
         return f"causal_tensor_wrapper({repr(self.elem)})"
 
+    def to_dense(self):
+        return torch.tril(self.elem)
+
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
         if kwargs is None:

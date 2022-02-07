@@ -6,6 +6,11 @@
 
 import torch
 
+from xformers import _is_triton_available
+
+if _is_triton_available:
+    from xformers.triton.softmax import softmax as triton_softmax
+
 
 def masked_matmul(a, b, mask=None):
     if torch.overrides.has_torch_function((a, b, mask)):
@@ -32,3 +37,11 @@ def masked_matmul(a, b, mask=None):
         # mask is presumed additive
         att += mask
     return att
+
+
+def softmax(a: torch.Tensor) -> torch.Tensor:
+    if _is_triton_available and type(a) is torch.Tensor:
+        # causal case is handled by CausalTensor
+        return triton_softmax(a, mask=None, causal=False)
+    else:
+        return torch.softmax(a, dim=-1)
