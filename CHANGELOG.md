@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - bugfix Favor, single feature map [#183]
+- sanity check blocksparse settings [#207]
+- fixed some pickability [#204]
 
 ### Added
 - Mixture of Experts [#181]
