@@ -74,8 +74,8 @@ autodoc_member_order = "bysource"
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3.6", None),
-    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
-    "torch": ("https://pytorch.org/docs/master/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "torch": ("https://pytorch.org/docs/master", None),
 }
 # -------------------------
 

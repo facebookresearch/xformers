@@ -139,7 +139,7 @@ def test_softmax(BLOCK, WIDTH, DTYPE):
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
-@pytest.mark.parametrize("block", [32])  # 16, 32,
+@pytest.mark.parametrize("block", [32, 43])  # 16, 32,
 def test_attention_fwd_bwd(
     block,
     input_scale=1.0,
@@ -177,44 +177,49 @@ def test_attention_fwd_bwd(
     query.retain_grad()
     key.retain_grad()
     value.retain_grad()
-    block_sparse_attention = BlockSparseAttention(layout, block)
-    attn_out = block_sparse_attention(
-        att_mask=attn_mask, q=query, k=key, v=value, scale=scale
-    )
-
-    # ad hoc loss
-    loss = loss_fn(attn_out)
-    loss.backward()
-    grads = [query.grad, key.grad, value.grad]
-
-    # Torch version:
-    torch_q, torch_k, torch_v = [x.clone() for x in qkvs]
-    torch_q = torch_q / math.sqrt(head_dim)
-    attn_mask = 1e6 * (-1 + (attn_mask.reshape((1, 1, n_ctx, n_ctx)).cuda()))
-    torch_q.retain_grad()
-    torch_k.retain_grad()
-    torch_v.retain_grad()
-    scores = scale * torch.einsum("bhsd,bhtd->bhst", torch_q, torch_k)
-    scores = scores + attn_mask
-    probs = torch.softmax(scores, dim=-1)
-    torch_attn_out = torch.einsum("bhst,bhtd->bhsd", probs, torch_v)
-
-    # ad hoc loss
-    torch_loss = loss_fn(torch_attn_out)
-    torch_loss.backward()
-    torch_grads = [torch_q.grad, torch_k.grad, torch_v.grad]
-
-    # comparison
-    assert_almost_equal(
-        loss, torch_loss, err_msg=f"Triton loss {loss} and torch loss {torch_loss}"
-    )
-
-    for g1, g2 in zip(grads, torch_grads):
-        assert_almost_equal(
-            torch.norm(g1),
-            torch.norm(g2),
-            err_msg=f"Triton grad {torch.norm(g1).item()} and torch grad {torch.norm(g2).item()}",
+    if block not in [16, 32, 64]:
+        # Check that unsupported dimensions are caught
+        with pytest.raises(AssertionError):
+            _ = BlockSparseAttention(layout, block)
+    else:
+        block_sparse_attention = BlockSparseAttention(layout, block)
+        attn_out = block_sparse_attention(
+            att_mask=attn_mask, q=query, k=key, v=value, scale=scale
         )
+
+        # ad hoc loss
+        loss = loss_fn(attn_out)
+        loss.backward()
+        grads = [query.grad, key.grad, value.grad]
+
+        # Torch version:
+        torch_q, torch_k, torch_v = [x.clone() for x in qkvs]
+        torch_q = torch_q / math.sqrt(head_dim)
+        attn_mask = 1e6 * (-1 + (attn_mask.reshape((1, 1, n_ctx, n_ctx)).cuda()))
+        torch_q.retain_grad()
+        torch_k.retain_grad()
+        torch_v.retain_grad()
+        scores = scale * torch.einsum("bhsd,bhtd->bhst", torch_q, torch_k)
+        scores = scores + attn_mask
+        probs = torch.softmax(scores, dim=-1)
+        torch_attn_out = torch.einsum("bhst,bhtd->bhsd", probs, torch_v)
+
+        # ad hoc loss
+        torch_loss = loss_fn(torch_attn_out)
+        torch_loss.backward()
+        torch_grads = [torch_q.grad, torch_k.grad, torch_v.grad]
+
+        # comparison
+        assert_almost_equal(
+            loss, torch_loss, err_msg=f"Triton loss {loss} and torch loss {torch_loss}"
+        )
+
+        for g1, g2 in zip(grads, torch_grads):
+            assert_almost_equal(
+                torch.norm(g1),
+                torch.norm(g2),
+                err_msg=f"Triton grad {torch.norm(g1).item()} and torch grad {torch.norm(g2).item()}",
+            )
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")

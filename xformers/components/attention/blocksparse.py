@@ -52,6 +52,9 @@ if _is_triton_available:
         .. warning: for now, the sequence (context) length has to be a power of two. This constraint could
             be relaxed in the future.
 
+        .. warning: the block size has to be picked from [16, 32, 64]. Some speed is gained from bigger blocks.
+            It is of course possible to reproduce coarser patterns given these primitives, as the user sees fit.
+
         .. note: it is possible to pass a specific per batch mask in the forward call,
             but this will not lead to any speed up.
             Any constant sparsity pattern is better passed through the layout parameter.
@@ -76,7 +79,11 @@ if _is_triton_available:
                 layout = layout.unsqueeze(0).expand(num_heads, -1, -1)
                 logging.warning(f"New layout dimensions: {layout.shape}")
 
-            assert block_size >= 16, "Minimum block size is 16, for now at least"
+            assert block_size in (
+                16,
+                32,
+                64,
+            ), "Only block sizes in [16, 32, 64] are supported"
 
             super().__init__()
             self.attn_drop = torch.nn.Dropout(dropout, inplace=False)
