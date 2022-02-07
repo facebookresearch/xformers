@@ -36,17 +36,8 @@ def _get_transpose_info(m, n, row_indices, row_offsets, column_indices):
     row_coo, _ = _csr_to_coo(m, n, row_offsets, column_indices)
 
     # get the permutation for the stable sort
-    # unfortunately PyTorch sort is not stable, so we need to
-    # do it in two steps
-    row_offsets_t, perm1 = column_indices.sort(0)
-    new_columns = row_coo[perm1]
-
-    # workaround the lack of stable sorting in PyTorch
-    perm2 = torch.argsort(new_columns + row_offsets_t * m)
-    column_indices_t = new_columns[perm2]
-
-    # find the final permutation corresponding to the indices of the stable sort
-    perm = perm1[perm2]
+    row_offsets_t, perm = column_indices.sort(dim=0, stable=True)
+    column_indices_t = row_coo[perm]
 
     row_offsets_t, _ = _coo_to_csr(m, n, row_offsets_t, column_indices)
     row_indices_t = _diffsort(row_offsets_t).int()

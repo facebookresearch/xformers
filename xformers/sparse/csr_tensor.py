@@ -80,8 +80,7 @@ class SparseCSRTensor(torch.Tensor):
         matrix.__transp_info = _transp_info
         return matrix
 
-    @property
-    def _csr_values(self):
+    def values(self):
         return self.__values
 
     @property

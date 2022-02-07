@@ -8,7 +8,7 @@
 [![codecov](https://codecov.io/gh/facebookresearch/xformers/branch/main/graph/badge.svg?token=PKGKDR4JQM)](https://codecov.io/gh/facebookresearch/xformers)
 [![black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/facebookresearch/xformers/blob/main/docs/source/xformers_mingpt.ipynb)
-
+[![Downloads](https://pepy.tech/badge/xformers)](https://pepy.tech/project/xformers)
 --------------------------------------------------------------------------------
 
 ## Description
@@ -104,11 +104,15 @@ Models are thus not implemented in monolithic files, which are typically complic
 │   │    └ ...                  # all the supported positional embeddings
 │   ├── activations.py          #
 │   └── multi_head_dispatch.py  # (optional) multihead wrap
-├── factory
+│
+├── factory                     # Build model programatically
 │   ├── block_factory.py        # (optional) helper to programatically generate layers
 │   └── model_factory.py        # (optional) helper to programatically generate models
-├── models
-...                             # Full models, ready to be used
+│
+├── benchmarks
+│     └ ...                     # A lot of benchmarks that you can use to test some parts
+└── triton
+      └ ...                     # (optional) all the triton parts, requires triton + CUDA gpu
 ```
 
 <details><summary> Attention mechanisms</summary><p>
@@ -150,6 +154,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 - [MLP](xformers/components/feedforward/mlp.py)
 - [Fused](xformers/components/feedforward/fused_mlp.py)
+- [Mixture of Experts](xformers/components/feedforward/mixture_of_experts.py)
 
 </p></details>
 
@@ -170,6 +175,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
    3. fused softmax
    4. fused linear layer
    5. fused layer norm
+   6. fused dropout(activation(x+bias))
 3. Benchmarking and testing tools
    1. [micro benchnmarks](BENCHMARKS.md)
    2. transformer block benchmark
@@ -211,3 +217,4 @@ The following repositories are used in xFormers, either in close to original for
 * [LucidRain Reformer](https://github.com/lucidrains/reformer-pytorch)
 * [RevTorch](https://github.com/RobinBruegger/RevTorch)
 * [Nystromformer](https://github.com/mlpen/Nystromformer)
+* [FairScale](https://github.com/facebookresearch/fairscale/)
