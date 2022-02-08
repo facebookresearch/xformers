@@ -209,7 +209,10 @@ def test_sparse_softmax(tensor_type, device):
     res_sparse.values().backward(torch.ones_like(res_sparse.values()))
     res_gt.backward(torch.ones_like(res_gt))
 
-    assert torch.allclose(a.grad, a_sparse.grad.to_dense(), atol=2e-7)
+    a_grad = a.grad.clone()
+    a_grad[~mask] = 0
+
+    assert torch.allclose(a_grad, a_sparse.grad.to_dense(), atol=1e-6)
 
 
 @pytest.mark.parametrize("tensor_type", _tensor_types)
