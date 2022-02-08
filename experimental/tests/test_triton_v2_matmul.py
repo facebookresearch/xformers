@@ -6,7 +6,7 @@
 
 import pytest
 import torch
-from ragged_inference.test_utils import assert_eq
+from ragged_inference.test_utils import assert_eq, bf16_support
 from ragged_inference.triton_v2_matmul import matmul
 
 SHAPES = [
@@ -18,11 +18,20 @@ SHAPES = [
 ]
 
 
+_dtypes = [
+    {"device": "cuda", "dtype": torch.float16},
+    {"device": "cuda", "dtype": torch.float32},
+]
+
+if bf16_support():
+    _dtypes.append({"device": "cuda", "dtype": torch.bfloat16})
+
+
 @pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("dtype", _dtypes)
 def test_matmul(shape, dtype):
-    a = torch.randn(shape, dtype=dtype, device="cuda")
-    b = torch.randn(shape, dtype=dtype, device="cuda").T
+    a = torch.randn(shape, **dtype)
+    b = torch.randn(shape, **dtype).T
 
     out = matmul(a, b)
 

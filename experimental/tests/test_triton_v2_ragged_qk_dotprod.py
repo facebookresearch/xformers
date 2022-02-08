@@ -6,38 +6,39 @@
 
 import time
 
+import pytest
 import torch
 from ragged_inference.garbage_pad_ragged_acts import RaggedActivations
 from ragged_inference.seq_kv_cache import scores_via_qk_dotprod
-from ragged_inference.test_utils import assert_eq, bf16_cuda
+from ragged_inference.test_utils import (
+    assert_eq,
+    bf16_support,
+    make_seq,
+    make_seq_arange,
+)
 from ragged_inference.triton_v2_ragged_qk_dotprod import (
     RaggedQkPidLookupTable,
     ragged_qk_dotprod,
 )
 
+_dtypes = [{"device": "cuda", "dtype": torch.float16}]
 
-def _make_seq(n_ctx: int, value: int, d_head: int):
-    return torch.full([n_ctx, d_head], value, **bf16_cuda())
-
-
-def _make_seq_arange(n_ctx: int, start_value: int, d_head: int):
-    return (
-        torch.full([n_ctx, d_head], start_value, **bf16_cuda())
-        + torch.arange(n_ctx, **bf16_cuda())[:, None]
-    )
+if bf16_support():
+    _dtypes.append({"device": "cuda", "dtype": torch.bfloat16})
 
 
-def test_ragged_qk_dotprod_single_seq():
+@pytest.mark.parametrize("dtype", _dtypes)
+def test_ragged_qk_dotprod_single_seq(dtype):
     d_head = 2
 
     key = RaggedActivations.from_list(
         [
-            _make_seq(n_ctx=3, value=42, d_head=d_head),
+            make_seq(n_ctx=3, value=42, d_model=d_head, dtype=dtype),
         ]
     )
     query = RaggedActivations.from_list(
         [
-            _make_seq(n_ctx=4, value=55, d_head=d_head),
+            make_seq(n_ctx=4, value=55, d_model=d_head, dtype=dtype),
         ]
     )
     torch_scores = scores_via_qk_dotprod(query, key)
@@ -51,21 +52,22 @@ def test_ragged_qk_dotprod_single_seq():
     assert_eq(torch_scores, scores)
 
 
-def test_ragged_qk_dotprod_multiple_seqs_lut():
+@pytest.mark.parametrize("dtype", _dtypes)
+def test_ragged_qk_dotprod_multiple_seqs_lut(dtype):
     d_head = 2
 
     key = RaggedActivations.from_list(
         [
-            _make_seq_arange(n_ctx=5, start_value=0, d_head=d_head),
-            _make_seq_arange(n_ctx=2, start_value=5, d_head=d_head),
-            _make_seq_arange(n_ctx=3, start_value=7, d_head=d_head),
+            make_seq_arange(n_ctx=5, start_value=0, d_head=d_head, dtype=dtype),
+            make_seq_arange(n_ctx=2, start_value=5, d_head=d_head, dtype=dtype),
+            make_seq_arange(n_ctx=3, start_value=7, d_head=d_head, dtype=dtype),
         ]
     )
     query = RaggedActivations.from_list(
         [
-            _make_seq_arange(n_ctx=3, start_value=0, d_head=d_head),
-            _make_seq_arange(n_ctx=2, start_value=3, d_head=d_head),
-            _make_seq_arange(n_ctx=2, start_value=5, d_head=d_head),
+            make_seq_arange(n_ctx=3, start_value=0, d_head=d_head, dtype=dtype),
+            make_seq_arange(n_ctx=2, start_value=3, d_head=d_head, dtype=dtype),
+            make_seq_arange(n_ctx=2, start_value=5, d_head=d_head, dtype=dtype),
         ]
     )
 
@@ -83,21 +85,22 @@ def test_ragged_qk_dotprod_multiple_seqs_lut():
     assert_eq(lut.n_pids_total, 9)
 
 
-def test_ragged_qk_dotprod_multiple_seqs():
+@pytest.mark.parametrize("dtype", _dtypes)
+def test_ragged_qk_dotprod_multiple_seqs(dtype):
     d_head = 2
 
     key = RaggedActivations.from_list(
         [
-            _make_seq_arange(n_ctx=5, start_value=0, d_head=d_head),
-            _make_seq_arange(n_ctx=2, start_value=5, d_head=d_head),
-            _make_seq_arange(n_ctx=3, start_value=7, d_head=d_head),
+            make_seq_arange(n_ctx=5, start_value=0, d_head=d_head, dtype=dtype),
+            make_seq_arange(n_ctx=2, start_value=5, d_head=d_head, dtype=dtype),
+            make_seq_arange(n_ctx=3, start_value=7, d_head=d_head, dtype=dtype),
         ]
     )
     query = RaggedActivations.from_list(
         [
-            _make_seq_arange(n_ctx=3, start_value=0, d_head=d_head),
-            _make_seq_arange(n_ctx=2, start_value=3, d_head=d_head),
-            _make_seq_arange(n_ctx=2, start_value=5, d_head=d_head),
+            make_seq_arange(n_ctx=3, start_value=0, d_head=d_head, dtype=dtype),
+            make_seq_arange(n_ctx=2, start_value=3, d_head=d_head, dtype=dtype),
+            make_seq_arange(n_ctx=2, start_value=5, d_head=d_head, dtype=dtype),
         ]
     )
 
@@ -118,7 +121,8 @@ def test_ragged_qk_dotprod_multiple_seqs():
         )
 
 
-def test_ragged_qk_dotprod_multiple_seqs_perf():
+@pytest.mark.parametrize("dtype", _dtypes)
+def test_ragged_qk_dotprod_multiple_seqs_perf(dtype):
     n_q_ctx = 5
     n_seqs = 50
     d_head = 256
@@ -127,13 +131,13 @@ def test_ragged_qk_dotprod_multiple_seqs_perf():
 
     query = RaggedActivations.from_list(
         [
-            _make_seq_arange(n_ctx=n_q_ctx, start_value=0, d_head=d_head)
+            make_seq_arange(n_ctx=n_q_ctx, start_value=0, d_head=d_head, dtype=dtype)
             for _ in range(n_seqs)
         ]
     )
     key = RaggedActivations.from_list(
         [
-            _make_seq_arange(n_ctx=n_k_ctx, start_value=0, d_head=d_head)
+            make_seq_arange(n_ctx=n_k_ctx, start_value=0, d_head=d_head, dtype=dtype)
             for _ in range(n_seqs)
         ]
     )
@@ -180,7 +184,10 @@ def test_ragged_qk_dotprod_multiple_seqs_perf():
 {micros_per_seq/expected_micros_per_seq:.1f}x the expected HBM-bandwidth bound time
 """
     )
-    assert micros_per_seq / expected_micros_per_seq < 1.5
+
+    # FIXME: write a proper, device agnostic test
+    if "A100" in torch.cuda.get_device_name(0):
+        assert micros_per_seq / expected_micros_per_seq < 1.5
 
 
 """

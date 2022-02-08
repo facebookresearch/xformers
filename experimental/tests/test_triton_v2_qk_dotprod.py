@@ -8,17 +8,12 @@ import time
 
 import pytest
 import torch
-from ragged_inference.test_utils import assert_eq, bf16_cuda
+from ragged_inference.test_utils import assert_eq, bf16_support
 from ragged_inference.triton_v2_qk_dotprod import qk_dotprod
 from ragged_inference.triton_v2_ragged_qk_dotprod import (
     RaggedQkPidLookupTable,
     ragged_single_seq_qk_dotprod,
 )
-
-
-def _make_seq(n_ctx: int, value: int, d_model: int):
-    return torch.full([n_ctx, d_model], value, **bf16_cuda())
-
 
 SHAPES = [
     (3, 7),
@@ -27,6 +22,15 @@ SHAPES = [
     (1024, 1024),
     (2048, 384),
 ]
+
+
+_dtypes = [
+    {"device": "cuda", "dtype": torch.float16},
+    {"device": "cuda", "dtype": torch.float32},
+]
+
+if bf16_support():
+    _dtypes.append({"device": "cuda", "dtype": torch.bfloat16})
 
 
 def qk_dotprod_pytorch(q, k):
@@ -40,40 +44,39 @@ def qk_dotprod_single_head_pytorch(q, k):
 
 
 @pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("dtype", _dtypes)
 def test_qk_dotprod(shape, dtype):
-    a = torch.randn(shape, dtype=dtype, device="cuda")
-    b = torch.randn(shape, dtype=dtype, device="cuda")
+    a = torch.randn(shape, **dtype)
+    b = torch.randn(shape, **dtype)
 
     out = qk_dotprod(a, b)
 
     torch_out = qk_dotprod_single_head_pytorch(a, b)
-    assert_eq(out, torch_out, rtol=0.01, atol=0.2)
+    assert_eq(out, torch_out, rtol=0.05, atol=0.2)
 
 
 @pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("dtype", _dtypes)
 def test_ragged_qk_dotprod(shape, dtype):
-    a = torch.randn(shape, dtype=dtype, device="cuda")
-    b = torch.randn(shape, dtype=dtype, device="cuda")
+    a = torch.randn(shape, **dtype)
+    b = torch.randn(shape, **dtype)
 
     lut = RaggedQkPidLookupTable.from_single_seq(n_ctx_q=shape[0], n_ctx_k=shape[0])
     out = ragged_single_seq_qk_dotprod(a, b, lut)
 
     torch_out = qk_dotprod_single_head_pytorch(a, b)
-    assert_eq(out, torch_out, rtol=0.01, atol=0.2)
+    assert_eq(out, torch_out, rtol=0.02, atol=0.2)
 
 
-def test_ragged_qk_dotprod_perf():
+@pytest.mark.parametrize("dtype", _dtypes)
+def test_ragged_qk_dotprod_perf(dtype):
     active_tokens = 5
     d_head = 256
     active_and_cached_tokens = 8000 * 50
     n_iters = 10
 
-    q = torch.randn((active_tokens, d_head), dtype=torch.bfloat16, device="cuda")
-    k = torch.randn(
-        (active_and_cached_tokens, d_head), dtype=torch.bfloat16, device="cuda"
-    )
+    q = torch.randn((active_tokens, d_head), **dtype)
+    k = torch.randn((active_and_cached_tokens, d_head), **dtype)
 
     lut = RaggedQkPidLookupTable.from_single_seq(
         n_ctx_q=active_tokens, n_ctx_k=active_and_cached_tokens
@@ -114,21 +117,20 @@ def test_ragged_qk_dotprod_perf():
 {micros_per_seq/expected_micros_per_seq:.1f}x the expected HBM-bandwidth bound time
 """
     )
-    assert micros_per_seq / expected_micros_per_seq < 1.5
+
+    # FIXME: Write a proper device agnostic test
+
+    if "A100" in torch.cuda.get_device_name(0):
+        assert micros_per_seq / expected_micros_per_seq < 1.5
 
 
-def test_simple_qk_dotprod():
-    dtype = torch.float32
+@pytest.mark.parametrize("dtype", _dtypes)
+def test_simple_qk_dotprod(dtype):
     shape = (8, 8)
-
-    # a = torch.zeros(shape, dtype=dtype, device="cuda")
-    # a[0,0] = 1.0
-    # b = torch.randn(shape, dtype=dtype, device="cuda")
-
-    k = torch.zeros(shape, dtype=dtype, device="cuda")
+    k = torch.zeros(shape, **dtype)
     k[0, 0] = 1.0
     k[0, 1] = 1.0
-    q = torch.randn(shape, dtype=dtype, device="cuda")
+    q = torch.randn(shape, **dtype)
 
     print(f"{q=}")
     print(f"{k=}")

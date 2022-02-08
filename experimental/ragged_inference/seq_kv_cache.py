@@ -9,7 +9,6 @@ from typing import List, Tuple
 
 import torch
 from ragged_inference.garbage_pad_ragged_acts import RaggedActivations
-from ragged_inference.test_utils import bf16_cuda
 
 
 class SingleSeqKVCache:
@@ -43,13 +42,6 @@ class SingleSeqKVCache:
     @property
     def dtype(self):
         return self.raw_values.dtype
-
-
-def _single_seq_kv_cache(n_ctx, value, d_model) -> SingleSeqKVCache:
-    return SingleSeqKVCache(
-        keys=torch.full([n_ctx, d_model], value, **bf16_cuda()),
-        values=torch.full([n_ctx, d_model], value, **bf16_cuda()),
-    )
 
 
 def extend_kv_caches(

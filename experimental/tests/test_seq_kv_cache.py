@@ -6,24 +6,38 @@
 
 import time
 
+import pytest
 import torch
 from ragged_inference.garbage_pad_ragged_acts import RaggedActivations
 from ragged_inference.seq_kv_cache import (
+    SingleSeqKVCache,
     _create_indices,
-    _single_seq_kv_cache,
     calculate_scores_via_qk_dotprod,
     extend_kv_caches,
     garbage_pad_keys,
     garbage_pad_seq_kv_cache,
 )
-from ragged_inference.test_utils import assert_eq, bf16_cuda
+from ragged_inference.test_utils import assert_eq, bf16_support
+
+_dtypes = [{"device": "cuda", "dtype": torch.float16}]
+
+if bf16_support():
+    _dtypes.append({"device": "cuda", "dtype": torch.bfloat16})
 
 
-def test_garbage_pad_seq_kv_cache_correctness():
+def _single_seq_kv_cache(n_ctx, value, d_model, dtype) -> SingleSeqKVCache:
+    return SingleSeqKVCache(
+        keys=torch.full([n_ctx, d_model], value, **dtype),
+        values=torch.full([n_ctx, d_model], value, **dtype),
+    )
+
+
+@pytest.mark.parametrize("dtype", _dtypes)
+def test_garbage_pad_seq_kv_cache_correctness(dtype):
     seq_kv_cache = [
-        _single_seq_kv_cache(n_ctx=1, value=33, d_model=2),
-        _single_seq_kv_cache(n_ctx=3, value=42, d_model=2),
-        _single_seq_kv_cache(n_ctx=7, value=55, d_model=2),
+        _single_seq_kv_cache(n_ctx=1, value=33, d_model=2, dtype=dtype),
+        _single_seq_kv_cache(n_ctx=3, value=42, d_model=2, dtype=dtype),
+        _single_seq_kv_cache(n_ctx=7, value=55, d_model=2, dtype=dtype),
     ]
 
     padded_keys, padded_values = garbage_pad_seq_kv_cache(seq_kv_cache)
@@ -38,27 +52,28 @@ def test_garbage_pad_seq_kv_cache_correctness():
     assert_eq(padded_values[2, :7, :], seq_kv_cache[2].values)
 
 
-def test_extend_kv_caches_correctness():
+@pytest.mark.parametrize("dtype", _dtypes)
+def test_extend_kv_caches_correctness(dtype):
     d_model = 6
     seq_kv_cache = [
-        _single_seq_kv_cache(n_ctx=1, value=33, d_model=d_model),
-        _single_seq_kv_cache(n_ctx=3, value=42, d_model=d_model),
-        _single_seq_kv_cache(n_ctx=7, value=55, d_model=d_model),
+        _single_seq_kv_cache(n_ctx=1, value=33, d_model=d_model, dtype=dtype),
+        _single_seq_kv_cache(n_ctx=3, value=42, d_model=d_model, dtype=dtype),
+        _single_seq_kv_cache(n_ctx=7, value=55, d_model=d_model, dtype=dtype),
     ]
 
     n_ctx_new = 1
     active_keys = RaggedActivations.from_list(
         [
-            torch.ones(n_ctx_new, d_model, **bf16_cuda()),
-            torch.ones(n_ctx_new, d_model, **bf16_cuda()),
-            torch.ones(n_ctx_new, d_model, **bf16_cuda()),
+            torch.ones(n_ctx_new, d_model, **dtype),
+            torch.ones(n_ctx_new, d_model, **dtype),
+            torch.ones(n_ctx_new, d_model, **dtype),
         ]
     )
     active_values = RaggedActivations.from_list(
         [
-            torch.ones(n_ctx_new, d_model, **bf16_cuda()) * 2,
-            torch.ones(n_ctx_new, d_model, **bf16_cuda()) * 2,
-            torch.ones(n_ctx_new, d_model, **bf16_cuda()) * 2,
+            torch.ones(n_ctx_new, d_model, **dtype) * 2,
+            torch.ones(n_ctx_new, d_model, **dtype) * 2,
+            torch.ones(n_ctx_new, d_model, **dtype) * 2,
         ]
     )
 
@@ -74,13 +89,14 @@ def test_extend_kv_caches_correctness():
     assert_eq(new_cache[2].values[:, 0].cpu(), [55, 55, 55, 55, 55, 55, 55, 2])
 
 
-def test_index_select_throughput():
+@pytest.mark.parametrize("dtype", _dtypes)
+def test_index_select_throughput(dtype):
     n_ctx_per_seq = 8192
-    n_seqs = 100
+    n_seqs = 20
     d_model_per_gpu = 12 * 1024 // 8
 
     keys = _single_seq_kv_cache(
-        n_ctx=n_ctx_per_seq * n_seqs, value=42, d_model=d_model_per_gpu
+        n_ctx=n_ctx_per_seq * n_seqs, value=42, d_model=d_model_per_gpu, dtype=dtype
     ).keys
 
     indices = _create_indices(tuple(n_ctx_per_seq for _ in range(n_seqs)))
@@ -126,11 +142,14 @@ def test_index_select_throughput():
         )
 
 
-def test_garbage_pad_keys_throughput(n_ctx_per_seq=1024):
+@pytest.mark.parametrize("dtype", _dtypes)
+def test_garbage_pad_keys_throughput(dtype, n_ctx_per_seq=1024):
     n_seqs = 100
     d_model_per_gpu = 12 * 1024 // 8
     seq_kv_cache = [
-        _single_seq_kv_cache(n_ctx=n_ctx_per_seq, value=42, d_model=d_model_per_gpu)
+        _single_seq_kv_cache(
+            n_ctx=n_ctx_per_seq, value=42, d_model=d_model_per_gpu, dtype=dtype
+        )
         for _ in range(n_seqs)
     ]
 
@@ -179,12 +198,13 @@ def test_garbage_pad_keys_throughput(n_ctx_per_seq=1024):
     )
 
 
-def test_garbage_pad_active_queries_throughput(n_active_ctx_per_seq=5):
+@pytest.mark.parametrize("dtype", _dtypes)
+def test_garbage_pad_active_queries_throughput(dtype, n_active_ctx_per_seq=5):
     n_seqs = 100
     d_model_per_gpu = 12 * 1024 // 8
     active_queries = RaggedActivations.from_list(
         [
-            torch.ones(n_active_ctx_per_seq, d_model_per_gpu, **bf16_cuda()) * 2
+            torch.ones(n_active_ctx_per_seq, d_model_per_gpu, **dtype) * 2
             for _ in range(n_seqs)
         ]
     )
@@ -234,19 +254,22 @@ def test_garbage_pad_active_queries_throughput(n_active_ctx_per_seq=5):
     )
 
 
+@pytest.mark.parametrize("dtype", _dtypes)
 def test_calculate_scores_via_qk_dotprod_throughput(
-    n_key_ctx_per_seq=1024, n_active_query_ctx_per_seq=5
+    dtype, n_key_ctx_per_seq=1024, n_active_query_ctx_per_seq=5
 ):
     n_seqs = 100
     d_model_per_gpu = 12 * 1024 // 8
     seq_kv_cache = [
-        _single_seq_kv_cache(n_ctx=n_key_ctx_per_seq, value=42, d_model=d_model_per_gpu)
+        _single_seq_kv_cache(
+            n_ctx=n_key_ctx_per_seq, value=42, d_model=d_model_per_gpu, dtype=dtype
+        )
         for _ in range(n_seqs)
     ]
 
     active_queries = RaggedActivations.from_list(
         [
-            torch.ones(n_active_query_ctx_per_seq, d_model_per_gpu, **bf16_cuda()) * 2
+            torch.ones(n_active_query_ctx_per_seq, d_model_per_gpu, **dtype) * 2
             for _ in range(n_seqs)
         ]
     )

@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
@@ -80,5 +80,35 @@ def assert_eq(actual, expected, msg="", rtol=None, atol=None):
         ), f"{actual} != {expected}"
 
 
-def bf16_cuda():
-    return dict(device="cuda", dtype=torch.bfloat16)
+_gpu_is_old = None
+
+
+def gpu_capabilities_older_than_70() -> bool:
+    """Return True if the GPU's compute capability is older than SM70."""
+    global _gpu_is_old
+    if _gpu_is_old is None:
+        for i in range(torch.cuda.device_count()):
+            major, _ = torch.cuda.get_device_capability(f"cuda:{i}")
+            if major < 7:
+                _gpu_is_old = True
+        if _gpu_is_old is None:
+            _gpu_is_old = False
+    return _gpu_is_old
+
+
+def bf16_support():
+    # Ampere cards support bf16
+    return torch.cuda.is_available() and (
+        "RTX" in torch.cuda.get_device_name() or "A100" in torch.cuda.get_device_name()
+    )
+
+
+def make_seq(n_ctx: int, value: int, d_model: int, dtype: Dict[str, Any]):
+    return torch.full([n_ctx, d_model], value, **dtype)
+
+
+def make_seq_arange(n_ctx: int, start_value: int, d_head: int, dtype: Dict[str, Any]):
+    return (
+        torch.full([n_ctx, d_head], start_value, **dtype)
+        + torch.arange(n_ctx, **dtype)[:, None]
+    )
