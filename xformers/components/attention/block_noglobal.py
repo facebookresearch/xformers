@@ -15,15 +15,14 @@ import torch
 from torch import nn
 from torch import Tensor
 import torch.nn.functional as F
-from functools import partial, reduce
-from operator import mul
+from functools import partial
 
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 
 
 @dataclass
 class BlockNoglobalAttentionConfig(AttentionConfig):
-    window_size: int
+    block_size: int
     num_heads: int
     require_key_mask: bool
 
@@ -48,6 +47,7 @@ class BlockNoglobalAttention(Attention):
         v: torch.Tensor,
         att_mask: Optional[torch.Tensor] = None,
         key_padding_mask: Optional[Tensor] = None,
+        attn_bias: Optional[torch.Tensor] = None,
         *args, **kwargs
     ):
         # Notation: batch size: B, sequence length: L, number of blocks: nb, number of heads: nh
@@ -57,7 +57,8 @@ class BlockNoglobalAttention(Attention):
         bsz = bh // self.num_head
         head_dim = q.size(-1)
 
-        assert key_padding_mask is not None #HACK
+        if key_padding_mask is None:
+            key_padding_mask = torch.zeros(int(q.shape[0]/self.num_head), q.size(-2))
         key_padding_mask = key_padding_mask.to(q)
 
         # pad the input length to factors of bucket size
@@ -78,7 +79,7 @@ class BlockNoglobalAttention(Attention):
         b_q = blockify(num_blocks, q)
         b_k, b_v = map(partial(blockify, num_blocks), (k, v)) # (B * nh, nb, L // nb, head_dim)
 
-        dots = torch.einsum('buie,buje->buij', b_q, b_k) * (head_dim ** -0.5)
+        dots = torch.einsum('buie,buje->buij', b_q, b_k) * (head_dim ** -0.5) # (B * nh, nb, L // nb, L // nb)
         mask_value = -10000
 
         # this model does use global token markers (-1)
@@ -87,12 +88,17 @@ class BlockNoglobalAttention(Attention):
         # 1 means not masking
         kv_mask = q_mask
         mq, mk = map(partial(blockify, num_blocks), (q_mask, kv_mask)) # (B, nb, L // nb)
-        mask = mq[:, :, :, None] * mk[:, :, None, :]
+        mask = mq[:, :, :, None] * mk[:, :, None, :] # (B, nb, L // nb, L // nb)
 
-        dots.masked_fill_(~mask, mask_value)
+        dots = dots.view(bsz, self.num_head, num_blocks, self.block_size, self.block_size)
+        dots.masked_fill_(~mask.unsqueeze(1), mask_value)
+
+        # add relational bias
+        seq_len = q.size(1)
+        if attn_bias is not None:
+            dots += attn_bias.unsqueeze(2)[:,:,:,:seq_len,:seq_len]
 
         block_attn_weights = dots.view(bsz*self.num_head, -1, self.block_size)
-
         all_attn_probs = block_attn_weights.softmax(dim=-1)
         all_attn_probs = self.drop_attn(all_attn_probs)
 

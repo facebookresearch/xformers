@@ -101,6 +101,7 @@ from .nystrom import NystromAttention  # noqa
 from .ortho import OrthoFormerAttention  # noqa
 from .random import RandomAttention  # noqa
 from .scaled_dot_product import ScaledDotProduct  # noqa
+from .block_noglobal import BlockNoglobalAttention
 
 __all__ = [
     "ScaledDotProduct",
@@ -120,6 +121,7 @@ __all__ = [
 # Optionally expose the BlockSparse attention
 try:
     from .blocksparse import BlockSparseAttention  # noqa
+    from .blocksparse_local import BlockSparseLocalAttention
 
     __all__ += ["BlockSparseAttention"]
 except ImportError:

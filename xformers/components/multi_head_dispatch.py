@@ -1,3 +1,5 @@
+
+
 # Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 #
 # This source code is licensed under the BSD license found in the
@@ -44,11 +46,9 @@ class MultiHeadDispatch(nn.Module):
     """
     A multi-head masked self-attention dispatch mechanism, with a projection at the end,
     following the architecture proposed in `Attention is all you need`_, Vaswani et al.
-
     The actual attention mechanism can vary, as well as the projections.
     This can be used to wrap the proposed attention mechanisms and make them multi-head aware,
     but it is optional.
-
     .. _`Attention is all you need`: https://arxiv.org/abs/1706.03762v5
     """
 
@@ -127,7 +127,7 @@ class MultiHeadDispatch(nn.Module):
         key: Optional[torch.Tensor] = None,
         value: Optional[torch.Tensor] = None,
         att_mask: Optional[torch.Tensor] = None,
-        **kwargs
+        key_padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Expected input dimensions are [batch size, sequence length, embed dim]
@@ -198,11 +198,9 @@ class MultiHeadDispatch(nn.Module):
             v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
 
         # Self-attend
-        key_padding_mask = kwargs.get("key_padding_mask", None)
-        if self.attention.requires_orig_inputs:
-            y = self.attention(x=query, q=q, k=k, v=v, att_mask=att_mask, key_padding_mask=key_padding_mask)
-        else:
-            y = self.attention(q=q, k=k, v=v, att_mask=att_mask, key_padding_mask=key_padding_mask)
+        y = self.attention(
+            q=q, k=k, v=v, att_mask=att_mask, key_padding_mask=key_padding_mask
+        )
 
         # Re-assemble all head outputs side by side
         y = (

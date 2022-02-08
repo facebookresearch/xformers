@@ -27,8 +27,6 @@ def test_core_attention():
     assert torch.allclose(r_sparse, r_dense)
 
 
-<<<<<<< HEAD
-=======
 def test_core_attention_mask_types():
 
     b, s, d = 8, 900, 32
@@ -53,7 +51,6 @@ def test_core_attention_mask_types():
     assert torch.allclose(r_dense_add, r_sparse_add)
 
 
->>>>>>> f33b35641976f31354f208993c7692203ca4c3fe
 @pytest.mark.parametrize("device", _devices)
 def test_amp_attention_dense_no_mask(device):
     b, s, d = 8, 64, 32

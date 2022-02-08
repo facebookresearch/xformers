@@ -27,32 +27,33 @@ from xformers.components.attention import Attention, AttentionConfig, register_a
 
 @dataclass
 class BlockAttentionConfig(AttentionConfig):
-    window_size: int
+    block_size: int
     num_heads: int
     require_key_mask: bool
 
 @register_attention("block", BlockAttentionConfig)
 class BlockAttention(Attention):
     def __init__(
-        self, 
-        dropout: float, 
+        self,
+        dropout: float,
         num_heads: int,
-        window_size: int = 512, # 
+        block_size: int = 512, #
         *args, **kwargs
     ):
 
         super().__init__()
-        self.bucket_size = window_size
+        self.bucket_size = block_size
         self.drop_attn = nn.Dropout(dropout)
         self.num_head = num_heads
 
     def forward(
-        self, 
-        q: torch.Tensor, 
-        k: torch.Tensor, 
-        v: torch.Tensor, 
-        att_mask: Optional[torch.Tensor] = None, 
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        att_mask: Optional[torch.Tensor] = None,
         key_padding_mask: Optional[Tensor] = None,
+
         *args, **kwargs
     ):
         # q, k, v: (B * nh, S, hs)
@@ -78,13 +79,13 @@ class BlockAttention(Attention):
             pad_len = (self.bucket_size - key_padding_mask.shape[1] % self.bucket_size) % self.bucket_size
             # key padding mask: 1 means padding tokens
             key_padding_mask = torch.cat([key_padding_mask, key_padding_mask.new_ones(key_padding_mask.size(0), pad_len).to(key_padding_mask)], dim=1)
-            
+
         # global attention tokens
         extra_attention_mask = key_padding_mask < 0
         num_extra_indices_per_batch = extra_attention_mask.long().sum(dim=1)
         max_num_extra_indices_per_batch = num_extra_indices_per_batch.max()
 
-        hard_mask = key_padding_mask == 1 
+        hard_mask = key_padding_mask == 1
 
         if max_num_extra_indices_per_batch <= 0:
             extra_attention_mask = None
@@ -137,9 +138,9 @@ class BlockAttention(Attention):
 
         dots.masked_fill_(~mask, mask_value)
         del mask
-        
+
         block_attn_weights = dots.view(bsz*self.num_head, -1, self.bucket_size)
-        
+
         if extra_attention_mask is not None:
             attn_weights_over_g_tokens  = attn_weights_over_g_tokens.view(bsz*self.num_head, -1, max_num_extra_indices_per_batch)
             all_attn = torch.cat([block_attn_weights, attn_weights_over_g_tokens], dim=-1)
@@ -155,7 +156,7 @@ class BlockAttention(Attention):
         block_attn_probs = all_attn_probs[:, :, :block_attn_weights.shape[-1]]
         block_attn_probs = block_attn_probs.view(bsz*self.num_head, -1, self.bucket_size, self.bucket_size)
         C += block_attn_probs.matmul(b_v).view(bsz*self.num_head, -1, head_dim)
-        
+
         if extra_attention_mask is not None:
             attn_probs_over_g_tokens = all_attn_probs[:,:,-attn_weights_over_g_tokens.shape[-1]:]
             C += attn_probs_over_g_tokens.matmul(selected_v)
@@ -179,7 +180,7 @@ class BlockAttention(Attention):
 
             nonzero_global_attn = g2all_attn[selection_padding_mask_nonzeros[0], :, selection_padding_mask_nonzeros[1]]
 
-            C = C.view(bsz, self.num_head, -1, head_dim)             
+            C = C.view(bsz, self.num_head, -1, head_dim)
             C[extra_attention_mask_nonzeros[0],:,extra_attention_mask_nonzeros[1]] = nonzero_global_attn
             C = C.view(bsz*self.num_head, -1, head_dim)
 
