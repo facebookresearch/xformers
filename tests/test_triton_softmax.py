@@ -107,14 +107,15 @@ def test_softmax_fp16(dtype):
 @pytest.mark.parametrize("masking", [True, False])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("contiguous", [True, False])
-def test_softmax_parity_fallback(log, masking, causal, contiguous):
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_softmax_parity_fallback(log, masking, causal, contiguous, device):
     """Check that the fallback paths are correct"""
     torch.random.manual_seed(0)
 
     shape = (16, 16)
 
     # Check the result of a FW pass
-    X = torch.normal(0, 1, size=shape, device="cpu", requires_grad=False)
+    X = torch.normal(0, 1, size=shape, device=device, requires_grad=False)
 
     if not contiguous:
         # Make sure that the buffer is not contiguous
@@ -125,15 +126,18 @@ def test_softmax_parity_fallback(log, masking, causal, contiguous):
     X_.requires_grad = True
 
     seq = shape[1]
-    mask = torch.zeros((seq, seq))
+    mask = torch.zeros((seq, seq), device=device)
     if masking:
-        mask[torch.rand((seq, seq)) > 0.8] = -float("inf")
+        mask[torch.rand((seq, seq), device=device) > 0.8] = -float("inf")
 
+    mask_causal = torch.zeros_like(mask)
     if causal:
-        mask[~torch.tril(torch.ones_like(mask)).bool()] = -float("inf")
+        mask_causal[~torch.tril(torch.ones_like(mask)).bool()] = -float("inf")
 
     y_torch = (
-        torch.log_softmax(X + mask, dim=-1) if log else torch.softmax(X + mask, dim=-1)
+        torch.log_softmax(X + mask + mask_causal, dim=-1)
+        if log
+        else torch.softmax(X + mask + mask_causal, dim=-1)
     )
     y_triton = (
         triton_log_softmax(X_, mask, causal)
