@@ -191,7 +191,8 @@ class SparseCSRTensor(torch.Tensor):
             column_indices,
             mask.__transp_info,
         )
-        # TODO add bias here
+        if mask.dtype != torch.bool:
+            out = out + mask.__values
         return cls._wrap(
             mask.shape,
             out,

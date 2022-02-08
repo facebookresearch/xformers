@@ -65,7 +65,7 @@ class SparseCOOTensor(torch.Tensor):
         kwargs["dtype"] = elem.dtype
         kwargs["layout"] = elem.layout
         kwargs["requires_grad"] = elem.requires_grad
-        assert torch.__version__ > (1, 10), "SparseCSRTensor requires PyTorch 1.11+"
+        assert torch.__version__ > (1, 10), "SparseCOOTensor requires PyTorch 1.11+"
         r = torch.Tensor._make_wrapper_subclass(cls, elem.shape, **kwargs)
         r.elem = elem
         return r
@@ -89,9 +89,13 @@ class SparseCOOTensor(torch.Tensor):
         mask = _broadcast_batch(mask, a.shape[0])
 
         # coalesced is not implemented for bool tensors, so need to cast
+        dtype = mask.dtype
         mask = mask.to(dtype=a.dtype)  # type: ignore  # mypy is missing the catch above
 
-        return cls(torch.ops.xformers.matmul_with_mask(a, b, mask))
+        res = torch.ops.xformers.matmul_with_mask(a, b, mask)
+        if dtype != torch.bool:
+            res = res + mask
+        return cls(res)
 
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):

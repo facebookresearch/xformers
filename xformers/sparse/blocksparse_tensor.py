@@ -157,6 +157,8 @@ class BlockSparseTensor(torch.Tensor):
             res = _sddmm(a, b, mask.__layout)
         else:
             res = mask.__sparse_dot_sdd(a, b)
+        if mask.dtype != torch.bool:
+            res = res + mask.__values
         return cls._wrap(res, mask)
 
     @classmethod

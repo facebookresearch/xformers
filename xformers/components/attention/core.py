@@ -10,7 +10,6 @@ from typing import Optional, Union
 
 import torch
 
-from xformers import _is_sparse_available, _is_triton_available
 from xformers.components.attention.attention_mask import AttentionMask
 from xformers.ops import masked_matmul, softmax
 from xformers.sparse import (
@@ -70,12 +69,7 @@ def scaled_dot_product_attention(
     att_mask: Optional[MaskType],
     dropout: Optional[torch.nn.Module] = None,
 ) -> torch.Tensor:
-    autocast_disabled = (
-        _is_sparse_available
-        and type(att_mask)
-        not in [type(None), torch.Tensor, BlockSparseTensor, CausalTensor]
-        or (att_mask is not None and att_mask.is_sparse)
-    )
+    autocast_disabled = type(att_mask) in [SparseCSRTensor, SparseCOOTensor]
 
     with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
         if autocast_disabled:
