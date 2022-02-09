@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
+# import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -80,7 +80,8 @@ class ScaledDotProduct(Attention):
                     - If the mask has the float type, then an additive mask is expected (masked values are -inf)
 
         """
-
+        # TODO: FIXME
+        """
         # Convenience, create an attention mask if a tensor was passed
         if att_mask is not None and isinstance(att_mask, torch.Tensor):
             # By default we don't know of the causality, and a check would be expensive
@@ -119,6 +120,7 @@ class ScaledDotProduct(Attention):
                     + " Please pad the inputs or adjust the attention mask"
                 )
                 raise NotImplementedError
+        """
 
         # Attend: (B x nh, S, hs) x (B x nh, hs, S) -> (B x nh, S, S)
         y = scaled_dot_product_attention(
