@@ -16,7 +16,7 @@ else:
 
     def triton_softmax(
         x: torch.Tensor, mask: Optional[torch.Tensor] = None, causal: bool = False
-    ):
+    ) -> torch.Tensor:
         x = x + torch.triu(torch.full_like(x, float("-inf")), diagonal=1)
         return torch.softmax(x, dim=-1)
 
