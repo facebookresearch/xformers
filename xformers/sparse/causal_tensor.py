@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Optional
+
 import torch
 from torch.utils._pytree import tree_map
 
@@ -10,6 +12,13 @@ from xformers import _is_triton_available
 
 if _is_triton_available:
     from xformers.triton.softmax import softmax as triton_softmax
+else:
+
+    def triton_softmax(
+        x: torch.Tensor, mask: Optional[torch.Tensor] = None, causal: bool = False
+    ):
+        x = x + torch.triu(torch.full_like(x, float("-inf")), diagonal=1)
+        return torch.softmax(x, dim=-1)
 
 
 class CausalTensor(torch.Tensor):
@@ -23,7 +32,6 @@ class CausalTensor(torch.Tensor):
         kwargs["layout"] = elem.layout
         kwargs["requires_grad"] = elem.requires_grad
         assert torch.__version__ > (1, 10), "CausalTensor requires PyTorch 1.11+"
-        assert _is_triton_available, "Triton needs to be available"
         r = torch.Tensor._make_wrapper_subclass(cls, elem.shape, **kwargs)
         r.elem = elem
         return r
