@@ -9,13 +9,13 @@ from typing import Any, Callable, Dict, Set, Union
 
 import torch
 
+from xformers.sparse import SparseCOOTensor, SparseCSRTensor
 from xformers.utils import (
     generate_matching_config,
     get_registry_decorator,
     import_all_modules,
 )
 
-from ._sputnik_sparse import SparseCS
 from .attention_mask import AttentionMask
 from .base import Attention, AttentionConfig  # noqa
 
@@ -89,8 +89,8 @@ def maybe_sparsify(matrix) -> Any:
 
 def sparsify(matrix):
     if _USE_SPUTNIK:
-        return SparseCS(matrix)
-    return matrix.to_sparse()
+        return SparseCSRTensor.from_dense(matrix)
+    return SparseCOOTensor(matrix.to_sparse())
 
 
 from .favor import FavorAttention  # noqa
