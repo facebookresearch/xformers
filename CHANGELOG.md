@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compositional Attention [#41]
 - Experimental Ragged attention [#189]
 - Mixture of Experts [#181]
+- BlockSparseTensor [#202]
+- nd-tensor support for triton softmax [#210]
 
 ### Fixed
 - bugfix Favor, single feature map [#183]
