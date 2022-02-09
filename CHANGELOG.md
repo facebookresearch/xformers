@@ -4,18 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## TBD
+## [0.0.9] - 2022-02-09
 ### Added
 - Compositional Attention [#41]
 - Experimental Ragged attention [#189]
+- Mixture of Experts [#181]
+- BlockSparseTensor [#202]
+- nd-tensor support for triton softmax [#210]
 
 ### Fixed
 - bugfix Favor, single feature map [#183]
 - sanity check blocksparse settings [#207]
 - fixed some pickability [#204]
-
-### Added
-- Mixture of Experts [#181]
 
 ## [0.0.8] - 2022-01-07
 ### Fixed
