@@ -8,7 +8,7 @@ import torch
 
 # needed to register custom ops
 import xformers  # noqa: F401
-import xformers.components.attention.core
+from xformers.components.attention._sputnik_sparse import SparseCS
 from xformers.components.attention.core import _create_random_sparsity
 from xformers.sparse.coo_tensor import _broadcast_batch, _SparseBMM
 from xformers.sparse.utils import _csr_to_coo
@@ -17,6 +17,59 @@ _sparse_bmm = _SparseBMM.apply
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+
+
+# TODO Start of copy-paste to be deleted in the future
+def _matmul_with_mask(a, b, mask):
+    if mask is None:
+        return a @ b
+
+    if mask.dtype == torch.bool:
+        if isinstance(mask, SparseCS):
+            return mask.matmul_with_mask(a, b)
+        if mask.is_sparse:
+            # perform broadcasting if needed
+            mask = _broadcast_batch(mask, a.shape[0])
+
+            # coalesced is not implemented for bool tensors, so need to cast
+            mask = mask.to(dtype=a.dtype)  # type: ignore  # mypy is missing the catch above
+
+        return torch.ops.xformers.matmul_with_mask(a, b, mask)
+
+    # Non optimized codepath
+    assert not isinstance(mask, SparseCS)
+
+    att = a @ b
+    if mask.dtype == torch.bool:
+        if mask.ndim == 2:
+            mask = mask.unsqueeze(0).expand(att.shape[0], -1, -1)
+        # mask is presumed false == ignore
+        att[~mask] = float("-inf")
+    else:
+        # mask is presumed additive
+        att += mask
+    return att
+
+
+def _softmax(a: torch.Tensor) -> torch.Tensor:
+    if isinstance(a, SparseCS):
+        return a.softmax()
+
+    if a.is_sparse:
+        return torch.sparse.softmax(a, dim=a.ndim - 1)
+
+    return torch.softmax(a, dim=a.ndim - 1)
+
+
+def bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    if isinstance(a, SparseCS):
+        return a.spmm(b)
+    if a.is_sparse:
+        return _sparse_bmm(a, b)
+    return a @ b
+
+
+# TODO End of copy-paste to be deleted in the future
 
 
 def _baseline_matmul_with_sparse_mask(
@@ -140,9 +193,9 @@ def test_sddmm_sputnik(device):
         torch.ones(B, L, M, dtype=torch.bool, device=device), prob
     )
 
-    mask_csr = xformers.components.attention.core.SparseCS(mask, device)
+    mask_csr = SparseCS(mask, device)
 
-    fn = xformers.components.attention.core._matmul_with_mask
+    fn = _matmul_with_mask
 
     mask = mask.to_sparse()
 
@@ -171,7 +224,7 @@ def test_sddmm_csr(L, M, K):
         torch.ones(B, L, M, dtype=torch.bool, device=device), prob
     )
 
-    mask_csr = xformers.components.attention.core.SparseCS(mask, device)
+    mask_csr = SparseCS(mask, device)
     row_indices = mask_csr.row_indices
     row_offsets = mask_csr.row_offsets
     column_indices = mask_csr.column_indices
@@ -198,7 +251,7 @@ def test_sddmm_csr_per_nnz(nnz):
     mask.view(-1)[: nnz - 1] = True
     mask[-1, -1] = True
 
-    mask_csr = xformers.components.attention.core.SparseCS(mask, device)
+    mask_csr = SparseCS(mask, device)
     row_indices = mask_csr.row_indices
     row_offsets = mask_csr.row_offsets
     column_indices = mask_csr.column_indices
@@ -228,7 +281,7 @@ def test_sddmm_coo(L, M, K):
         torch.ones(B, L, M, dtype=torch.bool, device=device), prob
     )
 
-    mask_csr = xformers.components.attention.core.SparseCS(mask, device)
+    mask_csr = SparseCS(mask, device)
     row_indices = mask_csr.row_indices
     row_offsets = mask_csr.row_offsets
     column_indices = mask_csr.column_indices
@@ -261,9 +314,9 @@ def test_sddmm_sputnik_backward(device):
         torch.ones(B, L, M, dtype=torch.bool, device=device), prob
     )
 
-    mask_csr = xformers.components.attention.core.SparseCS(mask, device)
+    mask_csr = SparseCS(mask, device)
 
-    fn = xformers.components.attention.core._matmul_with_mask
+    fn = _matmul_with_mask
 
     mask = mask.to_sparse()
 
@@ -285,9 +338,9 @@ def test_sparse_softmax_sputnik(device):
     prob = 0.5
     a = _create_random_sparsity(torch.rand(B, L, L, device=device), prob)
 
-    a_csr = xformers.components.attention.core.SparseCS(a, device)
+    a_csr = SparseCS(a, device)
 
-    fn = xformers.components.attention.core._softmax
+    fn = _softmax
 
     a = a.to_sparse()
 
@@ -307,9 +360,9 @@ def test_sparse_softmax_sputnik_backward(device):
     prob = 0.5
     a = _create_random_sparsity(torch.rand(B, L, L, device=device), prob)
 
-    a_csr = xformers.components.attention.core.SparseCS(a, device)
+    a_csr = SparseCS(a, device)
 
-    fn = xformers.components.attention.core._softmax
+    fn = _softmax
 
     a = a.to_sparse()
 
@@ -332,9 +385,9 @@ def test_spmm_sputnik(device):
 
     b = torch.rand(B, L, K, device=device)
 
-    a_csr = xformers.components.attention.core.SparseCS(a, device)
+    a_csr = SparseCS(a, device)
 
-    fn = xformers.components.attention.core.bmm
+    fn = bmm
 
     a = a.to_sparse()
 
@@ -358,9 +411,9 @@ def test_spmm_sputnik_backward(device):
     b = torch.rand(B, L, K, device=device)
     b.requires_grad_(True)
 
-    a_csr = xformers.components.attention.core.SparseCS(a, device)
+    a_csr = SparseCS(a, device)
 
-    fn = xformers.components.attention.core.bmm
+    fn = bmm
 
     a = a.to_sparse()
     a.requires_grad_(True)
@@ -387,7 +440,7 @@ def test_csr_transpose():
 
     a = _create_random_sparsity(torch.rand(B, L, K, device=device), prob)
 
-    a_csr = xformers.components.attention.core.SparseCS(a, device)
+    a_csr = SparseCS(a, device)
 
     res = a_csr.transpose()
     res2 = res.transpose()
