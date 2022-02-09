@@ -8,8 +8,9 @@ import itertools
 import torch
 from torch.utils import benchmark
 
-from xformers.components.attention._sputnik_sparse import _csr_to_coo
-from xformers.components.attention.core import SparseCS, _create_random_sparsity
+from xformers.sparse import SparseCSRTensor
+from xformers.sparse.utils import _csr_to_coo
+from xformers.testing import _create_tensor
 
 MIN_RUN_TIME = 0.2
 
@@ -50,15 +51,13 @@ def bench_sddmm(configs):
         a = torch.rand(B, M, K, device=device)
         b = torch.rand(B, M, K, device=device)
 
-        mask = _create_random_sparsity(
-            torch.ones(1, M, M, dtype=torch.bool), prob, divisible_by=16
-        )
+        tensor_type = SparseCSRTensor
+        mask = _create_tensor(tensor_type, device, torch.bool, (1, M, M), prob)
         aa = a
         bb = b
-        mask = SparseCS(mask, device)
-        row_indices = mask.row_indices
-        row_offsets = mask.row_offsets
-        column_indices = mask.column_indices
+        row_indices = mask._csr_row_indices
+        row_offsets = mask._csr_row_offsets
+        column_indices = mask._csr_column_indices
 
         for backend in ["csr_sputnik", "csr_ge", "coo_ge", "csr_to_coo"]:
 
