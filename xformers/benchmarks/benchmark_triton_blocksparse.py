@@ -19,7 +19,8 @@ import triton
 from triton.ops.blocksparse import matmul as blocksparse_matmul
 
 from xformers.benchmarks.utils import TestCase, pretty_plot, pretty_print
-from xformers.components.attention.core import SparseCS, _matmul_with_mask
+from xformers.ops import masked_matmul
+from xformers.sparse import SparseCSRTensor
 
 
 def bench_matmul(dtype: torch.dtype, shapes):
@@ -70,11 +71,8 @@ def bench_matmul(dtype: torch.dtype, shapes):
             if mode == "sdd":
                 b_cs = b_cs.transpose(-2, -1)
 
-            # pyre-fixme[16]: TODO(T101400990): Pyre did not recognize the
-            # `SparseCS` import.
-            sparse_cs_mask = SparseCS(
-                mask.flatten(start_dim=0, end_dim=1).contiguous(),
-                device=torch.device("cuda"),
+            sparse_csr_mask = SparseCSRTensor.from_dense(
+                mask.flatten(start_dim=0, end_dim=1).contiguous()
             )
 
             # The raw compute steps
@@ -94,9 +92,9 @@ def bench_matmul(dtype: torch.dtype, shapes):
 
             def sparse_step():
                 if mode == "sdd":
-                    return _matmul_with_mask(a_cs, b_cs, sparse_cs_mask)
+                    return masked_matmul(a_cs, b_cs, sparse_csr_mask)
                 else:
-                    return sparse_cs_mask.spmm(b_cs)
+                    return torch.matmul(sparse_csr_mask, b_cs)
 
             # Run and measure, report perf in terms of TFlops
             for testcase in [
