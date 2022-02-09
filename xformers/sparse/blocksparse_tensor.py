@@ -4,10 +4,30 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from triton.ops.blocksparse import matmul as blocksparse_matmul
-from triton.ops.blocksparse import softmax as blocksparse_softmax
 
 from xformers.ops import masked_matmul
+
+try:
+    from triton.ops.blocksparse import matmul as blocksparse_matmul
+    from triton.ops.blocksparse import softmax as blocksparse_softmax
+except ImportError as e:
+    import logging
+
+    logging.warning(
+        f"Triton is not available, some optimizations will not be enabled.\nError {e}"
+    )
+    blocksparse_matmul = None
+    blocksparse_softmax = None
+
+
+def _can_use_triton(a):
+    if a.device.type == "cpu":
+        return False
+
+    if blocksparse_matmul is None:
+        return False
+
+    return True
 
 
 def _spmm(b, layout, values):
@@ -88,13 +108,24 @@ class BlockSparseTensor(torch.Tensor):
     def __init__(self, values, layout):
         assert values.shape[-2] == values.shape[-1]
         block_size = values.shape[-1]
+        # TODO: make this check conditioned on the use of Triton
         assert block_size >= 16, "Minimum block size is 16, for now at least"
 
         # Pure blocksparse data
         self.__values = values
         self.__layout = layout
 
-        # blocksparse operators
+        # blocksparse operators for triton
+        if blocksparse_matmul:
+            self._initialize_triton_ops()
+        else:
+            self.__sparse_dot_sdd = None
+            self.__sparse_dot_dsd = None
+            self.__sparse_softmax = None
+
+    def _initialize_triton_ops(self):
+        block_size = self.__values.shape[-1]
+
         self.__sparse_dot_sdd = blocksparse_matmul(
             self.__layout,
             block_size,
@@ -141,10 +172,10 @@ class BlockSparseTensor(torch.Tensor):
     def _bmm(cls, arg0, arg1):
         if not (isinstance(arg0, cls) and type(arg1) == torch.Tensor):
             return NotImplemented
-        if arg1.device.type == "cpu":
-            res = _spmm(arg1, arg0.__layout, arg0.__values)
-        else:
+        if _can_use_triton(arg1):
             res = arg0.__sparse_dot_dsd(arg0.__values, arg1)
+        else:
+            res = _spmm(arg1, arg0.__layout, arg0.__values)
         return res
 
     @classmethod
@@ -153,10 +184,10 @@ class BlockSparseTensor(torch.Tensor):
             return NotImplemented
         b = b.transpose(-2, -1)
         assert b.is_contiguous()
-        if a.device.type == "cpu":
-            res = _sddmm(a, b, mask.__layout)
-        else:
+        if _can_use_triton(a):
             res = mask.__sparse_dot_sdd(a, b)
+        else:
+            res = _sddmm(a, b, mask.__layout)
         if mask.dtype != torch.bool:
             res = res + mask.__values
         return cls._wrap(res, mask)
@@ -165,12 +196,12 @@ class BlockSparseTensor(torch.Tensor):
     def _softmax(cls, arg0, dim):
         if not (dim == -1 or dim == 2):
             return NotImplemented
-        if arg0.device.type == "cpu":
-            res = _softmax(arg0.__layout, arg0.__values)
-        else:
+        if _can_use_triton(arg0):
             # TODO triton softmax performs an in-place operation
             # res = arg0.__sparse_softmax(arg0.__values)
             res = arg0.__sparse_softmax(arg0.__values.clone())
+        else:
+            res = _softmax(arg0.__layout, arg0.__values)
         return cls._wrap(res, arg0)
 
     @classmethod

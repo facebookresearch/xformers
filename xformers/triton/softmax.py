@@ -19,7 +19,6 @@ from xformers.triton.k_softmax import _softmax, _softmax_backward
 
 
 _triton_registered_overflow = False
-_triton_registered_warnings = False
 _triton_softmax_fp16_enabled = False  # NOTE: PyTorch keeps softmax as fp32
 
 
@@ -40,6 +39,7 @@ class _softmax_triton(torch.autograd.Function):
 
         # Handle 2D/3D tensors
         x_ = x.unsqueeze(0) if x.ndim == 2 else x
+        x_ = x_.flatten(0, -3)
 
         if not x_.is_contiguous():
             x_ = x_.contiguous()
@@ -92,6 +92,7 @@ class _softmax_triton(torch.autograd.Function):
 
         # Handle 2D/3D tensors
         grad_out_ = grad_out.unsqueeze(0) if grad_out.ndim == 2 else grad_out
+        grad_out_ = grad_out_.flatten(0, -3)
 
         # SPMD launch grid
         grid_2d = (
@@ -177,7 +178,6 @@ def _softmax_dispatch(
     # - there was no previous failure
 
     global _triton_registered_overflow
-    global _triton_registered_warnings
 
     try:
         if torch.cuda.is_available() and x.is_cuda and not _triton_registered_overflow:
@@ -192,15 +192,11 @@ def _softmax_dispatch(
         )
         logging.warning(e)
 
-    if causal and not _triton_registered_warnings:
-        logging.warning(
-            "Triton softmax could not be used. \
-                The causal flags is being passed but it does not provide any benefit with PyTorch softmax."
-        )
-        _triton_registered_warnings = True
-
     if mask is not None:
         x = x + mask
+
+    if causal:
+        x = x + torch.triu(torch.full_like(x, float("-inf")), diagonal=1)
 
     if log:
         return torch.log_softmax(x, dim=-1)
