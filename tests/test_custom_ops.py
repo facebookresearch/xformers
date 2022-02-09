@@ -9,12 +9,11 @@ import torch
 # needed to register custom ops
 import xformers  # noqa: F401
 import xformers.components.attention.core
-from xformers.components.attention._sputnik_sparse import _csr_to_coo
-from xformers.components.attention.core import (
-    _broadcast_batch,
-    _create_random_sparsity,
-    _sparse_bmm,
-)
+from xformers.components.attention.core import _create_random_sparsity
+from xformers.sparse.coo_tensor import _broadcast_batch, _SparseBMM
+from xformers.sparse.utils import _csr_to_coo
+
+_sparse_bmm = _SparseBMM.apply
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
