@@ -51,7 +51,14 @@ def bench_matmul(dtype: torch.dtype, shapes):
             b_triton = (
                 triton.testing.sparsify_tensor(b, layout, block) if mode == "dds" else b
             )
-            bsmm = blocksparse_matmul(layout, block, mode, trans_a=False, trans_b=False)
+            bsmm = blocksparse_matmul(
+                layout=layout,
+                block=block,
+                mode=mode,
+                device=torch.device("cuda"),
+                trans_a=False,
+                trans_b=False,
+            )
 
             # - dense
             ta = triton.testing.mask_tensor(a, layout, block) if mode == "dsd" else a
