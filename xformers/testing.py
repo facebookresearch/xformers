@@ -69,3 +69,8 @@ def _create_tensor(tensor_type, device, dtype, shape, sparsity):
         )
     elif tensor_type == CausalTensor:
         return _create_causal_tensor(device=device, dtype=dtype, shape=shape)
+    elif tensor_type == torch.Tensor:
+        matrix = torch.rand(shape, dtype=torch.float32, device=device).to(dtype)
+        zeros = torch.rand(shape, device=device) > sparsity
+        matrix[zeros] = 0
+        return matrix

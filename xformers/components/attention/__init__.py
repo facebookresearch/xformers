@@ -88,9 +88,10 @@ def maybe_sparsify(matrix) -> Any:
 
 
 def sparsify(matrix):
+    # TODO this should be modified to take more options into account
     if _USE_SPUTNIK:
         return SparseCSRTensor.from_dense(matrix)
-    return SparseCOOTensor(matrix.to_sparse())
+    return SparseCOOTensor.from_dense(matrix)
 
 
 from .favor import FavorAttention  # noqa

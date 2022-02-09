@@ -8,13 +8,9 @@ import itertools
 import torch
 from torch.utils import benchmark
 
-from xformers.components.attention.core import (
-    SparseCS,
-    _create_random_sparsity,
-    _matmul_with_mask,
-    _softmax,
-    bmm,
-)
+from xformers.ops import masked_matmul, softmax
+from xformers.sparse import SparseCOOTensor, SparseCSRTensor
+from xformers.testing import _create_tensor
 
 MIN_RUN_TIME = 1
 SHAPES = [[8, 8], [256, 1024], [128, 256]]
@@ -35,30 +31,29 @@ def bench_sddmm():
         for backend, prob in itertools.product(
             ["coo_pytorch", "csr_sputnik", "csr_ge"], SPARSITIES
         ):
-            mask = _create_random_sparsity(torch.ones(B, M, M, dtype=torch.bool), prob)
+            tensor_type = SparseCSRTensor if "csr" in backend else SparseCOOTensor
+            mask = _create_tensor(tensor_type, device, torch.bool, (B, M, M), prob)
             aa = a
             bb = b
             if "csr" in backend:
-                mask = SparseCS(mask, device)
                 aa = a
                 bb = b
-                row_indices = mask.row_indices
-                row_offsets = mask.row_offsets
-                column_indices = mask.column_indices
+                row_indices = mask._csr_row_indices
+                row_offsets = mask._csr_row_offsets
+                column_indices = mask._csr_column_indices
                 if "_ge" in backend:
                     fn = torch.ops.xformers.csr_sddmm
                 else:
                     fn = torch.ops.xformers.sddmm_sputnik
                 fn_str = "fn(a, b, row_indices, row_offsets, column_indices)"
             else:
-                mask = mask.to_sparse().to(device)
                 _, row_offsets, column_indices = mask.indices().int().unbind()
                 row_offsets = row_offsets.contiguous()
                 column_indices = column_indices.contiguous()
                 row_indices = row_offsets
 
                 bb = b.transpose(-2, -1)
-                fn = _matmul_with_mask
+                fn = masked_matmul
                 fn_str = "fn(a, b, mask)"
 
             results.append(
@@ -97,53 +92,49 @@ def bench_matmul_with_mask():
         results.extend(
             [
                 benchmark.Timer(
-                    stmt="_matmul_with_mask(a, b, mask)",
+                    stmt="masked_matmul(a, b, mask)",
                     globals={
                         "a": a,
                         "b": b,
                         "mask": None,
-                        "_matmul_with_mask": _matmul_with_mask,
+                        "masked_matmul": masked_matmul,
                     },
-                    label="matmul_with_mask",
+                    label="masked_matmul",
                     sub_label="dense",
                     description=f"B={B}, M={M}, K={K}",
                 ).blocked_autorange(min_run_time=min_run_time),
                 benchmark.Timer(
-                    stmt="_matmul_with_mask(a, b, mask)",
+                    stmt="masked_matmul(a, b, mask)",
                     globals={
                         "a": a,
                         "b": b,
                         "mask": mask,
-                        "_matmul_with_mask": _matmul_with_mask,
+                        "masked_matmul": masked_matmul,
                     },
-                    label="matmul_with_mask",
+                    label="masked_matmul",
                     sub_label="dense with masking",
                     description=f"B={B}, M={M}, K={K}",
                 ).blocked_autorange(min_run_time=min_run_time),
             ]
         )
         for sputnik, prob in itertools.product([False, True], SPARSITIES):
-            mask = _create_random_sparsity(
-                torch.ones(B, M, M, dtype=torch.bool, device=device), prob
-            )
+            tensor_type = SparseCSRTensor if sputnik else SparseCOOTensor
+            mask = _create_tensor(tensor_type, device, torch.bool, (B, M, M), prob)
             aa = a
             bb = b
             if sputnik:
-                mask = SparseCS(mask, device)
                 aa = a
                 bb = b.transpose(-2, -1).contiguous().transpose(-2, -1)
-            else:
-                mask = mask.to_sparse()
             results.append(
                 benchmark.Timer(
-                    stmt="_matmul_with_mask(a, b, mask)",
+                    stmt="masked_matmul(a, b, mask)",
                     globals={
                         "a": aa,
                         "b": bb,
                         "mask": mask,
-                        "_matmul_with_mask": _matmul_with_mask,
+                        "masked_matmul": masked_matmul,
                     },
-                    label="matmul_with_mask",
+                    label="masked_matmul",
                     sub_label=f"sparsity {'sputnik' if sputnik else 'pytorch'}: {prob:0.2f}",
                     description=f"B={B}, M={M}, K={K}",
                 ).blocked_autorange(min_run_time=min_run_time)
@@ -166,10 +157,10 @@ def bench_softmax():
         results.extend(
             [
                 benchmark.Timer(
-                    stmt="_softmax(a)",
+                    stmt="softmax(a)",
                     globals={
                         "a": a,
-                        "_softmax": _softmax,
+                        "softmax": softmax,
                     },
                     label="softmax",
                     sub_label="dense",
@@ -178,17 +169,14 @@ def bench_softmax():
             ]
         )
         for sputnik, prob in itertools.product([False, True], SPARSITIES):
-            a = _create_random_sparsity(torch.rand(B, M, M, device=device), prob)
-            if sputnik:
-                a = SparseCS(a, device)
-            else:
-                a = a.to_sparse()
+            tensor_type = SparseCSRTensor if sputnik else SparseCOOTensor
+            a = _create_tensor(tensor_type, device, torch.float32, (B, M, M), prob)
             results.append(
                 benchmark.Timer(
-                    stmt="_softmax(a)",
+                    stmt="softmax(a)",
                     globals={
                         "a": a,
-                        "_softmax": _softmax,
+                        "softmax": softmax,
                     },
                     label="softmax",
                     sub_label=f"sparsity {'sputnik' if sputnik else 'pytorch'}: {prob:0.2f}",
@@ -214,11 +202,11 @@ def bench_bmm():
         results.extend(
             [
                 benchmark.Timer(
-                    stmt="bmm(a, b)",
+                    stmt="fn(a, b)",
                     globals={
                         "a": a,
                         "b": b,
-                        "bmm": bmm,
+                        "fn": torch.matmul,
                     },
                     label="bmm",
                     sub_label="dense",
@@ -227,20 +215,15 @@ def bench_bmm():
             ]
         )
         for sputnik, prob in itertools.product([False, True], SPARSITIES):
-            a = _create_random_sparsity(torch.rand(B, M, M, device=device), prob)
-            bb = b
-            if sputnik:
-                a = SparseCS(a, device)
-                bb = b
-            else:
-                a = a.to_sparse()
+            tensor_type = SparseCSRTensor if sputnik else SparseCOOTensor
+            a = _create_tensor(tensor_type, device, torch.float32, (B, M, M), prob)
             results.append(
                 benchmark.Timer(
-                    stmt="bmm(a, b)",
+                    stmt="fn(a, b)",
                     globals={
                         "a": a,
-                        "b": bb,
-                        "bmm": bmm,
+                        "b": b,
+                        "fn": torch.matmul,
                     },
                     label="bmm",
                     sub_label=f"sparsity {'sputnik' if sputnik else 'pytorch'}: {prob:0.2f}",
