@@ -5,7 +5,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional
 
 import torch
 from torch import nn
@@ -16,7 +16,7 @@ from xformers.components.attention import (
     AttentionMask,
     register_attention,
 )
-from xformers.components.attention.core import scaled_dot_product_attention
+from xformers.components.attention.core import MaskType, scaled_dot_product_attention
 
 
 @dataclass
@@ -62,7 +62,7 @@ class ScaledDotProduct(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        att_mask: Optional[Union[AttentionMask, torch.Tensor]] = None,
+        att_mask: Optional[MaskType] = None,
         *args,
         **kwargs,
     ) -> torch.Tensor:

@@ -28,8 +28,10 @@ from xformers.components.attention import (
     AttentionMask,
     register_attention,
 )
-from xformers.components.attention.core import _softmax
 from xformers.components.in_proj_container import InProjContainer, InProjParams
+
+# from xformers.components.attention.core import _softmax
+from xformers.ops import softmax as _softmax
 
 
 def _either_or(a: Optional[int], b: int) -> int:
@@ -282,7 +284,9 @@ class CompositionalAttention(Attention):
         if att_mask_additive is not None:
             attn_weights += att_mask_additive.values
 
-        attn_weights = _softmax(attn_weights, causal=self.causal)
+        # FIXME
+        # attn_weights = _softmax(attn_weights, causal=self.causal)
+        attn_weights = _softmax(attn_weights)
 
         attn_weights = attn_weights.view(B, self.num_heads, Sq, Sk)
         attn_probs = self.dropout_module(attn_weights)
