@@ -52,6 +52,9 @@ class SparseCSRTensor(torch.Tensor):
 
     @classmethod
     def from_dense(cls, matrix):
+        if len(matrix.shape) == 2:
+            # TODO: check if we want to support this use-case in the future
+            matrix = matrix[None]
         values, row_indices, row_offsets, column_indices = _dense3d_to_sparse(
             matrix, matrix.device
         )

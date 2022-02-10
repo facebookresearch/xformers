@@ -106,9 +106,6 @@ def _round_nnz(mask, divisible_by=4):
 
 
 def _dense3d_to_sparse(matrix, device):
-    if len(matrix.shape) == 2:
-        # TODO: check if we want to support this use-case in the future
-        matrix = matrix[None]
     assert len(matrix.shape) == 3
     mask = matrix != 0
     if not torch.all(mask == mask[0]):
