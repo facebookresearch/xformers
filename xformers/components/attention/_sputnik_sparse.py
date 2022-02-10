@@ -16,7 +16,7 @@ from xformers.sparse.utils import _csr_to_coo, _dense_to_sparse  # noqa: F401
 class SparseCS:
     def __init__(self, matrix, device=None):
         if device is None:
-            device = torch.device("cpu")
+            device = matrix.device
         if matrix.ndim == 2:
             matrix = matrix[None]
         assert matrix.ndim == 3
