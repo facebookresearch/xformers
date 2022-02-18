@@ -18,18 +18,18 @@ from xformers.factory import (
 )
 from xformers.helpers.test_utils import init_torch_distributed_local
 
-BATCH = 4
-SEQ = 128
-MODEL = 96
+BATCH = 2
+SEQ = 64
+MODEL = 64
 DROPOUT = 0.5
 GLOBAL_ATTENTION_RATIO = 0.1  # 10% of the tokens have a global view
 DEVICES = [torch.device("cuda")]
-VOCAB_SIZE = 32
+VOCAB_SIZE = 64
 
 
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
-@pytest.mark.parametrize("heads", [1, 3])
+@pytest.mark.parametrize("heads", [1, 2])
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
@@ -123,7 +123,7 @@ def test_xformer_encoder_block(
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("causal", [True, False])
-@pytest.mark.parametrize("heads", [1, 3])
+@pytest.mark.parametrize("heads", [1, 2])
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
 @pytest.mark.parametrize("rotary_embeddings", [False, True])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
