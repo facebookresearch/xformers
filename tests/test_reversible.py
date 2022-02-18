@@ -10,8 +10,8 @@ import torch
 
 from xformers.factory.model_factory import xFormer, xFormerConfig
 
-BATCH = 20
-SEQ = 128
+BATCH = 2
+SEQ = 64
 EMB = 48
 VOCAB = 16
 DEVICES = (
@@ -213,5 +213,12 @@ def test_reversible_train(config, device):
     eval_stop_rev = evaluate(model_reversible)
     eval_stop_non_rev = evaluate(model_non_reversible)
     if len(config) < 2:  # only check the encoder case
-        assert eval_start_rev / eval_stop_rev > 3
-        assert eval_start_non_rev / eval_stop_non_rev > 3
+        train_ratio_rev = eval_start_rev / eval_stop_rev
+        train_ratio_non_rev = eval_start_non_rev / eval_stop_non_rev
+
+        # Assert that train ratio > 1 (we trained),
+        # and reversible is not much worse than non-reversible (it's actually better on this dummy test)
+
+        assert train_ratio_rev > 1
+        assert train_ratio_non_rev > 1
+        assert train_ratio_rev > train_ratio_non_rev
