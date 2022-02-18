@@ -10,9 +10,10 @@ import torch
 
 from xformers.factory.model_factory import xFormer, xFormerConfig
 
-BATCH = 20
-SEQ = 512
-EMB = 384
+BATCH = 2
+SEQ = 64
+EMB = 64
+
 DEVICES = (
     [torch.device("cpu")]
     if not torch.cuda.is_available()
@@ -24,7 +25,7 @@ DEVICES = (
 encoder_configs = {
     "reversible": False,
     "block_type": "encoder",
-    "dim_model": 384,
+    "dim_model": EMB,
     "position_encoding_config": {
         "name": "vocab",
         "seq_len": SEQ,
@@ -39,7 +40,7 @@ encoder_configs = {
             "name": "linformer",
             "dropout": 0,
             "causal": True,
-            "seq_len": 512,
+            "seq_len": SEQ,
         },
         "dim_model": EMB,
     },
@@ -56,7 +57,7 @@ encoder_configs = {
 
 decoder_configs = {
     "block_type": "decoder",
-    "dim_model": 384,
+    "dim_model": EMB,
     "position_encoding_config": {
         "name": "vocab",
         "seq_len": SEQ,
@@ -72,7 +73,7 @@ decoder_configs = {
             "name": "linformer",
             "dropout": 0,
             "causal": True,
-            "seq_len": 512,
+            "seq_len": SEQ,
         },
     },
     "multi_head_config_cross": {
@@ -83,7 +84,7 @@ decoder_configs = {
             "name": "linformer",
             "dropout": 0,
             "causal": True,
-            "seq_len": 512,
+            "seq_len": SEQ,
         },
     },
     "feedforward_config": {

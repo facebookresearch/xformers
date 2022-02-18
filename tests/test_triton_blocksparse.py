@@ -228,7 +228,7 @@ def test_blocksparse_attention_parity():
         torch.manual_seed(0)
 
     seq = 64
-    model = 64
+    model = 128
     heads = 4
     block_size = 16
     batch_size = 2
