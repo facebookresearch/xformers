@@ -37,6 +37,7 @@ if torch.cuda.is_available():
                 dropout: float,
                 activation: Activation,
                 hidden_layer_multiplier: int,
+                bias: bool = True,
                 *args,
                 **kwargs,
             ):
@@ -45,13 +46,13 @@ if torch.cuda.is_available():
                 dim_mlp = hidden_layer_multiplier * dim_model
 
                 self.mlp = nn.Sequential(
-                    nn.Linear(in_features=dim_model, out_features=dim_mlp, bias=False),
+                    nn.Linear(in_features=dim_model, out_features=dim_mlp, bias=bias),
                     # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize
                     # the `FusedLinear` import.
                     FusedDropoutBias(
                         p=dropout, bias_shape=dim_mlp, activation=activation
                     ),
-                    nn.Linear(in_features=dim_mlp, out_features=dim_model, bias=False),
+                    nn.Linear(in_features=dim_mlp, out_features=dim_model, bias=bias),
                     # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize
                     # the `FusedLinear` import.
                     FusedDropoutBias(p=dropout, bias_shape=dim_model, activation=None),

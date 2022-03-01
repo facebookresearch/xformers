@@ -208,7 +208,7 @@ if __name__ == "__main__":
     # Adjust batch depending on the available memory on your machine.
     # You can also use reversible layers to save memory
     REF_BATCH = 4096
-    BATCH = 512
+    BATCH = 256
 
     MAX_EPOCHS = 20
     NUM_WORKERS = 4
