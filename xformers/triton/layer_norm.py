@@ -32,7 +32,7 @@ class FusedLayerNorm(nn.Module):
 
     """
 
-    def __init__(self, normalized_shape, affine=True, eps=1e-05):
+    def __init__(self, normalized_shape, affine=True, eps=1e-06):
         super().__init__()
         if affine:
             self.weight = nn.Parameter(torch.ones(normalized_shape))
@@ -49,7 +49,7 @@ def layer_norm(
     x: torch.Tensor,
     weight: Optional[torch.Tensor] = None,
     bias: Optional[torch.Tensor] = None,
-    eps: float = 1e-05,
+    eps: float = 1e-06,
 ) -> torch.Tensor:
 
     global _triton_registered_warnings
