@@ -33,7 +33,7 @@ class VisionTransformer(pl.LightningModule):
     def __init__(
         self,
         steps,
-        learning_rate=1e-3,
+        learning_rate=5e-4,
         betas=(0.9, 0.99),
         weight_decay=0.03,
         image_size=32,
@@ -81,7 +81,7 @@ class VisionTransformer(pl.LightningModule):
                 "feedforward_config": {
                     "name": "FusedMLP",
                     "dropout": mlp_pdrop,
-                    "activation": "gelu",
+                    "activation": "squared_relu",
                     "hidden_layer_multiplier": hidden_layer_multiplier,
                 },
             }
@@ -210,7 +210,7 @@ if __name__ == "__main__":
     REF_BATCH = 4096
     BATCH = 256
 
-    MAX_EPOCHS = 20
+    MAX_EPOCHS = 30
     NUM_WORKERS = 4
     GPUS = 1
 
@@ -248,7 +248,7 @@ if __name__ == "__main__":
 
     # compute total number of steps
     batch_size = BATCH * GPUS
-    steps = dm.num_samples // batch_size * MAX_EPOCHS
+    steps = dm.num_samples // REF_BATCH * MAX_EPOCHS
     lm = VisionTransformer(
         steps=steps,
         image_size=image_size,
