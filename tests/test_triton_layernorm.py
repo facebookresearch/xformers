@@ -53,8 +53,8 @@ def test_layernorm_parity(shape, amp):
     eps = 1e-5
 
     # Initialize the two layers, weights are 1 and 0 by default, no randomness
-    torch_layernorm = torch.nn.LayerNorm(X.shape[-1], eps).to("cuda")
-    triton_layernorm = FusedLayerNorm(X.shape[-1], eps).to("cuda")
+    torch_layernorm = torch.nn.LayerNorm(X.shape[-1], eps=eps).to("cuda")
+    triton_layernorm = FusedLayerNorm(X.shape[-1], affine=True, eps=eps).to("cuda")
 
     with autocast(enabled=amp):
         assert torch.allclose(X, X_)  # sanity checking, else all hell breaks loose

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.x] - TBD
 ### Fixed
 - Expose bias flag for feedforwards, same default as Timm [#220]
+- Update eps value for layernormm, same default as torch [#221]
 
 ## [0.0.9] - 2022-02-09
 ### Added
