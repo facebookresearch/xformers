@@ -28,16 +28,17 @@ class MLP(Feedforward):
         dropout: float,
         activation: Activation,
         hidden_layer_multiplier: int,
+        bias: bool = True,
         *args,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
 
         self.mlp = nn.Sequential(
-            nn.Linear(dim_model, hidden_layer_multiplier * dim_model),
+            nn.Linear(dim_model, hidden_layer_multiplier * dim_model, bias=bias),
             build_activation(activation),
             nn.Dropout(dropout),
-            nn.Linear(hidden_layer_multiplier * dim_model, dim_model),
+            nn.Linear(hidden_layer_multiplier * dim_model, dim_model, bias=bias),
             nn.Dropout(dropout),
         )
 
