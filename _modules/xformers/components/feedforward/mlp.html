@@ -255,16 +255,17 @@
         <span class="n">dropout</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
         <span class="n">activation</span><span class="p">:</span> <span class="n">Activation</span><span class="p">,</span>
         <span class="n">hidden_layer_multiplier</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">bias</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="o">*</span><span class="n">args</span><span class="p">,</span>
-        <span class="o">**</span><span class="n">kwargs</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
-            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">dim_model</span><span class="p">,</span> <span class="n">hidden_layer_multiplier</span> <span class="o">*</span> <span class="n">dim_model</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">dim_model</span><span class="p">,</span> <span class="n">hidden_layer_multiplier</span> <span class="o">*</span> <span class="n">dim_model</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">),</span>
             <span class="n">build_activation</span><span class="p">(</span><span class="n">activation</span><span class="p">),</span>
             <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="n">dropout</span><span class="p">),</span>
-            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden_layer_multiplier</span> <span class="o">*</span> <span class="n">dim_model</span><span class="p">,</span> <span class="n">dim_model</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden_layer_multiplier</span> <span class="o">*</span> <span class="n">dim_model</span><span class="p">,</span> <span class="n">dim_model</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">),</span>
             <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="n">dropout</span><span class="p">),</span>
         <span class="p">)</span>
 
