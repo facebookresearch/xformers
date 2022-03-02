@@ -49,7 +49,7 @@ class RandomAttention(Attention):
         **kwargs,
     ):
         """
-        "Random" attention, as proposed for instance in _BigBird.
+        "Random" attention, as proposed for instance in BigBird_.
         Random means in that case that each query can attend to a random set of keys.
         This implementation is sparse-aware, meaning that the empty attention parts will not be represented in memory.
 
@@ -57,8 +57,8 @@ class RandomAttention(Attention):
             r (float): the ratio in [0,1] of keys that the query can attend to
             constant_masking (bool): if true, keep the same random set for all queries.
 
-        _BigBird: "Zaheer, M., Guruganesh, G., Dubey, A., Ainslie, J., Alberti, C., Ontanon, S., Pham, P., Ravula,
-         A., Wang, Q., Yang, L., & Ahmed, A. (2020). Big Bird: Transformers for Longer Sequences. ArXiv, NeurIPS."
+        .. _BigBird: https://arxiv.org/pdf/2007.14062.pdf
+
         """
         super().__init__()
 
