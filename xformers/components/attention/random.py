@@ -50,7 +50,7 @@ class RandomAttention(Attention):
     ):
         """
         "Random" attention, as proposed for instance in _BigBird.
-        Random means in that case means that each query can attend to a random set of keys.
+        Random means in that case that each query can attend to a random set of keys.
         This implementation is sparse-aware, meaning that the empty attention parts will not be represented in memory.
 
         Args:
