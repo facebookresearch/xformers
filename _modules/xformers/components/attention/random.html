@@ -276,16 +276,16 @@
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        &quot;Random&quot; attention, as proposed for instance in _BigBird.</span>
-<span class="sd">        Random means in that case means that each query can attend to a random set of keys.</span>
+<span class="sd">        &quot;Random&quot; attention, as proposed for instance in BigBird_.</span>
+<span class="sd">        Random means in that case that each query can attend to a random set of keys.</span>
 <span class="sd">        This implementation is sparse-aware, meaning that the empty attention parts will not be represented in memory.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            r (float): the ratio in [0,1] of keys that the query can attend to</span>
 <span class="sd">            constant_masking (bool): if true, keep the same random set for all queries.</span>
 
-<span class="sd">        _BigBird: &quot;Zaheer, M., Guruganesh, G., Dubey, A., Ainslie, J., Alberti, C., Ontanon, S., Pham, P., Ravula,</span>
-<span class="sd">         A., Wang, Q., Yang, L., &amp; Ahmed, A. (2020). Big Bird: Transformers for Longer Sequences. ArXiv, NeurIPS.&quot;</span>
+<span class="sd">        .. _BigBird: https://arxiv.org/pdf/2007.14062.pdf</span>
+
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 

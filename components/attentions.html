@@ -346,8 +346,8 @@ be ignored. An additive mask is expected, meaning float values using “-inf” 
 <dl class="py method">
 <dt id="xformers.components.attention.RandomAttention.__init__">
 <code class="sig-name descname">__init__</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">dropout</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#float" title="(in Python v3.6)">float</a></span></em>, <em class="sig-param"><span class="n">causal</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></span> <span class="o">=</span> <span class="default_value">False</span></em>, <em class="sig-param"><span class="n">r</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#float" title="(in Python v3.6)">float</a></span> <span class="o">=</span> <span class="default_value">0.01</span></em>, <em class="sig-param"><span class="n">constant_masking</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></span> <span class="o">=</span> <span class="default_value">True</span></em>, <em class="sig-param"><span class="n">force_sparsity</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></span> <span class="o">=</span> <span class="default_value">False</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/attention/random.html#RandomAttention.__init__"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.attention.RandomAttention.__init__" title="Permalink to this definition">¶</a></dt>
-<dd><p>“Random” attention, as proposed for instance in _BigBird.
-Random means in that case means that each query can attend to a random set of keys.
+<dd><p>“Random” attention, as proposed for instance in <a class="reference external" href="https://arxiv.org/pdf/2007.14062.pdf">BigBird</a>.
+Random means in that case that each query can attend to a random set of keys.
 This implementation is sparse-aware, meaning that the empty attention parts will not be represented in memory.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -355,10 +355,6 @@ This implementation is sparse-aware, meaning that the empty attention parts will
 <li><p><strong>r</strong> (<a class="reference external" href="https://docs.python.org/3.6/library/functions.html#float" title="(in Python v3.6)"><em>float</em></a>) – the ratio in [0,1] of keys that the query can attend to</p></li>
 <li><p><strong>constant_masking</strong> (<a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><em>bool</em></a>) – if true, keep the same random set for all queries.</p></li>
 </ul>
-</dd>
-</dl>
-<dl class="simple">
-<dt>_BigBird: “Zaheer, M., Guruganesh, G., Dubey, A., Ainslie, J., Alberti, C., Ontanon, S., Pham, P., Ravula,</dt><dd><p>A., Wang, Q., Yang, L., &amp; Ahmed, A. (2020). Big Bird: Transformers for Longer Sequences. ArXiv, NeurIPS.”</p>
 </dd>
 </dl>
 </dd></dl>
