@@ -33,7 +33,7 @@ class VisionTransformer(pl.LightningModule):
     def __init__(
         self,
         steps,
-        learning_rate=1e-3,
+        learning_rate=5e-4,
         betas=(0.9, 0.99),
         weight_decay=0.03,
         image_size=32,
@@ -61,7 +61,7 @@ class VisionTransformer(pl.LightningModule):
         num_patches = (image_size // patch_size) ** 2
 
         # A list of the encoder or decoder blocks which constitute the Transformer.
-        xformer_config = [
+        model_config = [
             {
                 "reversible": False,  # Turn on to test the effect of using reversible layers
                 "block_type": "encoder",
@@ -71,7 +71,7 @@ class VisionTransformer(pl.LightningModule):
                 "multi_head_config": {
                     "num_heads": n_head,
                     "residual_dropout": resid_pdrop,
-                    "use_rotary_embeddings": True,
+                    "use_rotary_embeddings": False,
                     "attention": {
                         "name": attention,
                         "dropout": attn_pdrop,
@@ -87,8 +87,9 @@ class VisionTransformer(pl.LightningModule):
             }
         ]
 
-        config = xFormerConfig(xformer_config)
-        self.transformer = xFormer.from_config(config)
+        xformer_config = xFormerConfig(model_config)
+        self.transformer = xFormer.from_config(xformer_config)
+        print(self.transformer)
 
         # init positional embedding with 0.02 from BERT
         self.pos_emb = nn.Parameter(
@@ -210,7 +211,7 @@ if __name__ == "__main__":
     REF_BATCH = 4096
     BATCH = 256
 
-    MAX_EPOCHS = 20
+    MAX_EPOCHS = 40
     NUM_WORKERS = 4
     GPUS = 1
 
@@ -248,7 +249,7 @@ if __name__ == "__main__":
 
     # compute total number of steps
     batch_size = BATCH * GPUS
-    steps = dm.num_samples // batch_size * MAX_EPOCHS
+    steps = dm.num_samples // REF_BATCH * MAX_EPOCHS
     lm = VisionTransformer(
         steps=steps,
         image_size=image_size,

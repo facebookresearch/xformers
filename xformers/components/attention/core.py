@@ -193,8 +193,6 @@ def scaled_query_key_softmax(
     # this is needed due to limitations in sparse_bmm for now
 
     # Self-attend: (N, S, hs) x (N, hs, S) -> (N, S, S)
-    q = q / math.sqrt(k.size(-1))
-
     # Matmul with mask
     if att_mask is not None and isinstance(att_mask, AttentionMask):
         # Additive mask
@@ -202,7 +200,12 @@ def scaled_query_key_softmax(
     else:
         mask = att_mask
 
-    att = _matmul_with_mask(q, k.transpose(-2, -1), mask)
+    # FIXME: Add support for div in SparseCS ?
+    if not isinstance(mask, SparseCS):
+        att = _matmul_with_mask(q, k.transpose(-2, -1), mask) / math.sqrt(k.size(-1))
+    else:
+        k /= math.sqrt(k.size(-1))  # risk underflow
+        att = _matmul_with_mask(q, k.transpose(-2, -1), mask)
 
     # Softmax to get the attention probabilities
     is_causal = isinstance(att_mask, AttentionMask) and att_mask.is_causal
