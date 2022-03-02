@@ -18,8 +18,8 @@ from xformers.triton.k_softmax import _softmax, _softmax_backward
 # and https://triton-lang.org/getting-started/tutorials/02-fused-softmax.html
 
 
-_triton_registered_overflow = False
 _triton_softmax_fp16_enabled = False  # NOTE: PyTorch keeps softmax as fp32
+_triton_registered_warnings = False
 
 
 class MaskType(str, Enum):
@@ -87,7 +87,9 @@ class _softmax_triton(torch.autograd.Function):
 
     @staticmethod
     @custom_bwd
-    def backward(ctx, grad_out):
+    def backward(
+        ctx, grad_out
+    ):  # pragma: no cover  # this is covered, but called directly from C++
         (out,) = ctx.saved_tensors
 
         # Handle 2D/3D tensors
@@ -177,15 +179,15 @@ def _softmax_dispatch(
     # - there's enough data to make it faster than pytorch. This could change over time, Triton is improving
     # - there was no previous failure
 
-    global _triton_registered_overflow
+    global _triton_registered_warnings
 
     try:
-        if torch.cuda.is_available() and x.is_cuda and not _triton_registered_overflow:
+        if torch.cuda.is_available() and x.is_cuda and not _triton_registered_warnings:
             return _softmax_triton.apply(x, mask, log, causal)
     except (triton.code_gen.OutOfResources, RuntimeError) as e:
         # Catch cases where the current GPU does not have enough registers to hold a full tensor line
         # fallback to PyTorch's implementation, which streams the tensor in and out
-        _triton_registered_overflow = True
+        _triton_registered_warnings = True
         logging.warning(
             "Triton softmax kernel register spillover or invalid image caught."
             "Deactivating this kernel, please file an issue int the xFormers repository"

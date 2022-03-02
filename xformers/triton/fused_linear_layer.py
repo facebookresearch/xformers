@@ -51,7 +51,9 @@ class _fused_linear_triton(torch.autograd.Function):
 
     @staticmethod
     @custom_bwd
-    def backward(ctx: Any, grad_out: torch.Tensor) -> Any:  # type: ignore
+    def backward(
+        ctx: Any, grad_out: torch.Tensor
+    ) -> Any:  # pragma: no cover  # this is covered, but called directly from C++
         """
         Compute the derivative with respect to x, other tensors were not trainable inputs.
         """

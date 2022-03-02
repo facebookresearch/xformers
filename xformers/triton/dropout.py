@@ -203,7 +203,7 @@ class FusedDropoutBias(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Convenience, catch a possible type or device mismatch
-        if self.bias is not None:  # type: ignore
+        if self.bias is not None:
             self.bias = self.bias.to(dtype=x.dtype, device=x.device)  # type: ignore
 
         # Train/inference
