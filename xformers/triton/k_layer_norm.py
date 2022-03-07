@@ -7,15 +7,9 @@
 # CREDITS: This comes almost as-is from the Triton layer norm tutorial
 # https://github.com/openai/triton/blob/master/python/tutorials/05-layer-norm.py
 
-import logging
 
-import torch
 import triton
 import triton.language as tl
-from torch.cuda.amp import custom_bwd, custom_fwd
-
-_triton_layernorm_fp16_enabled = False  # NOTE: PyTorch keeps layernorm as fp32
-_triton_registered_warnings = False
 
 
 @triton.jit
@@ -43,7 +37,7 @@ def _store(y, Y, stride, N, META):
 
 
 @triton.jit
-def _layer_norm_non_affine(X, M, V, stride, N, eps, META):
+def layer_norm_non_affine(X, M, V, stride, N, eps, META):
     # fmt: on
     """
     Fused layernorm kernel over a 3d tensor.
@@ -77,13 +71,13 @@ def _layer_norm_non_affine(X, M, V, stride, N, eps, META):
 
 # fmt: off
 @triton.jit
-def _layer_norm_non_affine_fw(X, Y, M, V, stride, N, eps, **META):
-    _store(_layer_norm_non_affine(X, M, V, stride, N, eps, META), Y, stride, N, META)
+def layer_norm_non_affine_fw(X, Y, M, V, stride, N, eps, **META):
+    _store(layer_norm_non_affine(X, M, V, stride, N, eps, META), Y, stride, N, META)
 
 
 # fmt: off
 @triton.jit
-def _layer_norm_fw(X, Y, W, B, M, V, stride, N, eps, **META):
+def layer_norm_fw(X, Y, W, B, M, V, stride, N, eps, **META):
     # fmt: on
     """
     Fused layernorm kernel over a 3d tensor.
@@ -92,7 +86,7 @@ def _layer_norm_fw(X, Y, W, B, M, V, stride, N, eps, **META):
     Compute
         y = (x - E(x))/(sqrt(var(x) + epsilon)) * gamma + beta
     """
-    y = _layer_norm_non_affine(X, M, V, stride, N, eps, META)
+    y = layer_norm_non_affine(X, M, V, stride, N, eps, META)
     y = _affine(W, B, N, y, META)
 
     _store(y, Y, stride, N, META)
@@ -101,7 +95,7 @@ def _layer_norm_fw(X, Y, W, B, M, V, stride, N, eps, **META):
 # Backward pass (DX + partial DW + partial DB)
 # fmt: off
 @triton.jit
-def _layer_norm_bwd_dx_fused(
+def layer_norm_bwd_dx_fused(
     DX, DY, DW, DB,
     Y, W, B, V,
     Lock, stride, N,
@@ -180,7 +174,7 @@ def _layer_norm_bwd_dx_fused(
 
 
 @triton.jit
-def _layer_norm_no_affine_bwd(
+def layer_norm_no_affine_bwd(
     DX, DY,
     Y, V,
     stride, N,
@@ -216,7 +210,7 @@ def _layer_norm_no_affine_bwd(
 # Backward pass (total DW + total DB)
 # fmt: off
 @triton.jit
-def _layer_norm_bwd_dwdb(DW, DB, FINAL_DW, FINAL_DB, M, N, **meta):
+def layer_norm_bwd_dwdb(DW, DB, FINAL_DW, FINAL_DB, M, N, **meta):
     # fmt: on
     pid = tl.program_id(0)
     BLOCK_SIZE_M = meta["BLOCK_SIZE_M"]
@@ -238,144 +232,3 @@ def _layer_norm_bwd_dwdb(DW, DB, FINAL_DW, FINAL_DB, M, N, **meta):
 
     tl.store(FINAL_DW + cols, sum_dw, mask=cols < N)
     tl.store(FINAL_DB + cols, sum_db, mask=cols < N)
-
-
-# FIXME: @lefaudeux tensor shape changes are not well handled, see shape3
-class _LayerNorm(torch.autograd.Function):
-    @staticmethod
-    @custom_fwd(cast_inputs=torch.float16 if _triton_layernorm_fp16_enabled else None)
-    def forward(ctx, x, weight, bias, eps):
-        # allocate output
-        y = torch.empty_like(x)
-
-        # reshape input data into 2D tensor
-        x_arg = x.reshape(-1, x.shape[-1])
-        M, N = x_arg.shape
-
-        # allocate mean and std, they'll be used in the backward pass
-        mean = torch.empty((M,), dtype=torch.float32, device="cuda")
-        rstd = torch.empty((M,), dtype=torch.float32, device="cuda")
-
-        # Less than 64KB per feature: enqueue fused kernel
-        MAX_FUSED_SIZE = 65536 // x.element_size()
-        BLOCK_SIZE_N = min(MAX_FUSED_SIZE, triton.next_power_of_2(N))
-        if N > BLOCK_SIZE_N:
-            raise RuntimeError("This layer norm doesn't support feature dim >= 64KB.")
-
-        if not x_arg.is_contiguous() or not y.is_contiguous():
-            global _triton_registered_warnings
-            if not _triton_registered_warnings:
-                logging.warning("Non-contiguous input tensor found. Making it contiguous,"
-                                + " but could have perf or trainer implications")
-
-                _triton_registered_warnings = True
-
-            x_arg = x_arg.contiguous()
-            y = y.contiguous()
-
-        # heuristics for number of warps.
-        num_warps = min(max(BLOCK_SIZE_N // 256, 1), 8)
-
-        # enqueue kernel
-        # fmt: off
-        if weight is None:
-            _layer_norm_non_affine_fw[(M,)](
-                x_arg, y, mean, rstd,
-                x_arg.stride(0),
-                N,
-                eps,
-                num_warps=num_warps,
-                BLOCK_SIZE_N=BLOCK_SIZE_N
-            )
-        else:
-            _layer_norm_fw[(M,)](
-                x_arg, y, weight, bias, mean, rstd,
-                x_arg.stride(0),
-                N,
-                eps,
-                num_warps=num_warps,
-                BLOCK_SIZE_N=BLOCK_SIZE_N
-            )
-        # fmt: on
-
-        ctx.save_for_backward(y, rstd, weight, bias)
-        ctx.BLOCK_SIZE_N = BLOCK_SIZE_N
-        ctx.num_warps = num_warps
-        ctx.eps = eps
-        ctx.N = N
-
-        return y.reshape_as(x)
-
-    @staticmethod
-    @custom_bwd
-    def backward(ctx, dy):
-        y, var, weight, bias = ctx.saved_tensors
-
-        # heuristics for amount of parallel reduction stream for DG/DB
-        N = y.size(-1)
-        GROUP_SIZE_M = 64
-        if N <= 8192:
-            GROUP_SIZE_M = 96
-        if N <= 4096:
-            GROUP_SIZE_M = 128
-        if N <= 1024:
-            GROUP_SIZE_M = 256
-
-        # flatten the batch dimension, if any.
-        # We're interested in 'samples' x norm_dimension
-        y = y.reshape(-1, y.size(-1))
-        M, N = y.size()
-
-        # allocate output
-        locks = torch.zeros(2 * GROUP_SIZE_M, dtype=torch.int32, device="cuda")
-        t_args = {"dtype": y.dtype, "device": y.device}
-        _dw = torch.empty((GROUP_SIZE_M, y.size(-1)), **t_args)
-        _db = torch.empty((GROUP_SIZE_M, y.size(-1)), **t_args)
-        dw = torch.empty((y.size(-1),), **t_args)
-        db = torch.empty((y.size(-1),), **t_args)
-        dy = dy.contiguous()
-        dx = torch.empty_like(dy)
-
-        # Check the tensor shapes and layouts
-        # we suppose in the kernel that they have the same size and are contiguous
-        assert dx.numel() == y.numel(), \
-            "Something is wrong in the backward graph, possibly because of an inplace operation after the layernorm"
-
-        # enqueue kernel using forward pass heuristics
-        # also compute partial sums for DW and DB
-
-        # fmt: off
-        meta = {"BLOCK_SIZE_N": ctx.BLOCK_SIZE_N,
-                "GROUP_SIZE_M": GROUP_SIZE_M,
-                "num_warps": ctx.num_warps}
-        if weight is None:
-            _layer_norm_no_affine_bwd[(M,)](dx, dy, y, var, y.stride(0), N, **meta)
-            return dx, None, None, None
-
-        _layer_norm_bwd_dx_fused[(M,)](
-            dx, dy, _dw, _db,
-            y, weight, bias, var,
-            locks,
-            y.stride(0),
-            N,
-            **meta
-        )
-
-        # fmt: on
-
-        def grid(meta):
-            return [triton.cdiv(N, meta["BLOCK_SIZE_N"])]
-
-        # accumulate partial sums in separate kernel
-        # fmt: off
-        _layer_norm_bwd_dwdb[grid](
-            _dw, _db, dw, db,
-            GROUP_SIZE_M,
-            N,
-            BLOCK_SIZE_M=32,
-            BLOCK_SIZE_N=128
-        )
-        # fmt: on
-
-        dx = dx.reshape_as(dy)
-        return dx, dw, db, None
