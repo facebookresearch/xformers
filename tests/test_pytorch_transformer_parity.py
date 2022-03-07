@@ -172,7 +172,7 @@ if _is_triton_available:
             dim_feedforward=4 * EMB,
             dropout=DROP,
             activation=ACTIVATION,
-            layer_norm_eps=1e-05,
+            layer_norm_eps=1e-06,
             batch_first=True,  # (batch, seq, feature)
             device=device,
         )

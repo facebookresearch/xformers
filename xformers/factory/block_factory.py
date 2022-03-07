@@ -28,6 +28,7 @@ from xformers.components.positional_embedding import (
     PositionEmbeddingConfig,
     build_positional_embedding,
 )
+from xformers.components.residual import get_deepnorm_coefficients
 from xformers.utils import generate_matching_config
 
 
@@ -66,19 +67,39 @@ def _get_ln_factory(
     layer_norm_style: Optional[LayerNormStyle],
     residual: bool = True,
     use_triton: bool = True,
+    residual_scale: float = 1.0,
 ):
+    """
+    Handle all the supported residual path configurations.
+
+    ..Note: we return the appropriate constructor, not an actual layer
+    """
+
     def get_layer_wrapper(
         d_model: int,
         sublayer: nn.Module,
         layer_norm_style: Optional[LayerNormStyle],
-        residual: bool = True,
+        residual: bool,
+        residual_scale: float,
     ):
         if residual:
-            return (
-                Residual(PreNorm(d_model, sublayer, use_triton))
-                if layer_norm_style == LayerNormStyle.Pre
-                else PostNorm(d_model, Residual(sublayer), use_triton)
-            )
+            if layer_norm_style == LayerNormStyle.Pre:
+                return Residual(
+                    layer=PreNorm(d_model, sublayer, use_triton), scale=None
+                )
+            elif layer_norm_style == LayerNormStyle.Post:
+                return PostNorm(
+                    d_model, Residual(layer=sublayer, scale=None), use_triton
+                )
+            elif layer_norm_style == LayerNormStyle.DeepNorm:
+                return PostNorm(
+                    d_model,
+                    Residual(layer=sublayer, scale=residual_scale),
+                    use_triton=use_triton,
+                )
+            else:
+                raise ValueError
+
         return (
             PreNorm(d_model, sublayer, use_triton)
             if layer_norm_style == LayerNormStyle.Pre
@@ -86,7 +107,9 @@ def _get_ln_factory(
         )
 
     def ln_factory(sublayer: nn.Module):
-        return get_layer_wrapper(d_model, sublayer, layer_norm_style, residual)
+        return get_layer_wrapper(
+            d_model, sublayer, layer_norm_style, residual, residual_scale
+        )
 
     return ln_factory
 
@@ -280,9 +303,23 @@ class xFormerEncoderBlock(torch.nn.Module):
             else None
         )
 
+        if config.layer_norm_style == LayerNormStyle.DeepNorm:
+            # Just use the layer norm coefficient here,
+            # the init will be handled at the xformers level (knows about encoder and decoder blocks)
+            deep_norm_coefficients, _ = get_deepnorm_coefficients(
+                encoder_layers=config.num_layers, decoder_layers=0
+            )
+            assert deep_norm_coefficients is not None
+            residual_scale = deep_norm_coefficients.alpha
+        else:
+            residual_scale = 1.0
+
         # mini helper, builds a LayerNorm with the right Pre/Post config, residuals, and the right dimensions
         ln_factory = _get_ln_factory(
-            config.dim_model, config.layer_norm_style, use_triton=config.use_triton
+            config.dim_model,
+            config.layer_norm_style,
+            use_triton=config.use_triton,
+            residual_scale=residual_scale,
         )
 
         self.mha = build_multi_head_attention(config.multi_head_config)
@@ -356,9 +393,23 @@ class xFormerDecoderBlock(torch.nn.Module):
             else None
         )
 
+        if config.layer_norm_style == LayerNormStyle.DeepNorm:
+            # Just use the layer norm coefficient here,
+            # the init will be handled at the xformers level (knows about encoder and decoder blocks)
+            _, deep_norm_coefficients = get_deepnorm_coefficients(
+                encoder_layers=0, decoder_layers=config.num_layers
+            )
+            assert deep_norm_coefficients is not None
+            residual_scale = deep_norm_coefficients.alpha
+        else:
+            residual_scale = 1.0
+
         # mini helper, builds a LayerNorm with the right Pre/Post config and the right dimensions
         ln_factory = _get_ln_factory(
-            config.dim_model, config.layer_norm_style, use_triton=config.use_triton
+            config.dim_model,
+            config.layer_norm_style,
+            use_triton=config.use_triton,
+            residual_scale=residual_scale,
         )
 
         self.mha = build_multi_head_attention(config.multi_head_config_masked)

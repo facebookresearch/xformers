@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 import torch
 
 from xformers.components import reversible as rv
+from xformers.components.residual import LayerNormStyle, get_deepnorm_coefficients
 from xformers.factory.block_factory import (
     xFormerBlockConfig,
     xFormerDecoderBlock,
@@ -118,7 +119,9 @@ class xFormer(torch.nn.Module):
         if not isinstance(stack_configs, List):
             stack_configs = [stack_configs]
 
+        # Sanity checks, some config combinations do not make sense
         self._verify_reversible(stack_configs)
+        self._verify_deepnorm(stack_configs)
 
         encoders: List[torch.nn.Module] = []
         decoders: List[torch.nn.Module] = []
@@ -184,20 +187,79 @@ class xFormer(torch.nn.Module):
         )
         self.decoders = torch.nn.ModuleList(decoders)
 
+        use_deepnorm_init = stack_configs[0].layer_norm_style == LayerNormStyle.DeepNorm
+
+        if use_deepnorm_init:
+            self._deepnorm_weight_init()
+
     @classmethod
     def from_config(cls, config: xFormerConfig):
         return cls(config.stack_configs, config.tie_embedding_weights)
+
+    def _deepnorm_weight_init(self):
+        r"""Initiate parameters in the transformer model, using the DeepNorm_ method."""
+
+        def is_ffn_w(n):
+            return "feedforward" in n and "weight" in n
+
+        def is_out_mha_proj_w(n):
+            return "mha.proj" in n and "weight" in n
+
+        def is_v_proj_weight(n):
+            return "v_proj_weight" in n
+
+        encoder_coefficients, decoder_coefficients = get_deepnorm_coefficients(
+            encoder_layers=len(self.encoders), decoder_layers=len(self.decoders)  # type: ignore
+        )
+
+        encoder_gain = (
+            encoder_coefficients.beta if encoder_coefficients is not None else 1.0
+        )
+        decoder_gain = (
+            decoder_coefficients.beta if decoder_coefficients is not None else 1.0
+        )
+
+        # Initialize all the encoder weights
+        for n, p in self.encoders.named_parameters():
+            if is_ffn_w(n) or is_out_mha_proj_w(n) or is_v_proj_weight(n):
+                torch.nn.init.xavier_normal_(p, gain=encoder_gain)
+            elif "weight" in n and p.ndim > 1:
+                torch.nn.init.xavier_normal_(p, gain=1)
+
+        # Initialize all the decoder weights
+        for n, p in self.decoders.named_parameters():
+            if is_ffn_w(n) or is_out_mha_proj_w(n) or is_v_proj_weight(n):
+                torch.nn.init.xavier_normal_(p, gain=decoder_gain)
+            elif "weight" in n and p.ndim > 1:
+                torch.nn.init.xavier_normal_(p, gain=1)
+
+    def _reset_parameters(self):
+        r"""Initiate parameters in the transformer model
+        following the Xavier distribution."""
+
+        for p in self.parameters():
+            if p.dim() > 1:
+                torch.nn.init.xavier_uniform_(p)
 
     def _verify_reversible(self, stack_configs: List[xFormerBlockConfig]):
         reversible = [
             c.reversible
             for c in filter(lambda x: x.block_type == "encoder", stack_configs)
         ]
-        non_reversible = [not rev for rev in reversible]
 
-        assert all(reversible) or all(non_reversible), (
+        assert all(reversible) or not any(reversible), (
             "All layers need to have the same reversibility setting. "
             + f"Currently {reversible}"
+        )
+
+    def _verify_deepnorm(self, stack_configs: List[xFormerBlockConfig]):
+        deepnorm = [
+            c.layer_norm_style == LayerNormStyle.DeepNorm for c in stack_configs
+        ]
+
+        assert all(deepnorm) or not any(deepnorm), (
+            "All layers need to have the same deepnorm setting. "
+            + f"Currently {deepnorm}"
         )
 
     def forward(

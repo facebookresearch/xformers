@@ -166,6 +166,14 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 </p></details>
 
+<details><summary>Residual paths </summary><p>
+
+- [Pre](https://arxiv.org/pdf/2002.04745v1.pdf)
+- [Post](https://arxiv.org/pdf/2002.04745v1.pdf)
+- [DeepNorm](https://arxiv.org/pdf/2203.00555v1.pdf)
+
+</p></details>
+
 ### Key Features
 
 1. Many attention mechanisms, interchangeables
