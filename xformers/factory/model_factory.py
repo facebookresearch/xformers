@@ -184,21 +184,9 @@ class xFormer(torch.nn.Module):
         )
         self.decoders = torch.nn.ModuleList(decoders)
 
-        if len(self.decoders) > 0:
-            # Use Xavier init for encoding/decoding tasks
-            self._reset_parameters()
-
     @classmethod
     def from_config(cls, config: xFormerConfig):
         return cls(config.stack_configs, config.tie_embedding_weights)
-
-    def _reset_parameters(self):
-        r"""Initiate parameters in the transformer model
-        following the Xavier distribution."""
-
-        for p in self.parameters():
-            if p.dim() > 1:
-                torch.nn.init.xavier_uniform_(p)
 
     def _verify_reversible(self, stack_configs: List[xFormerBlockConfig]):
         reversible = [
