@@ -407,23 +407,11 @@
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">reversible_encoder</span>
             <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">(</span><span class="n">encoders</span><span class="p">)</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">decoders</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">(</span><span class="n">decoders</span><span class="p">)</span>
-
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">decoders</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="c1"># Use Xavier init for encoding/decoding tasks</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_reset_parameters</span><span class="p">()</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">decoders</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">(</span><span class="n">decoders</span><span class="p">)</span></div>
 
 <div class="viewcode-block" id="xFormer.from_config"><a class="viewcode-back" href="../../../factory/model.html#xformers.factory.model_factory.xFormer.from_config">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_config</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">xFormerConfig</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">stack_configs</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">tie_embedding_weights</span><span class="p">)</span></div>
-
-    <span class="k">def</span> <span class="nf">_reset_parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="sa">r</span><span class="sd">&quot;&quot;&quot;Initiate parameters in the transformer model</span>
-<span class="sd">        following the Xavier distribution.&quot;&quot;&quot;</span>
-
-        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
-            <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">dim</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_uniform_</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_verify_reversible</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stack_configs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">xFormerBlockConfig</span><span class="p">]):</span>
         <span class="n">reversible</span> <span class="o">=</span> <span class="p">[</span>
