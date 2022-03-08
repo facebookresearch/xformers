@@ -189,6 +189,10 @@ class xFormer(torch.nn.Module):
 
         use_deepnorm_init = stack_configs[0].layer_norm_style == LayerNormStyle.DeepNorm
 
+        assert (
+            not use_deepnorm_init or not self.reversible_encoder
+        ), "Reversible layers and deepnorm is not supported for now"
+
         if use_deepnorm_init:
             self._deepnorm_weight_init()
 

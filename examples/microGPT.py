@@ -53,7 +53,7 @@ class GPT(pl.LightningModule):
                 "block_type": "encoder",
                 "num_layers": self.hparams.n_layer,
                 "dim_model": self.hparams.n_embd,
-                "layer_norm_style": "deepnorm",
+                "layer_norm_style": "pre",
                 "position_encoding_config": {
                     "name": "vocab",
                     "seq_len": self.hparams.block_size,
