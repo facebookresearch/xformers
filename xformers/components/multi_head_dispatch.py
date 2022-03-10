@@ -144,10 +144,11 @@ class MultiHeadDispatch(nn.Module):
         self._check(value, "value")
         self._check(key, "key")
 
-        max_batch = max((query.shape[0], key.shape[0], value.shape[0]))
-        query, key, value = map(
-            lambda x: x.expand(max_batch, -1, -1), [query, key, value]
-        )
+        if query.shape[0] != key.shape[0] or query.shape[0] != value.shape[0]:
+            max_batch = max((query.shape[0], key.shape[0], value.shape[0]))
+            query, key, value = map(
+                lambda x: x.expand(max_batch, -1, -1), [query, key, value]
+            )
 
         B, S_Q, _ = query.size()  # Batch x Sequence x Embedding (latent)
         _, S_K, _ = key.size()  # K, Q's sequence length could differ
