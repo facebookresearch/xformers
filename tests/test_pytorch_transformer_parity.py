@@ -19,7 +19,7 @@ if _is_triton_available:
     EMB = 8
     VOCAB = 8
     HEADS = 4
-    DROP = 0.1
+    DROP = 0.0
     LAYERS = 2
     ACTIVATION = "relu"
 
@@ -39,6 +39,7 @@ if _is_triton_available:
                 "seq_len": SEQ,
             },
             "dim_model": EMB,
+            "self_attention": True,
         },
         "feedforward_config": {
             "name": "MLP",
@@ -161,6 +162,8 @@ if _is_triton_available:
     def test_pytorch_tranformer_parity(device=torch.device("cuda")):
         # Build both a xFormers and Pytorch model
         reset_seeds()
+        torch.backends.cuda.matmul.allow_tf32 = False
+
         model_xformers = xFormer.from_config(xFormerConfig(_test_config)).to(device)
         print(model_xformers)
 

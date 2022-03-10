@@ -209,10 +209,10 @@ class xFormer(torch.nn.Module):
             return "mha.proj" in n and "weight" in n
 
         def is_v_proj_weight(n):
-            return "v_proj_weight" in n
+            return "v_proj" in n and "weight" in n
 
         def is_self_attn_proj_weight(n):
-            return "in_proj_weight" in n
+            return "in_proj.weight" in n
 
         encoder_coefficients, decoder_coefficients = get_deepnorm_coefficients(
             encoder_layers=len(self.encoders), decoder_layers=len(self.decoders)  # type: ignore

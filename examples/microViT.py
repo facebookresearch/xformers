@@ -78,6 +78,7 @@ class VisionTransformer(pl.LightningModule):
                         "dropout": attn_pdrop,
                         "causal": False,
                     },
+                    "self_attention": True,
                 },
                 "feedforward_config": {
                     "name": "FusedMLP",
@@ -246,7 +247,7 @@ if __name__ == "__main__":
         num_classes=num_classes,
         attention="scaled_dot_product",
         classifier=Classifier.TOKEN,
-        layer_norm_style="pre",
+        layer_norm_style="deepnorm",
         use_rotary_embeddings=True,
     )
     trainer = pl.Trainer(

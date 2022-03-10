@@ -29,7 +29,7 @@ from xformers.components.attention import (
     register_attention,
 )
 from xformers.components.attention.core import _softmax
-from xformers.components.in_proj_container import InProjContainer, InProjParams
+from xformers.components.input_projection import InProjParams, InputProjection
 
 
 def _either_or(a: Optional[int], b: int) -> int:
@@ -51,7 +51,7 @@ class CompositionalAttentionConfig(AttentionConfig):
     q_compose: bool = False
     bias: bool = True
     causal: Optional[bool] = False
-    in_proj_container: Optional[InProjContainer] = None
+    in_proj_container: Optional[InputProjection] = None
     use_separate_proj_weight: Optional[bool] = False
 
 
@@ -99,7 +99,7 @@ class CompositionalAttention(Attention):
         qk_rule=False,
         nonlinear=False,
         q_compose=False,
-        in_proj_container: Optional[InProjContainer] = None,
+        in_proj_container: Optional[InputProjection] = None,
         use_separate_proj_weight: Optional[bool] = False,
         bias=True,
         causal=False,
@@ -126,7 +126,7 @@ class CompositionalAttention(Attention):
         self.in_proj_container = (
             in_proj_container
             if in_proj_container is not None
-            else InProjContainer(
+            else InputProjection(
                 query_proj_params=InProjParams(dim_model, dim_key, bias=bias),
                 key_proj_params=InProjParams(dim_model, dim_key, bias=bias)
                 if use_separate_proj_weight

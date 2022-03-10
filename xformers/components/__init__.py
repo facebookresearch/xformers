@@ -12,7 +12,7 @@ from xformers.utils import import_all_modules
 
 from .activations import Activation, build_activation  # noqa
 from .attention import Attention, build_attention  # noqa
-from .in_proj_container import InProjContainer, InProjParams  # noqa
+from .input_projection import InProjParams, InputProjection  # noqa
 from .multi_head_dispatch import MultiHeadDispatch  # noqa
 from .multi_head_dispatch import MultiHeadDispatchConfig
 from .patch_embedding import PatchEmbeddingConfig  # noqa

@@ -11,8 +11,7 @@ import torch
 import torch.nn as nn
 from torch.nn.init import constant_
 
-from xformers.components.attention import Attention
-from xformers.components.in_proj_container import InProjContainer, InProjParams
+from xformers.components import Attention, InProjParams, InputProjection
 from xformers.components.positional_embedding import RotaryEmbedding
 
 
@@ -25,10 +24,11 @@ class MultiHeadDispatchConfig:
     residual_dropout: float
     dim_key: Optional[int]
     dim_value: Optional[int]
-    in_proj_container: Optional[InProjContainer]
+    in_proj_container: Optional[InputProjection]
     use_separate_proj_weight: Optional[bool]
     use_rotary_embeddings: Optional[bool]
     out_proj: Optional[nn.Module]
+    self_attention: bool = False
 
 
 # Move head forward and fold into batch dim. dimensions become (B * nh, S, hs)
@@ -61,10 +61,11 @@ class MultiHeadDispatch(nn.Module):
         residual_dropout: float = 0.0,
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
-        in_proj_container: Optional[InProjContainer] = None,
-        use_separate_proj_weight: Optional[bool] = False,
+        in_proj_container: Optional[InputProjection] = None,
+        use_separate_proj_weight: Optional[bool] = True,
         use_rotary_embeddings: Optional[bool] = False,
         out_proj: Optional[nn.Module] = None,
+        self_attention: bool = False,
         *args,
         **kwargs,
     ):
@@ -85,14 +86,19 @@ class MultiHeadDispatch(nn.Module):
         self.attention = attention
 
         # key, query, value projections for all heads
-        # critical options are
-        # - are we sharing weights ?
-        # - are we adding biases, and if yes are they shared ?
         if attention.requires_input_projection:
-            self.in_proj_container = (
-                in_proj_container
-                if in_proj_container is not None
-                else InProjContainer(
+            # projection block is already provided
+            if in_proj_container is not None:
+                self.in_proj_container = in_proj_container
+            # self attention, only one parameter required and flag passthrough for optimization purposes
+            elif self_attention:
+                self.in_proj_container = InputProjection(
+                    query_proj_params=InProjParams(dim_model, dim_key, bias=bias),
+                    self_attention=self_attention,
+                )
+            # the most generic case, one projection per input
+            else:
+                self.in_proj_container = InputProjection(
                     query_proj_params=InProjParams(dim_model, dim_key, bias=bias),
                     key_proj_params=InProjParams(dim_model, dim_key, bias=bias)
                     if use_separate_proj_weight
@@ -100,8 +106,8 @@ class MultiHeadDispatch(nn.Module):
                     value_proj_params=InProjParams(dim_model, dim_value, bias=bias)
                     if use_separate_proj_weight
                     else None,
+                    self_attention=False,
                 )
-            )
 
         # Optional rotary embeddings
         self.rotary_embeddings = (
@@ -171,11 +177,11 @@ class MultiHeadDispatch(nn.Module):
         if self.attention.requires_skip_multi_head:
             return self.attention(query, key, value, **kw_mask_args)
 
-        # Calculate query, key, values for all heads in batch
+        # Project query, key, values for all heads in batch
         if self.attention.requires_input_projection:
             q, k, v = self.in_proj_container(query=query, key=key, value=value)
         else:
-            k, q, v = key, query, value
+            q, k, v = query, key, value
 
         # Check the dimensions properly
         def check(t, name):

@@ -129,6 +129,7 @@ def bench_pytorch_encoder(
                                 "seq_len": seq,
                             },
                             "dim_model": emb,
+                            "self_attention": True,
                         },
                         "feedforward_config": {
                             "name": "FusedMLP",

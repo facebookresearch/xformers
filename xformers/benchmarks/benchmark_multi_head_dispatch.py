@@ -44,6 +44,7 @@ def bench_multihead_dispatch(backward: bool, self_attention: bool):
                     num_heads=heads,
                     attention=ScaledDotProduct(),
                     bias=True,
+                    self_attention=self_attention,
                 ).to(device=device, dtype=dtype)
                 torch_multi_head = nn.MultiheadAttention(
                     embed_dim=K, num_heads=heads, batch_first=True
@@ -81,7 +82,7 @@ def bench_multihead_dispatch(backward: bool, self_attention: bool):
                     TestCase(xformers_mha, f"xf - fw{bw}{sa}"),
                 ]:
                     time = triton.testing.do_bench(testcase.function)[0]
-                    key = f"B={B}, M={M}, K={K}, N_HEADS={heads}"
+                    key = f"({B},{M},{K}) - {heads}H"
                     if key not in results:
                         results[key] = {}
 
