@@ -248,7 +248,7 @@ if __name__ == "__main__":
 
     # compute total number of steps
     batch_size = BATCH * GPUS
-    steps = dm.num_samples // batch_size * MAX_EPOCHS
+    steps = dm.num_samples // REF_BATCH * MAX_EPOCHS
     lm = VisionTransformer(
         steps=steps,
         image_size=image_size,
