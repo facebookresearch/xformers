@@ -236,6 +236,8 @@
 <span class="kn">from</span> <span class="nn">torch.autograd.function</span> <span class="kn">import</span> <span class="n">Function</span>
 <span class="kn">from</span> <span class="nn">torch.utils.checkpoint</span> <span class="kn">import</span> <span class="n">get_device_states</span><span class="p">,</span> <span class="n">set_device_states</span>
 
+<span class="kn">from</span> <span class="nn">xformers.components</span> <span class="kn">import</span> <span class="n">RequiresWrappedInputs</span>
+
 <span class="c1"># CREDITS: Code adapted from</span>
 <span class="c1"># https://github.com/lucidrains/reformer-pytorch/blob/master/reformer_pytorch/reversible.py</span>
 <span class="c1"># https://github.com/RobinBruegger/RevTorch/blob/master/revtorch/revtorch.py,</span>
@@ -251,6 +253,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">cuda_in_fwd</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">gpu_devices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">gpu_states</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wrap_inputs</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">net</span><span class="p">,</span> <span class="n">RequiresWrappedInputs</span><span class="p">)</span>
 
 <div class="viewcode-block" id="Deterministic.record_rng"><a class="viewcode-back" href="../../../components/reversible.html#xformers.components.reversible.Deterministic.record_rng">[docs]</a>    <span class="k">def</span> <span class="nf">record_rng</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">cpu_state</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">get_rng_state</span><span class="p">()</span>
@@ -263,7 +266,10 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">record_rng</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="n">set_rng</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_inputs</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 
         <span class="n">rng_devices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cuda_in_fwd</span><span class="p">:</span>
@@ -273,7 +279,11 @@
             <span class="n">torch</span><span class="o">.</span><span class="n">set_rng_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cpu_state</span><span class="p">)</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cuda_in_fwd</span><span class="p">:</span>
                 <span class="n">set_device_states</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gpu_devices</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpu_states</span><span class="p">)</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div></div>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_inputs</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div></div>
 
 
 <div class="viewcode-block" id="ReversibleBlock"><a class="viewcode-back" href="../../../components/reversible.html#xformers.components.reversible.ReversibleBlock">[docs]</a><span class="k">class</span> <span class="nc">ReversibleBlock</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
