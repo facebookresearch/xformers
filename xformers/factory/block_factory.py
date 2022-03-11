@@ -335,8 +335,8 @@ class xFormerEncoderBlock(torch.nn.Module):
             q, k, v = x, x, x
 
         # Pre/Post norms and residual paths are already handled
-        x = self.wrap_att(q, k, v, att_mask=att_mask)
-        x = self.wrap_ff(x)
+        x = self.wrap_att(inputs=[q, k, v], att_mask=att_mask)
+        x = self.wrap_ff(inputs=[x])
 
         return x
 
@@ -397,8 +397,10 @@ class xFormerDecoderBlock(torch.nn.Module):
         else:
             target_q, target_k, target_v = target, target, target
 
-        x = self.wrap_att([target_q, target_k, target_v], att_mask=decoder_att_mask)
-        x = self.wrap_cross([x, memory, memory], att_mask=encoder_att_mask)
-        x = self.wrap_ff(x)
+        x = self.wrap_att(
+            inputs=[target_q, target_k, target_v], att_mask=decoder_att_mask
+        )
+        x = self.wrap_cross(inputs=[x, memory, memory], att_mask=encoder_att_mask)
+        x = self.wrap_ff(inputs=[x])
 
         return x
