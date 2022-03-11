@@ -26,8 +26,15 @@ class LayerNormStyle(str, Enum):
     Post = "post"
 
 
+class RequiresWrappedInputs:
+    """Used to mark, through inheritance,
+    the fact that this class will require inputs to be passed as a single list"""
+
+    pass
+
+
 # CREDITS: the following is inspired by FastAI's Transformer implementation
-class Residual(nn.Module):
+class Residual(nn.Module, RequiresWrappedInputs):
     """
     Object-oriented handling of the residual path
 
@@ -49,7 +56,7 @@ class Residual(nn.Module):
             return inputs[0] + self.layer(*inputs, **kwargs)
 
 
-class PreNorm(nn.Module):
+class PreNorm(nn.Module, RequiresWrappedInputs):
     """Adds LayerNorm before computing attention
 
     ..Note: If a list of inputs is passed, all of them get normalized"""
@@ -62,9 +69,7 @@ class PreNorm(nn.Module):
             self.norm = nn.LayerNorm(d_model)
 
         self.sublayer = sublayer
-        self.wrap_inputs = isinstance(sublayer, PostNorm) or isinstance(
-            sublayer, Residual
-        )
+        self.wrap_inputs = isinstance(sublayer, RequiresWrappedInputs)
 
     def forward(self, inputs: List[torch.Tensor], **kwargs):
         assert len(inputs) > 0
@@ -85,7 +90,7 @@ class PreNorm(nn.Module):
             return self.sublayer(*inputs_normed, **kwargs)
 
 
-class PostNorm(nn.Module):
+class PostNorm(nn.Module, RequiresWrappedInputs):
     """Adds LayerNorm after computing attention"""
 
     def __init__(self, d_model: int, sublayer: nn.Module, use_triton: bool = True):
@@ -96,9 +101,7 @@ class PostNorm(nn.Module):
             self.norm = nn.LayerNorm(d_model)
 
         self.sublayer = sublayer
-        self.wrap_inputs = isinstance(sublayer, PreNorm) or isinstance(
-            sublayer, Residual
-        )
+        self.wrap_inputs = isinstance(sublayer, RequiresWrappedInputs)
 
     def forward(self, inputs: List[torch.Tensor], **kwargs):
         if self.wrap_inputs:

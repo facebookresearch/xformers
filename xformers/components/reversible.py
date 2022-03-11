@@ -11,6 +11,8 @@ import torch.nn as nn
 from torch.autograd.function import Function
 from torch.utils.checkpoint import get_device_states, set_device_states
 
+from xformers.components import RequiresWrappedInputs
+
 # CREDITS: Code adapted from
 # https://github.com/lucidrains/reformer-pytorch/blob/master/reformer_pytorch/reversible.py
 # https://github.com/RobinBruegger/RevTorch/blob/master/revtorch/revtorch.py,
@@ -26,6 +28,7 @@ class Deterministic(nn.Module):
         self.cuda_in_fwd: bool = False
         self.gpu_devices: List[int] = []
         self.gpu_states: List[torch.Tensor] = []
+        self.wrap_inputs = isinstance(net, RequiresWrappedInputs)
 
     def record_rng(self, *args):
         self.cpu_state = torch.get_rng_state()
@@ -38,7 +41,10 @@ class Deterministic(nn.Module):
             self.record_rng(*args)
 
         if not set_rng:
-            return self.net(*args, **kwargs)
+            if self.wrap_inputs:
+                return self.net(inputs=args, **kwargs)
+            else:
+                return self.net(*args, **kwargs)
 
         rng_devices: List[int] = []
         if self.cuda_in_fwd:
@@ -48,7 +54,11 @@ class Deterministic(nn.Module):
             torch.set_rng_state(self.cpu_state)
             if self.cuda_in_fwd:
                 set_device_states(self.gpu_devices, self.gpu_states)
-            return self.net(*args, **kwargs)
+
+            if self.wrap_inputs:
+                return self.net(inputs=args, **kwargs)
+            else:
+                return self.net(*args, **kwargs)
 
 
 class ReversibleBlock(nn.Module):
