@@ -16,14 +16,6 @@ if _is_triton_available:
     from xformers.triton.layer_norm import FusedLayerNorm
 
 
-def _to_tensor_list(
-    inputs: Union[torch.Tensor, List[torch.Tensor]]
-) -> List[torch.Tensor]:
-    if not isinstance(inputs, list):
-        inputs = [inputs]
-    return inputs
-
-
 class LayerNormStyle(str, Enum):
     """Support different layer norm styles.
     See "On Layer Normalization in the Transformer Architecture",
@@ -36,16 +28,25 @@ class LayerNormStyle(str, Enum):
 
 # CREDITS: the following is inspired by FastAI's Transformer implementation
 class Residual(nn.Module):
-    """Object-oriented handling of the residual path"""
+    """
+    Object-oriented handling of the residual path
+
+    .. Note: the wrapped layers must accept all the inputs as a single list
+    """
 
     def __init__(self, layer: nn.Module):
         super().__init__()
         self.layer = layer
 
-    def forward(self, inputs: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs):
-        inputs = _to_tensor_list(inputs)
+        # PreNorm and PostNorm require all the tensors to be passed as a list
+        self.wrap_inputs = isinstance(layer, PreNorm) or isinstance(layer, PostNorm)
 
-        return inputs[0] + self.layer(*inputs, *args, **kwargs)
+    def forward(self, inputs: List[torch.Tensor], **kwargs):
+        if self.wrap_inputs:
+            return inputs[0] + self.layer(inputs=inputs, **kwargs)
+
+        else:
+            return inputs[0] + self.layer(*inputs, **kwargs)
 
 
 class PreNorm(nn.Module):
@@ -61,12 +62,27 @@ class PreNorm(nn.Module):
             self.norm = nn.LayerNorm(d_model)
 
         self.sublayer = sublayer
+        self.wrap_inputs = isinstance(sublayer, PostNorm) or isinstance(
+            sublayer, Residual
+        )
 
-    def forward(self, inputs: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs):
-        inputs = _to_tensor_list(inputs)
+    def forward(self, inputs: List[torch.Tensor], **kwargs):
+        assert len(inputs) > 0
 
-        x_norm = [self.norm(x_) for x_ in inputs]
-        return self.sublayer(*x_norm, *args, **kwargs)
+        # Perf improvement: if the inputs are all the same, only norm once
+        ids = [id(x) for x in inputs]
+        if ids.count(ids[0]) == len(ids):
+            # The same tensor is passed multiple times
+            x_norm = self.norm(inputs[0])
+            inputs_normed = [x_norm for _ in inputs]
+        else:
+            # The inputs differ, norm them all
+            inputs_normed = [self.norm(x_) for x_ in inputs]
+
+        if self.wrap_inputs:
+            return self.sublayer(inputs=inputs_normed, **kwargs)
+        else:
+            return self.sublayer(*inputs_normed, **kwargs)
 
 
 class PostNorm(nn.Module):
@@ -80,9 +96,13 @@ class PostNorm(nn.Module):
             self.norm = nn.LayerNorm(d_model)
 
         self.sublayer = sublayer
+        self.wrap_inputs = isinstance(sublayer, PreNorm) or isinstance(
+            sublayer, Residual
+        )
 
-    def forward(self, inputs: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs):
-        inputs = _to_tensor_list(inputs)
-
-        x = self.sublayer(*inputs, *args, **kwargs)
+    def forward(self, inputs: List[torch.Tensor], **kwargs):
+        if self.wrap_inputs:
+            x = self.sublayer(inputs=inputs, **kwargs)
+        else:
+            x = self.sublayer(*inputs, **kwargs)
         return self.norm(x)
