@@ -38,17 +38,19 @@ class VisionTransformer(pl.LightningModule):
         weight_decay=0.03,
         image_size=32,
         num_classes=10,
-        patch_size=4,
-        dim=768,
-        n_layer=12,
-        n_head=12,
-        resid_pdrop=0.1,
-        attn_pdrop=0.1,
-        mlp_pdrop=0.1,
+        patch_size=2,
+        dim=384,
+        n_layer=6,
+        n_head=6,
+        resid_pdrop=0.0,
+        attn_pdrop=0.0,
+        mlp_pdrop=0.0,
         attention="scaled_dot_product",
+        layer_norm_style="pre",
         hidden_layer_multiplier=4,
-        linear_warmup_ratio=0.05,
-        classifier: Classifier = Classifier.GAP,
+        use_rotary_embeddings=True,
+        linear_warmup_ratio=0.1,
+        classifier: Classifier = Classifier.TOKEN,
     ):
 
         super().__init__()
@@ -67,11 +69,11 @@ class VisionTransformer(pl.LightningModule):
                 "block_type": "encoder",
                 "num_layers": n_layer,
                 "dim_model": dim,
-                "layer_norm_style": "pre",
+                "layer_norm_style": layer_norm_style,
                 "multi_head_config": {
                     "num_heads": n_head,
                     "residual_dropout": resid_pdrop,
-                    "use_rotary_embeddings": True,
+                    "use_rotary_embeddings": use_rotary_embeddings,
                     "attention": {
                         "name": attention,
                         "dropout": attn_pdrop,
@@ -207,10 +209,10 @@ if __name__ == "__main__":
 
     # Adjust batch depending on the available memory on your machine.
     # You can also use reversible layers to save memory
-    REF_BATCH = 4096
+    REF_BATCH = 512
     BATCH = 256
 
-    MAX_EPOCHS = 20
+    MAX_EPOCHS = 30
     NUM_WORKERS = 4
     GPUS = 1
 
