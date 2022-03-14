@@ -65,8 +65,8 @@ class BlockType(str, Enum):
 def _get_ln_factory(
     d_model: int,
     layer_norm_style: Optional[LayerNormStyle],
-    residual: bool = True,
-    use_triton: bool = True,
+    use_triton: bool,
+    residual: bool,
     residual_scale: float = 1.0,
 ):
     """
@@ -319,6 +319,7 @@ class xFormerEncoderBlock(torch.nn.Module):
             config.dim_model,
             config.layer_norm_style,
             use_triton=config.use_triton,
+            residual=True,
             residual_scale=residual_scale,
         )
 
@@ -409,6 +410,7 @@ class xFormerDecoderBlock(torch.nn.Module):
             config.dim_model,
             config.layer_norm_style,
             use_triton=config.use_triton,
+            residual=True,
             residual_scale=residual_scale,
         )
 
