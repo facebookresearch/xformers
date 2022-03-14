@@ -253,6 +253,7 @@
     <span class="n">PositionEmbeddingConfig</span><span class="p">,</span>
     <span class="n">build_positional_embedding</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xformers.components.residual</span> <span class="kn">import</span> <span class="n">get_deepnorm_coefficients</span>
 <span class="kn">from</span> <span class="nn">xformers.utils</span> <span class="kn">import</span> <span class="n">generate_matching_config</span>
 
 
@@ -289,21 +290,41 @@
 <span class="k">def</span> <span class="nf">_get_ln_factory</span><span class="p">(</span>
     <span class="n">d_model</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">layer_norm_style</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LayerNormStyle</span><span class="p">],</span>
-    <span class="n">residual</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-    <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">residual</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">residual_scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
 <span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Handle all the supported residual path configurations.</span>
+
+<span class="sd">    ..Note: we return the appropriate constructor, not an actual layer</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
     <span class="k">def</span> <span class="nf">get_layer_wrapper</span><span class="p">(</span>
         <span class="n">d_model</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">sublayer</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
         <span class="n">layer_norm_style</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LayerNormStyle</span><span class="p">],</span>
-        <span class="n">residual</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">residual</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+        <span class="n">residual_scale</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="k">if</span> <span class="n">residual</span><span class="p">:</span>
-            <span class="k">return</span> <span class="p">(</span>
-                <span class="n">Residual</span><span class="p">(</span><span class="n">PreNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">use_triton</span><span class="p">))</span>
-                <span class="k">if</span> <span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">Pre</span>
-                <span class="k">else</span> <span class="n">PostNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">Residual</span><span class="p">(</span><span class="n">sublayer</span><span class="p">),</span> <span class="n">use_triton</span><span class="p">)</span>
-            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">Pre</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">Residual</span><span class="p">(</span>
+                    <span class="n">layer</span><span class="o">=</span><span class="n">PreNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">use_triton</span><span class="p">),</span> <span class="n">scale</span><span class="o">=</span><span class="kc">None</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">Post</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">PostNorm</span><span class="p">(</span>
+                    <span class="n">d_model</span><span class="p">,</span> <span class="n">Residual</span><span class="p">(</span><span class="n">layer</span><span class="o">=</span><span class="n">sublayer</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="kc">None</span><span class="p">),</span> <span class="n">use_triton</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">PostNorm</span><span class="p">(</span>
+                    <span class="n">d_model</span><span class="p">,</span>
+                    <span class="n">Residual</span><span class="p">(</span><span class="n">layer</span><span class="o">=</span><span class="n">sublayer</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">residual_scale</span><span class="p">),</span>
+                    <span class="n">use_triton</span><span class="o">=</span><span class="n">use_triton</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span>
+
         <span class="k">return</span> <span class="p">(</span>
             <span class="n">PreNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">use_triton</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">Pre</span>
@@ -311,7 +332,9 @@
         <span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">ln_factory</span><span class="p">(</span><span class="n">sublayer</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">get_layer_wrapper</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">layer_norm_style</span><span class="p">,</span> <span class="n">residual</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">get_layer_wrapper</span><span class="p">(</span>
+            <span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">layer_norm_style</span><span class="p">,</span> <span class="n">residual</span><span class="p">,</span> <span class="n">residual_scale</span>
+        <span class="p">)</span>
 
     <span class="k">return</span> <span class="n">ln_factory</span>
 
@@ -505,9 +528,24 @@
             <span class="k">else</span> <span class="kc">None</span>
         <span class="p">)</span>
 
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span><span class="p">:</span>
+            <span class="c1"># Just use the layer norm coefficient here,</span>
+            <span class="c1"># the init will be handled at the xformers level (knows about encoder and decoder blocks)</span>
+            <span class="n">deep_norm_coefficients</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">get_deepnorm_coefficients</span><span class="p">(</span>
+                <span class="n">encoder_layers</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">num_layers</span><span class="p">,</span> <span class="n">decoder_layers</span><span class="o">=</span><span class="mi">0</span>
+            <span class="p">)</span>
+            <span class="k">assert</span> <span class="n">deep_norm_coefficients</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">residual_scale</span> <span class="o">=</span> <span class="n">deep_norm_coefficients</span><span class="o">.</span><span class="n">alpha</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">residual_scale</span> <span class="o">=</span> <span class="mf">1.0</span>
+
         <span class="c1"># mini helper, builds a LayerNorm with the right Pre/Post config, residuals, and the right dimensions</span>
         <span class="n">ln_factory</span> <span class="o">=</span> <span class="n">_get_ln_factory</span><span class="p">(</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">,</span> <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">,</span>
+            <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span><span class="p">,</span>
+            <span class="n">residual</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">residual_scale</span><span class="o">=</span><span class="n">residual_scale</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">mha</span> <span class="o">=</span> <span class="n">build_multi_head_attention</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">multi_head_config</span><span class="p">)</span>
@@ -581,9 +619,24 @@
             <span class="k">else</span> <span class="kc">None</span>
         <span class="p">)</span>
 
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span><span class="p">:</span>
+            <span class="c1"># Just use the layer norm coefficient here,</span>
+            <span class="c1"># the init will be handled at the xformers level (knows about encoder and decoder blocks)</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">deep_norm_coefficients</span> <span class="o">=</span> <span class="n">get_deepnorm_coefficients</span><span class="p">(</span>
+                <span class="n">encoder_layers</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">decoder_layers</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">num_layers</span>
+            <span class="p">)</span>
+            <span class="k">assert</span> <span class="n">deep_norm_coefficients</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">residual_scale</span> <span class="o">=</span> <span class="n">deep_norm_coefficients</span><span class="o">.</span><span class="n">alpha</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">residual_scale</span> <span class="o">=</span> <span class="mf">1.0</span>
+
         <span class="c1"># mini helper, builds a LayerNorm with the right Pre/Post config and the right dimensions</span>
         <span class="n">ln_factory</span> <span class="o">=</span> <span class="n">_get_ln_factory</span><span class="p">(</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">,</span> <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">,</span>
+            <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span><span class="p">,</span>
+            <span class="n">residual</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">residual_scale</span><span class="o">=</span><span class="n">residual_scale</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">mha</span> <span class="o">=</span> <span class="n">build_multi_head_attention</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">multi_head_config_masked</span><span class="p">)</span>
