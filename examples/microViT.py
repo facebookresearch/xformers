@@ -33,7 +33,7 @@ class VisionTransformer(pl.LightningModule):
     def __init__(
         self,
         steps,
-        learning_rate=1e-3,
+        learning_rate=5e-4,
         betas=(0.9, 0.99),
         weight_decay=0.03,
         image_size=32,

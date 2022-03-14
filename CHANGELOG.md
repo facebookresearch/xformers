@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update eps value for layernormm, same default as torch [#221]
 - PreNorm bugfix, only one input was normalized [#233]
 
+### Added
+- Add DeepNet (DeepNorm) residual path and init [#227]
+
 ## [0.0.9] - 2022-02-09
 ### Added
 - Compositional Attention [#41]

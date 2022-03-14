@@ -26,6 +26,7 @@ encoder_configs = {
     "reversible": False,
     "block_type": "encoder",
     "dim_model": EMB,
+    "layer_norm_style": "pre",
     "position_encoding_config": {
         "name": "vocab",
         "seq_len": SEQ,
@@ -58,6 +59,7 @@ encoder_configs = {
 decoder_configs = {
     "block_type": "decoder",
     "dim_model": EMB,
+    "layer_norm_style": "pre",
     "position_encoding_config": {
         "name": "vocab",
         "seq_len": SEQ,
@@ -105,13 +107,17 @@ test_configs_dict = {"encoder": encoder_configs, "decoder": decoder_configs}
 @pytest.mark.parametrize("config", [test_configs_list, test_configs_dict])
 @pytest.mark.parametrize("reversible", [True, False])
 @pytest.mark.parametrize("tie_embedding_weights", [True, False])
+@pytest.mark.parametrize("layer_norm_style", ["pre", "post", "deepnorm"])
 @pytest.mark.parametrize("device", DEVICES)
-def test_presets(config, reversible, tie_embedding_weights, device):
+def test_presets(config, reversible, tie_embedding_weights, layer_norm_style, device):
     # Build the model
     if isinstance(config, list):
         config[0]["reversible"] = reversible
+        config[0]["layer_norm_style"] = layer_norm_style
     else:
         config["encoder"]["reversible"] = reversible
+        config["encoder"]["layer_norm_style"] = layer_norm_style
+        config["decoder"]["layer_norm_style"] = layer_norm_style
 
     modelConfig = xFormerConfig(config, tie_embedding_weights)
     if isinstance(modelConfig.stack_configs, dict):
@@ -123,7 +129,7 @@ def test_presets(config, reversible, tie_embedding_weights, device):
 
     context = (
         pytest.raises(AssertionError)
-        if reversible and tie_embedding_weights
+        if reversible and (tie_embedding_weights or layer_norm_style == "deepnorm")
         else nullcontext()
     )
 
