@@ -35,7 +35,7 @@ copyright = "Copyright © 2021 Meta Platforms, Inc"
 author = "Facebook AI Research"
 
 # The full version, including alpha/beta/rc tags
-release = "0.0.9"
+release = "0.0.10"
 
 
 # -- General configuration ---------------------------------------------------
