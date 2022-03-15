@@ -104,14 +104,15 @@ def get_extensions():
 
 class clean(distutils.command.clean.clean):  # type: ignore
     def run(self):
-        with open(".gitignore", "r") as f:
-            ignores = f.read()
-            for wildcard in filter(None, ignores.split("\n")):
-                for filename in glob.glob(wildcard):
-                    try:
-                        os.remove(filename)
-                    except OSError:
-                        shutil.rmtree(filename, ignore_errors=True)
+        if os.path.exists(".gitignore"):
+            with open(".gitignore", "r") as f:
+                ignores = f.read()
+                for wildcard in filter(None, ignores.split("\n")):
+                    for filename in glob.glob(wildcard):
+                        try:
+                            os.remove(filename)
+                        except OSError:
+                            shutil.rmtree(filename, ignore_errors=True)
 
         # It's an old-style class in Python 2.7...
         distutils.command.clean.clean.run(self)
@@ -130,6 +131,7 @@ if __name__ == "__main__":
             "build_ext": BuildExtension.with_options(no_python_abi_suffix=True),
             "clean": clean,
         },
+        url="https://facebookresearch.github.io/xformers/",
         python_requires=">=3.6",
         author="Facebook AI Research",
         author_email="lefaudeux@fb.com",
