@@ -16,6 +16,7 @@ from xformers.components.attention import (
     AttentionMask,
     register_attention,
 )
+from xformers.components.attention.attention_patterns import causal_1d_pattern
 from xformers.components.attention.core import MaskType, scaled_dot_product_attention
 
 
@@ -52,10 +53,11 @@ class ScaledDotProduct(Attention):
         self.causal = causal
         self.seq_len = seq_len
 
+        mask = None
         if causal and seq_len is not None:
-            self.mask = AttentionMask.make_causal(seq_len, to_seq_len)
-        else:
-            self.mask = None
+            mask = causal_1d_pattern(seq_len)
+
+        self.register_buffer("mask")
 
     def forward(
         self,

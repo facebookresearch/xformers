@@ -9,6 +9,7 @@ import torch
 from torch.utils._pytree import tree_map
 
 from xformers import _is_triton_available
+from xformers.ops import masked_matmul
 
 if _is_triton_available:
     from xformers.triton.softmax import softmax as triton_softmax
@@ -39,6 +40,10 @@ class CausalTensor(torch.Tensor):
     def __repr__(self):
         return f"causal_tensor_wrapper({repr(self.elem)})"
 
+    @classmethod
+    def from_dense(cls, matrix):
+        return cls(torch.tril(matrix))
+
     def to_dense(self):
         return torch.tril(self.elem)
 
@@ -54,20 +59,51 @@ class CausalTensor(torch.Tensor):
                 return NotImplemented
             return cls(triton_softmax(a, mask=None, causal=True))
 
+        if func in [
+            torch.Tensor.bmm,
+            torch.bmm,
+            torch.Tensor.__matmul__,
+            torch.matmul,
+            torch.Tensor.matmul,
+        ]:
+            assert len(args) == 2
+            arg0, arg1 = args
+            if not (isinstance(arg0, cls) and type(arg1) == torch.Tensor):
+                return NotImplemented
+            return arg0.elem @ arg1
+
+        if func == masked_matmul:
+            assert len(args) == 3
+            if not (type(arg[0]) == torch.Tensor and type(args[1]) == torch.Tensor):
+                return NotImplemented
+            return cls(masked_matmul(args[0], args[1], args[2].elem))
+
         def unwrap(e):
             return e.elem if isinstance(e, cls) else e
 
         def wrap(e):
             return cls(e) if isinstance(e, torch.Tensor) else e
 
-        with torch._C.DisableTorchFunction():
+        if func in [
+            torch.Tensor.to,
+            torch.Tensor.copy_,
+            torch.Tensor.equal,
+            torch.equal,
+            torch.Tensor.detach,
+            torch.Tensor.__deepcopy__,
+            torch.Tensor.requires_grad_,
+        ]:
             ret = func(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
-            # ret = func(*args, **kwargs)
+            return tree_map(wrap, ret)
+
+        with torch._C.DisableTorchFunction():
+            ret = func(*args, **kwargs)
             # TODO: check this
             if func in torch.overrides.get_default_nowrap_functions():
                 return ret
-            return tree_map(wrap, ret)
-            # return torch._tensor._convert(ret, cls)
+            return torch._tensor._convert(ret, cls)
+
+        return NotImplemented
 
     @classmethod
     def __torch_dispatch__(cls, func, types, args, kwargs):
