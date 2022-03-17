@@ -18,6 +18,15 @@ void fill_zero(scalar_t* buf, int64_t K) {
 }
 
 
+template <typename scalar_t, int K>
+scalar_t max(scalar_t* buf) {
+  scalar_t m = buf[0];
+  for (int64_t k = 1; k < K; k++) {
+    m = buf[k] > m ? buf[k] : m;
+  }
+  return m;
+}
+
 
 template <typename scalar_t>
 void attention_kernel(
@@ -29,6 +38,7 @@ void attention_kernel(
     //at::TensorAccessor<int64_t, 2> mask
     ) {
 
+  constexpr int64_t BLOCK = 8;
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -44,47 +54,37 @@ void attention_kernel(
         auto aar = query[i][j].data();
         scalar_t s_prime = 0;
         scalar_t m_prime = -std::numeric_limits<scalar_t>::infinity();
-        for (int64_t l = 0; l < N; l+=4) {
+        for (int64_t l = 0; l < N; l+=BLOCK) {
           auto bar = key[i][l].data();
-          scalar_t si[4] = {0};
+          scalar_t si[BLOCK] = {0};
           for (int64_t k = 0; k < K; k++) {
             auto aaar = aar[k];
-            si[0] += aaar * bar[k + K * 0];
-            si[1] += aaar * bar[k + K * 1];
-            si[2] += aaar * bar[k + K * 2];
-            si[3] += aaar * bar[k + K * 3];
+            for (int64_t rr = 0; rr < BLOCK; rr++)
+              si[rr] += aaar * bar[k + K * rr];
           }
-          scalar_t m_i_[4];
-          m_i_[0] = si[0] > m_prime ? si[0] : m_prime;
-          m_i_[1] = si[1] > m_prime ? si[1] : m_prime;
-          m_i_[2] = si[2] > m_prime ? si[2] : m_prime;
-          m_i_[3] = si[3] > m_prime ? si[3] : m_prime;
-          scalar_t m_i = m_i_[0];
-          m_i = m_i_[1] > m_i ? m_i_[1] : m_i;
-          m_i = m_i_[2] > m_i ? m_i_[2] : m_i;
-          m_i = m_i_[3] > m_i ? m_i_[3] : m_i;
+          scalar_t m_i_[BLOCK];
+          for (int64_t rr = 0; rr < BLOCK; rr++)
+            m_i_[rr] = si[rr] > m_prime ? si[rr] : m_prime;
+
+          scalar_t m_i = max<scalar_t, BLOCK>(m_i_);
 
           auto vi = value[i][l].data();
 
           scalar_t m_delta;
-          scalar_t s_delta[4];
+          scalar_t s_delta[BLOCK];
           m_delta = std::exp(m_prime - m_i);
 
-          s_delta[0] = std::exp(si[0] - m_i);
-          s_delta[1] = std::exp(si[1] - m_i);
-          s_delta[2] = std::exp(si[2] - m_i);
-          s_delta[3] = std::exp(si[3] - m_i);
+          for (int64_t rr = 0; rr < BLOCK; rr++)
+            s_delta[rr] = std::exp(si[rr] - m_i);
 
           for (int64_t k = 0; k < K; k++) {
-            buf[k] = buf[k] * m_delta + vi[k + K * 0] * s_delta[0];
-            buf[k] = buf[k]  + vi[k + K * 1] * s_delta[1];
-            buf[k] = buf[k]  + vi[k + K * 2] * s_delta[2];
-            buf[k] = buf[k]  + vi[k + K * 3] * s_delta[3];
+            buf[k] = buf[k] * m_delta;
+            for (int64_t rr = 0; rr < BLOCK; rr++)
+              buf[k] += vi[k + K * rr] * s_delta[rr];
           }
-          s_prime = s_prime * m_delta + s_delta[0];
-          s_prime = s_prime  + s_delta[1];
-          s_prime = s_prime  + s_delta[2];
-          s_prime = s_prime  + s_delta[3];
+          s_prime = s_prime * m_delta;
+          for (int64_t rr = 0; rr < BLOCK; rr++)
+            s_prime += s_delta[rr];
 
           m_prime = m_i;
         }
