@@ -27,8 +27,8 @@ DEVICES = [torch.device("cuda")]
 VOCAB_SIZE = 64
 
 
-@pytest.mark.parametrize("attn_dropout", [0.1])
-@pytest.mark.parametrize("residual_dropout", [0.1])
+@pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
+@pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("heads", [1, 2])
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
@@ -120,8 +120,8 @@ def test_xformer_encoder_block(
     _ = block(inputs, input_mask=input_mask)
 
 
-@pytest.mark.parametrize("attn_dropout", [0.1])
-@pytest.mark.parametrize("residual_dropout", [0.1])
+@pytest.mark.parametrize("attn_dropout", [0.0, 0.1])
+@pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 2])
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
