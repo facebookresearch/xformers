@@ -42,24 +42,28 @@ def test_nystrom_attention_close_to_sdp(
 
     a = torch.rand(b, s, d)
 
-    # Make sure that Nystrom and Normal attention are not too far off.
-    nystrom_attention = NystromAttention(**nystrom_config)
-    sdp_attention = ScaledDotProduct(**sdp_config)
+    def test_close_to_sdp():
+        # Make sure that Nystrom and Normal attention are not too far off.
 
-    r_nystrom = nystrom_attention(a, a, a, att_mask=None)
-    r_sdp = sdp_attention(a, a, a, att_mask=None)
+        nystrom_attention = NystromAttention(**nystrom_config)
+        sdp_attention = ScaledDotProduct(**sdp_config)
 
-    assert torch.allclose(r_nystrom, r_sdp, rtol=0.005, atol=1e-2)
+        r_nystrom = nystrom_attention(a, a, a, att_mask=None)
+        r_sdp = sdp_attention(a, a, a, att_mask=None)
 
-    # Make sure that Nystrom and Normal attention are not too far off.
+        assert torch.allclose(r_nystrom, r_sdp, rtol=0.005, atol=1e-2)
 
-    nystrom_attention = NystromAttention(**nystrom_config)
-    sdp_attention = ScaledDotProduct(**sdp_config)
+        # Make sure that Nystrom and Normal attention are not too far off.
 
-    r_nystrom = nystrom_attention(a, a, a, att_mask=None)
-    r_sdp = sdp_attention(a, a, a, att_mask=None)
+        nystrom_attention = NystromAttention(**nystrom_config)
+        sdp_attention = ScaledDotProduct(**sdp_config)
 
-    assert torch.allclose(r_nystrom, r_sdp, rtol=0.005, atol=1e-2)
+        r_nystrom = nystrom_attention(a, a, a, att_mask=None)
+        r_sdp = sdp_attention(a, a, a, att_mask=None)
+
+        assert torch.allclose(r_nystrom, r_sdp, rtol=0.005, atol=1e-2)
+
+    test_close_to_sdp()
 
 
 @pytest.mark.parametrize("pinverse_original_init", [True])
