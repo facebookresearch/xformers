@@ -13,7 +13,7 @@ _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
 def test_core_attention():
-    b, s, d = 8, 900, 32
+    b, s, d = 2, 400, 8
     prob = 0.95
 
     a = torch.rand(b, s, d)
@@ -29,7 +29,7 @@ def test_core_attention():
 
 def test_core_attention_mask_types():
 
-    b, s, d = 8, 900, 32
+    b, s, d = 4, 90, 16
     prob = 0.8  # make sure that we trigger the sparse kernels
 
     a = torch.rand(b, s, d)

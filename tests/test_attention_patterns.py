@@ -118,10 +118,11 @@ def test_swin_attention_pattern(H, W, window_size):
     w = W // window_size
     d = d.reshape(h, window_size, w, window_size, h, window_size, w, window_size)
 
-    for y, x in itertools.product(range(h), range(w)):
+    product = itertools.product(range(h), range(w))
+    for y, x in product:
         # every region should fully attend to itself
         assert torch.all(d[y, :, x, :, y, :, x, :])
-        for y2, x2 in itertools.product(range(h), range(w)):
+        for y2, x2 in product:
             if y == y2 or x == x2:
                 continue
             # different regions shouldn't attend between each other
@@ -155,12 +156,15 @@ def test_swin_attention_pattern(H, W, window_size):
 def test_dilated_2d_pattern(H, W, k):
     d = AP.dilated_2d_pattern(H, W, k)
     d = d.reshape(H, W, H, W)
-    for h, w in itertools.product(range(H), range(W)):
+
+    product_HW = itertools.product(range(H), range(W))
+    product_kk = itertools.product(range(k), range(k))
+    for h, w in product_HW:
         i = h % k
         j = w % k
         # every kth element is taken
         assert torch.all(d[h, w][i::k, j::k])
-        for ii, jj in itertools.product(range(k), range(k)):
+        for ii, jj in product_kk:
             if ii == i and jj == j:
                 continue
             # and the other elements are discarded

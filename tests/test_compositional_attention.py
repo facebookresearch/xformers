@@ -31,8 +31,8 @@ assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
 
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.3])
 @pytest.mark.parametrize("causal", [True, False])
-@pytest.mark.parametrize("heads", [1, 4])
-@pytest.mark.parametrize("rules", [1, 4])
+@pytest.mark.parametrize("heads", [4])
+@pytest.mark.parametrize("rules", [4])
 @pytest.mark.parametrize("q_compose", [False, True])
 @pytest.mark.parametrize("dim_selection", [MODEL // 2, None])
 @pytest.mark.parametrize("bias", [True, False])
