@@ -62,11 +62,10 @@ void attention_kernel(
             for (int64_t rr = 0; rr < BLOCK; rr++)
               si[rr] += aaar * bar[k + K * rr];
           }
-          scalar_t m_i_[BLOCK];
-          for (int64_t rr = 0; rr < BLOCK; rr++)
-            m_i_[rr] = si[rr] > m_prime ? si[rr] : m_prime;
-
-          scalar_t m_i = max<scalar_t, BLOCK>(m_i_);
+          scalar_t m_i = si[0] > m_prime ? si[0] : m_prime;
+          for (int64_t rr = 1; rr < BLOCK; rr++) {
+            m_i = si[rr] > m_i ? si[rr] : m_i;
+          }
 
           auto vi = value[i][l].data();
 
