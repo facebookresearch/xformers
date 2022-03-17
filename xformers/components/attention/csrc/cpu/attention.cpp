@@ -11,56 +11,46 @@
 namespace {
 
 template <typename scalar_t>
+void fill_zero(scalar_t* buf, int64_t K) {
+  for (int64_t k = 0; k < K; k++) {
+    buf[k] = 0;
+  }
+}
+
+
+template <typename scalar_t>
 void attention_kernel(
     at::TensorAccessor<scalar_t, 3> output,
-    at::TensorAccessor<scalar_t, 3> q,
-    at::TensorAccessor<scalar_t, 3> k,
-    at::TensorAccessor<scalar_t, 3> v,
+    at::TensorAccessor<scalar_t, 3> query,
+    at::TensorAccessor<scalar_t, 3> key,
+    at::TensorAccessor<scalar_t, 3> value,
     at::TensorAccessor<scalar_t, 3> buffer//,
     //at::TensorAccessor<int64_t, 2> mask
     ) {
 
-  int64_t K = q.size(2);
-  int64_t B = q.size(0);
-  int64_t M = q.size(1);
-  int64_t N = k.size(1);
+  int64_t K = query.size(2);
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
   int64_t grain_size = 1;//buffer.size(1);
   at::parallel_for(0, B, grain_size, [&](int64_t start, int64_t end) {
     using Vec = at::vec::Vectorized<scalar_t>;
 
     auto buf = buffer[at::get_thread_num()][0].data();
     for (int64_t i = start; i < end; i++) {
-    //for (int64_t ii = start; ii < end; ii++) {
-      //int64_t i = ii / M;
-      //int64_t j = ii % M;
-
-      //{
       for (int64_t j = 0; j < M; j++) {
-        //auto buf = buffer[i][at::get_thread_num()];
-        for (int64_t k = 0; k < K; k++) {
-          buf[k] = 0;
-        }
-        //std::memset(buf.data(), 0, K * sizeof(scalar_t));
-        auto aar = q[i][j].data();
+        fill_zero<scalar_t>(buf, K);
+        auto aar = query[i][j].data();
         scalar_t s_prime = 0;
         scalar_t m_prime = -std::numeric_limits<scalar_t>::infinity();
         for (int64_t l = 0; l < N; l++) {
-          auto bar = k[i][l].data();
+          auto bar = key[i][l].data();
           scalar_t si = 0;
           for (int64_t k = 0; k < K; k++) {
             si += aar[k] * bar[k];
           }
-          /*
-          si = at::vec::map2_reduce_all<scalar_t>(
-            [](Vec a, Vec b) { return a * b; },
-            [](Vec x, Vec y) { return x + y; },
-            aar,
-            bar,
-            K
-          );
-          */
           scalar_t m_i = si > m_prime ? si : m_prime;
-          auto vi = v[i][l].data();
+          auto vi = value[i][l].data();
 
           scalar_t m_delta = std::exp(m_prime - m_i);
           scalar_t s_delta = std::exp(si - m_i);
@@ -68,13 +58,6 @@ void attention_kernel(
           for (int64_t k = 0; k < K; k++) {
             buf[k] = buf[k] * m_delta + vi[k] * s_delta;
           }
-          //at::vec::map2<scalar_t>(
-          //  [m_delta, s_delta](Vec a, Vec b) { return a * Vec(m_delta) + b * Vec(s_delta); },
-          //  buf,
-          //  buf,
-          //  vi,
-          //  K
-          //);
           s_prime = s_prime * m_delta + s_delta;
 
           m_prime = m_i;
