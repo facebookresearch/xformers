@@ -29,7 +29,7 @@ GLOBAL_ATTENTION_RATIO = (
 assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
 
 
-@pytest.mark.parametrize("attn_dropout", [0.3])
+@pytest.mark.parametrize("attn_dropout", [0.0, 0.3])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [4])
 @pytest.mark.parametrize("rules", [4])
