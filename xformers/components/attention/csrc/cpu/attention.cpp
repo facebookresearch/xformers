@@ -18,6 +18,7 @@ void fill_zero(scalar_t* buf, int64_t K) {
 }
 
 
+
 template <typename scalar_t>
 void attention_kernel(
     at::TensorAccessor<scalar_t, 3> output,
@@ -43,22 +44,47 @@ void attention_kernel(
         auto aar = query[i][j].data();
         scalar_t s_prime = 0;
         scalar_t m_prime = -std::numeric_limits<scalar_t>::infinity();
-        for (int64_t l = 0; l < N; l++) {
+        for (int64_t l = 0; l < N; l+=4) {
           auto bar = key[i][l].data();
-          scalar_t si = 0;
+          scalar_t si[4] = {0};
           for (int64_t k = 0; k < K; k++) {
-            si += aar[k] * bar[k];
+            auto aaar = aar[k];
+            si[0] += aaar * bar[k + K * 0];
+            si[1] += aaar * bar[k + K * 1];
+            si[2] += aaar * bar[k + K * 2];
+            si[3] += aaar * bar[k + K * 3];
           }
-          scalar_t m_i = si > m_prime ? si : m_prime;
+          scalar_t m_i_[4];
+          m_i_[0] = si[0] > m_prime ? si[0] : m_prime;
+          m_i_[1] = si[1] > m_prime ? si[1] : m_prime;
+          m_i_[2] = si[2] > m_prime ? si[2] : m_prime;
+          m_i_[3] = si[3] > m_prime ? si[3] : m_prime;
+          scalar_t m_i = m_i_[0];
+          m_i = m_i_[1] > m_i ? m_i_[1] : m_i;
+          m_i = m_i_[2] > m_i ? m_i_[2] : m_i;
+          m_i = m_i_[3] > m_i ? m_i_[3] : m_i;
+
           auto vi = value[i][l].data();
 
-          scalar_t m_delta = std::exp(m_prime - m_i);
-          scalar_t s_delta = std::exp(si - m_i);
+          scalar_t m_delta;
+          scalar_t s_delta[4];
+          m_delta = std::exp(m_prime - m_i);
+
+          s_delta[0] = std::exp(si[0] - m_i);
+          s_delta[1] = std::exp(si[1] - m_i);
+          s_delta[2] = std::exp(si[2] - m_i);
+          s_delta[3] = std::exp(si[3] - m_i);
 
           for (int64_t k = 0; k < K; k++) {
-            buf[k] = buf[k] * m_delta + vi[k] * s_delta;
+            buf[k] = buf[k] * m_delta + vi[k + K * 0] * s_delta[0];
+            buf[k] = buf[k]  + vi[k + K * 1] * s_delta[1];
+            buf[k] = buf[k]  + vi[k + K * 2] * s_delta[2];
+            buf[k] = buf[k]  + vi[k + K * 3] * s_delta[3];
           }
-          s_prime = s_prime * m_delta + s_delta;
+          s_prime = s_prime * m_delta + s_delta[0];
+          s_prime = s_prime  + s_delta[1];
+          s_prime = s_prime  + s_delta[2];
+          s_prime = s_prime  + s_delta[3];
 
           m_prime = m_i;
         }
