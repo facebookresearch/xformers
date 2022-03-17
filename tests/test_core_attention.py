@@ -13,7 +13,7 @@ _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
 def test_core_attention():
-    b, s, d = 4, 90, 16
+    b, s, d = 2, 400, 8
     prob = 0.95
 
     a = torch.rand(b, s, d)

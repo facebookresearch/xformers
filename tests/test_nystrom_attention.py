@@ -13,14 +13,14 @@ from xformers.components.attention.utils import maybe_merge_masks
 
 @pytest.mark.parametrize("pinverse_original_init", [True, False])
 @pytest.mark.parametrize("use_razavi_pinverse", [True, False])
-@pytest.mark.parametrize("num_landmarks", [30, 33, 905])
+@pytest.mark.parametrize("num_landmarks", [33, 905])
 def test_nystrom_attention(
     pinverse_original_init: bool,
     use_razavi_pinverse: bool,
     num_landmarks: int,
 ):
     # TODO: conv_kernel_size parameter not set to None fails this test. Investigate.
-    b, s, d = 8, 900, 384
+    b, s, d = 2, 900, 40
     num_heads = 2
     seed = 42
     torch.random.manual_seed(seed)
