@@ -103,7 +103,7 @@ def test_order_invariance(
     )
 
     # Check that a shuffled input produces the same results
-    seqs = [SEQ, SEQ//2] if (attention_name != "blocksparse") else [SEQ]
+    seqs = [SEQ, SEQ // 2] if (attention_name != "blocksparse") else [SEQ]
 
     for seq in seqs:
         # Check that we can pass a smaller sequence
@@ -194,7 +194,7 @@ def test_inproj(
     if same_settings:
         in_proj = InProjContainer(in_params, None, None)
     else:
-        out_features = MODEL if same_sizes else MODEL//2
+        out_features = MODEL if same_sizes else MODEL // 2
         in_params_flip = InProjParams(MODEL, out_features, not proj_bias, small_init)
         in_proj = InProjContainer(in_params, in_params_flip, in_params_flip)
 
@@ -248,7 +248,7 @@ def test_different_kq_dimensions(
         # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
         pytest.skip(f"{attention_name} does not support different k, q dimensions yet.")
 
-    seq_q = SEQ//2
+    seq_q = SEQ // 2
     q = torch.rand((BATCH, seq_q, MODEL), device=device)
     k = torch.rand((BATCH, SEQ, MODEL), device=device)
     v = torch.rand((BATCH, SEQ, MODEL), device=device)
