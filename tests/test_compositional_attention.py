@@ -22,13 +22,13 @@ MODEL = 128 if torch.cuda.is_available() else 32
 assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
 
 
-@pytest.mark.parametrize("heads", [1, 4])
+@pytest.mark.parametrize("heads", [4])
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.3])
 @pytest.mark.parametrize("causal", [True, False])
-@pytest.mark.parametrize("rules", [1, 4])
+@pytest.mark.parametrize("rules", [4])
 @pytest.mark.parametrize("q_compose", [False, True])
 @pytest.mark.parametrize("dim_selection", [MODEL // 2, None])
-@pytest.mark.parametrize("num_rules", [1, 2])
+@pytest.mark.parametrize("num_rules", [2])
 @pytest.mark.parametrize("qk_rule", [True, False])
 @pytest.mark.parametrize("nonlinear", [True, False])
 @pytest.mark.parametrize("device", DEVICES)
