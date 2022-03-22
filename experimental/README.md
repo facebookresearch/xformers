@@ -18,6 +18,11 @@ The kernels in this folder are experimental, and for now not tied to the rest of
 
 - (Optional) Check that the installation is successful by running `pytest tests` in this folder
 
+To use `triton_v2_blocksparse` you should navigate to that directory and install as follows:
+```
+cd triton_v2_blocksparse
+pip install -e .
+```
 ## If things go south, grab a backtrace as follows
 
 `gdb -batch -ex run -ex bt --args python -m pytest [..]`
