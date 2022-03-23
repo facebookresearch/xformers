@@ -18,9 +18,9 @@ def garbage_pad_ragged_acts_kernel(
     ragged_acts_offset_per_seq_ptr,
     n_ctx_per_seq_ptr,
     padded_acts_ptr,
-    **meta,  # Optional meta-parameters for the kernel
+    BLOCK_SIZE: tl.constexpr,  # How many inputs each program should process
+    n_ctx_max: tl.constexpr,
 ):
-    BLOCK_SIZE = meta["d_model"]  # How many inputs each program should process
     # There are multiple 'program's processing different data. We identify which program
     # we are here
 
@@ -47,7 +47,6 @@ def garbage_pad_ragged_acts_kernel(
     acts = tl.load(ragged_acts_ptr + ragged_acts_offsets, mask=ctx_idx_too_large_mask)
 
     # Calculate the offsets for the padded acts
-    n_ctx_max = meta["n_ctx_max"]
     padded_acts_offset = n_ctx_max * seq_idx * BLOCK_SIZE
 
     # Write things back, again masking out the sections that would be garbage
@@ -153,7 +152,7 @@ class RaggedActivations:
             torch.tensor(ragged_acts_offset_per_seq, device="cuda"),
             torch.tensor(self.n_ctx_per_seq, device="cuda"),
             padded_acts,
-            d_model=d_model,
+            BLOCK_SIZE=d_model,
             n_ctx_max=n_ctx_max,
         )
         return padded_acts

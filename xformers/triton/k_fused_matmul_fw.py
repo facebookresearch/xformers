@@ -15,24 +15,24 @@ import triton.language as tl
 # fmt: off
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_ROW": 16, "BLOCK_COL": 16}, num_stages=5, num_warps=1),
-        triton.Config({"BLOCK_ROW": 32, "BLOCK_COL": 32}, num_stages=5, num_warps=1),
-        triton.Config({"BLOCK_ROW": 64, "BLOCK_COL": 32}, num_stages=5, num_warps=2),
-        triton.Config({"BLOCK_ROW": 32, "BLOCK_COL": 64}, num_stages=5, num_warps=2),
-        triton.Config({"BLOCK_ROW": 128, "BLOCK_COL": 64}, num_stages=4, num_warps=4),
-        triton.Config({"BLOCK_ROW": 64, "BLOCK_COL": 128}, num_stages=4, num_warps=4),
-        triton.Config({"BLOCK_ROW": 128, "BLOCK_COL": 128}, num_stages=4, num_warps=4),
-        # triton.Config({"BLOCK_ROW": 32, "BLOCK_COL": 256}, num_stages=3, num_warps=4),
-        # triton.Config({"BLOCK_ROW": 256, "BLOCK_COL": 32}, num_stages=3, num_warps=4),
-        # triton.Config({"BLOCK_ROW": 64, "BLOCK_COL": 256}, num_stages=3, num_warps=8),
-        # triton.Config({"BLOCK_ROW": 256, "BLOCK_COL": 64}, num_stages=3, num_warps=8),
+        triton.Config({"BLOCK_M": 16, "BLOCK_N": 16}, num_stages=5, num_warps=1),
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_stages=5, num_warps=1),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_stages=5, num_warps=2),
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 64}, num_stages=5, num_warps=2),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 64}, num_stages=4, num_warps=4),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 128}, num_stages=4, num_warps=4),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 128}, num_stages=4, num_warps=4),
+        # triton.Config({"BLOCK_M": 32, "BLOCK_N": 256}, num_stages=3, num_warps=4),
+        # triton.Config({"BLOCK_M": 256, "BLOCK_N": 32}, num_stages=3, num_warps=4),
+        # triton.Config({"BLOCK_M": 64, "BLOCK_N": 256}, num_stages=3, num_warps=8),
+        # triton.Config({"BLOCK_M": 256, "BLOCK_N": 64}, num_stages=3, num_warps=8),
     ],
     key=["M", "N", "K"],
 )
 @triton.jit
 def kernel_fma(
     # Pointers to matrices
-    OUT, ACT_INPUTS, INPUT, WEIGHT, BIAS,
+    OUT, ACT_INPUTS, INPUT, WEIGHT, bias,
     # Matrix dimensions
     M, N, K,
     # The stride variables represent how much to increase the ptr by when moving by 1
@@ -41,7 +41,11 @@ def kernel_fma(
     stride_om, stride_im,
     stride_wn, stride_wk,
     # Meta-parameters
-    **META,
+    BLOCK_M: tl.constexpr, GROUP_M: tl.constexpr,
+    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    BIAS: tl.constexpr,
+    SAVE_ACT_INPUTS: tl.constexpr,
+    ACTIVATION: tl.constexpr,
 ):
     # fmt: on
 
@@ -58,10 +62,6 @@ def kernel_fma(
 
     This kernel will consolidate over K
     """
-
-    # extract metaparameters
-    BLOCK_M, GROUP_M = META["BLOCK_ROW"], META["GROUP_ROW"]
-    BLOCK_N, BLOCK_K = META["BLOCK_COL"], META["BLOCK_K"]
 
     # programs are grouped together to improve L2 hit rate
     # the logic is that we'll consolidate over K. If the programs were not grouped,
@@ -98,8 +98,8 @@ def kernel_fma(
     # initialize and iteratively update accumulator
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
-    if META["BIAS"]:
-        bias = tl.load(BIAS + rn, mask=rn < N, other=0.0).to(tl.float32)
+    if BIAS:
+        bias = tl.load(bias + rn, mask=rn < N, other=0.0).to(tl.float32)
         acc += bias[None, :]
 
     # block level matrix multiplication.
@@ -114,13 +114,13 @@ def kernel_fma(
         weight_ptrs += BLOCK_K * stride_wk
 
     # optional: save the activation inputs
-    if META["SAVE_ACT_INPUTS"]:
+    if SAVE_ACT_INPUTS:
         act_in_ptrs = ACT_INPUTS + rm[:, None] * stride_om + rn[None, :]
         tl.store(act_in_ptrs, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
 
     # optional: fused activation (while the data is in shared memory)
-    if META["ACTIVATION"]:
-        acc = META["ACTIVATION"](acc)
+    if ACTIVATION:
+        acc = ACTIVATION(acc)
 
     # write back result
     out_ptrs = OUT + rm[:, None] * stride_om + rn[None, :]
@@ -160,28 +160,18 @@ def fused_matmul(
     act_inputs = torch.empty_like(outputs) if save_act_inputs else x  # will not be used in that case
 
     # 1D launch kernel where each block gets its own program.
-    def grid(META):
-        return (
-            triton.cdiv(M, META["BLOCK_ROW"]) * triton.cdiv(N, META["BLOCK_COL"]),
-        )
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),) # noqa
 
     # fmt: off
     kernel_fma[grid](
-        # data ptrs
-        outputs, act_inputs, x_, weight,
-        bias if bias is not None else x,  # auto skip bias if not present
-        # shapes
-        M, N, K,
-        # strides
-        outputs.stride(0), x_.stride(0),
+        outputs, act_inputs, x_, weight,            # data ptrs
+        bias if bias is not None else x,            # auto skip bias if not present
+        M, N, K,                                    # shapes
+        outputs.stride(0), x_.stride(0),            # strides
         weight.stride(0), weight.stride(1),
-        # optional fused activation
-        ACTIVATION=activation,
-        # optional fused bias
-        BIAS=bias is not None,
-        # speed optimization: group the programs
-        # improve on data reuse in L2 cache
-        GROUP_ROW=8,
+        ACTIVATION=activation,                      # optional fused activation
+        BIAS=bias is not None,                      # optional fused bias
+        GROUP_M=8,                                  # speed optimization: group the programs
         BLOCK_K=32,
         SAVE_ACT_INPUTS=save_act_inputs
     )

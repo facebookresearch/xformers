@@ -18,8 +18,6 @@ from xformers.triton.k_layer_norm import (
     layer_norm_bwd_dwdb,
     layer_norm_bwd_dx_fused,
     layer_norm_fw,
-    layer_norm_no_affine_bwd,
-    layer_norm_non_affine_fw,
 )
 
 _triton_layernorm_fp16_enabled = False  # NOTE: PyTorch keeps layernorm as fp32
@@ -30,6 +28,10 @@ class _LayerNorm(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16 if _triton_layernorm_fp16_enabled else None)
     def forward(ctx, x, weight, bias, eps):
+        # catch eps being too small if the tensors are fp16
+        if x.dtype == torch.float16:
+            eps = max(eps, 1.6e-5)
+
         # allocate output
         y = torch.empty_like(x)
 
@@ -61,35 +63,24 @@ class _LayerNorm(torch.autograd.Function):
             y = y.contiguous()
 
         # heuristics for number of warps.
-        num_warps = min(max(BLOCK_SIZE_N // 256, 1), 8)
+        num_warps = min(max(BLOCK_SIZE_N // 256, 1), 16)
 
         # enqueue kernel
         # fmt: off
-        if weight is None:
-            layer_norm_non_affine_fw[(M,)](
-                x_arg, y, mean, rstd,
-                x_arg.stride(0),
-                N,
-                eps,
-                num_warps=num_warps,
-                BLOCK_SIZE_N=BLOCK_SIZE_N
-            )
-        else:
-            layer_norm_fw[(M,)](
-                x_arg, y, weight, bias, mean, rstd,
-                x_arg.stride(0),
-                N,
-                eps,
-                num_warps=num_warps,
-                BLOCK_SIZE_N=BLOCK_SIZE_N
-            )
+        layer_norm_fw[(M,)](
+            x_arg, y, weight, bias, mean, rstd,
+            x_arg.stride(0),
+            N,
+            eps,
+            num_warps=num_warps,
+            BLOCK_SIZE_N=BLOCK_SIZE_N,
+            affine=weight is not None
+        )
         # fmt: on
 
-        ctx.save_for_backward(y, rstd, weight, bias)
+        ctx.save_for_backward(x, mean, rstd, weight)
         ctx.BLOCK_SIZE_N = BLOCK_SIZE_N
         ctx.num_warps = num_warps
-        ctx.eps = eps
-        ctx.N = N
 
         return y.reshape_as(x)
 
@@ -98,10 +89,14 @@ class _LayerNorm(torch.autograd.Function):
     def backward(
         ctx, dy
     ):  # pragma: no cover  # this is covered, but called directly from C++
-        y, var, weight, bias = ctx.saved_tensors
+        x, mean, rstd, weight = ctx.saved_tensors
+
+        # flatten the batch dimension, if any.
+        # We're interested in 'samples' x norm_dimension
+        x = x.reshape(-1, x.size(-1))
+        M, N = x.size()
 
         # heuristics for amount of parallel reduction stream for DG/DB
-        N = y.size(-1)
         GROUP_SIZE_M = 64
         if N <= 8192:
             GROUP_SIZE_M = 96
@@ -110,47 +105,39 @@ class _LayerNorm(torch.autograd.Function):
         if N <= 1024:
             GROUP_SIZE_M = 256
 
-        # flatten the batch dimension, if any.
-        # We're interested in 'samples' x norm_dimension
-        y = y.reshape(-1, y.size(-1))
-        M, N = y.size()
-
         # allocate output
         locks = torch.zeros(2 * GROUP_SIZE_M, dtype=torch.int32, device="cuda")
-        t_args = {"dtype": y.dtype, "device": y.device}
-        _dw = torch.empty((GROUP_SIZE_M, y.size(-1)), **t_args)
-        _db = torch.empty((GROUP_SIZE_M, y.size(-1)), **t_args)
-        dw = torch.empty((y.size(-1),), **t_args)
-        db = torch.empty((y.size(-1),), **t_args)
+        t_args = {"dtype": x.dtype, "device": x.device}
+        _dw = torch.empty((GROUP_SIZE_M, x.size(-1)), **t_args)
+        _db = torch.empty_like(_dw)
+        dw = torch.empty((x.size(-1),), **t_args)
+        db = torch.empty_like(dw)
         dy = dy.contiguous()
         dx = torch.empty_like(dy)
 
         # Check the tensor shapes and layouts
         # we suppose in the kernel that they have the same size and are contiguous
         assert (
-            dx.numel() == y.numel()
+            dy.numel() == x.numel()
         ), "Something is wrong in the backward graph, possibly because of an inplace operation after the layernorm"
 
         # enqueue kernel using forward pass heuristics
         # also compute partial sums for DW and DB
+        num_warps = min(max(ctx.BLOCK_SIZE_N // 256, 1), 16)
 
         # fmt: off
-        meta = {"BLOCK_SIZE_N": ctx.BLOCK_SIZE_N,
-                "GROUP_SIZE_M": GROUP_SIZE_M,
-                "num_warps": ctx.num_warps}
-        if weight is None:
-            layer_norm_no_affine_bwd[(M,)](dx, dy, y, var, y.stride(0), N, **meta)
-            return dx, None, None, None
-
         layer_norm_bwd_dx_fused[(M,)](
-            dx, dy, _dw, _db,
-            y, weight, bias, var,
+            dx, dy, _dw, _db, x,
+            weight if weight is not None else x,
+            mean, rstd,
             locks,
-            y.stride(0),
+            x.stride(0),
             N,
-            **meta
+            affine=weight is not None,
+            GROUP_SIZE_M=GROUP_SIZE_M,
+            BLOCK_SIZE_N=ctx.BLOCK_SIZE_N,
+            num_warps=num_warps
         )
-
         # fmt: on
 
         def grid(meta):

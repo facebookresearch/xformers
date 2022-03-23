@@ -36,7 +36,7 @@ if _triton_available:
 if _triton_available:
 
     @triton.jit
-    def k_mean(X, Mean, Var, stride, N, **META):
+    def k_mean(X, Mean, Var, stride, N, BLOCK_SIZE_N: tl.constexpr):
         # fmt: on
         """
         Fused layernorm kernel over a 3d tensor.
@@ -47,7 +47,7 @@ if _triton_available:
         """
 
         row = tl.program_id(0)
-        cols = tl.arange(0, META["BLOCK_SIZE_N"])
+        cols = tl.arange(0, BLOCK_SIZE_N)
 
         # Move to this row
         x_ptrs = X + row * stride + cols
