@@ -154,8 +154,7 @@ class xFormerBlockConfig:
 
         # Fill in possible gaps in the config for subparts of the block
         self.feedforward_config = generate_matching_config(
-            feedforward_config,
-            FEEDFORWARD_REGISTRY[feedforward_config["name"]].config,
+            feedforward_config, FEEDFORWARD_REGISTRY[feedforward_config["name"]].config,
         )
 
         self.position_encoding_config = (
@@ -303,6 +302,13 @@ class xFormerEncoderBlock(torch.nn.Module):
             else None
         )
 
+        if self.pose_encoding is not None:
+            pos_encoding_dim = config.position_encoding_config.dim_model
+            mha_dim = config.multi_head_config["dim_model"]
+
+            if pos_encoding_dim != mha_dim:
+                self.embedding_projector = nn.Linear(pos_encoding_dim, mha_dim)
+
         if config.layer_norm_style == LayerNormStyle.DeepNorm:
             # Just use the layer norm coefficient here,
             # the init will be handled at the xformers level (knows about encoder and decoder blocks)
@@ -361,8 +367,11 @@ class xFormerEncoderBlock(torch.nn.Module):
         att_mask: Optional[torch.Tensor] = None,
         input_mask: Optional[torch.Tensor] = None,
     ):
-        if self.pose_encoding:
+        if self.pose_encoding is not None:
             x = self.pose_encoding(x)
+
+            if hasattr(self, "embedding_projector"):
+                x = self.embedding_projector(x)
 
         # Handle the optional input masking, differs on Q, K, V
         if input_mask is not None:
@@ -393,6 +402,13 @@ class xFormerDecoderBlock(torch.nn.Module):
             if config.position_encoding_config and config.layer_position.is_first()
             else None
         )
+
+        if self.pose_encoding is not None:
+            pos_encoding_dim = config.position_encoding_config.dim_model
+            mha_dim = config.multi_head_config["dim_model"]
+
+            if pos_encoding_dim != mha_dim:
+                self.embedding_projector = nn.Linear(pos_encoding_dim, mha_dim)
 
         if config.layer_norm_style == LayerNormStyle.DeepNorm:
             # Just use the layer norm coefficient here,
@@ -439,8 +455,11 @@ class xFormerDecoderBlock(torch.nn.Module):
         decoder_att_mask: Optional[torch.Tensor] = None,
         input_mask: Optional[torch.Tensor] = None,
     ):
-        if self.pose_encoding:
+        if self.pose_encoding is not None:
             target = self.pose_encoding(target)
+
+            if hasattr(self, "embedding_projector"):
+                target = self.embedding_projector(target)
 
         # Handle the optional input masking, differs on Q, K, V
         if input_mask is not None:
