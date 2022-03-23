@@ -140,7 +140,7 @@ def gelu_grad(x):
 
 
 @triton.jit
-def smelu(x, beta: tl.constexpr = 2.0):
+def smelu(x, beta=2.0):
     """
     SmeLU_ activation -  Smooth ReLU
 
@@ -155,7 +155,7 @@ def smelu(x, beta: tl.constexpr = 2.0):
 
 
 @triton.jit
-def smelu_grad(x, beta: tl.constexpr = 2.0):
+def smelu_grad(x, beta=2.0):
     zero = 0.0
     one = 1.0
     two = 2.0
