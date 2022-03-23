@@ -15,7 +15,7 @@ from xformers.triton.sum_strided import sum_2d_dim_0
 
 # fmt: off
 @triton.heuristics({
-    'EVEN_N': lambda *args: args[3] % (args['BLOCK_COL']) == 0,
+    'EVEN_N': lambda args: args["N"] % (args['BLOCK_COL']) == 0,
 })
 @triton.autotune(
     configs=[
