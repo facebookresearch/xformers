@@ -32,7 +32,7 @@ import triton.language as tl
 @triton.jit
 def kernel_fma(
     # Pointers to matrices
-    OUT, ACT_INPUTS, INPUT, WEIGHT, BIAS,
+    OUT, ACT_INPUTS, INPUT, WEIGHT, bias,
     # Matrix dimensions
     M, N, K,
     # The stride variables represent how much to increase the ptr by when moving by 1
@@ -41,7 +41,11 @@ def kernel_fma(
     stride_om, stride_im,
     stride_wn, stride_wk,
     # Meta-parameters
-    **META,
+    BLOCK_ROW: tl.constexpr, GROUP_ROW: tl.constexpr,
+    BLOCK_COL: tl.constexpr, BLOCK_K: tl.constexpr,
+    BIAS: tl.constexpr,
+    SAVE_ACT_INPUTS: tl.constexpr,
+    ACTIVATION: tl.constexpr,
 ):
     # fmt: on
 
@@ -60,8 +64,8 @@ def kernel_fma(
     """
 
     # extract metaparameters
-    BLOCK_M, GROUP_M = META["BLOCK_ROW"], META["GROUP_ROW"]
-    BLOCK_N, BLOCK_K = META["BLOCK_COL"], META["BLOCK_K"]
+    BLOCK_M, GROUP_M = BLOCK_ROW, GROUP_ROW
+    BLOCK_N = BLOCK_COL
 
     # programs are grouped together to improve L2 hit rate
     # the logic is that we'll consolidate over K. If the programs were not grouped,
@@ -98,8 +102,8 @@ def kernel_fma(
     # initialize and iteratively update accumulator
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
-    if META["BIAS"]:
-        bias = tl.load(BIAS + rn, mask=rn < N, other=0.0).to(tl.float32)
+    if BIAS:
+        bias = tl.load(bias + rn, mask=rn < N, other=0.0).to(tl.float32)
         acc += bias[None, :]
 
     # block level matrix multiplication.
@@ -114,13 +118,13 @@ def kernel_fma(
         weight_ptrs += BLOCK_K * stride_wk
 
     # optional: save the activation inputs
-    if META["SAVE_ACT_INPUTS"]:
+    if SAVE_ACT_INPUTS:
         act_in_ptrs = ACT_INPUTS + rm[:, None] * stride_om + rn[None, :]
         tl.store(act_in_ptrs, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
 
     # optional: fused activation (while the data is in shared memory)
-    if META["ACTIVATION"]:
-        acc = META["ACTIVATION"](acc)
+    if ACTIVATION:
+        acc = ACTIVATION(acc)
 
     # write back result
     out_ptrs = OUT + rm[:, None] * stride_om + rn[None, :]
@@ -160,11 +164,7 @@ def fused_matmul(
     act_inputs = torch.empty_like(outputs) if save_act_inputs else x  # will not be used in that case
 
     # 1D launch kernel where each block gets its own program.
-    def grid(META):
-        return (
-            triton.cdiv(M, META["BLOCK_ROW"]) * triton.cdiv(N, META["BLOCK_COL"]),
-        )
-
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_ROW"]) * triton.cdiv(N, META["BLOCK_COL"]),)
     # fmt: off
     kernel_fma[grid](
         # data ptrs

@@ -13,8 +13,8 @@ import triton.language as tl
 
 
 @triton.jit
-def _affine(W, B, N, x, META):
-    cols = tl.arange(0, META["BLOCK_SIZE_N"])
+def _affine(W, B, N, x, BLOCK_SIZE_N):
+    cols = tl.arange(0, BLOCK_SIZE_N)
 
     w = tl.load(W + cols, mask=cols < N, other=1.0)
     zero = 0.0
@@ -28,16 +28,16 @@ def _affine(W, B, N, x, META):
 
 
 @triton.jit
-def _store(y, Y, stride, N, META):
+def _store(y, Y, stride, N, BLOCK_SIZE_N: tl.constexpr):
     row = tl.program_id(0)
-    cols = tl.arange(0, META["BLOCK_SIZE_N"])
+    cols = tl.arange(0, BLOCK_SIZE_N)
 
     y_ptrs = Y + row * stride + cols
     tl.store(y_ptrs, y, mask=cols < N)
 
 
 @triton.jit
-def layer_norm_non_affine(X, M, V, stride, N, eps, META):
+def layer_norm_non_affine(X, M, V, stride, N, eps, BLOCK_SIZE_N: tl.constexpr):
     # fmt: on
     """
     Fused layernorm kernel over a 3d tensor.
@@ -48,7 +48,7 @@ def layer_norm_non_affine(X, M, V, stride, N, eps, META):
     """
 
     row = tl.program_id(0)
-    cols = tl.arange(0, META["BLOCK_SIZE_N"])
+    cols = tl.arange(0, BLOCK_SIZE_N)
 
     # Move to this row
     x_ptrs = X + row * stride + cols
@@ -71,13 +71,13 @@ def layer_norm_non_affine(X, M, V, stride, N, eps, META):
 
 # fmt: off
 @triton.jit
-def layer_norm_non_affine_fw(X, Y, M, V, stride, N, eps, **META):
-    _store(layer_norm_non_affine(X, M, V, stride, N, eps, META), Y, stride, N, META)
+def layer_norm_non_affine_fw(X, Y, M, V, stride, N, eps, BLOCK_SIZE_N: tl.constexpr):
+    _store(layer_norm_non_affine(X, M, V, stride, N, eps, BLOCK_SIZE_N), Y, stride, N, BLOCK_SIZE_N)
 
 
 # fmt: off
 @triton.jit
-def layer_norm_fw(X, Y, W, B, M, V, stride, N, eps, **META):
+def layer_norm_fw(X, Y, W, B, M, V, stride, N, eps, BLOCK_SIZE_N: tl.constexpr):
     # fmt: on
     """
     Fused layernorm kernel over a 3d tensor.
@@ -86,10 +86,10 @@ def layer_norm_fw(X, Y, W, B, M, V, stride, N, eps, **META):
     Compute
         y = (x - E(x))/(sqrt(var(x) + epsilon)) * gamma + beta
     """
-    y = layer_norm_non_affine(X, M, V, stride, N, eps, META)
-    y = _affine(W, B, N, y, META)
+    y = layer_norm_non_affine(X, M, V, stride, N, eps, BLOCK_SIZE_N)
+    y = _affine(W, B, N, y, BLOCK_SIZE_N)
 
-    _store(y, Y, stride, N, META)
+    _store(y, Y, stride, N, BLOCK_SIZE_N)
 
 
 # Backward pass (DX + partial DW + partial DB)
@@ -99,12 +99,11 @@ def layer_norm_bwd_dx_fused(
     DX, DY, DW, DB,
     Y, W, B, V,
     Lock, stride, N,
-    **META
+    # META-parameters
+    GROUP_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_N: tl.constexpr,
 ):
     # fmt: on
-
-    GROUP_SIZE_M = META["GROUP_SIZE_M"]
-    BLOCK_SIZE_N = META["BLOCK_SIZE_N"]
 
     # position of elements processed by this program
     row = tl.program_id(0)
@@ -143,7 +142,7 @@ def layer_norm_bwd_dx_fused(
     dx = (wdy - (xhat * mean1 + mean2)) * rstd
 
     # write-back dx
-    _store(dx, DX, stride, N, META)
+    _store(dx, DX, stride, N, BLOCK_SIZE_N)
 
     # accumulate partial sums for dw/db
     partial_dw = (dy * xhat).to(w.dtype)
@@ -178,13 +177,13 @@ def layer_norm_no_affine_bwd(
     DX, DY,
     Y, V,
     stride, N,
-    **META
+    BLOCK_SIZE_N: tl.constexpr,
 ):
     # fmt: on
 
     # position of elements processed by this program
     row = tl.program_id(0)
-    cols = tl.arange(0, META["BLOCK_SIZE_N"])
+    cols = tl.arange(0, BLOCK_SIZE_N)
 
     # offset data pointers to start at the row of interest
     y_ptrs = Y + row * stride + cols
@@ -204,24 +203,22 @@ def layer_norm_no_affine_bwd(
     dx = (wdy - (xhat * mean1 + mean2)) * rstd
 
     # write-back dx
-    _store(dx, DX, stride, N, META)
+    _store(dx, DX, stride, N, BLOCK_SIZE_N)
 
 
 # Backward pass (total DW + total DB)
 # fmt: off
 @triton.jit
-def layer_norm_bwd_dwdb(DW, DB, FINAL_DW, FINAL_DB, M, N, **meta):
+def layer_norm_bwd_dwdb(DW, DB, FINAL_DW, FINAL_DB, M, N, BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr,):
     # fmt: on
     pid = tl.program_id(0)
-    BLOCK_SIZE_M = meta["BLOCK_SIZE_M"]
-    BLOCK_SIZE_N = meta["BLOCK_SIZE_N"]
 
     cols = pid * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     dw = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
     db = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 
     for i in range(0, M, BLOCK_SIZE_M):
-        rows = i + tl.arange(0, meta["BLOCK_SIZE_M"])
+        rows = i + tl.arange(0, BLOCK_SIZE_M)
         offs = rows[:, None] * N + cols[None, :]
 
         dw += tl.load(DW + offs, mask=(rows[:, None] < M) & (cols[None, :] < N), other=0.0)

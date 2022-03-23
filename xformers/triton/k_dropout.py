@@ -55,7 +55,7 @@ def _random_prune_and_scale(x, rand_mask, p, p_scale):
 
 
 # fmt: off
-@triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
+@triton.heuristics({"SIZE_RAND_BLOCK": lambda args: args["BLOCK_N"] * args["BLOCK_M"]})
 @triton.autotune(
     configs=_configs,
     key=["M", "N", "is_fp16"],
@@ -67,7 +67,12 @@ def k_dropout_fw(
     M, N,
     p,
     is_fp16,  # autotune
-    **meta,
+    # Meta-parameters
+    BLOCK_M: tl.constexpr, 
+    BLOCK_N: tl.constexpr, 
+    SIZE_RAND_BLOCK: tl.constexpr,
+    USE_BIAS: tl.constexpr,
+    ACTIVATION: tl.constexpr,
 ):
     """
     Apply dropout on an input tensor
@@ -78,10 +83,6 @@ def k_dropout_fw(
     p : dropout probability
     """
     # fmt: on
-
-    BLOCK_M = meta["BLOCK_M"]
-    BLOCK_N = meta["BLOCK_N"]
-    SIZE_RAND_BLOCK = meta["SIZE_RAND_BLOCK"]
 
     row_id = tl.program_id(axis=0)
     rows = row_id * BLOCK_M * 4 + tl.arange(0, BLOCK_M)
@@ -101,7 +102,7 @@ def k_dropout_fw(
     col_mask = cols[None, :] < N
     p_scale = 1 / (1 - p) if p < 1. else 1.
 
-    if meta["USE_BIAS"]:
+    if USE_BIAS:
         b_ptrs = BIAS + cols[None, :]
         bias = tl.load(b_ptrs, mask=cols[None, :] < N, other=0.)
 
@@ -120,12 +121,12 @@ def k_dropout_fw(
         x = tl.load(x_ptrs, mask=block_mask, other=0.)
 
         # optionally apply a fused bias
-        if meta["USE_BIAS"]:
+        if USE_BIAS:
             x += bias
 
         # optional: fused activation (while the data is in shared memory)
-        if meta["ACTIVATION"]:
-            x = meta["ACTIVATION"](x)
+        if ACTIVATION:
+            x = ACTIVATION(x)
 
         # randomly prune (and scale) the resulting buffer, possibly a no-op
         output = _random_prune_and_scale(x, rand_mask, p, p_scale)
@@ -139,7 +140,7 @@ def k_dropout_fw(
 
 
 # fmt: off
-@triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
+@triton.heuristics({"SIZE_RAND_BLOCK": lambda args: args["BLOCK_N"] * args["BLOCK_M"]})
 @triton.autotune(
     configs=_configs,
     key=["M", "N", "is_fp16"],
@@ -152,7 +153,13 @@ def k_dropout_bw(
     M, N,
     p,
     is_fp16,  # autotune
-    **meta,
+    # Meta-parameters
+    BLOCK_M: tl.constexpr, 
+    BLOCK_N: tl.constexpr, 
+    SIZE_RAND_BLOCK: tl.constexpr,
+    TRAINABLE_BIAS: tl.constexpr,
+    USE_BIAS: tl.constexpr,
+    ACTIVATION_GRAD: tl.constexpr,
 ):
     """
     Apply dropout on an input tensor
@@ -164,11 +171,6 @@ def k_dropout_bw(
     p : dropout probability
     """
     # fmt: on
-
-    BLOCK_M = meta["BLOCK_M"]
-    BLOCK_N = meta["BLOCK_N"]
-    SIZE_RAND_BLOCK = meta["SIZE_RAND_BLOCK"]
-    TRAINABLE_BIAS = meta["TRAINABLE_BIAS"]
 
     rows = tl.arange(0, BLOCK_M)
     row_id = tl.program_id(axis=0)
@@ -192,7 +194,7 @@ def k_dropout_bw(
     col_mask = cols[None, :] < N
     p_scale = 1 / (1 - p) if p < 1. else 1.
 
-    if meta["USE_BIAS"]:
+    if USE_BIAS:
         b_ptrs = BIAS + cols[None, :]
         bias = tl.load(b_ptrs, mask=col_mask, other=0.)
 
@@ -211,14 +213,14 @@ def k_dropout_bw(
         grad_out = tl.load(grad_out_ptrs, mask=block_mask, other=0.)
 
         # optional: fused activation (while the data is in shared memory)
-        if meta["ACTIVATION_GRAD"]:
+        if ACTIVATION_GRAD:
             inputs = tl.load(input_ptrs, mask=block_mask, other=0.)
 
             # optionally apply a fused bias
-            if meta["USE_BIAS"]:
+            if USE_BIAS:
                 inputs += bias
 
-            act_grad = meta["ACTIVATION_GRAD"](inputs).to(grad_out.dtype)
+            act_grad = ACTIVATION_GRAD(inputs).to(grad_out.dtype)
             grad_out *= act_grad
 
         # randomly prune (and scale) the resulting buffer, possibly a no-op

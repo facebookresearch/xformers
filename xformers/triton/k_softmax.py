@@ -12,8 +12,8 @@ import triton.language as tl
 # and https://triton-lang.org/getting-started/tutorials/02-fused-softmax.html
 
 
-def get_depth(*args, **_):
-    return triton.next_power_of_2(args[-1])
+def get_depth(args):
+    return triton.next_power_of_2(args["K"])
 
 
 # autotune: Triton will test out these configurations, and automatically pick the fastest one.
@@ -30,7 +30,7 @@ def get_depth(*args, **_):
     ],
     key=["K"],
 )
-@triton.heuristics(values={"depth": get_depth , "is_fp16": lambda *args, **_: args[0].dtype == torch.float16})
+@triton.heuristics(values={"depth": get_depth , "is_fp16": lambda args: args["Y"].dtype == torch.float16})
 @triton.jit
 def _softmax(
     Y, X, M,
@@ -38,7 +38,12 @@ def _softmax(
     stride_xm, stride_xn,
     stride_mn,
     K,
-    **meta,  # extra parameters which can be automatically filled in given some heuristics
+    # Meta-params
+    depth: tl.constexpr,
+    causal: tl.constexpr,
+    use_mask: tl.constexpr,
+    is_fp16: tl.constexpr,
+    log: tl.constexpr,
 ):
     # fmt: om
 
@@ -54,7 +59,7 @@ def _softmax(
     n = tl.program_id(1)
 
     # col indices
-    k = tl.arange(0, meta["depth"])
+    k = tl.arange(0, depth)
 
     # the memory address of all the elements that we want to load can be computed as follows
     x_ptrs = X + m * stride_xm + n * stride_xn + k
@@ -63,18 +68,18 @@ def _softmax(
     io_mask = k < K
 
     # Causal - 1: skip on the loads directly
-    if meta["causal"]:
+    if causal:
         io_mask = io_mask & (k <= n)
 
     x = tl.load(x_ptrs, mask=io_mask, other=float("-inf"))
 
     # Causal - 2: enforce correctness over a couple of misloaded values
-    if meta["causal"]:
+    if causal:
         off = float("-inf")
         off = off.to(x.dtype)
         x = tl.where(k > n, off, x)
 
-    if meta["use_mask"]:
+    if use_mask:
         mask_ptrs = M + n * stride_mn + k
         add_mask = tl.load(mask_ptrs, io_mask, other=float("-inf"))
         x += add_mask
@@ -82,7 +87,7 @@ def _softmax(
     # compute numerically-stable softmax
     z = x - tl.max(x, axis=0)
 
-    if meta["is_fp16"]:
+    if is_fp16:
         # tl.exp() crashes on fp16 values
         # See https://github.com/openai/triton/issues/241
         z = z.to(tl.float32)
@@ -90,7 +95,7 @@ def _softmax(
     num = tl.exp(z)
     denom = tl.sum(num, axis=0)
 
-    if meta["log"]:
+    if log:
         y = z - tl.log(denom)
     else:
         y = num / denom
@@ -115,7 +120,7 @@ def _softmax(
     ],
     key=["K"],
 )
-@triton.heuristics(values={"is_fp16": lambda *args, **_: args[0].dtype == torch.float16})
+@triton.heuristics(values={"is_fp16": lambda args: args["GradIn"].dtype == torch.float16})
 @triton.jit
 def _softmax_backward(
     GradIn, GradOut, Out,
@@ -123,7 +128,11 @@ def _softmax_backward(
     stride_gm, stride_gn,
     stride_om, stride_on,
     K,
-    **meta,
+    # meta-params
+    depth: tl.constexpr,
+    causal: tl.constexpr,
+    is_fp16: tl.constexpr,
+    log: tl.constexpr,
 ):
     # fmt: on
 
@@ -136,7 +145,7 @@ def _softmax_backward(
     n = tl.program_id(1)
 
     # col indices
-    k = tl.arange(0, meta["depth"])
+    k = tl.arange(0, depth)
 
     # the memory address of all the elements that we want to load can be computed as follows
     grad_out_ptrs = GradOut + m * stride_gm + n * stride_gn + k
@@ -146,22 +155,22 @@ def _softmax_backward(
     io_mask = k < K
 
     # Causal - 1: skip on the loads directly
-    if meta["causal"]:
+    if causal:
         io_mask = io_mask & (k <= n)
 
     g = tl.load(grad_out_ptrs, mask=io_mask, other=float(0))
     o = tl.load(out_ptrs, mask=io_mask, other=float(0))
 
     # Causal - 2: enforce correctness over a couple of misloaded values
-    if meta["causal"]:
+    if causal:
         zero = float(0)
         zero = zero.to(g.dtype)
         g = tl.where(k > n, zero, g)
         o = tl.where(k > n, zero, o)
 
-    if meta["log"]:
+    if log:
         s = tl.sum(g, 0)
-        if meta["is_fp16"]:
+        if is_fp16:
             o = o.to(tl.float32)
         grad_in = g - tl.exp(o) * s
     else:
