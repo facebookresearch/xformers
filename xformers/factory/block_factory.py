@@ -405,7 +405,7 @@ class xFormerDecoderBlock(torch.nn.Module):
 
         if self.pose_encoding is not None:
             pos_encoding_dim = config.position_encoding_config.dim_model
-            mha_dim = config.multi_head_config["dim_model"]
+            mha_dim = config.multi_head_config_masked["dim_model"]
 
             if pos_encoding_dim != mha_dim:
                 self.embedding_projector = nn.Linear(pos_encoding_dim, mha_dim)
