@@ -5,7 +5,6 @@
 
 
 import logging
-from enum import Enum
 from typing import Optional
 
 import torch
@@ -20,11 +19,6 @@ from xformers.triton.k_softmax import _softmax, _softmax_backward
 
 _triton_softmax_fp16_enabled = False  # NOTE: PyTorch keeps softmax as fp32
 _triton_registered_warnings = False
-
-
-class MaskType(str, Enum):
-    ADD = "add"
-    MUL = "mul"
 
 
 # Helper to handle the SPMD launch grid and error cases

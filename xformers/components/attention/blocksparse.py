@@ -7,7 +7,6 @@
 import logging
 import math
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 
@@ -21,7 +20,6 @@ if _is_triton_available:
     from triton.ops.blocksparse import matmul as blocksparse_matmul  # type: ignore
     from triton.ops.blocksparse import softmax as blocksparse_softmax  # type: ignore
 
-    from xformers.triton.softmax import MaskType
     from xformers.triton.utils import gpu_capabilities_older_than_70
 
     # Blocksparse requires Tensor cores
@@ -66,6 +64,7 @@ if _is_triton_available:
             block_size: int = 16,
             dropout: float = 0.0,
             num_heads: int = 1,  # optional, used to adapt the layout if in need
+            causal: bool = False,
             *args,
             **kwargs,
         ):
@@ -86,39 +85,24 @@ if _is_triton_available:
             ), "Only block sizes in [16, 32, 64] are supported"
 
             super().__init__()
+
+            self.causal = causal
+
             self.attn_drop = torch.nn.Dropout(dropout, inplace=False)
 
             # Pure blocksparse data
             self.layout = layout
             self.block_size = block_size
 
-            # blocksparse operators
-            self.sparse_dot_sdd = blocksparse_matmul(
-                self.layout,
-                self.block_size,
-                "sdd",
-                trans_a=False,
-                trans_b=True,
-            )
-            self.sparse_dot_dsd = blocksparse_matmul(
-                self.layout,
-                self.block_size,
-                "dsd",
-                trans_a=False,
-                trans_b=False,
-            )
-            self.sparse_softmax = blocksparse_softmax(self.layout, self.block_size)
-
             # make sure that the head dimension is not folded down with the batch
             self.requires_head_dimension = True
 
             # key padding mask and attention mask must be passed in separately
-            self.requires_separate_masks = True
             self.requires_same_k_q_dimensions = True
 
-            # Properties specific to this attention mechanism
-            self.supports_attention_mask = True
-            self.supports_key_padding_mask = True
+            # The underlying triton op does not support per element attention mask
+            self.supports_attention_mask = False
+            self.supports_key_padding_mask = False
 
         def update_mask_type(self, mask: torch.Tensor):
             global _mask_type_warning
@@ -133,33 +117,46 @@ if _is_triton_available:
             q: torch.Tensor,
             k: torch.Tensor,
             v: torch.Tensor,
-            att_mask: Optional[torch.Tensor] = None,
-            key_padding_mask: Optional[torch.Tensor] = None,
             scale: float = 1.0,
             *args,
             **kwargs,
         ) -> torch.Tensor:
+            assert (
+                "att_mask" not in kwargs.keys() and "att_mask" not in args
+            ), "This attention does not support an attention mask, but you can specify causality."
+
             r"""
-            att_mask            A 2D attention mask. The dtype must be the same as q. An additive mask is expected,
-                                meaning float values using "-inf" to mask values.
-            key_padding_mask    A mask with size (batch size x sequence length). The dtype must be the same as q.
-                                An additive mask is expected, meaning float values using "-inf" to mask values
+            A thin wrap around the Triton blockparse attention operation
+
+            .. note: Per element attention mask is not supported, but you can specify causality
             """
 
-            # NOTE:
-            # The attention mask will be taken into account when computing the softmax
-            # meaning that non-masked values which are present in the initial blocksparse layout will be computed.
-            # If blocks are to be constantly masked, better perf would thus be reached by signalling them out in the
-            # initial attention setup
+            # Delayed triton init, to make sure that we get the right device
+            if not hasattr(self, "sparse_dot_sdd"):
+                # blocksparse operators
+                self.sparse_dot_sdd = blocksparse_matmul(
+                    self.layout,
+                    self.block_size,
+                    "sdd",
+                    trans_a=False,
+                    trans_b=True,
+                    device=q.device,
+                )
 
-            if att_mask is not None and att_mask.dtype == torch.bool:
-                self.update_mask_type(att_mask)
-            if key_padding_mask is not None and key_padding_mask.dtype == torch.bool:
-                self.update_mask_type(key_padding_mask)
+                self.sparse_dot_dsd = blocksparse_matmul(
+                    self.layout,
+                    self.block_size,
+                    "dsd",
+                    trans_a=False,
+                    trans_b=False,
+                    device=q.device,
+                )
 
-            assert (
-                att_mask is None or att_mask.dim() == 2
-            ), "The attention mask is constant across heads, expected dimensions are [seq x seq]"
+                self.sparse_softmax = blocksparse_softmax(
+                    self.layout,
+                    self.block_size,
+                    device=q.device,
+                )
 
             assert (
                 q.shape[-2] == k.shape[-2]
@@ -182,12 +179,6 @@ if _is_triton_available:
             q_dtype = q.dtype
             q, k, v = q.half(), k.half(), v.half()
 
-            if att_mask is not None:
-                att_mask = att_mask.half()
-
-            if key_padding_mask is not None:
-                key_padding_mask = key_padding_mask.half()
-
             # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
             # When the computations are block sparse, the matrix types change along the way:
             # - (sparse) attention matrix = (dense) Kt * (dense) Q
@@ -196,12 +187,7 @@ if _is_triton_available:
 
             # - softmax on the sparse attention matrix
             sparse_att_mat = self.sparse_softmax(
-                sparse_att_mat,
-                scale=scale,
-                key_padding_mask=key_padding_mask,
-                attn_mask=att_mask,
-                key_padding_mask_mode=MaskType.ADD,
-                attn_mask_mode=MaskType.ADD,
+                sparse_att_mat, scale=scale, is_causal=self.causal
             )
 
             sparse_att_mat = self.attn_drop(sparse_att_mat)

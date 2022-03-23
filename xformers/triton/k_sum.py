@@ -14,7 +14,9 @@ def k_sum_0(
     stride_xm,
     M, N,
     is_fp16,
-    **meta,
+    # META-params
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
 ):
     # fmt: om
 
@@ -22,8 +24,6 @@ def k_sum_0(
     Sum a 2d tensor over the first (strided) dimension.
     This extracts some speed through a parallel sum across the second dimension
     """
-    BLOCK_M = meta["BLOCK_M"]
-    BLOCK_N = meta["BLOCK_N"]
 
     # partial row indices. We'll reduce over this dimension
     m = tl.arange(0, BLOCK_M)

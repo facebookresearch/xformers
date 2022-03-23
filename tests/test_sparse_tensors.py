@@ -19,7 +19,7 @@ _tensor_types = [BlockSparseTensor, SparseCSRTensor]
 def _create_blocksparse_tensor(
     device, block_size=32, Z=8, C=2, H=64, W=64, dtype=torch.float32
 ):
-    layout = torch.randint(2, (C, H // block_size, W // block_size))
+    layout = torch.randint(2, (C, H // block_size, W // block_size), device=device)
     layout[:, :, 0] = 1
     layout[:, 0, :] = 1
     values = torch.randn(Z, layout.sum(), block_size, block_size, device=device).to(

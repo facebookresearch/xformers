@@ -36,6 +36,7 @@ class _dropout(torch.autograd.Function):
         M, N = x_.shape
 
         assert bias is None or (bias.dtype == x.dtype and bias.shape[0] == N)
+        assert p > 0.0
 
         def grid(meta):
             # NOTE: We use Triton Philox random number generator, which optimally generates 4 blocks for
@@ -53,9 +54,11 @@ class _dropout(torch.autograd.Function):
         seeds = torch.randint(65536, (N_BLOCK_N,), device=x.device).to(torch.int32)
 
         # fmt: off
+        bias_ptr = bias if bias is not None else x_  # Possibly not being used
+
         k_dropout_fw[grid](
             y, x_,
-            bias if bias is not None else x_,
+            bias_ptr,
             seeds,
             y.stride(0),
             M, N,
@@ -166,15 +169,22 @@ def dropout(
     Optionally add a bias, the computation will be fused.
     """
 
-    # Micro optim, skip dropout
-    if p == 0.0 and activation is None:
-        return x + bias if bias is not None else x
+    assert p < 1.0, f"We don't want to drop all the values, most probably {p}"
 
+    # Micro optim, skip dropout
+    if p == 0.0:
+        x = x + bias if bias is not None else x
+        if activation is not None:
+            activation_fn = build_activation(activation)
+            return activation_fn(x)
+        return x
+
+    # The normal triton enabled codepath
     act_kernel = get_triton_activation_kernel(activation)
     act_grad_kernel = get_triton_activation_bwd_kernel(activation)
     return _dropout.apply(
         x,
-        p,
+        float(p),
         bias,
         act_kernel,
         act_grad_kernel,
@@ -190,7 +200,13 @@ class FusedDropoutBias(torch.nn.Module):
         activation: Optional[Activation] = None,
     ) -> None:
         super().__init__()
-        self.p = p
+
+        self.p = float(p)
+
+        assert (
+            self.p < 1.0
+        ), f"We don't want to drop all the values, most probably p={p} is not properly set"
+
         self.activation_type = activation
         self.bias = (
             torch.zeros(bias_shape, requires_grad=True)
@@ -213,10 +229,10 @@ class FusedDropoutBias(torch.nn.Module):
         perf_check = x.shape[-1] > 512
 
         # Catch a non-cuda setup, fallback to pytorch
-        if not x.is_cuda or not perf_check:
+        if not x.is_cuda or not perf_check or p == 0.0:
             x = x + self.bias if self.bias is not None else x
             x = self.pytorch_activation(x)
-            return torch.nn.functional.dropout(x, p)
+            return torch.nn.functional.dropout(x, p) if p > 0.0 else x
 
         # The normal, Triton-backed path
         return _dropout.apply(

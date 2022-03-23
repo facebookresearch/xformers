@@ -50,7 +50,7 @@ def test_layernorm_parity(shape, amp):
     torch.random.manual_seed(0)
     X_ = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
 
-    eps = 1e-5
+    eps = 1e-4
 
     # Initialize the two layers, weights are 1 and 0 by default, no randomness
     torch_layernorm = torch.nn.LayerNorm(X.shape[-1], eps=eps).to("cuda")
