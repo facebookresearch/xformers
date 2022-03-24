@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import logging
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple, Union
@@ -39,7 +40,7 @@ class LayerPositionBitmask(int, Enum):
 
 
 class LayerPosition:
-    """ Bitmask to mark this layer as first, last, nothing or both"""
+    """Bitmask to mark this layer as first, last, nothing or both"""
 
     def __init__(self):
         self.bitmask = LayerPositionBitmask.Default
@@ -154,7 +155,8 @@ class xFormerBlockConfig:
 
         # Fill in possible gaps in the config for subparts of the block
         self.feedforward_config = generate_matching_config(
-            feedforward_config, FEEDFORWARD_REGISTRY[feedforward_config["name"]].config,
+            feedforward_config,
+            FEEDFORWARD_REGISTRY[feedforward_config["name"]].config,
         )
 
         self.position_encoding_config = (
@@ -285,7 +287,7 @@ class xFormerDecoderConfig(xFormerBlockConfig):
 
 
 class xFormerEncoderBlock(torch.nn.Module):
-    r""" A vanilla Transformer Encoder block """
+    r"""A vanilla Transformer Encoder block"""
 
     def __init__(self, config: xFormerEncoderConfig, **kwargs):
         super().__init__()
@@ -307,6 +309,11 @@ class xFormerEncoderBlock(torch.nn.Module):
             mha_dim = config.multi_head_config["dim_model"]
 
             if pos_encoding_dim != mha_dim:
+
+                logging.warning(
+                    f"The embedding dim and model dim do not match ({pos_encoding_dim} vs {mha_dim}), adding a projector layer."  # noqa
+                )
+
                 self.embedding_projector = nn.Linear(pos_encoding_dim, mha_dim)
 
         if config.layer_norm_style == LayerNormStyle.DeepNorm:
@@ -408,6 +415,11 @@ class xFormerDecoderBlock(torch.nn.Module):
             mha_dim = config.multi_head_config_masked["dim_model"]
 
             if pos_encoding_dim != mha_dim:
+
+                logging.warning(
+                    f"The embedding dim and model dim do not match ({pos_encoding_dim} vs {mha_dim}), adding a projector layer."  # noqa
+                )
+
                 self.embedding_projector = nn.Linear(pos_encoding_dim, mha_dim)
 
         if config.layer_norm_style == LayerNormStyle.DeepNorm:
