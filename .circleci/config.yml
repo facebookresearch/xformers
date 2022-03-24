@@ -329,7 +329,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-exp-112-394-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-gpu-exp-112-394-{{ checksum "requirements-experimental.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_dep_exp
 
@@ -341,7 +341,7 @@ jobs:
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-gpu-exp-112-394-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-gpu-exp-112-394-{{ checksum "requirements-experimental.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_experimental_repo
       - <<: *run_experimental_unittests

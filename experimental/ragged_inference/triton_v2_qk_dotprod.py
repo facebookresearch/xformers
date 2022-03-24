@@ -7,7 +7,7 @@
 import torch
 import triton
 import triton.language as tl
-from triton.ops.matmul_perf_model import estimate_matmul_time, prune_num_stages
+from triton.ops.matmul_perf_model import early_config_prune, estimate_matmul_time
 
 # This implements a simple QKt matrix multiplication (non ragged), for reference
 # Author: Tom B Brown
@@ -106,7 +106,7 @@ def get_fast_dev_configs():
     configs=get_fast_dev_configs(),
     key=["n_ctx_q", "n_ctx_k", "d_model"],
     prune_configs_by={
-        "prune_num_stages_by": prune_num_stages,
+        "early_config_prune": early_config_prune,
         "perf_model": estimate_matmul_time,
         "top_k": 10,
     },
