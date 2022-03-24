@@ -166,6 +166,8 @@ def dropout(
     Optionally add a bias, the computation will be fused.
     """
 
+    assert p < 1.0, f"We don't want to drop all the values, most probably {p}"
+
     # Micro optim, skip dropout
     if p == 0.0 and activation is None:
         return x + bias if bias is not None else x
@@ -174,7 +176,7 @@ def dropout(
     act_grad_kernel = get_triton_activation_bwd_kernel(activation)
     return _dropout.apply(
         x,
-        p,
+        float(p),
         bias,
         act_kernel,
         act_grad_kernel,
@@ -190,7 +192,11 @@ class FusedDropoutBias(torch.nn.Module):
         activation: Optional[Activation] = None,
     ) -> None:
         super().__init__()
-        self.p = p
+
+        self.p = float(p)
+
+        assert self.p < 1.0, f"We don't want to drop all the values, most probably {p}"
+
         self.activation_type = activation
         self.bias = (
             torch.zeros(bias_shape, requires_grad=True)

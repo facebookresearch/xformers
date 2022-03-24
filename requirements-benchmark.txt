@@ -7,5 +7,5 @@ scikit-learn == 0.24.1
 tqdm == 4.59.0
 pandas == 1.2.4
 seaborn == 0.11.1
-triton == 1.1.2.dev20220106
+triton == 2.0.0.dev20220323
 pytorch-lightning >= 1.3

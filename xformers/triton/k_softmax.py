@@ -76,7 +76,7 @@ def _softmax(
     # Causal - 2: enforce correctness over a couple of misloaded values
     if causal:
         off = float("-inf")
-        off = off.to(x.dtype)
+        off = off.to(x.dtype)  # type: ignore
         x = tl.where(k > n, off, x)
 
     if use_mask:
@@ -164,7 +164,7 @@ def _softmax_backward(
     # Causal - 2: enforce correctness over a couple of misloaded values
     if causal:
         zero = float(0)
-        zero = zero.to(g.dtype)
+        zero = zero.to(g.dtype)  # type: ignore
         g = tl.where(k > n, zero, g)
         o = tl.where(k > n, zero, o)
 
