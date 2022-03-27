@@ -298,13 +298,14 @@ class xFormerEncoderBlock(torch.nn.Module):
         self.dim_model = config.dim_model
 
         # If this layer is the first one, and a pose encoding has been requested
-        self.pose_encoding = (
-            build_positional_embedding(asdict(config.position_encoding_config))
-            if config.position_encoding_config and config.layer_position.is_first()
-            else None
-        )
+        if (
+            config.position_encoding_config is not None
+            and config.layer_position.is_first()
+        ):
+            self.pose_encoding = build_positional_embedding(
+                asdict(config.position_encoding_config)
+            )
 
-        if self.pose_encoding is not None:
             pos_encoding_dim = config.position_encoding_config.dim_model
             mha_dim = config.multi_head_config["dim_model"]
 
@@ -315,6 +316,8 @@ class xFormerEncoderBlock(torch.nn.Module):
                 )
 
                 self.embedding_projector = nn.Linear(pos_encoding_dim, mha_dim)
+        else:
+            self.pose_encoding = None
 
         if config.layer_norm_style == LayerNormStyle.DeepNorm:
             # Just use the layer norm coefficient here,
@@ -404,13 +407,14 @@ class xFormerDecoderBlock(torch.nn.Module):
         super().__init__()
 
         # If this layer is the first one, and a pose encoding as been requested
-        self.pose_encoding = (
-            build_positional_embedding(config.position_encoding_config)
-            if config.position_encoding_config and config.layer_position.is_first()
-            else None
-        )
+        if (
+            config.position_encoding_config is not None
+            and config.layer_position.is_first()
+        ):
+            self.pose_encoding = build_positional_embedding(
+                config.position_encoding_config
+            )
 
-        if self.pose_encoding is not None:
             pos_encoding_dim = config.position_encoding_config.dim_model
             mha_dim = config.multi_head_config_masked["dim_model"]
 
@@ -421,6 +425,8 @@ class xFormerDecoderBlock(torch.nn.Module):
                 )
 
                 self.embedding_projector = nn.Linear(pos_encoding_dim, mha_dim)
+        else:
+            self.pose_encoding = None
 
         if config.layer_norm_style == LayerNormStyle.DeepNorm:
             # Just use the layer norm coefficient here,
