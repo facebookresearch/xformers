@@ -229,6 +229,7 @@
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
 
+<span class="kn">import</span> <span class="nn">logging</span>
 <span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">asdict</span><span class="p">,</span> <span class="n">dataclass</span>
 <span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
@@ -264,7 +265,7 @@
 
 
 <div class="viewcode-block" id="LayerPosition"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.LayerPosition">[docs]</a><span class="k">class</span> <span class="nc">LayerPosition</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot; Bitmask to mark this layer as first, last, nothing or both&quot;&quot;&quot;</span>
+    <span class="sd">&quot;&quot;&quot;Bitmask to mark this layer as first, last, nothing or both&quot;&quot;&quot;</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">bitmask</span> <span class="o">=</span> <span class="n">LayerPositionBitmask</span><span class="o">.</span><span class="n">Default</span>
@@ -511,7 +512,7 @@
 
 
 <div class="viewcode-block" id="xFormerEncoderBlock"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock">[docs]</a><span class="k">class</span> <span class="nc">xFormerEncoderBlock</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="sa">r</span><span class="sd">&quot;&quot;&quot; A vanilla Transformer Encoder block &quot;&quot;&quot;</span>
+    <span class="sa">r</span><span class="sd">&quot;&quot;&quot;A vanilla Transformer Encoder block&quot;&quot;&quot;</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">xFormerEncoderConfig</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -522,11 +523,26 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">dim_model</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span>
 
         <span class="c1"># If this layer is the first one, and a pose encoding has been requested</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">build_positional_embedding</span><span class="p">(</span><span class="n">asdict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">position_encoding_config</span><span class="p">))</span>
-            <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">position_encoding_config</span> <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">is_first</span><span class="p">()</span>
-            <span class="k">else</span> <span class="kc">None</span>
-        <span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">position_encoding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">is_first</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="o">=</span> <span class="n">build_positional_embedding</span><span class="p">(</span>
+                <span class="n">asdict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">position_encoding_config</span><span class="p">)</span>
+            <span class="p">)</span>
+
+            <span class="n">pos_encoding_dim</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">position_encoding_config</span><span class="o">.</span><span class="n">dim_model</span>
+            <span class="n">mha_dim</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">multi_head_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">pos_encoding_dim</span> <span class="o">!=</span> <span class="n">mha_dim</span><span class="p">:</span>
+
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;The embedding dim and model dim do not match (</span><span class="si">{</span><span class="n">pos_encoding_dim</span><span class="si">}</span><span class="s2"> vs </span><span class="si">{</span><span class="n">mha_dim</span><span class="si">}</span><span class="s2">), adding a projector layer.&quot;</span>  <span class="c1"># noqa</span>
+                <span class="p">)</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">embedding_projector</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">pos_encoding_dim</span><span class="p">,</span> <span class="n">mha_dim</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="o">=</span> <span class="kc">None</span>
 
         <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span><span class="p">:</span>
             <span class="c1"># Just use the layer norm coefficient here,</span>
@@ -586,8 +602,11 @@
         <span class="n">att_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">input_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;embedding_projector&quot;</span><span class="p">):</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embedding_projector</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
         <span class="c1"># Handle the optional input masking, differs on Q, K, V</span>
         <span class="k">if</span> <span class="n">input_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -613,11 +632,26 @@
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
         <span class="c1"># If this layer is the first one, and a pose encoding as been requested</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">build_positional_embedding</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">position_encoding_config</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">position_encoding_config</span> <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">is_first</span><span class="p">()</span>
-            <span class="k">else</span> <span class="kc">None</span>
-        <span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">position_encoding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">is_first</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="o">=</span> <span class="n">build_positional_embedding</span><span class="p">(</span>
+                <span class="n">config</span><span class="o">.</span><span class="n">position_encoding_config</span>
+            <span class="p">)</span>
+
+            <span class="n">pos_encoding_dim</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">position_encoding_config</span><span class="o">.</span><span class="n">dim_model</span>
+            <span class="n">mha_dim</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">multi_head_config_masked</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">pos_encoding_dim</span> <span class="o">!=</span> <span class="n">mha_dim</span><span class="p">:</span>
+
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;The embedding dim and model dim do not match (</span><span class="si">{</span><span class="n">pos_encoding_dim</span><span class="si">}</span><span class="s2"> vs </span><span class="si">{</span><span class="n">mha_dim</span><span class="si">}</span><span class="s2">), adding a projector layer.&quot;</span>  <span class="c1"># noqa</span>
+                <span class="p">)</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">embedding_projector</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">pos_encoding_dim</span><span class="p">,</span> <span class="n">mha_dim</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="o">=</span> <span class="kc">None</span>
 
         <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span><span class="p">:</span>
             <span class="c1"># Just use the layer norm coefficient here,</span>
@@ -664,8 +698,11 @@
         <span class="n">decoder_att_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">input_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;embedding_projector&quot;</span><span class="p">):</span>
+                <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embedding_projector</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
 
         <span class="c1"># Handle the optional input masking, differs on Q, K, V</span>
         <span class="k">if</span> <span class="n">input_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
