@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import logging
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple, Union
@@ -39,7 +40,7 @@ class LayerPositionBitmask(int, Enum):
 
 
 class LayerPosition:
-    """ Bitmask to mark this layer as first, last, nothing or both"""
+    """Bitmask to mark this layer as first, last, nothing or both"""
 
     def __init__(self):
         self.bitmask = LayerPositionBitmask.Default
@@ -286,7 +287,7 @@ class xFormerDecoderConfig(xFormerBlockConfig):
 
 
 class xFormerEncoderBlock(torch.nn.Module):
-    r""" A vanilla Transformer Encoder block """
+    r"""A vanilla Transformer Encoder block"""
 
     def __init__(self, config: xFormerEncoderConfig, **kwargs):
         super().__init__()
@@ -297,11 +298,26 @@ class xFormerEncoderBlock(torch.nn.Module):
         self.dim_model = config.dim_model
 
         # If this layer is the first one, and a pose encoding has been requested
-        self.pose_encoding = (
-            build_positional_embedding(asdict(config.position_encoding_config))
-            if config.position_encoding_config and config.layer_position.is_first()
-            else None
-        )
+        if (
+            config.position_encoding_config is not None
+            and config.layer_position.is_first()
+        ):
+            self.pose_encoding = build_positional_embedding(
+                asdict(config.position_encoding_config)
+            )
+
+            pos_encoding_dim = config.position_encoding_config.dim_model
+            mha_dim = config.multi_head_config["dim_model"]
+
+            if pos_encoding_dim != mha_dim:
+
+                logging.warning(
+                    f"The embedding dim and model dim do not match ({pos_encoding_dim} vs {mha_dim}), adding a projector layer."  # noqa
+                )
+
+                self.embedding_projector = nn.Linear(pos_encoding_dim, mha_dim)
+        else:
+            self.pose_encoding = None
 
         if config.layer_norm_style == LayerNormStyle.DeepNorm:
             # Just use the layer norm coefficient here,
@@ -361,8 +377,11 @@ class xFormerEncoderBlock(torch.nn.Module):
         att_mask: Optional[torch.Tensor] = None,
         input_mask: Optional[torch.Tensor] = None,
     ):
-        if self.pose_encoding:
+        if self.pose_encoding is not None:
             x = self.pose_encoding(x)
+
+            if hasattr(self, "embedding_projector"):
+                x = self.embedding_projector(x)
 
         # Handle the optional input masking, differs on Q, K, V
         if input_mask is not None:
@@ -388,11 +407,26 @@ class xFormerDecoderBlock(torch.nn.Module):
         super().__init__()
 
         # If this layer is the first one, and a pose encoding as been requested
-        self.pose_encoding = (
-            build_positional_embedding(config.position_encoding_config)
-            if config.position_encoding_config and config.layer_position.is_first()
-            else None
-        )
+        if (
+            config.position_encoding_config is not None
+            and config.layer_position.is_first()
+        ):
+            self.pose_encoding = build_positional_embedding(
+                config.position_encoding_config
+            )
+
+            pos_encoding_dim = config.position_encoding_config.dim_model
+            mha_dim = config.multi_head_config_masked["dim_model"]
+
+            if pos_encoding_dim != mha_dim:
+
+                logging.warning(
+                    f"The embedding dim and model dim do not match ({pos_encoding_dim} vs {mha_dim}), adding a projector layer."  # noqa
+                )
+
+                self.embedding_projector = nn.Linear(pos_encoding_dim, mha_dim)
+        else:
+            self.pose_encoding = None
 
         if config.layer_norm_style == LayerNormStyle.DeepNorm:
             # Just use the layer norm coefficient here,
@@ -439,8 +473,11 @@ class xFormerDecoderBlock(torch.nn.Module):
         decoder_att_mask: Optional[torch.Tensor] = None,
         input_mask: Optional[torch.Tensor] = None,
     ):
-        if self.pose_encoding:
+        if self.pose_encoding is not None:
             target = self.pose_encoding(target)
+
+            if hasattr(self, "embedding_projector"):
+                target = self.embedding_projector(target)
 
         # Handle the optional input masking, differs on Q, K, V
         if input_mask is not None:
