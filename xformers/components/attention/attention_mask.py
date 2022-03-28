@@ -125,7 +125,6 @@ class AttentionMask:
         return self.values.shape
 
     def __add__(self, other):
-        assert isinstance(other, type(self))
         return AttentionMask(self.values + other.values, is_causal=False)
 
     def to(
