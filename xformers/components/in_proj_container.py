@@ -82,8 +82,8 @@ class InProjContainer(nn.Module):
 
         # Catch a beneficial case, if Q,K,V dimensions are the same
         self.same_dimensions = (
-            query_proj_params.in_features == key_proj_params.in_features
-            and value_proj_params.in_features == key_proj_params.in_features
+            query_proj_params.out_features == key_proj_params.out_features
+            and value_proj_params.out_features == key_proj_params.out_features
         )
 
         self.out_features = query_proj_params.out_features
@@ -196,7 +196,7 @@ class InProjContainer(nn.Module):
 
         # - bias free projection
         q, k, v = map(
-            lambda x, y: x @ y.transpose(1, 0),
+            lambda x, y: x @ y,
             [query, key, value],
             [self.q_proj_weight, self.k_proj_weight, self.v_proj_weight],
         )

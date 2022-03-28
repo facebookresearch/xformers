@@ -41,24 +41,27 @@ class Deterministic(nn.Module):
             self.record_rng(*args)
 
         if not set_rng:
+            # Normal FW run
             if self.wrap_inputs:
                 return self.net(inputs=args, **kwargs)
             else:
                 return self.net(*args, **kwargs)
 
-        rng_devices: List[int] = []
-        if self.cuda_in_fwd:
-            rng_devices = self.gpu_devices
-
-        with torch.random.fork_rng(devices=rng_devices, enabled=True):
-            torch.set_rng_state(self.cpu_state)
+        else:  # pragma: no cover  # this is called in the backward pass, not picked up
+            # This is analogous to checkpointing, reset the original random state
+            rng_devices: List[int] = []
             if self.cuda_in_fwd:
-                set_device_states(self.gpu_devices, self.gpu_states)
+                rng_devices = self.gpu_devices
 
-            if self.wrap_inputs:
-                return self.net(inputs=args, **kwargs)
-            else:
-                return self.net(*args, **kwargs)
+            with torch.random.fork_rng(devices=rng_devices, enabled=True):
+                torch.set_rng_state(self.cpu_state)
+                if self.cuda_in_fwd:
+                    set_device_states(self.gpu_devices, self.gpu_states)
+
+                if self.wrap_inputs:
+                    return self.net(inputs=args, **kwargs)
+                else:
+                    return self.net(*args, **kwargs)
 
 
 class ReversibleBlock(nn.Module):

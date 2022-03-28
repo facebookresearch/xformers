@@ -195,7 +195,7 @@ def test_inproj(
         in_proj = InProjContainer(in_params, None, None)
     else:
         out_features = MODEL if same_sizes else MODEL // 2
-        in_params_flip = InProjParams(MODEL, out_features, not proj_bias, small_init)
+        in_params_flip = InProjParams(MODEL, out_features, proj_bias, small_init)
         in_proj = InProjContainer(in_params, in_params_flip, in_params_flip)
 
     # build a multi head dispatch to test this attention mechanism
