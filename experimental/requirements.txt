@@ -1,2 +1,2 @@
 torch>=1.10
-triton==2.0.0.dev20220206
+triton==2.0.0.dev20220323
