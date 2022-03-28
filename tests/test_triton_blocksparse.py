@@ -72,7 +72,14 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
     layout = torch.randint(2, (H, shape[0] // BLOCK, shape[1] // BLOCK))
 
     # triton result
-    op = blocksparse_matmul(layout, BLOCK, MODE, trans_a=TRANS_A, trans_b=TRANS_B)
+    op = blocksparse_matmul(
+        layout,
+        BLOCK,
+        MODE,
+        trans_a=TRANS_A,
+        trans_b=TRANS_B,
+        device=torch.device("cuda"),
+    )
     ra = block_sparsify_tensor(a, layout, BLOCK) if MODE == "dsd" else a
     rb = block_sparsify_tensor(b, layout, BLOCK) if MODE == "dds" else b
     rc = triton.testing.catch_oor(lambda: op(ra, rb), pytest)
@@ -112,7 +119,7 @@ def test_softmax(BLOCK, WIDTH, DTYPE):
     kp_mask[kp_mask == 1.0] = float("-inf")
 
     # triton result
-    op = blocksparse_softmax(layout, BLOCK)
+    op = blocksparse_softmax(layout, BLOCK, device=torch.device("cuda"))
     tx = block_sparsify_tensor(x, layout, BLOCK)
     ty = op(
         tx,

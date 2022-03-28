@@ -20,8 +20,8 @@ _configs = [
 
 
 @triton.jit
-def _get_4_bin_masks(seed, rand_offsets, p):
-    seed = tl.load(seed)
+def _get_4_bin_masks(seed_ptr, rand_offsets, p):
+    seed = tl.load(seed_ptr)
     rand1, rand2, rand3, rand4 = tl.randint4x(seed, rand_offsets)
 
     # binarize masks, save registers
@@ -68,8 +68,8 @@ def k_dropout_fw(
     p,
     is_fp16,  # autotune
     # Meta-parameters
-    BLOCK_M: tl.constexpr, 
-    BLOCK_N: tl.constexpr, 
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
     SIZE_RAND_BLOCK: tl.constexpr,
     USE_BIAS: tl.constexpr,
     ACTIVATION: tl.constexpr,
@@ -100,7 +100,7 @@ def k_dropout_fw(
     rand_mask1, rand_mask2, rand_mask3, rand_mask4 = _get_4_bin_masks(seed, rand_offsets, p)
 
     col_mask = cols[None, :] < N
-    p_scale = 1 / (1 - p) if p < 1. else 1.
+    p_scale = 1 / (1 - p)
 
     if USE_BIAS:
         b_ptrs = BIAS + cols[None, :]
@@ -154,8 +154,8 @@ def k_dropout_bw(
     p,
     is_fp16,  # autotune
     # Meta-parameters
-    BLOCK_M: tl.constexpr, 
-    BLOCK_N: tl.constexpr, 
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
     SIZE_RAND_BLOCK: tl.constexpr,
     TRAINABLE_BIAS: tl.constexpr,
     USE_BIAS: tl.constexpr,
@@ -192,7 +192,7 @@ def k_dropout_bw(
     # now go over the tiles
     grad_bias = tl.zeros((BLOCK_N,), dtype=tl.float32)
     col_mask = cols[None, :] < N
-    p_scale = 1 / (1 - p) if p < 1. else 1.
+    p_scale = 1 / (1 - p)
 
     if USE_BIAS:
         b_ptrs = BIAS + cols[None, :]
