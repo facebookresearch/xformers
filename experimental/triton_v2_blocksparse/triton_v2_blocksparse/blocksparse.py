@@ -174,16 +174,10 @@ if _is_triton_available:
 
             assert (
                 q.shape[-2] == self.layout.shape[-2] * self.block_size
-            ), "Actual sequence size and layout are inconsistent"
+            ), "Actual sequence size and layout are inconsistent {}".format(q.shape[-2])
             assert (
                 k.shape[-2] == self.layout.shape[-2] * self.block_size
             ), "Actual sequence size and layout are inconsistent"
-
-            assert math.log(
-                q.shape[-2], 2
-            ).is_integer(), (
-                "For now blocksparse only works on power-of-two sequence lengths"
-            )
             
             #infer all dtypes from query
             q_dtype = q.dtype
