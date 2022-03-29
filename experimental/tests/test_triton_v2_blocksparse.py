@@ -164,9 +164,9 @@ def test_softmax(BLOCK, WIDTH, is_dense, Z=2, H=2, is_causal=True, scale=0.4):
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
-@pytest.mark.parametrize("block", [32, 43, 128])  # 16, 32, 64, 128
-@pytest.mark.parametrize("n_ctx", [256, 384])  # 16, 32, 64, 128
-@pytest.mark.parametrize("is_causal", [True,False])  # 16, 32, 64
+@pytest.mark.parametrize("block", [32, 43, 128])  # 16, 32, 64, 128 v2 supported
+@pytest.mark.parametrize("n_ctx", [256, 384]) #sequence length
+@pytest.mark.parametrize("is_causal", [True,False])  #causal/non-causal softmax
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float])
 def test_attention_fwd_bwd(
     block,
@@ -239,8 +239,12 @@ def test_attention_fwd_bwd(
         torch_loss = loss_fn(torch_attn_out)
         torch_loss.backward()
         torch_grads = [torch_q.grad, torch_k.grad, torch_v.grad]
+      
+        #hard to pass equality tests with bfloat, just test type,shape,norm
+        assert torch_attn_out.dtype==attn_out.dtype, f'Triton dtype {attn_out.dtype} Torch dtype {torch_attn_out.dtype}'
+        assert torch_attn_out.shape==attn_out.shape, f'Triton shape {attn_out.shape} Torch shape {torch_attn_out.shape}'
 
-        # comparison
+        # compare losses
         assert_almost_equal(
             loss.float(), torch_loss.float(), err_msg=f"Triton loss {loss} and torch loss {torch_loss}"
         )
