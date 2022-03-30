@@ -266,24 +266,27 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">record_rng</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="n">set_rng</span><span class="p">:</span>
+            <span class="c1"># Normal FW run</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_inputs</span><span class="p">:</span>
                 <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 
-        <span class="n">rng_devices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cuda_in_fwd</span><span class="p">:</span>
-            <span class="n">rng_devices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpu_devices</span>
-
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">fork_rng</span><span class="p">(</span><span class="n">devices</span><span class="o">=</span><span class="n">rng_devices</span><span class="p">,</span> <span class="n">enabled</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">set_rng_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cpu_state</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># pragma: no cover  # this is called in the backward pass, not picked up</span>
+            <span class="c1"># This is analogous to checkpointing, reset the original random state</span>
+            <span class="n">rng_devices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cuda_in_fwd</span><span class="p">:</span>
-                <span class="n">set_device_states</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gpu_devices</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpu_states</span><span class="p">)</span>
+                <span class="n">rng_devices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpu_devices</span>
 
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_inputs</span><span class="p">:</span>
-                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div></div>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">fork_rng</span><span class="p">(</span><span class="n">devices</span><span class="o">=</span><span class="n">rng_devices</span><span class="p">,</span> <span class="n">enabled</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">set_rng_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cpu_state</span><span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cuda_in_fwd</span><span class="p">:</span>
+                    <span class="n">set_device_states</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gpu_devices</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpu_states</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_inputs</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div></div>
 
 
 <div class="viewcode-block" id="ReversibleBlock"><a class="viewcode-back" href="../../../components/reversible.html#xformers.components.reversible.ReversibleBlock">[docs]</a><span class="k">class</span> <span class="nc">ReversibleBlock</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
