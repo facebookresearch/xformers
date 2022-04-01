@@ -29,7 +29,7 @@ __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> key,
     at::PackedTensorAccessor<scalar_t, 3> value
     ) {
-  constexpr int64_t BLOCK = 8;
+  constexpr int64_t BLOCK = 16;
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -73,7 +73,7 @@ __global__ void attention_kernel(
           for (int64_t rr = 0; rr < BLOCK; rr++)
             s_delta[rr] = std::exp(si[rr] - m_i);
 
-          for (int64_t k = threadIdx.x; k < K; k+=32) {
+          for (int64_t k = threadIdx.x; k < K; k+=blockDim.x) {
             oo[k] = oo[k] * m_delta;
             for (int64_t rr = 0; rr < BLOCK; rr++)
               oo[k] += vi[k + K * rr] * s_delta[rr];
@@ -85,7 +85,7 @@ __global__ void attention_kernel(
           m_prime = m_i;
         }
 
-        for (int64_t k = threadIdx.x; k < K; k+=32) {
+        for (int64_t k = threadIdx.x; k < K; k+=blockDim.x) {
           oo[k] /= s_prime;
         }
       }
