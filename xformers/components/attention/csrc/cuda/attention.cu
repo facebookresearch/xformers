@@ -47,11 +47,18 @@ __global__ void attention_kernel(
         for (int64_t l = 0; l < N; l+=BLOCK) {
           auto bar = key[i][l].data();
           scalar_t si[BLOCK] = {0};
-          for (int64_t k = 0; k < K; k++) {
+          for (int64_t k = threadIdx.x; k < K; k+=32) {
             auto aaar = aar[k];
             for (int64_t rr = 0; rr < BLOCK; rr++)
               si[rr] += aaar * bar[k + K * rr];
           }
+
+          for (int64_t rr = 0; rr < BLOCK; rr++) {
+            for (int stride = 16; stride > 0; stride >>= 1) {
+              si[rr] += __shfl_xor_sync(0xffffffff, si[rr], stride, 32);
+            }
+          }
+
           scalar_t m_i = si[0] > m_prime ? si[0] : m_prime;
           for (int64_t rr = 1; rr < BLOCK; rr++) {
             m_i = si[rr] > m_i ? si[rr] : m_i;
@@ -66,7 +73,7 @@ __global__ void attention_kernel(
           for (int64_t rr = 0; rr < BLOCK; rr++)
             s_delta[rr] = std::exp(si[rr] - m_i);
 
-          for (int64_t k = 0; k < K; k++) {
+          for (int64_t k = threadIdx.x; k < K; k+=32) {
             oo[k] = oo[k] * m_delta;
             for (int64_t rr = 0; rr < BLOCK; rr++)
               oo[k] += vi[k + K * rr] * s_delta[rr];
@@ -78,7 +85,7 @@ __global__ void attention_kernel(
           m_prime = m_i;
         }
 
-        for (int64_t k = 0; k < K; k++) {
+        for (int64_t k = threadIdx.x; k < K; k+=32) {
           oo[k] /= s_prime;
         }
       }
