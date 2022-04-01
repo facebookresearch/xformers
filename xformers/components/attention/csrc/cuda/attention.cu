@@ -35,10 +35,10 @@ __global__ void attention_kernel(
   int64_t M = query.size(1);
   int64_t N = key.size(1);
 
-  CUDA_1D_KERNEL_LOOP(i, B) {
+  int64_t i = blockIdx.y;
+  int64_t j = blockIdx.x;
 
-      for (int64_t j = 0; j < M; j++) {
-        //fill_zero<scalar_t>(buf, K);
+      {{
         auto aar = query[i][j].data();
 
         auto oo = output[i][j].data();
@@ -128,10 +128,12 @@ at::Tensor attention(
   //at::Tensor buffer = at::empty({at::get_num_threads(), 1, K}, query.options());
 
 
-  dim3 grid(std::min(
-      ceil_div(static_cast<int64_t>(B), static_cast<int64_t>(512)),
-      static_cast<int64_t>(4096)));
-  dim3 block(512);
+  //dim3 grid(std::min(
+  //    ceil_div(static_cast<int64_t>(B), static_cast<int64_t>(512)),
+  //    static_cast<int64_t>(4096)));
+  //dim3 block(512);
+  dim3 grid(M, B);
+  dim3 block(32, 1);
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   AT_DISPATCH_FLOATING_TYPES(
