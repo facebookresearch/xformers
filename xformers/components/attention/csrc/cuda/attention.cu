@@ -22,15 +22,15 @@ constexpr __host__ __device__ inline integer ceil_div(integer n, integer m) {
   return (n + m - 1) / m;
 }
 
-template <typename scalar_t>
+template <typename scalar_t, int BLOCK=32, int BLOCK2=2>
 __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> output,
     at::PackedTensorAccessor<scalar_t, 3> query,
     at::PackedTensorAccessor<scalar_t, 3> key,
     at::PackedTensorAccessor<scalar_t, 3> value
     ) {
-  constexpr int64_t BLOCK = 32;
-  constexpr int64_t BLOCK2 = 2;
+  //constexpr int64_t BLOCK = 32;
+  //constexpr int64_t BLOCK2 = 2;
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -44,6 +44,7 @@ __global__ void attention_kernel(
         //auto aar = query[i][j].data();
         float4* aar[BLOCK2];
         float4* oo[BLOCK2];
+        float4 buffer[BLOCK2][8] = {0}; // TODO == K / 4
         scalar_t s_prime[BLOCK2] = {0};
         scalar_t m_prime[BLOCK2] = {-std::numeric_limits<scalar_t>::infinity()};
         for (int64_t rr = 0; rr < BLOCK2; rr++) {
@@ -51,15 +52,10 @@ __global__ void attention_kernel(
           oo[rr] = reinterpret_cast<float4 *>(output[i][j + rr].data());
         }
 
-        //for (int64_t l = threadIdx.x * BLOCK; l < N; l+=BLOCK * blockDim.x) {
-        for (int64_t l = 0; l < N; l+=BLOCK) {
-          //auto bar = key[i][l].data();
+        for (int64_t l = threadIdx.x * BLOCK; l < N; l+=BLOCK * blockDim.x) {
           auto bar = reinterpret_cast<float4 *>(key[i][l].data());
           scalar_t si[BLOCK2][BLOCK] = {0};
-          //for (int64_t k = threadIdx.x; k < K; k+=32) {
           for (int64_t k = 0; k < K / 4; k+=1) {
-            //auto aaar = aar[k];
-            //auto aaar = __ldg(aar + k);
             float4 aaar[BLOCK2];
 #pragma unroll
             for (int64_t rr = 0; rr < BLOCK2; rr++) {
@@ -72,16 +68,8 @@ __global__ void attention_kernel(
               for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
                 si[rr2][rr] += aaar[rr2].x * bbb.x + aaar[rr2].y * bbb.y + aaar[rr2].z * bbb.z + aaar[rr2].w * bbb.w;
               }
-              //si[rr] += aaar * bar[k + K * rr];
-              //si[rr] += aaar * __ldg(bar + k + K * rr);
             }
           }
-
-          //for (int64_t rr = 0; rr < BLOCK; rr++) {
-          //  for (int stride = 16; stride > 0; stride >>= 1) {
-          //    si[rr] += __shfl_xor_sync(0xffffffff, si[rr], stride, 32);
-          //  }
-          //}
 
           scalar_t m_i[BLOCK2];
 
@@ -93,11 +81,7 @@ __global__ void attention_kernel(
               m_i[rr2] = si[rr2][rr] > m_i[rr2] ? si[rr2][rr] : m_i[rr2];
             }
           }
-          //s_prime = m_i;  // TODO: only for testing, remove!!!
-
-          //auto vi = value[i][l].data();
           auto vi = reinterpret_cast<float4 *>(value[i][l].data());
-
 
           scalar_t m_delta[BLOCK2];
           scalar_t s_delta[BLOCK2][BLOCK];
@@ -112,36 +96,25 @@ __global__ void attention_kernel(
             for (int64_t rr = 0; rr < BLOCK; rr++)
               s_delta[rr2][rr] = std::exp(si[rr2][rr] - m_i[rr2]);
 
-          //for (int64_t k = threadIdx.x; k < K; k+=blockDim.x) {
-#pragma unroll
           for (int64_t k = 0; k < K/4; k+=1) {
-            //oo[k] = oo[k] * m_delta;
-            float4 tmp[BLOCK2];
 #pragma unroll
             for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
-              tmp[rr2] = oo[rr2][k];
-              tmp[rr2].x = tmp[rr2].x * m_delta[rr2];
-              tmp[rr2].y = tmp[rr2].y * m_delta[rr2];
-              tmp[rr2].z = tmp[rr2].z * m_delta[rr2];
-              tmp[rr2].w = tmp[rr2].w * m_delta[rr2];
+              buffer[rr2][k].x *= m_delta[rr2];
+              buffer[rr2][k].y *= m_delta[rr2];
+              buffer[rr2][k].z *= m_delta[rr2];
+              buffer[rr2][k].w *= m_delta[rr2];
             }
 #pragma unroll
             for (int64_t rr = 0; rr < BLOCK; rr++) {
-              //oo[k] += vi[k + K * rr] * s_delta[rr];
               float4 tmp2 = vi[k + K / 4 * rr];
 
 #pragma unroll
               for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
-                tmp[rr2].x += tmp2.x * s_delta[rr2][rr];
-                tmp[rr2].y += tmp2.y * s_delta[rr2][rr];
-                tmp[rr2].z += tmp2.z * s_delta[rr2][rr];
-                tmp[rr2].w += tmp2.w * s_delta[rr2][rr];
+                buffer[rr2][k].x += tmp2.x * s_delta[rr2][rr];
+                buffer[rr2][k].y += tmp2.y * s_delta[rr2][rr];
+                buffer[rr2][k].z += tmp2.z * s_delta[rr2][rr];
+                buffer[rr2][k].w += tmp2.w * s_delta[rr2][rr];
               }
-              //oo[k] += __ldg(vi + k + K * rr) * s_delta[rr];
-            }
-#pragma unroll
-            for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
-              oo[rr2][k] = tmp[rr2];
             }
           }
 #pragma unroll
@@ -155,14 +128,42 @@ __global__ void attention_kernel(
           }
         }
 
-        //for (int64_t k = threadIdx.x; k < K; k+=blockDim.x) {
-        for (int64_t k = 0; k < K / 4; k+=1) {
-          //oo[k] /= s_prime;
+        for (int64_t rr = 0; rr < BLOCK2; rr++) {
+          scalar_t m_i = m_prime[rr];
+          scalar_t s_i = s_prime[rr];
+          for (int stride = 2; stride > 0; stride >>= 1) {
+            scalar_t tmp2 = __shfl_xor_sync(0xffffffff, m_prime[rr], stride, 4);
+            m_prime[rr] = tmp2 > m_prime[rr] ? tmp2 : m_prime[rr];
+          }
+          scalar_t m_delta = std::exp(m_i - m_prime[rr]);
+          scalar_t s_delta = s_i * m_delta;
+          for (int stride = 2; stride > 0; stride >>= 1) {
+            s_delta += __shfl_xor_sync(0xffffffff, s_delta, stride, 4);
+          }
+          s_prime[rr] = s_delta;
+          for (int64_t k = 0; k < K / 4; k+=1) {
+            float4 tmp = buffer[rr][k];
+            tmp.x *= m_delta;
+            tmp.y *= m_delta;
+            tmp.z *= m_delta;
+            tmp.w *= m_delta;
+            for (int stride = 2; stride > 0; stride >>= 1) {
+              tmp.x += __shfl_xor_sync(0xffffffff, tmp.x, stride, 4);
+              tmp.y += __shfl_xor_sync(0xffffffff, tmp.y, stride, 4);
+              tmp.z += __shfl_xor_sync(0xffffffff, tmp.z, stride, 4);
+              tmp.w += __shfl_xor_sync(0xffffffff, tmp.w, stride, 4);
+            }
+            buffer[rr][k] = tmp;
+
+          }
+        }
+
+        for (int64_t k = threadIdx.x; k < K / 4; k+=blockDim.x) {
           float4 tmp;
 
 #pragma unroll
           for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
-            tmp = oo[rr2][k];
+            tmp = buffer[rr2][k];
 
             tmp.x /= s_prime[rr2];
             tmp.y /= s_prime[rr2];
@@ -227,7 +228,7 @@ at::Tensor attention(
   dim3 grid(M / 32, B);
   //dim3 block(32, 32);
   //dim3 block(4, 32);
-  dim3 block(1, 16);
+  dim3 block(4, 16);
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   AT_DISPATCH_FLOATING_TYPES(
