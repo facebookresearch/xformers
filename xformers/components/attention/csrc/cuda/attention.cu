@@ -30,6 +30,7 @@ __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> value
     ) {
   constexpr int64_t BLOCK = 32;
+  constexpr int64_t BLOCK2 = 2;
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -37,38 +38,40 @@ __global__ void attention_kernel(
 
   int64_t i = blockIdx.y;
   //int64_t j = blockIdx.x;
-  int64_t j = blockIdx.x * (blockDim.y * 2) + threadIdx.y * 2;
+  int64_t j = blockIdx.x * (blockDim.y * BLOCK2) + threadIdx.y * BLOCK2;
 
       {{
         //auto aar = query[i][j].data();
-        auto aar = reinterpret_cast<float4 *>(query[i][j].data());
-        auto aar2 = reinterpret_cast<float4 *>(query[i][j+1].data());
+        float4* aar[BLOCK2];
+        float4* oo[BLOCK2];
+        scalar_t s_prime[BLOCK2] = {0};
+        scalar_t m_prime[BLOCK2] = {-std::numeric_limits<scalar_t>::infinity()};
+        for (int64_t rr = 0; rr < BLOCK2; rr++) {
+          aar[rr] = reinterpret_cast<float4 *>(query[i][j + rr].data());
+          oo[rr] = reinterpret_cast<float4 *>(output[i][j + rr].data());
+        }
 
-        //auto oo = output[i][j].data();
-        auto oo = reinterpret_cast<float4 *>(output[i][j].data());
-        auto oo2 = reinterpret_cast<float4 *>(output[i][j+1].data());
-        scalar_t s_prime = 0;
-        scalar_t m_prime = -std::numeric_limits<scalar_t>::infinity();
-
-        scalar_t s_prime2 = 0;
-        scalar_t m_prime2 = -std::numeric_limits<scalar_t>::infinity();
         //for (int64_t l = threadIdx.x * BLOCK; l < N; l+=BLOCK * blockDim.x) {
         for (int64_t l = 0; l < N; l+=BLOCK) {
           //auto bar = key[i][l].data();
           auto bar = reinterpret_cast<float4 *>(key[i][l].data());
-          scalar_t si[BLOCK] = {0};
-          scalar_t si2[BLOCK] = {0};
+          scalar_t si[BLOCK2][BLOCK] = {0};
           //for (int64_t k = threadIdx.x; k < K; k+=32) {
           for (int64_t k = 0; k < K / 4; k+=1) {
             //auto aaar = aar[k];
             //auto aaar = __ldg(aar + k);
-            float4 aaar = __ldg(aar + k);
-            float4 aaar2 = __ldg(aar2 + k);
+            float4 aaar[BLOCK2];
+#pragma unroll
+            for (int64_t rr = 0; rr < BLOCK2; rr++) {
+              aaar[rr] = __ldg(aar[rr] + k);
+            }
+#pragma unroll
             for (int64_t rr = 0; rr < BLOCK; rr++) {
               float4 bbb = bar[k + K / 4 * rr];
-              si[rr] += aaar.x * bbb.x + aaar.y * bbb.y + aaar.z * bbb.z + aaar.w * bbb.w;
-              si2[rr] += aaar2.x * bbb.x + aaar2.y * bbb.y + aaar2.z * bbb.z + aaar2.w * bbb.w;
-
+#pragma unroll
+              for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+                si[rr2][rr] += aaar[rr2].x * bbb.x + aaar[rr2].y * bbb.y + aaar[rr2].z * bbb.z + aaar[rr2].w * bbb.w;
+              }
               //si[rr] += aaar * bar[k + K * rr];
               //si[rr] += aaar * __ldg(bar + k + K * rr);
             }
@@ -80,96 +83,94 @@ __global__ void attention_kernel(
           //  }
           //}
 
-          scalar_t m_i = si[0] > m_prime ? si[0] : m_prime;
-          for (int64_t rr = 1; rr < BLOCK; rr++) {
-            m_i = si[rr] > m_i ? si[rr] : m_i;
-          }
+          scalar_t m_i[BLOCK2];
 
-          scalar_t m_i2 = si2[0] > m_prime2 ? si2[0] : m_prime2;
-          for (int64_t rr = 1; rr < BLOCK; rr++) {
-            m_i2 = si2[rr] > m_i2 ? si2[rr] : m_i2;
+#pragma unroll
+          for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+            m_i[rr2] = si[rr2][0] > m_prime[rr2] ? si[rr2][0] : m_prime[rr2];
+#pragma unroll
+            for (int64_t rr = 1; rr < BLOCK; rr++) {
+              m_i[rr2] = si[rr2][rr] > m_i[rr2] ? si[rr2][rr] : m_i[rr2];
+            }
           }
           //s_prime = m_i;  // TODO: only for testing, remove!!!
 
           //auto vi = value[i][l].data();
           auto vi = reinterpret_cast<float4 *>(value[i][l].data());
 
-          scalar_t m_delta;
-          scalar_t s_delta[BLOCK];
-          m_delta = std::exp(m_prime - m_i);
 
+          scalar_t m_delta[BLOCK2];
+          scalar_t s_delta[BLOCK2][BLOCK];
 
-          scalar_t m_delta2;
-          scalar_t s_delta2[BLOCK];
-          m_delta2 = std::exp(m_prime2 - m_i2);
+#pragma unroll
+          for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++)
+            m_delta[rr2] = std::exp(m_prime[rr2] - m_i[rr2]);
 
-          for (int64_t rr = 0; rr < BLOCK; rr++)
-            s_delta[rr] = std::exp(si[rr] - m_i);
-
-          for (int64_t rr = 0; rr < BLOCK; rr++)
-            s_delta2[rr] = std::exp(si2[rr] - m_i2);
+#pragma unroll
+          for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++)
+#pragma unroll
+            for (int64_t rr = 0; rr < BLOCK; rr++)
+              s_delta[rr2][rr] = std::exp(si[rr2][rr] - m_i[rr2]);
 
           //for (int64_t k = threadIdx.x; k < K; k+=blockDim.x) {
+#pragma unroll
           for (int64_t k = 0; k < K/4; k+=1) {
             //oo[k] = oo[k] * m_delta;
-            float4 tmp = oo[k];
-            tmp.x = tmp.x * m_delta;
-            tmp.y = tmp.y * m_delta;
-            tmp.z = tmp.z * m_delta;
-            tmp.w = tmp.w * m_delta;
-
-            float4 tmp3 = oo2[k];
-            tmp3.x = tmp3.x * m_delta2;
-            tmp3.y = tmp3.y * m_delta2;
-            tmp3.z = tmp3.z * m_delta2;
-            tmp3.w = tmp3.w * m_delta2;
+            float4 tmp[BLOCK2];
+#pragma unroll
+            for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+              tmp[rr2] = oo[rr2][k];
+              tmp[rr2].x = tmp[rr2].x * m_delta[rr2];
+              tmp[rr2].y = tmp[rr2].y * m_delta[rr2];
+              tmp[rr2].z = tmp[rr2].z * m_delta[rr2];
+              tmp[rr2].w = tmp[rr2].w * m_delta[rr2];
+            }
+#pragma unroll
             for (int64_t rr = 0; rr < BLOCK; rr++) {
               //oo[k] += vi[k + K * rr] * s_delta[rr];
               float4 tmp2 = vi[k + K / 4 * rr];
-              tmp.x += tmp2.x * s_delta[rr];
-              tmp.y += tmp2.y * s_delta[rr];
-              tmp.z += tmp2.z * s_delta[rr];
-              tmp.w += tmp2.w * s_delta[rr];
 
-              tmp3.x += tmp2.x * s_delta2[rr];
-              tmp3.y += tmp2.y * s_delta2[rr];
-              tmp3.z += tmp2.z * s_delta2[rr];
-              tmp3.w += tmp2.w * s_delta2[rr];
+#pragma unroll
+              for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+                tmp[rr2].x += tmp2.x * s_delta[rr2][rr];
+                tmp[rr2].y += tmp2.y * s_delta[rr2][rr];
+                tmp[rr2].z += tmp2.z * s_delta[rr2][rr];
+                tmp[rr2].w += tmp2.w * s_delta[rr2][rr];
+              }
               //oo[k] += __ldg(vi + k + K * rr) * s_delta[rr];
             }
-            oo[k] = tmp;
-            oo2[k] = tmp3;
+#pragma unroll
+            for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+              oo[rr2][k] = tmp[rr2];
+            }
           }
-          s_prime = s_prime * m_delta;
-          for (int64_t rr = 0; rr < BLOCK; rr++)
-            s_prime += s_delta[rr];
+#pragma unroll
+          for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+            s_prime[rr2] = s_prime[rr2] * m_delta[rr2];
+#pragma unroll
+            for (int64_t rr = 0; rr < BLOCK; rr++)
+              s_prime[rr2] += s_delta[rr2][rr];
 
-          m_prime = m_i;
-
-
-          s_prime2 = s_prime2 * m_delta2;
-          for (int64_t rr = 0; rr < BLOCK; rr++)
-            s_prime2 += s_delta2[rr];
-
-          m_prime2 = m_i2;
+            m_prime[rr2] = m_i[rr2];
+          }
         }
 
         //for (int64_t k = threadIdx.x; k < K; k+=blockDim.x) {
         for (int64_t k = 0; k < K / 4; k+=1) {
           //oo[k] /= s_prime;
-          float4 tmp = oo[k];
-          float4 tmp2 = oo2[k];
-          tmp.x /= s_prime;
-          tmp.y /= s_prime;
-          tmp.z /= s_prime;
-          tmp.w /= s_prime;
+          float4 tmp;
 
-          tmp2.x /= s_prime2;
-          tmp2.y /= s_prime2;
-          tmp2.z /= s_prime2;
-          tmp2.w /= s_prime2;
-          oo[k] = tmp;
-          oo2[k] = tmp2;
+#pragma unroll
+          for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+            tmp = oo[rr2][k];
+
+            tmp.x /= s_prime[rr2];
+            tmp.y /= s_prime[rr2];
+            tmp.z /= s_prime[rr2];
+            tmp.w /= s_prime[rr2];
+
+            oo[rr2][k] = tmp;
+          }
         }
       }
   }
