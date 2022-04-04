@@ -288,9 +288,11 @@ class xFormer(torch.nn.Module):
                 # Reversible Encoder
                 x = torch.cat([memory, memory], dim=-1)
 
-                # TODO: pass in key and value independently.
-                kwargs = {"att_mask": encoder_input_mask}
-                x = encoders(x, **kwargs)
+                # Apply the optional input masking
+                if encoder_input_mask is not None:
+                    x += encoder_input_mask.unsqueeze(0).unsqueeze(-1)
+
+                x = encoders(x)
                 memory = torch.stack(x.chunk(2, dim=-1)).mean(dim=0)
 
             if not self.decoders:
