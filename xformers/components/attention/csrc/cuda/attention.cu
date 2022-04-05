@@ -24,6 +24,21 @@ constexpr __host__ __device__ inline integer ceil_div(integer n, integer m) {
   return (n + m - 1) / m;
 }
 
+template <typename scalar_t>
+__device__ __forceinline__ void iMul(scalar_t x1, float4 * out) {
+  out[0].x *= x1;
+  out[0].y *= x1;
+  out[0].z *= x1;
+  out[0].w *= x1;
+}
+
+template <typename scalar_t>
+__device__ __forceinline__ void iDiv(scalar_t x1, float4 * out) {
+  out[0].x /= x1;
+  out[0].y /= x1;
+  out[0].z /= x1;
+  out[0].w /= x1;
+}
 
 template <typename scalar_t, int BLOCK, int BLOCK2>
 __device__ void compute_dot(float4* aar[BLOCK2], float4* bar, scalar_t si[BLOCK2][BLOCK], int64_t K) {
@@ -46,6 +61,27 @@ __device__ void compute_dot(float4* aar[BLOCK2], float4* bar, scalar_t si[BLOCK2
 }
 
 template <typename scalar_t, int BLOCK, int BLOCK2>
+__device__ void compute_final_mult(float4* vi, scalar_t s_delta[BLOCK2][BLOCK], scalar_t m_delta[BLOCK2], float4 buffer[BLOCK2][8] /*TODO fix me*/, int64_t K) {
+  constexpr int kVecSize = sizeof(float4) / sizeof(float);
+
+  for (int64_t k = 0; k < K/kVecSize; k+=1) {
+#pragma unroll
+    for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+      iMul<scalar_t>(m_delta[rr2], &buffer[rr2][k]);
+    }
+#pragma unroll
+    for (int64_t rr = 0; rr < BLOCK; rr++) {
+      float4 tmp2 = vi[k + K / kVecSize * rr];
+
+#pragma unroll
+      for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+        sputnik::VectorCompute<float4>::FMA(s_delta[rr2][rr], tmp2, &buffer[rr2][k]);
+      }
+    }
+  }
+}
+
+template <typename scalar_t, int BLOCK, int BLOCK2>
 __device__ __forceinline__ void compute_max(scalar_t si[BLOCK2][BLOCK], scalar_t m_prime[BLOCK2], scalar_t m_i[BLOCK2]) {
 #pragma unroll
   for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
@@ -59,7 +95,10 @@ __device__ __forceinline__ void compute_max(scalar_t si[BLOCK2][BLOCK], scalar_t
 
 
 template <typename scalar_t, int BLOCK, int BLOCK2>
-__device__ __forceinline__ void compute_scaling_coeffs(scalar_t si[BLOCK2][BLOCK], scalar_t m_i[BLOCK2], scalar_t s_delta[BLOCK2][BLOCK]) {
+__device__ __forceinline__ void compute_scaling_coeffs(scalar_t m_i[BLOCK2], scalar_t m_prime[BLOCK2], scalar_t si[BLOCK2][BLOCK], scalar_t m_delta[BLOCK2], scalar_t s_delta[BLOCK2][BLOCK]) {
+#pragma unroll
+  for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++)
+    m_delta[rr2] = std::exp(m_prime[rr2] - m_i[rr2]);
 #pragma unroll
   for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++)
 #pragma unroll
@@ -67,6 +106,19 @@ __device__ __forceinline__ void compute_scaling_coeffs(scalar_t si[BLOCK2][BLOCK
       s_delta[rr2][rr] = std::exp(si[rr2][rr] - m_i[rr2]);
 }
 
+
+template <typename scalar_t, int BLOCK, int BLOCK2>
+__device__ __forceinline__ void update_scaling_coeffs(scalar_t m_delta[BLOCK2], scalar_t m_i[BLOCK2], scalar_t s_delta[BLOCK2][BLOCK], scalar_t m_prime[BLOCK2], scalar_t s_prime[BLOCK2]) {
+#pragma unroll
+  for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+    s_prime[rr2] = s_prime[rr2] * m_delta[rr2];
+#pragma unroll
+    for (int64_t rr = 0; rr < BLOCK; rr++)
+      s_prime[rr2] += s_delta[rr2][rr];
+
+    m_prime[rr2] = m_i[rr2];
+  }
+}
 
 template <typename scalar_t, int BLOCK=32, int BLOCK2=2>
 __global__ void attention_kernel(
@@ -108,39 +160,11 @@ __global__ void attention_kernel(
           scalar_t m_delta[BLOCK2];
           scalar_t s_delta[BLOCK2][BLOCK];
 
-#pragma unroll
-          for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++)
-            m_delta[rr2] = std::exp(m_prime[rr2] - m_i[rr2]);
+          compute_scaling_coeffs<scalar_t, BLOCK, BLOCK2>(m_i, m_prime, si, m_delta, s_delta);
 
-          compute_scaling_coeffs<scalar_t, BLOCK, BLOCK2>(si, m_i, s_delta);
+          compute_final_mult<scalar_t, BLOCK, BLOCK2>(vi, s_delta, m_delta, buffer, K);
 
-          for (int64_t k = 0; k < K/kVecSize; k+=1) {
-#pragma unroll
-            for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
-              buffer[rr2][k].x *= m_delta[rr2];
-              buffer[rr2][k].y *= m_delta[rr2];
-              buffer[rr2][k].z *= m_delta[rr2];
-              buffer[rr2][k].w *= m_delta[rr2];
-            }
-#pragma unroll
-            for (int64_t rr = 0; rr < BLOCK; rr++) {
-              float4 tmp2 = vi[k + K / kVecSize * rr];
-
-#pragma unroll
-              for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
-                sputnik::VectorCompute<float4>::FMA(s_delta[rr2][rr], tmp2, &buffer[rr2][k]);
-              }
-            }
-          }
-#pragma unroll
-          for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
-            s_prime[rr2] = s_prime[rr2] * m_delta[rr2];
-#pragma unroll
-            for (int64_t rr = 0; rr < BLOCK; rr++)
-              s_prime[rr2] += s_delta[rr2][rr];
-
-            m_prime[rr2] = m_i[rr2];
-          }
+          update_scaling_coeffs<scalar_t, BLOCK, BLOCK2>(m_delta, m_i, s_delta, m_prime, s_prime);
         }
 
         for (int64_t rr = 0; rr < BLOCK2; rr++) {
@@ -179,11 +203,7 @@ __global__ void attention_kernel(
 #pragma unroll
           for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
             tmp = buffer[rr2][k];
-
-            tmp.x /= s_prime[rr2];
-            tmp.y /= s_prime[rr2];
-            tmp.z /= s_prime[rr2];
-            tmp.w /= s_prime[rr2];
+            iDiv<scalar_t>(s_prime[rr2], &tmp);
 
             oo[rr2][k] = tmp;
           }
