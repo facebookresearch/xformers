@@ -193,15 +193,18 @@ __global__ void attention_kernel(
   scalar_t s_prime[kBlockSizeQ] = {0};
   scalar_t m_prime[kBlockSizeQ] = {-std::numeric_limits<scalar_t>::infinity()};
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-    query_block[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][query_idx + q_item_idx].data());
-    output_block[q_item_idx] = reinterpret_cast<vec_t*>(output[batch_idx][query_idx + q_item_idx].data());
+    query_block[q_item_idx] = reinterpret_cast<vec_t*>(
+        query[batch_idx][query_idx + q_item_idx].data());
+    output_block[q_item_idx] = reinterpret_cast<vec_t*>(
+        output[batch_idx][query_idx + q_item_idx].data());
   }
 
   for (int64_t l = threadIdx.x * kBlockSizeK; l < N;
        l += kBlockSizeK * blockDim.x) {
     auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
     scalar_t si[kBlockSizeQ][kBlockSizeK] = {0};
-    compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(query_block, key_i, si, K);
+    compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
+        query_block, key_i, si, K);
 
     scalar_t m_i[kBlockSizeQ];
     compute_max<scalar_t, kBlockSizeK, kBlockSizeQ>(si, m_prime, m_i);
