@@ -183,30 +183,30 @@ __global__ void attention_kernel(
   int64_t M = query.size(1);
   int64_t N = key.size(1);
 
-  int64_t i = blockIdx.y;
-  int64_t j =
+  int64_t batch_idx = blockIdx.y;
+  int64_t query_idx =
       blockIdx.x * (blockDim.y * kBlockSizeQ) + threadIdx.y * kBlockSizeQ;
 
-  vec_t* aar[kBlockSizeQ];
-  vec_t* oo[kBlockSizeQ];
+  vec_t* query_block[kBlockSizeQ];
+  vec_t* output_block[kBlockSizeQ];
   vec_t buffer[kBlockSizeQ][8] = {0}; // TODO == K / 4
   scalar_t s_prime[kBlockSizeQ] = {0};
   scalar_t m_prime[kBlockSizeQ] = {-std::numeric_limits<scalar_t>::infinity()};
-  for (int64_t rr = 0; rr < kBlockSizeQ; rr++) {
-    aar[rr] = reinterpret_cast<vec_t*>(query[i][j + rr].data());
-    oo[rr] = reinterpret_cast<vec_t*>(output[i][j + rr].data());
+  for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+    query_block[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][query_idx + q_item_idx].data());
+    output_block[q_item_idx] = reinterpret_cast<vec_t*>(output[batch_idx][query_idx + q_item_idx].data());
   }
 
   for (int64_t l = threadIdx.x * kBlockSizeK; l < N;
        l += kBlockSizeK * blockDim.x) {
-    auto bar = reinterpret_cast<vec_t*>(key[i][l].data());
+    auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
     scalar_t si[kBlockSizeQ][kBlockSizeK] = {0};
-    compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(aar, bar, si, K);
+    compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(query_block, key_i, si, K);
 
     scalar_t m_i[kBlockSizeQ];
     compute_max<scalar_t, kBlockSizeK, kBlockSizeQ>(si, m_prime, m_i);
 
-    auto vi = reinterpret_cast<vec_t*>(value[i][l].data());
+    auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
 
     scalar_t m_delta[kBlockSizeQ];
     scalar_t s_delta[kBlockSizeQ][kBlockSizeK];
@@ -215,25 +215,25 @@ __global__ void attention_kernel(
         m_i, m_prime, si, m_delta, s_delta);
 
     compute_final_mult<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
-        vi, s_delta, m_delta, buffer, K);
+        value_i, s_delta, m_delta, buffer, K);
 
     update_scaling_coeffs<scalar_t, kBlockSizeK, kBlockSizeQ>(
         m_delta, m_i, s_delta, m_prime, s_prime);
   }
 
-  for (int64_t rr = 0; rr < kBlockSizeQ; rr++) {
-    scalar_t m_i = m_prime[rr];
-    scalar_t s_i = s_prime[rr];
-    m_prime[rr] = warpMax<scalar_t, WARP_SIZE>(m_prime[rr]);
-    scalar_t m_delta = std::exp(m_i - m_prime[rr]);
+  for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+    scalar_t m_i = m_prime[q_item_idx];
+    scalar_t s_i = s_prime[q_item_idx];
+    m_prime[q_item_idx] = warpMax<scalar_t, WARP_SIZE>(m_prime[q_item_idx]);
+    scalar_t m_delta = std::exp(m_i - m_prime[q_item_idx]);
     scalar_t s_delta = s_i * m_delta;
     s_delta = warpSum<scalar_t, WARP_SIZE>(s_delta);
-    s_prime[rr] = s_delta;
+    s_prime[q_item_idx] = s_delta;
     for (int64_t k = 0; k < K / kVecSize; k += 1) {
-      vec_t tmp = buffer[rr][k];
+      vec_t tmp = buffer[q_item_idx][k];
       iMul<scalar_t>(m_delta, &tmp);
       tmp = warpSum<vec_t, WARP_SIZE>(tmp);
-      buffer[rr][k] = tmp;
+      buffer[q_item_idx][k] = tmp;
     }
   }
 
@@ -241,11 +241,11 @@ __global__ void attention_kernel(
     vec_t tmp;
 
 #pragma unroll
-    for (int64_t rr2 = 0; rr2 < kBlockSizeQ; rr2++) {
-      tmp = buffer[rr2][k];
-      iDiv<scalar_t>(s_prime[rr2], &tmp);
+    for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      tmp = buffer[q_item_idx][k];
+      iDiv<scalar_t>(s_prime[q_item_idx], &tmp);
 
-      oo[rr2][k] = tmp;
+      output_block[q_item_idx][k] = tmp;
     }
   }
 }
