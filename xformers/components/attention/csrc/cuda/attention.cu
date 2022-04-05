@@ -78,7 +78,8 @@ __device__ void compute_dot(
       vec_t k_i = keys[k + K / kVecSize * k_item_idx];
 #pragma unroll
       for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-        sputnik::VectorCompute<vec_t>::Dot(q_i[q_item_idx], k_i, &out[q_item_idx][k_item_idx]);
+        sputnik::VectorCompute<vec_t>::Dot(
+            q_i[q_item_idx], k_i, &out[q_item_idx][k_item_idx]);
       }
     }
   }
@@ -118,10 +119,13 @@ __device__ __forceinline__ void compute_max(
     scalar_t out[kBlockSizeQ]) {
 #pragma unroll
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-    out[q_item_idx] = a[q_item_idx][0] > b[q_item_idx] ? a[q_item_idx][0] : b[q_item_idx];
+    out[q_item_idx] =
+        a[q_item_idx][0] > b[q_item_idx] ? a[q_item_idx][0] : b[q_item_idx];
 #pragma unroll
     for (int64_t k_item_idx = 1; k_item_idx < kBlockSizeK; k_item_idx++) {
-      out[q_item_idx] = a[q_item_idx][k_item_idx] > out[q_item_idx] ? a[q_item_idx][k_item_idx] : out[q_item_idx];
+      out[q_item_idx] = a[q_item_idx][k_item_idx] > out[q_item_idx]
+          ? a[q_item_idx][k_item_idx]
+          : out[q_item_idx];
     }
   }
 }
@@ -140,7 +144,8 @@ __device__ __forceinline__ void compute_scaling_coeffs(
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++)
 #pragma unroll
     for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++)
-      s_delta[q_item_idx][k_item_idx] = std::exp(si[q_item_idx][k_item_idx] - m_i[q_item_idx]);
+      s_delta[q_item_idx][k_item_idx] =
+          std::exp(si[q_item_idx][k_item_idx] - m_i[q_item_idx]);
 }
 
 template <typename scalar_t, int kBlockSizeK, int kBlockSizeQ>
@@ -161,7 +166,12 @@ __device__ __forceinline__ void update_scaling_coeffs(
   }
 }
 
-template <typename scalar_t, typename vec_t = float4, int kBlockSizeK = 32, int kBlockSizeQ = 2, int WARP_SIZE = 4>
+template <
+    typename scalar_t,
+    typename vec_t = float4,
+    int kBlockSizeK = 32,
+    int kBlockSizeQ = 2,
+    int WARP_SIZE = 4>
 __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> output,
     at::PackedTensorAccessor<scalar_t, 3> query,
@@ -174,7 +184,8 @@ __global__ void attention_kernel(
   int64_t N = key.size(1);
 
   int64_t i = blockIdx.y;
-  int64_t j = blockIdx.x * (blockDim.y * kBlockSizeQ) + threadIdx.y * kBlockSizeQ;
+  int64_t j =
+      blockIdx.x * (blockDim.y * kBlockSizeQ) + threadIdx.y * kBlockSizeQ;
 
   vec_t* aar[kBlockSizeQ];
   vec_t* oo[kBlockSizeQ];
@@ -186,7 +197,8 @@ __global__ void attention_kernel(
     oo[rr] = reinterpret_cast<vec_t*>(output[i][j + rr].data());
   }
 
-  for (int64_t l = threadIdx.x * kBlockSizeK; l < N; l += kBlockSizeK * blockDim.x) {
+  for (int64_t l = threadIdx.x * kBlockSizeK; l < N;
+       l += kBlockSizeK * blockDim.x) {
     auto bar = reinterpret_cast<vec_t*>(key[i][l].data());
     scalar_t si[kBlockSizeQ][kBlockSizeK] = {0};
     compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(aar, bar, si, K);
@@ -275,14 +287,12 @@ at::Tensor attention(
 
   at::Tensor res = at::zeros({B, M, K}, query.options());
 
-
   constexpr int WARP_SIZE = 4;
 
   constexpr int kBlockSizeK = 32;
   constexpr int kBlockSizeQ = 2;
 
   constexpr int TILE_SIZE = 32;
-
 
   dim3 grid(M / TILE_SIZE, B);
   dim3 block(WARP_SIZE, TILE_SIZE / kBlockSizeQ);
@@ -291,14 +301,15 @@ at::Tensor attention(
   using scalar_t = float;
   // AT_DISPATCH_FLOATING_TYPES(
   // query.scalar_type(), "attention_kernel", [&] {
-  attention_kernel<scalar_t, float4, kBlockSizeK, kBlockSizeQ, WARP_SIZE><<<grid, block, 0, stream>>>(
-      res.packed_accessor<scalar_t, 3>(),
-      query.packed_accessor<scalar_t, 3>(),
-      key.packed_accessor<scalar_t, 3>(),
-      value.packed_accessor<scalar_t, 3>()
-      // buffer.accessor<scalar_t, 3>()
-      // idxs.accessor<int64_t, 2>()
-  );
+  attention_kernel<scalar_t, float4, kBlockSizeK, kBlockSizeQ, WARP_SIZE>
+      <<<grid, block, 0, stream>>>(
+          res.packed_accessor<scalar_t, 3>(),
+          query.packed_accessor<scalar_t, 3>(),
+          key.packed_accessor<scalar_t, 3>(),
+          value.packed_accessor<scalar_t, 3>()
+          // buffer.accessor<scalar_t, 3>()
+          // idxs.accessor<int64_t, 2>()
+      );
   //});
 
   return res;
