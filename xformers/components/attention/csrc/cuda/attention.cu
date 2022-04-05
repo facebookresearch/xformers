@@ -40,6 +40,37 @@ __device__ __forceinline__ void iDiv(scalar_t x1, float4 * out) {
   out[0].w /= x1;
 }
 
+
+template <typename scalar_t, int WARP_SIZE>
+__device__ __forceinline__ scalar_t warpSum(scalar_t val) {
+  for (int stride = WARP_SIZE / 2; stride > 0; stride >>= 1) {
+    val += __shfl_xor_sync(0xffffffff, val, stride, WARP_SIZE);
+  }
+  return val;
+}
+
+template <typename scalar_t, int WARP_SIZE>
+__device__ __forceinline__ float4 warpSum(float4 val) {
+  for (int stride = WARP_SIZE / 2; stride > 0; stride >>= 1) {
+    val.x += __shfl_xor_sync(0xffffffff, val.x, stride, WARP_SIZE);
+    val.y += __shfl_xor_sync(0xffffffff, val.y, stride, WARP_SIZE);
+    val.z += __shfl_xor_sync(0xffffffff, val.z, stride, WARP_SIZE);
+    val.w += __shfl_xor_sync(0xffffffff, val.w, stride, WARP_SIZE);
+  }
+  return val;
+}
+
+
+template <typename scalar_t, int WARP_SIZE>
+__device__ __forceinline__ scalar_t warpMax(scalar_t val) {
+  for (int stride = WARP_SIZE / 2; stride > 0; stride >>= 1) {
+    scalar_t tmp = __shfl_xor_sync(0xffffffff, val, stride, WARP_SIZE);
+    val = tmp > val ? tmp : val;
+  }
+  return val;
+}
+
+
 template <typename scalar_t, int BLOCK, int BLOCK2>
 __device__ void compute_dot(float4* aar[BLOCK2], float4* bar, scalar_t si[BLOCK2][BLOCK], int64_t K) {
   constexpr int kVecSize = sizeof(float4) / sizeof(float);
@@ -170,28 +201,15 @@ __global__ void attention_kernel(
         for (int64_t rr = 0; rr < BLOCK2; rr++) {
           scalar_t m_i = m_prime[rr];
           scalar_t s_i = s_prime[rr];
-          for (int stride = 2; stride > 0; stride >>= 1) {
-            scalar_t tmp2 = __shfl_xor_sync(0xffffffff, m_prime[rr], stride, 4);
-            m_prime[rr] = tmp2 > m_prime[rr] ? tmp2 : m_prime[rr];
-          }
+          m_prime[rr] = warpMax<scalar_t, 4>(m_prime[rr]);
           scalar_t m_delta = std::exp(m_i - m_prime[rr]);
           scalar_t s_delta = s_i * m_delta;
-          for (int stride = 2; stride > 0; stride >>= 1) {
-            s_delta += __shfl_xor_sync(0xffffffff, s_delta, stride, 4);
-          }
+          s_delta = warpSum<scalar_t, 4>(s_delta);
           s_prime[rr] = s_delta;
           for (int64_t k = 0; k < K / kVecSize; k+=1) {
             float4 tmp = buffer[rr][k];
-            tmp.x *= m_delta;
-            tmp.y *= m_delta;
-            tmp.z *= m_delta;
-            tmp.w *= m_delta;
-            for (int stride = 2; stride > 0; stride >>= 1) {
-              tmp.x += __shfl_xor_sync(0xffffffff, tmp.x, stride, 4);
-              tmp.y += __shfl_xor_sync(0xffffffff, tmp.y, stride, 4);
-              tmp.z += __shfl_xor_sync(0xffffffff, tmp.z, stride, 4);
-              tmp.w += __shfl_xor_sync(0xffffffff, tmp.w, stride, 4);
-            }
+            iMul<scalar_t>(m_delta, &tmp);
+            tmp = warpSum<float4, 4>(tmp);
             buffer[rr][k] = tmp;
 
           }
