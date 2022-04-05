@@ -60,108 +60,108 @@ __device__ __forceinline__ scalar_t warpMax(scalar_t val) {
   return val;
 }
 
-template <typename scalar_t, typename vec_t, int BLOCK, int BLOCK2>
+template <typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ>
 __device__ void compute_dot(
-    vec_t* aar[BLOCK2],
-    vec_t* bar,
-    scalar_t si[BLOCK2][BLOCK],
+    vec_t* queries[kBlockSizeQ],
+    vec_t* keys,
+    scalar_t out[kBlockSizeQ][kBlockSizeK],
     int64_t K) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
+  vec_t q_i[kBlockSizeQ];
   for (int64_t k = 0; k < K / kVecSize; k += 1) {
-    vec_t aaar[BLOCK2];
 #pragma unroll
-    for (int64_t rr = 0; rr < BLOCK2; rr++) {
-      aaar[rr] = __ldg(aar[rr] + k);
+    for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      q_i[q_item_idx] = __ldg(queries[q_item_idx] + k);
     }
 #pragma unroll
-    for (int64_t rr = 0; rr < BLOCK; rr++) {
-      vec_t bbb = bar[k + K / kVecSize * rr];
+    for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+      vec_t k_i = keys[k + K / kVecSize * k_item_idx];
 #pragma unroll
-      for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
-        sputnik::VectorCompute<vec_t>::Dot(aaar[rr2], bbb, &si[rr2][rr]);
+      for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+        sputnik::VectorCompute<vec_t>::Dot(q_i[q_item_idx], k_i, &out[q_item_idx][k_item_idx]);
       }
     }
   }
 }
 
-template <typename scalar_t, typename vec_t, int BLOCK, int BLOCK2>
+template <typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ>
 __device__ void compute_final_mult(
     vec_t* vi,
-    scalar_t s_delta[BLOCK2][BLOCK],
-    scalar_t m_delta[BLOCK2],
-    vec_t buffer[BLOCK2][8] /*TODO fix me*/,
+    scalar_t s_delta[kBlockSizeQ][kBlockSizeK],
+    scalar_t m_delta[kBlockSizeQ],
+    vec_t buffer[kBlockSizeQ][8] /*TODO fix me*/,
     int64_t K) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
 
   for (int64_t k = 0; k < K / kVecSize; k += 1) {
 #pragma unroll
-    for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
-      iMul<scalar_t>(m_delta[rr2], &buffer[rr2][k]);
+    for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      iMul<scalar_t>(m_delta[q_item_idx], &buffer[q_item_idx][k]);
     }
 #pragma unroll
-    for (int64_t rr = 0; rr < BLOCK; rr++) {
-      vec_t tmp2 = vi[k + K / kVecSize * rr];
+    for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+      vec_t tmp2 = vi[k + K / kVecSize * k_item_idx];
 
 #pragma unroll
-      for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+      for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
         sputnik::VectorCompute<vec_t>::FMA(
-            s_delta[rr2][rr], tmp2, &buffer[rr2][k]);
+            s_delta[q_item_idx][k_item_idx], tmp2, &buffer[q_item_idx][k]);
       }
     }
   }
 }
 
-template <typename scalar_t, int BLOCK, int BLOCK2>
+template <typename scalar_t, int kBlockSizeK, int kBlockSizeQ>
 __device__ __forceinline__ void compute_max(
-    scalar_t si[BLOCK2][BLOCK],
-    scalar_t m_prime[BLOCK2],
-    scalar_t m_i[BLOCK2]) {
+    scalar_t a[kBlockSizeQ][kBlockSizeK],
+    scalar_t b[kBlockSizeQ],
+    scalar_t out[kBlockSizeQ]) {
 #pragma unroll
-  for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
-    m_i[rr2] = si[rr2][0] > m_prime[rr2] ? si[rr2][0] : m_prime[rr2];
+  for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+    out[q_item_idx] = a[q_item_idx][0] > b[q_item_idx] ? a[q_item_idx][0] : b[q_item_idx];
 #pragma unroll
-    for (int64_t rr = 1; rr < BLOCK; rr++) {
-      m_i[rr2] = si[rr2][rr] > m_i[rr2] ? si[rr2][rr] : m_i[rr2];
+    for (int64_t k_item_idx = 1; k_item_idx < kBlockSizeK; k_item_idx++) {
+      out[q_item_idx] = a[q_item_idx][k_item_idx] > out[q_item_idx] ? a[q_item_idx][k_item_idx] : out[q_item_idx];
     }
   }
 }
 
-template <typename scalar_t, int BLOCK, int BLOCK2>
+template <typename scalar_t, int kBlockSizeK, int kBlockSizeQ>
 __device__ __forceinline__ void compute_scaling_coeffs(
-    scalar_t m_i[BLOCK2],
-    scalar_t m_prime[BLOCK2],
-    scalar_t si[BLOCK2][BLOCK],
-    scalar_t m_delta[BLOCK2],
-    scalar_t s_delta[BLOCK2][BLOCK]) {
+    scalar_t m_i[kBlockSizeQ],
+    scalar_t m_prime[kBlockSizeQ],
+    scalar_t si[kBlockSizeQ][kBlockSizeK],
+    scalar_t m_delta[kBlockSizeQ],
+    scalar_t s_delta[kBlockSizeQ][kBlockSizeK]) {
 #pragma unroll
-  for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++)
-    m_delta[rr2] = std::exp(m_prime[rr2] - m_i[rr2]);
+  for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++)
+    m_delta[q_item_idx] = std::exp(m_prime[q_item_idx] - m_i[q_item_idx]);
 #pragma unroll
-  for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++)
+  for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++)
 #pragma unroll
-    for (int64_t rr = 0; rr < BLOCK; rr++)
-      s_delta[rr2][rr] = std::exp(si[rr2][rr] - m_i[rr2]);
+    for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++)
+      s_delta[q_item_idx][k_item_idx] = std::exp(si[q_item_idx][k_item_idx] - m_i[q_item_idx]);
 }
 
-template <typename scalar_t, int BLOCK, int BLOCK2>
+template <typename scalar_t, int kBlockSizeK, int kBlockSizeQ>
 __device__ __forceinline__ void update_scaling_coeffs(
-    scalar_t m_delta[BLOCK2],
-    scalar_t m_i[BLOCK2],
-    scalar_t s_delta[BLOCK2][BLOCK],
-    scalar_t m_prime[BLOCK2],
-    scalar_t s_prime[BLOCK2]) {
+    scalar_t m_delta[kBlockSizeQ],
+    scalar_t m_i[kBlockSizeQ],
+    scalar_t s_delta[kBlockSizeQ][kBlockSizeK],
+    scalar_t m_prime[kBlockSizeQ],
+    scalar_t s_prime[kBlockSizeQ]) {
 #pragma unroll
-  for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
-    s_prime[rr2] = s_prime[rr2] * m_delta[rr2];
+  for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+    s_prime[q_item_idx] = s_prime[q_item_idx] * m_delta[q_item_idx];
 #pragma unroll
-    for (int64_t rr = 0; rr < BLOCK; rr++)
-      s_prime[rr2] += s_delta[rr2][rr];
+    for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++)
+      s_prime[q_item_idx] += s_delta[q_item_idx][k_item_idx];
 
-    m_prime[rr2] = m_i[rr2];
+    m_prime[q_item_idx] = m_i[q_item_idx];
   }
 }
 
-template <typename scalar_t, typename vec_t = float4, int BLOCK = 32, int BLOCK2 = 2, int WARP_SIZE = 4>
+template <typename scalar_t, typename vec_t = float4, int kBlockSizeK = 32, int kBlockSizeQ = 2, int WARP_SIZE = 4>
 __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> output,
     at::PackedTensorAccessor<scalar_t, 3> query,
@@ -174,42 +174,42 @@ __global__ void attention_kernel(
   int64_t N = key.size(1);
 
   int64_t i = blockIdx.y;
-  int64_t j = blockIdx.x * (blockDim.y * BLOCK2) + threadIdx.y * BLOCK2;
+  int64_t j = blockIdx.x * (blockDim.y * kBlockSizeQ) + threadIdx.y * kBlockSizeQ;
 
-  vec_t* aar[BLOCK2];
-  vec_t* oo[BLOCK2];
-  vec_t buffer[BLOCK2][8] = {0}; // TODO == K / 4
-  scalar_t s_prime[BLOCK2] = {0};
-  scalar_t m_prime[BLOCK2] = {-std::numeric_limits<scalar_t>::infinity()};
-  for (int64_t rr = 0; rr < BLOCK2; rr++) {
+  vec_t* aar[kBlockSizeQ];
+  vec_t* oo[kBlockSizeQ];
+  vec_t buffer[kBlockSizeQ][8] = {0}; // TODO == K / 4
+  scalar_t s_prime[kBlockSizeQ] = {0};
+  scalar_t m_prime[kBlockSizeQ] = {-std::numeric_limits<scalar_t>::infinity()};
+  for (int64_t rr = 0; rr < kBlockSizeQ; rr++) {
     aar[rr] = reinterpret_cast<vec_t*>(query[i][j + rr].data());
     oo[rr] = reinterpret_cast<vec_t*>(output[i][j + rr].data());
   }
 
-  for (int64_t l = threadIdx.x * BLOCK; l < N; l += BLOCK * blockDim.x) {
+  for (int64_t l = threadIdx.x * kBlockSizeK; l < N; l += kBlockSizeK * blockDim.x) {
     auto bar = reinterpret_cast<vec_t*>(key[i][l].data());
-    scalar_t si[BLOCK2][BLOCK] = {0};
-    compute_dot<scalar_t, vec_t, BLOCK, BLOCK2>(aar, bar, si, K);
+    scalar_t si[kBlockSizeQ][kBlockSizeK] = {0};
+    compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(aar, bar, si, K);
 
-    scalar_t m_i[BLOCK2];
-    compute_max<scalar_t, BLOCK, BLOCK2>(si, m_prime, m_i);
+    scalar_t m_i[kBlockSizeQ];
+    compute_max<scalar_t, kBlockSizeK, kBlockSizeQ>(si, m_prime, m_i);
 
     auto vi = reinterpret_cast<vec_t*>(value[i][l].data());
 
-    scalar_t m_delta[BLOCK2];
-    scalar_t s_delta[BLOCK2][BLOCK];
+    scalar_t m_delta[kBlockSizeQ];
+    scalar_t s_delta[kBlockSizeQ][kBlockSizeK];
 
-    compute_scaling_coeffs<scalar_t, BLOCK, BLOCK2>(
+    compute_scaling_coeffs<scalar_t, kBlockSizeK, kBlockSizeQ>(
         m_i, m_prime, si, m_delta, s_delta);
 
-    compute_final_mult<scalar_t, vec_t, BLOCK, BLOCK2>(
+    compute_final_mult<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
         vi, s_delta, m_delta, buffer, K);
 
-    update_scaling_coeffs<scalar_t, BLOCK, BLOCK2>(
+    update_scaling_coeffs<scalar_t, kBlockSizeK, kBlockSizeQ>(
         m_delta, m_i, s_delta, m_prime, s_prime);
   }
 
-  for (int64_t rr = 0; rr < BLOCK2; rr++) {
+  for (int64_t rr = 0; rr < kBlockSizeQ; rr++) {
     scalar_t m_i = m_prime[rr];
     scalar_t s_i = s_prime[rr];
     m_prime[rr] = warpMax<scalar_t, WARP_SIZE>(m_prime[rr]);
@@ -229,7 +229,7 @@ __global__ void attention_kernel(
     vec_t tmp;
 
 #pragma unroll
-    for (int64_t rr2 = 0; rr2 < BLOCK2; rr2++) {
+    for (int64_t rr2 = 0; rr2 < kBlockSizeQ; rr2++) {
       tmp = buffer[rr2][k];
       iDiv<scalar_t>(s_prime[rr2], &tmp);
 
@@ -278,20 +278,20 @@ at::Tensor attention(
 
   constexpr int WARP_SIZE = 4;
 
-  constexpr int BLOCK = 32;
-  constexpr int BLOCK2 = 2;
+  constexpr int kBlockSizeK = 32;
+  constexpr int kBlockSizeQ = 2;
 
   constexpr int TILE_SIZE = 32;
 
 
   dim3 grid(M / TILE_SIZE, B);
-  dim3 block(WARP_SIZE, TILE_SIZE / BLOCK2);
+  dim3 block(WARP_SIZE, TILE_SIZE / kBlockSizeQ);
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   using scalar_t = float;
   // AT_DISPATCH_FLOATING_TYPES(
   // query.scalar_type(), "attention_kernel", [&] {
-  attention_kernel<scalar_t, float4, BLOCK, BLOCK2, WARP_SIZE><<<grid, block, 0, stream>>>(
+  attention_kernel<scalar_t, float4, kBlockSizeK, kBlockSizeQ, WARP_SIZE><<<grid, block, 0, stream>>>(
       res.packed_accessor<scalar_t, 3>(),
       query.packed_accessor<scalar_t, 3>(),
       key.packed_accessor<scalar_t, 3>(),
