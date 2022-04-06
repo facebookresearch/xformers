@@ -166,6 +166,32 @@ __device__ __forceinline__ void update_scaling_coeffs(
   }
 }
 
+
+template <typename scalar_t, typename vec_t, int kBlockSizeQ, int WARP_SIZE>
+__device__ __forceinline__ void aggregate_coeffs(
+    scalar_t m_prime[kBlockSizeQ],
+    scalar_t s_prime[kBlockSizeQ],
+    vec_t buffer[kBlockSizeQ][8] /*TODO fix me*/,
+    int64_t K) {
+  constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
+  for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+    scalar_t m_i = m_prime[q_item_idx];
+    scalar_t s_i = s_prime[q_item_idx];
+    m_prime[q_item_idx] = warpMax<scalar_t, WARP_SIZE>(m_prime[q_item_idx]);
+    scalar_t m_delta = std::exp(m_i - m_prime[q_item_idx]);
+    scalar_t s_delta = s_i * m_delta;
+    s_delta = warpSum<scalar_t, WARP_SIZE>(s_delta);
+    s_prime[q_item_idx] = s_delta;
+    for (int64_t k = 0; k < K / kVecSize; k += 1) {
+      vec_t tmp = buffer[q_item_idx][k];
+      iMul<scalar_t>(m_delta, &tmp);
+      tmp = warpSum<vec_t, WARP_SIZE>(tmp);
+      buffer[q_item_idx][k] = tmp;
+    }
+  }
+}
+
+
 template <
     typename scalar_t,
     typename vec_t = float4,
@@ -224,21 +250,7 @@ __global__ void attention_kernel(
         m_delta, m_i, s_delta, m_prime, s_prime);
   }
 
-  for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-    scalar_t m_i = m_prime[q_item_idx];
-    scalar_t s_i = s_prime[q_item_idx];
-    m_prime[q_item_idx] = warpMax<scalar_t, WARP_SIZE>(m_prime[q_item_idx]);
-    scalar_t m_delta = std::exp(m_i - m_prime[q_item_idx]);
-    scalar_t s_delta = s_i * m_delta;
-    s_delta = warpSum<scalar_t, WARP_SIZE>(s_delta);
-    s_prime[q_item_idx] = s_delta;
-    for (int64_t k = 0; k < K / kVecSize; k += 1) {
-      vec_t tmp = buffer[q_item_idx][k];
-      iMul<scalar_t>(m_delta, &tmp);
-      tmp = warpSum<vec_t, WARP_SIZE>(tmp);
-      buffer[q_item_idx][k] = tmp;
-    }
-  }
+  aggregate_coeffs<scalar_t, vec_t, kBlockSizeQ, WARP_SIZE>(m_prime, s_prime, buffer, K);
 
   for (int64_t k = threadIdx.x; k < K / kVecSize; k += blockDim.x) {
     vec_t tmp;
