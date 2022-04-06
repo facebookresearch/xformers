@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from torch.cuda.amp import autocast
 
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 
@@ -22,7 +23,9 @@ class FourierMix(Attention):
         self.requires_input_projection = False
 
     def forward(self, q: torch.Tensor, *_, **__):
-        att = torch.fft.fft2(q).real
+        # Guard against autocast / fp16, not supported by torch.fft.fft2
+        with autocast(enabled=False):
+            att = torch.fft.fft2(q).real
 
         att = self.attn_drop(att)
 

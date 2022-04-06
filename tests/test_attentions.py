@@ -124,6 +124,11 @@ def test_order_invariance(
             att_2 = multi_head(inputs, inputs_shuffled, inputs)
             assert (att != att_2).any()
 
+        # Test AMP, if available
+        if device.type == "cuda":
+            with torch.cuda.amp.autocast(enabled=True):
+                _ = multi_head(inputs, inputs_shuffled, inputs)
+
 
 @pytest.mark.parametrize("heads", [1, 4])
 @pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
