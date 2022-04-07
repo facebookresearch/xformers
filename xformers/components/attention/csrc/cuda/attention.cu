@@ -203,7 +203,7 @@ __device__ __forceinline__ void update_scaling_coeffs(
 }
 
 template <typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ, int BUFFER_SIZE>
-__device__ __forceinline__ void compute_loop(
+__device__ void compute_loop(
     vec_t* query_block[kBlockSizeQ],
     vec_t* key_i,
     vec_t* value_i,
@@ -310,7 +310,44 @@ __global__ void attention_kernel(
   }
 
   if (l < N) {
-    l = N - (N & (step - 1)) + threadIdx.x;
+    // TODO: unroll this in a generic manner
+    l = N - (N & (step - 1)) + threadIdx.x * (kBlockSizeK / 2);
+    end_iter = N - (N & (step / 2 - 1));
+    for (; l < end_iter;
+         l += step / 2) {
+      auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
+      auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
+      compute_loop<scalar_t, vec_t, kBlockSizeK / 2, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+    }
+
+    l = N - (N & (step / 2 - 1)) + threadIdx.x * (kBlockSizeK / 4);
+    end_iter = N - (N & (step / 4 - 1));
+    for (; l < end_iter;
+         l += step / 4) {
+      auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
+      auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
+      compute_loop<scalar_t, vec_t, kBlockSizeK / 4, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+    }
+
+    l = N - (N & (step / 4 - 1)) + threadIdx.x * (kBlockSizeK / 8);
+    end_iter = N - (N & (step / 8 - 1));
+    for (; l < end_iter;
+         l += step / 8) {
+      auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
+      auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
+      compute_loop<scalar_t, vec_t, kBlockSizeK / 8, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+    }
+
+    l = N - (N & (step / 8 - 1)) + threadIdx.x * (kBlockSizeK / 16);
+    end_iter = N - (N & (step / 16 - 1));
+    for (; l < end_iter;
+         l += step / 16) {
+      auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
+      auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
+      compute_loop<scalar_t, vec_t, kBlockSizeK / 16, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+    }
+
+    l = N - (N & (step / 16 - 1)) + threadIdx.x;
     for (; l < N;
          l += blockDim.x) {
       auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
