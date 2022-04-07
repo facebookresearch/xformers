@@ -53,6 +53,10 @@ class Attention(nn.Module, metaclass=ABCMeta):
         # so that the MHA wrapper should skip it
         self.requires_skip_multi_head = False
 
+        # Whether this attention mechanism supports attention masks
+        self.supports_attention_mask = True
+        self.supports_key_padding_mask = False
+
     @classmethod
     def from_config(cls: Type[Self], config: AttentionConfig) -> Self:
         # Generate the class inputs from the config

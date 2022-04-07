@@ -114,8 +114,11 @@ if _is_triton_available:
 
             # key padding mask and attention mask must be passed in separately
             self.requires_separate_masks = True
-
             self.requires_same_k_q_dimensions = True
+
+            # Properties specific to this attention mechanism
+            self.supports_attention_mask = True
+            self.supports_key_padding_mask = True
 
         def update_mask_type(self, mask: torch.Tensor):
             global _mask_type_warning

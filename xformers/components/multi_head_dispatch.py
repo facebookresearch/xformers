@@ -155,10 +155,21 @@ class MultiHeadDispatch(nn.Module):
                     + "In that case causality is ill-determined. Please pad your sequences accordingly"
                 )
 
+        kw_mask_args = {}
+        if att_mask is not None:
+            assert (
+                self.attention.supports_attention_mask
+            ), "This attention does not support attention masks"
+            kw_mask_args["att_mask"] = att_mask
+
+        if key_padding_mask is not None:
+            assert (
+                self.attention.supports_key_padding_mask
+            ), "This attention does not support key padding masks"
+            kw_mask_args["key_padding_mask"] = key_padding_mask
+
         if self.attention.requires_skip_multi_head:
-            return self.attention(
-                query, key, value, att_mask=att_mask, key_padding_mask=key_padding_mask
-            )
+            return self.attention(query, key, value, **kw_mask_args)
 
         # Calculate query, key, values for all heads in batch
         if self.attention.requires_input_projection:
@@ -199,9 +210,7 @@ class MultiHeadDispatch(nn.Module):
             v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
 
         # Self-attend
-        y = self.attention(
-            q=q, k=k, v=v, att_mask=att_mask, key_padding_mask=key_padding_mask
-        )
+        y = self.attention(q=q, k=k, v=v, **kw_mask_args)
 
         # Re-assemble all head outputs side by side
         y = (
