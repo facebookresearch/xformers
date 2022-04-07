@@ -290,10 +290,12 @@ __global__ void attention_kernel(
   scalar_t s_prime[kBlockSizeQ] = {0};
   scalar_t m_prime[kBlockSizeQ] = {-std::numeric_limits<scalar_t>::infinity()};
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+    int64_t index = query_idx + q_item_idx;
+    index = index >= M ? M - 1 : index;
     query_block[q_item_idx] = reinterpret_cast<vec_t*>(
-        query[batch_idx][query_idx + q_item_idx].data());
+        query[batch_idx][index].data());
     output_block[q_item_idx] = reinterpret_cast<vec_t*>(
-        output[batch_idx][query_idx + q_item_idx].data());
+        output[batch_idx][index].data());
   }
 
   int64_t l = threadIdx.x * kBlockSizeK;
