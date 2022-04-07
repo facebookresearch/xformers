@@ -55,7 +55,7 @@ class Attention(nn.Module, metaclass=ABCMeta):
 
         # Whether this attention mechanism supports attention masks
         self.supports_attention_mask = True
-        self.supports_key_padding_mask = True
+        self.supports_key_padding_mask = False
 
     @classmethod
     def from_config(cls: Type[Self], config: AttentionConfig) -> Self:

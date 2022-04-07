@@ -106,6 +106,7 @@ class FavorAttention(Attention):
 
         # Properties specific to this attention mechanism
         self.supports_attention_mask = False
+        self.supports_key_padding_mask = False
 
     @staticmethod
     def _maybe_promote(x: torch.Tensor) -> torch.Tensor:

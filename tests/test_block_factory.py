@@ -111,9 +111,14 @@ def test_xformer_encoder_block(
     _ = block(inputs)
 
     # Check that we support attention masking, at least interface wise (do not check correctness yet)
+    att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
     if block.mha.attention.supports_attention_mask:
-        att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
         _ = block(inputs, att_mask=att_mask)
+    else:
+        with pytest.raises(AssertionError):
+            # Check that passing an attention mask to a mechanism which does not support it raises
+            # an exception
+            _ = block(inputs, att_mask=att_mask)
 
     # Check that we support input masking, at least interface wise (do not check correctness yet)
     input_mask = torch.randn(SEQ, dtype=torch.float, device=device)

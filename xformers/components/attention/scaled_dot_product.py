@@ -57,6 +57,10 @@ class ScaledDotProduct(Attention):
         else:
             self.mask = None
 
+        # Properties specific to this attention mechanism
+        self.supports_attention_mask = True
+        self.supports_key_padding_mask = False
+
     def forward(
         self,
         q: torch.Tensor,

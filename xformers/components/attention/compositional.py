@@ -189,6 +189,10 @@ class CompositionalAttention(Attention):
 
         self.causal = causal
 
+        # Properties specific to this attention mechanism
+        self.supports_attention_mask = True
+        self.supports_key_padding_mask = False
+
         self._reset_parameters()
 
     def _reset_parameters(self):

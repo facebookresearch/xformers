@@ -156,6 +156,7 @@ class NystromAttention(Attention):
 
         # This attention does not support attention masks
         self.supports_attention_mask = False
+        self.supports_key_padding_mask = True
 
     def forward(
         self,
