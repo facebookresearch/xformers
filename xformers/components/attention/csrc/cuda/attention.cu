@@ -17,11 +17,27 @@ constexpr __host__ __device__ inline integer ceil_div(integer n, integer m) {
 }
 
 template <typename scalar_t>
+constexpr __host__ __device__ bool integerIsPowerOf2(scalar_t v) {
+  return (v && !(v & (v - 1)));
+}
+
+template <typename scalar_t>
 __device__ __forceinline__ void iMul(scalar_t x1, float4* out) {
   out[0].x *= x1;
   out[0].y *= x1;
   out[0].z *= x1;
   out[0].w *= x1;
+}
+
+template <typename scalar_t>
+__device__ __forceinline__ void iMul(scalar_t x1, float2* out) {
+  out[0].x *= x1;
+  out[0].y *= x1;
+}
+
+template <typename scalar_t>
+__device__ __forceinline__ void iMul(scalar_t x1, float* out) {
+  out[0] *= x1;
 }
 
 template <typename scalar_t>
@@ -32,10 +48,30 @@ __device__ __forceinline__ void iDiv(scalar_t x1, float4* out) {
   out[0].w /= x1;
 }
 
+template <typename scalar_t>
+__device__ __forceinline__ void iDiv(scalar_t x1, float2* out) {
+  out[0].x /= x1;
+  out[0].y /= x1;
+}
+
+template <typename scalar_t>
+__device__ __forceinline__ void iDiv(scalar_t x1, float* out) {
+  out[0] /= x1;
+}
+
 template <typename scalar_t, int WARP_SIZE>
 __device__ __forceinline__ scalar_t warpSum(scalar_t val) {
   for (int stride = WARP_SIZE / 2; stride > 0; stride >>= 1) {
     val += __shfl_xor_sync(0xffffffff, val, stride, WARP_SIZE);
+  }
+  return val;
+}
+
+template <typename scalar_t, int WARP_SIZE>
+__device__ __forceinline__ float2 warpSum(float2 val) {
+  for (int stride = WARP_SIZE / 2; stride > 0; stride >>= 1) {
+    val.x += __shfl_xor_sync(0xffffffff, val.x, stride, WARP_SIZE);
+    val.y += __shfl_xor_sync(0xffffffff, val.y, stride, WARP_SIZE);
   }
   return val;
 }
@@ -85,12 +121,12 @@ __device__ void compute_dot(
   }
 }
 
-template <typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ>
+template <typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ, int BUFFER_SIZE>
 __device__ void compute_final_mult(
     vec_t* vi,
     scalar_t s_delta[kBlockSizeQ][kBlockSizeK],
     scalar_t m_delta[kBlockSizeQ],
-    vec_t buffer[kBlockSizeQ][8] /*TODO fix me*/,
+    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
     int64_t K) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
 
@@ -166,12 +202,42 @@ __device__ __forceinline__ void update_scaling_coeffs(
   }
 }
 
+template <typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ, int BUFFER_SIZE>
+__device__ __forceinline__ void compute_loop(
+    vec_t* query_block[kBlockSizeQ],
+    vec_t* key_i,
+    vec_t* value_i,
+    scalar_t m_prime[kBlockSizeQ],
+    scalar_t s_prime[kBlockSizeQ],
+    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
+    int64_t K) {
 
-template <typename scalar_t, typename vec_t, int kBlockSizeQ, int WARP_SIZE>
+    scalar_t si[kBlockSizeQ][kBlockSizeK] = {0};
+    compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
+        query_block, key_i, si, K);
+
+    scalar_t m_i[kBlockSizeQ];
+    compute_max<scalar_t, kBlockSizeK, kBlockSizeQ>(si, m_prime, m_i);
+
+    scalar_t m_delta[kBlockSizeQ];
+    scalar_t s_delta[kBlockSizeQ][kBlockSizeK];
+
+    compute_scaling_coeffs<scalar_t, kBlockSizeK, kBlockSizeQ>(
+        m_i, m_prime, si, m_delta, s_delta);
+
+    compute_final_mult<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(
+        value_i, s_delta, m_delta, buffer, K);
+
+    update_scaling_coeffs<scalar_t, kBlockSizeK, kBlockSizeQ>(
+        m_delta, m_i, s_delta, m_prime, s_prime);
+}
+
+
+template <typename scalar_t, typename vec_t, int kBlockSizeQ, int WARP_SIZE, int BUFFER_SIZE>
 __device__ __forceinline__ void aggregate_coeffs(
     scalar_t m_prime[kBlockSizeQ],
     scalar_t s_prime[kBlockSizeQ],
-    vec_t buffer[kBlockSizeQ][8] /*TODO fix me*/,
+    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
     int64_t K) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
@@ -197,13 +263,15 @@ template <
     typename vec_t = float4,
     int kBlockSizeK = 32,
     int kBlockSizeQ = 2,
-    int WARP_SIZE = 4>
+    int WARP_SIZE = 4,
+    int BUFFER_SIZE = 8>
 __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> output,
     at::PackedTensorAccessor<scalar_t, 3> query,
     at::PackedTensorAccessor<scalar_t, 3> key,
     at::PackedTensorAccessor<scalar_t, 3> value) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
+  static_assert(integerIsPowerOf2(kBlockSizeK * WARP_SIZE), "kBlockSizeK * WARP_SIZE should be a power of 2");
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -213,9 +281,12 @@ __global__ void attention_kernel(
   int64_t query_idx =
       blockIdx.x * (blockDim.y * kBlockSizeQ) + threadIdx.y * kBlockSizeQ;
 
+  if (query_idx >= M)
+    return;
+
   vec_t* query_block[kBlockSizeQ];
   vec_t* output_block[kBlockSizeQ];
-  vec_t buffer[kBlockSizeQ][8] = {0}; // TODO == K / 4
+  vec_t buffer[kBlockSizeQ][BUFFER_SIZE] = {0}; // TODO == K / 4
   scalar_t s_prime[kBlockSizeQ] = {0};
   scalar_t m_prime[kBlockSizeQ] = {-std::numeric_limits<scalar_t>::infinity()};
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
@@ -225,32 +296,30 @@ __global__ void attention_kernel(
         output[batch_idx][query_idx + q_item_idx].data());
   }
 
-  for (int64_t l = threadIdx.x * kBlockSizeK; l < N;
-       l += kBlockSizeK * blockDim.x) {
+  int64_t l = threadIdx.x * kBlockSizeK;
+  constexpr int64_t step = kBlockSizeK * WARP_SIZE;
+  // this is equivalent to N - N % step, but faster
+  // guaranteed to be the same as step is a power of 2
+  int64_t end_iter = N - (N & (step - 1));
+  for (; l < end_iter;
+       l += step) {
     auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
-    scalar_t si[kBlockSizeQ][kBlockSizeK] = {0};
-    compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
-        query_block, key_i, si, K);
-
-    scalar_t m_i[kBlockSizeQ];
-    compute_max<scalar_t, kBlockSizeK, kBlockSizeQ>(si, m_prime, m_i);
-
     auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
 
-    scalar_t m_delta[kBlockSizeQ];
-    scalar_t s_delta[kBlockSizeQ][kBlockSizeK];
-
-    compute_scaling_coeffs<scalar_t, kBlockSizeK, kBlockSizeQ>(
-        m_i, m_prime, si, m_delta, s_delta);
-
-    compute_final_mult<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
-        value_i, s_delta, m_delta, buffer, K);
-
-    update_scaling_coeffs<scalar_t, kBlockSizeK, kBlockSizeQ>(
-        m_delta, m_i, s_delta, m_prime, s_prime);
+    compute_loop<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
   }
 
-  aggregate_coeffs<scalar_t, vec_t, kBlockSizeQ, WARP_SIZE>(m_prime, s_prime, buffer, K);
+  if (l < N) {
+    l = N - (N & (step - 1)) + threadIdx.x;
+    for (; l < N;
+         l += blockDim.x) {
+      auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
+      auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
+      compute_loop<scalar_t, vec_t, 1, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+    }
+  }
+
+  aggregate_coeffs<scalar_t, vec_t, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>(m_prime, s_prime, buffer, K);
 
   for (int64_t k = threadIdx.x; k < K / kVecSize; k += blockDim.x) {
     vec_t tmp;
@@ -308,23 +377,49 @@ at::Tensor attention(
   constexpr int kBlockSizeQ = 2;
 
   constexpr int TILE_SIZE = 32;
+  constexpr int BUFFER_SIZE = 8;
 
-  dim3 grid(M / TILE_SIZE, B);
+  dim3 grid(ceil_div(M, int64_t(TILE_SIZE)), B);
   dim3 block(WARP_SIZE, TILE_SIZE / kBlockSizeQ);
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   using scalar_t = float;
   // AT_DISPATCH_FLOATING_TYPES(
   // query.scalar_type(), "attention_kernel", [&] {
-  attention_kernel<scalar_t, float4, kBlockSizeK, kBlockSizeQ, WARP_SIZE>
-      <<<grid, block, 0, stream>>>(
-          res.packed_accessor<scalar_t, 3>(),
-          query.packed_accessor<scalar_t, 3>(),
-          key.packed_accessor<scalar_t, 3>(),
-          value.packed_accessor<scalar_t, 3>()
-          // buffer.accessor<scalar_t, 3>()
-          // idxs.accessor<int64_t, 2>()
-      );
+
+  if ((K % 4) == 0) {
+    attention_kernel<scalar_t, float4, kBlockSizeK, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>
+        <<<grid, block, 0, stream>>>(
+            res.packed_accessor<scalar_t, 3>(),
+            query.packed_accessor<scalar_t, 3>(),
+            key.packed_accessor<scalar_t, 3>(),
+            value.packed_accessor<scalar_t, 3>()
+            // buffer.accessor<scalar_t, 3>()
+            // idxs.accessor<int64_t, 2>()
+        );
+  } else if ((K % 2) == 0) {
+    attention_kernel<scalar_t, float2, kBlockSizeK, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>
+        <<<grid, block, 0, stream>>>(
+            res.packed_accessor<scalar_t, 3>(),
+            query.packed_accessor<scalar_t, 3>(),
+            key.packed_accessor<scalar_t, 3>(),
+            value.packed_accessor<scalar_t, 3>()
+            // buffer.accessor<scalar_t, 3>()
+            // idxs.accessor<int64_t, 2>()
+        );
+
+  } else {
+    attention_kernel<scalar_t, float, kBlockSizeK, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>
+        <<<grid, block, 0, stream>>>(
+            res.packed_accessor<scalar_t, 3>(),
+            query.packed_accessor<scalar_t, 3>(),
+            key.packed_accessor<scalar_t, 3>(),
+            value.packed_accessor<scalar_t, 3>()
+            // buffer.accessor<scalar_t, 3>()
+            // idxs.accessor<int64_t, 2>()
+        );
+
+  }
   //});
 
   return res;
