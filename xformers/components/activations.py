@@ -16,6 +16,7 @@ class Activation(str, Enum):
     GeLU = "gelu"
     LeakyReLU = "leaky_relu"
     ReLU = "relu"
+    SmeLU = "smelu"
 
 
 # For unit testing / parity comparisons, probably not the fastest way
@@ -26,6 +27,24 @@ class SquaredReLU(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_ = torch.nn.functional.relu(x)
         return x_ * x_
+
+
+class SmeLU(nn.Module):
+    def __init__(self, beta: float = 2.0) -> None:
+        super().__init__()
+        self.beta = beta
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        relu = torch.where(
+            x >= self.beta,
+            x,
+            torch.tensor([0.0], device=x.device, dtype=x.dtype),
+        )
+        return torch.where(
+            torch.abs(x) <= self.beta,
+            ((x + self.beta) ** 2) / (4.0 * self.beta),
+            relu,
+        )
 
 
 class Passthrough(nn.Module):
@@ -45,4 +64,5 @@ def build_activation(activation: Optional[Activation]):
         Activation.GeLU: nn.GELU,
         Activation.LeakyReLU: nn.LeakyReLU,
         Activation.SquaredReLU: SquaredReLU,
+        Activation.SmeLU: SmeLU,
     }[activation]()
