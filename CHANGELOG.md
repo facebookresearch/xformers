@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix some torchscriptability [#246]
 - Fix FourierMix being compatible with AMP [#258]
 
+### Added
+- Simplicial Embeddings [#259]
+
 ## [0.0.10] - 2022-03-14
 ### Fixed
 - Expose bias flag for feedforwards, same default as Timm [#220]
