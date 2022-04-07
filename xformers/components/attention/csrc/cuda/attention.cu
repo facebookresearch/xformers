@@ -257,6 +257,57 @@ __device__ __forceinline__ void aggregate_coeffs(
   }
 }
 
+template <bool first, typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ, int BUFFER_SIZE, int WARP_SIZE>
+struct UnrollLoop {
+  static __device__ __forceinline__ void eval(
+    vec_t* query_block[kBlockSizeQ],
+    at::TensorAccessor<scalar_t, 2> key,
+    at::TensorAccessor<scalar_t, 2> value,
+    scalar_t m_prime[kBlockSizeQ],
+    scalar_t s_prime[kBlockSizeQ],
+    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
+    int64_t K,
+    int64_t N) {
+    constexpr int64_t step = kBlockSizeK * WARP_SIZE;
+    int64_t l;
+    if (first) {
+      l = threadIdx.x * kBlockSizeK;
+    } else {
+      l = N - (N & (step - 1)) + threadIdx.x * kBlockSizeK;
+    }
+    // this is equivalent to N - N % step, but faster
+    // guaranteed to be the same as step is a power of 2
+    int64_t end_iter = N - (N & (step - 1));
+    //if (l < end_iter) {
+    {
+    for (; l < end_iter;
+         l += step) {
+      auto key_i = reinterpret_cast<vec_t*>(key[l].data());
+      auto value_i = reinterpret_cast<vec_t*>(value[l].data());
+
+      compute_loop<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+    }
+    }
+    if (l < N) {
+      UnrollLoop<false, scalar_t, vec_t, kBlockSizeK / 2, kBlockSizeQ, BUFFER_SIZE, WARP_SIZE>::eval(query_block, key, value, m_prime, s_prime, buffer, K, N);
+    }
+  }
+};
+
+template <typename scalar_t, typename vec_t, int kBlockSizeQ, int BUFFER_SIZE, int WARP_SIZE>
+struct UnrollLoop<false, scalar_t, vec_t, 0, kBlockSizeQ, BUFFER_SIZE, WARP_SIZE> {
+  static __device__ __forceinline__ void eval(
+    vec_t* query_block[kBlockSizeQ],
+    at::TensorAccessor<scalar_t, 2> key,
+    at::TensorAccessor<scalar_t, 2> value,
+    scalar_t m_prime[kBlockSizeQ],
+    scalar_t s_prime[kBlockSizeQ],
+    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
+    int64_t K,
+    int64_t N) {
+  }
+};
+
 
 template <
     typename scalar_t,
@@ -297,7 +348,10 @@ __global__ void attention_kernel(
     output_block[q_item_idx] = reinterpret_cast<vec_t*>(
         output[batch_idx][index].data());
   }
-
+#if 0
+  // this for now makes things slower
+  UnrollLoop<true, scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE, WARP_SIZE>::eval(query_block, key[batch_idx], value[batch_idx], m_prime, s_prime, buffer, K, N);
+#else
   int64_t l = threadIdx.x * kBlockSizeK;
   constexpr int64_t step = kBlockSizeK * WARP_SIZE;
   // this is equivalent to N - N % step, but faster
@@ -357,6 +411,7 @@ __global__ void attention_kernel(
       compute_loop<scalar_t, vec_t, 1, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
     }
   }
+#endif
 
   aggregate_coeffs<scalar_t, vec_t, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>(m_prime, s_prime, buffer, K);
 
