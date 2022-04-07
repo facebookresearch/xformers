@@ -104,6 +104,9 @@ class FavorAttention(Attention):
 
         self.feature_map: FeatureMap = feature_map_constructor(**feature_settings)  # type: ignore
 
+        # Properties specific to this attention mechanism
+        self.supports_attention_mask = False
+
     @staticmethod
     def _maybe_promote(x: torch.Tensor) -> torch.Tensor:
         # Only promote fp16 buffers, bfloat16 would be fine for instance

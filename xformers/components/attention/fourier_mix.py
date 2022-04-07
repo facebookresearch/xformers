@@ -20,6 +20,9 @@ class FourierMix(Attention):
         """
         super().__init__()
         self.attn_drop = torch.nn.Dropout(dropout, inplace=False)
+
+        # Properties specific to this attention mechanism
+        self.supports_attention_mask = False
         self.requires_input_projection = False
 
     def forward(self, q: torch.Tensor, *_, **__):

@@ -39,7 +39,7 @@ encoder_configs = {
         "num_heads": 4,
         "residual_dropout": 0,
         "attention": {
-            "name": "linformer",
+            "name": "scaled_dot_product",
             "dropout": 0,
             "causal": True,
             "seq_len": SEQ,
@@ -73,7 +73,7 @@ decoder_configs = {
         "residual_dropout": 0,
         "dim_model": EMB,
         "attention": {
-            "name": "linformer",
+            "name": "scaled_dot_product",
             "dropout": 0,
             "causal": True,
             "seq_len": SEQ,
@@ -84,7 +84,7 @@ decoder_configs = {
         "residual_dropout": 0,
         "dim_model": EMB,
         "attention": {
-            "name": "linformer",
+            "name": "scaled_dot_product",
             "dropout": 0,
             "causal": True,
             "seq_len": SEQ,
