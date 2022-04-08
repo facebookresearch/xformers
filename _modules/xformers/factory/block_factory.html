@@ -255,6 +255,7 @@
     <span class="n">build_positional_embedding</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xformers.components.residual</span> <span class="kn">import</span> <span class="n">get_deepnorm_coefficients</span>
+<span class="kn">from</span> <span class="nn">xformers.components.simplicial_embedding</span> <span class="kn">import</span> <span class="n">SimplicialEmbedding</span>
 <span class="kn">from</span> <span class="nn">xformers.utils</span> <span class="kn">import</span> <span class="n">generate_matching_config</span>
 
 
@@ -408,6 +409,7 @@
 
     <span class="n">multi_head_config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
     <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">simplicial_embeddings</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -417,6 +419,7 @@
         <span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">layer_norm_style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;post&quot;</span><span class="p">,</span>
         <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">simplicial_embeddings</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="c1"># Convenience, fill in duplicated field</span>
@@ -448,7 +451,8 @@
         <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">multi_head_config</span> <span class="o">=</span> <span class="n">multi_head_config</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">use_triton</span> <span class="o">=</span> <span class="n">use_triton</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">use_triton</span> <span class="o">=</span> <span class="n">use_triton</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">simplicial_embeddings</span> <span class="o">=</span> <span class="n">simplicial_embeddings</span></div>
 
 
 <div class="viewcode-block" id="xFormerDecoderConfig"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerDecoderConfig">[docs]</a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
@@ -576,6 +580,13 @@
         <span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span> <span class="o">=</span> <span class="n">PostNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span><span class="p">)</span>
 
+        <span class="c1"># Simplicial embeddings are only used if specified, and on the last layer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">simplicial_embedding</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">SimplicialEmbedding</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">simplicial_embeddings</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">is_last</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">simplicial_embedding</span> <span class="o">=</span> <span class="n">SimplicialEmbedding</span><span class="p">(</span>
+                <span class="o">**</span><span class="n">config</span><span class="o">.</span><span class="n">simplicial_embeddings</span>
+            <span class="p">)</span>
+
 <div class="viewcode-block" id="xFormerEncoderBlock.from_config"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock.from_config">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_config</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">xFormerEncoderConfig</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">config</span><span class="p">)</span></div>
@@ -619,6 +630,10 @@
         <span class="c1"># Pre/Post norms and residual paths are already handled</span>
         <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_att</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="p">[</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">],</span> <span class="n">att_mask</span><span class="o">=</span><span class="n">att_mask</span><span class="p">)</span>
         <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="p">[</span><span class="n">x</span><span class="p">])</span>
+
+        <span class="c1"># Optional simplicial embeddings</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">simplicial_embedding</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">simplicial_embedding</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">x</span></div></div>
 
