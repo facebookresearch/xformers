@@ -435,26 +435,31 @@ at::Tensor attention(
     // const at::Tensor& mask
 ) {
   TORCH_CHECK(query.dim() == key.dim());
+  TORCH_CHECK(query.dim() == value.dim());
   // TORCH_CHECK(query.dim() == mask.dim());
   TORCH_CHECK(query.dim() == 3);
   TORCH_CHECK(query.size(2) == key.size(2));
   TORCH_CHECK(query.size(0) == key.size(0));
-  // TORCH_CHECK(query.size(1) == mask.size(1));
-  // TORCH_CHECK(query.size(2) == mask.size(2));
-  // TORCH_CHECK(query.size(0) == mask.size(0));
 
-  /*
-  TORCH_CHECK(!a.is_cuda(), "a must be a CPU tensor");
-  TORCH_CHECK(!b.is_cuda(), "b must be a CPU tensor");
-  TORCH_CHECK(!mask.is_cuda(), "mask must be a CPU tensor");
+  TORCH_CHECK(query.size(0) == value.size(0));
+  TORCH_CHECK(key.size(1) == value.size(1));
+  TORCH_CHECK(query.size(2) == value.size(2)); // TODO: drop this limitation in the future
 
-  TORCH_CHECK(!a.is_sparse(), "a must be a dense tensor");
-  TORCH_CHECK(!b.is_sparse(), "b must be a dense tensor");
-  //TORCH_CHECK(mask.is_sparse(), "mask must be a sparse tensor");
-  */
+  TORCH_CHECK(query.is_cuda(), "query must be a CUDA tensor");
+  TORCH_CHECK(key.is_cuda(), "key must be a CUDA tensor");
+  TORCH_CHECK(value.is_cuda(), "value must be a CUDA tensor");
+
+  TORCH_CHECK(!query.is_sparse(), "query must be a dense tensor");
+  TORCH_CHECK(!key.is_sparse(), "key must be a dense tensor");
+  TORCH_CHECK(!value.is_sparse(), "value must be a dense tensor");
+
+  // TODO drop this limitation in the future
   TORCH_CHECK(query.is_contiguous());
   TORCH_CHECK(key.is_contiguous());
   TORCH_CHECK(value.is_contiguous());
+
+  // TODO: support other dtypes in the future
+  TORCH_CHECK(query.scalar_type() == at::ScalarType::Float, "Only float supported by now");
 
   at::cuda::CUDAGuard device_guard(query.device());
 
@@ -464,6 +469,8 @@ at::Tensor attention(
   int64_t K = query.size(2);
 
   at::Tensor res = at::zeros({B, M, K}, query.options());
+
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   constexpr int WARP_SIZE = 4;
 
@@ -475,11 +482,8 @@ at::Tensor attention(
 
   dim3 grid(ceil_div(M, int64_t(TILE_SIZE)), B);
   dim3 block(WARP_SIZE, TILE_SIZE / kBlockSizeQ);
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   using scalar_t = float;
-  // AT_DISPATCH_FLOATING_TYPES(
-  // query.scalar_type(), "attention_kernel", [&] {
 
   if ((K % 4) == 0) {
     attention_kernel<scalar_t, float4, kBlockSizeK, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>
@@ -488,8 +492,6 @@ at::Tensor attention(
             query.packed_accessor<scalar_t, 3>(),
             key.packed_accessor<scalar_t, 3>(),
             value.packed_accessor<scalar_t, 3>()
-            // buffer.accessor<scalar_t, 3>()
-            // idxs.accessor<int64_t, 2>()
         );
   } else if ((K % 2) == 0) {
     attention_kernel<scalar_t, float2, kBlockSizeK, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>
@@ -498,8 +500,6 @@ at::Tensor attention(
             query.packed_accessor<scalar_t, 3>(),
             key.packed_accessor<scalar_t, 3>(),
             value.packed_accessor<scalar_t, 3>()
-            // buffer.accessor<scalar_t, 3>()
-            // idxs.accessor<int64_t, 2>()
         );
 
   } else {
@@ -509,12 +509,9 @@ at::Tensor attention(
             query.packed_accessor<scalar_t, 3>(),
             key.packed_accessor<scalar_t, 3>(),
             value.packed_accessor<scalar_t, 3>()
-            // buffer.accessor<scalar_t, 3>()
-            // idxs.accessor<int64_t, 2>()
         );
 
   }
-  //});
 
   return res;
 }
