@@ -30,6 +30,7 @@ from xformers.components.positional_embedding import (
     build_positional_embedding,
 )
 from xformers.components.residual import get_deepnorm_coefficients
+from xformers.components.simplicial_embedding import SimplicialEmbedding
 from xformers.utils import generate_matching_config
 
 
@@ -183,6 +184,7 @@ class xFormerEncoderConfig(xFormerBlockConfig):
 
     multi_head_config: Dict[str, Any]
     use_triton: bool
+    simplicial_embeddings: Optional[Dict[str, Any]]
 
     def __init__(
         self,
@@ -192,6 +194,7 @@ class xFormerEncoderConfig(xFormerBlockConfig):
         position_encoding_config: Optional[Dict[str, Any]] = None,
         layer_norm_style: str = "post",
         use_triton: bool = True,
+        simplicial_embeddings: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
         # Convenience, fill in duplicated field
@@ -224,6 +227,7 @@ class xFormerEncoderConfig(xFormerBlockConfig):
 
         self.multi_head_config = multi_head_config
         self.use_triton = use_triton
+        self.simplicial_embeddings = simplicial_embeddings
 
 
 @dataclass(init=False)
@@ -351,6 +355,13 @@ class xFormerEncoderBlock(torch.nn.Module):
         ):
             self.wrap_ff = PostNorm(config.dim_model, self.wrap_ff)
 
+        # Simplicial embeddings are only used if specified, and on the last layer
+        self.simplicial_embedding: Optional[SimplicialEmbedding] = None
+        if config.simplicial_embeddings is not None and config.layer_position.is_last():
+            self.simplicial_embedding = SimplicialEmbedding(
+                **config.simplicial_embeddings
+            )
+
     @classmethod
     def from_config(cls, config: xFormerEncoderConfig):
         return cls(config)
@@ -394,6 +405,10 @@ class xFormerEncoderBlock(torch.nn.Module):
         # Pre/Post norms and residual paths are already handled
         x = self.wrap_att(inputs=[q, k, v], att_mask=att_mask)
         x = self.wrap_ff(inputs=[x])
+
+        # Optional simplicial embeddings
+        if self.simplicial_embedding is not None:
+            x = self.simplicial_embedding(x)
 
         return x
 

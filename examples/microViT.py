@@ -86,6 +86,7 @@ class VisionTransformer(pl.LightningModule):
                     "activation": "gelu",
                     "hidden_layer_multiplier": hidden_layer_multiplier,
                 },
+                # "simplicial_embeddings": {"L": n_head, "temperature": 2.0},
             }
         ]
 
