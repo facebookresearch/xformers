@@ -121,7 +121,12 @@ __device__ void compute_dot(
   }
 }
 
-template <typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ, int BUFFER_SIZE>
+template <
+    typename scalar_t,
+    typename vec_t,
+    int kBlockSizeK,
+    int kBlockSizeQ,
+    int BUFFER_SIZE>
 __device__ void compute_final_mult(
     vec_t* vi,
     scalar_t s_delta[kBlockSizeQ][kBlockSizeK],
@@ -202,7 +207,12 @@ __device__ __forceinline__ void update_scaling_coeffs(
   }
 }
 
-template <typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ, int BUFFER_SIZE>
+template <
+    typename scalar_t,
+    typename vec_t,
+    int kBlockSizeK,
+    int kBlockSizeQ,
+    int BUFFER_SIZE>
 __device__ void compute_loop(
     vec_t* query_block[kBlockSizeQ],
     vec_t* key_i,
@@ -211,29 +221,32 @@ __device__ void compute_loop(
     scalar_t s_prime[kBlockSizeQ],
     vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
     int64_t K) {
+  scalar_t si[kBlockSizeQ][kBlockSizeK] = {0};
+  compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
+      query_block, key_i, si, K);
 
-    scalar_t si[kBlockSizeQ][kBlockSizeK] = {0};
-    compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
-        query_block, key_i, si, K);
+  scalar_t m_i[kBlockSizeQ];
+  compute_max<scalar_t, kBlockSizeK, kBlockSizeQ>(si, m_prime, m_i);
 
-    scalar_t m_i[kBlockSizeQ];
-    compute_max<scalar_t, kBlockSizeK, kBlockSizeQ>(si, m_prime, m_i);
+  scalar_t m_delta[kBlockSizeQ];
+  scalar_t s_delta[kBlockSizeQ][kBlockSizeK];
 
-    scalar_t m_delta[kBlockSizeQ];
-    scalar_t s_delta[kBlockSizeQ][kBlockSizeK];
+  compute_scaling_coeffs<scalar_t, kBlockSizeK, kBlockSizeQ>(
+      m_i, m_prime, si, m_delta, s_delta);
 
-    compute_scaling_coeffs<scalar_t, kBlockSizeK, kBlockSizeQ>(
-        m_i, m_prime, si, m_delta, s_delta);
+  compute_final_mult<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(
+      value_i, s_delta, m_delta, buffer, K);
 
-    compute_final_mult<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(
-        value_i, s_delta, m_delta, buffer, K);
-
-    update_scaling_coeffs<scalar_t, kBlockSizeK, kBlockSizeQ>(
-        m_delta, m_i, s_delta, m_prime, s_prime);
+  update_scaling_coeffs<scalar_t, kBlockSizeK, kBlockSizeQ>(
+      m_delta, m_i, s_delta, m_prime, s_prime);
 }
 
-
-template <typename scalar_t, typename vec_t, int kBlockSizeQ, int WARP_SIZE, int BUFFER_SIZE>
+template <
+    typename scalar_t,
+    typename vec_t,
+    int kBlockSizeQ,
+    int WARP_SIZE,
+    int BUFFER_SIZE>
 __device__ __forceinline__ void aggregate_coeffs(
     scalar_t m_prime[kBlockSizeQ],
     scalar_t s_prime[kBlockSizeQ],
@@ -257,17 +270,24 @@ __device__ __forceinline__ void aggregate_coeffs(
   }
 }
 
-template <bool first, typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ, int BUFFER_SIZE, int WARP_SIZE>
+template <
+    bool first,
+    typename scalar_t,
+    typename vec_t,
+    int kBlockSizeK,
+    int kBlockSizeQ,
+    int BUFFER_SIZE,
+    int WARP_SIZE>
 struct UnrollLoop {
   static __device__ __forceinline__ void eval(
-    vec_t* query_block[kBlockSizeQ],
-    at::TensorAccessor<scalar_t, 2> key,
-    at::TensorAccessor<scalar_t, 2> value,
-    scalar_t m_prime[kBlockSizeQ],
-    scalar_t s_prime[kBlockSizeQ],
-    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
-    int64_t K,
-    int64_t N) {
+      vec_t* query_block[kBlockSizeQ],
+      at::TensorAccessor<scalar_t, 2> key,
+      at::TensorAccessor<scalar_t, 2> value,
+      scalar_t m_prime[kBlockSizeQ],
+      scalar_t s_prime[kBlockSizeQ],
+      vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
+      int64_t K,
+      int64_t N) {
     constexpr int64_t step = kBlockSizeK * WARP_SIZE;
     int64_t l;
     if (first) {
@@ -278,36 +298,55 @@ struct UnrollLoop {
     // this is equivalent to N - N % step, but faster
     // guaranteed to be the same as step is a power of 2
     int64_t end_iter = N - (N & (step - 1));
-    //if (l < end_iter) {
+    // if (l < end_iter) {
     {
-    for (; l < end_iter;
-         l += step) {
-      auto key_i = reinterpret_cast<vec_t*>(key[l].data());
-      auto value_i = reinterpret_cast<vec_t*>(value[l].data());
+      for (; l < end_iter; l += step) {
+        auto key_i = reinterpret_cast<vec_t*>(key[l].data());
+        auto value_i = reinterpret_cast<vec_t*>(value[l].data());
 
-      compute_loop<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
-    }
+        compute_loop<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(
+            query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+      }
     }
     {
-      UnrollLoop<false, scalar_t, vec_t, kBlockSizeK / 2, kBlockSizeQ, BUFFER_SIZE, WARP_SIZE>::eval(query_block, key, value, m_prime, s_prime, buffer, K, N);
+      UnrollLoop<
+          false,
+          scalar_t,
+          vec_t,
+          kBlockSizeK / 2,
+          kBlockSizeQ,
+          BUFFER_SIZE,
+          WARP_SIZE>::
+          eval(query_block, key, value, m_prime, s_prime, buffer, K, N);
     }
   }
 };
 
-template <bool first, typename scalar_t, typename vec_t, int kBlockSizeQ, int BUFFER_SIZE, int WARP_SIZE>
-struct UnrollLoop<first, scalar_t, vec_t, 0, kBlockSizeQ, BUFFER_SIZE, WARP_SIZE> {
+template <
+    bool first,
+    typename scalar_t,
+    typename vec_t,
+    int kBlockSizeQ,
+    int BUFFER_SIZE,
+    int WARP_SIZE>
+struct UnrollLoop<
+    first,
+    scalar_t,
+    vec_t,
+    0,
+    kBlockSizeQ,
+    BUFFER_SIZE,
+    WARP_SIZE> {
   static __device__ __forceinline__ void eval(
-    vec_t* query_block[kBlockSizeQ],
-    at::TensorAccessor<scalar_t, 2> key,
-    at::TensorAccessor<scalar_t, 2> value,
-    scalar_t m_prime[kBlockSizeQ],
-    scalar_t s_prime[kBlockSizeQ],
-    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
-    int64_t K,
-    int64_t N) {
-  }
+      vec_t* query_block[kBlockSizeQ],
+      at::TensorAccessor<scalar_t, 2> key,
+      at::TensorAccessor<scalar_t, 2> value,
+      scalar_t m_prime[kBlockSizeQ],
+      scalar_t s_prime[kBlockSizeQ],
+      vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
+      int64_t K,
+      int64_t N) {}
 };
-
 
 template <
     typename scalar_t,
@@ -322,7 +361,9 @@ __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> key,
     at::PackedTensorAccessor<scalar_t, 3> value) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
-  static_assert(integerIsPowerOf2(kBlockSizeK * WARP_SIZE), "kBlockSizeK * WARP_SIZE should be a power of 2");
+  static_assert(
+      integerIsPowerOf2(kBlockSizeK * WARP_SIZE),
+      "kBlockSizeK * WARP_SIZE should be a power of 2");
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -343,10 +384,10 @@ __global__ void attention_kernel(
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
     int64_t index = query_idx + q_item_idx;
     index = index >= M ? M - 1 : index;
-    query_block[q_item_idx] = reinterpret_cast<vec_t*>(
-        query[batch_idx][index].data());
-    output_block[q_item_idx] = reinterpret_cast<vec_t*>(
-        output[batch_idx][index].data());
+    query_block[q_item_idx] =
+        reinterpret_cast<vec_t*>(query[batch_idx][index].data());
+    output_block[q_item_idx] =
+        reinterpret_cast<vec_t*>(output[batch_idx][index].data());
     m_prime[q_item_idx] = -std::numeric_limits<scalar_t>::infinity();
   }
 #if 0
@@ -358,63 +399,64 @@ __global__ void attention_kernel(
   // this is equivalent to N - N % step, but faster
   // guaranteed to be the same as step is a power of 2
   int64_t end_iter = N - (N & (step - 1));
-  for (; l < end_iter;
-       l += step) {
+  for (; l < end_iter; l += step) {
     auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
     auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
 
-    compute_loop<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+    compute_loop<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(
+        query_block, key_i, value_i, m_prime, s_prime, buffer, K);
   }
 
   {
     // TODO: unroll this in a generic manner
     l = N - (N & (step - 1)) + threadIdx.x * (kBlockSizeK / 2);
     end_iter = N - (N & (step / 2 - 1));
-    for (; l < end_iter;
-         l += step / 2) {
+    for (; l < end_iter; l += step / 2) {
       auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
       auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-      compute_loop<scalar_t, vec_t, kBlockSizeK / 2, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+      compute_loop<scalar_t, vec_t, kBlockSizeK / 2, kBlockSizeQ, BUFFER_SIZE>(
+          query_block, key_i, value_i, m_prime, s_prime, buffer, K);
     }
 
     l = N - (N & (step / 2 - 1)) + threadIdx.x * (kBlockSizeK / 4);
     end_iter = N - (N & (step / 4 - 1));
-    for (; l < end_iter;
-         l += step / 4) {
+    for (; l < end_iter; l += step / 4) {
       auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
       auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-      compute_loop<scalar_t, vec_t, kBlockSizeK / 4, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+      compute_loop<scalar_t, vec_t, kBlockSizeK / 4, kBlockSizeQ, BUFFER_SIZE>(
+          query_block, key_i, value_i, m_prime, s_prime, buffer, K);
     }
 
     l = N - (N & (step / 4 - 1)) + threadIdx.x * (kBlockSizeK / 8);
     end_iter = N - (N & (step / 8 - 1));
-    for (; l < end_iter;
-         l += step / 8) {
+    for (; l < end_iter; l += step / 8) {
       auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
       auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-      compute_loop<scalar_t, vec_t, kBlockSizeK / 8, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+      compute_loop<scalar_t, vec_t, kBlockSizeK / 8, kBlockSizeQ, BUFFER_SIZE>(
+          query_block, key_i, value_i, m_prime, s_prime, buffer, K);
     }
 
     l = N - (N & (step / 8 - 1)) + threadIdx.x * (kBlockSizeK / 16);
     end_iter = N - (N & (step / 16 - 1));
-    for (; l < end_iter;
-         l += step / 16) {
+    for (; l < end_iter; l += step / 16) {
       auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
       auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-      compute_loop<scalar_t, vec_t, kBlockSizeK / 16, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+      compute_loop<scalar_t, vec_t, kBlockSizeK / 16, kBlockSizeQ, BUFFER_SIZE>(
+          query_block, key_i, value_i, m_prime, s_prime, buffer, K);
     }
 
     l = N - (N & (step / 16 - 1)) + threadIdx.x;
-    for (; l < N;
-         l += blockDim.x) {
+    for (; l < N; l += blockDim.x) {
       auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
       auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-      compute_loop<scalar_t, vec_t, 1, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+      compute_loop<scalar_t, vec_t, 1, kBlockSizeQ, BUFFER_SIZE>(
+          query_block, key_i, value_i, m_prime, s_prime, buffer, K);
     }
   }
 #endif
 
-  aggregate_coeffs<scalar_t, vec_t, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>(m_prime, s_prime, buffer, K);
+  aggregate_coeffs<scalar_t, vec_t, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>(
+      m_prime, s_prime, buffer, K);
 
   for (int64_t k = threadIdx.x; k < K / kVecSize; k += blockDim.x) {
     vec_t tmp;
@@ -444,7 +486,9 @@ at::Tensor attention(
 
   TORCH_CHECK(query.size(0) == value.size(0));
   TORCH_CHECK(key.size(1) == value.size(1));
-  TORCH_CHECK(query.size(2) == value.size(2)); // TODO: drop this limitation in the future
+  TORCH_CHECK(
+      query.size(2) ==
+      value.size(2)); // TODO: drop this limitation in the future
 
   TORCH_CHECK(query.is_cuda(), "query must be a CUDA tensor");
   TORCH_CHECK(key.is_cuda(), "key must be a CUDA tensor");
@@ -460,7 +504,9 @@ at::Tensor attention(
   TORCH_CHECK(value.is_contiguous());
 
   // TODO: support other dtypes in the future
-  TORCH_CHECK(query.scalar_type() == at::ScalarType::Float, "Only float supported by now");
+  TORCH_CHECK(
+      query.scalar_type() == at::ScalarType::Float,
+      "Only float supported by now");
 
   at::cuda::CUDAGuard device_guard(query.device());
 
@@ -487,34 +533,51 @@ at::Tensor attention(
   using scalar_t = float;
 
   if ((K % 4) == 0) {
-    TORCH_CHECK(K / 4 <= BUFFER_SIZE, "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
-    attention_kernel<scalar_t, float4, kBlockSizeK, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>
-        <<<grid, block, 0, stream>>>(
-            res.packed_accessor<scalar_t, 3>(),
-            query.packed_accessor<scalar_t, 3>(),
-            key.packed_accessor<scalar_t, 3>(),
-            value.packed_accessor<scalar_t, 3>()
-        );
+    TORCH_CHECK(
+        K / 4 <= BUFFER_SIZE,
+        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
+    attention_kernel<
+        scalar_t,
+        float4,
+        kBlockSizeK,
+        kBlockSizeQ,
+        WARP_SIZE,
+        BUFFER_SIZE><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
   } else if ((K % 2) == 0) {
-    TORCH_CHECK(K / 2 <= BUFFER_SIZE, "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
-    attention_kernel<scalar_t, float2, kBlockSizeK, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>
-        <<<grid, block, 0, stream>>>(
-            res.packed_accessor<scalar_t, 3>(),
-            query.packed_accessor<scalar_t, 3>(),
-            key.packed_accessor<scalar_t, 3>(),
-            value.packed_accessor<scalar_t, 3>()
-        );
+    TORCH_CHECK(
+        K / 2 <= BUFFER_SIZE,
+        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
+    attention_kernel<
+        scalar_t,
+        float2,
+        kBlockSizeK,
+        kBlockSizeQ,
+        WARP_SIZE,
+        BUFFER_SIZE><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
 
   } else {
-    TORCH_CHECK(K <= BUFFER_SIZE, "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
-    attention_kernel<scalar_t, float, kBlockSizeK, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>
-        <<<grid, block, 0, stream>>>(
-            res.packed_accessor<scalar_t, 3>(),
-            query.packed_accessor<scalar_t, 3>(),
-            key.packed_accessor<scalar_t, 3>(),
-            value.packed_accessor<scalar_t, 3>()
-        );
-
+    TORCH_CHECK(
+        K <= BUFFER_SIZE,
+        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
+    attention_kernel<
+        scalar_t,
+        float,
+        kBlockSizeK,
+        kBlockSizeQ,
+        WARP_SIZE,
+        BUFFER_SIZE><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
   }
 
   return res;

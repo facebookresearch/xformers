@@ -7,7 +7,6 @@
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
 
-
 namespace {
 
 template <typename scalar_t>
@@ -16,7 +15,6 @@ void fill_zero(scalar_t* buf, int64_t K) {
     buf[k] = 0;
   }
 }
-
 
 template <typename scalar_t, int K>
 scalar_t max(scalar_t* buf) {
@@ -27,18 +25,16 @@ scalar_t max(scalar_t* buf) {
   return m;
 }
 
-
 template <typename scalar_t>
 void attention_kernel(
     at::TensorAccessor<scalar_t, 3> output,
     at::TensorAccessor<scalar_t, 3> query,
     at::TensorAccessor<scalar_t, 3> key,
     at::TensorAccessor<scalar_t, 3> value,
-    at::TensorAccessor<scalar_t, 3> buffer//,
-    //at::TensorAccessor<int64_t, 2> mask
-    ) {
-
-  constexpr int64_t BLOCK = 1;//8;
+    at::TensorAccessor<scalar_t, 3> buffer //,
+    // at::TensorAccessor<int64_t, 2> mask
+) {
+  constexpr int64_t BLOCK = 1; // 8;
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -52,7 +48,7 @@ void attention_kernel(
         auto aar = query[i][j].data();
         scalar_t s_prime = 0;
         scalar_t m_prime = -std::numeric_limits<scalar_t>::infinity();
-        for (int64_t l = 0; l < N; l+=BLOCK) {
+        for (int64_t l = 0; l < N; l += BLOCK) {
           auto bar = key[i][l].data();
           scalar_t si[BLOCK] = {0};
           for (int64_t k = 0; k < K; k++) {
@@ -94,14 +90,12 @@ void attention_kernel(
   });
 }
 
-
 at::Tensor attention(
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value
-    //const at::Tensor& mask
-    ) {
-
+    // const at::Tensor& mask
+) {
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
   // TORCH_CHECK(query.dim() == mask.dim());
@@ -111,7 +105,9 @@ at::Tensor attention(
 
   TORCH_CHECK(query.size(0) == value.size(0));
   TORCH_CHECK(key.size(1) == value.size(1));
-  TORCH_CHECK(query.size(2) == value.size(2)); // TODO: drop this limitation in the future
+  TORCH_CHECK(
+      query.size(2) ==
+      value.size(2)); // TODO: drop this limitation in the future
 
   TORCH_CHECK(!query.is_cuda(), "query must be a CPU tensor");
   TORCH_CHECK(!key.is_cuda(), "key must be a CPU tensor");
@@ -134,16 +130,14 @@ at::Tensor attention(
 
   at::Tensor buffer = at::empty({at::get_num_threads(), 1, K}, query.options());
 
-  AT_DISPATCH_FLOATING_TYPES(
-      query.scalar_type(), "attention_kernel", [&] {
-        attention_kernel<scalar_t>(
-            res.accessor<scalar_t, 3>(),
-            query.accessor<scalar_t, 3>(),
-            key.accessor<scalar_t, 3>(),
-            value.accessor<scalar_t, 3>(),
-            buffer.accessor<scalar_t, 3>()
-            );
-      });
+  AT_DISPATCH_FLOATING_TYPES(query.scalar_type(), "attention_kernel", [&] {
+    attention_kernel<scalar_t>(
+        res.accessor<scalar_t, 3>(),
+        query.accessor<scalar_t, 3>(),
+        key.accessor<scalar_t, 3>(),
+        value.accessor<scalar_t, 3>(),
+        buffer.accessor<scalar_t, 3>());
+  });
 
   return res;
 }
