@@ -487,6 +487,7 @@ at::Tensor attention(
   using scalar_t = float;
 
   if ((K % 4) == 0) {
+    TORCH_CHECK(K / 4 <= BUFFER_SIZE, "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
     attention_kernel<scalar_t, float4, kBlockSizeK, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>
         <<<grid, block, 0, stream>>>(
             res.packed_accessor<scalar_t, 3>(),
@@ -495,6 +496,7 @@ at::Tensor attention(
             value.packed_accessor<scalar_t, 3>()
         );
   } else if ((K % 2) == 0) {
+    TORCH_CHECK(K / 2 <= BUFFER_SIZE, "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
     attention_kernel<scalar_t, float2, kBlockSizeK, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>
         <<<grid, block, 0, stream>>>(
             res.packed_accessor<scalar_t, 3>(),
@@ -504,6 +506,7 @@ at::Tensor attention(
         );
 
   } else {
+    TORCH_CHECK(K <= BUFFER_SIZE, "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
     attention_kernel<scalar_t, float, kBlockSizeK, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>
         <<<grid, block, 0, stream>>>(
             res.packed_accessor<scalar_t, 3>(),
