@@ -273,7 +273,7 @@ struct UnrollLoop {
     if (first) {
       l = threadIdx.x * kBlockSizeK;
     } else {
-      l = N - (N & (step - 1)) + threadIdx.x * kBlockSizeK;
+      l = N - (N & (2 * step - 1)) + threadIdx.x * kBlockSizeK;
     }
     // this is equivalent to N - N % step, but faster
     // guaranteed to be the same as step is a power of 2
@@ -288,14 +288,14 @@ struct UnrollLoop {
       compute_loop<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
     }
     }
-    if (l < N) {
+    {
       UnrollLoop<false, scalar_t, vec_t, kBlockSizeK / 2, kBlockSizeQ, BUFFER_SIZE, WARP_SIZE>::eval(query_block, key, value, m_prime, s_prime, buffer, K, N);
     }
   }
 };
 
-template <typename scalar_t, typename vec_t, int kBlockSizeQ, int BUFFER_SIZE, int WARP_SIZE>
-struct UnrollLoop<false, scalar_t, vec_t, 0, kBlockSizeQ, BUFFER_SIZE, WARP_SIZE> {
+template <bool first, typename scalar_t, typename vec_t, int kBlockSizeQ, int BUFFER_SIZE, int WARP_SIZE>
+struct UnrollLoop<first, scalar_t, vec_t, 0, kBlockSizeQ, BUFFER_SIZE, WARP_SIZE> {
   static __device__ __forceinline__ void eval(
     vec_t* query_block[kBlockSizeQ],
     at::TensorAccessor<scalar_t, 2> key,
@@ -339,7 +339,7 @@ __global__ void attention_kernel(
   vec_t* output_block[kBlockSizeQ];
   vec_t buffer[kBlockSizeQ][BUFFER_SIZE] = {0}; // TODO == K / 4
   scalar_t s_prime[kBlockSizeQ] = {0};
-  scalar_t m_prime[kBlockSizeQ] = {-std::numeric_limits<scalar_t>::infinity()};
+  scalar_t m_prime[kBlockSizeQ];
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
     int64_t index = query_idx + q_item_idx;
     index = index >= M ? M - 1 : index;
@@ -347,6 +347,7 @@ __global__ void attention_kernel(
         query[batch_idx][index].data());
     output_block[q_item_idx] = reinterpret_cast<vec_t*>(
         output[batch_idx][index].data());
+    m_prime[q_item_idx] = -std::numeric_limits<scalar_t>::infinity();
   }
 #if 0
   // this for now makes things slower
@@ -365,7 +366,7 @@ __global__ void attention_kernel(
     compute_loop<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(query_block, key_i, value_i, m_prime, s_prime, buffer, K);
   }
 
-  if (l < N) {
+  {
     // TODO: unroll this in a generic manner
     l = N - (N & (step - 1)) + threadIdx.x * (kBlockSizeK / 2);
     end_iter = N - (N & (step / 2 - 1));
