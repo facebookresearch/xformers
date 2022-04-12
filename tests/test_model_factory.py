@@ -11,8 +11,9 @@ import torch
 from xformers.factory.model_factory import xFormer, xFormerConfig
 
 BATCH = 2
-SEQ = 64
-EMB = 64
+SEQ = 16
+EMB = 16
+VOC = 16
 
 DEVICES = (
     [torch.device("cpu")]
@@ -30,7 +31,7 @@ encoder_configs = {
     "position_encoding_config": {
         "name": "vocab",
         "seq_len": SEQ,
-        "vocab_size": 64,
+        "vocab_size": VOC,
         "dim_model": EMB,
     },
     "num_layers": 3,
@@ -63,7 +64,7 @@ decoder_configs = {
     "position_encoding_config": {
         "name": "vocab",
         "seq_len": SEQ,
-        "vocab_size": 64,
+        "vocab_size": VOC,
         "dim_model": EMB,
     },
     "num_layers": 2,

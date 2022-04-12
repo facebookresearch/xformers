@@ -10,7 +10,7 @@ import torch
 import triton
 import triton.language as tl
 from ragged_inference.garbage_pad_ragged_acts import RaggedActivations
-from triton.ops.matmul_perf_model import estimate_matmul_time, prune_num_stages
+from triton.ops.matmul_perf_model import early_config_prune, estimate_matmul_time
 
 # This implements a ragged attention (batched attention mechanism natively handling different sequence sizes)
 # Author: Tom B Brown
@@ -41,7 +41,7 @@ def get_fast_dev_configs():
     configs=get_fast_dev_configs(),
     key=["max_n_ctx_q_across_seqs", "max_n_ctx_k_across_seqs", "d_head"],
     prune_configs_by={
-        "prune_num_stages_by": prune_num_stages,
+        "early_config_prune": early_config_prune,
         "perf_model": estimate_matmul_time,
         "top_k": 10,
     },

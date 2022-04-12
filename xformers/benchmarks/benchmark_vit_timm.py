@@ -394,7 +394,7 @@ if __name__ == "__main__":
         max_epochs=MAX_EPOCHS,
         detect_anomaly=True,
         precision=16,
-        profiler=profiler,
+        profiler=profiler,  # type: ignore
     )
     trainer.fit(lm, dm)
 

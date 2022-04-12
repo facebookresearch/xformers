@@ -23,7 +23,7 @@ DEVICES = (
 
 BATCH = 2
 SEQ = 128 if torch.cuda.is_available() else 32
-MODEL = 128 if torch.cuda.is_available() else 64
+MODEL = 128 if torch.cuda.is_available() else 16
 GLOBAL_ATTENTION_RATIO = (
     _DENSITY_THRESHOLD * 0.9
 )  # Make sure that we test the sparse implementation, no matter the threshold
@@ -103,7 +103,7 @@ def test_order_invariance(
     )
 
     # Check that a shuffled input produces the same results
-    seqs = [SEQ, SEQ - 16] if (attention_name != "blocksparse") else [SEQ]
+    seqs = [SEQ, SEQ // 2] if (attention_name != "blocksparse") else [SEQ]
 
     for seq in seqs:
         # Check that we can pass a smaller sequence
@@ -123,6 +123,11 @@ def test_order_invariance(
         if attn_dropout > 0:
             att_2 = multi_head(inputs, inputs_shuffled, inputs)
             assert (att != att_2).any()
+
+        # Test AMP, if available
+        if device.type == "cuda":
+            with torch.cuda.amp.autocast(enabled=True):
+                _ = multi_head(inputs, inputs_shuffled, inputs)
 
 
 @pytest.mark.parametrize("heads", [1, 4])
@@ -194,8 +199,8 @@ def test_inproj(
     if same_settings:
         in_proj = InProjContainer(in_params, None, None)
     else:
-        out_features = MODEL if same_sizes else MODEL - 16
-        in_params_flip = InProjParams(MODEL, out_features, not proj_bias, small_init)
+        out_features = MODEL if same_sizes else MODEL // 2
+        in_params_flip = InProjParams(MODEL, out_features, proj_bias, small_init)
         in_proj = InProjContainer(in_params, in_params_flip, in_params_flip)
 
     # build a multi head dispatch to test this attention mechanism
@@ -248,7 +253,7 @@ def test_different_kq_dimensions(
         # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
         pytest.skip(f"{attention_name} does not support different k, q dimensions yet.")
 
-    seq_q = SEQ - 16
+    seq_q = SEQ // 2
     q = torch.rand((BATCH, seq_q, MODEL), device=device)
     k = torch.rand((BATCH, SEQ, MODEL), device=device)
     v = torch.rand((BATCH, SEQ, MODEL), device=device)

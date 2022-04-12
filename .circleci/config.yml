@@ -15,12 +15,12 @@ cpu_py38: &cpu_py38
     - image: cimg/python:3.8
   resource_class: large
 
-gpu_cu112: &gpu_cu112
+gpu_cu111: &gpu_cu111
   environment:
-    CUDA_VERSION: "11.2"
-    CUDA_HOME: /usr/local/cuda-11.2
+    CUDA_VERSION: "11.1"
+    CUDA_HOME: /usr/local/cuda-11.1
   machine:
-    image: ubuntu-2004-cuda-11.2:202103-01
+    image: ubuntu-1604-cuda-11.1:202012-01
     resource_class: gpu.nvidia.medium
 
 
@@ -240,7 +240,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-cpu-py38-386-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_dep
 
@@ -251,7 +251,7 @@ jobs:
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-cpu-py38-386-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+          key: cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_repo
 
@@ -268,7 +268,7 @@ jobs:
 
 
   gpu_tests:
-    <<: *gpu_cu112
+    <<: *gpu_cu111
 
     working_directory: ~/xformers
 
@@ -285,7 +285,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-112-394-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-gpu-111-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_dep
 
@@ -296,7 +296,7 @@ jobs:
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-gpu-112-394-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-gpu-111-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_repo
 
@@ -312,7 +312,7 @@ jobs:
           path: test-results
 
   gpu_experimental_tests:
-    <<: *gpu_cu112
+    <<: *gpu_cu111
 
     working_directory: ~/xformers
 
@@ -329,7 +329,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-exp-112-394-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-gpu-exp-111-{{ checksum "requirements-experimental.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_dep_exp
 
@@ -341,7 +341,7 @@ jobs:
       - save_cache:
           paths:
             - ~/venv
-          key: cache-key-gpu-exp-112-394-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-gpu-exp-111-{{ checksum "requirements-experimental.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_experimental_repo
       - <<: *run_experimental_unittests
