@@ -6,13 +6,13 @@
 import pytest
 import torch
 
-# needed to register custom ops
-import xformers  # noqa: F401
+import xformers.ops
 
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
 def ref_attention(q, k, v):
+    q = q * (1 / q.shape[-1] ** 0.5)
     return (q @ k.transpose(-2, -1)).softmax(-1) @ v
 
 
@@ -27,7 +27,7 @@ def test_memory_efficient_attention(device, q_len, kv_len, batch_size, k_len):
     key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
     value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
 
-    out = torch.ops.xformers.efficient_attention(query, key, value)
+    out = xformers.ops.memory_efficient_attention(query, key, value)
     ref = ref_attention(query, key, value)
 
     assert torch.allclose(out, ref, atol=2e-4)
@@ -44,7 +44,7 @@ def test_key_query_all_ones(device, q_len, kv_len, batch_size, k_len):
     key = torch.ones((batch_size, kv_len, k_len), device=device)
     value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
 
-    out = torch.ops.xformers.efficient_attention(query, key, value)
+    out = xformers.ops.memory_efficient_attention(query, key, value)
     # this should be equivalent to the average over value
     ref = value.mean(1, keepdim=True).expand_as(query)
 

@@ -27,3 +27,20 @@ def masked_matmul(a, b, mask=None):
         # mask is presumed additive
         att += mask
     return att
+
+
+def memory_efficient_attention(
+    query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+):
+    """
+    Implements the memory-efficient attention mechanism following
+    `"Self-Attention Does Not Need O(n^2) Memory" <http://arxiv.org/abs/2112.05682>`_.
+
+    For now, only forward in inference-mode is supported.
+    """
+    # don't support backwards for now
+    assert query.requires_grad is False
+    assert key.requires_grad is False
+    assert value.requires_grad is False
+
+    return torch.ops.xformers.efficient_attention(query, key, value)

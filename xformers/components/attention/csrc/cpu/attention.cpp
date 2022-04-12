@@ -44,6 +44,7 @@ void attention_kernel(
   int64_t M = query.size(1);
   int64_t N = key.size(1);
   int64_t grain_size = 1;
+  scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
   at::parallel_for(0, B, grain_size, [&](int64_t start, int64_t end) {
     auto buf = buffer[at::get_thread_num()][0].data();
     for (int64_t i = start; i < end; i++) {
@@ -56,7 +57,7 @@ void attention_kernel(
           auto bar = key[i][l].data();
           scalar_t si[BLOCK] = {0};
           for (int64_t k = 0; k < K; k++) {
-            auto aaar = aar[k];
+            auto aaar = aar[k] * scale;
             for (int64_t rr = 0; rr < BLOCK; rr++)
               si[rr] += aaar * bar[k + K * rr];
           }

@@ -5,11 +5,11 @@ from typing import Dict
 import torch
 from torch.utils import benchmark
 
-# needed to register custom ops
-import xformers  # noqa: F401
+import xformers.ops
 
 
 def ref_attention(q, k, v):
+    q = q * (1.0 / q.shape[-1] ** 0.5)
     return (q @ k.transpose(-2, -1)).softmax(-1) @ v
 
 
@@ -33,7 +33,7 @@ for num_threads in NUM_THREADS:
         sub_label = f"B={B}, M={M}, K={K}"
 
         if True:
-            r = torch.ops.xformers.efficient_attention(q, q, q)
+            r = xformers.ops.memory_efficient_attention(q, q, q)
 
             rr = ref_attention(q, q, q)
             assert (r - rr).abs().max() < 1e-5

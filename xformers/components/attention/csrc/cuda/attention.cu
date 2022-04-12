@@ -1,5 +1,4 @@
 #include <ATen/ATen.h>
-#include <ATen/Parallel.h>
 #include <torch/library.h>
 #include <cmath>
 #include <vector>
@@ -103,11 +102,13 @@ __device__ void compute_dot(
     scalar_t out[kBlockSizeQ][kBlockSizeK],
     int64_t K) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
+  scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
   vec_t q_i[kBlockSizeQ];
   for (int64_t k = 0; k < K / kVecSize; k += 1) {
 #pragma unroll
     for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
       q_i[q_item_idx] = __ldg(queries[q_item_idx] + k);
+      iMul(scale, q_i + q_item_idx);
     }
 #pragma unroll
     for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
