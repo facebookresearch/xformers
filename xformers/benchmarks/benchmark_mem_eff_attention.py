@@ -56,9 +56,9 @@ for num_threads in NUM_THREADS:
         torch.cuda.synchronize()
         memory = torch.cuda.max_memory_allocated() / 2 ** 20
         mem_use["optimized"][sub_label] = memory
-        memory = f"Memory used: {memory} MB"
+        memory_str = f"Memory used: {memory} MB"
 
-        print("Optimized", memory)
+        print("Optimized", memory_str)
 
         torch.cuda.reset_peak_memory_stats()
         torch.cuda.synchronize()
@@ -79,8 +79,8 @@ for num_threads in NUM_THREADS:
         torch.cuda.synchronize()
         memory = torch.cuda.max_memory_allocated() / 2 ** 20
         mem_use["vanilla"][sub_label] = memory
-        memory = f"Memory used: {memory} MB"
-        print("Vanilla", memory)
+        memory_str = f"Memory used: {memory} MB"
+        print("Vanilla", memory_str)
 
 
 compare = benchmark.Compare(results)
