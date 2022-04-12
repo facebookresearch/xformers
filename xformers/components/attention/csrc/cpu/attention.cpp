@@ -34,6 +34,10 @@ void attention_kernel(
     at::TensorAccessor<scalar_t, 3> buffer //,
     // at::TensorAccessor<int64_t, 2> mask
 ) {
+  // TODO: optimize the code by adding blocking
+  // over multiple dimensions. Doing this allows
+  // the compiler to group reads and operations
+  // for vectorization
   constexpr int64_t BLOCK = 1; // 8;
   int64_t K = query.size(2);
   int64_t B = query.size(0);

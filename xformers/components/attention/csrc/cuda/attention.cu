@@ -131,7 +131,7 @@ __device__ void compute_final_mult(
     vec_t* vi,
     scalar_t s_delta[kBlockSizeQ][kBlockSizeK],
     scalar_t m_delta[kBlockSizeQ],
-    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
+    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO [BUFFER_SIZE limitation]*/,
     int64_t K) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
 
@@ -219,7 +219,7 @@ __device__ void compute_loop(
     vec_t* value_i,
     scalar_t m_prime[kBlockSizeQ],
     scalar_t s_prime[kBlockSizeQ],
-    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
+    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO [BUFFER_SIZE limitation]*/,
     int64_t K) {
   scalar_t si[kBlockSizeQ][kBlockSizeK] = {0};
   compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
@@ -250,7 +250,7 @@ template <
 __device__ __forceinline__ void aggregate_coeffs(
     scalar_t m_prime[kBlockSizeQ],
     scalar_t s_prime[kBlockSizeQ],
-    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
+    vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO [BUFFER_SIZE limitation]*/,
     int64_t K) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
@@ -285,7 +285,7 @@ struct UnrollLoop {
       at::TensorAccessor<scalar_t, 2> value,
       scalar_t m_prime[kBlockSizeQ],
       scalar_t s_prime[kBlockSizeQ],
-      vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
+      vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO [BUFFER_SIZE limitation]*/,
       int64_t K,
       int64_t N) {
     constexpr int64_t step = kBlockSizeK * WARP_SIZE;
@@ -343,18 +343,18 @@ struct UnrollLoop<
       at::TensorAccessor<scalar_t, 2> value,
       scalar_t m_prime[kBlockSizeQ],
       scalar_t s_prime[kBlockSizeQ],
-      vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO fix me*/,
+      vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO [BUFFER_SIZE limitation]*/,
       int64_t K,
       int64_t N) {}
 };
 
 template <
     typename scalar_t,
-    typename vec_t = float4,
-    int kBlockSizeK = 32,
-    int kBlockSizeQ = 2,
-    int WARP_SIZE = 4,
-    int BUFFER_SIZE = 8>
+    typename vec_t,
+    int kBlockSizeK,
+    int kBlockSizeQ,
+    int WARP_SIZE,
+    int BUFFER_SIZE>
 __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> output,
     at::PackedTensorAccessor<scalar_t, 3> query,
@@ -378,7 +378,10 @@ __global__ void attention_kernel(
 
   vec_t* query_block[kBlockSizeQ];
   vec_t* output_block[kBlockSizeQ];
-  vec_t buffer[kBlockSizeQ][BUFFER_SIZE] = {0}; // TODO == K / 4
+  // TODO [BUFFER_SIZE limitation]: the current strategy assumes a
+  // statically-known size for K. Ideally we would like to remove this
+  // limitation in the future, so that any K is supported
+  vec_t buffer[kBlockSizeQ][BUFFER_SIZE] = {0};
   scalar_t s_prime[kBlockSizeQ] = {0};
   scalar_t m_prime[kBlockSizeQ];
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
@@ -506,7 +509,7 @@ at::Tensor attention(
   // TODO: support other dtypes in the future
   TORCH_CHECK(
       query.scalar_type() == at::ScalarType::Float,
-      "Only float supported by now");
+      "Only float32 type is supported for now");
 
   at::cuda::CUDAGuard device_guard(query.device());
 
