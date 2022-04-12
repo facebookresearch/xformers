@@ -11,11 +11,6 @@ import triton
 from triton.ops.blocksparse import matmul as blocksparse_matmul
 from yaml import BlockSequenceStartToken
 
-from xformers.components.attention.core import SparseCS, _matmul_with_mask
-
-TestCase = namedtuple("TestCase", ["prepare_callable", "mask", "config", "name"])
-
-# from xformers.benchmarks.benchmark_bsr import Config
 from xformers.components.attention.attention_patterns import (
     axial_2d_pattern,
     causal_1d_pattern,
@@ -23,10 +18,14 @@ from xformers.components.attention.attention_patterns import (
     local_1d_pattern,
     local_2d_pattern,
 )
+from xformers.components.attention.core import SparseCS, _matmul_with_mask
 
 device = "cuda"
+TestCase = namedtuple("TestCase", ["prepare_callable", "mask", "config", "name"])
 
-## Plotting utilities
+##############################################
+# Plotting utilities
+##############################################
 
 
 def pretty_barplot(results, title, units: str, filename=None, dash_key=""):
@@ -103,7 +102,9 @@ def plot_mask(mask, config, filename):
     plt.close(f)
 
 
-### Mask utilities
+##############################################
+# Mask and testing utilities
+##############################################
 
 
 def get_mask(MaskGenType, config, config_setter=[]):
@@ -146,7 +147,9 @@ def get_sparsity(mask):
     return round((1.0 - mask.sum().item() / mask.numel()) * 100)
 
 
-### Masks and Configurations
+##############################################
+# Mask Generation
+##############################################
 
 
 @dataclass
@@ -201,9 +204,25 @@ class AttentionMask(object):
         return mask, self.config, str(self)
 
 
-################################################
-###### LowerTriangular/Decoder only Attention Mask ######
-################################################
+class RandomAttentionMask(AttentionMask):
+    """
+    This is a Random mask. Useful for performance and memory analysis.
+    """
+
+    def __init__(self, config=None):
+        super(RandomAttentionMask, self).__init__(config)
+        self.set_config_attr("mask_prob", 0.5)
+
+    def gen_mask(self, keep_blocked=True):
+        seq_length = self.config.seq_length
+        if keep_blocked:
+            seq_length = self.config.blocked_seq_length
+
+        mask = torch.rand(seq_length, seq_length) > self.config.mask_prob
+        return self.expand(mask)
+
+    def __str__(self):
+        return "random"
 
 
 class LowerTriangularAttentionMask(AttentionMask):
@@ -231,37 +250,6 @@ class LowerTriangularAttentionMask(AttentionMask):
 
     def __str__(self):
         return "lower_triangular"
-
-
-################################################
-###### Random only Attention Mask ######
-################################################
-
-
-class RandomAttentionMask(AttentionMask):
-    """
-    This is a Random mask. Useful for performance and memory analysis.
-    """
-
-    def __init__(self, config=None):
-        super(RandomAttentionMask, self).__init__(config)
-        self.set_config_attr("mask_prob", 0.5)
-
-    def gen_mask(self, keep_blocked=True):
-        seq_length = self.config.seq_length
-        if keep_blocked:
-            seq_length = self.config.blocked_seq_length
-
-        mask = torch.rand(seq_length, seq_length) > self.config.mask_prob
-        return self.expand(mask)
-
-    def __str__(self):
-        return "random"
-
-
-################################################
-###########      BigBird mask   ################
-################################################
 
 
 class BigBirdAttentionMask(AttentionMask):
@@ -338,11 +326,6 @@ class BigBirdAttentionMask(AttentionMask):
         return "bigbird"
 
 
-################################################
-############## Axial Transformer ###############
-################################################
-
-
 class AxialAttentionMask(AttentionMask):
     """
     BigBird mask are composed of three types of masks - random, global and window.
@@ -376,11 +359,6 @@ class AxialAttentionMask(AttentionMask):
 
     def __str__(self):
         return "axial"
-
-
-################################################
-############## Local Transformer ###############
-################################################
 
 
 class LocalAttentionMask(AttentionMask):
@@ -417,6 +395,11 @@ class LocalAttentionMask(AttentionMask):
 
     def __str__(self):
         return "local"
+
+
+##############################################
+# Class to organize the experiments
+##############################################
 
 
 class Experiment(object):
@@ -669,6 +652,18 @@ class Experiment(object):
 
 
 class DifferentPatternExperiment(Experiment):
+    """
+    In this experiment, we check if sparsity pattern (like bigbird, lower triangular
+    etc) changes the performance of different kernels. The idea is to check if
+    changing sparsity pattern, while keeping total sparsity ratio same, leads to any
+    perforamnce differences.
+
+    We will perform two experiments
+
+    1) LowerTraingularMask vs RandomMask - Both have ~50% sparsity.
+    2) BigBird Mask vs RandomMask - Both have same sparsity.
+    """
+
     def __init__(self, mode, dtype, do_accuracy_check):
         super(DifferentPatternExperiment, self).__init__(mode, dtype, do_accuracy_check)
 
@@ -799,6 +794,10 @@ class DifferentPatternExperiment(Experiment):
 
 
 class VarySparsityExperiment(Experiment):
+    """
+    In this experiment, we check how sparsity ration affects the performance.
+    """
+
     def __init__(self, mode, dtype, do_accuracy_check):
         super(VarySparsityExperiment, self).__init__(mode, dtype, do_accuracy_check)
 
@@ -908,6 +907,13 @@ class VarySparsityExperiment(Experiment):
 
 
 class BlockSizeExperiment(Experiment):
+    """
+    In this experiment, we analyze how increasing the block size affects
+    performance.  We will take the lower triangular pattern. As we increase the
+    batch size, the blocks near the diagonal have to do more unnecessary
+    computation (the effective sparsity starts decreasing).
+    """
+
     def __init__(self, mode, dtype, do_accuracy_check):
         super(BlockSizeExperiment, self).__init__(mode, dtype, do_accuracy_check)
 
