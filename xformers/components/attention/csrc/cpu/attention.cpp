@@ -158,8 +158,7 @@ void attention_backward_kernel(
     at::TensorAccessor<scalar_t, 3> v,
     at::TensorAccessor<scalar_t, 2> logsumexp_normalizer,
     at::TensorAccessor<scalar_t, 3> buffer,
-    at::TensorAccessor<scalar_t, 3> buffer2,
-    at::TensorAccessor<scalar_t, 3> buffer3 //,
+    at::TensorAccessor<scalar_t, 3> buffer2 //,
     // at::TensorAccessor<int64_t, 2> mask
 ) {
   int64_t K = q.size(2);
@@ -169,14 +168,8 @@ void attention_backward_kernel(
   int64_t grain_size = 1; // buffer.size(1);
   at::parallel_for(0, B, grain_size, [&](int64_t start, int64_t end) {
     auto buf = buffer[at::get_thread_num()][0];
-    auto buf2 = buffer2[at::get_thread_num()];
-    auto buf3 = buffer3[at::get_thread_num()][0];
+    auto buf2 = buffer2[at::get_thread_num()][0];
     for (int64_t i = start; i < end; i++) {
-      for (int64_t l = 0; l < N; l++) {
-        for (int64_t k = 0; k < K; k++) {
-          buf2[l][k] = 0;
-        }
-      }
 
       for (int64_t j = 0; j < M; j++) {
         for (int64_t k = 0; k < K; k++) {
@@ -212,44 +205,27 @@ void attention_backward_kernel(
             buf[k] += attn_v * bar[k];
           }
 
-          // scalar_t factor = tmp_sum / (tmp_sum - tmp);
-          // if (tmp_sum == tmp)
-          //  factor = 1;
+          scalar_t factor = tmp_sum / (tmp_sum - tmp);
+          if (tmp_sum == tmp)
+            factor = 1;
 
           //  but grad_k is trickier
+          buf2[l] = attn_v;
           for (int64_t k = 0; k < K; k++) {
             grad_k[i][l][k] += tmp * aar[k];
-            // buf2[l][k] = buf2[l][k] * factor + attn_v * aar[k] * tmp_sum;
+            //buf3[l][k] = attn_v * aar[k];
+            //for (int64_t ll = 0; ll < N; ll++) {
+            //  buf2[l][k] = buf2[l][k] * factor + attn_v * aar[k] * tmp_sum;
+            //}
           }
         }
-        buf3[j] = tmp_sum;
+        for (int64_t l = 0; l < N; l++) {
+          for (int64_t k = 0; k < K; k++) {
+            grad_k[i][l][k] -= buf2[l] * aar[k] * tmp_sum;
+          }
+        }
         for (int64_t k = 0; k < K; k++) {
           grad_q[i][j][k] -= buf[k] * tmp_sum;
-        }
-      }
-
-      // TODO: try to make this folded in the previous loop
-      for (int64_t j = 0; j < M; j++) {
-        auto aar = q[i][j];
-        auto normalizer = logsumexp_normalizer[i][j];
-        scalar_t tmp = buf3[j];
-        for (int64_t l = 0; l < N; l++) {
-          auto bar = k[i][l];
-          scalar_t si = 0;
-          for (int64_t k = 0; k < K; k++) {
-            si += aar[k] * bar[k];
-          }
-          scalar_t attn_v = std::exp(si - normalizer);
-
-          for (int64_t k = 0; k < K; k++) {
-            buf2[l][k] += attn_v * aar[k] * tmp;
-          }
-        }
-      }
-
-      for (int64_t l = 0; l < N; l++) {
-        for (int64_t k = 0; k < K; k++) {
-          grad_k[i][l][k] -= buf2[l][k];
         }
       }
     }
@@ -295,9 +271,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   // at::Tensor buffer = at::empty({B, grain_size, K}, query.options());
   at::Tensor buffer = at::empty({at::get_num_threads(), 1, K}, query.options());
   at::Tensor buffer2 =
-      at::zeros({at::get_num_threads(), N, K + 1}, query.options());
-  at::Tensor buffer3 =
-      at::zeros({at::get_num_threads(), 1, M}, query.options());
+      at::zeros({at::get_num_threads(), 1, N}, query.options());
 
   // TODO this should be an argument from the function
   at::Tensor logsumexp = query.bmm(key.transpose(-2, -1)).logsumexp(-1);
@@ -314,8 +288,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
             value.accessor<scalar_t, 3>(),
             logsumexp.accessor<scalar_t, 2>(),
             buffer.accessor<scalar_t, 3>(),
-            buffer2.accessor<scalar_t, 3>(),
-            buffer3.accessor<scalar_t, 3>()
+            buffer2.accessor<scalar_t, 3>()
             // idxs.accessor<int64_t, 2>()
         );
       });
