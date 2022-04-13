@@ -175,14 +175,14 @@ void attention_backward_kernel(
         for (int64_t k = 0; k < K; k++) {
           buf[k] = 0;
         }
-        auto aar = q[i][j];
+        auto query_i = q[i][j];
         auto normalizer = logsumexp_normalizer[i][j];
         scalar_t tmp_sum = 0;
         for (int64_t l = 0; l < N; l++) {
-          auto bar = k[i][l];
+          auto key_j = k[i][l];
           scalar_t si = 0;
           for (int64_t k = 0; k < K; k++) {
-            si += aar[k] * bar[k];
+            si += query_i[k] * key_j[k];
           }
           scalar_t attn_v = std::exp(si - normalizer);
 
@@ -201,27 +201,19 @@ void attention_backward_kernel(
 
           // grad_q is easy
           for (int64_t k = 0; k < K; k++) {
-            grad_q[i][j][k] += tmp * bar[k]; // bar == key
-            buf[k] += attn_v * bar[k];
+            grad_q[i][j][k] += tmp * key_j[k]; // key_j == key
+            buf[k] += attn_v * key_j[k];
           }
-
-          scalar_t factor = tmp_sum / (tmp_sum - tmp);
-          if (tmp_sum == tmp)
-            factor = 1;
 
           //  but grad_k is trickier
           buf2[l] = attn_v;
           for (int64_t k = 0; k < K; k++) {
-            grad_k[i][l][k] += tmp * aar[k];
-            //buf3[l][k] = attn_v * aar[k];
-            //for (int64_t ll = 0; ll < N; ll++) {
-            //  buf2[l][k] = buf2[l][k] * factor + attn_v * aar[k] * tmp_sum;
-            //}
+            grad_k[i][l][k] += tmp * query_i[k];
           }
         }
         for (int64_t l = 0; l < N; l++) {
           for (int64_t k = 0; k < K; k++) {
-            grad_k[i][l][k] -= buf2[l] * aar[k] * tmp_sum;
+            grad_k[i][l][k] -= buf2[l] * query_i[k] * tmp_sum;
           }
         }
         for (int64_t k = 0; k < K; k++) {
@@ -239,23 +231,36 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
     const at::Tensor& value
     // const at::Tensor& mask
 ) {
+
+
+  TORCH_CHECK(query.dim() == grad_out.dim());
   TORCH_CHECK(query.dim() == key.dim());
+  TORCH_CHECK(query.dim() == value.dim());
   // TORCH_CHECK(query.dim() == mask.dim());
   TORCH_CHECK(query.dim() == 3);
+
+  TORCH_CHECK(query.size(0) == grad_out.size(0));
+  TORCH_CHECK(query.size(1) == grad_out.size(1));
+  TORCH_CHECK(query.size(2) == grad_out.size(2));
+
   TORCH_CHECK(query.size(2) == key.size(2));
   TORCH_CHECK(query.size(0) == key.size(0));
-  // TORCH_CHECK(query.size(1) == mask.size(1));
-  // TORCH_CHECK(query.size(2) == mask.size(2));
-  // TORCH_CHECK(query.size(0) == mask.size(0));
 
-  /*
-  TORCH_CHECK(!a.is_cuda(), "a must be a CPU tensor");
-  TORCH_CHECK(!b.is_cuda(), "b must be a CPU tensor");
-  TORCH_CHECK(!mask.is_cuda(), "mask must be a CPU tensor");
-  TORCH_CHECK(!a.is_sparse(), "a must be a dense tensor");
-  TORCH_CHECK(!b.is_sparse(), "b must be a dense tensor");
-  //TORCH_CHECK(mask.is_sparse(), "mask must be a sparse tensor");
-  */
+  TORCH_CHECK(query.size(0) == value.size(0));
+  TORCH_CHECK(key.size(1) == value.size(1));
+  TORCH_CHECK(
+      query.size(2) ==
+      value.size(2)); // TODO: drop this limitation in the future
+
+  TORCH_CHECK(!query.is_cuda(), "query must be a CPU tensor");
+  TORCH_CHECK(!key.is_cuda(), "key must be a CPU tensor");
+  TORCH_CHECK(!value.is_cuda(), "value must be a CPU tensor");
+  TORCH_CHECK(!grad_out.is_cuda(), "grad_out must be a CPU tensor");
+
+  TORCH_CHECK(!query.is_sparse(), "query must be a dense tensor");
+  TORCH_CHECK(!key.is_sparse(), "key must be a dense tensor");
+  TORCH_CHECK(!value.is_sparse(), "value must be a dense tensor");
+  TORCH_CHECK(!grad_out.is_sparse(), "grad_out must be a dense tensor");
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -267,8 +272,6 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   at::Tensor grad_k = at::zeros_like(key);
   at::Tensor grad_v = at::zeros_like(value);
 
-  int64_t grain_size = 32; // TODO: tune this
-  // at::Tensor buffer = at::empty({B, grain_size, K}, query.options());
   at::Tensor buffer = at::empty({at::get_num_threads(), 1, K}, query.options());
   at::Tensor buffer2 =
       at::zeros({at::get_num_threads(), 1, N}, query.options());
