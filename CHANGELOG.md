@@ -8,9 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fix some torchscriptability [#246]
 - Fix FourierMix being compatible with AMP [#258]
+- Better asserts on QKV dimensions [#264]
 
 ### Added
 - Simplicial Embeddings [#259]
+- Mem efficient attention, FW pass [#267]
 
 ## [0.0.10] - 2022-03-14
 ### Fixed
