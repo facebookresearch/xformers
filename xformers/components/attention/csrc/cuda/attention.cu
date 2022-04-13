@@ -617,7 +617,7 @@ __global__ void attention_backward_kernel(
   auto query_i = query[batch_idx][query_idx];
   auto normalizer = logsumexp_normalizer[batch_idx][query_idx];
   scalar_t tmp_sum = 0;
-  for (int64_t l = 0; l < N; l++) {
+  for (int64_t l = threadIdx.x; l < N; l += blockDim.x) {
     auto key_j = key[batch_idx][l];
     scalar_t si = 0;
     for (int64_t k = 0; k < K; k++) {
@@ -648,7 +648,8 @@ __global__ void attention_backward_kernel(
     for (int64_t k = 0; k < K; k++) {
       // grad_q[batch_idx][query_idx][k] += tmp * key_j[k];
       gpuAtomicAdd(&grad_q[batch_idx][query_idx][k], tmp * key_j[k]);
-      buf[k] += attn_v * key_j[k];
+      //buf[k] += attn_v * key_j[k];
+      gpuAtomicAdd(&buf[k], attn_v * key_j[k]);
     }
 
     //  but grad_k is a bit trickier
@@ -658,15 +659,18 @@ __global__ void attention_backward_kernel(
       gpuAtomicAdd(&grad_k[batch_idx][l][k], tmp * query_i[k]);
     }
   }
-  for (int64_t l = 0; l < N; l++) {
+  tmp_sum = warpSum<scalar_t, 32>(tmp_sum);
+  for (int64_t l = threadIdx.x; l < N; l += blockDim.x) {
     for (int64_t k = 0; k < K; k++) {
       // grad_k[batch_idx][l][k] -= buf2[l] * query_i[k] * tmp_sum;
       gpuAtomicAdd(&grad_k[batch_idx][l][k], -buf2[l] * query_i[k] * tmp_sum);
     }
   }
+  if (threadIdx.x == 0) {
   for (int64_t k = 0; k < K; k++) {
     // grad_q[batch_idx][query_idx][k] -= buf[k] * tmp_sum;
     gpuAtomicAdd(&grad_q[batch_idx][query_idx][k], -buf[k] * tmp_sum);
+  }
   }
 }
 
@@ -725,12 +729,13 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   at::Tensor logsumexp = query.bmm(key.transpose(-2, -1)).logsumexp(-1);
 
   dim3 grid(M, B);
-  dim3 block(1, 1);
+  dim3 block(32, 1);
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-  AT_DISPATCH_FLOATING_TYPES(
-      query.scalar_type(), "attention_backward_kernel", [&] {
+  using scalar_t = float;
+  //AT_DISPATCH_FLOATING_TYPES(
+  //    query.scalar_type(), "attention_backward_kernel", [&] {
         attention_backward_kernel<scalar_t><<<grid, block, 0, stream>>>(
             grad_q.packed_accessor<scalar_t, 3>(),
             grad_k.packed_accessor<scalar_t, 3>(),
@@ -743,7 +748,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
             buffer.packed_accessor<scalar_t, 3>(),
             buffer2.packed_accessor<scalar_t, 3>()
         );
-      });
+   //   });
 
   return std::make_tuple(grad_q, grad_k, grad_v);
 }
