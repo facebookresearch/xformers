@@ -28,7 +28,7 @@ SHAPES = [
 N_HEADS = [4]
 
 
-def bench_multihead_dispatch(backward: bool):
+def bench_multihead_dispatch(backward: bool, self_attention: bool):
     device = torch.device("cuda")
     bw = "+bw" if backward else ""
 
@@ -48,18 +48,29 @@ def bench_multihead_dispatch(backward: bool):
                     embed_dim=K, num_heads=heads, batch_first=True
                 ).to(device=device, dtype=dtype)
 
-                query = torch.randn(
+                q = torch.randn(
                     (B, M, K), requires_grad=backward, device=device, dtype=dtype
                 )
 
+                if self_attention:
+                    k = q
+                    v = q
+                else:
+                    k = torch.randn(
+                        (B, M, K), requires_grad=backward, device=device, dtype=dtype
+                    )
+                    v = torch.randn(
+                        (B, M, K), requires_grad=backward, device=device, dtype=dtype
+                    )
+
                 def torch_mha():
-                    y, _ = torch_multi_head(query=query, key=query, value=query)
+                    y, _ = torch_multi_head(query=q, key=k, value=v)
                     if backward:
                         torch.norm(y).backward()
                     return y
 
                 def xformers_mha():
-                    y = xf_multi_head(query=query, key=query, value=query)
+                    y = xf_multi_head(query=q, key=k, value=v)
                     if backward:
                         torch.norm(y).backward()
                     return y
@@ -89,4 +100,5 @@ def bench_multihead_dispatch(backward: bool):
 
 
 for bw in [False, True]:
-    bench_multihead_dispatch(bw)
+    for self_attention in [False, True]:
+        bench_multihead_dispatch(bw, self_attention)
