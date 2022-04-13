@@ -118,7 +118,7 @@ class MultiHeadDispatch(nn.Module):
 
     def _check(self, t, name):
         assert (
-            t.shape[2] % self.dim_k == 0
+            t.shape[2] % self.num_heads == 0
         ), f"the {name} embeddings need to be divisible by the number of heads"
 
     def forward(
