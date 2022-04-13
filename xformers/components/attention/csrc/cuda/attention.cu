@@ -606,7 +606,9 @@ __global__ void attention_backward_kernel(
   int64_t M = query.size(1);
   int64_t N = key.size(1);
   int64_t batch_idx = blockIdx.y;
-  int64_t query_idx = blockIdx.x;
+  int64_t query_idx = blockIdx.x * blockDim.y + threadIdx.y;
+
+  if (query_idx >= M) return;
 
   auto buf = buffer[batch_idx][query_idx];
   auto buf2 = buffer2[batch_idx][query_idx];
@@ -678,7 +680,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
     const at::Tensor& grad_out,
     const at::Tensor& query,
     const at::Tensor& key,
-    const at::Tensor& value
+    const at::Tensor& value,
+    const at::Tensor& logsumexp
     // const at::Tensor& mask
 ) {
   TORCH_CHECK(query.dim() == grad_out.dim());
@@ -726,10 +729,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   at::Tensor buffer2 = at::zeros({B, M, N}, query.options());
 
   // TODO this should be an argument from the function
-  at::Tensor logsumexp = query.bmm(key.transpose(-2, -1)).logsumexp(-1);
+  //at::Tensor logsumexp = query.bmm(key.transpose(-2, -1)).logsumexp(-1);
 
-  dim3 grid(M, B);
-  dim3 block(32, 1);
+  dim3 grid(ceil_div(M, int64_t(16)), B);
+  dim3 block(32, 16);
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 

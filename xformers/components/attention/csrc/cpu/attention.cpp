@@ -232,7 +232,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
     const at::Tensor& grad_out,
     const at::Tensor& query,
     const at::Tensor& key,
-    const at::Tensor& value
+    const at::Tensor& value,
+    const at::Tensor& logsumexp
     // const at::Tensor& mask
 ) {
 
@@ -281,7 +282,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
       at::zeros({at::get_num_threads(), 1, N}, query.options());
 
   // TODO this should be an argument from the function
-  at::Tensor logsumexp = query.bmm(key.transpose(-2, -1)).logsumexp(-1);
+  //at::Tensor logsumexp = query.bmm(key.transpose(-2, -1)).logsumexp(-1);
 
   AT_DISPATCH_FLOATING_TYPES(
       query.scalar_type(), "attention_backward_kernel", [&] {
