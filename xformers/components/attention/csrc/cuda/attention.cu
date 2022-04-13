@@ -5,6 +5,7 @@
 
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
+#include <ATen/cuda/Atomic.cuh>
 
 #include "sputnik/vector_utils.h"
 
@@ -587,10 +588,173 @@ at::Tensor attention(
   return res;
 }
 
+template <typename scalar_t>
+__global__ void attention_backward_kernel(
+    at::PackedTensorAccessor<scalar_t, 3> grad_q,
+    at::PackedTensorAccessor<scalar_t, 3> grad_k,
+    at::PackedTensorAccessor<scalar_t, 3> grad_v,
+    at::PackedTensorAccessor<scalar_t, 3> grad_out,
+    at::PackedTensorAccessor<scalar_t, 3> query,
+    at::PackedTensorAccessor<scalar_t, 3> key,
+    at::PackedTensorAccessor<scalar_t, 3> value,
+    at::PackedTensorAccessor<scalar_t, 2> logsumexp_normalizer,
+    at::PackedTensorAccessor<scalar_t, 3> buffer,
+    at::PackedTensorAccessor<scalar_t, 3> buffer2
+) {
+  int64_t K = query.size(2);
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+  int64_t batch_idx = blockIdx.y;
+  int64_t query_idx = blockIdx.x;
+
+  auto buf = buffer[batch_idx][query_idx];
+  auto buf2 = buffer2[batch_idx][query_idx];
+
+  for (int64_t k = 0; k < K; k++) {
+    buf[k] = 0;
+  }
+  auto query_i = query[batch_idx][query_idx];
+  auto normalizer = logsumexp_normalizer[batch_idx][query_idx];
+  scalar_t tmp_sum = 0;
+  for (int64_t l = 0; l < N; l++) {
+    auto key_j = key[batch_idx][l];
+    scalar_t si = 0;
+    for (int64_t k = 0; k < K; k++) {
+      si += query_i[k] * key_j[k];
+    }
+    scalar_t attn_v = std::exp(si - normalizer);
+
+    for (int64_t k = 0; k < K; k++) {
+      // grad_v[batch_idx][l][k] += attn_v * grad_out[batch_idx][query_idx][k];
+      gpuAtomicAdd(
+          &grad_v[batch_idx][l][k], attn_v * grad_out[batch_idx][query_idx][k]);
+    }
+
+    // now compute grad_q and grad_k
+    // first compute the gradient for the self-attention
+    // after softmax
+    scalar_t grad_attn_v = 0;
+    for (int64_t k = 0; k < K; k++) {
+      grad_attn_v += grad_out[batch_idx][query_idx][k] * value[batch_idx][l][k];
+      // grad_attn_v[i][j][l] += grad_out[i][j][k] * v[i][l][k];
+    }
+
+    // those are temporaries for the gradient of the softmax
+    scalar_t tmp = attn_v * grad_attn_v;
+    tmp_sum += tmp;
+
+    // grad_q is easy
+    for (int64_t k = 0; k < K; k++) {
+      // grad_q[batch_idx][query_idx][k] += tmp * key_j[k];
+      gpuAtomicAdd(&grad_q[batch_idx][query_idx][k], tmp * key_j[k]);
+      buf[k] += attn_v * key_j[k];
+    }
+
+    //  but grad_k is a bit trickier
+    buf2[l] = attn_v;
+    for (int64_t k = 0; k < K; k++) {
+      // grad_k[batch_idx][l][k] += tmp * query_i[k];
+      gpuAtomicAdd(&grad_k[batch_idx][l][k], tmp * query_i[k]);
+    }
+  }
+  for (int64_t l = 0; l < N; l++) {
+    for (int64_t k = 0; k < K; k++) {
+      // grad_k[batch_idx][l][k] -= buf2[l] * query_i[k] * tmp_sum;
+      gpuAtomicAdd(&grad_k[batch_idx][l][k], -buf2[l] * query_i[k] * tmp_sum);
+    }
+  }
+  for (int64_t k = 0; k < K; k++) {
+    // grad_q[batch_idx][query_idx][k] -= buf[k] * tmp_sum;
+    gpuAtomicAdd(&grad_q[batch_idx][query_idx][k], -buf[k] * tmp_sum);
+  }
+}
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
+    const at::Tensor& grad_out,
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value
+    // const at::Tensor& mask
+) {
+  TORCH_CHECK(query.dim() == grad_out.dim());
+  TORCH_CHECK(query.dim() == key.dim());
+  TORCH_CHECK(query.dim() == value.dim());
+  // TORCH_CHECK(query.dim() == mask.dim());
+  TORCH_CHECK(query.dim() == 3);
+
+  TORCH_CHECK(query.size(0) == grad_out.size(0));
+  TORCH_CHECK(query.size(1) == grad_out.size(1));
+  TORCH_CHECK(query.size(2) == grad_out.size(2));
+
+  TORCH_CHECK(query.size(2) == key.size(2));
+  TORCH_CHECK(query.size(0) == key.size(0));
+
+  TORCH_CHECK(query.size(0) == value.size(0));
+  TORCH_CHECK(key.size(1) == value.size(1));
+  TORCH_CHECK(
+      query.size(2) ==
+      value.size(2)); // TODO: drop this limitation in the future
+
+  TORCH_CHECK(query.is_cuda(), "query must be a CUDA tensor");
+  TORCH_CHECK(key.is_cuda(), "key must be a CUDA tensor");
+  TORCH_CHECK(value.is_cuda(), "value must be a CUDA tensor");
+  TORCH_CHECK(grad_out.is_cuda(), "grad_out must be a CUDA tensor");
+
+  TORCH_CHECK(!query.is_sparse(), "query must be a dense tensor");
+  TORCH_CHECK(!key.is_sparse(), "key must be a dense tensor");
+  TORCH_CHECK(!value.is_sparse(), "value must be a dense tensor");
+  TORCH_CHECK(!grad_out.is_sparse(), "grad_out must be a dense tensor");
+
+  at::cuda::CUDAGuard device_guard(query.device());
+
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+  int64_t K = query.size(2);
+
+  at::Tensor res = at::empty({B, M, K}, query.options());
+  at::Tensor grad_q = at::zeros_like(query);
+  at::Tensor grad_k = at::zeros_like(key);
+  at::Tensor grad_v = at::zeros_like(value);
+
+  at::Tensor buffer = at::empty({B, M, K}, query.options());
+  at::Tensor buffer2 = at::zeros({B, M, N}, query.options());
+
+  // TODO this should be an argument from the function
+  at::Tensor logsumexp = query.bmm(key.transpose(-2, -1)).logsumexp(-1);
+
+  dim3 grid(M, B);
+  dim3 block(1, 1);
+
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+
+  AT_DISPATCH_FLOATING_TYPES(
+      query.scalar_type(), "attention_backward_kernel", [&] {
+        attention_backward_kernel<scalar_t><<<grid, block, 0, stream>>>(
+            grad_q.packed_accessor<scalar_t, 3>(),
+            grad_k.packed_accessor<scalar_t, 3>(),
+            grad_v.packed_accessor<scalar_t, 3>(),
+            grad_out.packed_accessor<scalar_t, 3>(),
+            query.packed_accessor<scalar_t, 3>(),
+            key.packed_accessor<scalar_t, 3>(),
+            value.packed_accessor<scalar_t, 3>(),
+            logsumexp.packed_accessor<scalar_t, 2>(),
+            buffer.packed_accessor<scalar_t, 3>(),
+            buffer2.packed_accessor<scalar_t, 3>()
+        );
+      });
+
+  return std::make_tuple(grad_q, grad_k, grad_v);
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::efficient_attention"),
       TORCH_FN(attention));
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_backward"),
+      TORCH_FN(attention_backward));
 }
