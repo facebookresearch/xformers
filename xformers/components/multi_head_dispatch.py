@@ -116,11 +116,6 @@ class MultiHeadDispatch(nn.Module):
         if isinstance(self.proj, nn.Linear) and self.proj.bias is not None:
             constant_(self.proj.bias, 0.0)
 
-    def _check(self, t, name):
-        assert (
-            t.shape[2] % self.num_heads == 0
-        ), f"the {name} embeddings need to be divisible by the number of heads"
-
     def forward(
         self,
         query: torch.Tensor,
@@ -138,11 +133,6 @@ class MultiHeadDispatch(nn.Module):
             key = query
         if value is None:
             value = query
-
-        # Check the dimensions properly
-        self._check(query, "query")
-        self._check(value, "value")
-        self._check(key, "key")
 
         if query.shape[0] != key.shape[0] or query.shape[0] != value.shape[0]:
             max_batch = max((query.shape[0], key.shape[0], value.shape[0]))
@@ -175,6 +165,16 @@ class MultiHeadDispatch(nn.Module):
             q, k, v = self.in_proj_container(query=query, key=key, value=value)
         else:
             k, q, v = key, query, value
+
+        # Check the dimensions properly
+        def check(t, name):
+            assert (
+                t.shape[2] % self.num_heads == 0
+            ), f"the {name} embeddings need to be divisible by the number of heads"
+
+        check(q, "projected query")
+        check(v, "projected value")
+        check(k, "projected key")
 
         # Optional: rotary embedding, add relative positioning information
         if self.rotary_embeddings:
