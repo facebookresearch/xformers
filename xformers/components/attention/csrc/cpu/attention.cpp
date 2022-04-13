@@ -191,21 +191,25 @@ void attention_backward_kernel(
           }
 
           // now compute grad_q and grad_k
-          scalar_t g_attn = 0;
+          // first compute the gradient for the self-attention
+          // after softmax
+          scalar_t grad_attn_v = 0;
           for (int64_t k = 0; k < K; k++) {
-            g_attn += grad_out[i][j][k] * v[i][l][k];
-            // g_attn[i][j][l] += grad_out[i][j][k] * v[i][l][k];
+            grad_attn_v += grad_out[i][j][k] * v[i][l][k];
+            // grad_attn_v[i][j][l] += grad_out[i][j][k] * v[i][l][k];
           }
-          scalar_t tmp = attn_v * g_attn;
+
+          // those are temporaries for the gradient of the softmax
+          scalar_t tmp = attn_v * grad_attn_v;
           tmp_sum += tmp;
 
           // grad_q is easy
           for (int64_t k = 0; k < K; k++) {
-            grad_q[i][j][k] += tmp * key_j[k]; // key_j == key
+            grad_q[i][j][k] += tmp * key_j[k];
             buf[k] += attn_v * key_j[k];
           }
 
-          //  but grad_k is trickier
+          //  but grad_k is a bit trickier
           buf2[l] = attn_v;
           for (int64_t k = 0; k < K; k++) {
             grad_k[i][l][k] += tmp * query_i[k];
