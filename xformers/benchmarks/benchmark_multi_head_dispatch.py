@@ -31,6 +31,7 @@ N_HEADS = [4]
 def bench_multihead_dispatch(backward: bool, self_attention: bool):
     device = torch.device("cuda")
     bw = "+bw" if backward else ""
+    sa = " (self_attn)" if self_attention else ""
 
     for dtype in [torch.float16, torch.float32]:
         results: Dict[str, Any] = {}
@@ -76,8 +77,8 @@ def bench_multihead_dispatch(backward: bool, self_attention: bool):
                     return y
 
                 for testcase in [
-                    TestCase(torch_mha, f"torch - fw{bw}"),
-                    TestCase(xformers_mha, f"xf - fw{bw}"),
+                    TestCase(torch_mha, f"torch - fw{bw}{sa}"),
+                    TestCase(xformers_mha, f"xf - fw{bw}{sa}"),
                 ]:
                     time = triton.testing.do_bench(testcase.function)[0]
                     key = f"B={B}, M={M}, K={K}, N_HEADS={heads}"
