@@ -613,11 +613,22 @@ __global__ void attention_backward_kernel(
   auto buf = buffer[batch_idx][query_idx];
   auto buf2 = buffer2[batch_idx][query_idx];
 
+  constexpr int64_t BUFFER_SIZE = 32;
+  constexpr int64_t kBlockSizeK = 8;
+
+  //scalar_t temp_grad_q[kBlockSizeK][BUFFER_SIZE] = {0};
+  //scalar_t temp_grad_k[kBlockSizeK][BUFFER_SIZE] = {0};
+  //scalar_t temp_grad_v[kBlockSizeK][BUFFER_SIZE] = {0};
+  scalar_t temp_buffer[BUFFER_SIZE] = {0};
+  scalar_t temp_grad_q[BUFFER_SIZE] = {0};
+
+  /*
   for (int64_t k = 0; k < K; k++) {
     buf[k] = 0;
-  }
+  }*/
   auto query_i = query[batch_idx][query_idx];
   auto normalizer = logsumexp_normalizer[batch_idx][query_idx];
+  auto grad_q_i = grad_q[batch_idx][query_idx];
   scalar_t tmp_sum = 0;
   for (int64_t l = threadIdx.x; l < N; l += blockDim.x) {
     auto key_j = key[batch_idx][l];
@@ -627,19 +638,19 @@ __global__ void attention_backward_kernel(
     }
     scalar_t attn_v = std::exp(si - normalizer);
 
-    for (int64_t k = 0; k < K; k++) {
-      // grad_v[batch_idx][l][k] += attn_v * grad_out[batch_idx][query_idx][k];
-      gpuAtomicAdd(
-          &grad_v[batch_idx][l][k], attn_v * grad_out[batch_idx][query_idx][k]);
-    }
-
     // now compute grad_q and grad_k
     // first compute the gradient for the self-attention
     // after softmax
     scalar_t grad_attn_v = 0;
     for (int64_t k = 0; k < K; k++) {
-      grad_attn_v += grad_out[batch_idx][query_idx][k] * value[batch_idx][l][k];
-      // grad_attn_v[i][j][l] += grad_out[i][j][k] * v[i][l][k];
+      scalar_t temp = grad_out[batch_idx][query_idx][k];
+      // grad_v[batch_idx][l][k] += attn_v * grad_out[batch_idx][query_idx][k];
+      gpuAtomicAdd(
+          &grad_v[batch_idx][l][k], attn_v * temp);
+
+      //temp_grad_v[l][k] += attn_v * grad_out[batch_idx][query_idx][k];
+
+      grad_attn_v += temp * value[batch_idx][l][k];
     }
 
     // those are temporaries for the gradient of the softmax
@@ -649,9 +660,11 @@ __global__ void attention_backward_kernel(
     // grad_q is easy
     for (int64_t k = 0; k < K; k++) {
       // grad_q[batch_idx][query_idx][k] += tmp * key_j[k];
-      gpuAtomicAdd(&grad_q[batch_idx][query_idx][k], tmp * key_j[k]);
+      //gpuAtomicAdd(&grad_q_i[k], tmp * key_j[k]);
+      temp_grad_q[k] += tmp * key_j[k];
       //buf[k] += attn_v * key_j[k];
-      gpuAtomicAdd(&buf[k], attn_v * key_j[k]);
+      //gpuAtomicAdd(&buf[k], attn_v * key_j[k]);
+      temp_buffer[k] += attn_v * key_j[k];
     }
 
     //  but grad_k is a bit trickier
@@ -662,16 +675,24 @@ __global__ void attention_backward_kernel(
     }
   }
   tmp_sum = warpSum<scalar_t, 32>(tmp_sum);
+
   for (int64_t l = threadIdx.x; l < N; l += blockDim.x) {
     for (int64_t k = 0; k < K; k++) {
       // grad_k[batch_idx][l][k] -= buf2[l] * query_i[k] * tmp_sum;
       gpuAtomicAdd(&grad_k[batch_idx][l][k], -buf2[l] * query_i[k] * tmp_sum);
     }
   }
+  for (int64_t k = 0; k < K; k++) {
+    temp_grad_q[k] = warpSum<scalar_t, 32>(temp_grad_q[k]);
+    temp_buffer[k] = warpSum<scalar_t, 32>(temp_buffer[k]);
+  }
   if (threadIdx.x == 0) {
   for (int64_t k = 0; k < K; k++) {
     // grad_q[batch_idx][query_idx][k] -= buf[k] * tmp_sum;
-    gpuAtomicAdd(&grad_q[batch_idx][query_idx][k], -buf[k] * tmp_sum);
+
+    //gpuAtomicAdd(&grad_q_i[k], -buf[k] * tmp_sum);
+    //gpuAtomicAdd(&grad_q_i[k], -temp_buffer[k] * tmp_sum);
+    grad_q_i[k] = temp_grad_q[k] - temp_buffer[k] * tmp_sum;
   }
   }
 }
