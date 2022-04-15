@@ -124,6 +124,11 @@ def test_order_invariance(
             att_2 = multi_head(inputs, inputs_shuffled, inputs)
             assert (att != att_2).any()
 
+        # Test AMP, if available
+        if device.type == "cuda":
+            with torch.cuda.amp.autocast(enabled=True):
+                _ = multi_head(inputs, inputs_shuffled, inputs)
+
 
 @pytest.mark.parametrize("heads", [1, 4])
 @pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
@@ -195,7 +200,7 @@ def test_inproj(
         in_proj = InProjContainer(in_params, None, None)
     else:
         out_features = MODEL if same_sizes else MODEL // 2
-        in_params_flip = InProjParams(MODEL, out_features, not proj_bias, small_init)
+        in_params_flip = InProjParams(MODEL, out_features, proj_bias, small_init)
         in_proj = InProjContainer(in_params, in_params_flip, in_params_flip)
 
     # build a multi head dispatch to test this attention mechanism

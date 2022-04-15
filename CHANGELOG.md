@@ -5,12 +5,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.0.x] - TBD
+### Fixed
+- Fix some torchscriptability [#246]
+- Fix FourierMix being compatible with AMP [#258]
+- Better asserts on QKV dimensions [#264]
+
+### Added
+- Simplicial Embeddings [#259]
+- Mem efficient attention, FW pass [#267]
 
 ## [0.0.10] - 2022-03-14
 ### Fixed
 - Expose bias flag for feedforwards, same default as Timm [#220]
 - Update eps value for layernormm, same default as torch [#221]
 - PreNorm bugfix, only one input was normalized [#233]
+- Fix bug where embedding dimensions that did not match model dim would lead to a crash [#244]
 
 ### Added
 - Add DeepNet (DeepNorm) residual path and init [#227]

@@ -7,7 +7,7 @@
 import torch
 import triton
 import triton.language as tl
-from triton.ops.matmul_perf_model import estimate_matmul_time, prune_num_stages
+from triton.ops.matmul_perf_model import early_config_prune, estimate_matmul_time
 
 # Credits: this comes directly from the Triton repo, authors are Da Yan and Phil Tillet
 # See https://github.com/openai/triton/blob/v2.0/python/triton/ops/matmul.py
@@ -107,7 +107,7 @@ def get_fast_dev_configs():
     configs=get_fast_dev_configs(),
     key=["M", "N", "K"],
     prune_configs_by={
-        "prune_num_stages_by": prune_num_stages,
+        "early_config_prune": early_config_prune,
         "perf_model": estimate_matmul_time,
         "top_k": 10,
     },

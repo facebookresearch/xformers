@@ -75,7 +75,7 @@ def bench_revnet(backward: bool):
             results,
             title=f"RevNet-FW{bw}-{dtype}",
             units="runtime in ms, lower is better",
-            dash_key="pytorch",
+            dash_key="torch",
         )
 
 
