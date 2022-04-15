@@ -664,6 +664,8 @@ __global__ void attention_backward_kernel(
   vec_t* grad_q_block[kBlockSizeQ];
   scalar_t normalizer[kBlockSizeQ];
 
+  //__shared__ vec_t query_cache[kBlockSizeQ][BUFFER_SIZE];
+
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
     int64_t index = query_idx + q_item_idx;
     index = index >= M ? M - 1 : index;
@@ -674,7 +676,11 @@ __global__ void attention_backward_kernel(
     grad_q_block[q_item_idx] =
         reinterpret_cast<vec_t*>(grad_q[batch_idx][index].data());
     normalizer[q_item_idx] = logsumexp_normalizer[batch_idx][index];
+    //for (int64_t k = threadIdx.x; k < K / kVecSize; k += blockDim.x) {
+    //  query_cache[q_item_idx][k] = query_block[q_item_idx][k];
+   // }
   }
+  //__syncthreads();
 
   scalar_t tmp_sum[kBlockSizeQ] = {0};
   for (int64_t l = threadIdx.x * kBlockSizeK; l < N;
@@ -683,6 +689,7 @@ __global__ void attention_backward_kernel(
 
     scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
     compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
+        //query_cache, key_j, attn_v, K);
         query_block, key_j, attn_v, K);
 
 #pragma unroll
@@ -757,7 +764,8 @@ __global__ void attention_backward_kernel(
 #pragma unroll
         for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
           // res += tmp[q_item_idx][k_item_idx] * query_block[q_item_idx][k];
-          vec_t qqq = query_block[q_item_idx][k];
+          vec_t qqq = __ldg(query_block[q_item_idx] + k);
+          //vec_t qqq = query_cache[q_item_idx][k];
           axpy(tmp[q_item_idx][k_item_idx], qqq, &res);
         }
         myGpuAtomicAdd(&grad_k[batch_idx][l + k_item_idx][k * kVecSize], res);
@@ -792,7 +800,8 @@ __global__ void attention_backward_kernel(
 #pragma unroll
         for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
           scalar_t ttt = -attn_v[q_item_idx][k_item_idx] * tmp_sum[q_item_idx];
-          vec_t qqq = query_block[q_item_idx][k];
+          vec_t qqq = __ldg(query_block[q_item_idx] + k);
+          //vec_t qqq = query_cache[q_item_idx][k];
           axpy(ttt, qqq, &res);
         }
         myGpuAtomicAdd(&grad_k[batch_idx][l + k_item_idx][k * kVecSize], res);
