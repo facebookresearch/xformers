@@ -9,8 +9,11 @@ import pytest
 import torch
 
 import xformers
-#turn off xformers triton 1.X access to avoid triton version class 
-xformers.triton.softmax.softmax = lambda x: torch.softmax(x,dim=a.ndim-1)#_is_triton_available=False
+
+# turn off xformers triton 1.X access to avoid triton version class
+xformers.triton.softmax.softmax = lambda x: torch.softmax(
+    x, dim=a.ndim - 1
+)  # _is_triton_available=False
 
 from xformers.components import MultiHeadDispatch
 from xformers.components.attention import build_attention
@@ -18,7 +21,7 @@ from xformers.components.attention.attention_patterns import block_sparsify_tens
 from xformers.triton.utils import get_current_cuda_device
 
 # CREDITS:
-# Tests inherited from both xformers 0.10.0 triton tests which were in turn copied from 
+# Tests inherited from both xformers 0.10.0 triton tests which were in turn copied from
 # https://github.com/openai/triton/blob/master/python/test/unit/operators/test_blocksparse.py
 # and Triton 2.0 tests copied from
 # https://github.com/openai/triton/blob/v2.0/python/test/unit/operators/test_blocksparse.py
@@ -32,9 +35,10 @@ if _triton_available:
         import triton
         from triton.ops.blocksparse import matmul as blocksparse_matmul
         from triton.ops.blocksparse import softmax as blocksparse_softmax
-        
-        #FIXME: This should just import standard xFormers attention after porting
+
+        # FIXME: This should just import standard xFormers attention after porting
         from triton_v2_blocksparse import BlockSparseAttentionV2 as BlockSparseAttention
+
         from xformers.triton.utils import (
             assert_almost_equal,
             gpu_capabilities_older_than_70,
@@ -58,7 +62,9 @@ if _triton_available:
 @pytest.mark.parametrize("TRANS_A", [False, True])
 @pytest.mark.parametrize("TRANS_B", [False, True])
 @pytest.mark.parametrize("BLOCK", [16, 32, 64, 128])
-@pytest.mark.parametrize("DTYPE", [torch.float16,torch.bfloat16,torch.float32,torch.float])
+@pytest.mark.parametrize(
+    "DTYPE", [torch.float16, torch.bfloat16, torch.float32, torch.float]
+)
 def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K=384):
     seed = 0
     torch.manual_seed(seed)
@@ -81,8 +87,8 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
     layout[1, 2, :] = 0
     layout[1, :, 1] = 0
     # create data
-    a_ref, a_tri = triton.testing.make_pair(a_shape, alpha=.1)
-    b_ref, b_tri = triton.testing.make_pair(b_shape, alpha=.1)
+    a_ref, a_tri = triton.testing.make_pair(a_shape, alpha=0.1)
+    b_ref, b_tri = triton.testing.make_pair(b_shape, alpha=0.1)
     dc_ref, dc_tri = triton.testing.make_pair(c_shape)
     # compute [torch]
     dc_ref = do_mask(dc_ref) if is_sdd else dc_ref
@@ -90,8 +96,10 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
     b_ref = do_mask(b_ref) if is_dds else b_ref
     a_ref.retain_grad()
     b_ref.retain_grad()
-    c_ref = torch.matmul(a_ref.transpose(2, 3) if TRANS_A else a_ref,
-                         b_ref.transpose(2, 3) if TRANS_B else b_ref)
+    c_ref = torch.matmul(
+        a_ref.transpose(2, 3) if TRANS_A else a_ref,
+        b_ref.transpose(2, 3) if TRANS_B else b_ref,
+    )
     c_ref.backward(dc_ref)
     c_ref = do_sparsify(c_ref) if is_sdd else c_ref
     da_ref = do_sparsify(a_ref.grad) if is_dsd else a_ref.grad
@@ -102,7 +110,9 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
     b_tri = do_sparsify(b_tri) if is_dds else b_tri
     a_tri.retain_grad()
     b_tri.retain_grad()
-    op = triton.ops.blocksparse.matmul(layout, BLOCK, MODE, trans_a=TRANS_A, trans_b=TRANS_B, device="cuda")
+    op = triton.ops.blocksparse.matmul(
+        layout, BLOCK, MODE, trans_a=TRANS_A, trans_b=TRANS_B, device="cuda"
+    )
     c_tri = triton.testing.catch_oor(lambda: op(a_tri, b_tri), pytest)
     triton.testing.catch_oor(lambda: c_tri.backward(dc_tri), pytest)
     da_tri = a_tri.grad
@@ -112,12 +122,14 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
     triton.testing.assert_almost_equal(da_ref, da_tri)
     triton.testing.assert_almost_equal(db_ref, db_tri)
 
+
 configs = [
     (16, 256),
     (32, 576),
     (64, 1871),
     (128, 2511),
 ]
+
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
 @pytest.mark.parametrize("is_dense", [False, True])
@@ -165,15 +177,17 @@ def test_softmax(BLOCK, WIDTH, is_dense, Z=2, H=2, is_causal=True, scale=0.4):
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
 @pytest.mark.parametrize("block", [32, 43, 128])  # 16, 32, 64, 128 v2 supported
-@pytest.mark.parametrize("n_ctx", [256, 384]) #sequence length
-@pytest.mark.parametrize("is_causal", [True,False])  #causal/non-causal softmax
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float])
+@pytest.mark.parametrize("n_ctx", [256, 384])  # sequence length
+@pytest.mark.parametrize("is_causal", [True, False])  # causal/non-causal softmax
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float]
+)
 def test_attention_fwd_bwd(
     block,
     is_causal,
     dtype,
     n_ctx,
-    input_scale=0.4,#1.0,
+    input_scale=0.4,  # 1.0,
     scale=1 / 8.0,
     batch_size=2,
     n_heads=2,
@@ -196,10 +210,10 @@ def test_attention_fwd_bwd(
             diagonal=0,
         ).to(dtype)
     else:
-        attn_mask=torch.ones([n_ctx, n_ctx],device="cuda").to(dtype)
+        attn_mask = torch.ones([n_ctx, n_ctx], device="cuda").to(dtype)
 
     def loss_fn(x):
-        return (x ** 2).mean()
+        return (x**2).mean()
 
     # Triton:
     n_blocks = n_ctx // block
@@ -239,17 +253,23 @@ def test_attention_fwd_bwd(
         torch_loss = loss_fn(torch_attn_out)
         torch_loss.backward()
         torch_grads = [torch_q.grad, torch_k.grad, torch_v.grad]
-      
-        #hard to pass equality tests with bfloat, just test type,shape,norm
-        assert torch_attn_out.dtype==attn_out.dtype, f'Triton dtype {attn_out.dtype} Torch dtype {torch_attn_out.dtype}'
-        assert torch_attn_out.shape==attn_out.shape, f'Triton shape {attn_out.shape} Torch shape {torch_attn_out.shape}'
+
+        # hard to pass equality tests with bfloat, just test type,shape,norm
+        assert (
+            torch_attn_out.dtype == attn_out.dtype
+        ), f"Triton dtype {attn_out.dtype} Torch dtype {torch_attn_out.dtype}"
+        assert (
+            torch_attn_out.shape == attn_out.shape
+        ), f"Triton shape {attn_out.shape} Torch shape {torch_attn_out.shape}"
 
         # compare losses
         assert_almost_equal(
-            loss.float(), torch_loss.float(), err_msg=f"Triton loss {loss} and torch loss {torch_loss}"
+            loss.float(),
+            torch_loss.float(),
+            err_msg=f"Triton loss {loss} and torch loss {torch_loss}",
         )
 
-        #need to convert back to float, bfloat causes norm issues
+        # need to convert back to float, bfloat causes norm issues
         for g1, g2 in zip(grads, torch_grads):
             assert_almost_equal(
                 torch.norm(g1).float(),

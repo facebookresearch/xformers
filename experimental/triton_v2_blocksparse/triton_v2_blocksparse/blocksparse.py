@@ -68,7 +68,7 @@ if _is_triton_available:
             causal: bool = False,
             dropout: float = 0.0,
             num_heads: int = 1,  # optional, used to adapt the layout if in need
-            device: str = 'cuda', # need to set triton device for ops at creation
+            device: str = "cuda",  # need to set triton device for ops at creation
             *args,
             **kwargs,
         ):
@@ -115,7 +115,9 @@ if _is_triton_available:
                 trans_b=False,
                 device=self.device,
             )
-            self.sparse_softmax = blocksparse_softmax(self.layout, self.block_size, device=self.device)
+            self.sparse_softmax = blocksparse_softmax(
+                self.layout, self.block_size, device=self.device
+            )
 
             # make sure that the head dimension is not folded down with the batch
             self.requires_head_dimension = True
@@ -145,7 +147,7 @@ if _is_triton_available:
             **kwargs,
         ) -> torch.Tensor:
             r"""
-            q/k/v               Query, key, values of dimension (batch_size x num_heads x sequence_length x dim_per_head) 
+            q/k/v               Query, key, values of dimension (batch_size x num_heads x sequence_length x dim_per_head)
             att_mask            A 2D attention mask. The dtype must be the same as q. An additive mask is expected,
                                 meaning float values using "-inf" to mask values.
             key_padding_mask    A mask with size (batch size x sequence length). The dtype must be the same as q.
@@ -160,7 +162,7 @@ if _is_triton_available:
 
             if att_mask is not None and att_mask.dtype == torch.bool:
                 self.update_mask_type(att_mask)
-            
+
             if key_padding_mask is not None and key_padding_mask.dtype == torch.bool:
                 self.update_mask_type(key_padding_mask)
 
@@ -178,8 +180,8 @@ if _is_triton_available:
             assert (
                 k.shape[-2] == self.layout.shape[-2] * self.block_size
             ), "Actual sequence size and layout are inconsistent"
-            
-            #infer all dtypes from query
+
+            # infer all dtypes from query
             q_dtype = q.dtype
 
             # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
@@ -187,15 +189,19 @@ if _is_triton_available:
             # - (sparse) attention matrix = (dense) Kt * (dense) Q
             q = q / math.sqrt(q.size(-1))
             sparse_att_mat = self.sparse_dot_sdd(q, k)
-            
-            #apply masks
+
+            # apply masks
             if att_mask is not None:
-                sparse_att_mat += triton.testing.sparsify_tensor(att_mask.to(sparse_att_mat.dtype),self.layout)
+                sparse_att_mat += triton.testing.sparsify_tensor(
+                    att_mask.to(sparse_att_mat.dtype), self.layout
+                )
 
             if key_padding_mask is not None:
-                sparse_att_mat +=  triton.testing.sparsify_tensor(key_padding_mask.to(sparse_att_mat.dtype),self.layout)
+                sparse_att_mat += triton.testing.sparsify_tensor(
+                    key_padding_mask.to(sparse_att_mat.dtype), self.layout
+                )
 
-            #perform softmax in higher precision for stability
+            # perform softmax in higher precision for stability
             sparse_att_mat = self.sparse_softmax(
                 sparse_att_mat.float(),
                 scale=scale,
