@@ -808,8 +808,7 @@ __global__ void attention_backward_kernel(
           warpSum<scalar_t, 32>(temp_buffer[q_item_idx][k]);
     }
   }
-  if (threadIdx.x == 0) {
-    for (int64_t k = 0; k < K / kVecSize; k++) {
+    for (int64_t k = threadIdx.x; k < K / kVecSize; k += blockDim.x) {
 #pragma unroll
       for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
         // axpy(-tmp_sum[q_item_idx], temp_buffer[q_item_idx][k], &temp_grad_q[q_item_idx][k]);
@@ -824,7 +823,6 @@ __global__ void attention_backward_kernel(
             temp_buffer[q_item_idx][k].w * tmp_sum[q_item_idx];
       }
     }
-  }
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
@@ -876,14 +874,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   at::Tensor grad_k = at::zeros_like(key);
   at::Tensor grad_v = at::zeros_like(value);
 
-  // TODO this should be an argument from the function
-  // at::Tensor logsumexp = query.bmm(key.transpose(-2, -1)).logsumexp(-1);
-
-  // dim3 grid(ceil_div(M, int64_t(16)), B);
-  // dim3 block(32, 16);
   using scalar_t = float;
   using vec_t = float4;
   // using vec_t = float;
+
   constexpr int TILE_SIZE = 16 * 2;
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
 
