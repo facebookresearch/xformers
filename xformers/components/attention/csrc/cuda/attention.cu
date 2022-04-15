@@ -59,7 +59,6 @@ __device__ __forceinline__ void iDiv(scalar_t x1, float* out) {
   out[0] /= x1;
 }
 
-
 template <typename scalar_t>
 __device__ __forceinline__ void axpy(scalar_t a, float4 in, float4* out) {
   out[0].x += a * in.x;
@@ -142,7 +141,7 @@ __device__ void compute_dot(
     scalar_t out[kBlockSizeQ][kBlockSizeK],
     int64_t K) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
-  scalar_t scale = 1.0;// / std::sqrt(scalar_t(K));
+  scalar_t scale = 1.0; // / std::sqrt(scalar_t(K));
   vec_t q_i[kBlockSizeQ];
   for (int64_t k = 0; k < K / kVecSize; k += 1) {
 #pragma unroll
@@ -628,7 +627,12 @@ at::Tensor attention(
   return res;
 }
 
-template <typename scalar_t, typename vec_t, int kBlockSizeQ, int kBlockSizeK, int BUFFER_SIZE>
+template <
+    typename scalar_t,
+    typename vec_t,
+    int kBlockSizeQ,
+    int kBlockSizeK,
+    int BUFFER_SIZE>
 __global__ void attention_backward_kernel(
     at::PackedTensorAccessor<scalar_t, 3> grad_q,
     at::PackedTensorAccessor<scalar_t, 3> grad_k,
@@ -637,8 +641,7 @@ __global__ void attention_backward_kernel(
     at::PackedTensorAccessor<scalar_t, 3> query,
     at::PackedTensorAccessor<scalar_t, 3> key,
     at::PackedTensorAccessor<scalar_t, 3> value,
-    at::PackedTensorAccessor<scalar_t, 2> logsumexp_normalizer
-) {
+    at::PackedTensorAccessor<scalar_t, 2> logsumexp_normalizer) {
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -646,11 +649,12 @@ __global__ void attention_backward_kernel(
 
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
 
-
   int64_t batch_idx = blockIdx.y;
-  int64_t query_idx = blockIdx.x * blockDim.y * kBlockSizeQ + threadIdx.y * kBlockSizeQ;
+  int64_t query_idx =
+      blockIdx.x * blockDim.y * kBlockSizeQ + threadIdx.y * kBlockSizeQ;
 
-  if (query_idx >= M) return;
+  if (query_idx >= M)
+    return;
 
   vec_t temp_buffer[kBlockSizeQ][BUFFER_SIZE] = {0};
   vec_t temp_grad_q[kBlockSizeQ][BUFFER_SIZE] = {0};
@@ -673,27 +677,27 @@ __global__ void attention_backward_kernel(
   }
 
   scalar_t tmp_sum[kBlockSizeQ] = {0};
-  for (int64_t l = threadIdx.x * kBlockSizeK; l < N; l += blockDim.x * kBlockSizeK) {
-
+  for (int64_t l = threadIdx.x * kBlockSizeK; l < N;
+       l += blockDim.x * kBlockSizeK) {
     auto key_j = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
 
     scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
     compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
         query_block, key_j, attn_v, K);
 
-
 #pragma unroll
     for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
 #pragma unroll
       for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-        attn_v[q_item_idx][k_item_idx] = std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]);
+        attn_v[q_item_idx][k_item_idx] =
+            std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]);
       }
     }
 
     // now compute grad_q and grad_k
     // first compute the gradient for the self-attention
     // after softmax
-    //scalar_t grad_attn_v = 0;
+    // scalar_t grad_attn_v = 0;
     scalar_t grad_attn_v[kBlockSizeQ][kBlockSizeK] = {0};
     auto value_j = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
 
@@ -710,7 +714,8 @@ __global__ void attention_backward_kernel(
         vec_t tt = {0};
 #pragma unroll
         for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-          sputnik::VectorCompute<vec_t>::Dot(temp_i[q_item_idx], v, &grad_attn_v[q_item_idx][k_item_idx]);
+          sputnik::VectorCompute<vec_t>::Dot(
+              temp_i[q_item_idx], v, &grad_attn_v[q_item_idx][k_item_idx]);
           axpy(attn_v[q_item_idx][k_item_idx], temp_i[q_item_idx], &tt);
         }
         myGpuAtomicAdd(&grad_v[batch_idx][l + k_item_idx][k * kVecSize], tt);
@@ -723,7 +728,8 @@ __global__ void attention_backward_kernel(
     for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
 #pragma unroll
       for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-        tmp[q_item_idx][k_item_idx] = attn_v[q_item_idx][k_item_idx] * grad_attn_v[q_item_idx][k_item_idx];
+        tmp[q_item_idx][k_item_idx] = attn_v[q_item_idx][k_item_idx] *
+            grad_attn_v[q_item_idx][k_item_idx];
         tmp_sum[q_item_idx] += tmp[q_item_idx][k_item_idx];
       }
     }
@@ -736,7 +742,8 @@ __global__ void attention_backward_kernel(
         for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
           vec_t ttt = key_j[k + K / kVecSize * k_item_idx];
           axpy(tmp[q_item_idx][k_item_idx], ttt, &temp_grad_q[q_item_idx][k]);
-          axpy(attn_v[q_item_idx][k_item_idx], ttt, &temp_buffer[q_item_idx][k]);
+          axpy(
+              attn_v[q_item_idx][k_item_idx], ttt, &temp_buffer[q_item_idx][k]);
         }
       }
     }
@@ -749,7 +756,7 @@ __global__ void attention_backward_kernel(
         vec_t res = {0};
 #pragma unroll
         for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-          //res += tmp[q_item_idx][k_item_idx] * query_block[q_item_idx][k];
+          // res += tmp[q_item_idx][k_item_idx] * query_block[q_item_idx][k];
           vec_t qqq = query_block[q_item_idx][k];
           axpy(tmp[q_item_idx][k_item_idx], qqq, &res);
         }
@@ -762,60 +769,61 @@ __global__ void attention_backward_kernel(
     tmp_sum[q_item_idx] = warpSum<scalar_t, 32>(tmp_sum[q_item_idx]);
   }
 
-  for (int64_t l = threadIdx.x * kBlockSizeK; l < N; l += blockDim.x * kBlockSizeK) {
-
-
+  for (int64_t l = threadIdx.x * kBlockSizeK; l < N;
+       l += blockDim.x * kBlockSizeK) {
     auto key_j = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
     scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
     compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
         query_block, key_j, attn_v, K);
 
-
 #pragma unroll
     for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
 #pragma unroll
       for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-        attn_v[q_item_idx][k_item_idx] = std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]);
+        attn_v[q_item_idx][k_item_idx] =
+            std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]);
       }
     }
-
 
     for (int64_t k = 0; k < K / kVecSize; k++) {
 #pragma unroll
-        for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-      vec_t res = {0};
+      for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+        vec_t res = {0};
 #pragma unroll
-      for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-        scalar_t ttt = - attn_v[q_item_idx][k_item_idx] * tmp_sum[q_item_idx];
-        vec_t qqq = query_block[q_item_idx][k];
-        axpy(ttt, qqq, &res);
-      }
-      myGpuAtomicAdd(&grad_k[batch_idx][l + k_item_idx][k * kVecSize], res);
+        for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+          scalar_t ttt = -attn_v[q_item_idx][k_item_idx] * tmp_sum[q_item_idx];
+          vec_t qqq = query_block[q_item_idx][k];
+          axpy(ttt, qqq, &res);
+        }
+        myGpuAtomicAdd(&grad_k[batch_idx][l + k_item_idx][k * kVecSize], res);
       }
     }
   }
   for (int64_t k = 0; k < K / kVecSize; k++) {
 #pragma unroll
     for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-      temp_grad_q[q_item_idx][k] = warpSum<scalar_t, 32>(temp_grad_q[q_item_idx][k]);
-      temp_buffer[q_item_idx][k] = warpSum<scalar_t, 32>(temp_buffer[q_item_idx][k]);
+      temp_grad_q[q_item_idx][k] =
+          warpSum<scalar_t, 32>(temp_grad_q[q_item_idx][k]);
+      temp_buffer[q_item_idx][k] =
+          warpSum<scalar_t, 32>(temp_buffer[q_item_idx][k]);
     }
   }
   if (threadIdx.x == 0) {
-  for (int64_t k = 0; k < K / kVecSize; k++) {
-    //gpuAtomicAdd(&grad_q_i[k], -temp_buffer[k] * tmp_sum);
-    //grad_q_i[k] = temp_grad_q[k] - temp_buffer[k] * tmp_sum;
+    for (int64_t k = 0; k < K / kVecSize; k++) {
 #pragma unroll
-    for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-      //grad_q[batch_idx][query_idx + q_item_idx][k] = temp_grad_q[q_item_idx][k] - temp_buffer[q_item_idx][k] * tmp_sum[q_item_idx];
-      //axpy(-tmp_sum[q_item_idx], temp_buffer[q_item_idx][k], &temp_grad_q[q_item_idx][k]);
-      //grad_q_block[q_item_idx][k] = temp_grad_q[q_item_idx][k];
-      grad_q_block[q_item_idx][k].x = temp_grad_q[q_item_idx][k].x - temp_buffer[q_item_idx][k].x * tmp_sum[q_item_idx];
-      grad_q_block[q_item_idx][k].y = temp_grad_q[q_item_idx][k].y - temp_buffer[q_item_idx][k].y * tmp_sum[q_item_idx];
-      grad_q_block[q_item_idx][k].z = temp_grad_q[q_item_idx][k].z - temp_buffer[q_item_idx][k].z * tmp_sum[q_item_idx];
-      grad_q_block[q_item_idx][k].w = temp_grad_q[q_item_idx][k].w - temp_buffer[q_item_idx][k].w * tmp_sum[q_item_idx];
+      for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+        // axpy(-tmp_sum[q_item_idx], temp_buffer[q_item_idx][k], &temp_grad_q[q_item_idx][k]);
+        // grad_q_block[q_item_idx][k] = temp_grad_q[q_item_idx][k];
+        grad_q_block[q_item_idx][k].x = temp_grad_q[q_item_idx][k].x -
+            temp_buffer[q_item_idx][k].x * tmp_sum[q_item_idx];
+        grad_q_block[q_item_idx][k].y = temp_grad_q[q_item_idx][k].y -
+            temp_buffer[q_item_idx][k].y * tmp_sum[q_item_idx];
+        grad_q_block[q_item_idx][k].z = temp_grad_q[q_item_idx][k].z -
+            temp_buffer[q_item_idx][k].z * tmp_sum[q_item_idx];
+        grad_q_block[q_item_idx][k].w = temp_grad_q[q_item_idx][k].w -
+            temp_buffer[q_item_idx][k].w * tmp_sum[q_item_idx];
+      }
     }
-  }
   }
 }
 
@@ -869,13 +877,13 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   at::Tensor grad_v = at::zeros_like(value);
 
   // TODO this should be an argument from the function
-  //at::Tensor logsumexp = query.bmm(key.transpose(-2, -1)).logsumexp(-1);
+  // at::Tensor logsumexp = query.bmm(key.transpose(-2, -1)).logsumexp(-1);
 
-  //dim3 grid(ceil_div(M, int64_t(16)), B);
-  //dim3 block(32, 16);
+  // dim3 grid(ceil_div(M, int64_t(16)), B);
+  // dim3 block(32, 16);
   using scalar_t = float;
   using vec_t = float4;
-  //using vec_t = float;
+  // using vec_t = float;
   constexpr int TILE_SIZE = 16 * 2;
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
 
@@ -888,20 +896,23 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-
-  //AT_DISPATCH_FLOATING_TYPES(
+  // AT_DISPATCH_FLOATING_TYPES(
   //    query.scalar_type(), "attention_backward_kernel", [&] {
-        attention_backward_kernel<scalar_t, vec_t, kBlockSizeQ, kBlockSizeK, BUFFER_SIZE><<<grid, block, 0, stream>>>(
-            grad_q.packed_accessor<scalar_t, 3>(),
-            grad_k.packed_accessor<scalar_t, 3>(),
-            grad_v.packed_accessor<scalar_t, 3>(),
-            grad_out.packed_accessor<scalar_t, 3>(),
-            query.packed_accessor<scalar_t, 3>(),
-            key.packed_accessor<scalar_t, 3>(),
-            value.packed_accessor<scalar_t, 3>(),
-            logsumexp.packed_accessor<scalar_t, 2>()
-        );
-   //   });
+  attention_backward_kernel<
+      scalar_t,
+      vec_t,
+      kBlockSizeQ,
+      kBlockSizeK,
+      BUFFER_SIZE><<<grid, block, 0, stream>>>(
+      grad_q.packed_accessor<scalar_t, 3>(),
+      grad_k.packed_accessor<scalar_t, 3>(),
+      grad_v.packed_accessor<scalar_t, 3>(),
+      grad_out.packed_accessor<scalar_t, 3>(),
+      query.packed_accessor<scalar_t, 3>(),
+      key.packed_accessor<scalar_t, 3>(),
+      value.packed_accessor<scalar_t, 3>(),
+      logsumexp.packed_accessor<scalar_t, 2>());
+  //   });
 
   AT_CUDA_CHECK(cudaGetLastError());
 
