@@ -887,7 +887,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   using vec_t = float4;
   // using vec_t = float;
 
-  constexpr int TILE_SIZE = 16 * 4;
+  constexpr int TILE_SIZE = 16 * 8;
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
 
   constexpr int64_t BUFFER_SIZE = 32 / kVecSize;
