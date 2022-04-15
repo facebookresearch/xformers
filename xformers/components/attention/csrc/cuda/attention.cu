@@ -887,12 +887,12 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   using vec_t = float4;
   // using vec_t = float;
 
-  constexpr int TILE_SIZE = 16 * 2;
+  constexpr int TILE_SIZE = 16 * 4;
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
 
   constexpr int64_t BUFFER_SIZE = 32 / kVecSize;
-  constexpr int64_t kBlockSizeQ = 8;
-  constexpr int64_t kBlockSizeK = 8;
+  constexpr int64_t kBlockSizeQ = 16;
+  constexpr int64_t kBlockSizeK = 4;
 
   dim3 grid(ceil_div(M, int64_t(TILE_SIZE)), B);
   dim3 block(32, TILE_SIZE / kBlockSizeQ);
