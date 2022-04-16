@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Simplicial Embeddings [#259]
 - Mem efficient attention, FW pass [#267]
+- MHA benchmark
+- MLP benchmark
 
 ## [0.0.10] - 2022-03-14
 ### Fixed
