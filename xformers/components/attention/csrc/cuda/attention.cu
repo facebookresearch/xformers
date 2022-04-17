@@ -60,25 +60,6 @@ __device__ __forceinline__ void iDiv(scalar_t x1, float* out) {
 }
 
 template <typename scalar_t>
-__device__ __forceinline__ void axpy(scalar_t a, float4 in, float4* out) {
-  out[0].x += a * in.x;
-  out[0].y += a * in.y;
-  out[0].z += a * in.z;
-  out[0].w += a * in.w;
-}
-
-template <typename scalar_t>
-__device__ __forceinline__ void axpy(scalar_t a, float2 in, float2* out) {
-  out[0].x += a * in.x;
-  out[0].y += a * in.y;
-}
-
-template <typename scalar_t>
-__device__ __forceinline__ void axpy(scalar_t a, float in, float* out) {
-  out[0] += a * in;
-}
-
-template <typename scalar_t>
 __device__ __forceinline__ void myGpuAtomicAdd(scalar_t* address, float4 val) {
   gpuAtomicAdd(address + 0, val.x);
   gpuAtomicAdd(address + 1, val.y);
@@ -723,7 +704,7 @@ __global__ void attention_backward_kernel(
         for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
           sputnik::VectorCompute<vec_t>::Dot(
               temp_i[q_item_idx], v, &grad_attn_v[q_item_idx][k_item_idx]);
-          axpy(attn_v[q_item_idx][k_item_idx], temp_i[q_item_idx], &tt);
+          sputnik::VectorCompute<vec_t>::FMA(attn_v[q_item_idx][k_item_idx], temp_i[q_item_idx], &tt);
         }
         myGpuAtomicAdd(&grad_v[batch_idx][l + k_item_idx][k * kVecSize], tt);
       }
@@ -748,8 +729,8 @@ __global__ void attention_backward_kernel(
 #pragma unroll
         for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
           vec_t ttt = key_j[k + K / kVecSize * k_item_idx];
-          axpy(tmp[q_item_idx][k_item_idx], ttt, &temp_grad_q[q_item_idx][k]);
-          axpy(
+          sputnik::VectorCompute<vec_t>::FMA(tmp[q_item_idx][k_item_idx], ttt, &temp_grad_q[q_item_idx][k]);
+          sputnik::VectorCompute<vec_t>::FMA(
               attn_v[q_item_idx][k_item_idx], ttt, &temp_buffer[q_item_idx][k]);
         }
       }
@@ -766,7 +747,7 @@ __global__ void attention_backward_kernel(
           // res += tmp[q_item_idx][k_item_idx] * query_block[q_item_idx][k];
           vec_t qqq = __ldg(query_block[q_item_idx] + k);
           //vec_t qqq = query_cache[q_item_idx][k];
-          axpy(tmp[q_item_idx][k_item_idx], qqq, &res);
+          sputnik::VectorCompute<vec_t>::FMA(tmp[q_item_idx][k_item_idx], qqq, &res);
         }
         myGpuAtomicAdd(&grad_k[batch_idx][l + k_item_idx][k * kVecSize], res);
       }
@@ -802,7 +783,7 @@ __global__ void attention_backward_kernel(
           scalar_t ttt = -attn_v[q_item_idx][k_item_idx] * tmp_sum[q_item_idx];
           vec_t qqq = __ldg(query_block[q_item_idx] + k);
           //vec_t qqq = query_cache[q_item_idx][k];
-          axpy(ttt, qqq, &res);
+          sputnik::VectorCompute<vec_t>::FMA(ttt, qqq, &res);
         }
         myGpuAtomicAdd(&grad_k[batch_idx][l + k_item_idx][k * kVecSize], res);
       }
@@ -820,7 +801,7 @@ __global__ void attention_backward_kernel(
     for (int64_t k = threadIdx.x; k < K / kVecSize; k += blockDim.x) {
 #pragma unroll
       for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-        // axpy(-tmp_sum[q_item_idx], temp_buffer[q_item_idx][k], &temp_grad_q[q_item_idx][k]);
+        // sputnik::VectorCompute<vec_t>::FMA(-tmp_sum[q_item_idx], temp_buffer[q_item_idx][k], &temp_grad_q[q_item_idx][k]);
         // grad_q_block[q_item_idx][k] = temp_grad_q[q_item_idx][k];
         grad_q_block[q_item_idx][k].x = temp_grad_q[q_item_idx][k].x -
             temp_buffer[q_item_idx][k].x * tmp_sum[q_item_idx];
