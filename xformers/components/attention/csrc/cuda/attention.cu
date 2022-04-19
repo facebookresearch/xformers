@@ -712,14 +712,15 @@ __global__ void attention_backward_kernel(
     }
 
     // those are temporaries for the gradient of the softmax
-    scalar_t tmp[kBlockSizeQ][kBlockSizeK];
+    //scalar_t tmp[kBlockSizeQ][kBlockSizeK];
 #pragma unroll
     for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
 #pragma unroll
       for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-        tmp[q_item_idx][k_item_idx] = attn_v[q_item_idx][k_item_idx] *
-            grad_attn_v[q_item_idx][k_item_idx];
-        tmp_sum[q_item_idx] += tmp[q_item_idx][k_item_idx];
+        //tmp[q_item_idx][k_item_idx] = attn_v[q_item_idx][k_item_idx] *
+        //    grad_attn_v[q_item_idx][k_item_idx];
+        //tmp_sum[q_item_idx] += tmp[q_item_idx][k_item_idx];
+        tmp_sum[q_item_idx] += attn_v[q_item_idx][k_item_idx] * grad_attn_v[q_item_idx][k_item_idx];
       }
     }
 /*
@@ -738,7 +739,7 @@ __global__ void attention_backward_kernel(
     }
 */
     //  but grad_k is a bit trickier
-
+/*
     for (int64_t k = 0; k < K / kVecSize; k++) {
 #pragma unroll
       for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
@@ -752,7 +753,7 @@ __global__ void attention_backward_kernel(
         }
         myGpuAtomicAdd(&grad_k[batch_idx][l + k_item_idx][k * kVecSize], res);
       }
-    }
+    }*/
   }
 #pragma unroll
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
@@ -776,13 +777,48 @@ __global__ void attention_backward_kernel(
       }
     }
 
+    scalar_t grad_attn_v[kBlockSizeQ][kBlockSizeK] = {0};
+    auto value_j = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
+
+    for (int64_t k = 0; k < K / kVecSize; k++) {
+      vec_t temp_i[kBlockSizeQ];
+#pragma unroll
+      for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+        temp_i[q_item_idx] = __ldg(grad_out_block[q_item_idx] + k);
+      }
+
+#pragma unroll
+      for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+        vec_t v = value_j[k + K / kVecSize * k_item_idx];
+        vec_t tt = {0};
+#pragma unroll
+        for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+          sputnik::VectorCompute<vec_t>::Dot(
+              temp_i[q_item_idx], v, &grad_attn_v[q_item_idx][k_item_idx]);
+        }
+      }
+    }
+
+    // those are temporaries for the gradient of the softmax
+    scalar_t tmp[kBlockSizeQ][kBlockSizeK];
+#pragma unroll
+    for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+#pragma unroll
+      for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+        tmp[q_item_idx][k_item_idx] = attn_v[q_item_idx][k_item_idx] *
+            grad_attn_v[q_item_idx][k_item_idx];
+      }
+    }
+
+
     for (int64_t k = 0; k < K / kVecSize; k++) {
 #pragma unroll
       for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
         vec_t res = {0};
 #pragma unroll
         for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-          scalar_t ttt = -attn_v[q_item_idx][k_item_idx] * tmp_sum[q_item_idx];
+          //scalar_t ttt = -attn_v[q_item_idx][k_item_idx] * tmp_sum[q_item_idx];
+          scalar_t ttt = tmp[q_item_idx][k_item_idx] - attn_v[q_item_idx][k_item_idx] * tmp_sum[q_item_idx];
           vec_t qqq = __ldg(query_block[q_item_idx] + k);
           //vec_t qqq = query_cache[q_item_idx][k];
           sputnik::VectorCompute<vec_t>::FMA(ttt, qqq, &res);
