@@ -24,7 +24,7 @@ from xformers.triton.sum_strided import sum_2d_dim_0
         triton.Config({"BLOCK_N": 128}, num_stages=3, num_warps=4),
         triton.Config({"BLOCK_N": 256}, num_stages=3, num_warps=8),
         triton.Config({"BLOCK_N": 512}, num_stages=3, num_warps=8),
-        triton.Config({"BLOCK_N": 1024}, num_stages=3, num_warps=16),
+        triton.Config({"BLOCK_N": 1024}, num_stages=3, num_warps=8),
     ],
     key=["N"],
 )
