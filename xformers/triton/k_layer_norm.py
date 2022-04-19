@@ -12,15 +12,6 @@ import triton
 import triton.language as tl
 
 
-@triton.jit
-def _store(y, Y, stride, N, BLOCK_SIZE_N: tl.constexpr):
-    row = tl.program_id(0)
-    cols = tl.arange(0, BLOCK_SIZE_N)
-
-    y_ptrs = Y + row * stride + cols
-    tl.store(y_ptrs, y, mask=cols < N)
-
-
 # fmt: off
 @triton.jit
 def layer_norm_fw(X, Y, W, B, M, V, stride, N, eps, affine: tl.constexpr, BLOCK_SIZE_N: tl.constexpr):
@@ -87,8 +78,8 @@ def layer_norm_bwd_dx_fused(
     dy_ptrs = DY + row * stride + cols
 
     # load data to SRAM
-    x = tl.load(x_ptrs, mask=mask, other=0).to(tl.float32)
-    dy = tl.load(dy_ptrs, mask=mask, other=0).to(tl.float32)
+    x = tl.load(x_ptrs, mask=mask, other=0)
+    dy = tl.load(dy_ptrs, mask=mask, other=0)
     mean = tl.load(M + row)
     rstd = tl.load(V + row)
 
@@ -96,7 +87,7 @@ def layer_norm_bwd_dx_fused(
     xhat = (x - mean) * rstd
 
     if affine:
-        w = tl.load(W + cols, mask=mask, other=0).to(tl.float32)
+        w = tl.load(W + cols, mask=mask, other=0)
         wdy = w * dy
     else:
         wdy = dy
@@ -108,6 +99,7 @@ def layer_norm_bwd_dx_fused(
     dx = (wdy - (xhat * mean1 + mean2)) * rstd
 
     # write-back dx
+    cols = tl.arange(0, BLOCK_SIZE_N)
     mask = cols < N  # re-materialize the mask to save registers
     dx_ptrs = DX + row * stride + cols
     tl.store(dx_ptrs, dx, mask=mask)
@@ -172,12 +164,16 @@ def layer_norm_bwd_dwdb(
     for i in range(0, M, BLOCK_SIZE_M):
         rows = i + tl.arange(0, BLOCK_SIZE_M)
         offs = rows[:, None] * N + cols[None, :]
+        mask_rm = rows < M
 
-        dw += tl.load(DW + offs, mask=(rows[:, None] < M) & mask_cols[None, :], other=0.0)
-        db += tl.load(DB + offs, mask=(rows[:, None] < M) & mask_cols[None, :], other=0.0)
+        dw += tl.load(DW + offs, mask=mask_rm[:, None] & mask_cols[None, :], other=0.0)
+        db += tl.load(DB + offs, mask=mask_rm[:, None] & mask_cols[None, :], other=0.0)
 
     sum_dw = tl.sum(dw, axis=0)
     sum_db = tl.sum(db, axis=0)
+
+    cols = pid * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+    mask_cols = cols < N
 
     tl.store(FINAL_DW + cols, sum_dw, mask=mask_cols)
     tl.store(FINAL_DB + cols, sum_db, mask=mask_cols)

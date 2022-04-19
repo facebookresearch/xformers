@@ -97,13 +97,18 @@ class _LayerNorm(torch.autograd.Function):
         M, N = x.size()
 
         # heuristics for amount of parallel reduction stream for DG/DB
-        GROUP_SIZE_M = 64
+        GROUP_SIZE_M = 32
         if N <= 8192:
-            GROUP_SIZE_M = 96
+            GROUP_SIZE_M = 64
         if N <= 4096:
+            GROUP_SIZE_M = 96
+        if N <= 2048:
             GROUP_SIZE_M = 128
         if N <= 1024:
             GROUP_SIZE_M = 256
+
+        if dy.dtype == torch.float32:
+            GROUP_SIZE_M = GROUP_SIZE_M // 2
 
         # allocate output
         locks = torch.zeros(2 * GROUP_SIZE_M, dtype=torch.int32, device="cuda")
@@ -150,7 +155,7 @@ class _LayerNorm(torch.autograd.Function):
             GROUP_SIZE_M,
             N,
             BLOCK_SIZE_M=32,
-            BLOCK_SIZE_N=128
+            BLOCK_SIZE_N=64
         )
         # fmt: on
 
