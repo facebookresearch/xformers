@@ -82,7 +82,10 @@ if _is_triton_available:
                 16,
                 32,
                 64,
-            ), "Only block sizes in [16, 32, 64] are supported"
+                128,
+                256,
+                512,
+            ), "Only block sizes in [16, 32, 64, 128, 256, 512] are supported"
 
             super().__init__()
 
@@ -158,6 +161,7 @@ if _is_triton_available:
                     device=q.device,
                 )
 
+
             assert (
                 q.shape[-2] == k.shape[-2]
             ), "Blocksparse requires the same dimensions for K and Q for now"
@@ -169,11 +173,9 @@ if _is_triton_available:
                 k.shape[-2] == self.layout.shape[-2] * self.block_size
             ), "Actual sequence size and layout are inconsistent"
 
-            assert math.log(
-                q.shape[-2], 2
-            ).is_integer(), (
-                "For now blocksparse only works on power-of-two sequence lengths"
-            )
+            assert (
+                (q.shape[-2]%self.block_size) ==0
+            ), "Sequence length {}  must be a multiple of block size {}".format(q.shape[-2],self.block_size)
 
             # Blocksparse only works on fp16
             q_dtype = q.dtype
