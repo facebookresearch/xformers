@@ -1032,13 +1032,15 @@ __global__ void attention_backward_kernel2(
   int64_t N = key.size(1);
 
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
+  constexpr int BLOCK = 4;
+  constexpr int BLOCK2 = 4;
 
   int64_t batch_idx = blockIdx.z;
   int64_t query_idx =
-      blockIdx.x * blockDim.x + threadIdx.x;
+      blockIdx.x * blockDim.x * BLOCK + threadIdx.x * BLOCK;
 
   int64_t l =
-      blockIdx.y * blockDim.y + threadIdx.y;
+      blockIdx.y * blockDim.y * BLOCK2 + threadIdx.y * BLOCK2;
 
   if (query_idx >= M)
     return;
@@ -1046,8 +1048,8 @@ __global__ void attention_backward_kernel2(
   if (l >= N)
     return;
 
-  scalar_t normalizer;
-  scalar_t tmp_sum;
+  scalar_t normalizer[BLOCK];
+  scalar_t tmp_sum[BLOCK];
 
   constexpr int KS1 = 16;
   constexpr int KS2 = 16;
@@ -1068,107 +1070,90 @@ __global__ void attention_backward_kernel2(
   //vec_t query_cache[KS1][BUFFER_SIZE];
   //vec_t key_cache[KS2][BUFFER_SIZE];
 
-  //vec_t tmp_grad1[KS1][BUFFER_SIZE] = {0};
-  //vec_t tmp_grad2[KS2][BUFFER_SIZE] = {0};
-
   vec_t zero = {0};
   for (int64_t k = 0; k < K / kVecSize; k++) {
-    query_cache[threadIdx.x][k] = qb[k];
-    key_cache[threadIdx.y][k] = kb[k];
+    for (int i = 0; i < BLOCK; i++)
+      query_cache[BLOCK * threadIdx.x + i][k] = qb[k + K / kVecSize * i];
+    for (int i = 0; i < BLOCK; i++)
+      key_cache[BLOCK2 * threadIdx.y + i][k] = kb[k + K / kVecSize * i];
     //value_cache[threadIdx.y][k] = vb[k];
     //grad_out_cache[threadIdx.x][k] = gb[k];
-    //tmp_grad1[threadIdx.x][k] = zero;
-    //tmp_grad2[threadIdx.y][k] = zero;
   }
   //__syncwarp();
-  //__syncthreads();
+  __syncthreads();
 
 
-  normalizer = logsumexp_normalizer[batch_idx][query_idx];
-  tmp_sum = tmp_sum_i[batch_idx][query_idx];
+  for (int i = 0; i < BLOCK; i++) {
+    normalizer[i] = logsumexp_normalizer[batch_idx][query_idx + i];
+    tmp_sum[i] = tmp_sum_i[batch_idx][query_idx + i];
+  }
 
   auto key_j = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
-  scalar_t attn_v = 0;
-  scalar_t grad_attn_v = 0;
+  scalar_t attn_v[BLOCK][BLOCK2] = {0};
+  scalar_t grad_attn_v[BLOCK][BLOCK2] = {0};
 
   for (int64_t k = 0; k < K / kVecSize; k += 1) {
-    //sputnik::VectorCompute<vec_t>::Dot(query_block[k], key_j[k], &attn_v);
-    //sputnik::VectorCompute<vec_t>::Dot(__ldg(qb + k), __ldg(kb + k), &attn_v);
-    sputnik::VectorCompute<vec_t>::Dot(query_cache[threadIdx.x][k], key_cache[threadIdx.y][k], &attn_v);
-    sputnik::VectorCompute<vec_t>::Dot(__ldg(gb + k), __ldg(vb + k), &grad_attn_v);
+#pragma unroll
+    for (int ii = 0; ii < BLOCK2; ii++) {
+      vec_t kk = key_cache[BLOCK2 * threadIdx.y + ii][k];
+      vec_t tt = __ldg(vb + k + K / kVecSize * ii);
+#pragma unroll
+      for (int i = 0; i < BLOCK; i++) {
+        sputnik::VectorCompute<vec_t>::Dot(query_cache[BLOCK * threadIdx.x + i][k], kk, &attn_v[i][ii]);
+        sputnik::VectorCompute<vec_t>::Dot(__ldg(gb + k + K / kVecSize * i), tt, &grad_attn_v[i][ii]);
+      }
+    }
   }
-  attn_v = std::exp(attn_v - normalizer);
+#pragma unroll
+  for (int ii = 0; ii < BLOCK2; ii++) {
+#pragma unroll
+    for (int i = 0; i < BLOCK; i++) {
+      attn_v[i][ii] = std::exp(attn_v[i][ii] - normalizer[i]);
+    }
+  }
 
-
-  /*
-  for (int64_t k = 0; k < K / kVecSize; k++) {
-    sputnik::VectorCompute<vec_t>::Dot(__ldg(gb + k), __ldg(vb + k), &grad_attn_v);
-    //sputnik::VectorCompute<vec_t>::Dot(grad_out_cache[threadIdx.x][k], value_cache[threadIdx.y][k], &grad_attn_v);
-  }*/
-
-  fact[threadIdx.x][threadIdx.y] =  attn_v * grad_attn_v - attn_v * tmp_sum;
+#pragma unroll
+  for (int ii = 0; ii < BLOCK2; ii++) {
+#pragma unroll
+    for (int i = 0; i < BLOCK; i++) {
+      fact[BLOCK * threadIdx.x + i][BLOCK2 * threadIdx.y + ii] =  attn_v[i][ii] * grad_attn_v[i][ii] - attn_v[i][ii] * tmp_sum[i];
+    }
+  }
   __syncthreads();
 
 
 
   for (int64_t k = threadIdx.y; k < K / kVecSize; k+= blockDim.y) {
-      vec_t res = {0};
+      vec_t res[BLOCK] = {0};
+#pragma unroll
       for (int64_t i = 0; i < KS2; i++) {
-        sputnik::VectorCompute<vec_t>::FMA(fact[threadIdx.x][i], key_cache[i][k], &res);
-        //sputnik::VectorCompute<vec_t>::FMA(fact[threadIdx.x][i], __ldg(kb + i * K / kVecSize + k), &res);
+        vec_t kk = key_cache[i][k];
+#pragma unroll
+        for (int ii = 0; ii < BLOCK; ii++) {
+          sputnik::VectorCompute<vec_t>::FMA(fact[BLOCK * threadIdx.x + ii][i], kk, &res[ii]);
+        }
       }
-      //if (threadIdx.y == 0)
-        myGpuAtomicAdd(&grad_q[batch_idx][query_idx][k * kVecSize], res);
+#pragma unroll
+      for (int ii = 0; ii < BLOCK; ii++) {
+        myGpuAtomicAdd(&grad_q[batch_idx][query_idx + ii][k * kVecSize], res[ii]);
+      }
   }
 
   for (int64_t k = threadIdx.x; k < K / kVecSize; k+= blockDim.x) {
-      vec_t res = {0};
+      vec_t res[BLOCK2] = {0};
+#pragma unroll
       for (int64_t i = 0; i < KS1; i++) {
-        sputnik::VectorCompute<vec_t>::FMA(fact[i][threadIdx.y], query_cache[i][k], &res);
-        //sputnik::VectorCompute<vec_t>::FMA(fact[i][threadIdx.y], __ldg(qb + i * K / kVecSize + k), &res);
+        vec_t kk = query_cache[i][k];
+#pragma unroll
+        for (int ii = 0; ii < BLOCK2; ii++) {
+          sputnik::VectorCompute<vec_t>::FMA(fact[i][BLOCK2 * threadIdx.y + ii], kk, &res[ii]);
+        }
       }
-      //if (threadIdx.x == 0)
-        myGpuAtomicAdd(&grad_k[batch_idx][l][k * kVecSize], res);
-  }
-/*
-  for (int64_t k = 0; k < K / kVecSize; k++) {
-      vec_t res = {0};
-      scalar_t ttmp = attn_v * grad_attn_v - attn_v * tmp_sum;
-      //sputnik::VectorCompute<vec_t>::FMA(ttmp, key_j[k], &res);
-      sputnik::VectorCompute<vec_t>::FMA(ttmp, key_cache[threadIdx.y][k], &res);
-      //sputnik::VectorCompute<vec_t>::FMA(ttmp, key_cache[threadIdx.y][k], &tmp_grad1[threadIdx.x][k]);
-      //myGpuAtomicAdd(&grad_q[batch_idx][query_idx][k * kVecSize], res);
-  }
-
-
-  for (int64_t k = 0; k < K / kVecSize; k++) {
-      //vec_t res = {0};
-      scalar_t ttmp = attn_v * grad_attn_v - attn_v * tmp_sum;
-      //sputnik::VectorCompute<vec_t>::FMA(ttmp, query_block[k], &res);
-      sputnik::VectorCompute<vec_t>::FMA(ttmp, query_cache[threadIdx.x][k], &res);
-      //sputnik::VectorCompute<vec_t>::FMA(ttmp, query_cache[threadIdx.x][k], &tmp_grad2[threadIdx.y][k]);
-      //myGpuAtomicAdd(&grad_k[batch_idx][l][k * kVecSize], res);
-  }
-*/
-/*
-  if ((threadIdx.x == 0) && (threadIdx.y == 0)) {
-    for (int64_t k = 0; k < K / kVecSize; k++) {
-      vec_t res0 = {0};
-      for (int i = 0; i < KS1; i++)
-      {
-        sputnik::VectorCompute<vec_t>::FMA(scalar_t(1), tmp_grad1[i][k], &res0);
+#pragma unroll
+      for (int ii = 0; ii < BLOCK2; ii++) {
+        myGpuAtomicAdd(&grad_k[batch_idx][l + ii][k * kVecSize], res[ii]);
       }
-      myGpuAtomicAdd(&grad_q[batch_idx][query_idx][k * kVecSize], res0);
-
-      vec_t res1 = {0};
-      for (int i = 0; i < KS2; i++)
-      {
-        sputnik::VectorCompute<vec_t>::FMA(scalar_t(1), tmp_grad2[i][k], &res1);
-      }
-      myGpuAtomicAdd(&grad_k[batch_idx][l][k * kVecSize], res1);
-    }
-  }*/
-
+  }
 
 }
 
@@ -1271,7 +1256,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   //dim3 block2(TILE_SIZE2Q / kBlockSizeQ2, TILE_SIZE2K / kBlockSizeK2);
 
   dim3 grid2(ceil_div(M, int64_t(16)), ceil_div(N, int64_t(16)), B);
-  dim3 block2(16, 16);
+  dim3 block2(4, 4);
   // TODO: try adding a blockDim.x to iterate over k
 
   attention_backward_kernel2<
