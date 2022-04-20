@@ -615,7 +615,7 @@ template <
     int kBlockSizeK,
     int TILE_SIZEQ,
     int TILE_SIZEK>
-__global__ void attention_backward_grad_v2_kernel(
+__global__ void attention_backward_grad_v_kernel(
     at::PackedTensorAccessor<scalar_t, 3> grad_v,
     at::PackedTensorAccessor<scalar_t, 3> grad_out,
     at::PackedTensorAccessor<scalar_t, 3> query,
@@ -645,8 +645,6 @@ __global__ void attention_backward_grad_v2_kernel(
   scalar_t tmp_sum[kBlockSizeQ] = {0};
 
   __shared__ scalar_t fact[TILE_SIZEQ][TILE_SIZEK + 1];
-
-  //__shared__ scalar_t tmp_sum_shared[kBlockSizeQ][TILE_SIZEK];
 
   auto qb = reinterpret_cast<vec_t*>(query[batch_idx][query_idx].data());
   auto kb = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
@@ -698,9 +696,6 @@ __global__ void attention_backward_grad_v2_kernel(
       tmp_sum[q_item_idx] += attn_v[q_item_idx][k_item_idx] * grad_attn_v[q_item_idx][k_item_idx];
     }
   }
-  //for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-  //  tmp_sum_shared[kBlockSizeQ * threadIdx.x + q_item_idx][threadIdx.y] = tmp_sum[q_item_idx];
-  //}
   __syncthreads();
 
   for (int64_t k = threadIdx.x; k < K / kVecSize; k += blockDim.x) {
@@ -722,119 +717,8 @@ __global__ void attention_backward_grad_v2_kernel(
           &grad_v[batch_idx][l + k_item_idx][k * kVecSize], res[k_item_idx]);
     }
   }
-  /*
-  if (threadIdx.y == 0) {
-    for (int i = threadIdx.x; i < TILE_SIZEQ; i += blockDim.x) {
-      scalar_t tmp = 0;
-      for (int k = 0; k < blockDim.y; k++)
-      {
-        tmp += tmp_sum_shared[i][k];
-      }
-      myGpuAtomicAdd(&tmp_sum_i[batch_idx][query_idx + i - kBlockSizeQ * threadIdx.x], tmp);
-    }
-  }
-  */
   for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
     myGpuAtomicAdd(&tmp_sum_i[batch_idx][query_idx + q_item_idx], tmp_sum[q_item_idx]);
-  }
-}
-
-template <typename scalar_t, typename vec_t, int kBlockSizeQ, int kBlockSizeK>
-__global__ void attention_backward_grad_v_kernel(
-    at::PackedTensorAccessor<scalar_t, 3> grad_v,
-    at::PackedTensorAccessor<scalar_t, 3> grad_out,
-    at::PackedTensorAccessor<scalar_t, 3> query,
-    at::PackedTensorAccessor<scalar_t, 3> key,
-    at::PackedTensorAccessor<scalar_t, 3> value,
-    at::PackedTensorAccessor<scalar_t, 2> tmp_sum_i,
-    at::PackedTensorAccessor<scalar_t, 2> logsumexp_normalizer) {
-  int64_t K = query.size(2);
-  int64_t B = query.size(0);
-  int64_t M = query.size(1);
-  int64_t N = key.size(1);
-
-  constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
-
-  int64_t batch_idx = blockIdx.y;
-  int64_t query_idx =
-      blockIdx.x * blockDim.y * kBlockSizeQ + threadIdx.y * kBlockSizeQ;
-
-  if (query_idx >= M)
-    return;
-
-  vec_t* query_block[kBlockSizeQ];
-  vec_t* grad_out_block[kBlockSizeQ];
-  scalar_t normalizer[kBlockSizeQ];
-
-  for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-    int64_t index = query_idx + q_item_idx;
-    index = index >= M ? M - 1 : index;
-    query_block[q_item_idx] =
-        reinterpret_cast<vec_t*>(query[batch_idx][index].data());
-    grad_out_block[q_item_idx] =
-        reinterpret_cast<vec_t*>(grad_out[batch_idx][index].data());
-    normalizer[q_item_idx] = logsumexp_normalizer[batch_idx][index];
-  }
-
-  scalar_t tmp_sum[kBlockSizeQ] = {0};
-  for (int64_t l = threadIdx.x * kBlockSizeK; l < N;
-       l += blockDim.x * kBlockSizeK) {
-    auto key_j = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
-
-    scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
-    compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
-        query_block, key_j, attn_v, K);
-
-#pragma unroll
-    for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-#pragma unroll
-      for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-        attn_v[q_item_idx][k_item_idx] =
-            std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]);
-      }
-    }
-
-    // first compute the gradient for the self-attention
-    // after softmax
-    scalar_t grad_attn_v[kBlockSizeQ][kBlockSizeK] = {0};
-    auto value_j = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-
-    for (int64_t k = 0; k < K / kVecSize; k++) {
-      vec_t temp_i[kBlockSizeQ];
-#pragma unroll
-      for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-        temp_i[q_item_idx] = __ldg(grad_out_block[q_item_idx] + k);
-      }
-
-#pragma unroll
-      for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-        vec_t v = value_j[k + K / kVecSize * k_item_idx];
-        vec_t tt = {0};
-#pragma unroll
-        for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-          sputnik::VectorCompute<vec_t>::Dot(
-              temp_i[q_item_idx], v, &grad_attn_v[q_item_idx][k_item_idx]);
-          sputnik::VectorCompute<vec_t>::FMA(
-              attn_v[q_item_idx][k_item_idx], temp_i[q_item_idx], &tt);
-        }
-        myGpuAtomicAdd(&grad_v[batch_idx][l + k_item_idx][k * kVecSize], tt);
-      }
-    }
-
-    // those are temporaries for the gradient of the softmax
-#pragma unroll
-    for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-#pragma unroll
-      for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-        tmp_sum[q_item_idx] += attn_v[q_item_idx][k_item_idx] *
-            grad_attn_v[q_item_idx][k_item_idx];
-      }
-    }
-  }
-#pragma unroll
-  for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-    tmp_sum[q_item_idx] = warpSum<scalar_t, 32>(tmp_sum[q_item_idx]);
-    tmp_sum_i[batch_idx][query_idx + q_item_idx] = tmp_sum[q_item_idx];
   }
 }
 
@@ -1034,27 +918,13 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   constexpr int64_t kBlockSizeQ = 4;
   constexpr int64_t kBlockSizeK = 8;
 
-  //dim3 grid(ceil_div(M, int64_t(TILE_SIZE)), B);
-  //dim3 block(32, TILE_SIZE / kBlockSizeQ);
-
   dim3 grid(
       ceil_div(M, int64_t(TILE_SIZEQ)), ceil_div(N, int64_t(TILE_SIZEK)), B);
   dim3 block(TILE_SIZEQ / kBlockSizeQ, TILE_SIZEK / kBlockSizeK);
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-  /*
-  attention_backward_grad_v_kernel<scalar_t, vec_t, kBlockSizeQ, kBlockSizeK>
-      <<<grid, block, 0, stream>>>(
-          grad_v.packed_accessor<scalar_t, 3>(),
-          grad_out.packed_accessor<scalar_t, 3>(),
-          query.packed_accessor<scalar_t, 3>(),
-          key.packed_accessor<scalar_t, 3>(),
-          value.packed_accessor<scalar_t, 3>(),
-          tmp_sum_i.packed_accessor<scalar_t, 2>(),
-          logsumexp.packed_accessor<scalar_t, 2>());*/
-
-  attention_backward_grad_v2_kernel<
+  attention_backward_grad_v_kernel<
       scalar_t,
       vec_t,
       kBlockSizeQ,
