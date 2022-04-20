@@ -1052,7 +1052,7 @@ __global__ void attention_backward_kernel2(
   scalar_t tmp_sum[BLOCK];
 
   constexpr int KS1 = 32;
-  constexpr int KS2 = 16;
+  constexpr int KS2 = 32;
 
   //__shared__ vec_t query_cache[KS1][BUFFER_SIZE+1];
   //__shared__ vec_t key_cache[KS2][BUFFER_SIZE+1];
@@ -1251,8 +1251,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   //dim3 grid2(ceil_div(M, int64_t(TILE_SIZE2Q)), ceil_div(N, int64_t(TILE_SIZE2K)), B);
   //dim3 block2(TILE_SIZE2Q / kBlockSizeQ2, TILE_SIZE2K / kBlockSizeK2);
 
-  dim3 grid2(ceil_div(M, int64_t(32)), ceil_div(N, int64_t(16)), B);
-  dim3 block2(8, 4);
+  dim3 grid2(ceil_div(M, int64_t(32)), ceil_div(N, int64_t(32)), B);
+  dim3 block2(8, 8);
   // TODO: try adding a blockDim.x to iterate over k
 
   attention_backward_kernel2<
