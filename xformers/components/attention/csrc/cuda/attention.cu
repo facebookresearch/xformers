@@ -1027,14 +1027,19 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   using vec_t = float4;
   // using vec_t = float;
 
-  constexpr int TILE_SIZE = 16 * 8;
+  constexpr int TILE_SIZEQ = 32;
+  constexpr int TILE_SIZEK = 32;
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
 
-  constexpr int64_t kBlockSizeQ = 16;
-  constexpr int64_t kBlockSizeK = 4;
+  constexpr int64_t kBlockSizeQ = 4;
+  constexpr int64_t kBlockSizeK = 8;
 
-  dim3 grid(ceil_div(M, int64_t(TILE_SIZE)), B);
-  dim3 block(32, TILE_SIZE / kBlockSizeQ);
+  //dim3 grid(ceil_div(M, int64_t(TILE_SIZE)), B);
+  //dim3 block(32, TILE_SIZE / kBlockSizeQ);
+
+  dim3 grid(
+      ceil_div(M, int64_t(TILE_SIZEQ)), ceil_div(N, int64_t(TILE_SIZEK)), B);
+  dim3 block(TILE_SIZEQ / kBlockSizeQ, TILE_SIZEK / kBlockSizeK);
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
@@ -1049,6 +1054,21 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
           tmp_sum_i.packed_accessor<scalar_t, 2>(),
           logsumexp.packed_accessor<scalar_t, 2>());*/
 
+  attention_backward_grad_v2_kernel<
+      scalar_t,
+      vec_t,
+      kBlockSizeQ,
+      kBlockSizeK,
+      TILE_SIZEQ,
+      TILE_SIZEK><<<grid, block, 0, stream>>>(
+      grad_v.packed_accessor<scalar_t, 3>(),
+      grad_out.packed_accessor<scalar_t, 3>(),
+      query.packed_accessor<scalar_t, 3>(),
+      key.packed_accessor<scalar_t, 3>(),
+      value.packed_accessor<scalar_t, 3>(),
+      tmp_sum_i.packed_accessor<scalar_t, 2>(),
+      logsumexp.packed_accessor<scalar_t, 2>());
+
   constexpr int TILE_SIZEQ2 = 32;
   constexpr int TILE_SIZEK2 = 32;
 
@@ -1059,21 +1079,6 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
       ceil_div(M, int64_t(TILE_SIZEQ2)), ceil_div(N, int64_t(TILE_SIZEK2)), B);
   dim3 block2(TILE_SIZEQ2 / kBlockSizeQ2, TILE_SIZEK2 / kBlockSizeK2);
   // TODO: try adding a blockDim.x to iterate over k
-
-  attention_backward_grad_v2_kernel<
-      scalar_t,
-      vec_t,
-      kBlockSizeQ2,
-      kBlockSizeK2,
-      TILE_SIZEQ2,
-      TILE_SIZEK2><<<grid2, block2, 0, stream>>>(
-      grad_v.packed_accessor<scalar_t, 3>(),
-      grad_out.packed_accessor<scalar_t, 3>(),
-      query.packed_accessor<scalar_t, 3>(),
-      key.packed_accessor<scalar_t, 3>(),
-      value.packed_accessor<scalar_t, 3>(),
-      tmp_sum_i.packed_accessor<scalar_t, 2>(),
-      logsumexp.packed_accessor<scalar_t, 2>());
 
   attention_backward_grad_qk_kernel<
       scalar_t,
