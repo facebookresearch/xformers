@@ -21,7 +21,7 @@ from xformers.factory.model_factory import xFormer, xFormerConfig
 
 
 class GPT(pl.LightningModule):
-    """  the full GPT language model, with a context size of block_size """
+    """the full GPT language model, with a context size of block_size"""
 
     def __init__(
         self,

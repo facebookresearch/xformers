@@ -69,7 +69,7 @@ def iterative_pinv_analysis(
 ):
 
     for i in range(1, 10):
-        B, M = 1, 2 ** i
+        B, M = 1, 2**i
         a = torch.rand(B, M, M)
         a = torch.softmax(a, dim=-1)
 

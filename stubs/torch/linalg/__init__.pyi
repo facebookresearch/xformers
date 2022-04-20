@@ -15,6 +15,7 @@ M = TypeVar("M", bound=int)
 N = TypeVar("N", bound=int)
 
 Ts = TypeVarTuple("Ts")
+
 @overload
 def pinv(
     input: Tensor[FloatOrDouble, Unpack[Ts], N1, N1],

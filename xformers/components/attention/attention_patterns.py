@@ -53,7 +53,7 @@ def random_pattern_from_probability_matrix(dist_matrix, nnz):
     # should work fine if double tensor is passed on CPU. This is a bug that was introduced
     # in https://github.com/pytorch/pytorch/commit/bf04c2ca2f591d98ce57816f0ef0cd20a21bbf66
     # when unifying the checks between CPU and CUDA. For now, just fall-back to numpy
-    if dist_matrix.numel() > 2 ** 24:
+    if dist_matrix.numel() > 2**24:
         dist_matrix = dist_matrix.double()
         dist_matrix /= dist_matrix.sum()
         idxs = np.random.choice(
@@ -227,7 +227,7 @@ def alibi_pattern(threshold: float, mask_shape: torch.Size) -> torch.Tensor:
         def get_slopes_power_of_2(n: int) -> List[float]:
             start = 2 ** (-(2 ** -(math.log2(n) - 3)))
             ratio = start
-            return [start * ratio ** i for i in range(n)]
+            return [start * ratio**i for i in range(n)]
 
         # In the paper, we only train models that have 2^a heads for some a. This function has
         # some good properties that only occur when the input is a power of 2. To maintain that even

@@ -148,11 +148,13 @@ def test_attention_fwd_bwd(
     ]
 
     def loss_fn(x):
-        return (x ** 2).mean()
+        return (x**2).mean()
 
     # Triton:
     n_blocks = n_ctx // block
-    layout = torch.tril(torch.ones([n_heads, n_blocks, n_blocks], dtype=torch.long),diagonal=-1)
+    layout = torch.tril(
+        torch.ones([n_heads, n_blocks, n_blocks], dtype=torch.long), diagonal=-1
+    )
     query, key, value = [x.clone() for x in qkvs]
     query.retain_grad()
     key.retain_grad()

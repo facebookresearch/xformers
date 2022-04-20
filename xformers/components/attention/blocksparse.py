@@ -158,8 +158,8 @@ if _is_triton_available:
             .. note: Per element attention mask is not supported, but you can specify causality
             """
 
-            #Delayed triton init, to make sure that we get the right device
-            #Infer device from query
+            # Delayed triton init, to make sure that we get the right device
+            # Infer device from query
             if not hasattr(self, "sparse_dot_sdd"):
                 self.create_triton_kernels(q.device)
 
@@ -175,8 +175,10 @@ if _is_triton_available:
             ), "Actual sequence size and layout are inconsistent"
 
             assert (
-                (q.shape[-2]%self.block_size) ==0
-            ), "Sequence length {}  must be a multiple of block size {}".format(q.shape[-2],self.block_size)
+                q.shape[-2] % self.block_size
+            ) == 0, "Sequence length {}  must be a multiple of block size {}".format(
+                q.shape[-2], self.block_size
+            )
 
             # Blocksparse only works on fp16
             q_dtype = q.dtype

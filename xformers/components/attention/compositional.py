@@ -152,8 +152,8 @@ class CompositionalAttention(Attention):
             self.value_dim * num_rules == dim_attn
         ), "value_dim must be divisible by num_rules"
 
-        self.scaling = self.dim_head ** -0.5
-        self.scaling_values = self.dim_selection ** -0.5
+        self.scaling = self.dim_head**-0.5
+        self.scaling_values = self.dim_selection**-0.5
 
         self.out_proj = nn.Linear(self.num_heads * self.value_dim, dim_model, bias=bias)
 

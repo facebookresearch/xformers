@@ -60,7 +60,7 @@ for num_threads in NUM_THREADS:
             ).blocked_autorange(min_run_time=min_run_time)
         )
         torch.cuda.synchronize()
-        memory = torch.cuda.max_memory_allocated() / 2 ** 20
+        memory = torch.cuda.max_memory_allocated() / 2**20
         mem_use["optimized"][sub_label] = memory
         memory_str = f"Memory used: {memory} MB"
 
@@ -83,7 +83,7 @@ for num_threads in NUM_THREADS:
         )
 
         torch.cuda.synchronize()
-        memory = torch.cuda.max_memory_allocated() / 2 ** 20
+        memory = torch.cuda.max_memory_allocated() / 2**20
         mem_use["vanilla"][sub_label] = memory
         memory_str = f"Memory used: {memory} MB"
         print("Vanilla", memory_str)

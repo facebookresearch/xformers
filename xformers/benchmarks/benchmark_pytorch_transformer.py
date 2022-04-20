@@ -170,7 +170,7 @@ def bench_pytorch_encoder(
                 torch.cuda.synchronize()
 
                 train(model, optimizer, label, steps, batch, seq, emb, device)
-                max_memory = torch.cuda.max_memory_allocated() // 2 ** 20
+                max_memory = torch.cuda.max_memory_allocated() // 2**20
                 print(f"Peak memory use: {max_memory}MB")
 
                 eval_stop = evaluate(model, batch, seq, emb, device)

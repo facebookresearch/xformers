@@ -235,7 +235,7 @@ def rewrite_hyper(config, rewrites):
 
 def seed_worker(_: int):
     # Make sure that non-pytorch random generators are properly set
-    worker_seed = torch.initial_seed() % 2 ** 32
+    worker_seed = torch.initial_seed() % 2**32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
