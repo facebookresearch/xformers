@@ -82,7 +82,8 @@ if _is_triton_available:
                 16,
                 32,
                 64,
-            ), "Only block sizes in [16, 32, 64] are supported"
+                128,
+            ), "Only block sizes in [16, 32, 64, 128] are supported"
 
             super().__init__()
 
@@ -112,6 +113,32 @@ if _is_triton_available:
                 )
             mask = bool_mask_to_additive(mask)
 
+        def create_triton_kernels(self, device):
+            # blocksparse operators
+            self.sparse_dot_sdd = blocksparse_matmul(
+                self.layout,
+                self.block_size,
+                "sdd",
+                trans_a=False,
+                trans_b=True,
+                device=device,
+            )
+
+            self.sparse_dot_dsd = blocksparse_matmul(
+                self.layout,
+                self.block_size,
+                "dsd",
+                trans_a=False,
+                trans_b=False,
+                device=device,
+            )
+
+            self.sparse_softmax = blocksparse_softmax(
+                self.layout,
+                self.block_size,
+                device=device,
+            )
+
         def forward(
             self,
             q: torch.Tensor,
@@ -132,31 +159,9 @@ if _is_triton_available:
             """
 
             # Delayed triton init, to make sure that we get the right device
+            # Infer device from query
             if not hasattr(self, "sparse_dot_sdd"):
-                # blocksparse operators
-                self.sparse_dot_sdd = blocksparse_matmul(
-                    self.layout,
-                    self.block_size,
-                    "sdd",
-                    trans_a=False,
-                    trans_b=True,
-                    device=q.device,
-                )
-
-                self.sparse_dot_dsd = blocksparse_matmul(
-                    self.layout,
-                    self.block_size,
-                    "dsd",
-                    trans_a=False,
-                    trans_b=False,
-                    device=q.device,
-                )
-
-                self.sparse_softmax = blocksparse_softmax(
-                    self.layout,
-                    self.block_size,
-                    device=q.device,
-                )
+                self.create_triton_kernels(q.device)
 
             assert (
                 q.shape[-2] == k.shape[-2]
@@ -169,10 +174,10 @@ if _is_triton_available:
                 k.shape[-2] == self.layout.shape[-2] * self.block_size
             ), "Actual sequence size and layout are inconsistent"
 
-            assert math.log(
-                q.shape[-2], 2
-            ).is_integer(), (
-                "For now blocksparse only works on power-of-two sequence lengths"
+            assert (
+                q.shape[-2] % self.block_size
+            ) == 0, "Sequence length {}  must be a multiple of block size {}".format(
+                q.shape[-2], self.block_size
             )
 
             # Blocksparse only works on fp16

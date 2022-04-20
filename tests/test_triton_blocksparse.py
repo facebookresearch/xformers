@@ -98,7 +98,7 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
-@pytest.mark.parametrize("BLOCK", [32])
+@pytest.mark.parametrize("BLOCK", [32, 128])
 @pytest.mark.parametrize("WIDTH", [256, 576, 1024, 1792])
 @pytest.mark.parametrize("DTYPE", [torch.float16, torch.float32])
 def test_softmax(BLOCK, WIDTH, DTYPE):
@@ -127,12 +127,12 @@ def test_softmax(BLOCK, WIDTH, DTYPE):
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
-@pytest.mark.parametrize("block", [32, 43])  # 16, 32,
+@pytest.mark.parametrize("block", [32, 43, 128])  # 16, 32,
 def test_attention_fwd_bwd(
     block,
     input_scale=1.0,
     scale=1 / 8.0,
-    n_ctx=256,
+    n_ctx=384,
     dtype=torch.float16,
     batch_size=2,
     n_heads=2,
@@ -152,12 +152,14 @@ def test_attention_fwd_bwd(
 
     # Triton:
     n_blocks = n_ctx // block
-    layout = torch.tril(torch.ones([n_heads, n_blocks, n_blocks], dtype=torch.long))
+    layout = torch.tril(
+        torch.ones([n_heads, n_blocks, n_blocks], dtype=torch.long), diagonal=-1
+    )
     query, key, value = [x.clone() for x in qkvs]
     query.retain_grad()
     key.retain_grad()
     value.retain_grad()
-    if block not in [16, 32, 64]:
+    if block not in [16, 32, 64, 128]:
         # Check that unsupported dimensions are caught
         with pytest.raises(AssertionError):
             _ = BlockSparseAttention(layout, block)

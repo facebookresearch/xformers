@@ -26,7 +26,7 @@ if _triton_is_available:
 
 
 def pretty_print(results, title, units):
-    """ Printout the contents of a dict as a human-readable and Markdown compatible array"""
+    """Printout the contents of a dict as a human-readable and Markdown compatible array"""
     print(title)
     header = " Units: {:<45}".format(units)
     print("| " + header + "|" + "".join("{0:<20}|".format(k) for k in results.keys()))
