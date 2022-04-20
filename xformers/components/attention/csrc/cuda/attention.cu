@@ -765,29 +765,29 @@ __global__ void attention_backward_grad_qk_kernel(
 
   for (int64_t k = 0; k < K / kVecSize; k += 1) {
 #pragma unroll
-    for (int ii = 0; ii < kBlockSizeK; ii++) {
-      vec_t kk = __ldg(kb + k + K / kVecSize * ii);
-      vec_t tt = __ldg(vb + k + K / kVecSize * ii);
+    for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+      vec_t kk = __ldg(kb + k + K / kVecSize * k_item_idx);
+      vec_t tt = __ldg(vb + k + K / kVecSize * k_item_idx);
 #pragma unroll
-      for (int i = 0; i < kBlockSizeQ; i++) {
-        sputnik::VectorCompute<vec_t>::Dot(__ldg(qb + k + K / kVecSize * i), kk, &attn_v[i][ii]);
-        sputnik::VectorCompute<vec_t>::Dot(__ldg(gb + k + K / kVecSize * i), tt, &grad_attn_v[i][ii]);
+      for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+        sputnik::VectorCompute<vec_t>::Dot(__ldg(qb + k + K / kVecSize * q_item_idx), kk, &attn_v[q_item_idx][k_item_idx]);
+        sputnik::VectorCompute<vec_t>::Dot(__ldg(gb + k + K / kVecSize * q_item_idx), tt, &grad_attn_v[q_item_idx][k_item_idx]);
       }
     }
   }
 #pragma unroll
-  for (int ii = 0; ii < kBlockSizeK; ii++) {
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
 #pragma unroll
-    for (int i = 0; i < kBlockSizeQ; i++) {
-      attn_v[i][ii] = std::exp(attn_v[i][ii] - normalizer[i]);
+    for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      attn_v[q_item_idx][k_item_idx] = std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]);
     }
   }
 
 #pragma unroll
-  for (int ii = 0; ii < kBlockSizeK; ii++) {
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
 #pragma unroll
-    for (int i = 0; i < kBlockSizeQ; i++) {
-      fact[kBlockSizeQ * threadIdx.x + i][kBlockSizeK * threadIdx.y + ii] =  attn_v[i][ii] * grad_attn_v[i][ii] - attn_v[i][ii] * tmp_sum[i];
+    for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      fact[kBlockSizeQ * threadIdx.x + q_item_idx][kBlockSizeK * threadIdx.y + k_item_idx] =  attn_v[q_item_idx][k_item_idx] * grad_attn_v[q_item_idx][k_item_idx] - attn_v[q_item_idx][k_item_idx] * tmp_sum[q_item_idx];
     }
   }
   __syncthreads();
@@ -798,13 +798,13 @@ __global__ void attention_backward_grad_qk_kernel(
       for (int64_t i = 0; i < TILE_SIZEK; i++) {
         vec_t kk = __ldg(kb + k + K / kVecSize * (i - kBlockSizeK * threadIdx.y));
 #pragma unroll
-        for (int ii = 0; ii < kBlockSizeQ; ii++) {
-          sputnik::VectorCompute<vec_t>::FMA(fact[kBlockSizeQ * threadIdx.x + ii][i], kk, &res[ii]);
+        for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+          sputnik::VectorCompute<vec_t>::FMA(fact[kBlockSizeQ * threadIdx.x + q_item_idx][i], kk, &res[q_item_idx]);
         }
       }
 #pragma unroll
-      for (int ii = 0; ii < kBlockSizeQ; ii++) {
-        myGpuAtomicAdd(&grad_q[batch_idx][query_idx + ii][k * kVecSize], res[ii]);
+      for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+        myGpuAtomicAdd(&grad_q[batch_idx][query_idx + q_item_idx][k * kVecSize], res[q_item_idx]);
       }
   }
 
@@ -814,13 +814,13 @@ __global__ void attention_backward_grad_qk_kernel(
       for (int64_t i = 0; i < TILE_SIZEQ; i++) {
         vec_t kk = __ldg(qb + k + K / kVecSize * (i - kBlockSizeQ * threadIdx.x));
 #pragma unroll
-        for (int ii = 0; ii < kBlockSizeK; ii++) {
-          sputnik::VectorCompute<vec_t>::FMA(fact[i][kBlockSizeK * threadIdx.y + ii], kk, &res[ii]);
+        for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+          sputnik::VectorCompute<vec_t>::FMA(fact[i][kBlockSizeK * threadIdx.y + k_item_idx], kk, &res[k_item_idx]);
         }
       }
 #pragma unroll
-      for (int ii = 0; ii < kBlockSizeK; ii++) {
-        myGpuAtomicAdd(&grad_k[batch_idx][l + ii][k * kVecSize], res[ii]);
+      for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+        myGpuAtomicAdd(&grad_k[batch_idx][l + k_item_idx][k * kVecSize], res[k_item_idx]);
       }
   }
 }
