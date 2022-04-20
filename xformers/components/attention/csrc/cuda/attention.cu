@@ -1054,21 +1054,14 @@ __global__ void attention_backward_kernel2(
   constexpr int KS1 = 16;
   constexpr int KS2 = 16;
 
-  __shared__ vec_t query_cache[KS1][BUFFER_SIZE];
-  __shared__ vec_t key_cache[KS2][BUFFER_SIZE];
-  //__shared__ vec_t value_cache[KS2][BUFFER_SIZE];
-  //__shared__ vec_t grad_out_cache[KS1][BUFFER_SIZE];
-  __shared__ scalar_t fact[KS1][KS2];
+  __shared__ vec_t query_cache[KS1][BUFFER_SIZE+1];
+  __shared__ vec_t key_cache[KS2][BUFFER_SIZE+1];
+  __shared__ scalar_t fact[KS1][KS2+1];
 
   auto qb = reinterpret_cast<vec_t*>(query[batch_idx][query_idx].data());
   auto kb = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
   auto vb = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
   auto gb = reinterpret_cast<vec_t*>(grad_out[batch_idx][query_idx].data());
-
-  //__shared__ vec_t tmp_grad1[KS1][BUFFER_SIZE];
-  //__shared__ vec_t tmp_grad2[KS2][BUFFER_SIZE];
-  //vec_t query_cache[KS1][BUFFER_SIZE];
-  //vec_t key_cache[KS2][BUFFER_SIZE];
 
   vec_t zero = {0};
   for (int64_t k = 0; k < K / kVecSize; k++) {
@@ -1076,8 +1069,6 @@ __global__ void attention_backward_kernel2(
       query_cache[BLOCK * threadIdx.x + i][k] = qb[k + K / kVecSize * i];
     for (int i = 0; i < BLOCK; i++)
       key_cache[BLOCK2 * threadIdx.y + i][k] = kb[k + K / kVecSize * i];
-    //value_cache[threadIdx.y][k] = vb[k];
-    //grad_out_cache[threadIdx.x][k] = gb[k];
   }
   //__syncwarp();
   __syncthreads();
