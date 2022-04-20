@@ -1032,7 +1032,7 @@ __global__ void attention_backward_kernel2(
   int64_t N = key.size(1);
 
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
-  constexpr int BLOCK = 8; // KS1 / blockDim.x
+  constexpr int BLOCK = 4; // KS1 / blockDim.x
   constexpr int BLOCK2 = 4;
 
   int64_t batch_idx = blockIdx.z;
@@ -1252,7 +1252,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   //dim3 block2(TILE_SIZE2Q / kBlockSizeQ2, TILE_SIZE2K / kBlockSizeK2);
 
   dim3 grid2(ceil_div(M, int64_t(32)), ceil_div(N, int64_t(16)), B);
-  dim3 block2(4, 4);
+  dim3 block2(8, 4);
   // TODO: try adding a blockDim.x to iterate over k
 
   attention_backward_kernel2<
