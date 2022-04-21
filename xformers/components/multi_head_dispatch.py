@@ -210,7 +210,7 @@ class MultiHeadDispatch(nn.Module):
             v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
 
         # Self-attend
-        y = self.attention(q=q, k=k, v=v, **kw_mask_args)
+        y = self.attention(q, k, v, **kw_mask_args)
 
         # Re-assemble all head outputs side by side
         y = (
