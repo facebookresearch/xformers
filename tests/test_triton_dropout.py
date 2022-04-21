@@ -88,15 +88,18 @@ def test_dropout(shape, amp, bias, p):
         x_ref = (x + b if bias else x).to(y.dtype)
         assert torch.allclose(x_ref, y, rtol=tol), f"{x[x>y]}"
 
-        # Check that .99 means dropout for sure
+        # Check that 1 means drop all
+        y = triton_dropout(x, p=1, bias=b)
+        x_ref = (x + b if bias else x).to(y.dtype)
+        assert torch.allclose(torch.zeros_like(y), y, rtol=tol)
+
+        # Check that .99 means probably dropout
         y = triton_dropout(x, p=0.99, bias=b)
         x_ref = (x + b if bias else x).to(y.dtype)
         assert not torch.allclose(x_ref, y, rtol=tol)
 
         # Check that the drops are different for every row (could catch broken seeds per row)
         y = triton_dropout(x, p=0.5)
-
-        print(y)
 
         y = y.flatten(0, 1) if y.ndim == 3 else y
         assert not torch.sum(torch.eq(y[0, :] == 0.0, y[1, :] == 0.0)) == y.shape[1]

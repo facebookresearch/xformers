@@ -8,7 +8,7 @@ import logging
 import torch
 
 # Please update the doc version in docs/source/conf.py as well.
-__version__ = "0.0.11.dev"
+__version__ = "0.0.10"
 
 _is_sparse_available = True
 _is_triton_available = torch.cuda.is_available()

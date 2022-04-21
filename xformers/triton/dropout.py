@@ -169,7 +169,10 @@ def dropout(
     Optionally add a bias, the computation will be fused.
     """
 
-    assert p < 1.0, f"We don't want to drop all the values, most probably {p}"
+    assert p <= 1.0 and p >= 0.0
+
+    if p == 1.0:
+        return torch.zeros_like(x)
 
     # Micro optim, skip dropout
     if p == 0.0:
