@@ -20,18 +20,18 @@ _configs = [
 
 
 @triton.jit
-def _get_4_bin_masks(seed, rand_offsets, p):
-    seed = tl.load(seed)
+def _get_4_bin_masks(seed_ptr, rand_offsets, p):
+    seed = tl.load(seed_ptr)
     rand1, rand2, rand3, rand4 = tl.randint4x(seed, rand_offsets)
 
     # binarize masks, save registers
-    # NOTE: We keep the random numbers as is there (integers over int32),
+    # NOTE: We keep the random numbers as is there (integers over uint32),
     # and convert the threshold instead, for speed
 
-    # The initial distribution is -2**31 / 2**31 -1
+    # The initial distribution is over 2**32 -1
     # and our float threshold  is in between [0, 1]
     # The full computation is: `start_point + full range * p`
-    threshold = (-2147483648.0 + 4294967295.0 * p).to(tl.int32)
+    threshold = (4294967296.0 * p).to(tl.int32)
     rand_mask1 = rand1 > threshold
     rand_mask2 = rand2 > threshold
     rand_mask3 = rand3 > threshold
@@ -44,18 +44,44 @@ def _get_4_bin_masks(seed, rand_offsets, p):
 def _random_prune_and_scale(x, rand_mask, p, p_scale):
     zero = 0.0
 
-    if p > 0.0:
-        # generate all the random numbers for the block at once, then reshape
-        keep = tl.reshape(rand_mask, x.shape)
+    # generate all the random numbers for the block at once, then reshape
+    keep = tl.reshape(rand_mask, x.shape)
 
-        # prune and normalize in one go
-        x = tl.where(keep, (x * p_scale).to(x.dtype), zero.to(x.dtype))
-
+    # prune and normalize in one go
+    x = tl.where(keep, (x * p_scale).to(x.dtype), zero.to(x.dtype))
     return x
 
 
+@triton.jit
+def tile_random_drop(
+    x_ptrs,
+    y_ptrs,
+    block_mask,
+    use_bias,
+    bias,
+    rand_mask,
+    p,
+    p_scale,
+    ACTIVATION,
+):
+    x = tl.load(x_ptrs, mask=block_mask, other=0.0)
+
+    # optionally apply a fused bias
+    if use_bias:
+        x += bias
+
+    # optional: fused activation (while the data is in shared memory)
+    if ACTIVATION:
+        x = ACTIVATION(x)
+
+    # randomly prune (and scale) the resulting buffer, possibly a no-op
+    output = _random_prune_and_scale(x, rand_mask, p, p_scale)
+
+    tl.store(y_ptrs, output, mask=block_mask)  # output
+
+
 # fmt: off
-@triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
+@triton.heuristics({"SIZE_RAND_BLOCK": lambda args: args["BLOCK_N"] * args["BLOCK_M"]})
 @triton.autotune(
     configs=_configs,
     key=["M", "N", "is_fp16"],
@@ -67,7 +93,12 @@ def k_dropout_fw(
     M, N,
     p,
     is_fp16,  # autotune
-    **meta,
+    # Meta-parameters
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    SIZE_RAND_BLOCK: tl.constexpr,
+    USE_BIAS: tl.constexpr,
+    ACTIVATION: tl.constexpr,
 ):
     """
     Apply dropout on an input tensor
@@ -78,10 +109,6 @@ def k_dropout_fw(
     p : dropout probability
     """
     # fmt: on
-
-    BLOCK_M = meta["BLOCK_M"]
-    BLOCK_N = meta["BLOCK_N"]
-    SIZE_RAND_BLOCK = meta["SIZE_RAND_BLOCK"]
 
     row_id = tl.program_id(axis=0)
     rows = row_id * BLOCK_M * 4 + tl.arange(0, BLOCK_M)
@@ -99,14 +126,16 @@ def k_dropout_fw(
     rand_mask1, rand_mask2, rand_mask3, rand_mask4 = _get_4_bin_masks(seed, rand_offsets, p)
 
     col_mask = cols[None, :] < N
-    p_scale = 1 / (1 - p) if p < 1. else 1.
+    p_scale = 1 / (1 - p)
 
-    if meta["USE_BIAS"]:
+    if USE_BIAS:
         b_ptrs = BIAS + cols[None, :]
         bias = tl.load(b_ptrs, mask=cols[None, :] < N, other=0.)
+    else:
+        bias = x_ptrs  # will not be used
 
+    # cycle through the binary masks (workaround / no indexing)
     for i in range(4):
-        # cycle through the binary masks (workaround / no indexing)
         if i == 0:
             rand_mask = rand_mask1
         elif i == 1:
@@ -117,29 +146,15 @@ def k_dropout_fw(
             rand_mask = rand_mask4
 
         block_mask = (rows[:, None] < M) & col_mask
-        x = tl.load(x_ptrs, mask=block_mask, other=0.)
+        tile_random_drop(x_ptrs, y_ptrs, block_mask, USE_BIAS, bias, rand_mask, p, p_scale, ACTIVATION)
 
-        # optionally apply a fused bias
-        if meta["USE_BIAS"]:
-            x += bias
-
-        # optional: fused activation (while the data is in shared memory)
-        if meta["ACTIVATION"]:
-            x = meta["ACTIVATION"](x)
-
-        # randomly prune (and scale) the resulting buffer, possibly a no-op
-        output = _random_prune_and_scale(x, rand_mask, p, p_scale)
-
-        tl.store(y_ptrs, output, mask=block_mask)
-
-        # Update the pointers
         rows += BLOCK_M  # needs to be updated for the mask to be correct
         x_ptrs += BLOCK_M * stride
         y_ptrs += BLOCK_M * stride
 
 
 # fmt: off
-@triton.heuristics({"SIZE_RAND_BLOCK": lambda *_, **meta: meta["BLOCK_N"] * meta["BLOCK_M"]})
+@triton.heuristics({"SIZE_RAND_BLOCK": lambda args: args["BLOCK_N"] * args["BLOCK_M"]})
 @triton.autotune(
     configs=_configs,
     key=["M", "N", "is_fp16"],
@@ -152,7 +167,13 @@ def k_dropout_bw(
     M, N,
     p,
     is_fp16,  # autotune
-    **meta,
+    # Meta-parameters
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    SIZE_RAND_BLOCK: tl.constexpr,
+    TRAINABLE_BIAS: tl.constexpr,
+    USE_BIAS: tl.constexpr,
+    ACTIVATION_GRAD: tl.constexpr,
 ):
     """
     Apply dropout on an input tensor
@@ -165,12 +186,6 @@ def k_dropout_bw(
     """
     # fmt: on
 
-    BLOCK_M = meta["BLOCK_M"]
-    BLOCK_N = meta["BLOCK_N"]
-    SIZE_RAND_BLOCK = meta["SIZE_RAND_BLOCK"]
-    TRAINABLE_BIAS = meta["TRAINABLE_BIAS"]
-
-    rows = tl.arange(0, BLOCK_M)
     row_id = tl.program_id(axis=0)
     rows = row_id * BLOCK_M * 4 + tl.arange(0, BLOCK_M)
 
@@ -190,9 +205,9 @@ def k_dropout_bw(
     # now go over the tiles
     grad_bias = tl.zeros((BLOCK_N,), dtype=tl.float32)
     col_mask = cols[None, :] < N
-    p_scale = 1 / (1 - p) if p < 1. else 1.
+    p_scale = 1 / (1 - p)
 
-    if meta["USE_BIAS"]:
+    if USE_BIAS:
         b_ptrs = BIAS + cols[None, :]
         bias = tl.load(b_ptrs, mask=col_mask, other=0.)
 
@@ -211,14 +226,14 @@ def k_dropout_bw(
         grad_out = tl.load(grad_out_ptrs, mask=block_mask, other=0.)
 
         # optional: fused activation (while the data is in shared memory)
-        if meta["ACTIVATION_GRAD"]:
+        if ACTIVATION_GRAD:
             inputs = tl.load(input_ptrs, mask=block_mask, other=0.)
 
             # optionally apply a fused bias
-            if meta["USE_BIAS"]:
+            if USE_BIAS:
                 inputs += bias
 
-            act_grad = meta["ACTIVATION_GRAD"](inputs).to(grad_out.dtype)
+            act_grad = ACTIVATION_GRAD(inputs).to(grad_out.dtype)
             grad_out *= act_grad
 
         # randomly prune (and scale) the resulting buffer, possibly a no-op

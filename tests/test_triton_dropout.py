@@ -88,8 +88,13 @@ def test_dropout(shape, amp, bias, p):
         x_ref = (x + b if bias else x).to(y.dtype)
         assert torch.allclose(x_ref, y, rtol=tol), f"{x[x>y]}"
 
-        # Check that 1 means dropout for sure
+        # Check that 1 means drop all
         y = triton_dropout(x, p=1, bias=b)
+        x_ref = (x + b if bias else x).to(y.dtype)
+        assert torch.allclose(torch.zeros_like(y), y, rtol=tol)
+
+        # Check that .99 means probably dropout
+        y = triton_dropout(x, p=0.99, bias=b)
         x_ref = (x + b if bias else x).to(y.dtype)
         assert not torch.allclose(x_ref, y, rtol=tol)
 

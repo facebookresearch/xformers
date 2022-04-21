@@ -15,16 +15,16 @@ from xformers.triton.sum_strided import sum_2d_dim_0
 
 # fmt: off
 @triton.heuristics({
-    'EVEN_N': lambda *args, **meta: args[3] % (meta['BLOCK_COL']) == 0,
+    'EVEN_N': lambda args: args["N"] % (args['BLOCK_N']) == 0,
 })
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_COL": 32}, num_stages=5, num_warps=2),
-        triton.Config({"BLOCK_COL": 64}, num_stages=5, num_warps=2),
-        triton.Config({"BLOCK_COL": 128}, num_stages=3, num_warps=4),
-        triton.Config({"BLOCK_COL": 256}, num_stages=3, num_warps=8),
-        triton.Config({"BLOCK_COL": 512}, num_stages=3, num_warps=8),
-        triton.Config({"BLOCK_COL": 1024}, num_stages=3, num_warps=16),
+        triton.Config({"BLOCK_N": 32}, num_stages=5, num_warps=2),
+        triton.Config({"BLOCK_N": 64}, num_stages=5, num_warps=2),
+        triton.Config({"BLOCK_N": 128}, num_stages=3, num_warps=4),
+        triton.Config({"BLOCK_N": 256}, num_stages=3, num_warps=8),
+        triton.Config({"BLOCK_N": 512}, num_stages=3, num_warps=8),
+        triton.Config({"BLOCK_N": 1024}, num_stages=3, num_warps=8),
     ],
     key=["N"],
 )
@@ -39,16 +39,15 @@ def kernel_bw(
     # by to get the element one row down (A has M rows)
     stride_gom, stride_aim,
     # Meta-parameters
-    **META,
+    BLOCK_N: tl.constexpr,
+    EVEN_N: tl.constexpr,
+    ACTIVATION_GRAD: tl.constexpr,
 ):
     # fmt: on
 
     """
     Go over all the activation inputs, compute the corresponding gradient
     """
-
-    # extract metaparameters
-    BLOCK_N = META["BLOCK_COL"]
 
     # this kernel is relatively simple in terms of scheduling:
     # - per row (pid_m)
@@ -62,16 +61,16 @@ def kernel_bw(
     act_input_ptrs = ACT_INPUTS + pid_m * stride_aim + rn
 
     # compute the gradient which is related to this activation
-    if META["EVEN_N"]:
+    if EVEN_N:
         act_in = tl.load(act_input_ptrs)
     else:
         act_in = tl.load(act_input_ptrs, mask=rn < N, other=0.0)
 
-    grad_act = META["ACTIVATION_GRAD"](act_in)
+    grad_act = ACTIVATION_GRAD(act_in)
 
     # now read the incoming gradient, the backpropagated one is the multiple of both
     grad_out_ptrs = GRAD_OUT + pid_m * stride_gom + rn
-    if META["EVEN_N"]:
+    if EVEN_N:
         grad_out = tl.load(grad_out_ptrs)
     else:
         grad_out = tl.load(grad_out_ptrs, mask=rn < N)
@@ -120,24 +119,16 @@ def fused_matmul_backward(
         if act_in is None:
             act_in = grad_out_
 
-        def grid(META):
-            return (
-                M,
-                triton.cdiv(N, META["BLOCK_COL"]),
-            )
+        grid = lambda META: (M, triton.cdiv(N, META["BLOCK_N"])) # noqa
 
         # fmt: off
         kernel_bw[grid](
-            # data ptrs
-            grad_act, grad_out_, act_in,
-            # shapes
-            N,
-            # strides
-            grad_act.stride(0), act_in.stride(0),
-            weight.stride(0), weight.stride(1),
-            # optional fused activation
-            ACTIVATION_GRAD=activation_grad,
+            grad_act, grad_out_, act_in,            # data ptrs
+            N,                                      # shapes
+            grad_act.stride(0), act_in.stride(0),   # strides
+            ACTIVATION_GRAD=activation_grad,        # optional fused activation
         )
+        # fmt: on
 
         # Backpropagation going up, the reference gradient is now
         # just before the activation

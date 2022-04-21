@@ -91,7 +91,7 @@ def rmf(filename: str) -> None:
 
 @contextlib.contextmanager
 def temp_files_ctx(num: int) -> Generator:
-    """ A context to get tempfiles and ensure they are cleaned up. """
+    """A context to get tempfiles and ensure they are cleaned up."""
     files = [tempfile.mkstemp()[1] for _ in range(num)]
 
     yield tuple(files)

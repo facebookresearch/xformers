@@ -47,7 +47,7 @@ class LinformerAttention(Attention):
         # kq need to have the same dimension
         self.requires_same_k_q_dimensions = True
 
-        # Properties specific to this attention mechanism
+        # This attention does not support attention masks
         self.supports_attention_mask = False
 
     def forward(
