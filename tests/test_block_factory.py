@@ -50,6 +50,7 @@ def test_xformer_encoder_block(
     device: torch.device,
     reversible: bool,
 ):
+
     block_size = 16
 
     attention_config = {
@@ -112,7 +113,13 @@ def test_xformer_encoder_block(
 
     # Check that we support attention masking, at least interface wise (do not check correctness yet)
     att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
-    _ = block(inputs, att_mask=att_mask)
+    if block.mha.attention.supports_attention_mask:
+        _ = block(inputs, att_mask=att_mask)
+    else:
+        with pytest.raises(AssertionError):
+            # Check that passing an attention mask to a mechanism which does not support it raises
+            # an exception
+            _ = block(inputs, att_mask=att_mask)
 
     # Check that we support input masking, at least interface wise (do not check correctness yet)
     input_mask = torch.randn(SEQ, dtype=torch.float, device=device)
@@ -223,7 +230,10 @@ def test_xformer_decoder_block(
     input_mask[input_mask < 0.0] = -float("inf")
 
     encoded = encoder_block(inputs)
-    _ = decoder_block(inputs, encoded, encoder_att_mask=att_mask, input_mask=input_mask)
+    if decoder_block.mha.attention.supports_attention_mask:
+        _ = decoder_block(
+            inputs, encoded, encoder_att_mask=att_mask, input_mask=input_mask
+        )
 
     # Test different sequence lengths when encoding and decoding
     if not decoder_block.mha.attention.requires_same_k_q_dimensions:
@@ -303,6 +313,73 @@ def test_embedding_projection():
     _ = block(inputs)
 
     # Check that we support attention masking, at least interface wise (do not check correctness yet)
+    if block.mha.attention.supports_attention_mask:
+        att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
+        _ = block(inputs, att_mask=att_mask)
+
+    # Check that we support input masking, at least interface wise (do not check correctness yet)
+    input_mask = torch.randn(SEQ, dtype=torch.float, device=device)
+    input_mask[input_mask < 0.0] = -float("inf")
+    _ = block(inputs, input_mask=input_mask)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="This test requires a CUDA device"
+)
+def test_simplicial_embedding(
+    device: torch.device,
+):
+    attention_config = {
+        "name": "scaled_dot_product",
+        "dropout": 0.1,
+        "causal": False,
+        "window_size": SEQ // 8 + 1,
+        "seq_len": SEQ,
+        "dim_model": MODEL,
+        "num_heads": 4,
+    }
+
+    multi_head_config = {
+        "num_heads": 4,
+        "dim_model": MODEL,
+        "residual_dropout": 0.1,
+        "attention": attention_config,
+    }
+
+    feedforward_config = {
+        "name": "MLP",
+        "dim_model": MODEL,
+        "dropout": DROPOUT,
+        "activation": "relu",
+        "hidden_layer_multiplier": 4,
+    }
+
+    position_encoding_config = {
+        "name": "sine",
+        "dim_model": MODEL,
+        "seq_len": SEQ,
+        "vocab_size": VOCAB_SIZE,
+    }
+
+    block_config = xFormerEncoderConfig(
+        dim_model=MODEL,
+        multi_head_config=multi_head_config,
+        feedforward_config=feedforward_config,
+        position_encoding_config=position_encoding_config,
+        layer_norm_style="pre",
+        reversible=False,
+        simplicial_embeddings={"L": 4},
+    )
+
+    # Test that the whole block can be instantiated
+    block = xFormerEncoderBlock.from_config(block_config).to(device)
+
+    # Check that the dimensions make sense, to a FW pass
+    inputs = torch.rand(BATCH, SEQ, device=device)
+    _ = block(inputs)
+
+    # Check that we support attention masking, at least interface wise (do not check correctness yet)
     att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
     _ = block(inputs, att_mask=att_mask)
 
@@ -310,3 +387,19 @@ def test_embedding_projection():
     input_mask = torch.randn(SEQ, dtype=torch.float, device=device)
     input_mask[input_mask < 0.0] = -float("inf")
     _ = block(inputs, input_mask=input_mask)
+
+    # Check that a faulty L is caught
+    block_config = xFormerEncoderConfig(
+        dim_model=MODEL,
+        multi_head_config=multi_head_config,
+        feedforward_config=feedforward_config,
+        position_encoding_config=position_encoding_config,
+        layer_norm_style="pre",
+        reversible=False,
+        simplicial_embeddings={"L": 3},
+    )
+
+    # Test that the whole block can be instantiated
+    with pytest.raises(AssertionError):
+        block = xFormerEncoderBlock.from_config(block_config).to(device)
+        _ = block(inputs)

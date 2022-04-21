@@ -238,7 +238,6 @@ attention = BlockSparseAttention(layout=causal_layout, block_size=BLOCK_SIZE, dr
 # "multi_head" will be responsible for the forward
 multi_head = (
     MultiHeadDispatch(
-        seq_len=SEQ,
         dim_model=EMB,
         residual_dropout=DROPOUT,
         num_heads=HEADS,
@@ -509,6 +508,9 @@ my_config = [
             "activation": "relu",
             "hidden_layer_multiplier": 4,
         },
+        # Optional Simplicial Embeddings on the last encoder layer
+        # the temperature parameter is itself optional
+        "simplicial_embeddings": {"L": 4, "temperature": 0.5}
     },
     {
         "reversible": False,  # Optionally make these layers reversible, to save memory

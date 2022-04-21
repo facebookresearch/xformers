@@ -72,7 +72,14 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
     layout = torch.randint(2, (H, shape[0] // BLOCK, shape[1] // BLOCK))
 
     # triton result
-    op = blocksparse_matmul(layout, BLOCK, MODE, trans_a=TRANS_A, trans_b=TRANS_B)
+    op = blocksparse_matmul(
+        layout,
+        BLOCK,
+        MODE,
+        trans_a=TRANS_A,
+        trans_b=TRANS_B,
+        device=torch.device("cuda"),
+    )
     ra = block_sparsify_tensor(a, layout, BLOCK) if MODE == "dsd" else a
     rb = block_sparsify_tensor(b, layout, BLOCK) if MODE == "dds" else b
     rc = triton.testing.catch_oor(lambda: op(ra, rb), pytest)
@@ -91,7 +98,7 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
-@pytest.mark.parametrize("BLOCK", [32])
+@pytest.mark.parametrize("BLOCK", [32, 128])
 @pytest.mark.parametrize("WIDTH", [256, 576, 1024, 1792])
 @pytest.mark.parametrize("DTYPE", [torch.float16, torch.float32])
 def test_softmax(BLOCK, WIDTH, DTYPE):
@@ -103,34 +110,15 @@ def test_softmax(BLOCK, WIDTH, DTYPE):
     # create inputs
     layout = torch.randint(2, (H, M // BLOCK, N // BLOCK))
     x = torch.randn((Z, H, M, N), dtype=DTYPE, requires_grad=True, device="cuda")
-    at_mask = torch.randint(
-        low=0, high=2, size=(N, N), dtype=torch.bool, requires_grad=False, device="cuda"
-    )
-    kp_mask = torch.randint(
-        low=0, high=2, size=(Z, N), dtype=DTYPE, requires_grad=False, device="cuda"
-    )
-    kp_mask[kp_mask == 1.0] = float("-inf")
 
     # triton result
-    op = blocksparse_softmax(layout, BLOCK)
+    op = blocksparse_softmax(layout, BLOCK, device=torch.device("cuda"))
     tx = block_sparsify_tensor(x, layout, BLOCK)
-    ty = op(
-        tx,
-        scale=scale,
-        key_padding_mask=kp_mask,
-        key_padding_mask_mode="add",
-        attn_mask=at_mask.to(DTYPE),
-        attn_mask_mode="mul",
-    )
+    ty = op(tx, scale=scale)
 
     # torch result
     rx = triton.testing.mask_tensor(x, layout, BLOCK, value=float("-inf"))
-    if at_mask is not None:
-        # broadcast at_mask to the same shape as rx
-        M = at_mask[None, None, :, :] + torch.zeros_like(rx)
-        rx[M == 0] = float("-inf")
-    if kp_mask is not None:
-        rx += kp_mask[:, None, None, :]
+
     ry = torch.softmax(rx * scale, -1)
     ry = block_sparsify_tensor(ry, layout, BLOCK)
 
@@ -139,12 +127,12 @@ def test_softmax(BLOCK, WIDTH, DTYPE):
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
-@pytest.mark.parametrize("block", [32, 43])  # 16, 32,
+@pytest.mark.parametrize("block", [32, 43, 128])  # 16, 32,
 def test_attention_fwd_bwd(
     block,
     input_scale=1.0,
     scale=1 / 8.0,
-    n_ctx=256,
+    n_ctx=384,
     dtype=torch.float16,
     batch_size=2,
     n_heads=2,
@@ -158,34 +146,26 @@ def test_attention_fwd_bwd(
         .cuda()
         for _ in range(3)
     ]
-    attn_mask = torch.tril(
-        torch.ones(
-            [n_ctx, n_ctx],
-            device="cuda",
-            dtype=dtype,
-        ),
-        diagonal=0,
-    )
 
     def loss_fn(x):
         return (x ** 2).mean()
 
     # Triton:
     n_blocks = n_ctx // block
-    layout = torch.tril(torch.ones([n_heads, n_blocks, n_blocks], dtype=torch.long))
+    layout = torch.tril(
+        torch.ones([n_heads, n_blocks, n_blocks], dtype=torch.long), diagonal=-1
+    )
     query, key, value = [x.clone() for x in qkvs]
     query.retain_grad()
     key.retain_grad()
     value.retain_grad()
-    if block not in [16, 32, 64]:
+    if block not in [16, 32, 64, 128]:
         # Check that unsupported dimensions are caught
         with pytest.raises(AssertionError):
             _ = BlockSparseAttention(layout, block)
     else:
         block_sparse_attention = BlockSparseAttention(layout, block)
-        attn_out = block_sparse_attention(
-            att_mask=attn_mask, q=query, k=key, v=value, scale=scale
-        )
+        attn_out = block_sparse_attention(q=query, k=key, v=value, scale=scale)
 
         # ad hoc loss
         loss = loss_fn(attn_out)
@@ -195,12 +175,10 @@ def test_attention_fwd_bwd(
         # Torch version:
         torch_q, torch_k, torch_v = [x.clone() for x in qkvs]
         torch_q = torch_q / math.sqrt(head_dim)
-        attn_mask = 1e6 * (-1 + (attn_mask.reshape((1, 1, n_ctx, n_ctx)).cuda()))
         torch_q.retain_grad()
         torch_k.retain_grad()
         torch_v.retain_grad()
         scores = scale * torch.einsum("bhsd,bhtd->bhst", torch_q, torch_k)
-        scores = scores + attn_mask
         probs = torch.softmax(scores, dim=-1)
         torch_attn_out = torch.einsum("bhst,bhtd->bhsd", probs, torch_v)
 

@@ -116,11 +116,6 @@ class MultiHeadDispatch(nn.Module):
         if isinstance(self.proj, nn.Linear) and self.proj.bias is not None:
             constant_(self.proj.bias, 0.0)
 
-    def _check(self, t, name):
-        assert (
-            t.shape[2] % self.dim_k == 0
-        ), f"the {name} embeddings need to be divisible by the number of heads"
-
     def forward(
         self,
         query: torch.Tensor,
@@ -138,11 +133,6 @@ class MultiHeadDispatch(nn.Module):
             key = query
         if value is None:
             value = query
-
-        # Check the dimensions properly
-        self._check(query, "query")
-        self._check(value, "value")
-        self._check(key, "key")
 
         if query.shape[0] != key.shape[0] or query.shape[0] != value.shape[0]:
             max_batch = max((query.shape[0], key.shape[0], value.shape[0]))
@@ -165,16 +155,37 @@ class MultiHeadDispatch(nn.Module):
                     + "In that case causality is ill-determined. Please pad your sequences accordingly"
                 )
 
+        kw_mask_args = {}
+        if att_mask is not None:
+            assert (
+                self.attention.supports_attention_mask
+            ), "This attention does not support attention masks"
+            kw_mask_args["att_mask"] = att_mask
+
+        if key_padding_mask is not None:
+            assert (
+                self.attention.supports_key_padding_mask
+            ), "This attention does not support key padding masks"
+            kw_mask_args["key_padding_mask"] = key_padding_mask
+
         if self.attention.requires_skip_multi_head:
-            return self.attention(
-                query, key, value, att_mask=att_mask, key_padding_mask=key_padding_mask
-            )
+            return self.attention(query, key, value, **kw_mask_args)
 
         # Calculate query, key, values for all heads in batch
         if self.attention.requires_input_projection:
             q, k, v = self.in_proj_container(query=query, key=key, value=value)
         else:
             k, q, v = key, query, value
+
+        # Check the dimensions properly
+        def check(t, name):
+            assert (
+                t.shape[2] % self.num_heads == 0
+            ), f"the {name} embeddings need to be divisible by the number of heads"
+
+        check(q, "projected query")
+        check(v, "projected value")
+        check(k, "projected key")
 
         # Optional: rotary embedding, add relative positioning information
         if self.rotary_embeddings:
@@ -199,9 +210,7 @@ class MultiHeadDispatch(nn.Module):
             v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
 
         # Self-attend
-        y = self.attention(
-            q=q, k=k, v=v, att_mask=att_mask, key_padding_mask=key_padding_mask
-        )
+        y = self.attention(q=q, k=k, v=v, **kw_mask_args)
 
         # Re-assemble all head outputs side by side
         y = (

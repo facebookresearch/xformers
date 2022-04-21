@@ -38,7 +38,7 @@ SHAPES = [(128, 256), (8, 384, 128), (8, 784, 512)]
     "dtype", [torch.float32]
 )  # Triton use tensor cores, which return slightly different results to pytorch mm
 def test_fused_matmul(shape, dtype):
-    """ Check that the matrix multiply kernel and Pytorch's give the same results"""
+    """Check that the matrix multiply kernel and Pytorch's give the same results"""
     torch.random.manual_seed(0)
 
     # Raw fused matrix multiply first, to catch gross errors

@@ -78,7 +78,10 @@ class GlobalAttention(Attention):
             else maybe_sparsify(self.attention_mask)
         )
 
+        # Properties specific to this attention mechanism
         self.requires_same_k_q_dimensions = True
+        self.supports_attention_mask = False
+        self.supports_key_padding_mask = False
 
     def forward(
         self,

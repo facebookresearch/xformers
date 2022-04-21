@@ -107,6 +107,9 @@ class BlockSparseTensor(torch.Tensor):
 
     def __init__(self, values, layout):
         assert values.shape[-2] == values.shape[-1]
+        assert (
+            values.device == layout.device
+        ), "Both values and layout need to reside on the same device"
         block_size = values.shape[-1]
         # TODO: make this check conditioned on the use of Triton
         assert block_size >= 16, "Minimum block size is 16, for now at least"
@@ -125,13 +128,13 @@ class BlockSparseTensor(torch.Tensor):
 
     def _initialize_triton_ops(self):
         block_size = self.__values.shape[-1]
-
         self.__sparse_dot_sdd = blocksparse_matmul(
             self.__layout,
             block_size,
             "sdd",
             trans_a=False,
             trans_b=True,
+            device=self.__layout.device,
         )
         self.__sparse_dot_dsd = blocksparse_matmul(
             self.__layout,
@@ -139,8 +142,11 @@ class BlockSparseTensor(torch.Tensor):
             "dsd",
             trans_a=False,
             trans_b=False,
+            device=self.__layout.device,
         )
-        self.__sparse_softmax = blocksparse_softmax(self.__layout, block_size)
+        self.__sparse_softmax = blocksparse_softmax(
+            self.__layout, block_size, device=self.__layout.device
+        )
 
     def __repr__(self):
         return f"block_sparse_tensor(shape={self.shape}, values={self.__values})"
@@ -195,9 +201,7 @@ class BlockSparseTensor(torch.Tensor):
         if not (dim == -1 or dim == 2):
             return NotImplemented
         if _can_use_triton(arg0):
-            # TODO triton softmax performs an in-place operation
-            # res = arg0.__sparse_softmax(arg0.__values)
-            res = arg0.__sparse_softmax(arg0.__values.clone())
+            res = arg0.__sparse_softmax(arg0.__values)
         else:
             res = _softmax(arg0.__layout, arg0.__values)
         return cls._wrap(res, arg0)

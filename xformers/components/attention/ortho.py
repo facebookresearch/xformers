@@ -72,6 +72,10 @@ class OrthoFormerAttention(Attention):
         self.subsample_fraction = subsample_fraction
         self.landmark_selection = landmark_selection
 
+        # Properties specific to this attention mechanism
+        self.supports_attention_mask = True
+        self.supports_key_padding_mask = False
+
     def forward(
         self,
         q: torch.Tensor,
