@@ -646,32 +646,43 @@ __global__ void attention_backward_grad_v_kernel(
 
   __shared__ scalar_t fact[TILE_SIZEQ][TILE_SIZEK + 1];
 
-  auto qb = reinterpret_cast<vec_t*>(query[batch_idx][query_idx].data());
-  auto kb = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
-  auto vb = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-  auto gb = reinterpret_cast<vec_t*>(grad_out[batch_idx][query_idx].data());
+  vec_t* qb[kBlockSizeQ], *kb[kBlockSizeK], *vb[kBlockSizeK], *gb[kBlockSizeQ], *gbb[TILE_SIZEQ];
+
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+    kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][l + k_item_idx].data());
+    vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][l + k_item_idx].data());
+  }
+
+  for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+    qb[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][query_idx + q_item_idx].data());
+    gb[q_item_idx] = reinterpret_cast<vec_t*>(grad_out[batch_idx][query_idx + q_item_idx].data());
+
+  }
+  for (int64_t i = 0; i < TILE_SIZEQ; i++) {
+    int64_t idx = i - kBlockSizeQ * threadIdx.x;
+    gbb[i] = reinterpret_cast<vec_t*>(grad_out[batch_idx][query_idx + idx].data());
+  }
 
   for (int i = 0; i < kBlockSizeQ; i++) {
     normalizer[i] = logsumexp_normalizer[batch_idx][query_idx + i];
   }
 
-  auto key_j = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
   scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
   scalar_t grad_attn_v[kBlockSizeQ][kBlockSizeK] = {0};
 
   for (int64_t k = 0; k < K / kVecSize; k += 1) {
 #pragma unroll
     for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-      vec_t kk = __ldg(kb + k + K / kVecSize * k_item_idx);
-      vec_t tt = __ldg(vb + k + K / kVecSize * k_item_idx);
+      vec_t kk = __ldg(kb[k_item_idx] + k);
+      vec_t tt = __ldg(vb[k_item_idx] + k);
 #pragma unroll
       for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
         sputnik::VectorCompute<vec_t>::Dot(
-            __ldg(qb + k + K / kVecSize * q_item_idx),
+            __ldg(qb[q_item_idx] + k),
             kk,
             &attn_v[q_item_idx][k_item_idx]);
         sputnik::VectorCompute<vec_t>::Dot(
-            __ldg(gb + k + K / kVecSize * q_item_idx),
+            __ldg(gb[q_item_idx] + k),
             tt,
             &grad_attn_v[q_item_idx][k_item_idx]);
       }
@@ -702,7 +713,7 @@ __global__ void attention_backward_grad_v_kernel(
     vec_t res[kBlockSizeK] = {0};
 #pragma unroll
     for (int64_t i = 0; i < TILE_SIZEQ; i++) {
-      vec_t kk = __ldg(gb + k + K / kVecSize * (i - kBlockSizeQ * threadIdx.x));
+      vec_t kk = __ldg(gbb[i] + k);
 #pragma unroll
       for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
         sputnik::VectorCompute<vec_t>::FMA(
@@ -761,33 +772,50 @@ __global__ void attention_backward_grad_qk_kernel(
 
   __shared__ scalar_t fact[TILE_SIZEQ][TILE_SIZEK + 1];
 
-  auto qb = reinterpret_cast<vec_t*>(query[batch_idx][query_idx].data());
-  auto kb = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
-  auto vb = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-  auto gb = reinterpret_cast<vec_t*>(grad_out[batch_idx][query_idx].data());
+
+  vec_t* qb[kBlockSizeQ], *kb[kBlockSizeK], *vb[kBlockSizeK], *gb[kBlockSizeQ], *qbb[TILE_SIZEQ], *kbb[TILE_SIZEK];
+
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+    kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][l + k_item_idx].data());
+    vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][l + k_item_idx].data());
+  }
+
+  for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+    qb[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][query_idx + q_item_idx].data());
+    gb[q_item_idx] = reinterpret_cast<vec_t*>(grad_out[batch_idx][query_idx + q_item_idx].data());
+
+  }
+  for (int64_t i = 0; i < TILE_SIZEQ; i++) {
+    int64_t idx = i - kBlockSizeQ * threadIdx.x;
+    qbb[i] = reinterpret_cast<vec_t*>(query[batch_idx][query_idx + idx].data());
+  }
+
+  for (int64_t i = 0; i < TILE_SIZEK; i++) {
+    int64_t idx = i - kBlockSizeK * threadIdx.y;
+    kbb[i] = reinterpret_cast<vec_t*>(key[batch_idx][l + idx].data());
+  }
 
   for (int i = 0; i < kBlockSizeQ; i++) {
     normalizer[i] = logsumexp_normalizer[batch_idx][query_idx + i];
     tmp_sum[i] = tmp_sum_i[batch_idx][query_idx + i];
   }
 
-  auto key_j = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
   scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
   scalar_t grad_attn_v[kBlockSizeQ][kBlockSizeK] = {0};
 
   for (int64_t k = 0; k < K / kVecSize; k += 1) {
 #pragma unroll
     for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-      vec_t kk = __ldg(kb + k + K / kVecSize * k_item_idx);
-      vec_t tt = __ldg(vb + k + K / kVecSize * k_item_idx);
+      vec_t kk = __ldg(kb[k_item_idx] + k);
+      vec_t tt = __ldg(vb[k_item_idx] + k);
 #pragma unroll
       for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
         sputnik::VectorCompute<vec_t>::Dot(
-            __ldg(qb + k + K / kVecSize * q_item_idx),
+            __ldg(qb[q_item_idx] + k),
             kk,
             &attn_v[q_item_idx][k_item_idx]);
         sputnik::VectorCompute<vec_t>::Dot(
-            __ldg(gb + k + K / kVecSize * q_item_idx),
+            __ldg(gb[q_item_idx] + k),
             tt,
             &grad_attn_v[q_item_idx][k_item_idx]);
       }
@@ -819,7 +847,7 @@ __global__ void attention_backward_grad_qk_kernel(
     vec_t res[kBlockSizeQ] = {0};
 #pragma unroll
     for (int64_t i = 0; i < TILE_SIZEK; i++) {
-      vec_t kk = __ldg(kb + k + K / kVecSize * (i - kBlockSizeK * threadIdx.y));
+      vec_t kk = __ldg(kbb[i] + k);
 #pragma unroll
       for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
         sputnik::VectorCompute<vec_t>::FMA(
@@ -840,7 +868,7 @@ __global__ void attention_backward_grad_qk_kernel(
     vec_t res[kBlockSizeK] = {0};
 #pragma unroll
     for (int64_t i = 0; i < TILE_SIZEQ; i++) {
-      vec_t kk = __ldg(qb + k + K / kVecSize * (i - kBlockSizeQ * threadIdx.x));
+      vec_t kk = __ldg(qbb[i] + k);
 #pragma unroll
       for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
         sputnik::VectorCompute<vec_t>::FMA(
