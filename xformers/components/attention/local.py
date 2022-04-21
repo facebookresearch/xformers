@@ -77,6 +77,10 @@ class LocalAttention(Attention):
         self.attention_mask: Optional[torch.Tensor] = None
         self.requires_same_k_q_dimensions = True
 
+        # Properties specific to this attention mechanism
+        self.supports_attention_mask = True
+        self.supports_key_padding_mask = False
+
     def _get_local_mask(self, shape: torch.Size) -> torch.Tensor:
         window_size = self.window_size * 2 + 1 if self.causal else self.window_size
         mask = local_1d_pattern(shape[1], window_size)
