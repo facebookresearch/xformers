@@ -933,7 +933,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   at::Tensor grad_k = at::zeros_like(key);
   at::Tensor grad_v = at::zeros_like(value);
 
-  at::Tensor tmp_sum_i = at::empty({B, M}, query.options());
+  at::Tensor tmp_sum_i = at::zeros({B, M}, query.options());
 
   using scalar_t = float;
   using vec_t = float4;
