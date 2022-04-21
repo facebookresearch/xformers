@@ -154,6 +154,10 @@ class NystromAttention(Attention):
         self.causal_mask_2: Optional[torch.Tensor] = None
         self.causal_mask_3: Optional[torch.Tensor] = None
 
+        # This attention does not support attention masks
+        self.supports_attention_mask = False
+        self.supports_key_padding_mask = True
+
     def forward(
         self,
         q: torch.Tensor,

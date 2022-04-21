@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mem efficient attention, FW pass [#267]
 - MHA benchmark
 - MLP benchmark
+- Move all triton kernels to triton v2 [#272]
 
 ## [0.0.10] - 2022-03-14
 ### Fixed
