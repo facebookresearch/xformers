@@ -280,6 +280,10 @@
         <span class="c1"># so that the MHA wrapper should skip it</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">requires_skip_multi_head</span> <span class="o">=</span> <span class="kc">False</span>
 
+        <span class="c1"># Whether this attention mechanism supports attention masks</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">supports_attention_mask</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">supports_key_padding_mask</span> <span class="o">=</span> <span class="kc">False</span>
+
 <div class="viewcode-block" id="Attention.from_config"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.Attention.from_config">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_config</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Self</span><span class="p">],</span> <span class="n">config</span><span class="p">:</span> <span class="n">AttentionConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
         <span class="c1"># Generate the class inputs from the config</span>

@@ -297,7 +297,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span> <span class="o">=</span> <span class="n">num_landmarks</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">attn_drop</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="n">dropout</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">subsample_fraction</span> <span class="o">=</span> <span class="n">subsample_fraction</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">landmark_selection</span> <span class="o">=</span> <span class="n">landmark_selection</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">landmark_selection</span> <span class="o">=</span> <span class="n">landmark_selection</span>
+
+        <span class="c1"># Properties specific to this attention mechanism</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">supports_attention_mask</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">supports_key_padding_mask</span> <span class="o">=</span> <span class="kc">False</span></div>
 
 <div class="viewcode-block" id="OrthoFormerAttention.forward"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.OrthoFormerAttention.forward">[docs]</a>    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>

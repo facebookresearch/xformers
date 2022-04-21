@@ -329,7 +329,11 @@
             <span class="s2">&quot;normalize_inputs&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">normalize_inputs</span><span class="p">,</span>
         <span class="p">}</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">feature_map</span><span class="p">:</span> <span class="n">FeatureMap</span> <span class="o">=</span> <span class="n">feature_map_constructor</span><span class="p">(</span><span class="o">**</span><span class="n">feature_settings</span><span class="p">)</span>  <span class="c1"># type: ignore</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">feature_map</span><span class="p">:</span> <span class="n">FeatureMap</span> <span class="o">=</span> <span class="n">feature_map_constructor</span><span class="p">(</span><span class="o">**</span><span class="n">feature_settings</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+
+        <span class="c1"># Properties specific to this attention mechanism</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">supports_attention_mask</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">supports_key_padding_mask</span> <span class="o">=</span> <span class="kc">False</span></div>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span> <span class="nf">_maybe_promote</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>

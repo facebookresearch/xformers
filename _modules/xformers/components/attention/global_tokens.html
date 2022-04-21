@@ -305,7 +305,10 @@
             <span class="k">else</span> <span class="n">maybe_sparsify</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">attention_mask</span><span class="p">)</span>
         <span class="p">)</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">requires_same_k_q_dimensions</span> <span class="o">=</span> <span class="kc">True</span></div>
+        <span class="c1"># Properties specific to this attention mechanism</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">requires_same_k_q_dimensions</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">supports_attention_mask</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">supports_key_padding_mask</span> <span class="o">=</span> <span class="kc">False</span></div>
 
 <div class="viewcode-block" id="GlobalAttention.forward"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.GlobalAttention.forward">[docs]</a>    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
