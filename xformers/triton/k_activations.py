@@ -148,10 +148,10 @@ def smelu(x, beta: tl.constexpr = 2.0):
     """
     zero = 0.0
     four = 4.0
-    beta = beta.to(x.dtype)
-    output = (x + beta) * (x + beta) / (four.to(x.dtype) * beta)
-    relu = tl.where(x >= beta, x, zero.to(x.dtype))
-    return tl.where(tl.abs(x) <= beta, output, relu)
+    beta_cast = beta.to(x.dtype)
+    output = (x + beta_cast) * (x + beta_cast) / (four.to(x.dtype) * beta_cast)
+    relu = tl.where(x >= beta_cast, x, zero.to(x.dtype))
+    return tl.where(tl.abs(x) <= beta_cast, output, relu)
 
 
 @triton.jit
@@ -159,7 +159,7 @@ def smelu_grad(x, beta: tl.constexpr = 2.0):
     zero = 0.0
     one = 1.0
     two = 2.0
-    beta = beta.to(x.dtype)
-    grad = (beta + x) / (two.to(x.dtype) * beta)
-    relu_grad = tl.where(x >= beta, one.to(x.dtype), zero.to(x.dtype))
-    return tl.where(tl.abs(x) <= beta, grad, relu_grad)
+    beta_cast = beta.to(x.dtype)
+    grad = (beta_cast + x) / (two.to(x.dtype) * beta_cast)
+    relu_grad = tl.where(x >= beta_cast, one.to(x.dtype), zero.to(x.dtype))
+    return tl.where(tl.abs(x) <= beta_cast, grad, relu_grad)
