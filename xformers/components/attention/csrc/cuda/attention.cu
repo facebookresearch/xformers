@@ -934,6 +934,114 @@ __global__ void attention_backward_grad_qk_kernel(
   }
 }
 
+template <typename scalar_t, typename vec_t>
+void launch_attention_backward(
+    at::Tensor& grad_q,
+    at::Tensor& grad_k,
+    at::Tensor& grad_v,
+    const at::Tensor& grad_out,
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& logsumexp,
+    at::Tensor& tmp_sum_i
+) {
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+
+  constexpr int TILE_SIZEQ = 32;
+  constexpr int TILE_SIZEK = 32;
+
+  constexpr int64_t kBlockSizeQ = 4;
+  constexpr int64_t kBlockSizeK = 8;
+
+  dim3 grid(
+      ceil_div(M, int64_t(TILE_SIZEQ)), ceil_div(N, int64_t(TILE_SIZEK)), B);
+  dim3 block(TILE_SIZEQ / kBlockSizeQ, TILE_SIZEK / kBlockSizeK);
+
+  constexpr int TILE_SIZEQ2 = 32;
+  constexpr int TILE_SIZEK2 = 32;
+
+  constexpr int64_t kBlockSizeQ2 = 4;
+  constexpr int64_t kBlockSizeK2 = 4;
+
+  dim3 grid2(
+      ceil_div(M, int64_t(TILE_SIZEQ2)), ceil_div(N, int64_t(TILE_SIZEK2)), B);
+  dim3 block2(TILE_SIZEQ2 / kBlockSizeQ2, TILE_SIZEK2 / kBlockSizeK2);
+
+  // the bounds checking in device code is very expensive, making the code
+  // around 25% slower. So let's skip those checks if possible.
+  if ((M % TILE_SIZEQ == 0) && (N % TILE_SIZEK == 0)) {
+    attention_backward_grad_v_kernel<
+        scalar_t,
+        vec_t,
+        kBlockSizeQ,
+        kBlockSizeK,
+        TILE_SIZEQ,
+        TILE_SIZEK, false><<<grid, block, 0, stream>>>(
+        grad_v.packed_accessor<scalar_t, 3>(),
+        grad_out.packed_accessor<scalar_t, 3>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>(),
+        tmp_sum_i.packed_accessor<scalar_t, 2>(),
+        logsumexp.packed_accessor<scalar_t, 2>());
+  } else {
+    attention_backward_grad_v_kernel<
+        scalar_t,
+        vec_t,
+        kBlockSizeQ,
+        kBlockSizeK,
+        TILE_SIZEQ,
+        TILE_SIZEK, true><<<grid, block, 0, stream>>>(
+        grad_v.packed_accessor<scalar_t, 3>(),
+        grad_out.packed_accessor<scalar_t, 3>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>(),
+        tmp_sum_i.packed_accessor<scalar_t, 2>(),
+        logsumexp.packed_accessor<scalar_t, 2>());
+  }
+
+  if ((M % TILE_SIZEQ2 == 0) && (N % TILE_SIZEK2 == 0)) {
+    attention_backward_grad_qk_kernel<
+        scalar_t,
+        vec_t,
+        kBlockSizeQ2,
+        kBlockSizeK2,
+        TILE_SIZEQ2,
+        TILE_SIZEK2, false><<<grid2, block2, 0, stream>>>(
+        grad_q.packed_accessor<scalar_t, 3>(),
+        grad_k.packed_accessor<scalar_t, 3>(),
+        grad_out.packed_accessor<scalar_t, 3>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>(),
+        tmp_sum_i.packed_accessor<scalar_t, 2>(),
+        logsumexp.packed_accessor<scalar_t, 2>());
+  } else {
+    attention_backward_grad_qk_kernel<
+        scalar_t,
+        vec_t,
+        kBlockSizeQ2,
+        kBlockSizeK2,
+        TILE_SIZEQ2,
+        TILE_SIZEK2, true><<<grid2, block2, 0, stream>>>(
+        grad_q.packed_accessor<scalar_t, 3>(),
+        grad_k.packed_accessor<scalar_t, 3>(),
+        grad_out.packed_accessor<scalar_t, 3>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>(),
+        tmp_sum_i.packed_accessor<scalar_t, 2>(),
+        logsumexp.packed_accessor<scalar_t, 2>());
+  }
+}
+
+
 std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
     const at::Tensor& grad_out,
     const at::Tensor& query,
@@ -971,6 +1079,11 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   TORCH_CHECK(!value.is_sparse(), "value must be a dense tensor");
   TORCH_CHECK(!grad_out.is_sparse(), "grad_out must be a dense tensor");
 
+  // TODO: support other dtypes in the future
+  TORCH_CHECK(
+      query.scalar_type() == at::ScalarType::Float,
+      "Only float32 type is supported for now");
+
   at::cuda::CUDAGuard device_guard(query.device());
 
   int64_t B = query.size(0);
@@ -984,64 +1097,32 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
 
   at::Tensor tmp_sum_i = at::zeros({B, M}, query.options());
 
-  using scalar_t = float;
-  using vec_t = float4;
+  //using scalar_t = float;
+  //using vec_t = float4;
   // using vec_t = float;
 
-  constexpr int TILE_SIZEQ = 32;
-  constexpr int TILE_SIZEK = 32;
-  constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
-
-  constexpr int64_t kBlockSizeQ = 4;
-  constexpr int64_t kBlockSizeK = 8;
-
-  dim3 grid(
-      ceil_div(M, int64_t(TILE_SIZEQ)), ceil_div(N, int64_t(TILE_SIZEK)), B);
-  dim3 block(TILE_SIZEQ / kBlockSizeQ, TILE_SIZEK / kBlockSizeK);
-
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-
-  attention_backward_grad_v_kernel<
-      scalar_t,
-      vec_t,
-      kBlockSizeQ,
-      kBlockSizeK,
-      TILE_SIZEQ,
-      TILE_SIZEK, true><<<grid, block, 0, stream>>>(
-      grad_v.packed_accessor<scalar_t, 3>(),
-      grad_out.packed_accessor<scalar_t, 3>(),
-      query.packed_accessor<scalar_t, 3>(),
-      key.packed_accessor<scalar_t, 3>(),
-      value.packed_accessor<scalar_t, 3>(),
-      tmp_sum_i.packed_accessor<scalar_t, 2>(),
-      logsumexp.packed_accessor<scalar_t, 2>());
-
-  constexpr int TILE_SIZEQ2 = 32;
-  constexpr int TILE_SIZEK2 = 32;
-
-  constexpr int64_t kBlockSizeQ2 = 4;
-  constexpr int64_t kBlockSizeK2 = 4;
-
-  dim3 grid2(
-      ceil_div(M, int64_t(TILE_SIZEQ2)), ceil_div(N, int64_t(TILE_SIZEK2)), B);
-  dim3 block2(TILE_SIZEQ2 / kBlockSizeQ2, TILE_SIZEK2 / kBlockSizeK2);
-  // TODO: try adding a blockDim.x to iterate over k
-
-  attention_backward_grad_qk_kernel<
-      scalar_t,
-      vec_t,
-      kBlockSizeQ2,
-      kBlockSizeK2,
-      TILE_SIZEQ2,
-      TILE_SIZEK2, true><<<grid2, block2, 0, stream>>>(
-      grad_q.packed_accessor<scalar_t, 3>(),
-      grad_k.packed_accessor<scalar_t, 3>(),
-      grad_out.packed_accessor<scalar_t, 3>(),
-      query.packed_accessor<scalar_t, 3>(),
-      key.packed_accessor<scalar_t, 3>(),
-      value.packed_accessor<scalar_t, 3>(),
-      tmp_sum_i.packed_accessor<scalar_t, 2>(),
-      logsumexp.packed_accessor<scalar_t, 2>());
+  if ((K % 4) == 0) {
+    launch_attention_backward<float, float4>(grad_q, grad_k, grad_v,
+      grad_out,
+      query,
+      key,
+      value,
+      logsumexp, tmp_sum_i);
+  } else if ((K % 2) == 0) {
+    launch_attention_backward<float, float2>(grad_q, grad_k, grad_v,
+      grad_out,
+      query,
+      key,
+      value,
+      logsumexp, tmp_sum_i);
+  } else {
+    launch_attention_backward<float, float>(grad_q, grad_k, grad_v,
+      grad_out,
+      query,
+      key,
+      value,
+      logsumexp, tmp_sum_i);
+  }
 
   AT_CUDA_CHECK(cudaGetLastError());
 
