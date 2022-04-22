@@ -39,7 +39,7 @@ class _MemoryEfficientAttentionOp(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad):
         query, key, value, lse = ctx.saved_tensors
-        grad_q, grad_k, grad_v = torch.ops.xformers.efficient_attention(
+        grad_q, grad_k, grad_v = torch.ops.xformers.efficient_attention_backward(
             grad, query, key, value, lse
         )
         return grad_q, grad_k, grad_v
