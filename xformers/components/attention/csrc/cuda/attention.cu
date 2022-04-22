@@ -614,7 +614,8 @@ template <
     int kBlockSizeQ,
     int kBlockSizeK,
     int TILE_SIZEQ,
-    int TILE_SIZEK>
+    int TILE_SIZEK,
+    bool check_bounds>
 __global__ void attention_backward_grad_v_kernel(
     at::PackedTensorAccessor<scalar_t, 3> grad_v,
     at::PackedTensorAccessor<scalar_t, 3> grad_out,
@@ -655,7 +656,8 @@ __global__ void attention_backward_grad_v_kernel(
   for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
     int64_t index = l + k_item_idx;
     maskK[k_item_idx] = index >= N ? scalar_t(0) : scalar_t(1);
-    index = index >= N ? N - 1 : index;
+    if (check_bounds)
+      index = min(index, N - 1);
     kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][index].data());
     vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][index].data());
   }
@@ -663,20 +665,23 @@ __global__ void attention_backward_grad_v_kernel(
   for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
     int64_t index = query_idx + q_item_idx;
     maskQ[q_item_idx] = index >= M ? scalar_t(0) : scalar_t(1);
-    index = index >= M ? M - 1 : index;
+    if (check_bounds)
+      index = min(index, M - 1);
     qb[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][index].data());
     gb[q_item_idx] = reinterpret_cast<vec_t*>(grad_out[batch_idx][index].data());
   }
 
   for (int64_t i = 0; i < TILE_SIZEQ; i++) {
     int64_t index = query_idx + i - kBlockSizeQ * threadIdx.x;
-    index = index >= M ? M - 1 : index;
+    if (check_bounds)
+      index = min(index, M - 1);
     gbb[i] = reinterpret_cast<vec_t*>(grad_out[batch_idx][index].data());
   }
 
   for (int i = 0; i < kBlockSizeQ; i++) {
     int64_t index = query_idx + i;
-    index = index >= M ? M - 1 : index;
+    if (check_bounds)
+      index = min(index, M - 1);
     normalizer[i] = logsumexp_normalizer[batch_idx][index];
   }
 
@@ -738,14 +743,16 @@ __global__ void attention_backward_grad_v_kernel(
 #pragma unroll
     for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
       int64_t index = l + k_item_idx;
-      index = index >= N ? N - 1 : index;
+      if (check_bounds)
+        index = min(index, N - 1);
       myGpuAtomicAdd(
           &grad_v[batch_idx][index][k * kVecSize], res[k_item_idx]);
     }
   }
   for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
     int64_t index = query_idx + q_item_idx;
-    index = index >= M ? M - 1 : index;
+    if (check_bounds)
+      index = min(index, M - 1);
     myGpuAtomicAdd(&tmp_sum_i[batch_idx][index], tmp_sum[q_item_idx]);
   }
 }
@@ -756,7 +763,8 @@ template <
     int kBlockSizeQ,
     int kBlockSizeK,
     int TILE_SIZEQ,
-    int TILE_SIZEK>
+    int TILE_SIZEK,
+    bool check_bounds>
 __global__ void attention_backward_grad_qk_kernel(
     at::PackedTensorAccessor<scalar_t, 3> grad_q,
     at::PackedTensorAccessor<scalar_t, 3> grad_k,
@@ -798,7 +806,8 @@ __global__ void attention_backward_grad_qk_kernel(
   for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
     int64_t index = l + k_item_idx;
     maskK[k_item_idx] = index >= N ? scalar_t(0) : scalar_t(1);
-    index = index >= N ? N - 1 : index;
+    if (check_bounds)
+      index = min(index, N - 1);
     kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][index].data());
     vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][index].data());
   }
@@ -806,26 +815,30 @@ __global__ void attention_backward_grad_qk_kernel(
   for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
     int64_t index = query_idx + q_item_idx;
     maskQ[q_item_idx] = index >= M ? scalar_t(0) : scalar_t(1);
-    index = index >= M ? M - 1 : index;
+    if (check_bounds)
+      index = min(index, M - 1);
     qb[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][index].data());
     gb[q_item_idx] = reinterpret_cast<vec_t*>(grad_out[batch_idx][index].data());
 
   }
   for (int64_t i = 0; i < TILE_SIZEQ; i++) {
     int64_t index = query_idx + i - kBlockSizeQ * threadIdx.x;
-    index = index >= M ? M - 1 : index;
+    if (check_bounds)
+      index = min(index, M - 1);
     qbb[i] = reinterpret_cast<vec_t*>(query[batch_idx][index].data());
   }
 
   for (int64_t i = 0; i < TILE_SIZEK; i++) {
     int64_t index = l + i - kBlockSizeK * threadIdx.y;
-    index = index >= N ? N - 1 : index;
+    if (check_bounds)
+      index = min(index, N - 1);
     kbb[i] = reinterpret_cast<vec_t*>(key[batch_idx][index].data());
   }
 
   for (int i = 0; i < kBlockSizeQ; i++) {
     int64_t index = query_idx + i;
-    index = index >= M ? M - 1 : index;
+    if (check_bounds)
+      index = min(index, M - 1);
     normalizer[i] = logsumexp_normalizer[batch_idx][index];
     tmp_sum[i] = tmp_sum_i[batch_idx][index];
   }
@@ -889,7 +902,8 @@ __global__ void attention_backward_grad_qk_kernel(
 #pragma unroll
     for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
       int64_t index = query_idx + q_item_idx;
-      index = index >= M ? M - 1 : index;
+      if (check_bounds)
+        index = min(index, M - 1);
       myGpuAtomicAdd(
           &grad_q[batch_idx][index][k * kVecSize],
           res[q_item_idx]);
@@ -912,7 +926,8 @@ __global__ void attention_backward_grad_qk_kernel(
 #pragma unroll
     for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
       int64_t index = l + k_item_idx;
-      index = index >= N ? N - 1 : index;
+      if (check_bounds)
+        index = min(index, N - 1);
       myGpuAtomicAdd(
           &grad_k[batch_idx][index][k * kVecSize], res[k_item_idx]);
     }
@@ -992,7 +1007,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
       kBlockSizeQ,
       kBlockSizeK,
       TILE_SIZEQ,
-      TILE_SIZEK><<<grid, block, 0, stream>>>(
+      TILE_SIZEK, true><<<grid, block, 0, stream>>>(
       grad_v.packed_accessor<scalar_t, 3>(),
       grad_out.packed_accessor<scalar_t, 3>(),
       query.packed_accessor<scalar_t, 3>(),
@@ -1018,7 +1033,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
       kBlockSizeQ2,
       kBlockSizeK2,
       TILE_SIZEQ2,
-      TILE_SIZEK2><<<grid2, block2, 0, stream>>>(
+      TILE_SIZEK2, true><<<grid2, block2, 0, stream>>>(
       grad_q.packed_accessor<scalar_t, 3>(),
       grad_k.packed_accessor<scalar_t, 3>(),
       grad_out.packed_accessor<scalar_t, 3>(),
