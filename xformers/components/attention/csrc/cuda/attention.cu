@@ -926,9 +926,8 @@ __global__ void attention_backward_grad_qk_kernel(
     for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
       fact[kBlockSizeQ * threadIdx.x + q_item_idx]
           [kBlockSizeK * threadIdx.y + k_item_idx] =
-              attn_v[q_item_idx][k_item_idx] * scale * (
-              grad_attn_v[q_item_idx][k_item_idx] -
-              tmp_sum[q_item_idx]);
+              attn_v[q_item_idx][k_item_idx] * scale *
+          (grad_attn_v[q_item_idx][k_item_idx] - tmp_sum[q_item_idx]);
     }
   }
   __syncthreads();
