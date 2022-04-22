@@ -28,10 +28,12 @@ scalar_t max(scalar_t* buf) {
 template <typename scalar_t>
 void attention_kernel(
     at::TensorAccessor<scalar_t, 3> output,
+    at::TensorAccessor<scalar_t, 2> logsumexp,
     at::TensorAccessor<scalar_t, 3> query,
     at::TensorAccessor<scalar_t, 3> key,
     at::TensorAccessor<scalar_t, 3> value,
-    at::TensorAccessor<scalar_t, 3> buffer //,
+    at::TensorAccessor<scalar_t, 3> buffer,
+    bool compute_logsumexp
     // at::TensorAccessor<int64_t, 2> mask
 ) {
   // TODO: optimize the code by adding blocking
@@ -90,15 +92,18 @@ void attention_kernel(
         for (int64_t k = 0; k < K; k++) {
           oo[k] = buf[k] / s_prime;
         }
+        if (compute_logsumexp)
+          logsumexp[i][j] = m_prime + std::log(s_prime);
       }
     }
   });
 }
 
-at::Tensor attention(
+std::tuple<at::Tensor, at::Tensor> attention(
     const at::Tensor& query,
     const at::Tensor& key,
-    const at::Tensor& value
+    const at::Tensor& value,
+    bool compute_logsumexp
     // const at::Tensor& mask
 ) {
   TORCH_CHECK(query.dim() == key.dim());
@@ -132,19 +137,22 @@ at::Tensor attention(
   int64_t K = query.size(2);
 
   at::Tensor res = at::empty({B, M, K}, query.options());
+  at::Tensor logsumexp = at::empty({B, M}, query.options());
 
   at::Tensor buffer = at::empty({at::get_num_threads(), 1, K}, query.options());
 
   AT_DISPATCH_FLOATING_TYPES(query.scalar_type(), "attention_kernel", [&] {
     attention_kernel<scalar_t>(
         res.accessor<scalar_t, 3>(),
+        logsumexp.accessor<scalar_t, 2>(),
         query.accessor<scalar_t, 3>(),
         key.accessor<scalar_t, 3>(),
         value.accessor<scalar_t, 3>(),
-        buffer.accessor<scalar_t, 3>());
+        buffer.accessor<scalar_t, 3>(),
+        compute_logsumexp);
   });
 
-  return res;
+  return std::make_tuple(res, logsumexp);
 }
 
 template <typename scalar_t>
@@ -280,9 +288,6 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   at::Tensor buffer = at::empty({at::get_num_threads(), 1, K}, query.options());
   at::Tensor buffer2 =
       at::zeros({at::get_num_threads(), 1, N}, query.options());
-
-  // TODO this should be an argument from the function
-  //at::Tensor logsumexp = query.bmm(key.transpose(-2, -1)).logsumexp(-1);
 
   AT_DISPATCH_FLOATING_TYPES(
       query.scalar_type(), "attention_backward_kernel", [&] {

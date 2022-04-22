@@ -375,12 +375,15 @@ template <
     int kBlockSizeK,
     int kBlockSizeQ,
     int WARP_SIZE,
-    int BUFFER_SIZE>
+    int BUFFER_SIZE,
+    bool compute_logsumexp>
 __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> output,
+    at::PackedTensorAccessor<scalar_t, 2> logsumexp,
     at::PackedTensorAccessor<scalar_t, 3> query,
     at::PackedTensorAccessor<scalar_t, 3> key,
-    at::PackedTensorAccessor<scalar_t, 3> value) {
+    at::PackedTensorAccessor<scalar_t, 3> value
+    ) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
   static_assert(
       integerIsPowerOf2(kBlockSizeK * WARP_SIZE),
@@ -399,6 +402,7 @@ __global__ void attention_kernel(
 
   vec_t* query_block[kBlockSizeQ];
   vec_t* output_block[kBlockSizeQ];
+  scalar_t* logsumexp_block[kBlockSizeQ];
   // TODO [BUFFER_SIZE limitation]: the current strategy assumes a
   // statically-known size for K. Ideally we would like to remove this
   // limitation in the future, so that any K is supported
@@ -413,6 +417,7 @@ __global__ void attention_kernel(
     output_block[q_item_idx] =
         reinterpret_cast<vec_t*>(output[batch_idx][index].data());
     m_prime[q_item_idx] = -std::numeric_limits<scalar_t>::infinity();
+    logsumexp_block[q_item_idx] = &logsumexp[batch_idx][index];
   }
 #if 0
   // this for now makes things slower
@@ -493,12 +498,103 @@ __global__ void attention_kernel(
       output_block[q_item_idx][k] = tmp;
     }
   }
+
+  if (compute_logsumexp) {
+#pragma unroll
+    for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      *logsumexp_block[q_item_idx] = m_prime[q_item_idx] + std::log(s_prime[q_item_idx]);
+    }
+  }
 }
 
-at::Tensor attention(
+template <bool compute_logsumexp>
+void launch_attention(
+    at::Tensor& res,
+    at::Tensor& logsumexp,
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value
+    ) {
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+  int64_t K = query.size(2);
+
+  constexpr int WARP_SIZE = 4;
+
+  constexpr int kBlockSizeK = 32;
+  constexpr int kBlockSizeQ = 2;
+
+  constexpr int TILE_SIZE = 32;
+  constexpr int BUFFER_SIZE = 8;
+
+  dim3 grid(ceil_div(M, int64_t(TILE_SIZE)), B);
+  dim3 block(WARP_SIZE, TILE_SIZE / kBlockSizeQ);
+
+  using scalar_t = float;
+
+  if ((K % 4) == 0) {
+    TORCH_CHECK(
+        K / 4 <= BUFFER_SIZE,
+        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
+    attention_kernel<
+        scalar_t,
+        float4,
+        kBlockSizeK,
+        kBlockSizeQ,
+        WARP_SIZE,
+        BUFFER_SIZE,
+        compute_logsumexp><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
+  } else if ((K % 2) == 0) {
+    TORCH_CHECK(
+        K / 2 <= BUFFER_SIZE,
+        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
+    attention_kernel<
+        scalar_t,
+        float2,
+        kBlockSizeK,
+        kBlockSizeQ,
+        WARP_SIZE,
+        BUFFER_SIZE,
+        compute_logsumexp><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
+
+  } else {
+    TORCH_CHECK(
+        K <= BUFFER_SIZE,
+        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
+    attention_kernel<
+        scalar_t,
+        float,
+        kBlockSizeK,
+        kBlockSizeQ,
+        WARP_SIZE,
+        BUFFER_SIZE,
+        compute_logsumexp><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
+  }
+}
+
+std::tuple<at::Tensor, at::Tensor> attention(
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    bool compute_logsumexp
     // const at::Tensor& mask
 ) {
   TORCH_CHECK(query.dim() == key.dim());
@@ -540,72 +636,19 @@ at::Tensor attention(
   int64_t K = query.size(2);
 
   at::Tensor res = at::zeros({B, M, K}, query.options());
+  at::Tensor logsumexp = at::empty({B, M}, query.options());
 
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-
-  constexpr int WARP_SIZE = 4;
-
-  constexpr int kBlockSizeK = 32;
-  constexpr int kBlockSizeQ = 2;
-
-  constexpr int TILE_SIZE = 32;
-  constexpr int BUFFER_SIZE = 8;
-
-  dim3 grid(ceil_div(M, int64_t(TILE_SIZE)), B);
-  dim3 block(WARP_SIZE, TILE_SIZE / kBlockSizeQ);
-
-  using scalar_t = float;
-
-  if ((K % 4) == 0) {
-    TORCH_CHECK(
-        K / 4 <= BUFFER_SIZE,
-        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
-    attention_kernel<
-        scalar_t,
-        float4,
-        kBlockSizeK,
-        kBlockSizeQ,
-        WARP_SIZE,
-        BUFFER_SIZE><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
-  } else if ((K % 2) == 0) {
-    TORCH_CHECK(
-        K / 2 <= BUFFER_SIZE,
-        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
-    attention_kernel<
-        scalar_t,
-        float2,
-        kBlockSizeK,
-        kBlockSizeQ,
-        WARP_SIZE,
-        BUFFER_SIZE><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
-
+  // have to pass compute_logsumexp as a template parameter
+  // otherwise there is a slowdown in the kernel...
+  if (compute_logsumexp) {
+    launch_attention<true>(res, logsumexp, query, key, value);
   } else {
-    TORCH_CHECK(
-        K <= BUFFER_SIZE,
-        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
-    attention_kernel<
-        scalar_t,
-        float,
-        kBlockSizeK,
-        kBlockSizeQ,
-        WARP_SIZE,
-        BUFFER_SIZE><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
+    launch_attention<false>(res, logsumexp, query, key, value);
   }
+
   AT_CUDA_CHECK(cudaGetLastError());
 
-  return res;
+  return std::make_tuple(res, logsumexp);
 }
 
 template <

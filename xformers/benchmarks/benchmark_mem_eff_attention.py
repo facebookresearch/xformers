@@ -26,6 +26,7 @@ NUM_THREADS = [1] if device.type == "cuda" else [1, 40]
 SHAPES = list(
     itertools.product([1, 8, 32, 256], [127, 128, 512, 513, 1023, 1024], [16, 32])
 )
+SHAPES = [(256, 1024, 32)]
 
 results = []
 mem_use: Dict[str, Dict[str, float]] = dict(optimized={}, vanilla={})
@@ -38,7 +39,7 @@ for num_threads in NUM_THREADS:
         q = torch.rand(shape, device=device)
         sub_label = f"B={B}, M={M}, K={K}"
 
-        if True:
+        if False:
             r = xformers.ops.memory_efficient_attention(q, q, q)
 
             rr = ref_attention(q, q, q)
@@ -51,7 +52,7 @@ for num_threads in NUM_THREADS:
                 stmt="fn(q, q, q)",
                 globals={
                     "q": q,
-                    "fn": torch.ops.xformers.efficient_attention,
+                    "fn": xformers.ops.memory_efficient_attention,
                 },
                 label="attention",
                 description="optimized",
