@@ -635,36 +635,49 @@ __global__ void attention_backward_grad_v_kernel(
       blockIdx.x * blockDim.x * kBlockSizeQ + threadIdx.x * kBlockSizeQ;
   int64_t l = blockIdx.y * blockDim.y * kBlockSizeK + threadIdx.y * kBlockSizeK;
 
-  if (query_idx >= M)
-    return;
+  __shared__ scalar_t fact[TILE_SIZEQ][TILE_SIZEK + 1];
 
-  if (l >= N)
-    return;
+#pragma unroll
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+#pragma unroll
+    for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      fact[kBlockSizeQ * threadIdx.x + q_item_idx]
+          [kBlockSizeK * threadIdx.y + k_item_idx] = 0;
+    }
+  }
 
   scalar_t normalizer[kBlockSizeQ];
   scalar_t tmp_sum[kBlockSizeQ] = {0};
 
-  __shared__ scalar_t fact[TILE_SIZEQ][TILE_SIZEK + 1];
-
   vec_t* qb[kBlockSizeQ], *kb[kBlockSizeK], *vb[kBlockSizeK], *gb[kBlockSizeQ], *gbb[TILE_SIZEQ];
+  scalar_t maskQ[kBlockSizeQ], maskK[kBlockSizeK];
 
   for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-    kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][l + k_item_idx].data());
-    vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][l + k_item_idx].data());
+    int64_t index = l + k_item_idx;
+    maskK[k_item_idx] = index >= N ? scalar_t(0) : scalar_t(1);
+    index = index >= N ? N - 1 : index;
+    kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][index].data());
+    vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][index].data());
   }
 
   for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-    qb[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][query_idx + q_item_idx].data());
-    gb[q_item_idx] = reinterpret_cast<vec_t*>(grad_out[batch_idx][query_idx + q_item_idx].data());
-
+    int64_t index = query_idx + q_item_idx;
+    maskQ[q_item_idx] = index >= M ? scalar_t(0) : scalar_t(1);
+    index = index >= M ? M - 1 : index;
+    qb[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][index].data());
+    gb[q_item_idx] = reinterpret_cast<vec_t*>(grad_out[batch_idx][index].data());
   }
+
   for (int64_t i = 0; i < TILE_SIZEQ; i++) {
-    int64_t idx = i - kBlockSizeQ * threadIdx.x;
-    gbb[i] = reinterpret_cast<vec_t*>(grad_out[batch_idx][query_idx + idx].data());
+    int64_t index = query_idx + i - kBlockSizeQ * threadIdx.x;
+    index = index >= M ? M - 1 : index;
+    gbb[i] = reinterpret_cast<vec_t*>(grad_out[batch_idx][index].data());
   }
 
   for (int i = 0; i < kBlockSizeQ; i++) {
-    normalizer[i] = logsumexp_normalizer[batch_idx][query_idx + i];
+    int64_t index = query_idx + i;
+    index = index >= M ? M - 1 : index;
+    normalizer[i] = logsumexp_normalizer[batch_idx][index];
   }
 
   scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
@@ -693,7 +706,7 @@ __global__ void attention_backward_grad_v_kernel(
 #pragma unroll
     for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
       attn_v[q_item_idx][k_item_idx] =
-          std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]);
+          std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]) * maskQ[q_item_idx] * maskK[k_item_idx];
     }
   }
 
@@ -724,12 +737,16 @@ __global__ void attention_backward_grad_v_kernel(
     }
 #pragma unroll
     for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+      int64_t index = l + k_item_idx;
+      index = index >= N ? N - 1 : index;
       myGpuAtomicAdd(
-          &grad_v[batch_idx][l + k_item_idx][k * kVecSize], res[k_item_idx]);
+          &grad_v[batch_idx][index][k * kVecSize], res[k_item_idx]);
     }
   }
   for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-    myGpuAtomicAdd(&tmp_sum_i[batch_idx][query_idx + q_item_idx], tmp_sum[q_item_idx]);
+    int64_t index = query_idx + q_item_idx;
+    index = index >= M ? M - 1 : index;
+    myGpuAtomicAdd(&tmp_sum_i[batch_idx][index], tmp_sum[q_item_idx]);
   }
 }
 
@@ -761,43 +778,56 @@ __global__ void attention_backward_grad_qk_kernel(
       blockIdx.x * blockDim.x * kBlockSizeQ + threadIdx.x * kBlockSizeQ;
   int64_t l = blockIdx.y * blockDim.y * kBlockSizeK + threadIdx.y * kBlockSizeK;
 
-  if (query_idx >= M)
-    return;
+  __shared__ scalar_t fact[TILE_SIZEQ][TILE_SIZEK + 1];
 
-  if (l >= N)
-    return;
+#pragma unroll
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+#pragma unroll
+    for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      fact[kBlockSizeQ * threadIdx.x + q_item_idx]
+          [kBlockSizeK * threadIdx.y + k_item_idx] = 0;
+    }
+  }
 
   scalar_t normalizer[kBlockSizeQ];
   scalar_t tmp_sum[kBlockSizeQ];
 
-  __shared__ scalar_t fact[TILE_SIZEQ][TILE_SIZEK + 1];
-
-
   vec_t* qb[kBlockSizeQ], *kb[kBlockSizeK], *vb[kBlockSizeK], *gb[kBlockSizeQ], *qbb[TILE_SIZEQ], *kbb[TILE_SIZEK];
+  scalar_t maskQ[kBlockSizeQ], maskK[kBlockSizeK];
 
   for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
-    kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][l + k_item_idx].data());
-    vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][l + k_item_idx].data());
+    int64_t index = l + k_item_idx;
+    maskK[k_item_idx] = index >= N ? scalar_t(0) : scalar_t(1);
+    index = index >= N ? N - 1 : index;
+    kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][index].data());
+    vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][index].data());
   }
 
   for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
-    qb[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][query_idx + q_item_idx].data());
-    gb[q_item_idx] = reinterpret_cast<vec_t*>(grad_out[batch_idx][query_idx + q_item_idx].data());
+    int64_t index = query_idx + q_item_idx;
+    maskQ[q_item_idx] = index >= M ? scalar_t(0) : scalar_t(1);
+    index = index >= M ? M - 1 : index;
+    qb[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][index].data());
+    gb[q_item_idx] = reinterpret_cast<vec_t*>(grad_out[batch_idx][index].data());
 
   }
   for (int64_t i = 0; i < TILE_SIZEQ; i++) {
-    int64_t idx = i - kBlockSizeQ * threadIdx.x;
-    qbb[i] = reinterpret_cast<vec_t*>(query[batch_idx][query_idx + idx].data());
+    int64_t index = query_idx + i - kBlockSizeQ * threadIdx.x;
+    index = index >= M ? M - 1 : index;
+    qbb[i] = reinterpret_cast<vec_t*>(query[batch_idx][index].data());
   }
 
   for (int64_t i = 0; i < TILE_SIZEK; i++) {
-    int64_t idx = i - kBlockSizeK * threadIdx.y;
-    kbb[i] = reinterpret_cast<vec_t*>(key[batch_idx][l + idx].data());
+    int64_t index = l + i - kBlockSizeK * threadIdx.y;
+    index = index >= N ? N - 1 : index;
+    kbb[i] = reinterpret_cast<vec_t*>(key[batch_idx][index].data());
   }
 
   for (int i = 0; i < kBlockSizeQ; i++) {
-    normalizer[i] = logsumexp_normalizer[batch_idx][query_idx + i];
-    tmp_sum[i] = tmp_sum_i[batch_idx][query_idx + i];
+    int64_t index = query_idx + i;
+    index = index >= M ? M - 1 : index;
+    normalizer[i] = logsumexp_normalizer[batch_idx][index];
+    tmp_sum[i] = tmp_sum_i[batch_idx][index];
   }
 
   scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
@@ -826,7 +856,7 @@ __global__ void attention_backward_grad_qk_kernel(
 #pragma unroll
     for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
       attn_v[q_item_idx][k_item_idx] =
-          std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]);
+          std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]) * maskQ[q_item_idx] * maskK[k_item_idx];
     }
   }
 
@@ -858,8 +888,10 @@ __global__ void attention_backward_grad_qk_kernel(
     }
 #pragma unroll
     for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      int64_t index = query_idx + q_item_idx;
+      index = index >= M ? M - 1 : index;
       myGpuAtomicAdd(
-          &grad_q[batch_idx][query_idx + q_item_idx][k * kVecSize],
+          &grad_q[batch_idx][index][k * kVecSize],
           res[q_item_idx]);
     }
   }
@@ -879,8 +911,10 @@ __global__ void attention_backward_grad_qk_kernel(
     }
 #pragma unroll
     for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+      int64_t index = l + k_item_idx;
+      index = index >= N ? N - 1 : index;
       myGpuAtomicAdd(
-          &grad_k[batch_idx][l + k_item_idx][k * kVecSize], res[k_item_idx]);
+          &grad_k[batch_idx][index][k * kVecSize], res[k_item_idx]);
     }
   }
 }
