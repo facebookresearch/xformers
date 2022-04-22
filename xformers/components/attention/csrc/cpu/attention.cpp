@@ -178,7 +178,6 @@ void attention_backward_kernel(
     auto buf = buffer[at::get_thread_num()][0];
     auto buf2 = buffer2[at::get_thread_num()][0];
     for (int64_t i = start; i < end; i++) {
-
       for (int64_t j = 0; j < M; j++) {
         for (int64_t k = 0; k < K; k++) {
           buf[k] = 0;
@@ -244,8 +243,6 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
     const at::Tensor& logsumexp
     // const at::Tensor& mask
 ) {
-
-
   TORCH_CHECK(query.dim() == grad_out.dim());
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
