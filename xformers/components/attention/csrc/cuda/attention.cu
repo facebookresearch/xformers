@@ -122,7 +122,7 @@ __device__ void compute_dot(
     scalar_t out[kBlockSizeQ][kBlockSizeK],
     int64_t K) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
-  scalar_t scale = 1.0; // / std::sqrt(scalar_t(K));
+  scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
   vec_t q_i[kBlockSizeQ];
   for (int64_t k = 0; k < K / kVecSize; k += 1) {
 #pragma unroll
@@ -731,11 +731,13 @@ __global__ void attention_backward_grad_v_kernel(
 
   scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
   scalar_t grad_attn_v[kBlockSizeQ][kBlockSizeK] = {0};
+  scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
 
   for (int64_t k = 0; k < K / kVecSize; k += 1) {
 #pragma unroll
     for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
       vec_t kk = __ldg(kb[k_item_idx] + k);
+      iMul(scale, &kk);
       vec_t tt = __ldg(vb[k_item_idx] + k);
 #pragma unroll
       for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
@@ -889,11 +891,13 @@ __global__ void attention_backward_grad_qk_kernel(
 
   scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
   scalar_t grad_attn_v[kBlockSizeQ][kBlockSizeK] = {0};
+  scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
 
   for (int64_t k = 0; k < K / kVecSize; k += 1) {
 #pragma unroll
     for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
       vec_t kk = __ldg(kb[k_item_idx] + k);
+      iMul(scale, &kk);
       vec_t tt = __ldg(vb[k_item_idx] + k);
 #pragma unroll
       for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
@@ -922,9 +926,9 @@ __global__ void attention_backward_grad_qk_kernel(
     for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
       fact[kBlockSizeQ * threadIdx.x + q_item_idx]
           [kBlockSizeK * threadIdx.y + k_item_idx] =
-              attn_v[q_item_idx][k_item_idx] *
+              attn_v[q_item_idx][k_item_idx] * scale * (
               grad_attn_v[q_item_idx][k_item_idx] -
-          attn_v[q_item_idx][k_item_idx] * tmp_sum[q_item_idx];
+              tmp_sum[q_item_idx]);
     }
   }
   __syncthreads();

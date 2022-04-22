@@ -174,6 +174,7 @@ void attention_backward_kernel(
   int64_t M = q.size(1);
   int64_t N = k.size(1);
   int64_t grain_size = 1; // buffer.size(1);
+  scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
   at::parallel_for(0, B, grain_size, [&](int64_t start, int64_t end) {
     auto buf = buffer[at::get_thread_num()][0];
     auto buf2 = buffer2[at::get_thread_num()][0];
@@ -191,7 +192,7 @@ void attention_backward_kernel(
           for (int64_t k = 0; k < K; k++) {
             si += query_i[k] * key_j[k];
           }
-          scalar_t attn_v = std::exp(si - normalizer);
+          scalar_t attn_v = std::exp(si * scale - normalizer);
 
           for (int64_t k = 0; k < K; k++) {
             grad_v[i][l][k] += attn_v * grad_out[i][j][k];
@@ -207,7 +208,7 @@ void attention_backward_kernel(
           }
 
           // those are temporaries for the gradient of the softmax
-          scalar_t tmp = attn_v * grad_attn_v;
+          scalar_t tmp = attn_v * grad_attn_v * scale;
           tmp_sum += tmp;
 
           // grad_q is easy
