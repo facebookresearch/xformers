@@ -30,66 +30,147 @@ SHAPES = list(
 results = []
 mem_use: Dict[str, Dict[str, float]] = dict(optimized={}, vanilla={})
 
-print(f"Processing {len(SHAPES)} cases")
-for num_threads in NUM_THREADS:
-    for shape in SHAPES:
-        print(f"===== {shape} =====")
-        B, M, K = shape
-        q = torch.rand(shape, device=device)
-        sub_label = f"B={B}, M={M}, K={K}"
 
-        if True:
-            r = xformers.ops.memory_efficient_attention(q, q, q)
+def benchmark_forward():
+    print(f"Processing {len(SHAPES)} cases")
+    print("Forward")
+    for num_threads in NUM_THREADS:
+        for shape in SHAPES:
+            print(f"===== {shape} =====")
+            B, M, K = shape
+            q = torch.rand(shape, device=device)
+            sub_label = f"B={B}, M={M}, K={K}"
 
-            rr = ref_attention(q, q, q)
-            assert (r - rr).abs().max() < 1e-5
+            if True:
+                r = xformers.ops.memory_efficient_attention(q, q, q)
 
-        torch.cuda.reset_peak_memory_stats()
-        torch.cuda.synchronize()
-        results.append(
-            benchmark.Timer(
-                stmt="fn(q, q, q)",
-                globals={
-                    "q": q,
-                    "fn": torch.ops.xformers.efficient_attention,
-                },
-                label="attention",
-                description="optimized",
-                sub_label=sub_label,
-                num_threads=num_threads,
-            ).blocked_autorange(min_run_time=min_run_time)
-        )
-        torch.cuda.synchronize()
-        memory = torch.cuda.max_memory_allocated() / 2 ** 20
-        mem_use["optimized"][sub_label] = memory
-        memory_str = f"Memory used: {memory} MB"
+                rr = ref_attention(q, q, q)
+                assert (r - rr).abs().max() < 1e-5
 
-        print("Optimized", memory_str)
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.synchronize()
+            results.append(
+                benchmark.Timer(
+                    stmt="fn(q, q, q)",
+                    globals={
+                        "q": q,
+                        "fn": xformers.ops.memory_efficient_attention,
+                    },
+                    label="attention",
+                    description="optimized",
+                    sub_label=sub_label,
+                    num_threads=num_threads,
+                ).blocked_autorange(min_run_time=min_run_time)
+            )
+            torch.cuda.synchronize()
+            memory = torch.cuda.max_memory_allocated() / 2 ** 20
+            mem_use["optimized"][sub_label] = memory
+            memory_str = f"Memory used: {memory} MB"
 
-        torch.cuda.reset_peak_memory_stats()
-        torch.cuda.synchronize()
-        results.append(
-            benchmark.Timer(
-                stmt="fn(q, q, q)",
-                globals={
-                    "q": q,
-                    "fn": ref_attention,
-                },
-                label="attention",
-                description="vanilla",
-                sub_label=sub_label,
-                num_threads=num_threads,
-            ).blocked_autorange(min_run_time=min_run_time)
-        )
+            print("Optimized", memory_str)
 
-        torch.cuda.synchronize()
-        memory = torch.cuda.max_memory_allocated() / 2 ** 20
-        mem_use["vanilla"][sub_label] = memory
-        memory_str = f"Memory used: {memory} MB"
-        print("Vanilla", memory_str)
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.synchronize()
+            results.append(
+                benchmark.Timer(
+                    stmt="fn(q, q, q)",
+                    globals={
+                        "q": q,
+                        "fn": ref_attention,
+                    },
+                    label="attention",
+                    description="vanilla",
+                    sub_label=sub_label,
+                    num_threads=num_threads,
+                ).blocked_autorange(min_run_time=min_run_time)
+            )
+
+            torch.cuda.synchronize()
+            memory = torch.cuda.max_memory_allocated() / 2 ** 20
+            mem_use["vanilla"][sub_label] = memory
+            memory_str = f"Memory used: {memory} MB"
+            print("Vanilla", memory_str)
+
+    compare = benchmark.Compare(results)
+    compare.print()
+
+    pprint.pprint(mem_use)
 
 
-compare = benchmark.Compare(results)
-compare.print()
+def benchmark_backward():
+    print(f"Processing {len(SHAPES)} cases")
+    print("Backward")
+    for num_threads in NUM_THREADS:
+        for shape in SHAPES:
+            print(f"===== {shape} =====")
+            B, M, K = shape
+            q = torch.rand(shape, device=device, requires_grad=True)
+            sub_label = f"B={B}, M={M}, K={K}"
 
-pprint.pprint(mem_use)
+            if True:
+                r = xformers.ops.memory_efficient_attention(q, q, q)
+                r.backward(torch.ones_like(q))
+
+                grad = q.grad
+                q.grad = None
+
+                rr = ref_attention(q, q, q)
+                rr.backward(torch.ones_like(q))
+                assert (grad - q.grad).abs().max() < 1e-5
+
+            out = xformers.ops.memory_efficient_attention(q, q, q)
+            grad = torch.ones_like(q)
+
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.synchronize()
+            results.append(
+                benchmark.Timer(
+                    stmt="out.backward(grad, retain_graph=True)",
+                    globals={
+                        "out": out,
+                        "grad": grad,
+                    },
+                    label="attention",
+                    description="optimized",
+                    sub_label=sub_label,
+                    num_threads=num_threads,
+                ).blocked_autorange(min_run_time=min_run_time)
+            )
+            torch.cuda.synchronize()
+            memory = torch.cuda.max_memory_allocated() / 2 ** 20
+            mem_use["optimized"][sub_label] = memory
+            memory_str = f"Memory used: {memory} MB"
+
+            print("Optimized", memory_str)
+
+            out = ref_attention(q, q, q)
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.synchronize()
+            results.append(
+                benchmark.Timer(
+                    stmt="out.backward(grad, retain_graph=True)",
+                    globals={
+                        "out": out,
+                        "grad": grad,
+                    },
+                    label="attention",
+                    description="vanilla",
+                    sub_label=sub_label,
+                    num_threads=num_threads,
+                ).blocked_autorange(min_run_time=min_run_time)
+            )
+
+            torch.cuda.synchronize()
+            memory = torch.cuda.max_memory_allocated() / 2 ** 20
+            mem_use["vanilla"][sub_label] = memory
+            memory_str = f"Memory used: {memory} MB"
+            print("Vanilla", memory_str)
+
+    compare = benchmark.Compare(results)
+    compare.print()
+
+    pprint.pprint(mem_use)
+
+
+benchmark_forward()
+benchmark_backward()
