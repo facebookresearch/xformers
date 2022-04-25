@@ -68,12 +68,15 @@ def test_logsumexp(device, q_len, kv_len, batch_size, k_len):
     assert torch.allclose(lse, ref_lse, atol=2e-4)
 
 
+@pytest.mark.parametrize("grad_out_contiguous", [False, True])
 @pytest.mark.parametrize("k_len", [5, 6, 32])
 @pytest.mark.parametrize("batch_size", [1, 4])
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
 @pytest.mark.parametrize("q_len", [2, 3, 5])
 @pytest.mark.parametrize("device", _devices)
-def test_memory_efficient_attention_backward(device, q_len, kv_len, batch_size, k_len):
+def test_memory_efficient_attention_backward(
+    device, q_len, kv_len, batch_size, k_len, grad_out_contiguous
+):
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
@@ -83,8 +86,12 @@ def test_memory_efficient_attention_backward(device, q_len, kv_len, batch_size, 
     key.requires_grad_(True)
     value.requires_grad_(True)
 
+    grad_out = torch.ones_like(query)
+    if grad_out_contiguous is False:
+        grad_out = torch.tensor([1.0], device=device)[None, None, :].expand_as(query)
+
     out = xformers.ops.memory_efficient_attention(query, key, value)
-    out.backward(torch.ones_like(query))
+    out.backward(grad_out)
 
     grad_q = query.grad
     grad_k = key.grad
@@ -95,7 +102,7 @@ def test_memory_efficient_attention_backward(device, q_len, kv_len, batch_size, 
     value.grad = None
 
     ref = ref_attention(query, key, value)
-    ref.backward(torch.ones_like(query))
+    ref.backward(grad_out)
 
     # there is some extra precision loss in the CPU implementation due to an
     # extra accumulation step in grad_q, which is not present in the CUDA
