@@ -54,7 +54,7 @@ def kernel_fma(
     Kernel for computing Out = activation(A x W + C)
 
     - Input has shape (M, K)
-    - Weight has shape (K, N)
+    - Weight has shape (N, K)
     - Bias has shape (N,)
     - Output has shape (M, N)
     - ActInputs (optional) has shape (M, N)
@@ -90,7 +90,6 @@ def kernel_fma(
     # for rows (resp. col) of C
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    rk = tl.arange(0, BLOCK_K)
 
     # the memory addresses of elements can follow numpy broadcasting
     input_ptrs = INPUT + rm[:, None] * stride_im
@@ -108,8 +107,8 @@ def kernel_fma(
     mask_rn = rn < N
     mask_rm = rm < M
 
-    for i in range(0, K, BLOCK_K):
-        rk = tl.arange(0, BLOCK_K) + i
+    for step_k in range(0, K, BLOCK_K):
+        rk = tl.arange(0, BLOCK_K) + step_k
         a = tl.load(input_ptrs + rk[None, :], mask=((rk[None, :] < K) & mask_rm[:, None]), other=0.0)
         w = tl.load(weight_ptrs + rk[:, None], mask=((rk[:, None] < K) & mask_rn[None, :]), other=0.0)
 

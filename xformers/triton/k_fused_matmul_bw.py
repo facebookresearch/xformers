@@ -10,8 +10,6 @@ import torch
 import triton
 import triton.language as tl
 
-from xformers.triton.sum_strided import sum_2d_dim_0
-
 
 # fmt: off
 @triton.heuristics({
@@ -29,9 +27,9 @@ from xformers.triton.sum_strided import sum_2d_dim_0
     key=["N"],
 )
 @triton.jit
-def kernel_bw(
-    # Pointers to matrices
-    GRAD_ACT, GRAD_OUT, ACT_INPUTS,
+def kernel_bw_act(
+    # Pointers to tensors
+    D_ACT, D_OUT, ACT_INPUTS,
     # Matrix dimensions
     N,
     # The stride variables represent how much to increase the ptr by when moving by 1
@@ -69,7 +67,7 @@ def kernel_bw(
     grad_act = ACTIVATION_GRAD(act_in)
 
     # now read the incoming gradient, the backpropagated one is the multiple of both
-    grad_out_ptrs = GRAD_OUT + pid_m * stride_gom + rn
+    grad_out_ptrs = D_OUT + pid_m * stride_gom + rn
     if EVEN_N:
         grad_out = tl.load(grad_out_ptrs)
     else:
@@ -78,8 +76,114 @@ def kernel_bw(
     grad_act *= grad_out
 
     # write back result
-    grad_act_ptrs = GRAD_ACT + pid_m * stride_gom + rn
+    grad_act_ptrs = D_ACT + pid_m * stride_gom + rn
     tl.store(grad_act_ptrs, grad_act, mask=rn < N)
+
+
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_M": 16, "BLOCK_K": 16}, num_stages=5, num_warps=2),
+        triton.Config({"BLOCK_M": 32, "BLOCK_K": 32}, num_stages=5, num_warps=2),
+        triton.Config({"BLOCK_M": 64, "BLOCK_K": 32}, num_stages=5, num_warps=2),
+        triton.Config({"BLOCK_M": 32, "BLOCK_K": 64}, num_stages=5, num_warps=2),
+        triton.Config({"BLOCK_M": 128, "BLOCK_K": 64}, num_stages=4, num_warps=2),
+        triton.Config({"BLOCK_M": 64, "BLOCK_K": 128}, num_stages=4, num_warps=2),
+        triton.Config({"BLOCK_M": 128, "BLOCK_K": 128}, num_stages=3, num_warps=2),
+    ],
+    key=["M", "N", "K"],
+)
+@triton.jit
+def kernel_bw_epilogue(
+    # Pointers to tensors
+    D_WEIGHT, D_BIAS, D_IN, D_ACT, WEIGHT,
+    # Tensor dimensions
+    M, N, K,
+    # Strides which are not == 1
+    stride_im, stride_am, stride_wn,
+    # Meta-parameters
+    BLOCK_M: tl.constexpr, GROUP_M: tl.constexpr,
+    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    COMPUTE_D_WEIGHT: tl.constexpr,
+    COMPUTE_D_BIAS: tl.constexpr,
+):
+    # fmt: on
+
+    """
+    Given the gradient pre-activation, compute the input gradient,
+    and optionally the bias and weight gradients
+
+    Shapes:
+    d_in    - M x K
+    d_act   - M x N
+    weight  - N x K
+    bias    - N
+
+    The main computation in this kernel is
+    d_in = d_act @ weight
+
+    The consolidation is over N
+    """
+
+    pid = tl.program_id(axis=0)
+
+    num_pid_m = tl.cdiv(M, BLOCK_M)  # number of program ids along the M axis
+    num_pid_k = tl.cdiv(K, BLOCK_K)  # number of programs ids along the N axis
+    num_pid_in_group = GROUP_M * num_pid_k  # number of programs in group
+    group_id = pid // num_pid_in_group  # id of the group this program is in
+    first_pid_m = group_id * GROUP_M  # row-id of the first program in the group
+    GROUP_M = min(
+        num_pid_m - first_pid_m, GROUP_M
+    )  # if `num_pid_m` isn't divisible by `GROUP_M`, the last group is smaller
+
+    # *within groups*, programs are ordered in a column-major order
+    # row-id /col-id of the program in the *launch grid*
+    pid_m = first_pid_m + (pid % GROUP_M)
+    pid_k = (pid % num_pid_in_group) // GROUP_M
+
+    # now compute the block that each program will go through
+    # rm (resp. rn) denotes a range of indices
+    # for rows (resp. col) of C
+    rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    rk = pid_k * BLOCK_K + tl.arange(0, BLOCK_K)
+
+    # Compute the input derivative
+    # ```
+    #   d_in = d_act @ weight
+    # ```
+
+    # We fetch a block memory block from both inputs, matmul and accumulate, then repeat
+    act_ptrs = D_ACT + rm[:, None] * stride_am
+    weight_ptrs = WEIGHT + rk[None, :]
+
+    acc = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
+
+    mask_rm = rm < M
+    mask_rk = rk < K
+
+    for step_n in range(0, N, BLOCK_N):
+        rn = tl.arange(0, BLOCK_N) + step_n
+        a = tl.load(act_ptrs + rn[None, :], mask=(mask_rm[:, None] & (rn[None, :] < N)), other=0.0)
+        w = tl.load(weight_ptrs + rn[:, None] * stride_wn, mask=((rn[:, None] < N) & mask_rk[None, :]), other=0.0)
+        acc += tl.dot(a, w)
+
+        # Optionally compute the bias gradient
+        if COMPUTE_D_BIAS:
+            # ```
+            #   grad_bias = sum_2d_dim_0(grad_act_)
+            # ````
+            # Benefit here is that we've already loaded the grad_act data, so we can compute the accumulation on the fly
+            db = tl.sum(a, axis=0)
+            tl.atomic_add(D_BIAS + rn, db, mask=rn < N)
+
+    # write back result
+    grad_in_ptrs = D_IN + rm[:, None] * stride_im + rk[None, :]
+    tl.store(grad_in_ptrs, acc, mask=mask_rm[:, None] & mask_rk[None, :])
+
+    # Optionally compute the weight gradient
+    if COMPUTE_D_WEIGHT:
+        # grad_weight = grad_out_.transpose(1, 0) @ inputs_
+        # not sure that this can be fused really
+        pass
 
 
 def fused_matmul_backward(
@@ -108,7 +212,7 @@ def fused_matmul_backward(
     assert grad_out_.shape[1] == weight.shape[0], "Incompatible dimensions in between grad_out and weight"
 
     M, N = grad_out_.shape
-    N, _ = weight.shape
+    N, K = weight.shape
 
     # Compute the gradient for the activation
     if activation_grad is not None:
@@ -122,7 +226,7 @@ def fused_matmul_backward(
         grid = lambda META: (M, triton.cdiv(N, META["BLOCK_N"])) # noqa
 
         # fmt: off
-        kernel_bw[grid](
+        kernel_bw_act[grid](
             grad_act, grad_out_, act_in,            # data ptrs
             N,                                      # shapes
             grad_act.stride(0), act_in.stride(0),   # strides
@@ -134,9 +238,31 @@ def fused_matmul_backward(
         # just before the activation
         grad_out_ = grad_act
 
-    # The following ops can also be handled by triton
-    grad_in = grad_out_ @ weight
-    grad_weight = grad_out_.transpose(1, 0) @ inputs_ if trainable_weight else None
-    grad_bias = sum_2d_dim_0(grad_out_) if trainable_bias else None
+    # Now compute the input and bias gradients
+    grid_e = lambda META: (triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(K, META["BLOCK_K"]),) # noqa
 
-    return grad_in.reshape_as(inputs), grad_weight, grad_bias
+    grad_weight : Optional[torch.Tensor] = torch.empty_like(weight) if trainable_weight else grad_out
+    grad_bias = torch.empty((N,), dtype=inputs_.dtype, device=inputs_.device) if trainable_bias else grad_out
+    grad_in = torch.empty_like(inputs_)
+
+    # NOTE: We're using atomic add in the kernel, over a block of size BLOCK_N
+    # We should not have more threads than the number of elements in the block
+    # else atomic_add is not guarded (multiple commits per element)
+    # hence ```num_warps == BLOCK_N // 32```
+
+    # fmt: off
+    kernel_bw_epilogue[grid_e](
+        grad_weight, grad_bias, grad_in, grad_out_, weight,
+        M, N, K,
+        grad_in.stride(0), grad_out_.stride(0), weight.stride(0),
+        # Meta-parameters
+        GROUP_M=8, BLOCK_N=64,
+        COMPUTE_D_WEIGHT=False,
+        COMPUTE_D_BIAS=trainable_bias,
+    )
+    # fmt: on
+
+    # Final computation, not fused yet..
+    grad_weight = grad_out_.transpose(1, 0) @ inputs_ if trainable_weight else None
+
+    return grad_in.reshape_as(inputs), grad_weight, grad_bias if trainable_bias else None

@@ -93,6 +93,8 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
 
     # Instantiate pytorch and fused layers, same initialization
     torch.random.manual_seed(0)
+    torch.cuda.manual_seed_all(0)
+
     X = torch.normal(0, 1, size=shape, device="cuda")
     X.requires_grad_()
 
