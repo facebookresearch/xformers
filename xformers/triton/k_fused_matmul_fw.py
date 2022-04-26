@@ -40,7 +40,7 @@ def kernel_fma(
     # element in a particular dimension. E.g. stride_am is how much to increase a_ptr
     # by to get the element one row down (A has M rows)
     stride_om, stride_im,
-    stride_wn, stride_wk,
+    stride_wn,
     # Meta-parameters
     BLOCK_M: tl.constexpr, GROUP_M: tl.constexpr,
     BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
@@ -93,8 +93,8 @@ def kernel_fma(
     rk = tl.arange(0, BLOCK_K)
 
     # the memory addresses of elements can follow numpy broadcasting
-    input_ptrs = INPUT + rm[:, None] * stride_im + rk[None, :]
-    weight_ptrs = WEIGHT + rk[:, None] * stride_wk + rn[None, :] * stride_wn
+    input_ptrs = INPUT + rm[:, None] * stride_im
+    weight_ptrs = WEIGHT + rn[None, :] * stride_wn
 
     # initialize and iteratively update accumulator
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
@@ -105,19 +105,20 @@ def kernel_fma(
 
     # block level matrix multiplication.
     # We fetch a block memory block from both inputs, matmul and accumulate, then repeat
-    for _ in range(K, 0, -BLOCK_K):
-        a = tl.load(input_ptrs, mask=((rk[None, :] < K) & (rm[:, None] < M)), other=0.0)
-        w = tl.load(weight_ptrs, mask=((rk[:, None] < K) & (rn[None, :] < N)), other=0.0)
+    mask_rn = rn < N
+    mask_rm = rm < M
 
-        acc += tl.dot(a, w).to(tl.float32)
+    for i in range(0, K, BLOCK_K):
+        rk = tl.arange(0, BLOCK_K) + i
+        a = tl.load(input_ptrs + rk[None, :], mask=((rk[None, :] < K) & mask_rm[:, None]), other=0.0)
+        w = tl.load(weight_ptrs + rk[:, None], mask=((rk[:, None] < K) & mask_rn[None, :]), other=0.0)
 
-        input_ptrs += BLOCK_K
-        weight_ptrs += BLOCK_K * stride_wk
+        acc += tl.dot(a, w)
 
     # optional: save the activation inputs
     if SAVE_ACT_INPUTS:
         act_in_ptrs = ACT_INPUTS + rm[:, None] * stride_om + rn[None, :]
-        tl.store(act_in_ptrs, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
+        tl.store(act_in_ptrs, acc, mask=mask_rm[:, None] & mask_rn[None, :])
 
     # optional: fused activation (while the data is in shared memory)
     if ACTIVATION:
@@ -125,7 +126,7 @@ def kernel_fma(
 
     # write back result
     out_ptrs = OUT + rm[:, None] * stride_om + rn[None, :]
-    tl.store(out_ptrs, acc, mask=(rm[:, None] < M) & (rn[None, :] < N))
+    tl.store(out_ptrs, acc, mask=mask_rm[:, None] & mask_rn[None, :])
 
 
 # Activation needs to be a triton kernel
@@ -153,6 +154,7 @@ def fused_matmul(
     assert (
         bias is None or bias.shape[0] == weight.shape[0]
     ), "Incompatible dimensions in between weight and bias"
+    assert weight.is_contiguous()
 
     M, K = x_.shape
     N, K = weight.shape
@@ -169,7 +171,7 @@ def fused_matmul(
         bias if bias is not None else x,            # auto skip bias if not present
         M, N, K,                                    # shapes
         outputs.stride(0), x_.stride(0),            # strides
-        weight.stride(0), weight.stride(1),
+        weight.stride(0),
         ACTIVATION=activation,                      # optional fused activation
         BIAS=bias is not None,                      # optional fused bias
         GROUP_M=8,                                  # speed optimization: group the programs

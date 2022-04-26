@@ -47,13 +47,13 @@ def test_fused_matmul(shape, dtype):
 
     # Test that not passing any bias is fine
     res_torch = a @ b
-    res_triton, _ = fused_matmul(a, b.transpose(0, 1), None)
+    res_triton, _ = fused_matmul(a, b.transpose(0, 1).contiguous(), None)
     assert torch.allclose(res_torch, res_triton), "Vanilla matmul is broken"
 
     # Now test with a real FMA
     c = -torch.rand((shape[-2],), dtype=dtype, device="cuda")
     res_torch = torch.addmm(c, a, b)
-    res_triton, _ = fused_matmul(a, b.transpose(1, 0), c)
+    res_triton, _ = fused_matmul(a, b.transpose(1, 0).contiguous(), c)
 
     assert torch.allclose(
         res_torch, res_triton
@@ -65,7 +65,9 @@ def test_fused_matmul(shape, dtype):
         res_torch = torch_activation(torch.addmm(c, a, b))
 
         triton_activation = get_triton_activation_kernel(activation)
-        res_triton, _ = fused_matmul(a, b.transpose(1, 0), c, triton_activation)
+        res_triton, _ = fused_matmul(
+            a, b.transpose(1, 0).contiguous(), c, triton_activation
+        )
 
         # NOTE: @lefaudeux
         # GeLUs are not well handled for now, we use an approximation
