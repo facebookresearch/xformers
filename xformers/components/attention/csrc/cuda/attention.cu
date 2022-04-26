@@ -1088,22 +1088,22 @@ void launch_attention_backward(
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
-    const at::Tensor& grad_out,
+    const at::Tensor& grad_out_,
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
     const at::Tensor& logsumexp
     // const at::Tensor& mask
 ) {
-  TORCH_CHECK(query.dim() == grad_out.dim());
+  TORCH_CHECK(query.dim() == grad_out_.dim());
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
   // TORCH_CHECK(query.dim() == mask.dim());
   TORCH_CHECK(query.dim() == 3);
 
-  TORCH_CHECK(query.size(0) == grad_out.size(0));
-  TORCH_CHECK(query.size(1) == grad_out.size(1));
-  TORCH_CHECK(query.size(2) == grad_out.size(2));
+  TORCH_CHECK(query.size(0) == grad_out_.size(0));
+  TORCH_CHECK(query.size(1) == grad_out_.size(1));
+  TORCH_CHECK(query.size(2) == grad_out_.size(2));
 
   TORCH_CHECK(query.size(2) == key.size(2));
   TORCH_CHECK(query.size(0) == key.size(0));
@@ -1117,12 +1117,17 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   TORCH_CHECK(query.is_cuda(), "query must be a CUDA tensor");
   TORCH_CHECK(key.is_cuda(), "key must be a CUDA tensor");
   TORCH_CHECK(value.is_cuda(), "value must be a CUDA tensor");
-  TORCH_CHECK(grad_out.is_cuda(), "grad_out must be a CUDA tensor");
+  TORCH_CHECK(grad_out_.is_cuda(), "grad_out must be a CUDA tensor");
 
   TORCH_CHECK(!query.is_sparse(), "query must be a dense tensor");
   TORCH_CHECK(!key.is_sparse(), "key must be a dense tensor");
   TORCH_CHECK(!value.is_sparse(), "value must be a dense tensor");
-  TORCH_CHECK(!grad_out.is_sparse(), "grad_out must be a dense tensor");
+  TORCH_CHECK(!grad_out_.is_sparse(), "grad_out must be a dense tensor");
+
+  // TODO drop this limitation in the future
+  TORCH_CHECK(query.is_contiguous());
+  TORCH_CHECK(key.is_contiguous());
+  TORCH_CHECK(value.is_contiguous());
 
   // TODO: support other dtypes in the future
   TORCH_CHECK(
@@ -1130,6 +1135,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
       "Only float32 type is supported for now");
 
   at::cuda::CUDAGuard device_guard(query.device());
+
+  // handle potentially non-contiguous grad_out through a copy
+  auto grad_out = grad_out_.contiguous();
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
