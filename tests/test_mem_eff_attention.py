@@ -107,7 +107,13 @@ def test_memory_efficient_attention_backward(
     # there is some extra precision loss in the CPU implementation due to an
     # extra accumulation step in grad_q, which is not present in the CUDA
     # implementation
-    atol = 3e-4 if device == "cuda" else 4e-4
-    assert torch.allclose(grad_q, query.grad, atol=atol), "grad_q doesn't match"
-    assert torch.allclose(grad_k, key.grad, atol=atol), "grad_k doesn't match"
-    assert torch.allclose(grad_v, value.grad, atol=atol), "grad_v doesn't match"
+    atol = 5e-4 if device == "cuda" else 6e-4
+    assert torch.allclose(
+        grad_q, query.grad, atol=atol
+    ), f"grad_q doesn't match {(grad_q - query.grad).abs().max()}"
+    assert torch.allclose(
+        grad_k, key.grad, atol=atol
+    ), f"grad_k doesn't match {(grad_k - key.grad).abs().max()}"
+    assert torch.allclose(
+        grad_v, value.grad, atol=atol
+    ), f"grad_v doesn't match {(grad_v - value.grad).abs().max()}"
