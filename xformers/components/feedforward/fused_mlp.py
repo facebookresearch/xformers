@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
+from xformers import _is_triton_available
 from xformers.components import Activation
 from xformers.components.feedforward import (
     Feedforward,
@@ -17,9 +18,9 @@ from xformers.components.feedforward import (
     register_feedforward,
 )
 
-if torch.cuda.is_available():
+if _is_triton_available:
     try:
-        from xformers.triton import FusedDropoutBias
+        from xformers.triton import FusedLinear
 
         @dataclass
         class FusedMlpConfig(FeedforwardConfig):
@@ -46,17 +47,22 @@ if torch.cuda.is_available():
                 dim_mlp = hidden_layer_multiplier * dim_model
 
                 self.mlp = nn.Sequential(
-                    nn.Linear(in_features=dim_model, out_features=dim_mlp, bias=bias),
-                    # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize
-                    # the `FusedLinear` import.
-                    FusedDropoutBias(
-                        p=dropout, bias_shape=dim_mlp, activation=activation
+                    FusedLinear(
+                        in_features=dim_model,
+                        out_features=dim_mlp,
+                        bias=bias,
+                        activation=activation,
                     ),
-                    nn.Linear(in_features=dim_mlp, out_features=dim_model, bias=bias),
-                    # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize
-                    # the `FusedLinear` import.
-                    FusedDropoutBias(p=dropout, bias_shape=dim_model, activation=None),
+                    torch.nn.Dropout(p=dropout),
+                    FusedLinear(
+                        in_features=dim_mlp,
+                        out_features=dim_model,
+                        bias=bias,
+                        activation=None,
+                    ),
+                    torch.nn.Dropout(p=dropout),
                 )
+
                 self.requires_cuda = True
 
             def forward(self, inputs: torch.Tensor) -> torch.Tensor:
