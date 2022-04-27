@@ -92,23 +92,30 @@ def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: boo
     """Check that PyTorch and fused linear layers give the same result"""
 
     # Instantiate pytorch and fused layers, same initialization
-    torch.random.manual_seed(0)
-    X = torch.normal(0, 1, size=shape, device="cuda")
+    torch.random.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
+
+    dtype = torch.float32
+
+    X = torch.normal(0, 1, size=shape, device="cuda", dtype=dtype)
     X.requires_grad_()
 
-    torch_linear = torch.nn.Linear(shape[-1], shape[-1] // 2, bias=bias).to("cuda")
+    torch_linear = torch.nn.Linear(shape[-1], shape[-1] // 2, bias=bias).to(
+        device="cuda", dtype=dtype
+    )
     torch_activation = build_activation(activation)
     torch_sequence = torch.nn.Sequential(torch_linear, torch_activation)
 
-    torch.random.manual_seed(0)
-    X_ = torch.normal(0, 1, size=shape, device="cuda")
+    torch.random.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
+    X_ = torch.normal(0, 1, size=shape, device="cuda", dtype=dtype)
     X_.requires_grad_()
 
     # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize the
     # `FusedLinear` import.
     triton_fused_linear = FusedLinear(
         shape[-1], shape[-1] // 2, bias=bias, activation=activation
-    ).to("cuda")
+    ).to(device="cuda", dtype=dtype)
 
     # Now check parity
     torch_linear.train()

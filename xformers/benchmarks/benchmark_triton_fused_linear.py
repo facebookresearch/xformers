@@ -67,9 +67,8 @@ def bench_linear(activations: List[Optional[Activation]]):
         torch.float16,
         torch.float32,
     ]:
-        for backward in [True, False]:
-
-            for activation in activations:
+        for activation in activations:
+            for backward in [True, False]:
                 results: Dict[str, Any] = {}
 
                 for bias in [False, True]:
@@ -128,6 +127,7 @@ def bench_linear(activations: List[Optional[Activation]]):
                                 ),
                             ),
                         ]:
+                            torch.cuda.empty_cache()
                             time = triton.testing.do_bench(
                                 lambda: testcase.function(a)
                             )[0]
