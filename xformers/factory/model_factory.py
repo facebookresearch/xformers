@@ -233,11 +233,13 @@ class xFormer(torch.nn.Module):
             elif is_self_attn_proj_weight(n):
                 # The input projection is packed in a single weight matrix
                 # Init normally, then scale the slice which corresponds to the value projection
-                torch.nn.init.xavier_normal_(p, gain=1)
                 # The Value projection is the last chunk, the projection matrix is
-                # 3N x N
-                _, N = p.shape
-                torch.nn.init.xavier_normal_(p[-N:, :], gain=encoder_gain)
+                # 3K x N
+                M, _ = p.shape
+                K = M // 3
+                torch.nn.init.xavier_normal_(p[:K, :], gain=1)
+                torch.nn.init.xavier_normal_(p[K:-K, :], gain=1)
+                torch.nn.init.xavier_normal_(p[-K:, :], gain=encoder_gain)
             elif "weight" in n and p.ndim > 1:
                 torch.nn.init.xavier_normal_(p, gain=1)
 
@@ -248,11 +250,13 @@ class xFormer(torch.nn.Module):
             elif is_self_attn_proj_weight(n):
                 # The input projection is packed in a single weight matrix
                 # Init normally, then scale the slice which corresponds to the value projection
-                torch.nn.init.xavier_normal_(p, gain=1)
                 # The Value projection is the last chunk, the projection matrix is
-                # 3N x N
-                _, N = p.shape
-                torch.nn.init.xavier_normal_(p[-N:, :], gain=decoder_gain)
+                # 3K x N
+                M, _ = p.shape
+                K = M // 3
+                torch.nn.init.xavier_normal_(p[:K, :], gain=1)
+                torch.nn.init.xavier_normal_(p[K:-K, :], gain=1)
+                torch.nn.init.xavier_normal_(p[-K:, :], gain=decoder_gain)
             elif "weight" in n and p.ndim > 1:
                 torch.nn.init.xavier_normal_(p, gain=1)
 
