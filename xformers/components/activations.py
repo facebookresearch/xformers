@@ -32,7 +32,7 @@ class SquaredReLU(nn.Module):
 class SmeLU(nn.Module):
     def __init__(self, beta: float = 2.0) -> None:
         super().__init__()
-        self.beta = beta
+        self.register_buffer("beta", torch.tensor(beta))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         relu = torch.where(
@@ -44,6 +44,8 @@ class SmeLU(nn.Module):
             torch.abs(x) <= self.beta,
             ((x + self.beta) ** 2) / (4.0 * self.beta),
             relu,
+            device=x.device,
+            dtype=x.dtype,
         )
 
 
