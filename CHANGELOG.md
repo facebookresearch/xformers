@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix some torchscriptability [#246]
 - Fix FourierMix being compatible with AMP [#258]
 - Better asserts on QKV dimensions [#264]
+- Better perfs for FusedMLP and FusedLinearLayer [#283]
 
 ### Added
 - Simplicial Embeddings [#259]
@@ -16,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MHA benchmark
 - MLP benchmark
 - Move all triton kernels to triton v2 [#272]
+- Mem efficient attention, BW pass [#281]
 
 ## [0.0.10] - 2022-03-14
 ### Fixed

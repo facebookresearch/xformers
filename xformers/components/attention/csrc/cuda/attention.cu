@@ -5,6 +5,7 @@
 
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
+#include <ATen/cuda/Atomic.cuh>
 
 #include "sputnik/vector_utils.h"
 
@@ -56,6 +57,25 @@ __device__ __forceinline__ void iDiv(scalar_t x1, float2* out) {
 template <typename scalar_t>
 __device__ __forceinline__ void iDiv(scalar_t x1, float* out) {
   out[0] /= x1;
+}
+
+template <typename scalar_t>
+__device__ __forceinline__ void myGpuAtomicAdd(scalar_t* address, float4 val) {
+  gpuAtomicAdd(address + 0, val.x);
+  gpuAtomicAdd(address + 1, val.y);
+  gpuAtomicAdd(address + 2, val.z);
+  gpuAtomicAdd(address + 3, val.w);
+}
+
+template <typename scalar_t>
+__device__ __forceinline__ void myGpuAtomicAdd(scalar_t* address, float2 val) {
+  gpuAtomicAdd(address + 0, val.x);
+  gpuAtomicAdd(address + 1, val.y);
+}
+
+template <typename scalar_t>
+__device__ __forceinline__ void myGpuAtomicAdd(scalar_t* address, float val) {
+  gpuAtomicAdd(address, val);
 }
 
 template <typename scalar_t, int WARP_SIZE>
@@ -355,9 +375,11 @@ template <
     int kBlockSizeK,
     int kBlockSizeQ,
     int WARP_SIZE,
-    int BUFFER_SIZE>
+    int BUFFER_SIZE,
+    bool compute_logsumexp>
 __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> output,
+    at::PackedTensorAccessor<scalar_t, 2> logsumexp,
     at::PackedTensorAccessor<scalar_t, 3> query,
     at::PackedTensorAccessor<scalar_t, 3> key,
     at::PackedTensorAccessor<scalar_t, 3> value) {
@@ -379,6 +401,7 @@ __global__ void attention_kernel(
 
   vec_t* query_block[kBlockSizeQ];
   vec_t* output_block[kBlockSizeQ];
+  scalar_t* logsumexp_block[kBlockSizeQ];
   // TODO [BUFFER_SIZE limitation]: the current strategy assumes a
   // statically-known size for K. Ideally we would like to remove this
   // limitation in the future, so that any K is supported
@@ -393,6 +416,7 @@ __global__ void attention_kernel(
     output_block[q_item_idx] =
         reinterpret_cast<vec_t*>(output[batch_idx][index].data());
     m_prime[q_item_idx] = -std::numeric_limits<scalar_t>::infinity();
+    logsumexp_block[q_item_idx] = &logsumexp[batch_idx][index];
   }
 #if 0
   // this for now makes things slower
@@ -473,12 +497,103 @@ __global__ void attention_kernel(
       output_block[q_item_idx][k] = tmp;
     }
   }
+
+  if (compute_logsumexp) {
+#pragma unroll
+    for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      *logsumexp_block[q_item_idx] =
+          m_prime[q_item_idx] + std::log(s_prime[q_item_idx]);
+    }
+  }
 }
 
-at::Tensor attention(
+template <bool compute_logsumexp>
+void launch_attention(
+    at::Tensor& res,
+    at::Tensor& logsumexp,
     const at::Tensor& query,
     const at::Tensor& key,
-    const at::Tensor& value
+    const at::Tensor& value) {
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+  int64_t K = query.size(2);
+
+  constexpr int WARP_SIZE = 4;
+
+  constexpr int kBlockSizeK = 32;
+  constexpr int kBlockSizeQ = 2;
+
+  constexpr int TILE_SIZE = 32;
+  constexpr int BUFFER_SIZE = 8;
+
+  dim3 grid(ceil_div(M, int64_t(TILE_SIZE)), B);
+  dim3 block(WARP_SIZE, TILE_SIZE / kBlockSizeQ);
+
+  using scalar_t = float;
+
+  if ((K % 4) == 0) {
+    TORCH_CHECK(
+        K / 4 <= BUFFER_SIZE,
+        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
+    attention_kernel<
+        scalar_t,
+        float4,
+        kBlockSizeK,
+        kBlockSizeQ,
+        WARP_SIZE,
+        BUFFER_SIZE,
+        compute_logsumexp><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
+  } else if ((K % 2) == 0) {
+    TORCH_CHECK(
+        K / 2 <= BUFFER_SIZE,
+        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
+    attention_kernel<
+        scalar_t,
+        float2,
+        kBlockSizeK,
+        kBlockSizeQ,
+        WARP_SIZE,
+        BUFFER_SIZE,
+        compute_logsumexp><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
+
+  } else {
+    TORCH_CHECK(
+        K <= BUFFER_SIZE,
+        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
+    attention_kernel<
+        scalar_t,
+        float,
+        kBlockSizeK,
+        kBlockSizeQ,
+        WARP_SIZE,
+        BUFFER_SIZE,
+        compute_logsumexp><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
+  }
+}
+
+std::tuple<at::Tensor, at::Tensor> attention(
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    bool compute_logsumexp
     // const at::Tensor& mask
 ) {
   TORCH_CHECK(query.dim() == key.dim());
@@ -520,71 +635,563 @@ at::Tensor attention(
   int64_t K = query.size(2);
 
   at::Tensor res = at::zeros({B, M, K}, query.options());
+  at::Tensor logsumexp = at::empty({B, M}, query.options());
 
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-
-  constexpr int WARP_SIZE = 4;
-
-  constexpr int kBlockSizeK = 32;
-  constexpr int kBlockSizeQ = 2;
-
-  constexpr int TILE_SIZE = 32;
-  constexpr int BUFFER_SIZE = 8;
-
-  dim3 grid(ceil_div(M, int64_t(TILE_SIZE)), B);
-  dim3 block(WARP_SIZE, TILE_SIZE / kBlockSizeQ);
-
-  using scalar_t = float;
-
-  if ((K % 4) == 0) {
-    TORCH_CHECK(
-        K / 4 <= BUFFER_SIZE,
-        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
-    attention_kernel<
-        scalar_t,
-        float4,
-        kBlockSizeK,
-        kBlockSizeQ,
-        WARP_SIZE,
-        BUFFER_SIZE><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
-  } else if ((K % 2) == 0) {
-    TORCH_CHECK(
-        K / 2 <= BUFFER_SIZE,
-        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
-    attention_kernel<
-        scalar_t,
-        float2,
-        kBlockSizeK,
-        kBlockSizeQ,
-        WARP_SIZE,
-        BUFFER_SIZE><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
-
+  // have to pass compute_logsumexp as a template parameter
+  // otherwise there is a slowdown in the kernel...
+  if (compute_logsumexp) {
+    launch_attention<true>(res, logsumexp, query, key, value);
   } else {
-    TORCH_CHECK(
-        K <= BUFFER_SIZE,
-        "For now only a certain number of K values are supported. Let us know if you hit this and we will fix it");
-    attention_kernel<
-        scalar_t,
-        float,
-        kBlockSizeK,
-        kBlockSizeQ,
-        WARP_SIZE,
-        BUFFER_SIZE><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
+    launch_attention<false>(res, logsumexp, query, key, value);
   }
 
-  return res;
+  AT_CUDA_CHECK(cudaGetLastError());
+
+  return std::make_tuple(res, logsumexp);
+}
+
+template <
+    typename scalar_t,
+    typename vec_t,
+    int kBlockSizeQ,
+    int kBlockSizeK,
+    int TILE_SIZEQ,
+    int TILE_SIZEK,
+    bool check_bounds>
+__global__ void attention_backward_grad_v_kernel(
+    at::PackedTensorAccessor<scalar_t, 3> grad_v,
+    at::PackedTensorAccessor<scalar_t, 3> grad_out,
+    at::PackedTensorAccessor<scalar_t, 3> query,
+    at::PackedTensorAccessor<scalar_t, 3> key,
+    at::PackedTensorAccessor<scalar_t, 3> value,
+    at::PackedTensorAccessor<scalar_t, 2> tmp_sum_i,
+    at::PackedTensorAccessor<scalar_t, 2> logsumexp_normalizer) {
+  int64_t K = query.size(2);
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+
+  constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
+
+  int64_t batch_idx = blockIdx.z;
+  int64_t query_idx =
+      blockIdx.x * blockDim.x * kBlockSizeQ + threadIdx.x * kBlockSizeQ;
+  int64_t l = blockIdx.y * blockDim.y * kBlockSizeK + threadIdx.y * kBlockSizeK;
+
+  __shared__ scalar_t fact[TILE_SIZEQ][TILE_SIZEK + 1];
+
+#pragma unroll
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+#pragma unroll
+    for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      fact[kBlockSizeQ * threadIdx.x + q_item_idx]
+          [kBlockSizeK * threadIdx.y + k_item_idx] = 0;
+    }
+  }
+
+  scalar_t normalizer[kBlockSizeQ];
+  scalar_t tmp_sum[kBlockSizeQ] = {0};
+
+  vec_t *qb[kBlockSizeQ], *kb[kBlockSizeK], *vb[kBlockSizeK], *gb[kBlockSizeQ],
+      *gbb[TILE_SIZEQ];
+  scalar_t maskQ[kBlockSizeQ], maskK[kBlockSizeK];
+
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+    int64_t index = l + k_item_idx;
+    maskK[k_item_idx] = index >= N ? scalar_t(0) : scalar_t(1);
+    if (check_bounds)
+      index = min(index, N - 1);
+    kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][index].data());
+    vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][index].data());
+  }
+
+  for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+    int64_t index = query_idx + q_item_idx;
+    maskQ[q_item_idx] = index >= M ? scalar_t(0) : scalar_t(1);
+    if (check_bounds)
+      index = min(index, M - 1);
+    qb[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][index].data());
+    gb[q_item_idx] =
+        reinterpret_cast<vec_t*>(grad_out[batch_idx][index].data());
+  }
+
+  for (int64_t i = 0; i < TILE_SIZEQ; i++) {
+    int64_t index = query_idx + i - kBlockSizeQ * threadIdx.x;
+    if (check_bounds)
+      index = min(index, M - 1);
+    gbb[i] = reinterpret_cast<vec_t*>(grad_out[batch_idx][index].data());
+  }
+
+  for (int i = 0; i < kBlockSizeQ; i++) {
+    int64_t index = query_idx + i;
+    if (check_bounds)
+      index = min(index, M - 1);
+    normalizer[i] = logsumexp_normalizer[batch_idx][index];
+  }
+
+  scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
+  scalar_t grad_attn_v[kBlockSizeQ][kBlockSizeK] = {0};
+  scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
+
+  for (int64_t k = 0; k < K / kVecSize; k += 1) {
+#pragma unroll
+    for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+      vec_t kk = __ldg(kb[k_item_idx] + k);
+      iMul(scale, &kk);
+      vec_t tt = __ldg(vb[k_item_idx] + k);
+#pragma unroll
+      for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+        sputnik::VectorCompute<vec_t>::Dot(
+            __ldg(qb[q_item_idx] + k), kk, &attn_v[q_item_idx][k_item_idx]);
+        sputnik::VectorCompute<vec_t>::Dot(
+            __ldg(gb[q_item_idx] + k),
+            tt,
+            &grad_attn_v[q_item_idx][k_item_idx]);
+      }
+    }
+  }
+#pragma unroll
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+#pragma unroll
+    for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      attn_v[q_item_idx][k_item_idx] =
+          std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]) *
+          maskQ[q_item_idx] * maskK[k_item_idx];
+    }
+  }
+
+#pragma unroll
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+#pragma unroll
+    for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      fact[kBlockSizeQ * threadIdx.x + q_item_idx]
+          [kBlockSizeK * threadIdx.y + k_item_idx] =
+              attn_v[q_item_idx][k_item_idx];
+      tmp_sum[q_item_idx] +=
+          attn_v[q_item_idx][k_item_idx] * grad_attn_v[q_item_idx][k_item_idx];
+    }
+  }
+  __syncthreads();
+
+  for (int64_t k = threadIdx.x; k < K / kVecSize; k += blockDim.x) {
+    vec_t res[kBlockSizeK] = {0};
+#pragma unroll
+    for (int64_t i = 0; i < TILE_SIZEQ; i++) {
+      vec_t kk = __ldg(gbb[i] + k);
+#pragma unroll
+      for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+        sputnik::VectorCompute<vec_t>::FMA(
+            fact[i][kBlockSizeK * threadIdx.y + k_item_idx],
+            kk,
+            &res[k_item_idx]);
+      }
+    }
+#pragma unroll
+    for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+      int64_t index = l + k_item_idx;
+      if (check_bounds)
+        index = min(index, N - 1);
+      myGpuAtomicAdd(&grad_v[batch_idx][index][k * kVecSize], res[k_item_idx]);
+    }
+  }
+  for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+    int64_t index = query_idx + q_item_idx;
+    if (check_bounds)
+      index = min(index, M - 1);
+    myGpuAtomicAdd(&tmp_sum_i[batch_idx][index], tmp_sum[q_item_idx]);
+  }
+}
+
+template <
+    typename scalar_t,
+    typename vec_t,
+    int kBlockSizeQ,
+    int kBlockSizeK,
+    int TILE_SIZEQ,
+    int TILE_SIZEK,
+    bool check_bounds>
+__global__ void attention_backward_grad_qk_kernel(
+    at::PackedTensorAccessor<scalar_t, 3> grad_q,
+    at::PackedTensorAccessor<scalar_t, 3> grad_k,
+    at::PackedTensorAccessor<scalar_t, 3> grad_out,
+    at::PackedTensorAccessor<scalar_t, 3> query,
+    at::PackedTensorAccessor<scalar_t, 3> key,
+    at::PackedTensorAccessor<scalar_t, 3> value,
+    at::PackedTensorAccessor<scalar_t, 2> tmp_sum_i,
+    at::PackedTensorAccessor<scalar_t, 2> logsumexp_normalizer) {
+  int64_t K = query.size(2);
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+
+  constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
+
+  int64_t batch_idx = blockIdx.z;
+  int64_t query_idx =
+      blockIdx.x * blockDim.x * kBlockSizeQ + threadIdx.x * kBlockSizeQ;
+  int64_t l = blockIdx.y * blockDim.y * kBlockSizeK + threadIdx.y * kBlockSizeK;
+
+  __shared__ scalar_t fact[TILE_SIZEQ][TILE_SIZEK + 1];
+
+#pragma unroll
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+#pragma unroll
+    for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      fact[kBlockSizeQ * threadIdx.x + q_item_idx]
+          [kBlockSizeK * threadIdx.y + k_item_idx] = 0;
+    }
+  }
+
+  scalar_t normalizer[kBlockSizeQ];
+  scalar_t tmp_sum[kBlockSizeQ];
+
+  vec_t *qb[kBlockSizeQ], *kb[kBlockSizeK], *vb[kBlockSizeK], *gb[kBlockSizeQ],
+      *qbb[TILE_SIZEQ], *kbb[TILE_SIZEK];
+  scalar_t maskQ[kBlockSizeQ], maskK[kBlockSizeK];
+
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+    int64_t index = l + k_item_idx;
+    maskK[k_item_idx] = index >= N ? scalar_t(0) : scalar_t(1);
+    if (check_bounds)
+      index = min(index, N - 1);
+    kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][index].data());
+    vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][index].data());
+  }
+
+  for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+    int64_t index = query_idx + q_item_idx;
+    maskQ[q_item_idx] = index >= M ? scalar_t(0) : scalar_t(1);
+    if (check_bounds)
+      index = min(index, M - 1);
+    qb[q_item_idx] = reinterpret_cast<vec_t*>(query[batch_idx][index].data());
+    gb[q_item_idx] =
+        reinterpret_cast<vec_t*>(grad_out[batch_idx][index].data());
+  }
+  for (int64_t i = 0; i < TILE_SIZEQ; i++) {
+    int64_t index = query_idx + i - kBlockSizeQ * threadIdx.x;
+    if (check_bounds)
+      index = min(index, M - 1);
+    qbb[i] = reinterpret_cast<vec_t*>(query[batch_idx][index].data());
+  }
+
+  for (int64_t i = 0; i < TILE_SIZEK; i++) {
+    int64_t index = l + i - kBlockSizeK * threadIdx.y;
+    if (check_bounds)
+      index = min(index, N - 1);
+    kbb[i] = reinterpret_cast<vec_t*>(key[batch_idx][index].data());
+  }
+
+  for (int i = 0; i < kBlockSizeQ; i++) {
+    int64_t index = query_idx + i;
+    if (check_bounds)
+      index = min(index, M - 1);
+    normalizer[i] = logsumexp_normalizer[batch_idx][index];
+    tmp_sum[i] = tmp_sum_i[batch_idx][index];
+  }
+
+  scalar_t attn_v[kBlockSizeQ][kBlockSizeK] = {0};
+  scalar_t grad_attn_v[kBlockSizeQ][kBlockSizeK] = {0};
+  scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
+
+  for (int64_t k = 0; k < K / kVecSize; k += 1) {
+#pragma unroll
+    for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+      vec_t kk = __ldg(kb[k_item_idx] + k);
+      iMul(scale, &kk);
+      vec_t tt = __ldg(vb[k_item_idx] + k);
+#pragma unroll
+      for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+        sputnik::VectorCompute<vec_t>::Dot(
+            __ldg(qb[q_item_idx] + k), kk, &attn_v[q_item_idx][k_item_idx]);
+        sputnik::VectorCompute<vec_t>::Dot(
+            __ldg(gb[q_item_idx] + k),
+            tt,
+            &grad_attn_v[q_item_idx][k_item_idx]);
+      }
+    }
+  }
+#pragma unroll
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+#pragma unroll
+    for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      attn_v[q_item_idx][k_item_idx] =
+          std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]) *
+          maskQ[q_item_idx] * maskK[k_item_idx];
+    }
+  }
+
+#pragma unroll
+  for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+#pragma unroll
+    for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      fact[kBlockSizeQ * threadIdx.x + q_item_idx]
+          [kBlockSizeK * threadIdx.y + k_item_idx] =
+              attn_v[q_item_idx][k_item_idx] * scale *
+          (grad_attn_v[q_item_idx][k_item_idx] - tmp_sum[q_item_idx]);
+    }
+  }
+  __syncthreads();
+
+  for (int64_t k = threadIdx.y; k < K / kVecSize; k += blockDim.y) {
+    vec_t res[kBlockSizeQ] = {0};
+#pragma unroll
+    for (int64_t i = 0; i < TILE_SIZEK; i++) {
+      vec_t kk = __ldg(kbb[i] + k);
+#pragma unroll
+      for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+        sputnik::VectorCompute<vec_t>::FMA(
+            fact[kBlockSizeQ * threadIdx.x + q_item_idx][i],
+            kk,
+            &res[q_item_idx]);
+      }
+    }
+#pragma unroll
+    for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+      int64_t index = query_idx + q_item_idx;
+      if (check_bounds)
+        index = min(index, M - 1);
+      myGpuAtomicAdd(&grad_q[batch_idx][index][k * kVecSize], res[q_item_idx]);
+    }
+  }
+
+  for (int64_t k = threadIdx.x; k < K / kVecSize; k += blockDim.x) {
+    vec_t res[kBlockSizeK] = {0};
+#pragma unroll
+    for (int64_t i = 0; i < TILE_SIZEQ; i++) {
+      vec_t kk = __ldg(qbb[i] + k);
+#pragma unroll
+      for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+        sputnik::VectorCompute<vec_t>::FMA(
+            fact[i][kBlockSizeK * threadIdx.y + k_item_idx],
+            kk,
+            &res[k_item_idx]);
+      }
+    }
+#pragma unroll
+    for (int k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+      int64_t index = l + k_item_idx;
+      if (check_bounds)
+        index = min(index, N - 1);
+      myGpuAtomicAdd(&grad_k[batch_idx][index][k * kVecSize], res[k_item_idx]);
+    }
+  }
+}
+
+template <typename scalar_t, typename vec_t>
+void launch_attention_backward(
+    at::Tensor& grad_q,
+    at::Tensor& grad_k,
+    at::Tensor& grad_v,
+    const at::Tensor& grad_out,
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& logsumexp,
+    at::Tensor& tmp_sum_i) {
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+
+  constexpr int TILE_SIZEQ = 32;
+  constexpr int TILE_SIZEK = 32;
+
+  constexpr int64_t kBlockSizeQ = 4;
+  constexpr int64_t kBlockSizeK = 8;
+
+  dim3 grid(
+      ceil_div(M, int64_t(TILE_SIZEQ)), ceil_div(N, int64_t(TILE_SIZEK)), B);
+  dim3 block(TILE_SIZEQ / kBlockSizeQ, TILE_SIZEK / kBlockSizeK);
+
+  constexpr int TILE_SIZEQ2 = 32;
+  constexpr int TILE_SIZEK2 = 32;
+
+  constexpr int64_t kBlockSizeQ2 = 4;
+  constexpr int64_t kBlockSizeK2 = 4;
+
+  dim3 grid2(
+      ceil_div(M, int64_t(TILE_SIZEQ2)), ceil_div(N, int64_t(TILE_SIZEK2)), B);
+  dim3 block2(TILE_SIZEQ2 / kBlockSizeQ2, TILE_SIZEK2 / kBlockSizeK2);
+
+  // the bounds checking in device code is very expensive, making the code
+  // around 25% slower. So let's skip those checks if possible.
+  if ((M % TILE_SIZEQ == 0) && (N % TILE_SIZEK == 0)) {
+    attention_backward_grad_v_kernel<
+        scalar_t,
+        vec_t,
+        kBlockSizeQ,
+        kBlockSizeK,
+        TILE_SIZEQ,
+        TILE_SIZEK,
+        false><<<grid, block, 0, stream>>>(
+        grad_v.packed_accessor<scalar_t, 3>(),
+        grad_out.packed_accessor<scalar_t, 3>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>(),
+        tmp_sum_i.packed_accessor<scalar_t, 2>(),
+        logsumexp.packed_accessor<scalar_t, 2>());
+  } else {
+    attention_backward_grad_v_kernel<
+        scalar_t,
+        vec_t,
+        kBlockSizeQ,
+        kBlockSizeK,
+        TILE_SIZEQ,
+        TILE_SIZEK,
+        true><<<grid, block, 0, stream>>>(
+        grad_v.packed_accessor<scalar_t, 3>(),
+        grad_out.packed_accessor<scalar_t, 3>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>(),
+        tmp_sum_i.packed_accessor<scalar_t, 2>(),
+        logsumexp.packed_accessor<scalar_t, 2>());
+  }
+
+  if ((M % TILE_SIZEQ2 == 0) && (N % TILE_SIZEK2 == 0)) {
+    attention_backward_grad_qk_kernel<
+        scalar_t,
+        vec_t,
+        kBlockSizeQ2,
+        kBlockSizeK2,
+        TILE_SIZEQ2,
+        TILE_SIZEK2,
+        false><<<grid2, block2, 0, stream>>>(
+        grad_q.packed_accessor<scalar_t, 3>(),
+        grad_k.packed_accessor<scalar_t, 3>(),
+        grad_out.packed_accessor<scalar_t, 3>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>(),
+        tmp_sum_i.packed_accessor<scalar_t, 2>(),
+        logsumexp.packed_accessor<scalar_t, 2>());
+  } else {
+    attention_backward_grad_qk_kernel<
+        scalar_t,
+        vec_t,
+        kBlockSizeQ2,
+        kBlockSizeK2,
+        TILE_SIZEQ2,
+        TILE_SIZEK2,
+        true><<<grid2, block2, 0, stream>>>(
+        grad_q.packed_accessor<scalar_t, 3>(),
+        grad_k.packed_accessor<scalar_t, 3>(),
+        grad_out.packed_accessor<scalar_t, 3>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>(),
+        tmp_sum_i.packed_accessor<scalar_t, 2>(),
+        logsumexp.packed_accessor<scalar_t, 2>());
+  }
+}
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
+    const at::Tensor& grad_out_,
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& logsumexp
+    // const at::Tensor& mask
+) {
+  TORCH_CHECK(query.dim() == grad_out_.dim());
+  TORCH_CHECK(query.dim() == key.dim());
+  TORCH_CHECK(query.dim() == value.dim());
+  // TORCH_CHECK(query.dim() == mask.dim());
+  TORCH_CHECK(query.dim() == 3);
+
+  TORCH_CHECK(query.size(0) == grad_out_.size(0));
+  TORCH_CHECK(query.size(1) == grad_out_.size(1));
+  TORCH_CHECK(query.size(2) == grad_out_.size(2));
+
+  TORCH_CHECK(query.size(2) == key.size(2));
+  TORCH_CHECK(query.size(0) == key.size(0));
+
+  TORCH_CHECK(query.size(0) == value.size(0));
+  TORCH_CHECK(key.size(1) == value.size(1));
+  TORCH_CHECK(
+      query.size(2) ==
+      value.size(2)); // TODO: drop this limitation in the future
+
+  TORCH_CHECK(query.is_cuda(), "query must be a CUDA tensor");
+  TORCH_CHECK(key.is_cuda(), "key must be a CUDA tensor");
+  TORCH_CHECK(value.is_cuda(), "value must be a CUDA tensor");
+  TORCH_CHECK(grad_out_.is_cuda(), "grad_out must be a CUDA tensor");
+
+  TORCH_CHECK(!query.is_sparse(), "query must be a dense tensor");
+  TORCH_CHECK(!key.is_sparse(), "key must be a dense tensor");
+  TORCH_CHECK(!value.is_sparse(), "value must be a dense tensor");
+  TORCH_CHECK(!grad_out_.is_sparse(), "grad_out must be a dense tensor");
+
+  // TODO drop this limitation in the future
+  TORCH_CHECK(query.is_contiguous());
+  TORCH_CHECK(key.is_contiguous());
+  TORCH_CHECK(value.is_contiguous());
+
+  // TODO: support other dtypes in the future
+  TORCH_CHECK(
+      query.scalar_type() == at::ScalarType::Float,
+      "Only float32 type is supported for now");
+
+  at::cuda::CUDAGuard device_guard(query.device());
+
+  // handle potentially non-contiguous grad_out through a copy
+  auto grad_out = grad_out_.contiguous();
+
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+  int64_t K = query.size(2);
+
+  at::Tensor grad_q = at::zeros_like(query);
+  at::Tensor grad_k = at::zeros_like(key);
+  at::Tensor grad_v = at::zeros_like(value);
+
+  at::Tensor tmp_sum_i = at::zeros({B, M}, query.options());
+
+  // using scalar_t = float;
+  // using vec_t = float4;
+  // using vec_t = float;
+
+  if ((K % 4) == 0) {
+    launch_attention_backward<float, float4>(
+        grad_q,
+        grad_k,
+        grad_v,
+        grad_out,
+        query,
+        key,
+        value,
+        logsumexp,
+        tmp_sum_i);
+  } else if ((K % 2) == 0) {
+    launch_attention_backward<float, float2>(
+        grad_q,
+        grad_k,
+        grad_v,
+        grad_out,
+        query,
+        key,
+        value,
+        logsumexp,
+        tmp_sum_i);
+  } else {
+    launch_attention_backward<float, float>(
+        grad_q,
+        grad_k,
+        grad_v,
+        grad_out,
+        query,
+        key,
+        value,
+        logsumexp,
+        tmp_sum_i);
+  }
+
+  AT_CUDA_CHECK(cudaGetLastError());
+
+  return std::make_tuple(grad_q, grad_k, grad_v);
 }
 
 } // namespace
@@ -593,4 +1200,7 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::efficient_attention"),
       TORCH_FN(attention));
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_backward"),
+      TORCH_FN(attention_backward));
 }
