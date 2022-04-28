@@ -258,11 +258,13 @@ if __name__ == "__main__":
         num_classes=num_classes,
         attention="scaled_dot_product",
         classifier=Classifier.TOKEN,
+        layer_norm_style="deepnorm",
+        use_rotary_embeddings=False,
     )
     trainer = pl.Trainer(
         gpus=GPUS,
         max_epochs=MAX_EPOCHS,
-        detect_anomaly=True,
+        detect_anomaly=False,
         precision=16,
         accumulate_grad_batches=REF_BATCH // BATCH,
     )

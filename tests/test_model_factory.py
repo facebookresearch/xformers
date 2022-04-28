@@ -111,10 +111,16 @@ test_configs_dict = {"encoder": encoder_configs, "decoder": decoder_configs}
 @pytest.mark.parametrize("layer_norm_style", ["pre", "post", "deepnorm"])
 @pytest.mark.parametrize("device", DEVICES)
 def test_presets(config, reversible, tie_embedding_weights, layer_norm_style, device):
+    torch.cuda.manual_seed(42)
+    torch.manual_seed(42)
+
     # Build the model
     if isinstance(config, list):
+        # Only the encoder can be reversible
         config[0]["reversible"] = reversible
+
         config[0]["layer_norm_style"] = layer_norm_style
+        config[1]["layer_norm_style"] = layer_norm_style
     else:
         config["encoder"]["reversible"] = reversible
         config["encoder"]["layer_norm_style"] = layer_norm_style
@@ -136,6 +142,42 @@ def test_presets(config, reversible, tie_embedding_weights, layer_norm_style, de
 
     with context:
         model = xFormer.from_config(modelConfig).to(device)
+
+        def check_against_default(p):
+            # check that a different gain than 1 was used
+            vanilla = p.clone()
+            torch.nn.init.xavier_normal_(p, gain=1)
+            change = torch.abs((torch.std(vanilla) - torch.std(p)) / torch.std(p))
+            assert change > 0.1
+
+        # Check deepnorm init, if applicable
+        if layer_norm_style == "deepnorm":
+            for n, p in model.encoders.named_parameters():
+                # Check the MHA
+                if "in_proj_weight" in n:
+                    # self attention projection, check that the value projection has been changed
+                    M, _ = p.shape
+                    K = M // 3
+
+                    value_rel_std = torch.abs(
+                        torch.std(p[:K, :]) - torch.std(p[-K:, :])
+                    )
+                    qp_rel_std = torch.abs(torch.std(p[:K, :]) - torch.std(p[K:-K, :]))
+
+                    # Check that the value proj init has been changed by more than the noise
+                    assert (
+                        value_rel_std / qp_rel_std > 2
+                    ), f"{(value_rel_std/qp_rel_std)}"
+
+                if "v_proj_weight" in n:
+                    check_against_default(p)
+
+                if "mha.proj" in n and "weight" in n:
+                    check_against_default(p)
+
+                # Check the feedforward
+                if "feedforward" in n and "weight" in n:
+                    check_against_default(p)
 
         # Dummy inputs, test a forward
         inputs = (torch.rand((BATCH, SEQ), device=device) * 10).abs().to(torch.int)

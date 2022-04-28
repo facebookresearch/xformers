@@ -133,7 +133,7 @@ def get_deepnorm_coefficients(
     See DeepNet_.
 
     Returns alpha and beta depending on the number of encoder and decoder layers,
-    first tuple is for the  for the encoder and second for the decoder
+    first tuple is for the encoder and second for the decoder
 
     .. _DeepNet: https://arxiv.org/pdf/2203.00555v1.pdf
     """
