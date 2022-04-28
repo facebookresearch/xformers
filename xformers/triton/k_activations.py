@@ -140,26 +140,30 @@ def gelu_grad(x):
 
 
 @triton.jit
-def smelu(x, beta=2.0):
+def smelu(x):
     """
-    SmeLU_ activation -  Smooth ReLU
+    SmeLU_ activation -  Smooth ReLU with beta=2.0
 
     .. _SmeLU: https://arxiv.org/pdf/2202.06499.pdf
     """
     zero = 0.0
     four = 4.0
-    beta_cast = beta.to(x.dtype)
-    output = (x + beta_cast) * (x + beta_cast) / (four.to(x.dtype) * beta_cast)
-    relu = tl.where(x >= beta_cast, x, zero.to(x.dtype))
-    return tl.where(tl.abs(x) <= beta_cast, output, relu)
+    beta = 2.0
+
+    beta = beta.to(x.dtype)
+    output = (x + beta) * (x + beta) / (four.to(x.dtype) * beta)
+    relu = tl.where(x >= beta, x, zero.to(x.dtype))
+    return tl.where(tl.abs(x) <= beta, output, relu)
 
 
 @triton.jit
-def smelu_grad(x, beta=2.0):
+def smelu_grad(x):
     zero = 0.0
     one = 1.0
     two = 2.0
-    beta_cast = beta.to(x.dtype)
-    grad = (beta_cast + x) / (two.to(x.dtype) * beta_cast)
-    relu_grad = tl.where(x >= beta_cast, one.to(x.dtype), zero.to(x.dtype))
-    return tl.where(tl.abs(x) <= beta_cast, grad, relu_grad)
+    beta = 2.0
+
+    beta = beta.to(x.dtype)
+    grad = (beta + x) / (two.to(x.dtype) * beta)
+    relu_grad = tl.where(x >= beta, one.to(x.dtype), zero.to(x.dtype))
+    return tl.where(tl.abs(x) <= beta, grad, relu_grad)
