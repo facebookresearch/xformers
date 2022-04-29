@@ -11,7 +11,9 @@ import triton.language as tl
 
 from xformers.components import Activation
 
-_kAlpha = math.sqrt(2.0 / math.pi)
+ALPHA: tl.constexpr = math.sqrt(2.0 / math.pi)
+ZERO: tl.constexpr = 0.0
+ONE: tl.constexpr = 1.0
 
 
 def get_triton_activation_kernel(activation: Optional[Activation]):
@@ -43,7 +45,7 @@ def get_triton_activation_bwd_kernel(activation: Optional[Activation]):
 @triton.jit
 def tanh(x):
     # Tanh is just a scaled sigmoid
-    return 2 * tl.sigmoid(2 * x) - 1
+    return 2 * tl.sigmoid(2.0 * x) - 1.0
 
 
 @triton.jit
@@ -63,8 +65,7 @@ def relu(x):
 
     .. _ReLU: https://pytorch.org/docs/stable/generated/torch.nn.ReLU.html
     """
-    zero = 0.0
-    return tl.where(x >= 0, x, zero.to(x.dtype))
+    return tl.where(x >= 0, x, ZERO.to(x.dtype))
 
 
 @triton.jit
@@ -72,9 +73,7 @@ def relu_grad(x):
     # ReLU is different from other activations
     # in that it does not require the input to retrospectively compute its gradient
     # here the input is the downstream gradient, and we return the upstream gradient directly
-    zero = 0.0
-    one = 1.0
-    return tl.where(x >= 0, one.to(x.dtype), zero.to(x.dtype))
+    return tl.where(x >= 0, ONE.to(x.dtype), ZERO.to(x.dtype))
 
 
 @triton.jit
@@ -101,15 +100,14 @@ def leaky_relu(x):
 
     .. _LeakyReLU: https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html
     """
-    scale = 0.01 + 0.0
-    scale = scale.to(x.dtype)
+    scale: tl.constexpr = 0.01
     return tl.where(x >= 0, x, scale * x)
 
 
 @triton.jit
 def leaky_relu_grad(x):
-    min_grad = 0.01
-    max_grad = 1
+    min_grad: tl.constexpr = 0.01
+    max_grad: tl.constexpr = 1
 
     min_grad = min_grad.to(x.dtype)
     max_grad = max_grad.to(x.dtype)
@@ -124,7 +122,7 @@ def gelu(x):
 
     .. _GeLU: https://arxiv.org/pdf/1606.08415.pdf
     """
-    return 0.5 * x * (1 + tanh(_kAlpha * (x + 0.044715 * x * x * x)))
+    return 0.5 * x * (1 + tanh(ALPHA * (x + 0.044715 * x * x * x)))
 
 
 @triton.jit

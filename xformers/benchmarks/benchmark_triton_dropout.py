@@ -39,7 +39,7 @@ def to_gbs_fw(a, ms, bias):
 def bench_dropout(bias: bool, backward: bool, activation: Optional[Activation]):
     device = torch.device("cuda")
 
-    for dtype in [torch.float16, torch.float32, torch.bfloat16]:
+    for dtype in [torch.bfloat16, torch.float16, torch.float32]:
         results: Dict[str, Any] = {}
 
         for B, M, K in SHAPES:
@@ -106,7 +106,7 @@ def bench_dropout(bias: bool, backward: bool, activation: Optional[Activation]):
         )
 
 
-for activation in [Activation.GeLU, None, Activation.SquaredReLU]:
+for activation in [None, Activation.GeLU, Activation.SquaredReLU]:
     for bw in [True, False]:
         for bias in [True, False]:
             bench_dropout(bias, bw, activation)

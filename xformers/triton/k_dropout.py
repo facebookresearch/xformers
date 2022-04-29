@@ -31,6 +31,7 @@ def _get_4_bin_masks(seed_ptr, rand_offsets, p):
     # The initial distribution is over 2**32 -1
     # and our float threshold  is in between [0, 1]
     # The full computation is: `start_point + full range * p`
+    p = p.to(tl.float32)
     threshold = (4294967296.0 * p).to(tl.int32)
     rand_mask1 = rand1 > threshold
     rand_mask2 = rand2 > threshold
@@ -41,43 +42,13 @@ def _get_4_bin_masks(seed_ptr, rand_offsets, p):
 
 
 @triton.jit
-def _random_prune_and_scale(x, rand_mask, p, p_scale):
-    zero = 0.0
-
+def _random_prune_and_scale(x, rand_mask, p_scale):
     # generate all the random numbers for the block at once, then reshape
     keep = tl.reshape(rand_mask, x.shape)
 
     # prune and normalize in one go
-    x = tl.where(keep, (x * p_scale).to(x.dtype), zero.to(x.dtype))
-    return x
-
-
-@triton.jit
-def tile_random_drop(
-    x_ptrs,
-    y_ptrs,
-    block_mask,
-    use_bias,
-    bias,
-    rand_mask,
-    p,
-    p_scale,
-    ACTIVATION,
-):
-    x = tl.load(x_ptrs, mask=block_mask, other=0.0)
-
-    # optionally apply a fused bias
-    if use_bias:
-        x += bias
-
-    # optional: fused activation (while the data is in shared memory)
-    if ACTIVATION:
-        x = ACTIVATION(x)
-
-    # randomly prune (and scale) the resulting buffer, possibly a no-op
-    output = _random_prune_and_scale(x, rand_mask, p, p_scale)
-
-    tl.store(y_ptrs, output, mask=block_mask)  # output
+    x = tl.where(keep, x, 0.0)
+    return x * p_scale
 
 
 # fmt: off
@@ -115,38 +86,53 @@ def k_dropout_fw(
 
     col_id = tl.program_id(axis=1)
     cols = col_id * BLOCK_N + tl.arange(0, BLOCK_N)
-    seed = SEEDS + col_id
+    # seed = SEEDS + col_id
 
     # pointers starting point
     x_ptrs = X + rows[:, None] * stride + cols[None, :]
     y_ptrs = Y + rows[:, None] * stride + cols[None, :]
 
     # go over all the tiles, one by one
-    rand_offsets = tl.arange(0, SIZE_RAND_BLOCK) + row_id * BLOCK_M * 4
-    rand_mask1, rand_mask2, rand_mask3, rand_mask4 = _get_4_bin_masks(seed, rand_offsets, p)
+    # rand_offsets = tl.arange(0, SIZE_RAND_BLOCK) + row_id * BLOCK_M * 4
+    # rand_mask1, rand_mask2, rand_mask3, rand_mask4 = _get_4_bin_masks(seed, rand_offsets, p)
 
     col_mask = cols[None, :] < N
     p_scale = 1 / (1 - p)
+    p_scale = p_scale
 
     if USE_BIAS:
         b_ptrs = BIAS + cols[None, :]
-        bias = tl.load(b_ptrs, mask=cols[None, :] < N, other=0.)
+        bias = tl.load(b_ptrs, mask=cols[None, :] < N).to(tl.float32)
+        bias = tl.where(cols[None, :] < N, bias, 0.)
     else:
-        bias = x_ptrs  # will not be used
+        bias = None
 
     # cycle through the binary masks (workaround / no indexing)
     for i in range(4):
-        if i == 0:
-            rand_mask = rand_mask1
-        elif i == 1:
-            rand_mask = rand_mask2
-        elif i == 2:
-            rand_mask = rand_mask3
-        else:
-            rand_mask = rand_mask4
+        # if i == 0:
+        #     rand_mask = rand_mask1
+        # elif i == 1:
+        #     rand_mask = rand_mask2
+        # elif i == 2:
+        #     rand_mask = rand_mask3
+        # else:
+        #     rand_mask = rand_mask4
 
         block_mask = (rows[:, None] < M) & col_mask
-        tile_random_drop(x_ptrs, y_ptrs, block_mask, USE_BIAS, bias, rand_mask, p, p_scale, ACTIVATION)
+        x = tl.load(x_ptrs, mask=block_mask, other=0.).to(tl.float32)
+
+        # # optionally apply a fused bias
+        # if USE_BIAS:
+        #     x += bias
+
+        # optional: fused activation (while the data is in shared memory)
+        # if ACTIVATION:
+        #     x = ACTIVATION(x)
+
+        # # randomly prune (and scale) the resulting buffer, possibly a no-op
+        # output = _random_prune_and_scale(x, rand_mask, p_scale)
+        output = x
+        tl.store(y_ptrs, output, mask=block_mask)
 
         rows += BLOCK_M  # needs to be updated for the mask to be correct
         x_ptrs += BLOCK_M * stride
@@ -191,7 +177,7 @@ def k_dropout_bw(
 
     col_id = tl.program_id(axis=1)
     cols = col_id * BLOCK_N + tl.arange(0, BLOCK_N)
-    seed = SEEDS + col_id  # FIXME index the seed properly
+    seed = SEEDS + col_id
 
     # pointers starting point
     grad_out_ptrs = GRAD_OUT + rows[:, None] * stride_grad + cols[None, :]
@@ -209,7 +195,7 @@ def k_dropout_bw(
 
     if USE_BIAS:
         b_ptrs = BIAS + cols[None, :]
-        bias = tl.load(b_ptrs, mask=col_mask, other=0.)
+        bias = tl.load(b_ptrs, mask=col_mask, other=0.).to(tl.float32)
 
     for i in range(4):
         # cycle through the binary masks (workaround / no indexing)
@@ -223,11 +209,11 @@ def k_dropout_bw(
             rand_mask = rand_mask4
 
         block_mask = (rows[:, None] < M) & col_mask
-        grad_out = tl.load(grad_out_ptrs, mask=block_mask, other=0.)
+        grad_out = tl.load(grad_out_ptrs, mask=block_mask, other=0.).to(tl.float32)
 
         # optional: fused activation (while the data is in shared memory)
         if ACTIVATION_GRAD:
-            inputs = tl.load(input_ptrs, mask=block_mask, other=0.)
+            inputs = tl.load(input_ptrs, mask=block_mask, other=0.).to(tl.float32)
 
             # optionally apply a fused bias
             if USE_BIAS:
@@ -239,7 +225,7 @@ def k_dropout_bw(
         # randomly prune (and scale) the resulting buffer, possibly a no-op
         # note that even if we did not save the mask from the FW pass, it is generated
         # from the same seeds, so the same drop mask is applied here
-        output = _random_prune_and_scale(grad_out, rand_mask, p, p_scale)
+        output = _random_prune_and_scale(grad_out, rand_mask, p_scale)
 
         # write-back
         tl.store(grad_in_ptrs, output, mask=block_mask)

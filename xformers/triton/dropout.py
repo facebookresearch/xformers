@@ -30,12 +30,14 @@ class _dropout(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16)
     def forward(ctx, x, p, bias, activation, activation_grad, trainable_bias):
+
         # Soft-flatten an hypothetical 3rd dimension
         x_ = x.reshape(-1, x.shape[-1]).contiguous()
+
         y = torch.empty_like(x_)
         M, N = x_.shape
 
-        assert bias is None or (bias.dtype == x.dtype and bias.shape[0] == N)
+        assert bias is None or (bias.dtype == x_.dtype and bias.shape[0] == N)
         assert p > 0.0
 
         def grid(meta):
@@ -72,7 +74,7 @@ class _dropout(torch.autograd.Function):
         # fmt: on
 
         if activation is not None:
-            ctx.save_for_backward(seeds, bias, x)
+            ctx.save_for_backward(seeds, bias, x_)
         else:
             ctx.save_for_backward(seeds, bias, None)
 
@@ -89,6 +91,7 @@ class _dropout(torch.autograd.Function):
 
         # Soft-flatten an hypothetical 3rd dimension
         grad_out_ = grad_out.reshape(-1, grad_out.shape[-1]).contiguous()
+
         grad_in = torch.empty_like(grad_out_)
 
         M, N = grad_out_.shape
@@ -98,8 +101,6 @@ class _dropout(torch.autograd.Function):
 
         if inputs is None:
             inputs = grad_out_
-        elif inputs.ndim > 2:
-            inputs = inputs.reshape(-1, N)
 
         # We split the problem in tiles:
         # - over M there will be a follow up reduction
@@ -183,6 +184,7 @@ def dropout(
         return x
 
     # The normal triton enabled codepath
+
     act_kernel = get_triton_activation_kernel(activation)
     act_grad_kernel = get_triton_activation_bwd_kernel(activation)
     return _dropout.apply(

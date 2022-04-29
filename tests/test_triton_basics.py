@@ -36,6 +36,53 @@ if _triton_available:
 if _triton_available:
 
     @triton.jit
+    def k_load_store(X, Y, stride, N, BLOCK_SIZE_N: tl.constexpr):
+        # fmt: on
+        """
+        do nothing, test a load and consecutive store
+        """
+
+        row = tl.program_id(0)
+        col = tl.program_id(1)
+        cols = col * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+
+        # Move to this row
+        x_ptrs = X + row * stride + cols
+        x = tl.load(x_ptrs, mask=cols < N, other=0.0).to(tl.float32)
+        tl.store(Y + row * stride + cols, x, mask=cols < N)
+
+    def test_load_store():
+        torch.random.manual_seed(0)
+
+        # FIXME: odd shapes can make this crash
+
+        for shape in [(128, 256), (2048, 384), (2048, 2048)]:
+            for type in [torch.bfloat16, torch.float16, torch.float32]:
+                a = torch.rand(shape, device=torch.device("cuda"), dtype=type)
+                b = torch.empty_like(a)
+
+                # reshape input data into 2D tensor
+                M, N = a.shape
+                BLOCK_SIZE_N = min(128, triton.next_power_of_2(N))
+
+                # heuristics for number of warps.
+                num_warps = min(max(BLOCK_SIZE_N // 256, 1), 8)
+
+                # enqueue kernel
+                # fmt: off
+                k_load_store[(M, triton.cdiv(N, BLOCK_SIZE_N))](
+                    a, b, a.stride(0),
+                    N,
+                    num_warps=num_warps,
+                    BLOCK_SIZE_N=BLOCK_SIZE_N
+                )
+                # fmt: on
+
+                assert torch.allclose(
+                    a, b
+                ), f"max error {torch.max(torch.abs(a-b))} - shape {shape}"
+
+    @triton.jit
     def k_mean(X, Mean, Var, stride, N, BLOCK_SIZE_N: tl.constexpr):
         # fmt: on
         """
