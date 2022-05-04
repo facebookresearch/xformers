@@ -190,6 +190,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
    2. transformer block benchmark
    3. [LRA](xformers/benchmarks/LRA/README.md), with SLURM suppot
 4. Programatic and sweep friendly layer and model construction
+   1. Compatible with hierarchical Transformers, like Swin or Metaformer
 5. Hackable
    1. Not using monolithic CUDA kernels, composable building blocks
    2. Using [Triton](https://triton-lang.org/) for some optimized parts, explicit, pythonic and user-accessible

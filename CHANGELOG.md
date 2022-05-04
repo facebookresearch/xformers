@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MLP benchmark
 - Move all triton kernels to triton v2 [#272]
 - Mem efficient attention, BW pass [#281]
+- Metaformer support [#294]
 
 ## [0.0.10] - 2022-03-14
 ### Fixed

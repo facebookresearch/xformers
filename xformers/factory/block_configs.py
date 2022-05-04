@@ -130,7 +130,7 @@ class xFormerEncoderConfig(xFormerBlockConfig):
         patch_embedding_config: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
-        # Convenience, fill in duplicated field
+        # Convenience, fill in duplicated fields
         try:
             if "dim_model" not in multi_head_config.keys():
                 multi_head_config["dim_model"] = dim_model
@@ -143,6 +143,12 @@ class xFormerEncoderConfig(xFormerBlockConfig):
                 and "dim_model" not in position_encoding_config.keys()
             ):
                 position_encoding_config["dim_model"] = dim_model
+
+            if (
+                patch_embedding_config is not None
+                and "out_channels" not in patch_embedding_config.keys()
+            ):
+                patch_embedding_config["out_channels"] = dim_model
 
         except AttributeError:
             # A config instance was passed in, this is fine
