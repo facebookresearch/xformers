@@ -420,7 +420,23 @@ __global__ void attention_kernel(
   }
 
   // Computes s_prime, buffer (aka v_prime) and m_prime
-  UnrollLoop<true, scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE, WARP_SIZE>::eval(query_block, key[batch_idx], value[batch_idx], m_prime, s_prime, buffer, K, N);
+  UnrollLoop<
+      true,
+      scalar_t,
+      vec_t,
+      kBlockSizeK,
+      kBlockSizeQ,
+      BUFFER_SIZE,
+      WARP_SIZE>::
+      eval(
+          query_block,
+          key[batch_idx],
+          value[batch_idx],
+          m_prime,
+          s_prime,
+          buffer,
+          K,
+          N);
 
   aggregate_coeffs<scalar_t, vec_t, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>(
       m_prime, s_prime, buffer, K);

@@ -7,10 +7,9 @@
 import itertools
 import os
 import uuid
-from collections import Iterable
 from datetime import date
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Iterable
 
 import submitit
 
