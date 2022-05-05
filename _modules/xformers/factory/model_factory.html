@@ -237,13 +237,12 @@
 
 <span class="kn">from</span> <span class="nn">xformers.components</span> <span class="kn">import</span> <span class="n">reversible</span> <span class="k">as</span> <span class="n">rv</span>
 <span class="kn">from</span> <span class="nn">xformers.components.residual</span> <span class="kn">import</span> <span class="n">LayerNormStyle</span><span class="p">,</span> <span class="n">get_deepnorm_coefficients</span>
-<span class="kn">from</span> <span class="nn">xformers.factory.block_factory</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span> <span class="nn">xformers.factory.block_configs</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">xFormerBlockConfig</span><span class="p">,</span>
-    <span class="n">xFormerDecoderBlock</span><span class="p">,</span>
     <span class="n">xFormerDecoderConfig</span><span class="p">,</span>
-    <span class="n">xFormerEncoderBlock</span><span class="p">,</span>
     <span class="n">xFormerEncoderConfig</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xformers.factory.block_factory</span> <span class="kn">import</span> <span class="n">xFormerDecoderBlock</span><span class="p">,</span> <span class="n">xFormerEncoderBlock</span>
 
 
 <div class="viewcode-block" id="xFormerConfig"><a class="viewcode-back" href="../../../factory/model.html#xformers.factory.model_factory.xFormerConfig">[docs]</a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>

@@ -230,63 +230,26 @@
 
 
 <span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">asdict</span><span class="p">,</span> <span class="n">dataclass</span>
-<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">asdict</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
 
 <span class="kn">from</span> <span class="nn">xformers.components</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">LayerNormStyle</span><span class="p">,</span>
+    <span class="n">PatchEmbeddingConfig</span><span class="p">,</span>
     <span class="n">PostNorm</span><span class="p">,</span>
     <span class="n">PreNorm</span><span class="p">,</span>
     <span class="n">Residual</span><span class="p">,</span>
     <span class="n">build_multi_head_attention</span><span class="p">,</span>
+    <span class="n">build_patch_embedding</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">xformers.components.feedforward</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">FEEDFORWARD_REGISTRY</span><span class="p">,</span>
-    <span class="n">FeedforwardConfig</span><span class="p">,</span>
-    <span class="n">build_feedforward</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span> <span class="nn">xformers.components.positional_embedding</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">POSITION_EMBEDDING_REGISTRY</span><span class="p">,</span>
-    <span class="n">PositionEmbeddingConfig</span><span class="p">,</span>
-    <span class="n">build_positional_embedding</span><span class="p">,</span>
-<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xformers.components.feedforward</span> <span class="kn">import</span> <span class="n">build_feedforward</span>
+<span class="kn">from</span> <span class="nn">xformers.components.positional_embedding</span> <span class="kn">import</span> <span class="n">build_positional_embedding</span>
 <span class="kn">from</span> <span class="nn">xformers.components.residual</span> <span class="kn">import</span> <span class="n">get_deepnorm_coefficients</span>
 <span class="kn">from</span> <span class="nn">xformers.components.simplicial_embedding</span> <span class="kn">import</span> <span class="n">SimplicialEmbedding</span>
-<span class="kn">from</span> <span class="nn">xformers.utils</span> <span class="kn">import</span> <span class="n">generate_matching_config</span>
-
-
-<div class="viewcode-block" id="LayerPositionBitmask"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.LayerPositionBitmask">[docs]</a><span class="k">class</span> <span class="nc">LayerPositionBitmask</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
-    <span class="n">First</span> <span class="o">=</span> <span class="mb">0b01</span>
-    <span class="n">Last</span> <span class="o">=</span> <span class="mb">0b10</span>
-    <span class="n">Default</span> <span class="o">=</span> <span class="mb">0b11</span></div>
-
-
-<div class="viewcode-block" id="LayerPosition"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.LayerPosition">[docs]</a><span class="k">class</span> <span class="nc">LayerPosition</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;Bitmask to mark this layer as first, last, nothing or both&quot;&quot;&quot;</span>
-
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">bitmask</span> <span class="o">=</span> <span class="n">LayerPositionBitmask</span><span class="o">.</span><span class="n">Default</span>
-
-<div class="viewcode-block" id="LayerPosition.is_first"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.LayerPosition.is_first">[docs]</a>    <span class="k">def</span> <span class="nf">is_first</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bitmask</span> <span class="o">&amp;</span> <span class="n">LayerPositionBitmask</span><span class="o">.</span><span class="n">First</span><span class="p">)</span></div>
-
-<div class="viewcode-block" id="LayerPosition.is_last"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.LayerPosition.is_last">[docs]</a>    <span class="k">def</span> <span class="nf">is_last</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bitmask</span> <span class="o">&amp;</span> <span class="n">LayerPositionBitmask</span><span class="o">.</span><span class="n">Last</span><span class="p">)</span></div>
-
-<div class="viewcode-block" id="LayerPosition.mark_not_first"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.LayerPosition.mark_not_first">[docs]</a>    <span class="k">def</span> <span class="nf">mark_not_first</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">bitmask</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="n">LayerPositionBitmask</span><span class="o">.</span><span class="n">First</span></div>
-
-<div class="viewcode-block" id="LayerPosition.mark_not_last"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.LayerPosition.mark_not_last">[docs]</a>    <span class="k">def</span> <span class="nf">mark_not_last</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">bitmask</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="n">LayerPositionBitmask</span><span class="o">.</span><span class="n">Last</span></div></div>
-
-
-<div class="viewcode-block" id="BlockType"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.BlockType">[docs]</a><span class="k">class</span> <span class="nc">BlockType</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
-    <span class="n">Encoder</span> <span class="o">=</span> <span class="s2">&quot;encoder&quot;</span>
-    <span class="n">Decoder</span> <span class="o">=</span> <span class="s2">&quot;decoder&quot;</span></div>
+<span class="kn">from</span> <span class="nn">xformers.factory.block_configs</span> <span class="kn">import</span> <span class="n">xFormerDecoderConfig</span><span class="p">,</span> <span class="n">xFormerEncoderConfig</span>
 
 
 <span class="k">def</span> <span class="nf">_get_ln_factory</span><span class="p">(</span>
@@ -341,180 +304,6 @@
     <span class="k">return</span> <span class="n">ln_factory</span>
 
 
-<div class="viewcode-block" id="xFormerBlockConfig"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerBlockConfig">[docs]</a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># handle constructors explicitly to force type changes</span>
-<span class="k">class</span> <span class="nc">xFormerBlockConfig</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    The configuration structure to define a Transformer block.</span>
-<span class="sd">    This base class is applicable to both encoder and decoder definitions.</span>
-
-<span class="sd">    This completely defines each of the blocks, for instance in terms of dimensions,</span>
-<span class="sd">    position encoding, pre or post layer norms or reversibility.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="n">dim_model</span><span class="p">:</span> <span class="nb">int</span>
-    <span class="n">feedforward_config</span><span class="p">:</span> <span class="n">FeedforwardConfig</span>
-    <span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">PositionEmbeddingConfig</span><span class="p">]</span>
-    <span class="n">block_type</span><span class="p">:</span> <span class="n">BlockType</span>
-    <span class="n">layer_norm_style</span><span class="p">:</span> <span class="n">LayerNormStyle</span>
-    <span class="n">layer_position</span><span class="p">:</span> <span class="n">LayerPosition</span>
-    <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span>
-    <span class="n">reversible</span><span class="p">:</span> <span class="nb">bool</span>
-    <span class="n">num_layers</span><span class="p">:</span> <span class="nb">int</span>
-
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">dim_model</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-        <span class="n">feedforward_config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
-        <span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
-        <span class="n">block_type</span><span class="p">:</span> <span class="n">BlockType</span><span class="p">,</span>
-        <span class="n">layer_norm_style</span><span class="p">:</span> <span class="n">LayerNormStyle</span> <span class="o">=</span> <span class="n">LayerNormStyle</span><span class="p">(</span><span class="s2">&quot;post&quot;</span><span class="p">),</span>
-        <span class="n">reversible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="n">num_layers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
-        <span class="n">layer_position</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LayerPosition</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">):</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">dim_model</span> <span class="o">=</span> <span class="n">dim_model</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">block_type</span> <span class="o">=</span> <span class="n">block_type</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">=</span> <span class="n">layer_norm_style</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">reversible</span> <span class="o">=</span> <span class="n">reversible</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">num_layers</span> <span class="o">=</span> <span class="n">num_layers</span>
-
-        <span class="c1"># Fill in possible gaps in the config for subparts of the block</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">feedforward_config</span> <span class="o">=</span> <span class="n">generate_matching_config</span><span class="p">(</span>
-            <span class="n">feedforward_config</span><span class="p">,</span>
-            <span class="n">FEEDFORWARD_REGISTRY</span><span class="p">[</span><span class="n">feedforward_config</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]]</span><span class="o">.</span><span class="n">config</span><span class="p">,</span>
-        <span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">position_encoding_config</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">generate_matching_config</span><span class="p">(</span>
-                <span class="n">position_encoding_config</span><span class="p">,</span>
-                <span class="n">POSITION_EMBEDDING_REGISTRY</span><span class="p">[</span><span class="n">position_encoding_config</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]]</span><span class="o">.</span><span class="n">config</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="k">if</span> <span class="n">position_encoding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="k">else</span> <span class="kc">None</span>
-        <span class="p">)</span>
-
-        <span class="c1"># Default is that this layer is the only one, so both first and last</span>
-        <span class="k">if</span> <span class="n">layer_position</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">layer_position</span> <span class="o">=</span> <span class="n">layer_position</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">layer_position</span> <span class="o">=</span> <span class="n">LayerPosition</span><span class="p">()</span></div>
-
-
-<div class="viewcode-block" id="xFormerEncoderConfig"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerEncoderConfig">[docs]</a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">xFormerEncoderConfig</span><span class="p">(</span><span class="n">xFormerBlockConfig</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    The configuration structure for an encoder block</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="n">multi_head_config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
-    <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span>
-    <span class="n">simplicial_embeddings</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span>
-
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">dim_model</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-        <span class="n">feedforward_config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
-        <span class="n">multi_head_config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
-        <span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">layer_norm_style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;post&quot;</span><span class="p">,</span>
-        <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-        <span class="n">simplicial_embeddings</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
-    <span class="p">):</span>
-        <span class="c1"># Convenience, fill in duplicated field</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-                <span class="n">multi_head_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
-
-            <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">feedforward_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-                <span class="n">feedforward_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
-
-            <span class="k">if</span> <span class="p">(</span>
-                <span class="n">position_encoding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                <span class="ow">and</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">position_encoding_config</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
-            <span class="p">):</span>
-                <span class="n">position_encoding_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
-
-        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
-            <span class="c1"># A config instance was passed in, this is fine</span>
-            <span class="k">pass</span>
-        <span class="k">if</span> <span class="s2">&quot;block_type&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;block_type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;encoder&quot;</span>
-        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;block_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">BlockType</span><span class="p">(</span><span class="s2">&quot;encoder&quot;</span><span class="p">)</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
-            <span class="n">dim_model</span><span class="o">=</span><span class="n">dim_model</span><span class="p">,</span>
-            <span class="n">feedforward_config</span><span class="o">=</span><span class="n">feedforward_config</span><span class="p">,</span>
-            <span class="n">position_encoding_config</span><span class="o">=</span><span class="n">position_encoding_config</span><span class="p">,</span>
-            <span class="n">layer_norm_style</span><span class="o">=</span><span class="n">LayerNormStyle</span><span class="p">(</span><span class="n">layer_norm_style</span><span class="p">),</span>
-            <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
-        <span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">multi_head_config</span> <span class="o">=</span> <span class="n">multi_head_config</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">use_triton</span> <span class="o">=</span> <span class="n">use_triton</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">simplicial_embeddings</span> <span class="o">=</span> <span class="n">simplicial_embeddings</span></div>
-
-
-<div class="viewcode-block" id="xFormerDecoderConfig"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerDecoderConfig">[docs]</a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">xFormerDecoderConfig</span><span class="p">(</span><span class="n">xFormerBlockConfig</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    The configuration structure for a decoder block.</span>
-
-<span class="sd">    This specifically defines the masked and cross attention mechanisms,</span>
-<span class="sd">    on top of the settings defining all blocks.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="n">multi_head_config_masked</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>  <span class="c1"># prior to encoder output</span>
-    <span class="n">multi_head_config_cross</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>  <span class="c1"># cross attention, takes encoder output</span>
-
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">dim_model</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-        <span class="n">feedforward_config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
-        <span class="n">multi_head_config_masked</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
-        <span class="n">multi_head_config_cross</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
-        <span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">layer_norm_style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;post&quot;</span><span class="p">,</span>
-        <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
-    <span class="p">):</span>
-
-        <span class="c1"># Convenience, fill in duplicated field</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config_masked</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-                <span class="n">multi_head_config_masked</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
-
-            <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">multi_head_config_cross</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-                <span class="n">multi_head_config_cross</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
-
-            <span class="k">if</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">feedforward_config</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-                <span class="n">feedforward_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
-
-            <span class="k">if</span> <span class="p">(</span>
-                <span class="n">position_encoding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                <span class="ow">and</span> <span class="s2">&quot;dim_model&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">position_encoding_config</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
-            <span class="p">):</span>
-                <span class="n">position_encoding_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim_model</span>
-        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
-            <span class="c1"># A config instance was passed in, this is fine</span>
-            <span class="k">pass</span>
-        <span class="k">if</span> <span class="s2">&quot;block_type&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-            <span class="k">assert</span> <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;block_type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;decoder&quot;</span>
-        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;block_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">BlockType</span><span class="p">(</span><span class="s2">&quot;decoder&quot;</span><span class="p">)</span>
-
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
-            <span class="n">dim_model</span><span class="o">=</span><span class="n">dim_model</span><span class="p">,</span>
-            <span class="n">feedforward_config</span><span class="o">=</span><span class="n">feedforward_config</span><span class="p">,</span>
-            <span class="n">position_encoding_config</span><span class="o">=</span><span class="n">position_encoding_config</span><span class="p">,</span>
-            <span class="n">layer_norm_style</span><span class="o">=</span><span class="n">LayerNormStyle</span><span class="p">(</span><span class="n">layer_norm_style</span><span class="p">),</span>
-            <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
-        <span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">multi_head_config_masked</span> <span class="o">=</span> <span class="n">multi_head_config_masked</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">multi_head_config_cross</span> <span class="o">=</span> <span class="n">multi_head_config_cross</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">use_triton</span> <span class="o">=</span> <span class="n">use_triton</span></div>
-
-
 <div class="viewcode-block" id="xFormerEncoderBlock"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock">[docs]</a><span class="k">class</span> <span class="nc">xFormerEncoderBlock</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
     <span class="sa">r</span><span class="sd">&quot;&quot;&quot;A vanilla Transformer Encoder block&quot;&quot;&quot;</span>
 
@@ -539,11 +328,9 @@
             <span class="n">mha_dim</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">multi_head_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span>
 
             <span class="k">if</span> <span class="n">pos_encoding_dim</span> <span class="o">!=</span> <span class="n">mha_dim</span><span class="p">:</span>
-
                 <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;The embedding dim and model dim do not match (</span><span class="si">{</span><span class="n">pos_encoding_dim</span><span class="si">}</span><span class="s2"> vs </span><span class="si">{</span><span class="n">mha_dim</span><span class="si">}</span><span class="s2">), adding a projector layer.&quot;</span>  <span class="c1"># noqa</span>
                 <span class="p">)</span>
-
                 <span class="bp">self</span><span class="o">.</span><span class="n">embedding_projector</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">pos_encoding_dim</span><span class="p">,</span> <span class="n">mha_dim</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="o">=</span> <span class="kc">None</span>
@@ -587,6 +374,17 @@
                 <span class="o">**</span><span class="n">config</span><span class="o">.</span><span class="n">simplicial_embeddings</span>
             <span class="p">)</span>
 
+        <span class="c1"># Optional patch embedding</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">patch_emb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">patch_embedding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">is_first</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">patch_emb</span> <span class="o">=</span> <span class="n">build_patch_embedding</span><span class="p">(</span>
+                <span class="n">PatchEmbeddingConfig</span><span class="p">(</span><span class="o">**</span><span class="n">config</span><span class="o">.</span><span class="n">patch_embedding_config</span><span class="p">)</span>
+            <span class="p">)</span>
+
 <div class="viewcode-block" id="xFormerEncoderBlock.from_config"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock.from_config">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_config</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">xFormerEncoderConfig</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">config</span><span class="p">)</span></div>
@@ -613,6 +411,9 @@
         <span class="n">att_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">input_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">patch_emb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">patch_emb</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 

@@ -232,180 +232,13 @@
   <section id="module-xformers.factory.block_factory">
 <span id="block-factory"></span><h1>Block factory<a class="headerlink" href="#module-xformers.factory.block_factory" title="Permalink to this headline">¶</a></h1>
 <dl class="py class">
-<dt id="xformers.factory.block_factory.LayerPositionBitmask">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">LayerPositionBitmask</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">value</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#LayerPositionBitmask"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.LayerPositionBitmask" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></a>, <a class="reference external" href="https://docs.python.org/3.6/library/enum.html#enum.Enum" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">enum.Enum</span></code></a></p>
-<p>An enumeration.</p>
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.LayerPositionBitmask.First">
-<code class="sig-name descname">First</code><em class="property"> = 1</em><a class="headerlink" href="#xformers.factory.block_factory.LayerPositionBitmask.First" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.LayerPositionBitmask.Last">
-<code class="sig-name descname">Last</code><em class="property"> = 2</em><a class="headerlink" href="#xformers.factory.block_factory.LayerPositionBitmask.Last" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.LayerPositionBitmask.Default">
-<code class="sig-name descname">Default</code><em class="property"> = 3</em><a class="headerlink" href="#xformers.factory.block_factory.LayerPositionBitmask.Default" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
-<dt id="xformers.factory.block_factory.LayerPosition">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">LayerPosition</code><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#LayerPosition"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.LayerPosition" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#object" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
-<p>Bitmask to mark this layer as first, last, nothing or both</p>
-<dl class="py method">
-<dt id="xformers.factory.block_factory.LayerPosition.is_first">
-<code class="sig-name descname">is_first</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#LayerPosition.is_first"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.LayerPosition.is_first" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py method">
-<dt id="xformers.factory.block_factory.LayerPosition.is_last">
-<code class="sig-name descname">is_last</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#LayerPosition.is_last"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.LayerPosition.is_last" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py method">
-<dt id="xformers.factory.block_factory.LayerPosition.mark_not_first">
-<code class="sig-name descname">mark_not_first</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#LayerPosition.mark_not_first"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.LayerPosition.mark_not_first" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py method">
-<dt id="xformers.factory.block_factory.LayerPosition.mark_not_last">
-<code class="sig-name descname">mark_not_last</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#LayerPosition.mark_not_last"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.LayerPosition.mark_not_last" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
-<dt id="xformers.factory.block_factory.BlockType">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">BlockType</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">value</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#BlockType"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.BlockType" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a>, <a class="reference external" href="https://docs.python.org/3.6/library/enum.html#enum.Enum" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">enum.Enum</span></code></a></p>
-<p>An enumeration.</p>
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.BlockType.Encoder">
-<code class="sig-name descname">Encoder</code><em class="property"> = 'encoder'</em><a class="headerlink" href="#xformers.factory.block_factory.BlockType.Encoder" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.BlockType.Decoder">
-<code class="sig-name descname">Decoder</code><em class="property"> = 'decoder'</em><a class="headerlink" href="#xformers.factory.block_factory.BlockType.Decoder" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
-<dt id="xformers.factory.block_factory.xFormerBlockConfig">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">xFormerBlockConfig</code><span class="sig-paren">(</span><em class="sig-param">dim_model: int, feedforward_config: Dict[str, Any], position_encoding_config: Optional[Dict[str, Any]], block_type: xformers.factory.block_factory.BlockType, layer_norm_style: xformers.components.residual.LayerNormStyle = &lt;LayerNormStyle.Post: 'post'&gt;, reversible: bool = False, num_layers: int = 1, layer_position: Optional[xformers.factory.block_factory.LayerPosition] = None</em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerBlockConfig"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#object" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
-<p>The configuration structure to define a Transformer block.
-This base class is applicable to both encoder and decoder definitions.</p>
-<p>This completely defines each of the blocks, for instance in terms of dimensions,
-position encoding, pre or post layer norms or reversibility.</p>
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerBlockConfig.use_triton">
-<code class="sig-name descname">use_triton</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig.use_triton" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerBlockConfig.dim_model">
-<code class="sig-name descname">dim_model</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig.dim_model" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerBlockConfig.block_type">
-<code class="sig-name descname">block_type</code><em class="property">: <a class="reference internal" href="#xformers.factory.block_factory.BlockType" title="xformers.factory.block_factory.BlockType">xformers.factory.block_factory.BlockType</a></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig.block_type" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerBlockConfig.layer_norm_style">
-<code class="sig-name descname">layer_norm_style</code><em class="property">: xformers.components.residual.LayerNormStyle</em><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig.layer_norm_style" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerBlockConfig.reversible">
-<code class="sig-name descname">reversible</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig.reversible" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerBlockConfig.num_layers">
-<code class="sig-name descname">num_layers</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig.num_layers" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerBlockConfig.feedforward_config">
-<code class="sig-name descname">feedforward_config</code><em class="property">: xformers.components.feedforward.base.FeedforwardConfig</em><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig.feedforward_config" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerBlockConfig.position_encoding_config">
-<code class="sig-name descname">position_encoding_config</code><em class="property">: Optional<span class="p">[</span>xformers.components.positional_embedding.base.PositionEmbeddingConfig<span class="p">]</span></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig.position_encoding_config" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerBlockConfig.layer_position">
-<code class="sig-name descname">layer_position</code><em class="property">: <a class="reference internal" href="#xformers.factory.block_factory.LayerPosition" title="xformers.factory.block_factory.LayerPosition">xformers.factory.block_factory.LayerPosition</a></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerBlockConfig.layer_position" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
-<dt id="xformers.factory.block_factory.xFormerEncoderConfig">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">xFormerEncoderConfig</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">dim_model</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span></em>, <em class="sig-param"><span class="n">feedforward_config</span><span class="p">:</span> <span class="n">Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span></span></em>, <em class="sig-param"><span class="n">multi_head_config</span><span class="p">:</span> <span class="n">Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span></span></em>, <em class="sig-param"><span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span>Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">layer_norm_style</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a></span> <span class="o">=</span> <span class="default_value">'post'</span></em>, <em class="sig-param"><span class="n">use_triton</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></span> <span class="o">=</span> <span class="default_value">True</span></em>, <em class="sig-param"><span class="n">simplicial_embeddings</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span>Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerEncoderConfig"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderConfig" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#xformers.factory.block_factory.xFormerBlockConfig" title="xformers.factory.block_factory.xFormerBlockConfig"><code class="xref py py-class docutils literal notranslate"><span class="pre">xformers.factory.block_factory.xFormerBlockConfig</span></code></a></p>
-<p>The configuration structure for an encoder block</p>
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerEncoderConfig.multi_head_config">
-<code class="sig-name descname">multi_head_config</code><em class="property">: Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderConfig.multi_head_config" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerEncoderConfig.use_triton">
-<code class="sig-name descname">use_triton</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderConfig.use_triton" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerEncoderConfig.simplicial_embeddings">
-<code class="sig-name descname">simplicial_embeddings</code><em class="property">: Optional<span class="p">[</span>Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span><span class="p">]</span></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderConfig.simplicial_embeddings" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
-<dt id="xformers.factory.block_factory.xFormerDecoderConfig">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">xFormerDecoderConfig</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">dim_model</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span></em>, <em class="sig-param"><span class="n">feedforward_config</span><span class="p">:</span> <span class="n">Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span></span></em>, <em class="sig-param"><span class="n">multi_head_config_masked</span><span class="p">:</span> <span class="n">Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span></span></em>, <em class="sig-param"><span class="n">multi_head_config_cross</span><span class="p">:</span> <span class="n">Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span></span></em>, <em class="sig-param"><span class="n">position_encoding_config</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span>Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">layer_norm_style</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a></span> <span class="o">=</span> <span class="default_value">'post'</span></em>, <em class="sig-param"><span class="n">use_triton</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></span> <span class="o">=</span> <span class="default_value">True</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerDecoderConfig"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerDecoderConfig" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#xformers.factory.block_factory.xFormerBlockConfig" title="xformers.factory.block_factory.xFormerBlockConfig"><code class="xref py py-class docutils literal notranslate"><span class="pre">xformers.factory.block_factory.xFormerBlockConfig</span></code></a></p>
-<p>The configuration structure for a decoder block.</p>
-<p>This specifically defines the masked and cross attention mechanisms,
-on top of the settings defining all blocks.</p>
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerDecoderConfig.multi_head_config_masked">
-<code class="sig-name descname">multi_head_config_masked</code><em class="property">: Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerDecoderConfig.multi_head_config_masked" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerDecoderConfig.multi_head_config_cross">
-<code class="sig-name descname">multi_head_config_cross</code><em class="property">: Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerDecoderConfig.multi_head_config_cross" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
 <dt id="xformers.factory.block_factory.xFormerEncoderBlock">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">xFormerEncoderBlock</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n"><a class="reference internal" href="#xformers.factory.block_factory.xFormerEncoderConfig" title="xformers.factory.block_factory.xFormerEncoderConfig">xformers.factory.block_factory.xFormerEncoderConfig</a></span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerEncoderBlock"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderBlock" title="Permalink to this definition">¶</a></dt>
+<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">xFormerEncoderBlock</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n">xformers.factory.block_configs.xFormerEncoderConfig</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerEncoderBlock"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderBlock" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">torch.nn.modules.module.Module</span></code></p>
 <p>A vanilla Transformer Encoder block</p>
-<dl class="py attribute">
-<dt id="xformers.factory.block_factory.xFormerEncoderBlock.training">
-<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderBlock.training" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
-
 <dl class="py method">
 <dt id="xformers.factory.block_factory.xFormerEncoderBlock.from_config">
-<em class="property">classmethod </em><code class="sig-name descname">from_config</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n"><a class="reference internal" href="#xformers.factory.block_factory.xFormerEncoderConfig" title="xformers.factory.block_factory.xFormerEncoderConfig">xformers.factory.block_factory.xFormerEncoderConfig</a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerEncoderBlock.from_config"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderBlock.from_config" title="Permalink to this definition">¶</a></dt>
+<em class="property">classmethod </em><code class="sig-name descname">from_config</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n">xformers.factory.block_configs.xFormerEncoderConfig</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerEncoderBlock.from_config"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderBlock.from_config" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py method">
@@ -415,14 +248,19 @@ on top of the settings defining all blocks.</p>
 
 <dl class="py method">
 <dt id="xformers.factory.block_factory.xFormerEncoderBlock.forward">
-<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+gited18181 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+gited18181 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">input_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+gited18181 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerEncoderBlock.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderBlock.forward" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+git3a6da16 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+git3a6da16 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">input_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+git3a6da16 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerEncoderBlock.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderBlock.forward" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt id="xformers.factory.block_factory.xFormerEncoderBlock.training">
+<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.factory.block_factory.xFormerEncoderBlock.training" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 </dd></dl>
 
 <dl class="py class">
 <dt id="xformers.factory.block_factory.xFormerDecoderBlock">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">xFormerDecoderBlock</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n"><a class="reference internal" href="#xformers.factory.block_factory.xFormerDecoderConfig" title="xformers.factory.block_factory.xFormerDecoderConfig">xformers.factory.block_factory.xFormerDecoderConfig</a></span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerDecoderBlock"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerDecoderBlock" title="Permalink to this definition">¶</a></dt>
+<em class="property">class </em><code class="sig-prename descclassname">xformers.factory.block_factory.</code><code class="sig-name descname">xFormerDecoderBlock</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n">xformers.factory.block_configs.xFormerDecoderConfig</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerDecoderBlock"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerDecoderBlock" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">torch.nn.modules.module.Module</span></code></p>
 <p>A vanilla Transformer Decoder block</p>
 <p>… note: this implementation is not (yet ?) reversible</p>
@@ -433,12 +271,12 @@ on top of the settings defining all blocks.</p>
 
 <dl class="py method">
 <dt id="xformers.factory.block_factory.xFormerDecoderBlock.from_config">
-<em class="property">classmethod </em><code class="sig-name descname">from_config</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n"><a class="reference internal" href="#xformers.factory.block_factory.xFormerDecoderConfig" title="xformers.factory.block_factory.xFormerDecoderConfig">xformers.factory.block_factory.xFormerDecoderConfig</a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerDecoderBlock.from_config"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerDecoderBlock.from_config" title="Permalink to this definition">¶</a></dt>
+<em class="property">classmethod </em><code class="sig-name descname">from_config</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n">xformers.factory.block_configs.xFormerDecoderConfig</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerDecoderBlock.from_config"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerDecoderBlock.from_config" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py method">
 <dt id="xformers.factory.block_factory.xFormerDecoderBlock.forward">
-<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">target</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+gited18181 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">memory</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+gited18181 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">encoder_att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+gited18181 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">decoder_att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+gited18181 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">input_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+gited18181 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerDecoderBlock.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerDecoderBlock.forward" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">target</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+git3a6da16 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">memory</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+git3a6da16 ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">encoder_att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+git3a6da16 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">decoder_att_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+git3a6da16 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em>, <em class="sig-param"><span class="n">input_mask</span><span class="p">:</span> <span class="n">Optional<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.12.0a0+git3a6da16 ))">torch.Tensor</a><span class="p">]</span></span> <span class="o">=</span> <span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/factory/block_factory.html#xFormerDecoderBlock.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.factory.block_factory.xFormerDecoderBlock.forward" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 </dd></dl>
