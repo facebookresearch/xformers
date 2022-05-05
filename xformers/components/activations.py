@@ -42,10 +42,8 @@ class SmeLU(nn.Module):
         )
         return torch.where(
             torch.abs(x) <= self.beta,
-            ((x + self.beta) ** 2) / (4.0 * self.beta),
+            ((x + self.beta) ** 2).type_as(x) / (4.0 * self.beta),
             relu,
-            device=x.device,
-            dtype=x.dtype,
         )
 
 

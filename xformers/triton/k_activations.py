@@ -148,9 +148,9 @@ def smelu(x):
     """
     zero = 0.0
     four = 4.0
-    beta = 2.0
+    two = 2.0
+    beta = two.to(x.dtype)
 
-    beta = beta.to(x.dtype)
     output = (x + beta) * (x + beta) / (four.to(x.dtype) * beta)
     relu = tl.where(x >= beta, x, zero.to(x.dtype))
     return tl.where(tl.abs(x) <= beta, output, relu)
@@ -161,9 +161,8 @@ def smelu_grad(x):
     zero = 0.0
     one = 1.0
     two = 2.0
-    beta = 2.0
+    beta = two.to(x.dtype)
 
-    beta = beta.to(x.dtype)
     grad = (beta + x) / (two.to(x.dtype) * beta)
     relu_grad = tl.where(x >= beta, one.to(x.dtype), zero.to(x.dtype))
     return tl.where(tl.abs(x) <= beta, grad, relu_grad)
