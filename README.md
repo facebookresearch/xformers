@@ -209,7 +209,7 @@ If you use xFormers in your publication, please cite it by using the following B
 
 ``` bibtex
 @Misc{xFormers2021,
-  author =       {Benjamin Lefaudeux, Francisco Massa, Diana Liskovich, Wenhan Xiong, Vittorio Caggiano, Sean Naren, Min Xu, Jieru Hu, Marta Tintore, Susan Zhang},
+  author =       {Benjamin Lefaudeux and Francisco Massa and Diana Liskovich and Wenhan Xiong and Vittorio Caggiano and Sean Naren and Min Xu and Jieru Hu and Marta Tintore and Susan Zhang},
   title =        {xFormers: A modular and hackable Transformer modelling library},
   howpublished = {\url{https://github.com/facebookresearch/xformers}},
   year =         {2021}
