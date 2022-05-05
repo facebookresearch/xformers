@@ -65,7 +65,6 @@ class VisionTransformer(pl.LightningModule):
         # A list of the encoder or decoder blocks which constitute the Transformer.
         xformer_config = [
             {
-                "reversible": False,  # Turn on to test the effect of using reversible layers
                 "block_type": "encoder",
                 "num_layers": n_layer,
                 "dim_model": dim,
@@ -86,22 +85,27 @@ class VisionTransformer(pl.LightningModule):
                     "activation": "gelu",
                     "hidden_layer_multiplier": hidden_layer_multiplier,
                 },
-                # "simplicial_embeddings": {"L": n_head, "temperature": 2.0},
+                "position_encoding_config": {
+                    "name": "learnable",
+                    "seq_len": num_patches,
+                    "dim_model": dim,
+                    "add_class_token": classifier == Classifier.TOKEN,
+                },
+                "patch_embedding_config": {
+                    "in_channels": 3,
+                    "out_channels": dim,
+                    "kernel_size": patch_size,
+                    "stride": patch_size,
+                },
             }
         ]
 
+        # The ViT trunk
         config = xFormerConfig(xformer_config)
-        self.transformer = xFormer.from_config(config)
+        self.vit = xFormer.from_config(config)
+        print(self.vit)
 
-        # init positional embedding with 0.02 from BERT
-        self.pos_emb = nn.Parameter(
-            torch.randn(1, num_patches + (classifier == Classifier.TOKEN), dim) * 0.02
-        )
-        self.patch_emb = nn.Conv2d(3, dim, kernel_size=patch_size, stride=patch_size)
-
-        if classifier == Classifier.TOKEN:
-            self.clf_token = nn.Parameter(torch.zeros(dim))
-
+        # The classifier head
         self.ln = nn.LayerNorm(dim)
         self.head = nn.Linear(dim, num_classes)
         self.criterion = torch.nn.CrossEntropyLoss()
@@ -145,23 +149,7 @@ class VisionTransformer(pl.LightningModule):
         return [optimizer], [scheduler]
 
     def forward(self, x):
-        batch, *_ = x.shape  # BCHW
-
-        x = self.patch_emb(x)
-
-        # flatten patches into sequence
-        x = x.flatten(2, 3).transpose(1, 2).contiguous()  # B HW C
-
-        if self.hparams.classifier == Classifier.TOKEN:
-            # prepend classification token to the sequence
-            clf_token = (
-                torch.ones(batch, 1, self.hparams.dim, device=x.device) * self.clf_token
-            )
-            x = torch.cat([clf_token, x], axis=1)
-
-        # add position embedding
-        x += self.pos_emb.expand_as(x)
-        x = self.transformer(x)
+        x = self.vit(x)
         x = self.ln(x)
 
         if self.hparams.classifier == Classifier.TOKEN:
@@ -211,7 +199,7 @@ if __name__ == "__main__":
     # Adjust batch depending on the available memory on your machine.
     # You can also use reversible layers to save memory
     REF_BATCH = 512
-    BATCH = 256
+    BATCH = 128
 
     MAX_EPOCHS = 30
     NUM_WORKERS = 4
@@ -258,8 +246,8 @@ if __name__ == "__main__":
         num_classes=num_classes,
         attention="scaled_dot_product",
         classifier=Classifier.TOKEN,
-        layer_norm_style="deepnorm",
-        use_rotary_embeddings=False,
+        layer_norm_style="pre",
+        use_rotary_embeddings=True,
     )
     trainer = pl.Trainer(
         gpus=GPUS,
