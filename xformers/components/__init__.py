@@ -15,6 +15,8 @@ from .attention import Attention, build_attention  # noqa
 from .in_proj_container import InProjContainer, InProjParams  # noqa
 from .multi_head_dispatch import MultiHeadDispatch  # noqa
 from .multi_head_dispatch import MultiHeadDispatchConfig
+from .patch_embedding import PatchEmbeddingConfig  # noqa
+from .patch_embedding import build_patch_embedding  # noqa
 from .residual import LayerNormStyle  # noqa; noqa
 from .residual import PostNorm  # noqa
 from .residual import PreNorm  # noqa

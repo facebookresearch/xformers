@@ -6,6 +6,7 @@
 import pytest
 import torch
 
+from xformers.components import PatchEmbeddingConfig, build_patch_embedding
 from xformers.components.positional_embedding import (
     POSITION_EMBEDDING_REGISTRY,
     build_positional_embedding,
@@ -39,3 +40,26 @@ def test_dimensions(encoding_name: str, dropout: float):
     if "name" == "sine":
         inputs = (torch.rand(BATCH, SEQ, MODEL) * 10).abs().to(torch.int)
         _ = encoding(inputs)
+
+
+def test_patch_embedding():
+    patch_embedding_config = {
+        "in_channels": 3,
+        "out_channels": 64,
+        "kernel_size": 7,
+        "stride": 4,
+        "padding": 2,
+    }
+
+    # dummy, just check construction and dimensions in the FW pass
+    patch_emb = build_patch_embedding(PatchEmbeddingConfig(**patch_embedding_config))
+
+    # Check BHWC
+    inputs = torch.rand(BATCH, 32 * 32, 3)
+    out = patch_emb(inputs)
+    assert out.shape[-1] == 64
+
+    # Check BCHW
+    inputs = torch.rand(BATCH, 3, 32, 32)
+    out = patch_emb(inputs)
+    assert out.shape[-1] == 64

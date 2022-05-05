@@ -12,13 +12,12 @@ import torch
 
 from xformers.components import reversible as rv
 from xformers.components.residual import LayerNormStyle, get_deepnorm_coefficients
-from xformers.factory.block_factory import (
+from xformers.factory.block_configs import (
     xFormerBlockConfig,
-    xFormerDecoderBlock,
     xFormerDecoderConfig,
-    xFormerEncoderBlock,
     xFormerEncoderConfig,
 )
+from xformers.factory.block_factory import xFormerDecoderBlock, xFormerEncoderBlock
 
 
 @dataclass(init=False)
