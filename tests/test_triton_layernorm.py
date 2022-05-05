@@ -102,16 +102,19 @@ def test_layernorm_parity(shape, amp):
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
-def test_no_contiguous():
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32, torch.bfloat16])
+def test_no_contiguous(dtype):
     """Check that we don't choke on non-contigous tensors"""
     shape = (8, 384, 128)
 
     # Get the same inputs
     torch.random.manual_seed(0)
-    X = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
+    torch.cuda.manual_seed(0)
+
+    X = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True, dtype=dtype)
     X = X.transpose(2, 1).contiguous().transpose(2, 1)
 
     assert not X.is_contiguous()
 
-    triton_layernorm = FusedLayerNorm(X.shape[-1]).to("cuda")
+    triton_layernorm = FusedLayerNorm(X.shape[-1]).to(device="cuda", dtype=dtype)
     _ = triton_layernorm(X)

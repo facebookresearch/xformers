@@ -212,6 +212,9 @@ class xFormer(torch.nn.Module):
         def is_v_proj_weight(n):
             return "v_proj_weight" in n
 
+        def is_self_attn_proj_weight(n):
+            return "in_proj_weight" in n
+
         encoder_coefficients, decoder_coefficients = get_deepnorm_coefficients(
             encoder_layers=len(self.encoders), decoder_layers=len(self.decoders)  # type: ignore
         )
@@ -227,6 +230,16 @@ class xFormer(torch.nn.Module):
         for n, p in self.encoders.named_parameters():
             if is_ffn_w(n) or is_out_mha_proj_w(n) or is_v_proj_weight(n):
                 torch.nn.init.xavier_normal_(p, gain=encoder_gain)
+            elif is_self_attn_proj_weight(n):
+                # The input projection is packed in a single weight matrix
+                # Init normally, then scale the slice which corresponds to the value projection
+                # The Value projection is the last chunk, the projection matrix is
+                # 3K x N
+                M, _ = p.shape
+                K = M // 3
+                torch.nn.init.xavier_normal_(p[:K, :], gain=1)
+                torch.nn.init.xavier_normal_(p[K:-K, :], gain=1)
+                torch.nn.init.xavier_normal_(p[-K:, :], gain=encoder_gain)
             elif "weight" in n and p.ndim > 1:
                 torch.nn.init.xavier_normal_(p, gain=1)
 
@@ -234,6 +247,16 @@ class xFormer(torch.nn.Module):
         for n, p in self.decoders.named_parameters():
             if is_ffn_w(n) or is_out_mha_proj_w(n) or is_v_proj_weight(n):
                 torch.nn.init.xavier_normal_(p, gain=decoder_gain)
+            elif is_self_attn_proj_weight(n):
+                # The input projection is packed in a single weight matrix
+                # Init normally, then scale the slice which corresponds to the value projection
+                # The Value projection is the last chunk, the projection matrix is
+                # 3K x N
+                M, _ = p.shape
+                K = M // 3
+                torch.nn.init.xavier_normal_(p[:K, :], gain=1)
+                torch.nn.init.xavier_normal_(p[K:-K, :], gain=1)
+                torch.nn.init.xavier_normal_(p[-K:, :], gain=decoder_gain)
             elif "weight" in n and p.ndim > 1:
                 torch.nn.init.xavier_normal_(p, gain=1)
 

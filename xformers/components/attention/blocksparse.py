@@ -12,9 +12,6 @@ import torch
 
 from xformers import _is_triton_available
 from xformers.components.attention import Attention, AttentionConfig, register_attention
-from xformers.components.attention.utils import bool_mask_to_additive
-
-_mask_type_warning = True
 
 if _is_triton_available:
     from triton.ops.blocksparse import matmul as blocksparse_matmul  # type: ignore
@@ -53,9 +50,6 @@ if _is_triton_available:
         .. warning: the block size has to be picked from [16, 32, 64]. Some speed is gained from bigger blocks.
             It is of course possible to reproduce coarser patterns given these primitives, as the user sees fit.
 
-        .. note: it is possible to pass a specific per batch mask in the forward call,
-            but this will not lead to any speed up.
-            Any constant sparsity pattern is better passed through the layout parameter.
         """
 
         def __init__(
@@ -104,14 +98,6 @@ if _is_triton_available:
             # The underlying triton op does not support per element attention mask
             self.supports_attention_mask = False
             self.supports_key_padding_mask = False
-
-        def update_mask_type(self, mask: torch.Tensor):
-            global _mask_type_warning
-            if _mask_type_warning:
-                logging.warning(
-                    "Mask has to be additive. Fixing that but this slows things down"
-                )
-            mask = bool_mask_to_additive(mask)
 
         def create_triton_kernels(self, device):
             # blocksparse operators

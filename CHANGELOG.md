@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix FourierMix being compatible with AMP [#258]
 - Better asserts on QKV dimensions [#264]
 - Better perfs for FusedMLP and FusedLinearLayer [#283]
+- Deepnorm init missing self-attention [#284]
 
 ### Added
 - Simplicial Embeddings [#259]
