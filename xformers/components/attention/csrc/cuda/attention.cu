@@ -318,7 +318,7 @@ struct UnrollLoop {
     }
     // this is equivalent to N - N % step, but faster
     // guaranteed to be the same as step is a power of 2
-    int64_t end_iter = N - (N & (step - 1));
+    int64_t end_iter = kBlockSizeK == 1 ? N : N - (N & (step - 1));
     // if (l < end_iter) {
     {
       for (; l < end_iter; l += step) {
@@ -418,70 +418,9 @@ __global__ void attention_kernel(
     m_prime[q_item_idx] = -std::numeric_limits<scalar_t>::infinity();
     logsumexp_block[q_item_idx] = &logsumexp[batch_idx][index];
   }
-#if 0
-  // this for now makes things slower
+
+  // Computes s_prime, buffer (aka v_prime) and m_prime
   UnrollLoop<true, scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE, WARP_SIZE>::eval(query_block, key[batch_idx], value[batch_idx], m_prime, s_prime, buffer, K, N);
-#else
-  int64_t l = threadIdx.x * kBlockSizeK;
-  constexpr int64_t step = kBlockSizeK * WARP_SIZE;
-  // this is equivalent to N - N % step, but faster
-  // guaranteed to be the same as step is a power of 2
-  int64_t end_iter = N - (N & (step - 1));
-  for (; l < end_iter; l += step) {
-    auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
-    auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-
-    compute_loop<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(
-        query_block, key_i, value_i, m_prime, s_prime, buffer, K);
-  }
-
-  {
-    // TODO: unroll this in a generic manner
-    l = N - (N & (step - 1)) + threadIdx.x * (kBlockSizeK / 2);
-    end_iter = N - (N & (step / 2 - 1));
-    for (; l < end_iter; l += step / 2) {
-      auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
-      auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-      compute_loop<scalar_t, vec_t, kBlockSizeK / 2, kBlockSizeQ, BUFFER_SIZE>(
-          query_block, key_i, value_i, m_prime, s_prime, buffer, K);
-    }
-
-    l = N - (N & (step / 2 - 1)) + threadIdx.x * (kBlockSizeK / 4);
-    end_iter = N - (N & (step / 4 - 1));
-    for (; l < end_iter; l += step / 4) {
-      auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
-      auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-      compute_loop<scalar_t, vec_t, kBlockSizeK / 4, kBlockSizeQ, BUFFER_SIZE>(
-          query_block, key_i, value_i, m_prime, s_prime, buffer, K);
-    }
-
-    l = N - (N & (step / 4 - 1)) + threadIdx.x * (kBlockSizeK / 8);
-    end_iter = N - (N & (step / 8 - 1));
-    for (; l < end_iter; l += step / 8) {
-      auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
-      auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-      compute_loop<scalar_t, vec_t, kBlockSizeK / 8, kBlockSizeQ, BUFFER_SIZE>(
-          query_block, key_i, value_i, m_prime, s_prime, buffer, K);
-    }
-
-    l = N - (N & (step / 8 - 1)) + threadIdx.x * (kBlockSizeK / 16);
-    end_iter = N - (N & (step / 16 - 1));
-    for (; l < end_iter; l += step / 16) {
-      auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
-      auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-      compute_loop<scalar_t, vec_t, kBlockSizeK / 16, kBlockSizeQ, BUFFER_SIZE>(
-          query_block, key_i, value_i, m_prime, s_prime, buffer, K);
-    }
-
-    l = N - (N & (step / 16 - 1)) + threadIdx.x;
-    for (; l < N; l += blockDim.x) {
-      auto key_i = reinterpret_cast<vec_t*>(key[batch_idx][l].data());
-      auto value_i = reinterpret_cast<vec_t*>(value[batch_idx][l].data());
-      compute_loop<scalar_t, vec_t, 1, kBlockSizeQ, BUFFER_SIZE>(
-          query_block, key_i, value_i, m_prime, s_prime, buffer, K);
-    }
-  }
-#endif
 
   aggregate_coeffs<scalar_t, vec_t, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>(
       m_prime, s_prime, buffer, K);
