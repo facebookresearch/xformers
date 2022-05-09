@@ -108,11 +108,7 @@ class MetaVisionTransformer(VisionTransformer):
         x = self.trunk(x)
         x = self.ln(x)
 
-        if self.hparams.classifier == Classifier.TOKEN:
-            x = x[:, 0]  # only consider the token, we're classifying anyway
-        elif self.hparams.classifier == Classifier.GAP:
-            x = x.mean(dim=1)  # mean over sequence len
-
+        x = x.mean(dim=1)  # mean over sequence len
         x = self.head(x)
         return x
 
@@ -128,6 +124,9 @@ if __name__ == "__main__":
     MAX_EPOCHS = 50
     NUM_WORKERS = 4
     GPUS = 1
+
+    torch.cuda.manual_seed_all(42)
+    torch.manual_seed(42)
 
     train_transforms = transforms.Compose(
         [

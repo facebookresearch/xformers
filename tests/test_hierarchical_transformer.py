@@ -23,7 +23,7 @@ def test_hierarchical_transformer():
     base_hierarchical_configs = [
         BasicLayerConfig(
             embedding=64,
-            attention_mechanism="scaled_dot_product",
+            attention_mechanism="pooling",
             patch_size=7,
             stride=4,
             padding=2,
@@ -31,7 +31,7 @@ def test_hierarchical_transformer():
         ),
         BasicLayerConfig(
             embedding=128,
-            attention_mechanism="scaled_dot_product",
+            attention_mechanism="pooling",
             patch_size=3,
             stride=2,
             padding=1,

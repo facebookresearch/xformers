@@ -145,6 +145,8 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
   - *[FNet: Mixing Tokens with Fourier Transforms, Lee-Thorp et al.](https://arxiv.org/abs/2105.03824v1)*
 - [CompositionalAttention](xformers/components/attention/compositional.py)
   - *[Compositional Attention: Disentangling search and retrieval, S. Mittal et al.](https://arxiv.org/pdf/2110.09419v1.pdf)*
+- [2D Pooling](xformers/components/attention/pooling.py)
+  - *[Metaformer is actually what you need for vision, Yu et al.](https://arxiv.org/pdf/2111.11418v1.pdf)*
 
 - ... add a new one [see Contribution.md](CONTRIBUTING.md)
 
