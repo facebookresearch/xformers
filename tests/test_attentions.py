@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from typing import Tuple
 
 import pytest
@@ -95,6 +96,9 @@ def test_order_invariance(
     causal: bool,
     device: torch.device,
 ):
+
+    if int(math.sqrt(SEQ)) ** 2 != SEQ and attention_name == "poolling":
+        pytest.skip(f"{attention_name} requires squared sequence lengths")
 
     torch.manual_seed(42)
 
@@ -282,6 +286,9 @@ def test_broadcast_batch_dimension(
     device: torch.device,
     batch_sizes: Tuple[int, int, int],
 ):
+    if int(math.sqrt(SEQ)) ** 2 != SEQ and attention_name == "poolling":
+        pytest.skip(f"{attention_name} requires squared sequence lengths")
+
     Q_BATCH, K_BATCH, V_BATCH = batch_sizes
     multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
 

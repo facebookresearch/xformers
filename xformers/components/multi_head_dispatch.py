@@ -19,10 +19,10 @@ from xformers.components.positional_embedding import RotaryEmbedding
 @dataclass
 class MultiHeadDispatchConfig:
     dim_model: int
-    residual_dropout: float
     num_heads: int
     attention: Attention
     bias: bool
+    residual_dropout: float
     dim_key: Optional[int]
     dim_value: Optional[int]
     in_proj_container: Optional[InProjContainer]
@@ -55,10 +55,10 @@ class MultiHeadDispatch(nn.Module):
     def __init__(
         self,
         dim_model: int,
-        residual_dropout: float,
         num_heads: int,
         attention: Attention,
         bias: bool = True,
+        residual_dropout: float = 0.0,
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
         in_proj_container: Optional[InProjContainer] = None,

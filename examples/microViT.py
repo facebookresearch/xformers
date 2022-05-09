@@ -171,7 +171,7 @@ class VisionTransformer(pl.LightningModule):
                 "train_loss": loss.mean(),
                 "learning_rate": self.lr_schedulers().get_last_lr()[0],
             },
-            step=trainer.global_step,
+            step=self.global_step,
         )
 
         return loss
