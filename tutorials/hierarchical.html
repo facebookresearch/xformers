@@ -13,7 +13,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Using Triton-based layers | xFormers 0.0.11.dev documentation</title>
+  <title>Hierarchical Transformers | xFormers 0.0.11.dev documentation</title>
   
   <script src="../_static/js/ga.js"></script>
   <script src="../_static/js/redirect.js"></script>
@@ -21,9 +21,9 @@
   <link rel="shortcut icon" href="../_static/images/favicon.png" />
   
   
-  <link rel="canonical" href="https://facebookresearch.github.io/xformerstutorials/triton.html" />
+  <link rel="canonical" href="https://facebookresearch.github.io/xformerstutorials/hierarchical.html" />
   
-  <meta property="og:title" content="Using Triton-based layers | xFormers 0.0.11.dev documentation">
+  <meta property="og:title" content="Hierarchical Transformers | xFormers 0.0.11.dev documentation">
   <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
@@ -43,8 +43,8 @@
   <link rel="stylesheet" href="../_static/css/customize.css" type="text/css" />
   <link rel="index" title="Index" href="../genindex.html" />
   <link rel="search" title="Search" href="../search.html" />
-  <link rel="next" title="Hierarchical Transformers" href="hierarchical.html" />
-  <link rel="prev" title="Using the Reversible block" href="reversible.html" /> 
+  <link rel="next" title="Custom parts reference" href="../custom_parts/index.html" />
+  <link rel="prev" title="Using Triton-based layers" href="triton.html" /> 
 
   
   <script src="../_static/js/modernizr.min.js"></script>
@@ -197,13 +197,13 @@
         
           <li><a href="index.html">Tutorials</a> &gt;</li>
         
-      <li>Using Triton-based layers</li>
+      <li>Hierarchical Transformers</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="../_sources/tutorials/triton.rst.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
+            <a href="../_sources/tutorials/hierarchical.rst.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -229,73 +229,56 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
-  <section id="using-triton-based-layers">
-<h1>Using Triton-based layers<a class="headerlink" href="#using-triton-based-layers" title="Permalink to this headline">¶</a></h1>
-<p><a class="reference external" href="https://triton-lang.org/">Triton</a> is a language and compiler for parallel programming, currently applicable to CUDA-enabled GPUs.
-It is compatible with PyTorch CUDA Tensors, and can be interfaced directly with pure python code.</p>
-<p>PyTorch provides many primitives capable of tranforming tensors, which correspond to operators in each of the supported backends.
-There are limits to how many of them can be supported at any point in time, short of supporting a JIT toolchain,
-so some operations typical of the Transformer family are supported in PyTorch as a sequence of base operators.</p>
-<p>Triton makes it possible to consolidate some of them into ad-hoc fused operators, which are compiled just-in-time.
-xFormers proposes a couple of optimized layers, and the goal is to increase their number over time.</p>
-<section id="fused-softmax-layer">
-<h2>Fused softmax layer<a class="headerlink" href="#fused-softmax-layer" title="Permalink to this headline">¶</a></h2>
-<p>This is a drop-in replacement to <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Softmax.html">torch.nn.softmax</a>, the only limitation being that the softmax operation is limited to the last dimension.
-Log-softmax is also available. The actual Triton kernel is very similar to <cite>this tutorial&lt;https://triton-lang.org/getting-started/tutorials/02-fused-softmax.html#sphx-glr-getting-started-tutorials-02-fused-softmax-py&gt;</cite></p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">xformers.triton</span> <span class="kn">import</span> <span class="n">softmax</span><span class="p">,</span> <span class="n">log_softmax</span>
-<span class="n">y</span> <span class="o">=</span> <span class="n">softmax</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>   <span class="c1"># Torch AMP, autograd aware</span>
+  <section id="hierarchical-transformers">
+<h1>Hierarchical Transformers<a class="headerlink" href="#hierarchical-transformers" title="Permalink to this headline">¶</a></h1>
+<p>The original Transformer proposal processes (“transforms”) sequences of tokens, across possibly many layers. Crucially, the number of tokens is unchanged cross the depth of the model, and this prove to be really efficient in many domains.</p>
+<p>It seems that some domains could however benefit from an architecture more typical from CNN, where there’s a tradeoff across the depth of the model in between the spatial extent (ie: number of tokens) and their expressiveness (ie: the model or embedding dimension). These architectures are handled in xformers, through the “patch_embedding” element, which translates the sequence of tokens from one layer to another.</p>
+<p>A small helper is provided to make it easier to generate matching configurations, as follows. We present in this example a truncated version of a small <a class="reference external" href="https://arxiv.org/abs/2111.11418v1">Metaformer</a>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">xformers.factory</span> <span class="kn">import</span> <span class="n">xFormer</span><span class="p">,</span> <span class="n">xFormerConfig</span>
+<span class="kn">from</span> <span class="nn">xformers.helpers.hierarchical_configs</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BasicLayerConfig</span><span class="p">,</span>
+    <span class="n">get_hierarchical_configuration</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="n">base_hierarchical_configs</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">BasicLayerConfig</span><span class="p">(</span>
+        <span class="n">embedding</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span>   <span class="c1"># the dimensions just have to match along the layers</span>
+        <span class="n">attention_mechanism</span><span class="o">=</span><span class="s2">&quot;scaled_dot_product&quot;</span><span class="p">,</span>   <span class="c1"># anything you like</span>
+        <span class="n">patch_size</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span>
+        <span class="n">stride</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+        <span class="n">padding</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">seq_len</span><span class="o">=</span><span class="n">image_size</span> <span class="o">*</span> <span class="n">image_size</span> <span class="o">//</span> <span class="mi">16</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">BasicLayerConfig</span><span class="p">(</span>
+        <span class="n">embedding</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span>
+        <span class="n">attention_mechanism</span><span class="o">=</span><span class="s2">&quot;scaled_dot_product&quot;</span><span class="p">,</span>
+        <span class="n">patch_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="n">stride</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">padding</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">seq_len</span><span class="o">=</span><span class="n">image_size</span> <span class="o">*</span> <span class="n">image_size</span> <span class="o">//</span> <span class="mi">64</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">BasicLayerConfig</span><span class="p">(</span>
+        <span class="n">embedding</span><span class="o">=</span><span class="mi">320</span><span class="p">,</span>
+        <span class="n">attention_mechanism</span><span class="o">=</span><span class="s2">&quot;scaled_dot_product&quot;</span><span class="p">,</span>
+        <span class="n">patch_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="n">stride</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">padding</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">seq_len</span><span class="o">=</span><span class="n">image_size</span> <span class="o">*</span> <span class="n">image_size</span> <span class="o">//</span> <span class="mi">256</span><span class="p">,</span>
+    <span class="p">),</span>
+<span class="p">]</span>
+
+<span class="c1"># Fill in the gaps in the config</span>
+<span class="n">xformer_config</span> <span class="o">=</span> <span class="n">get_hierarchical_configuration</span><span class="p">(</span>
+    <span class="n">base_hierarchical_configs</span><span class="p">,</span>
+    <span class="n">layernorm_style</span><span class="o">=</span><span class="s2">&quot;pre&quot;</span><span class="p">,</span>
+    <span class="n">use_rotary_embeddings</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">mlp_multiplier</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+    <span class="n">dim_head</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">config</span> <span class="o">=</span> <span class="n">xFormerConfig</span><span class="p">(</span><span class="n">xformer_config</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>The expected throughput, when compared to PyTorch and on a nVidia V100, is along these lines</p>
-<a class="reference internal image-reference" href="../_images/Softmax_Bandwidth_FW_fp16.png"><img alt="Softmax throughput in fp16 - inference" src="../_images/Softmax_Bandwidth_FW_fp16.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/Softmax_Bandwidth_FW_BW_fp16.png"><img alt="Softmax throughput in fp16 - training" src="../_images/Softmax_Bandwidth_FW_BW_fp16.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/Softmax_Bandwidth_FW_fp32.png"><img alt="Softmax throughput in fp32 - inference" src="../_images/Softmax_Bandwidth_FW_fp32.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/Softmax_Bandwidth_FW_BW_fp32.png"><img alt="Softmax throughput in fp32 - training" src="../_images/Softmax_Bandwidth_FW_BW_fp32.png" style="width: 600px;" /></a>
-</section>
-<section id="fused-linear-layer">
-<h2>Fused linear layer<a class="headerlink" href="#fused-linear-layer" title="Permalink to this headline">¶</a></h2>
-<p>This is a drop-in replacement to two PyTorch operands: a <cite>torch.nn.Linear</cite>, and an activation, like <cite>torch.nn.ReLU</cite>. It is Torch AMP and autograd aware, and can be used very simply:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">xformers.triton</span> <span class="kn">import</span> <span class="n">FusedLinearLayer</span>
-
-<span class="n">my_linear_layer</span> <span class="o">=</span> <span class="n">FusedLinearLayer</span><span class="p">(</span><span class="n">in_features</span><span class="p">,</span> <span class="n">out_features</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="o">/</span><span class="kc">False</span><span class="p">,</span> <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;squared_relu&quot;</span><span class="p">)</span>
-
-<span class="o">...</span>
-
-<span class="n">y</span> <span class="o">=</span> <span class="n">my_linear_layer</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>It is possible to skip either the bias or the activation (just use <cite>None</cite> in that case). As of September 2021, this layer is <strong>faster than PyTorch for non-sigmoid activations and fp16</strong>.
-In all other usecases, you will be better served using PyTorch.</p>
-<p>The following is an example of the measured performance on a laptop nVidia 3080, using Triton 1.1 and PyTorch 1.10.</p>
-<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_gelu.png"><img alt="Fused linear layers throughput in fp16 - inference - GeLU" src="../_images/FusedLinear_fp16_FW_gelu.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_BW_gelu.png"><img alt="Fused linear layers throughput in fp16 - training - GeLU" src="../_images/FusedLinear_fp16_FW_BW_gelu.png" style="width: 600px;" /></a>
-<p>–</p>
-<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_leaky_relu.png"><img alt="Fused linear layers throughput in fp16 - inference - LeakyReLU" src="../_images/FusedLinear_fp16_FW_leaky_relu.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_BW_leaky_relu.png"><img alt="Fused linear layers throughput in fp16 - training - LeakyReLU" src="../_images/FusedLinear_fp16_FW_BW_leaky_relu.png" style="width: 600px;" /></a>
-<p>–</p>
-<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_squared_relu.png"><img alt="Fused linear layers throughput in fp16 - inference - Squared ReLU" src="../_images/FusedLinear_fp16_FW_squared_relu.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_BW_squared_relu.png"><img alt="Fused linear layers throughput in fp16 - training - Squared ReLU" src="../_images/FusedLinear_fp16_FW_BW_squared_relu.png" style="width: 600px;" /></a>
-<p>–</p>
-<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_relu.png"><img alt="Fused linear layers throughput in fp16 - inference - ReLU" src="../_images/FusedLinear_fp16_FW_relu.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_BW_relu.png"><img alt="Fused linear layers throughput in fp16 - training - ReLU" src="../_images/FusedLinear_fp16_FW_BW_relu.png" style="width: 600px;" /></a>
-</section>
-<section id="fused-layer-norm">
-<h2>Fused layer norm<a class="headerlink" href="#fused-layer-norm" title="Permalink to this headline">¶</a></h2>
-<p>You can reproduce these numbers locally by running <cite>python3 xformers/benchmarks/benchmark_triton_layernorm.py</cite>. The units are GB/s. These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.</p>
-<a class="reference internal image-reference" href="../_images/LayerNorm_FW_torch.float16.png"><img alt="Fused layer norm throughput in fp16 - inference" src="../_images/LayerNorm_FW_torch.float16.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/LayerNorm_FW+BW_torch.float16.png"><img alt="Fused layer norm throughput in fp16 - training" src="../_images/LayerNorm_FW+BW_torch.float16.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/LayerNorm_FW_torch.float32.png"><img alt="Fused layer norm throughput in fp32 - inference" src="../_images/LayerNorm_FW_torch.float32.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/LayerNorm_FW+BW_torch.float32.png"><img alt="Fused layer norm throughput in fp32 - training" src="../_images/LayerNorm_FW+BW_torch.float32.png" style="width: 600px;" /></a>
-</section>
-<section id="fused-dropout-bias-activation">
-<h2>Fused dropout + bias + activation<a class="headerlink" href="#fused-dropout-bias-activation" title="Permalink to this headline">¶</a></h2>
-<p>You can reproduce these numbers locally by running <cite>python3 xformers/benchmarks/benchmark_triton_dropout.py</cite>. The units are GB/s.
-These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.</p>
-<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW_torch.float16_Act_gelu.png"><img alt="Fused dropout+ bias throughput in fp16 - inference - GeLU" src="../_images/Dropout_Bias_True_FW_torch.float16_Act_gelu.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act_gelu.png"><img alt="Fused dropout+ bias throughput in fp16 - training - GeLU" src="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act_gelu.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW_torch.float16_Act_squared_relu.png"><img alt="Fused dropout+ bias throughput in fp16 - inference - Squared ReLU" src="../_images/Dropout_Bias_True_FW_torch.float16_Act_squared_relu.png" style="width: 600px;" /></a>
-<a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act_squared_relu.png"><img alt="Fused dropout+ bias throughput in fp16 - training - Squared ReLU" src="../_images/Dropout_Bias_True_FW+BW_torch.float16_Act_squared_relu.png" style="width: 600px;" /></a>
-</section>
 </section>
 
 
@@ -306,10 +289,10 @@ These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="hierarchical.html" class="btn btn-neutral float-right" title="Hierarchical Transformers" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="../custom_parts/index.html" class="btn btn-neutral float-right" title="Custom parts reference" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="reversible.html" class="btn btn-neutral" title="Using the Reversible block" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="triton.html" class="btn btn-neutral" title="Using Triton-based layers" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -341,13 +324,7 @@ These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Using Triton-based layers</a><ul>
-<li><a class="reference internal" href="#fused-softmax-layer">Fused softmax layer</a></li>
-<li><a class="reference internal" href="#fused-linear-layer">Fused linear layer</a></li>
-<li><a class="reference internal" href="#fused-layer-norm">Fused layer norm</a></li>
-<li><a class="reference internal" href="#fused-dropout-bias-activation">Fused dropout + bias + activation</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#">Hierarchical Transformers</a></li>
 </ul>
 
             </div>

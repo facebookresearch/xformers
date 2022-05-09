@@ -244,10 +244,10 @@
 <span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">MultiHeadDispatchConfig</span><span class="p">:</span>
     <span class="n">dim_model</span><span class="p">:</span> <span class="nb">int</span>
-    <span class="n">residual_dropout</span><span class="p">:</span> <span class="nb">float</span>
     <span class="n">num_heads</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">attention</span><span class="p">:</span> <span class="n">Attention</span>
     <span class="n">bias</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">residual_dropout</span><span class="p">:</span> <span class="nb">float</span>
     <span class="n">dim_key</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
     <span class="n">dim_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
     <span class="n">in_proj_container</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">InProjContainer</span><span class="p">]</span>
@@ -280,10 +280,10 @@
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">dim_model</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-        <span class="n">residual_dropout</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
         <span class="n">num_heads</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">attention</span><span class="p">:</span> <span class="n">Attention</span><span class="p">,</span>
         <span class="n">bias</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">residual_dropout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
         <span class="n">dim_key</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">dim_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">in_proj_container</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">InProjContainer</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
