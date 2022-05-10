@@ -21,6 +21,7 @@ def get_triton_activation_kernel(activation: Optional[Activation]):
             Activation.LeakyReLU: leaky_relu,
             Activation.GeLU: gelu,
             Activation.SquaredReLU: squared_relu,
+            Activation.SmeLU: smelu,
         }[activation]
         if activation
         else None
@@ -34,6 +35,7 @@ def get_triton_activation_bwd_kernel(activation: Optional[Activation]):
             Activation.LeakyReLU: leaky_relu_grad,
             Activation.GeLU: gelu_grad,
             Activation.SquaredReLU: squared_relu_grad,
+            Activation.SmeLU: smelu_grad,
         }[activation]
         if activation
         else None
@@ -135,3 +137,32 @@ def gelu_grad(x):
     return 0.5 * x * (
         (1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * x * x)
     ) + 0.5 * (1 + tanh_out)
+
+
+@triton.jit
+def smelu(x):
+    """
+    SmeLU_ activation -  Smooth ReLU with beta=2.0
+
+    .. _SmeLU: https://arxiv.org/pdf/2202.06499.pdf
+    """
+    zero = 0.0
+    four = 4.0
+    two = 2.0
+    beta = two.to(x.dtype)
+
+    output = (x + beta) * (x + beta) / (four.to(x.dtype) * beta)
+    relu = tl.where(x >= beta, x, zero.to(x.dtype))
+    return tl.where(tl.abs(x) <= beta, output, relu)
+
+
+@triton.jit
+def smelu_grad(x):
+    zero = 0.0
+    one = 1.0
+    two = 2.0
+    beta = two.to(x.dtype)
+
+    grad = (beta + x) / (two.to(x.dtype) * beta)
+    relu_grad = tl.where(x >= beta, one.to(x.dtype), zero.to(x.dtype))
+    return tl.where(tl.abs(x) <= beta, grad, relu_grad)
