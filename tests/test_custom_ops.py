@@ -158,14 +158,14 @@ def test_sddmm_sputnik(device):
 
 
 @cuda_only
+@pytest.mark.parametrize("prob", [0.5, 1])
 @pytest.mark.parametrize("K", [32, 17])
 @pytest.mark.parametrize("M", [30, 17])
 @pytest.mark.parametrize("L", [30, 17])
-def test_sddmm_csr(L, M, K):
+def test_sddmm_csr(L, M, K, prob):
     device = torch.device("cuda")
     # TODO add more checks for different nnz
     B = 8
-    prob = 0.5
     a = torch.rand(B, L, K, device=device)
     b = torch.rand(B, M, K, device=device)
     mask = _create_random_sparsity(
@@ -188,7 +188,7 @@ def test_sddmm_csr(L, M, K):
 
 
 @cuda_only
-@pytest.mark.parametrize("nnz", [4, 16, 20, 36])
+@pytest.mark.parametrize("nnz", [0, 4, 16, 20, 36])
 def test_sddmm_csr_per_nnz(nnz):
     device = torch.device("cuda")
     B = 8
@@ -215,14 +215,14 @@ def test_sddmm_csr_per_nnz(nnz):
 
 
 @cuda_only
+@pytest.mark.parametrize("prob", [0.5, 1])
 @pytest.mark.parametrize("K", [32, 17])
 @pytest.mark.parametrize("M", [30, 17])
 @pytest.mark.parametrize("L", [30, 17])
-def test_sddmm_coo(L, M, K):
+def test_sddmm_coo(L, M, K, prob):
     device = torch.device("cuda")
     # TODO add more checks for different nnz
     B = 8
-    prob = 0.5
     a = torch.rand(B, L, K, device=device)
     b = torch.rand(B, M, K, device=device)
     mask = _create_random_sparsity(

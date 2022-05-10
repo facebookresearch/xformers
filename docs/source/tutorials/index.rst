@@ -11,3 +11,4 @@ Tutorials
    pytorch_encoder
    reversible
    triton
+   hierarchical

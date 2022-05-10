@@ -37,7 +37,6 @@ class SoftMaxPositiveEstimators(FeatureMap):
     ):
         super().__init__(dim_features, iter_before_redraw, normalize_inputs, epsilon)
         self.softmax_temp = softmax_temp
-        self.offset = -1.0
 
         # Handle the scaling from all kernels by √m.
         # This normalizes for all the feature maps involved

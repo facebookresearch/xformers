@@ -457,6 +457,9 @@ torch::Tensor sddmm_cuda_coo(
   const auto nnz = rowind.size(0);
   auto out = torch::empty({batch_size, nnz}, D1.options());
 
+  if (out.numel() == 0)
+    return out;
+
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   dim3 grid_dim(nnz / 16 + (nnz & 15), batch_size, 1);
   if ((k % 4) == 0) {
@@ -496,6 +499,7 @@ torch::Tensor sddmm_cuda_coo(
         D2.data_ptr<float>(),
         out.data_ptr<float>());
   }
+  AT_CUDA_CHECK(cudaGetLastError());
   return out;
 }
 
@@ -510,6 +514,9 @@ torch::Tensor sddmm_cuda_csr(
   const auto n = D2.size(1);
   const auto nnz = colind.size(0);
   auto out = torch::empty({batch_size, nnz}, D1.options());
+
+  if (out.numel() == 0)
+    return out;
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   dim3 grid_dim(nnz / 16 + (nnz & 15), batch_size, 1);
@@ -539,6 +546,7 @@ torch::Tensor sddmm_cuda_csr(
         D2.data_ptr<float>(),
         out.data_ptr<float>());
   }
+  AT_CUDA_CHECK(cudaGetLastError());
   return out;
 }
 } // namespace ge_spmm

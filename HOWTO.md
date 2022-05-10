@@ -30,6 +30,8 @@ Let's present here a couple of code snippets on how to solve a couple of questio
     - [Intro](#intro)
     - [Transformer](#transformer)
     - [In practice](#in-practice)
+  - [Hierarchical Transformers](#hierarchical-transformers)
+
 
 ## Understanding the dimension conventions
 
@@ -749,3 +751,60 @@ class xFormerStackConfig:
 [2]: Kitaev, N., Kaiser, Ł., & Levskaya, A. (2020). Reformer: The Efficient Transformer.
 
 [3]: Vaswani et al., Attention is all you need, 2017
+
+
+### Hierarchical Transformers
+
+The original Transformer proposal processes ("transforms") sequences of tokens, across possibly many layers. Crucially, the number of tokens is unchanged across the depth of the model, and this proved to be really efficient in many domains.
+
+It seems that some fields could however benefit from an architecture more typical from CNN, where there's a tradeoff across the depth of the model in between the spatial extent (ie: number of tokens) and their expressiveness (ie: the model or embedding dimension). These architectures are handled in xformers, through the "patch_embedding" element, which translates the sequence of tokens from one layer to another.
+
+A small helper is provided to make it easier to generate matching configurations, as follows. We present in this example a truncated version of a small [Metaformer](https://arxiv.org/abs/2111.11418v1).
+
+```python
+    from xformers.factory import xFormer, xFormerConfig
+    from xformers.helpers.hierarchical_configs import (
+        BasicLayerConfig,
+        get_hierarchical_configuration,
+    )
+
+
+    base_hierarchical_configs = [
+        BasicLayerConfig(
+            embedding=64,   # the dimensions just have to match along the layers
+            attention_mechanism="scaled_dot_product",   # anything you like
+            patch_size=7,
+            stride=4,
+            padding=2,
+            seq_len=image_size * image_size // 16,
+        ),
+        BasicLayerConfig(
+            embedding=128,
+            attention_mechanism="scaled_dot_product",
+            patch_size=3,
+            stride=2,
+            padding=1,
+            seq_len=image_size * image_size // 64,
+        ),
+        BasicLayerConfig(
+            embedding=320,
+            attention_mechanism="scaled_dot_product",
+            patch_size=3,
+            stride=2,
+            padding=1,
+            seq_len=image_size * image_size // 256,
+        ),
+    ]
+
+    # Fill in the gaps in the config
+    xformer_config = get_hierarchical_configuration(
+        base_hierarchical_configs,
+        layernorm_style="pre",
+        use_rotary_embeddings=False,
+        mlp_multiplier=4,
+        dim_head=32,
+    )
+    config = xFormerConfig(xformer_config)
+```
+
+Note that the actual patch embedding module can be changed as you see fit, so that the patch merging proposed by [Swin Transformer](https://arxiv.org/pdf/2103.14030.pdf) for instance is useable here also.

@@ -145,6 +145,8 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
   - *[FNet: Mixing Tokens with Fourier Transforms, Lee-Thorp et al.](https://arxiv.org/abs/2105.03824v1)*
 - [CompositionalAttention](xformers/components/attention/compositional.py)
   - *[Compositional Attention: Disentangling search and retrieval, S. Mittal et al.](https://arxiv.org/pdf/2110.09419v1.pdf)*
+- [2D Pooling](xformers/components/attention/pooling.py)
+  - *[Metaformer is actually what you need for vision, Yu et al.](https://arxiv.org/pdf/2111.11418v1.pdf)*
 
 - ... add a new one [see Contribution.md](CONTRIBUTING.md)
 
@@ -190,6 +192,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
    2. transformer block benchmark
    3. [LRA](xformers/benchmarks/LRA/README.md), with SLURM suppot
 4. Programatic and sweep friendly layer and model construction
+   1. Compatible with hierarchical Transformers, like Swin or Metaformer
 5. Hackable
    1. Not using monolithic CUDA kernels, composable building blocks
    2. Using [Triton](https://triton-lang.org/) for some optimized parts, explicit, pythonic and user-accessible
