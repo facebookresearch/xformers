@@ -343,8 +343,6 @@
             <span class="n">q</span><span class="o">=</span><span class="n">q_</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k_</span><span class="p">,</span> <span class="n">v</span><span class="o">=</span><span class="n">v_</span><span class="p">,</span> <span class="n">att_mask</span><span class="o">=</span><span class="n">mask</span><span class="p">,</span> <span class="n">dropout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">attn_drop</span>
         <span class="p">)</span>
 
-        <span class="n">att</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn_drop</span><span class="p">(</span><span class="n">att</span><span class="p">)</span>
-
         <span class="c1"># Take into account an hypothetical padding</span>
         <span class="k">return</span> <span class="n">att</span><span class="p">[:,</span> <span class="p">:</span><span class="n">seq_len</span><span class="p">,</span> <span class="p">:]</span></div></div>
 </pre></div>
