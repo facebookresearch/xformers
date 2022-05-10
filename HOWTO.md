@@ -755,9 +755,9 @@ class xFormerStackConfig:
 
 ### Hierarchical Transformers
 
-The original Transformer proposal processes ("transforms") sequences of tokens, across possibly many layers. Crucially, the number of tokens is unchanged cross the depth of the model, and this prove to be really efficient in many domains.
+The original Transformer proposal processes ("transforms") sequences of tokens, across possibly many layers. Crucially, the number of tokens is unchanged across the depth of the model, and this proved to be really efficient in many domains.
 
-It seems that some domains could however benefit from an architecture more typical from CNN, where there's a tradeoff across the depth of the model in between the spatial extent (ie: number of tokens) and their expressiveness (ie: the model or embedding dimension). These architectures are handled in xformers, through the "patch_embedding" element, which translates the sequence of tokens from one layer to another.
+It seems that some fields could however benefit from an architecture more typical from CNN, where there's a tradeoff across the depth of the model in between the spatial extent (ie: number of tokens) and their expressiveness (ie: the model or embedding dimension). These architectures are handled in xformers, through the "patch_embedding" element, which translates the sequence of tokens from one layer to another.
 
 A small helper is provided to make it easier to generate matching configurations, as follows. We present in this example a truncated version of a small [Metaformer](https://arxiv.org/abs/2111.11418v1).
 
@@ -806,3 +806,5 @@ A small helper is provided to make it easier to generate matching configurations
     )
     config = xFormerConfig(xformer_config)
 ```
+
+Note that the actual patch embedding module can be changed as you see fit, so that the patch merging proposed by [Swin Transformer](https://arxiv.org/pdf/2103.14030.pdf) for instance is useable here also.
