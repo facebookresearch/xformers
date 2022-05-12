@@ -228,6 +228,20 @@ __device__ __forceinline__ void update_scaling_coeffs(
   }
 }
 
+template <typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ>
+__device__ void add_attn_bias(
+    scalar_t si[kBlockSizeQ][kBlockSizeK],
+    scalar_t* attn_bias_i) {
+  // TODO: use vector loads if possible
+#pragma unroll
+  for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
+#pragma unroll
+    for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
+      si[q_item_idx][k_item_idx] += attn_bias_i[k_item_idx];
+    }
+  }
+}
+
 template <
     typename scalar_t,
     typename vec_t,
@@ -241,10 +255,15 @@ __device__ void compute_loop(
     scalar_t m_prime[kBlockSizeQ],
     scalar_t s_prime[kBlockSizeQ],
     vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO [BUFFER_SIZE limitation]*/,
-    int64_t K) {
+    int64_t K,
+    scalar_t* attn_bias_i) {
   scalar_t si[kBlockSizeQ][kBlockSizeK] = {0};
   compute_dot<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(
       query_block, key_i, si, K);
+
+  if (attn_bias_i != nullptr) {
+    add_attn_bias<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ>(si, attn_bias_i);
+  }
 
   scalar_t m_i[kBlockSizeQ];
   compute_max<scalar_t, kBlockSizeK, kBlockSizeQ>(si, m_prime, m_i);
@@ -308,7 +327,8 @@ struct UnrollLoop {
       scalar_t s_prime[kBlockSizeQ],
       vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO [BUFFER_SIZE limitation]*/,
       int64_t K,
-      int64_t N) {
+      int64_t N,
+      at::TensorAccessor<scalar_t, 2> attn_bias) {
     constexpr int64_t step = kBlockSizeK * WARP_SIZE;
     int64_t l;
     if (first) {
@@ -324,9 +344,17 @@ struct UnrollLoop {
       for (; l < end_iter; l += step) {
         auto key_i = reinterpret_cast<vec_t*>(key[l].data());
         auto value_i = reinterpret_cast<vec_t*>(value[l].data());
+        auto attn_bias_i = &attn_bias[0][l];
 
         compute_loop<scalar_t, vec_t, kBlockSizeK, kBlockSizeQ, BUFFER_SIZE>(
-            query_block, key_i, value_i, m_prime, s_prime, buffer, K);
+            query_block,
+            key_i,
+            value_i,
+            m_prime,
+            s_prime,
+            buffer,
+            K,
+            attn_bias_i);
       }
     }
     {
@@ -338,7 +366,16 @@ struct UnrollLoop {
           kBlockSizeQ,
           BUFFER_SIZE,
           WARP_SIZE>::
-          eval(query_block, key, value, m_prime, s_prime, buffer, K, N);
+          eval(
+              query_block,
+              key,
+              value,
+              m_prime,
+              s_prime,
+              buffer,
+              K,
+              N,
+              attn_bias);
     }
   }
 };
@@ -366,7 +403,8 @@ struct UnrollLoop<
       scalar_t s_prime[kBlockSizeQ],
       vec_t buffer[kBlockSizeQ][BUFFER_SIZE] /*TODO [BUFFER_SIZE limitation]*/,
       int64_t K,
-      int64_t N) {}
+      int64_t N,
+      at::TensorAccessor<scalar_t, 2> attn_bias) {}
 };
 
 template <
@@ -382,7 +420,8 @@ __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 2> logsumexp,
     at::PackedTensorAccessor<scalar_t, 3> query,
     at::PackedTensorAccessor<scalar_t, 3> key,
-    at::PackedTensorAccessor<scalar_t, 3> value) {
+    at::PackedTensorAccessor<scalar_t, 3> value,
+    at::PackedTensorAccessor<scalar_t, 3> attn_bias) {
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
   static_assert(
       integerIsPowerOf2(kBlockSizeK * WARP_SIZE),
@@ -436,7 +475,8 @@ __global__ void attention_kernel(
           s_prime,
           buffer,
           K,
-          N);
+          N,
+          attn_bias[batch_idx]);
 
   aggregate_coeffs<scalar_t, vec_t, kBlockSizeQ, WARP_SIZE, BUFFER_SIZE>(
       m_prime, s_prime, buffer, K);
@@ -462,13 +502,26 @@ __global__ void attention_kernel(
   }
 }
 
+template <typename scalar_t>
+at::PackedTensorAccessor<scalar_t, 3> _packed_tensor_accessor_or_dummy(
+    const at::Tensor& attn_bias) {
+  if (attn_bias.defined()) {
+    return attn_bias.packed_accessor<scalar_t, 3>();
+  } else {
+    const std::array<int64_t, 3> zeros{{0}};
+    return at::PackedTensorAccessor<scalar_t, 3>(
+        nullptr, zeros.data(), zeros.data());
+  }
+}
+
 template <bool compute_logsumexp>
 void launch_attention(
     at::Tensor& res,
     at::Tensor& logsumexp,
     const at::Tensor& query,
     const at::Tensor& key,
-    const at::Tensor& value) {
+    const at::Tensor& value,
+    const at::Tensor& attn_bias) {
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   int64_t B = query.size(0);
@@ -489,6 +542,8 @@ void launch_attention(
 
   using scalar_t = float;
 
+  auto attn_bias_packed = _packed_tensor_accessor_or_dummy<scalar_t>(attn_bias);
+
   if ((K % 4) == 0) {
     TORCH_CHECK(
         K / 4 <= BUFFER_SIZE,
@@ -505,7 +560,8 @@ void launch_attention(
         logsumexp.packed_accessor<scalar_t, 2>(),
         query.packed_accessor<scalar_t, 3>(),
         key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
+        value.packed_accessor<scalar_t, 3>(),
+        attn_bias_packed);
   } else if ((K % 2) == 0) {
     TORCH_CHECK(
         K / 2 <= BUFFER_SIZE,
@@ -522,7 +578,8 @@ void launch_attention(
         logsumexp.packed_accessor<scalar_t, 2>(),
         query.packed_accessor<scalar_t, 3>(),
         key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
+        value.packed_accessor<scalar_t, 3>(),
+        attn_bias_packed);
 
   } else {
     TORCH_CHECK(
@@ -540,7 +597,8 @@ void launch_attention(
         logsumexp.packed_accessor<scalar_t, 2>(),
         query.packed_accessor<scalar_t, 3>(),
         key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
+        value.packed_accessor<scalar_t, 3>(),
+        attn_bias_packed);
   }
 }
 
@@ -548,15 +606,23 @@ std::tuple<at::Tensor, at::Tensor> attention(
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
-    bool compute_logsumexp
-    // const at::Tensor& mask
-) {
+    bool compute_logsumexp,
+    const c10::optional<at::Tensor>& attn_bias_) {
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
-  // TORCH_CHECK(query.dim() == mask.dim());
   TORCH_CHECK(query.dim() == 3);
   TORCH_CHECK(query.size(2) == key.size(2));
   TORCH_CHECK(query.size(0) == key.size(0));
+
+  at::Tensor attn_bias;
+  if (attn_bias_.has_value()) {
+    attn_bias = *attn_bias_;
+    TORCH_CHECK(query.dim() == attn_bias.dim());
+    TORCH_CHECK(query.size(0) == attn_bias.size(0));
+    TORCH_CHECK(query.size(1) == attn_bias.size(1));
+    TORCH_CHECK(key.size(1) == attn_bias.size(2));
+    TORCH_CHECK(attn_bias.stride(1) == 0);
+  }
 
   TORCH_CHECK(query.size(0) == value.size(0));
   TORCH_CHECK(key.size(1) == value.size(1));
@@ -595,9 +661,9 @@ std::tuple<at::Tensor, at::Tensor> attention(
   // have to pass compute_logsumexp as a template parameter
   // otherwise there is a slowdown in the kernel...
   if (compute_logsumexp) {
-    launch_attention<true>(res, logsumexp, query, key, value);
+    launch_attention<true>(res, logsumexp, query, key, value, attn_bias);
   } else {
-    launch_attention<false>(res, logsumexp, query, key, value);
+    launch_attention<false>(res, logsumexp, query, key, value, attn_bias);
   }
 
   AT_CUDA_CHECK(cudaGetLastError());
@@ -620,7 +686,8 @@ __global__ void attention_backward_grad_v_kernel(
     at::PackedTensorAccessor<scalar_t, 3> key,
     at::PackedTensorAccessor<scalar_t, 3> value,
     at::PackedTensorAccessor<scalar_t, 2> tmp_sum_i,
-    at::PackedTensorAccessor<scalar_t, 2> logsumexp_normalizer) {
+    at::PackedTensorAccessor<scalar_t, 2> logsumexp_normalizer,
+    at::PackedTensorAccessor<scalar_t, 3> attn_bias) {
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -646,6 +713,7 @@ __global__ void attention_backward_grad_v_kernel(
 
   scalar_t normalizer[kBlockSizeQ];
   scalar_t tmp_sum[kBlockSizeQ] = {0};
+  scalar_t attn_b[kBlockSizeK];
 
   vec_t *qb[kBlockSizeQ], *kb[kBlockSizeK], *vb[kBlockSizeK], *gb[kBlockSizeQ],
       *gbb[TILE_SIZEQ];
@@ -658,6 +726,10 @@ __global__ void attention_backward_grad_v_kernel(
       index = min(index, N - 1);
     kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][index].data());
     vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][index].data());
+    attn_b[k_item_idx] = attn_bias.data() == nullptr
+        ? scalar_t(0)
+        : attn_bias[batch_idx][0][index];
+    ;
   }
 
   for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
@@ -710,7 +782,9 @@ __global__ void attention_backward_grad_v_kernel(
 #pragma unroll
     for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
       attn_v[q_item_idx][k_item_idx] =
-          std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]) *
+          std::exp(
+              attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx] +
+              attn_b[k_item_idx]) *
           maskQ[q_item_idx] * maskK[k_item_idx];
     }
   }
@@ -773,7 +847,8 @@ __global__ void attention_backward_grad_qk_kernel(
     at::PackedTensorAccessor<scalar_t, 3> key,
     at::PackedTensorAccessor<scalar_t, 3> value,
     at::PackedTensorAccessor<scalar_t, 2> tmp_sum_i,
-    at::PackedTensorAccessor<scalar_t, 2> logsumexp_normalizer) {
+    at::PackedTensorAccessor<scalar_t, 2> logsumexp_normalizer,
+    at::PackedTensorAccessor<scalar_t, 3> attn_bias) {
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -799,6 +874,7 @@ __global__ void attention_backward_grad_qk_kernel(
 
   scalar_t normalizer[kBlockSizeQ];
   scalar_t tmp_sum[kBlockSizeQ];
+  scalar_t attn_b[kBlockSizeK];
 
   vec_t *qb[kBlockSizeQ], *kb[kBlockSizeK], *vb[kBlockSizeK], *gb[kBlockSizeQ],
       *qbb[TILE_SIZEQ], *kbb[TILE_SIZEK];
@@ -811,6 +887,10 @@ __global__ void attention_backward_grad_qk_kernel(
       index = min(index, N - 1);
     kb[k_item_idx] = reinterpret_cast<vec_t*>(key[batch_idx][index].data());
     vb[k_item_idx] = reinterpret_cast<vec_t*>(value[batch_idx][index].data());
+    attn_b[k_item_idx] = attn_bias.data() == nullptr
+        ? scalar_t(0)
+        : attn_bias[batch_idx][0][index];
+    ;
   }
 
   for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
@@ -870,7 +950,9 @@ __global__ void attention_backward_grad_qk_kernel(
 #pragma unroll
     for (int q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
       attn_v[q_item_idx][k_item_idx] =
-          std::exp(attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx]) *
+          std::exp(
+              attn_v[q_item_idx][k_item_idx] - normalizer[q_item_idx] +
+              attn_b[k_item_idx]) *
           maskQ[q_item_idx] * maskK[k_item_idx];
     }
   }
@@ -942,8 +1024,11 @@ void launch_attention_backward(
     const at::Tensor& key,
     const at::Tensor& value,
     const at::Tensor& logsumexp,
-    at::Tensor& tmp_sum_i) {
+    at::Tensor& tmp_sum_i,
+    const at::Tensor& attn_bias) {
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+
+  auto attn_bias_packed = _packed_tensor_accessor_or_dummy<scalar_t>(attn_bias);
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -986,7 +1071,8 @@ void launch_attention_backward(
         key.packed_accessor<scalar_t, 3>(),
         value.packed_accessor<scalar_t, 3>(),
         tmp_sum_i.packed_accessor<scalar_t, 2>(),
-        logsumexp.packed_accessor<scalar_t, 2>());
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        attn_bias_packed);
   } else {
     attention_backward_grad_v_kernel<
         scalar_t,
@@ -1002,7 +1088,8 @@ void launch_attention_backward(
         key.packed_accessor<scalar_t, 3>(),
         value.packed_accessor<scalar_t, 3>(),
         tmp_sum_i.packed_accessor<scalar_t, 2>(),
-        logsumexp.packed_accessor<scalar_t, 2>());
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        attn_bias_packed);
   }
 
   if ((M % TILE_SIZEQ2 == 0) && (N % TILE_SIZEK2 == 0)) {
@@ -1021,7 +1108,8 @@ void launch_attention_backward(
         key.packed_accessor<scalar_t, 3>(),
         value.packed_accessor<scalar_t, 3>(),
         tmp_sum_i.packed_accessor<scalar_t, 2>(),
-        logsumexp.packed_accessor<scalar_t, 2>());
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        attn_bias_packed);
   } else {
     attention_backward_grad_qk_kernel<
         scalar_t,
@@ -1038,7 +1126,8 @@ void launch_attention_backward(
         key.packed_accessor<scalar_t, 3>(),
         value.packed_accessor<scalar_t, 3>(),
         tmp_sum_i.packed_accessor<scalar_t, 2>(),
-        logsumexp.packed_accessor<scalar_t, 2>());
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        attn_bias_packed);
   }
 }
 
@@ -1047,13 +1136,11 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
-    const at::Tensor& logsumexp
-    // const at::Tensor& mask
-) {
+    const at::Tensor& logsumexp,
+    const c10::optional<at::Tensor>& attn_bias_) {
   TORCH_CHECK(query.dim() == grad_out_.dim());
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
-  // TORCH_CHECK(query.dim() == mask.dim());
   TORCH_CHECK(query.dim() == 3);
 
   TORCH_CHECK(query.size(0) == grad_out_.size(0));
@@ -1068,6 +1155,16 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   TORCH_CHECK(
       query.size(2) ==
       value.size(2)); // TODO: drop this limitation in the future
+
+  at::Tensor attn_bias;
+  if (attn_bias_.has_value()) {
+    attn_bias = *attn_bias_;
+    TORCH_CHECK(query.dim() == attn_bias.dim());
+    TORCH_CHECK(query.size(0) == attn_bias.size(0));
+    TORCH_CHECK(query.size(1) == attn_bias.size(1));
+    TORCH_CHECK(key.size(1) == attn_bias.size(2));
+    TORCH_CHECK(attn_bias.stride(1) == 0);
+  }
 
   TORCH_CHECK(query.is_cuda(), "query must be a CUDA tensor");
   TORCH_CHECK(key.is_cuda(), "key must be a CUDA tensor");
@@ -1119,7 +1216,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
         key,
         value,
         logsumexp,
-        tmp_sum_i);
+        tmp_sum_i,
+        attn_bias);
   } else if ((K % 2) == 0) {
     launch_attention_backward<float, float2>(
         grad_q,
@@ -1130,7 +1228,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
         key,
         value,
         logsumexp,
-        tmp_sum_i);
+        tmp_sum_i,
+        attn_bias);
   } else {
     launch_attention_backward<float, float>(
         grad_q,
@@ -1141,7 +1240,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
         key,
         value,
         logsumexp,
-        tmp_sum_i);
+        tmp_sum_i,
+        attn_bias);
   }
 
   AT_CUDA_CHECK(cudaGetLastError());

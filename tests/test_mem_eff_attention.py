@@ -11,24 +11,34 @@ import xformers.ops
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
-def ref_attention(q, k, v):
+def ref_attention(q, k, v, attn_bias=None):
     q = q * (1 / q.shape[-1] ** 0.5)
-    return (q @ k.transpose(-2, -1)).softmax(-1) @ v
+    if attn_bias is None:
+        return (q @ k.transpose(-2, -1)).softmax(-1) @ v
+    else:
+        return (q @ k.transpose(-2, -1) + attn_bias).softmax(-1) @ v
 
 
+@pytest.mark.parametrize("use_attn_bias", [False, True])
 @pytest.mark.parametrize("k_len", [5, 6, 32])
 @pytest.mark.parametrize("batch_size", [1, 4])
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
 @pytest.mark.parametrize("q_len", [2, 3, 5])
 @pytest.mark.parametrize("device", _devices)
-def test_memory_efficient_attention(device, q_len, kv_len, batch_size, k_len):
+def test_memory_efficient_attention(
+    device, q_len, kv_len, batch_size, k_len, use_attn_bias
+):
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
     value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    attn_bias = None
+    if use_attn_bias:
+        attn_bias = torch.randn((batch_size, 1, kv_len), device=device) * scale
+        attn_bias = attn_bias.expand(batch_size, q_len, kv_len)
 
-    out = xformers.ops.memory_efficient_attention(query, key, value)
-    ref = ref_attention(query, key, value)
+    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias)
+    ref = ref_attention(query, key, value, attn_bias)
 
     assert torch.allclose(out, ref, atol=2e-4)
 
@@ -62,12 +72,13 @@ def test_logsumexp(device, q_len, kv_len, batch_size, k_len):
     key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
     value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
 
-    _, lse = torch.ops.xformers.efficient_attention(query, key, value, True)
+    _, lse = torch.ops.xformers.efficient_attention(query, key, value, True, None)
     ref_lse = ((query / k_len**0.5) @ key.transpose(-2, -1)).logsumexp(-1)
 
     assert torch.allclose(lse, ref_lse, atol=2e-4)
 
 
+@pytest.mark.parametrize("use_attn_bias", [False, True])
 @pytest.mark.parametrize("grad_out_contiguous", [False, True])
 @pytest.mark.parametrize("k_len", [5, 6, 32])
 @pytest.mark.parametrize("batch_size", [1, 4])
@@ -75,12 +86,17 @@ def test_logsumexp(device, q_len, kv_len, batch_size, k_len):
 @pytest.mark.parametrize("q_len", [2, 3, 5])
 @pytest.mark.parametrize("device", _devices)
 def test_memory_efficient_attention_backward(
-    device, q_len, kv_len, batch_size, k_len, grad_out_contiguous
+    device, q_len, kv_len, batch_size, k_len, grad_out_contiguous, use_attn_bias
 ):
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
     value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+
+    attn_bias = None
+    if use_attn_bias:
+        attn_bias = torch.randn((batch_size, 1, kv_len), device=device) * scale
+        attn_bias = attn_bias.expand(batch_size, q_len, kv_len)
 
     query.requires_grad_(True)
     key.requires_grad_(True)
@@ -90,7 +106,7 @@ def test_memory_efficient_attention_backward(
     if grad_out_contiguous is False:
         grad_out = torch.tensor([1.0], device=device)[None, None, :].expand_as(query)
 
-    out = xformers.ops.memory_efficient_attention(query, key, value)
+    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias)
     out.backward(grad_out)
 
     grad_q = query.grad
@@ -101,7 +117,7 @@ def test_memory_efficient_attention_backward(
     key.grad = None
     value.grad = None
 
-    ref = ref_attention(query, key, value)
+    ref = ref_attention(query, key, value, attn_bias)
     ref.backward(grad_out)
 
     # there is some extra precision loss in the CPU implementation due to an
