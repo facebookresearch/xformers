@@ -1,24 +1,27 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+
 import gc
 import math
 from collections import namedtuple
 from dataclasses import dataclass
-from typing import Any, Dict
 
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
 import triton
 from triton.ops.blocksparse import matmul as blocksparse_matmul
-from yaml import BlockSequenceStartToken
+from xformers.benchmarks.utils import pretty_barplot
+from xformers.components.attention.attention_patterns import axial_2d_pattern
+from xformers.components.attention.attention_patterns import causal_1d_pattern
+from xformers.components.attention.attention_patterns import global_token_pattern
+from xformers.components.attention.attention_patterns import local_1d_pattern
+from xformers.components.attention.attention_patterns import local_2d_pattern
 
-from xformers.components.attention.attention_patterns import (
-    axial_2d_pattern,
-    causal_1d_pattern,
-    global_token_pattern,
-    local_1d_pattern,
-    local_2d_pattern,
-)
-from xformers.components.attention.core import SparseCS, _matmul_with_mask
+from xformers.components.attention.core import SparseCS
+from xformers.components.attention.core import _matmul_with_mask
 
 device = "cuda"
 TestCase = namedtuple("TestCase", ["prepare_callable", "mask", "config", "name"])
@@ -26,63 +29,6 @@ TestCase = namedtuple("TestCase", ["prepare_callable", "mask", "config", "name"]
 ##############################################
 # Plotting utilities
 ##############################################
-
-
-def pretty_barplot(results, title, units: str, filename=None, dash_key=""):
-    """Graph out the contents of a dict.
-    Dash key means that if the result label has this key, then it will be displayed with a dash"""
-
-    if not filename:
-        filename = title + ".png"
-
-    # Sanitize the filename
-    filename = (
-        filename.replace(" ", "_").replace("/", "_").replace("-", "_").replace(":", "")
-    )
-
-    xlabels = list(results.keys())
-    # Gather all the results in "collumns"
-    workloads: Dict[str, Any] = {k: [] for v in results.values() for k in v.keys()}
-    for v in results.values():
-        for k in v.keys():
-            workloads[k].append(float(v[k]))
-
-    options = list(workloads.keys())
-    group_len = len(options)
-    for key in workloads.keys():
-        num_groups = len(workloads[key])
-        break
-    group_width = group_len + 1
-
-    # Make sure that the plot is big enough
-    f = plt.figure()
-    f.set_figwidth(6)
-    f.set_figheight(6)
-
-    for idx in range(group_len):
-        option = options[idx]
-        values = workloads[option]
-        xloc = np.arange(1 + idx, group_width * num_groups, group_width)
-        plt.bar(xloc, values, width=1, edgecolor="black")
-
-    plt.title(title)
-    plt.legend(list(workloads.keys()), loc="upper right")
-    plt.ylabel(units)
-
-    ax = plt.gca()
-    xticks_loc = np.arange(
-        1 + (group_len - 1) / 2.0, group_width * num_groups, group_width
-    )
-    ax.set_xticks(xticks_loc, xlabels)
-    plt.xticks(rotation=45)
-
-    plt.setp(ax.xaxis.get_majorticklabels(), ha="right")
-    ax.set_axisbelow(True)
-    ax.yaxis.grid(color="gray", linestyle="dashed")
-    ax.xaxis.grid(color="gray", linestyle="dashed")
-
-    plt.savefig(filename, bbox_inches="tight")
-    plt.close(f)
 
 
 def plot_mask(mask, config, filename):
@@ -169,8 +115,14 @@ class Configuration(object):
             setattr(self, key, value)
 
     def __str__(self):
-        return f"bs={self.batch_size},h={self.num_heads},k={self.hidden_size},seq={self.seq_length},bl={self.block_size}"
-        # return "-".join([str(getattr(self, x.name)) for x in fields(self)])
+        desc = [
+            f"bs={self.batch_size}",
+            f"h={self.num_heads}",
+            f"k={self.hidden_size}",
+            f"seq={self.seq_length}",
+            f"bl={self.block_size}",
+        ]
+        return ",".join(desc)
 
 
 class AttentionMask(object):
@@ -295,11 +247,9 @@ class BigBirdAttentionMask(AttentionMask):
 
     def gen_mask(self, keep_blocked=True):
         seq_length = self.config.seq_length
-        if keep_blocked == True:
+        if keep_blocked:
             seq_length = self.config.blocked_seq_length
-        assert (
-            keep_blocked == True
-        ), "Not implemented, call to_dense later to get full tensor"
+        assert keep_blocked, "Not implemented, call to_dense later to get full tensor"
 
         if self.mask_per_head:
             head_masks = []
@@ -403,10 +353,11 @@ class LocalAttentionMask(AttentionMask):
 
 
 class Experiment(object):
-    def __init__(self, mode, dtype, do_accuracy_check):
+    def __init__(self, mode, dtype, do_accuracy_check, profile_sputnik):
         self.mode = mode
         self.dtype = dtype
         self.do_accuracy_check = do_accuracy_check
+        self.profile_sputnik = profile_sputnik
 
     def reset_results(self):
         self.results = {}
@@ -424,7 +375,7 @@ class Experiment(object):
         fn()
         fn()
         torch.cuda.synchronize()
-        return torch.cuda.max_memory_allocated() // 2 ** 20
+        return torch.cuda.max_memory_allocated() // 2**20
 
     def gen_config(self):
         raise NotImplementedError("Not setup")
@@ -434,6 +385,12 @@ class Experiment(object):
 
     def run(self):
         raise NotImplementedError("Not setup")
+
+    def add_kv(self, d, d_key, d_value, testcase):
+        d_value = max(0, d_value)
+        if d_key not in d:
+            d[d_key] = {}
+        d[d_key][testcase.name] = d_value
 
     def bench_all(
         self, a, b, tests, mask_config, sparsity, baseline_name, op_flops, dict_key
@@ -451,33 +408,28 @@ class Experiment(object):
                 ms = triton.testing.do_bench(fn)[0]
                 flops = op_flops / ms * 1e3  # TFlop per second
                 mem = self.do_mem(fn)
-            except:
+            except Exception:
                 # raise
                 ms = -1
                 flops = -1
                 mem = -1
 
-            def add_kv(d, d_key, d_value):
-                d_value = max(0, d_value)
-                if d_key not in d:
-                    d[d_key] = {}
-                d[d_key][testcase.name] = d_value
-
             # Write into results
             # dict_key = f"sp={sparsity}%,{mask_config}"
-            add_kv(self.results["time"], dict_key, ms)
-            add_kv(self.results["flops"], dict_key, flops)
-            add_kv(self.results["memory"], dict_key, mem)
+            self.add_kv(self.results["time"], dict_key, ms, testcase)
+            self.add_kv(self.results["flops"], dict_key, flops, testcase)
+            self.add_kv(self.results["memory"], dict_key, mem, testcase)
 
             speedup = self.results["time"][dict_key][baseline_name] / ms
             memory_savings = self.results["memory"][dict_key][baseline_name] / mem
-            add_kv(self.results["speedup"], dict_key, speedup)
-            add_kv(self.results["flops"], dict_key, flops)
-            add_kv(self.results["memory_savings"], dict_key, memory_savings)
-
-            print(
-                f"{testcase.name} --> {mask_config}, sparsity={sparsity}, ops={op_flops}, time={ms}, tflops={flops}, mem={mem}"
+            self.add_kv(self.results["speedup"], dict_key, speedup, testcase)
+            self.add_kv(self.results["flops"], dict_key, flops, testcase)
+            self.add_kv(
+                self.results["memory_savings"], dict_key, memory_savings, testcase
             )
+
+            desc = f"sparsity={sparsity}, ops={op_flops}, time={ms}, tflops={flops}, mem={mem}"
+            print(f"{testcase.name} --> {mask_config}, {desc}")
 
     def get_inputs(self, config, device="cuda"):
         # if mode = sddmm, a, b = query, key
@@ -664,8 +616,10 @@ class DifferentPatternExperiment(Experiment):
     2) BigBird Mask vs RandomMask - Both have same sparsity.
     """
 
-    def __init__(self, mode, dtype, do_accuracy_check):
-        super(DifferentPatternExperiment, self).__init__(mode, dtype, do_accuracy_check)
+    def __init__(self, mode, dtype, do_accuracy_check, profile_sputnik=False):
+        super(DifferentPatternExperiment, self).__init__(
+            mode, dtype, do_accuracy_check, profile_sputnik
+        )
 
     def gen_config(self):
         batch_sizes = [32]
@@ -687,10 +641,18 @@ class DifferentPatternExperiment(Experiment):
                             }
                             yield entry
 
-    def plot(self, sparsity, pattern_name):
+    def plot(self, sparsity, config, pattern_name):
+        desc = [
+            f"bs={config.batch_size}",
+            f"nheads={config.num_heads}",
+            f"block={config.block_size}",
+            f"dtype={self.dtype}",
+        ]
+        title_suffix = ",".join(desc)
         pretty_barplot(
             self.results["speedup"],
-            title=f"Same Sparsity ({sparsity}%) - speedup - {self.mode} and {self.dtype}",
+            title=f"{self.mode} - Pattern experiment ({sparsity}%) - speedup\n"
+            + title_suffix,
             filename=f"same_sparsity_{self.mode}_{self.dtype}_{pattern_name}_time.svg",
             dash_key="pytorch",
             units="Speedup normalized to torch_matmul",
@@ -698,7 +660,8 @@ class DifferentPatternExperiment(Experiment):
 
         pretty_barplot(
             self.results["flops"],
-            title=f"Same Sparsity ({sparsity}%) - throughput - {self.mode} and {self.dtype}",
+            title=f"{self.mode} - Pattern experiment ({sparsity}%) - throughput\n"
+            + title_suffix,
             filename=f"same_sparsity_{self.mode}_{self.dtype}_{pattern_name}_flops.svg",
             dash_key="pytorch",
             units="TFlops/s",
@@ -706,7 +669,8 @@ class DifferentPatternExperiment(Experiment):
 
         pretty_barplot(
             self.results["memory_savings"],
-            title=f"Same Sparsity ({sparsity}%) - memory savings - {self.mode} and {self.dtype}",
+            title=f"{self.mode} - Pattern experiment ({sparsity}%) - memory savings\n"
+            + title_suffix,
             filename=f"same_sparsity_{self.mode}_{self.dtype}_{pattern_name}_memory.svg",
             dash_key="pytorch",
             units="Memory savings normalized to torch_matmul",
@@ -750,7 +714,7 @@ class DifferentPatternExperiment(Experiment):
                         self.triton_callable,
                         random_mask,
                         random_config,
-                        f"triton-random",
+                        "triton-random",
                     )
                 )
                 tests.append(
@@ -761,13 +725,13 @@ class DifferentPatternExperiment(Experiment):
                         f"triton-{pattern_name}",
                     )
                 )
-                if self.mode == "sddmm":
+                if self.profile_sputnik and self.mode == "sddmm":
                     tests.append(
                         TestCase(
                             self.sputnik_callable,
                             random_mask,
                             random_config,
-                            f"sputnik-random",
+                            "sputnik-random",
                         )
                     )
                     tests.append(
@@ -779,6 +743,7 @@ class DifferentPatternExperiment(Experiment):
                         )
                     )
 
+                dict_key = f"hidden={random_config.hidden_size},seq_len={random_config.seq_length}"
                 self.bench_all(
                     a,
                     b,
@@ -787,10 +752,21 @@ class DifferentPatternExperiment(Experiment):
                     sparsity,
                     baseline_name,
                     self.get_op_flops(random_mask, random_config),
-                    f"{random_config}",
+                    dict_key,
                 )
 
-                self.plot(sparsity, pattern_name)
+                ideal_testcase = TestCase(None, None, None, "Ideal")
+                ideal_speedup = round(100 / (100 - sparsity), 1)
+                self.add_kv(
+                    self.results["speedup"], dict_key, ideal_speedup, ideal_testcase
+                )
+                self.add_kv(
+                    self.results["memory_savings"],
+                    dict_key,
+                    ideal_speedup,
+                    ideal_testcase,
+                )
+                self.plot(sparsity, random_config, pattern_name)
 
 
 class VarySparsityExperiment(Experiment):
@@ -798,8 +774,10 @@ class VarySparsityExperiment(Experiment):
     In this experiment, we check how sparsity ration affects the performance.
     """
 
-    def __init__(self, mode, dtype, do_accuracy_check):
-        super(VarySparsityExperiment, self).__init__(mode, dtype, do_accuracy_check)
+    def __init__(self, mode, dtype, do_accuracy_check, profile_sputnik=False):
+        super(VarySparsityExperiment, self).__init__(
+            mode, dtype, do_accuracy_check, profile_sputnik
+        )
 
     def gen_config(self):
         batch_sizes = [32]
@@ -821,10 +799,18 @@ class VarySparsityExperiment(Experiment):
                             }
                             yield entry
 
-    def plot(self, sparsity, pattern_name):
+    def plot(self, sparsity, config, pattern_name):
+        desc = [
+            f"bs={config.batch_size}",
+            f"nheads={config.num_heads}",
+            f"block={config.block_size}",
+            f"dtype={self.dtype}",
+            f"seq_len={config.seq_length}",
+        ]
+        title_suffix = ",".join(desc)
         pretty_barplot(
             self.results["speedup"],
-            title=f"Varying Sparsity - speedup - {self.mode} and {self.dtype}",
+            title=f"{self.mode} - SparsityRatio experiment speedup\n" + title_suffix,
             filename=f"vary_sparsity_{self.mode}_{self.dtype}_{pattern_name}_time.svg",
             dash_key="pytorch",
             units="Speedup normalized to torch_matmul",
@@ -832,7 +818,7 @@ class VarySparsityExperiment(Experiment):
 
         pretty_barplot(
             self.results["flops"],
-            title=f"Varying Sparsity - throughput - {self.mode} and {self.dtype}",
+            title=f"{self.mode} - SparsityRatio experiment throughput\n" + title_suffix,
             filename=f"vary_sparsity_{self.mode}_{self.dtype}_{pattern_name}_flops.svg",
             dash_key="pytorch",
             units="TFlops/s",
@@ -840,7 +826,8 @@ class VarySparsityExperiment(Experiment):
 
         pretty_barplot(
             self.results["memory_savings"],
-            title=f"Varying Sparsity - memory savings - {self.mode} and {self.dtype}",
+            title=f"{self.mode} - SparsityRatio experiment memory savings\n"
+            + title_suffix,
             filename=f"vary_sparsity_{self.mode}_{self.dtype}_{pattern_name}_memory.svg",
             dash_key="pytorch",
             units="Memory savings normalized to torch_matmul",
@@ -848,6 +835,7 @@ class VarySparsityExperiment(Experiment):
 
     def run(self):
         self.reset_results()
+        random_config = None
         for config in self.gen_config():
             for x in range(10, 100, 10):
                 mask_prob = x / 100.0
@@ -880,19 +868,19 @@ class VarySparsityExperiment(Experiment):
                         self.triton_callable,
                         random_mask,
                         random_config,
-                        f"triton-random",
+                        "triton-random",
                     )
                 )
-                if self.mode == "sddmm":
+                if self.profile_sputnik and self.mode == "sddmm":
                     tests.append(
                         TestCase(
                             self.sputnik_callable,
                             random_mask,
                             random_config,
-                            f"sputnik-random",
+                            "sputnik-random",
                         )
                     )
-                dict_key = f"sp={mask_prob},{random_config}"
+                dict_key = f"sp={mask_prob},hidden={random_config.hidden_size}"
                 self.bench_all(
                     a,
                     b,
@@ -903,7 +891,19 @@ class VarySparsityExperiment(Experiment):
                     self.get_op_flops(random_mask, random_config),
                     dict_key,
                 )
-        self.plot(None, "random")
+
+                ideal_testcase = TestCase(None, None, None, "Ideal")
+                ideal_speedup = round(100 / (100 - mask_prob * 100), 1)
+                self.add_kv(
+                    self.results["speedup"], dict_key, ideal_speedup, ideal_testcase
+                )
+                self.add_kv(
+                    self.results["memory_savings"],
+                    dict_key,
+                    ideal_speedup,
+                    ideal_testcase,
+                )
+        self.plot(None, random_config, "random")
 
 
 class BlockSizeExperiment(Experiment):
@@ -914,8 +914,10 @@ class BlockSizeExperiment(Experiment):
     computation (the effective sparsity starts decreasing).
     """
 
-    def __init__(self, mode, dtype, do_accuracy_check):
-        super(BlockSizeExperiment, self).__init__(mode, dtype, do_accuracy_check)
+    def __init__(self, mode, dtype, do_accuracy_check, profile_sputnik=False):
+        super(BlockSizeExperiment, self).__init__(
+            mode, dtype, do_accuracy_check, profile_sputnik
+        )
 
     def gen_config(self):
         batch_sizes = [32]
@@ -937,10 +939,11 @@ class BlockSizeExperiment(Experiment):
                             }
                             yield entry
 
-    def plot(self, sparsity, pattern_name):
+    def plot(self, sparsity, config, pattern_name):
         pretty_barplot(
             self.results["speedup"],
-            title=f"Varying Block size - speedup - {self.mode} and {self.dtype}",
+            title=f"{self.mode} - BlockSize experiment speedup\n"
+            f"bs={config.batch_size}, nheads={config.num_heads}, seq_len={config.seq_length}, dtype={self.dtype}",
             filename=f"vary_block_size_{self.mode}_{self.dtype}_{pattern_name}_time.svg",
             dash_key="pytorch",
             units="Speedup normalized to torch matmul",
@@ -948,7 +951,8 @@ class BlockSizeExperiment(Experiment):
 
         pretty_barplot(
             self.results["flops"],
-            title=f"Varying Block size - throughput - {self.mode} and {self.dtype}",
+            title=f"{self.mode} - BlockSize experiment throughput\n"
+            f"bs={config.batch_size}, nheads={config.num_heads}, seq_len={config.seq_length}, dtype={self.dtype}",
             filename=f"vary_block_size_{self.mode}_{self.dtype}_{pattern_name}_flops.svg",
             dash_key="pytorch",
             units="TFlops/s",
@@ -956,7 +960,8 @@ class BlockSizeExperiment(Experiment):
 
         pretty_barplot(
             self.results["memory_savings"],
-            title=f"Varying Block size - memory_savings - {self.mode} and {self.dtype}",
+            title=f"{self.mode} - BlockSize experiment memory savings\n"
+            f"bs={config.batch_size}, nheads={config.num_heads}, seq_len={config.seq_length}, dtype={self.dtype}",
             filename=f"vary_block_size_{self.mode}_{self.dtype}_{pattern_name}_memory.svg",
             dash_key="pytorch",
             units="Memory savings normalized to torch matmul",
@@ -981,6 +986,7 @@ class BlockSizeExperiment(Experiment):
 
     def run(self):
         self.reset_results()
+        lt_config = None
         for config in self.gen_config():
             lt_mask, lt_config, lt_name = get_mask(
                 LowerTriangularAttentionMask,
@@ -1002,15 +1008,15 @@ class BlockSizeExperiment(Experiment):
                 )
             )
             tests.append(
-                TestCase(self.triton_callable, lt_mask, lt_config, f"triton-random")
+                TestCase(self.triton_callable, lt_mask, lt_config, "triton-random")
             )
-            if self.mode == "sddmm":
+            if self.profile_sputnik and self.mode == "sddmm":
                 tests.append(
                     TestCase(
-                        self.sputnik_callable, lt_mask, lt_config, f"sputnik-random"
+                        self.sputnik_callable, lt_mask, lt_config, "sputnik-random"
                     )
                 )
-            dict_key = f"sp={sparsity}%,{lt_config}"
+            dict_key = f"hidden={lt_config.hidden_size}, block={lt_config.block_size}"
             self.bench_all(
                 a,
                 b,
@@ -1021,7 +1027,23 @@ class BlockSizeExperiment(Experiment):
                 self.get_op_flops(lt_mask, lt_config),
                 dict_key,
             )
-        self.plot(None, lt_name)
+
+            ideal_testcase = TestCase(None, None, None, "Ideal")
+            seq_len = lt_config.seq_length
+            total_elems = seq_len * seq_len
+            nnz = seq_len * (seq_len + 1) / 2
+            ideal_speedup = (1.0 * total_elems) / nnz
+
+            self.add_kv(
+                self.results["speedup"], dict_key, ideal_speedup, ideal_testcase
+            )
+            self.add_kv(
+                self.results["memory_savings"],
+                dict_key,
+                ideal_speedup,
+                ideal_testcase,
+            )
+        self.plot(None, lt_config, lt_name)
 
 
 if __name__ == "__main__":
