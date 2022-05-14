@@ -214,6 +214,7 @@ run_doc_build: &run_doc_build
       command: |
         source $BASH_ENV
         cd docs
+        python3 -m ensurepip
         python3 -m pip install -r requirements.txt
         make help
         make singlehtml | tee make.out
