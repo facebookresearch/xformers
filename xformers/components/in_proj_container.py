@@ -126,9 +126,21 @@ class InProjContainer(nn.Module):
     def _reset_parameters(self):
         if self.in_proj_weight is not None:
             # 1/sqrt(2) init is empirically beneficial in that case
-            self.in_proj_weight = self._init_weights(
-                self.q_p_params, self.in_proj_weight, gain=1.0 / math.sqrt(2)
-            )
+            # Init the buffer piece by piece, to respect the per-query/key/value dimensions
+
+            with torch.no_grad():
+                begin = 0
+                for end in [
+                    self.out_features,
+                    2 * self.out_features,
+                    3 * self.out_features,
+                ]:
+                    self.in_proj_weight[begin:end, :] = self._init_weights(
+                        self.q_p_params,
+                        self.in_proj_weight[begin:end, :],
+                        gain=1.0 / math.sqrt(2),
+                    )
+                    begin = end
 
         else:
             self.q_proj_weight = self._init_weights(
