@@ -8,32 +8,40 @@ from typing import Optional
 import torch
 import triton
 import triton.language as tl
+from triton.ops.matmul import get_configs_io_bound
+from triton.ops.matmul_perf_model import early_config_prune, estimate_matmul_time
 
 # CREDITS: Initially inspired by the Triton tutorial on matrix multiplications
 
 
 # fmt: off
+@triton.heuristics({
+    'EVEN_K': lambda args: args['K'] % (args['BLOCK_K'] * args['SPLIT_K']) == 0,
+})
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_M": 16, "BLOCK_N": 16}, num_stages=5, num_warps=1),
-        triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_stages=5, num_warps=1),
-        triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_stages=5, num_warps=2),
-        triton.Config({"BLOCK_M": 32, "BLOCK_N": 64}, num_stages=5, num_warps=2),
-        triton.Config({"BLOCK_M": 128, "BLOCK_N": 64}, num_stages=4, num_warps=4),
-        triton.Config({"BLOCK_M": 64, "BLOCK_N": 128}, num_stages=4, num_warps=4),
-        triton.Config({"BLOCK_M": 128, "BLOCK_N": 128}, num_stages=3, num_warps=4),
-        # requires a GPU with enough shared memory
-        # triton.Config({"BLOCK_M": 32, "BLOCK_N": 256}, num_stages=3, num_warps=4),
-        # triton.Config({"BLOCK_M": 256, "BLOCK_N": 32}, num_stages=3, num_warps=4),
-        # triton.Config({"BLOCK_M": 64, "BLOCK_N": 256}, num_stages=3, num_warps=8),
-        # triton.Config({"BLOCK_M": 256, "BLOCK_N": 64}, num_stages=3, num_warps=8),
-    ],
-    key=["M", "N", "K"],
+        # basic configs for compute-bound matmuls
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 256, 'BLOCK_K': 32, 'SPLIT_K': 1}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 128, 'BLOCK_K': 32, 'SPLIT_K': 1}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 64, 'BLOCK_K': 32, 'SPLIT_K': 1}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 256, 'BLOCK_K': 32, 'SPLIT_K': 1}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 128, 'BLOCK_K': 32, 'SPLIT_K': 1}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 64, 'BLOCK_K': 32, 'SPLIT_K': 1}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 128, 'BLOCK_K': 32, 'SPLIT_K': 1}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 32, 'BLOCK_K': 32, 'SPLIT_K': 1}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 32, 'BLOCK_K': 32, 'SPLIT_K': 1}, num_stages=5, num_warps=2),
+    ] + get_configs_io_bound(),
+    key=['M', 'N', 'K'],
+    prune_configs_by={
+        'early_config_prune': early_config_prune,
+        'perf_model': estimate_matmul_time,
+        'top_k': 10
+    },
 )
 @triton.jit
 def kernel_fma(
     # Pointers to matrices
-    OUT, ACT_INPUTS, INPUT, WEIGHT, bias,
+    C, ACT_INPUTS, A, B, bias,
     # Matrix dimensions
     M, N, K,
     # The stride variables represent how much to increase the ptr by when moving by 1
@@ -47,19 +55,21 @@ def kernel_fma(
     BIAS: tl.constexpr,
     SAVE_ACT_INPUTS: tl.constexpr,
     ACTIVATION: tl.constexpr,
+    EVEN_K: tl.constexpr,
+    SPLIT_K: tl.constexpr  # compatibility purposes only, not used
 ):
     # fmt: on
 
     """
-    Kernel for computing Out = activation(A x W + C)
+    Kernel for computing C = activation(A x B + bias)
 
-    - Input has shape (M, K)
-    - Weight has shape (K, N)
+    - A has shape (M, K)
+    - B has shape (K, N)
     - Bias has shape (N,)
-    - Output has shape (M, N)
+    - C has shape (M, N)
     - ActInputs (optional) has shape (M, N)
 
-    'ActInputs' optionally saves the A x W + C intermediate for backward computations
+    'ActInputs' optionally saves the A x B + bias intermediate for backward computations
 
     This kernel will consolidate over K
     """
@@ -93,8 +103,8 @@ def kernel_fma(
     rk = tl.arange(0, BLOCK_K)
 
     # the memory addresses of elements can follow numpy broadcasting
-    input_ptrs = INPUT + rm[:, None] * stride_im
-    weight_ptrs = WEIGHT + rn[None, :] * stride_wn
+    input_ptrs = A + rm[:, None] * stride_im
+    weight_ptrs = B + rn[None, :] * stride_wn
 
     # initialize and iteratively update accumulator
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
@@ -108,10 +118,17 @@ def kernel_fma(
     mask_rn = rn < N
     mask_rm = rm < M
 
+    rk = tl.arange(0, BLOCK_K)
+
     for i in range(0, K, BLOCK_K):
-        rk = tl.arange(0, BLOCK_K) + i
-        a = tl.load(input_ptrs + rk[None, :], mask=((rk[None, :] < K) & mask_rm[:, None]), other=0.0)
-        w = tl.load(weight_ptrs + rk[:, None], mask=((rk[:, None] < K) & mask_rn[None, :]), other=0.0)
+        rks = rk + i
+
+        if EVEN_K:
+            a = tl.load(input_ptrs + rks[None, :])
+            w = tl.load(weight_ptrs + rks[:, None])
+        else:
+            a = tl.load(input_ptrs + rks[None, :], mask=((rks[None, :] < K) & mask_rm[:, None]), other=0.0)
+            w = tl.load(weight_ptrs + rks[:, None], mask=((rks[:, None] < K) & mask_rn[None, :]), other=0.0)
 
         acc += tl.dot(a, w)
 
@@ -125,7 +142,7 @@ def kernel_fma(
         acc = ACTIVATION(acc)
 
     # write back result
-    out_ptrs = OUT + rm[:, None] * stride_om + rn[None, :]
+    out_ptrs = C + rm[:, None] * stride_om + rn[None, :]
     tl.store(out_ptrs, acc, mask=mask_rm[:, None] & mask_rn[None, :])
 
 
@@ -175,7 +192,6 @@ def fused_matmul(
         ACTIVATION=activation,                      # optional fused activation
         BIAS=bias is not None,                      # optional fused bias
         GROUP_M=8,                                  # speed optimization: group the programs
-        BLOCK_K=32,
         SAVE_ACT_INPUTS=save_act_inputs
     )
     # fmt: on
