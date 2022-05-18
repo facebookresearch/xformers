@@ -164,6 +164,7 @@ def fused_matmul(
 
     # 1D launch kernel where each block gets its own program.
     grid = lambda META: (triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),) # noqa
+    BLOCK_K = 32 if K < 1024 else 64
 
     # fmt: off
     kernel_fma[grid](
@@ -175,7 +176,7 @@ def fused_matmul(
         ACTIVATION=activation,                      # optional fused activation
         BIAS=bias is not None,                      # optional fused bias
         GROUP_M=8,                                  # speed optimization: group the programs
-        BLOCK_K=32,
+        BLOCK_K=BLOCK_K,
         SAVE_ACT_INPUTS=save_act_inputs
     )
     # fmt: on
