@@ -135,8 +135,8 @@ def fused_matmul_backward(
         grad_out_ = grad_act
 
     # The following ops can also be handled by triton
-    grad_in = triton.ops.matmul(grad_out_, weight)
-    grad_weight = triton.ops.matmul(grad_out_.transpose(1, 0), inputs_) if trainable_weight else None
+    grad_in = grad_out_ @ weight
+    grad_weight = grad_out_.transpose(1, 0) @ inputs_ if trainable_weight else None
     grad_bias = sum_2d_dim_0(grad_out_) if trainable_bias else None
 
     return grad_in.reshape_as(inputs), grad_weight, grad_bias
