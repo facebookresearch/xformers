@@ -14,14 +14,19 @@ from torch.utils import benchmark
 import xformers.ops
 
 
-def ref_attention(q, k, v, attn_bias=None):
+def ref_attention(q, k, v, attn_bias=None, p=0.0):
     q = q * (1.0 / q.shape[-1] ** 0.5)
+    attn = q @ k.transpose(-2, -1)
     if attn_bias is None:
-        return (q @ k.transpose(-2, -1)).softmax(-1) @ v
+        attn = q @ k.transpose(-2, -1)
     else:
         # equivalent to (q @ k.transpose(-2, -1) + m).softmax(-1) @ v
         # but faster, and is what is used in PyTorch now
-        return torch.baddbmm(attn_bias, q, k.transpose(-2, -1)).softmax(-1) @ v
+        attn = torch.baddbmm(attn_bias, q, k.transpose(-2, -1))
+    attn = attn.softmax(-1)
+    if p > 0:
+        attn = torch.nn.functional.dropout(attn, p=p)
+    return attn @ v
 
 
 min_run_time = 2
@@ -31,6 +36,8 @@ NUM_THREADS = [1] if device.type == "cuda" else [1, 40]
 SHAPES = list(
     itertools.product([1, 8, 32, 256], [127, 128, 512, 513, 1023, 1024], [16, 32])
 )
+
+p = 0.0
 
 results = []
 mem_use: Dict[str, Dict[str, float]] = dict(optimized={}, vanilla={})
@@ -59,15 +66,17 @@ def benchmark_forward():
 
                     rr = ref_attention(q, q, q, attn_bias)
                     assert (r - rr).abs().max() < 1e-5
+                    del r, rr
 
                 torch.cuda.reset_peak_memory_stats()
                 torch.cuda.synchronize()
                 results.append(
                     benchmark.Timer(
-                        stmt="fn(q, q, q, attn_bias)",
+                        stmt="fn(q, q, q, attn_bias, p)",
                         globals={
                             "q": q,
                             "attn_bias": attn_bias,
+                            "p": p,
                             "fn": xformers.ops.memory_efficient_attention,
                         },
                         label=f"attention (use_attn_bias={use_attn_bias})",
@@ -87,10 +96,11 @@ def benchmark_forward():
                 torch.cuda.synchronize()
                 results.append(
                     benchmark.Timer(
-                        stmt="fn(q, q, q, attn_bias)",
+                        stmt="fn(q, q, q, attn_bias, p)",
                         globals={
                             "q": q,
                             "attn_bias": attn_bias,
+                            "p": p,
                             "fn": ref_attention,
                         },
                         label=f"attention (use_attn_bias={use_attn_bias})",
@@ -105,9 +115,6 @@ def benchmark_forward():
                 mem_use["vanilla"][sub_label] = memory
                 memory_str = f"Memory used: {memory} MB"
                 print("Vanilla", memory_str)
-
-    compare = benchmark.Compare(results)
-    compare.print()
 
     pprint.pprint(mem_use)
 
@@ -141,8 +148,10 @@ def benchmark_backward():
                     assert (
                         grad - q.grad
                     ).abs().max() < 1e-5, f"{(grad - q.grad).abs().max()}"
+                    q.grad = None
+                    del r, rr, grad
 
-                out = xformers.ops.memory_efficient_attention(q, q, q, attn_bias)
+                out = xformers.ops.memory_efficient_attention(q, q, q, attn_bias, p)
                 grad = torch.ones_like(q)
 
                 torch.cuda.reset_peak_memory_stats()
@@ -167,7 +176,7 @@ def benchmark_backward():
 
                 print("Optimized", memory_str)
 
-                out = ref_attention(q, q, q, attn_bias)
+                out = ref_attention(q, q, q, attn_bias, p)
                 torch.cuda.reset_peak_memory_stats()
                 torch.cuda.synchronize()
                 results.append(
@@ -190,11 +199,11 @@ def benchmark_backward():
                 memory_str = f"Memory used: {memory} MB"
                 print("Vanilla", memory_str)
 
-    compare = benchmark.Compare(results)
-    compare.print()
-
     pprint.pprint(mem_use)
 
 
 benchmark_forward()
 benchmark_backward()
+
+compare = benchmark.Compare(results)
+compare.print()

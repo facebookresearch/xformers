@@ -115,12 +115,13 @@ void attention_kernel(
   });
 }
 
-std::tuple<at::Tensor, at::Tensor> attention(
+std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
     bool compute_logsumexp,
-    const c10::optional<at::Tensor>& attn_bias_) {
+    const c10::optional<at::Tensor>& attn_bias_,
+    double p) {
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
   TORCH_CHECK(query.dim() == 3);
@@ -155,6 +156,8 @@ std::tuple<at::Tensor, at::Tensor> attention(
   TORCH_CHECK(key.is_contiguous());
   TORCH_CHECK(value.is_contiguous());
 
+  TORCH_CHECK(p == 0, "CPU implementation does not support dropout");
+
   int64_t B = query.size(0);
   int64_t M = query.size(1);
   int64_t K = query.size(2);
@@ -177,7 +180,7 @@ std::tuple<at::Tensor, at::Tensor> attention(
         _tensor_accessor_or_dummy<scalar_t>(attn_bias, zeros));
   });
 
-  return std::make_tuple(res, logsumexp);
+  return std::make_tuple(res, logsumexp, 1, 1);
 }
 
 template <typename scalar_t>
@@ -268,7 +271,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
     const at::Tensor& key,
     const at::Tensor& value,
     const at::Tensor& logsumexp,
-    const c10::optional<at::Tensor>& attn_bias_) {
+    const c10::optional<at::Tensor>& attn_bias_,
+    double p,
+    int64_t rng_seed,
+    int64_t rng_offset) {
   TORCH_CHECK(query.dim() == grad_out.dim());
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
@@ -306,6 +312,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   TORCH_CHECK(!key.is_sparse(), "key must be a dense tensor");
   TORCH_CHECK(!value.is_sparse(), "value must be a dense tensor");
   TORCH_CHECK(!grad_out.is_sparse(), "grad_out must be a dense tensor");
+
+  TORCH_CHECK(p == 0, "CPU implementation does not support dropout");
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);

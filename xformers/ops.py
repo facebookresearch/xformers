@@ -33,20 +33,26 @@ def masked_matmul(a, b, mask=None):
 
 class _MemoryEfficientAttentionOp(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, query, key, value, attn_bias):
-        out, lse = torch.ops.xformers.efficient_attention(
-            query, key, value, True, attn_bias
+    def forward(ctx, query, key, value, attn_bias, p):
+        out, lse, rng_seed, rng_offset = torch.ops.xformers.efficient_attention(
+            query, key, value, True, attn_bias, p
         )
         ctx.save_for_backward(query, key, value, lse, attn_bias)
+        ctx.p = p
+        ctx.rng_seed = rng_seed
+        ctx.rng_offset = rng_offset
         return out
 
     @staticmethod
     def backward(ctx, grad):
         query, key, value, lse, attn_bias = ctx.saved_tensors
+        p = ctx.p
+        rng_seed = ctx.rng_seed
+        rng_offset = ctx.rng_offset
         grad_q, grad_k, grad_v = torch.ops.xformers.efficient_attention_backward(
-            grad, query, key, value, lse, attn_bias
+            grad, query, key, value, lse, attn_bias, p, rng_seed, rng_offset
         )
-        return grad_q, grad_k, grad_v, None
+        return grad_q, grad_k, grad_v, None, None
 
 
 def memory_efficient_attention(
@@ -54,6 +60,7 @@ def memory_efficient_attention(
     key: torch.Tensor,
     value: torch.Tensor,
     attn_bias: Optional[torch.Tensor] = None,
+    p: float = 0.0,
 ):
     """
     Implements the memory-efficient attention mechanism following
@@ -63,6 +70,6 @@ def memory_efficient_attention(
     # fast-path that doesn't require computing the logsumexp for backward computation
     if all(x.requires_grad is False for x in [query, key, value]):
         return torch.ops.xformers.efficient_attention(
-            query, key, value, False, attn_bias
+            query, key, value, False, attn_bias, p
         )[0]
-    return _MemoryEfficientAttentionOp.apply(query, key, value, attn_bias)
+    return _MemoryEfficientAttentionOp.apply(query, key, value, attn_bias, p)

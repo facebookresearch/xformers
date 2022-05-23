@@ -5,18 +5,23 @@
 
 import pytest
 import torch
+from scipy.stats import binom_test
 
 import xformers.ops
 
+cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
-def ref_attention(q, k, v, attn_bias=None):
+def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     q = q * (1 / q.shape[-1] ** 0.5)
-    if attn_bias is None:
-        return (q @ k.transpose(-2, -1)).softmax(-1) @ v
-    else:
-        return (q @ k.transpose(-2, -1) + attn_bias).softmax(-1) @ v
+    attn = q @ k.transpose(-2, -1)
+    if attn_bias is not None:
+        attn = attn + attn_bias
+    attn = attn.softmax(-1)
+    if drop_mask is not None:
+        attn = attn * (drop_mask / (1 - p))
+    return attn @ v
 
 
 @pytest.mark.parametrize("use_attn_bias", [False, True])
@@ -72,7 +77,9 @@ def test_logsumexp(device, q_len, kv_len, batch_size, k_len):
     key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
     value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
 
-    _, lse = torch.ops.xformers.efficient_attention(query, key, value, True, None)
+    _, lse, _, _ = torch.ops.xformers.efficient_attention(
+        query, key, value, True, None, 0.0
+    )
     ref_lse = ((query / k_len**0.5) @ key.transpose(-2, -1)).logsumexp(-1)
 
     assert torch.allclose(lse, ref_lse, atol=2e-4)
@@ -118,6 +125,138 @@ def test_memory_efficient_attention_backward(
     value.grad = None
 
     ref = ref_attention(query, key, value, attn_bias)
+    ref.backward(grad_out)
+
+    # there is some extra precision loss in the CPU implementation due to an
+    # extra accumulation step in grad_q, which is not present in the CUDA
+    # implementation
+    atol = 5e-4 if device == "cuda" else 6e-4
+    assert torch.allclose(
+        grad_q, query.grad, atol=atol
+    ), f"grad_q doesn't match {(grad_q - query.grad).abs().max()}"
+    assert torch.allclose(
+        grad_k, key.grad, atol=atol
+    ), f"grad_k doesn't match {(grad_k - key.grad).abs().max()}"
+    assert torch.allclose(
+        grad_v, value.grad, atol=atol
+    ), f"grad_v doesn't match {(grad_v - value.grad).abs().max()}"
+
+
+def _vec_binom_test(x, n, p):
+    """
+    vectorized implementation of scipy.stats.binom_test
+    this makes our tests much faster
+    reference: https://github.com/scipy/scipy/blob/v1.8.0/scipy/stats/_morestats.py#L2609-L2702
+    """
+    import numpy as np
+    from scipy.stats import distributions
+
+    x = np.atleast_1d(x)
+    d = distributions.binom.pmf(x, n, p)[:, None]
+    rerr = 1 + 1e-7
+    # x < p * n case
+    i = np.arange(np.ceil(p * n), n + 1)
+    y = np.sum(distributions.binom.pmf(i, n, p) <= d * rerr, axis=1)
+    pval1 = distributions.binom.cdf(x, n, p) + distributions.binom.sf(n - y, n, p)
+
+    # other case
+    i = np.arange(np.floor(p * n) + 1)
+    y = np.sum(distributions.binom.pmf(i, n, p) <= d * rerr, axis=1)
+    pval2 = distributions.binom.cdf(y - 1, n, p) + distributions.binom.sf(x - 1, n, p)
+
+    pval = np.where(x < p * n, pval1, pval2)
+    pval = np.minimum(1.0, pval)
+    return pval
+
+
+@cuda_only
+@pytest.mark.parametrize("seed", [42, 124])
+@pytest.mark.parametrize("p", [0.3, 0.7])
+@pytest.mark.parametrize("k_len", [32])
+@pytest.mark.parametrize("batch_size", [1, 4])
+@pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
+@pytest.mark.parametrize("q_len", [2, 33])
+@pytest.mark.parametrize("device", ["cuda"])
+def test_dropout(device, q_len, kv_len, batch_size, k_len, p, seed):
+    scale = 3
+    query = torch.randn((batch_size, q_len, k_len), device=device) * scale
+    key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+
+    attn_bias = None
+
+    torch.manual_seed(seed)
+    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, p)
+
+    torch.manual_seed(seed)
+    out2 = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, p)
+
+    assert torch.allclose(out, out2)
+
+    mask = torch.empty((batch_size, q_len, kv_len), device=device)
+
+    torch.manual_seed(seed)
+    mask = torch.ops.xformers._temp_dropout(mask, p)
+
+    ref = ref_attention(query, key, value, attn_bias, mask, p)
+    assert torch.allclose(out, ref, atol=2e-4), f"{(out - ref).abs().max()}"
+
+    num_trials = 1000
+    p_val_tol = 0.0001
+    keep_prob = 1 - p
+    masks = []
+    for i in range(num_trials):
+        mask = torch.ops.xformers._temp_dropout(mask, p)
+        masks.append(mask.clone().cpu())
+    masks = torch.stack(masks, dim=0)
+    p_value = binom_test(masks.sum(), masks.numel(), p=keep_prob)
+    assert p_value > p_val_tol, p_value
+    masks = masks.sum(0).flatten()
+    p_values = _vec_binom_test(masks, num_trials, p=keep_prob)
+    assert all(p_values > p_val_tol)
+
+
+@cuda_only
+@pytest.mark.parametrize("p", [0.3, 0.7])
+@pytest.mark.parametrize("k_len", [5, 6, 32])
+@pytest.mark.parametrize("batch_size", [1, 4])
+@pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
+@pytest.mark.parametrize("q_len", [2, 33])
+@pytest.mark.parametrize("device", ["cuda"])
+def test_dropout_backward(device, q_len, kv_len, batch_size, k_len, p):
+    scale = 3
+    query = torch.randn((batch_size, q_len, k_len), device=device) * scale
+    key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+
+    query.requires_grad_(True)
+    key.requires_grad_(True)
+    value.requires_grad_(True)
+
+    grad_out = torch.ones_like(query)
+
+    attn_bias = None
+
+    seed = 42
+    torch.manual_seed(seed)
+    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, p)
+
+    out.backward(grad_out)
+
+    grad_q = query.grad
+    grad_k = key.grad
+    grad_v = value.grad
+
+    query.grad = None
+    key.grad = None
+    value.grad = None
+
+    mask = torch.empty((batch_size, q_len, kv_len), device=device)
+
+    torch.manual_seed(seed)
+    mask = torch.ops.xformers._temp_dropout(mask, p)
+
+    ref = ref_attention(query, key, value, attn_bias, mask, p)
     ref.backward(grad_out)
 
     # there is some extra precision loss in the CPU implementation due to an
