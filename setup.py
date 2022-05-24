@@ -60,6 +60,7 @@ def get_extensions():
     source_cuda = glob.glob(os.path.join(extensions_dir, "cuda", "*.cu"))
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
+    cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
 
     extension = CppExtension
 
@@ -74,9 +75,6 @@ def get_extensions():
 
     include_dirs = [
         extensions_dir,
-        os.path.join(
-            this_dir, "third_party", "cutlass", "include"
-        )
     ]
 
     if (torch.cuda.is_available() and ((CUDA_HOME is not None))) or os.getenv(
@@ -84,7 +82,7 @@ def get_extensions():
     ) == "1":
         extension = CUDAExtension
         sources += source_cuda
-        include_dirs += [sputnik_dir]
+        include_dirs += [sputnik_dir, cutlass_dir]
         nvcc_flags = os.getenv("NVCC_FLAGS", "")
         if nvcc_flags == "":
             nvcc_flags = []
