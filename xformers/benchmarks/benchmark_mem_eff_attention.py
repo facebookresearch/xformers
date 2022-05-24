@@ -16,7 +16,6 @@ import xformers.ops
 
 def ref_attention(q, k, v, attn_bias=None, p=0.0):
     q = q * (1.0 / q.shape[-1] ** 0.5)
-    attn = q @ k.transpose(-2, -1)
     if attn_bias is None:
         attn = q @ k.transpose(-2, -1)
     else:
