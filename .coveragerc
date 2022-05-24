@@ -6,3 +6,4 @@ omit =
     xformers/benchmarks/*
     xformers/triton/k_*
     stubs/*
+    third-party/*
