@@ -187,22 +187,22 @@ def test_memory_efficient_attention_backward(
     # extra accumulation step in grad_q, which is not present in the CUDA
     # implementation
     atol = 7e-4 if device == "cuda" else 6e-4
-    atol = 2e-3
+    atol += 1e-6 * k_len * kv_len
 
     # (for mypy)
     assert isinstance(query.grad, torch.Tensor)
     assert isinstance(key.grad, torch.Tensor)
     assert isinstance(value.grad, torch.Tensor)
 
-    assert torch.allclose(
-        grad_q, query.grad, atol=atol
-    ), f"grad_q doesn't match {(grad_q - query.grad).abs().max()}"
-    assert torch.allclose(
-        grad_k, key.grad, atol=atol
-    ), f"grad_k doesn't match {(grad_k - key.grad).abs().max()}"
-    assert torch.allclose(
-        grad_v, value.grad, atol=atol
-    ), f"grad_v doesn't match {(grad_v - value.grad).abs().max()}"
+    for name, calc_grad, ref_grad in [
+        ("query", grad_q, query.grad),
+        ("key", grad_k, key.grad),
+        ("value", grad_v, value.grad),
+    ]:
+        assert torch.allclose(
+            calc_grad, ref_grad, atol=atol
+        ), f"""{name} doesn't match
+        max={(calc_grad - ref_grad).abs().max()}"""
 
 
 def _vec_binom_test(x, n, p):
