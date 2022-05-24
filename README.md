@@ -13,36 +13,47 @@
 
 ## Description
 
-xFormers is a modular and field agnostic library to flexibly generate transformer architectures by interoperable and optimized building blocks.
+xFormers is a modular and field agnostic library to flexibly generate transformer architectures from interoperable and optimized building blocks. These blocks are not limited to xFormers and can also be cherry picked as the user see fit.
 
 ## Getting started
 
 The full [documentation](https://facebookresearch.github.io/xformers/) contains instructions for getting started, deep dives and tutorials about the various APIs.
 If in doubt, please check out the [HOWTO](HOWTO.md). Only some general considerations are laid out in the README.
 
+For recent changes, you can have a look at the [changelog](CHANGELOG.md)
+
+
 ### Installation
 
 To install xFormers, it is recommended to use a dedicated virtual environment, as often with python, through `python-virtualenv` or `conda` for instance.
-There are two ways you can install it:
 
-#### Directly from the pip package
-
-  You can also fetch the latest release from PyPi. This will not contain the wheels for the sparse attention kernels, for which you will need to build from source.
-
-  ```bash
+```bash
   conda create --name xformer_env
   conda activate xformer_env
+```
+
+*Please note that, until Pytorch 1.12 is released, xformers requires Pytorch nightly to be installed. You can fetch it using `pip` or `conda` [here](https://pytorch.org/get-started/locally/)*
+
+
+There are two ways you can install xFormers locally:
+
+<details><summary> Directly from the pip package </summary><p>
+
+  You can fetch the latest release from PyPi. This will not contain the wheels for the sparse attention kernels, for which you will need to build from source.
+
+  ```bash
   pip install xformers
   ```
 
-#### Build from source (dev mode)
+</p></details>
 
-  These commands will fetch the latest version of the code, create a dedicated `conda` environment, activate it then install xFormers from source. If you want to build the sparse attention CUDA kernels, please make sure that the next point is covered prior to running these instructions.
+<details><summary> Build from source (dev mode) </summary><p>
+
+  These commands will fetch the latest version of the code and then install xFormers from source.
+  If you want to build the sparse attention CUDA kernels, please make sure that the next point is covered prior to running these instructions.
 
   ```bash
   git clone git@github.com:facebookresearch/xformers.git
-  conda create --name xformer_env python=3.8
-  conda activate xformer_env
   cd xformers
   pip install -r requirements.txt
   pip install -e .
@@ -50,7 +61,11 @@ There are two ways you can install it:
   MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ pip install -e .
   ```
 
-#### Sparse attention kernels
+</p></details>
+
+### Installing custom (non-pytorch) parts
+
+<details><summary> Sparse attention kernels </summary><p>
 
 Installing the CUDA-based sparse attention kernels may require extra care, as this mobilizes the CUDA toolchain. As a reminder, these kernels are built when you run `pip install -e .` and the CUDA buildchain is available (NVCC compiler). Re-building can for instance be done via `python3 setup.py clean && python3 setup.py develop`, so similarly wipe the `build` folder and redo a pip install -e.
 
@@ -60,11 +75,15 @@ Some advices related to building these CUDA-specific components, tentatively adr
 * the version of GCC that you're using matches the current NVCC capabilities
 * the `TORCH_CUDA_ARCH_LIST` env variable is set to the architures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;8.0;8.6"`
 
-#### Triton
+</p></details>
+
+<details><summary> Triton </summary><p>
 
 Some parts of xFormers use [Triton](http://www.triton-lang.org), and will only expose themselves if Triton is installed, and a compatible GPU is present (nVidia GPU with tensor cores). If Triton was not installed as part of the testing procedure, you can install it directly by running `pip install triton`. You can optionally test that the installation is successful by running one of the Triton-related benchmarks, for instance `python3 xformers/benchmarks/benchmark_triton_softmax.py`
 
 Triton will cache the compiled kernels to `/tmp/triton` by default. If this becomes an issue, this path can be specified through the `TRITON_CACHE_DIR` environment variable.
+
+</p></details>
 
 ### Testing the installation
 
