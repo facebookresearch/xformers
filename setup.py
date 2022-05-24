@@ -73,9 +73,7 @@ def get_extensions():
     elif "OpenMP not found" not in torch.__config__.parallel_info():
         extra_compile_args["cxx"].append("-fopenmp")
 
-    include_dirs = [
-        extensions_dir,
-    ]
+    include_dirs = [extensions_dir]
 
     if (torch.cuda.is_available() and ((CUDA_HOME is not None))) or os.getenv(
         "FORCE_CUDA", "0"
