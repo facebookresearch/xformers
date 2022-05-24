@@ -137,7 +137,8 @@ template <
   int AdvanceRank,
   typename ThreadMap,
   int AccessSize = ThreadMap::kElementsPerAccess,
-  bool Gather = false
+  bool Gather = false,
+  bool LoadFromGlobalMemoryOnly = true
 >
 class PredicatedTileIterator;
 
@@ -151,9 +152,9 @@ class PredicatedTileIterator;
 ///            MaskedTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, int AccessSize, bool Gather>
+          typename ThreadMap_, int AccessSize, bool Gather, bool LoadFromGlobalMemoryOnly>
 class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
-                             ThreadMap_, AccessSize, Gather> {
+                             ThreadMap_, AccessSize, Gather, LoadFromGlobalMemoryOnly> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -336,10 +337,16 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
 
           AccessType const *access_ptr = reinterpret_cast<AccessType const *>(byte_ptr);
 
-          cutlass::arch::global_load<AccessType,
-                                     sizeof(AccessType)
-                                    >(
-              frag_ptr[idx], access_ptr, address_iterator_.valid());
+          if (LoadFromGlobalMemoryOnly) {
+            cutlass::arch::global_load<AccessType,
+                                      sizeof(AccessType)
+                                      >(
+                frag_ptr[idx], access_ptr, address_iterator_.valid());
+          } else {
+              if (address_iterator_.valid()) {
+                frag_ptr[idx] = *access_ptr;
+              }
+          }
 
           ++address_iterator_;
         }
@@ -404,9 +411,10 @@ template <
   int AdvanceRank,
   typename ThreadMap_,
   int AccessSize,
-  bool Gather
+  bool Gather,
+  bool LoadFromGlobalMemoryOnly
 >
-class PredicatedTileIterator<Shape_, Element_, layout::ColumnMajor, AdvanceRank, ThreadMap_, AccessSize, Gather> {
+class PredicatedTileIterator<Shape_, Element_, layout::ColumnMajor, AdvanceRank, ThreadMap_, AccessSize, Gather, LoadFromGlobalMemoryOnly> {
 public:
 
   static_assert(AdvanceRank == 0 || AdvanceRank == 1, 
@@ -436,7 +444,8 @@ public:
     (kAdvanceRank == 0 ? 0 : 1),
     ThreadMap,
     AccessSize,
-    Gather
+    Gather,
+    LoadFromGlobalMemoryOnly
   >;
 
   using AccessType = typename UnderlyingIterator::AccessType;
@@ -617,9 +626,10 @@ template <
   int AdvanceRank,
   typename ThreadMap_,
   int AccessSize,
-  bool Gather
+  bool Gather,
+  bool LoadFromGlobalMemoryOnly
 >
-class PredicatedTileIterator<Shape_, Element_, layout::RowMajor, AdvanceRank, ThreadMap_, AccessSize, Gather> {
+class PredicatedTileIterator<Shape_, Element_, layout::RowMajor, AdvanceRank, ThreadMap_, AccessSize, Gather, LoadFromGlobalMemoryOnly> {
 public:
 
   static_assert(AdvanceRank == 0 || AdvanceRank == 1, 
@@ -649,7 +659,8 @@ public:
     (kAdvanceRank == 0 ? 1 : 0),
     ThreadMap,
     AccessSize,
-    Gather
+    Gather,
+    LoadFromGlobalMemoryOnly
   >;
 
   using AccessType = typename UnderlyingIterator::AccessType;
@@ -825,7 +836,7 @@ public:
 template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, int AccessSize>
 class PredicatedTileIterator<Shape_, Element_, layout::AffineRankN<2>, AdvanceRank,
-                             ThreadMap_, AccessSize, false> {
+                             ThreadMap_, AccessSize, false, true> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
