@@ -57,12 +57,12 @@ class NystromSelfAttentionConfig(AttentionConfig):
     use_razavi_pinverse: Optional[bool]
 
 
-class AvgPool:
+class AvgPool(nn.Module):
     def __init__(self, n: int):
         super().__init__()
         self.n = n
 
-    def __call__(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor):
         # Average independently for every segment in the sequence dimension
         seq_len = x.shape[1]
         head_dim = x.shape[2]
