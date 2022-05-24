@@ -7,7 +7,7 @@
 # CREDITS: This comes almost as-is from the Triton dropout tutorial
 # https://raw.githubusercontent.com/openai/triton/master/python/tutorials/04-low-memory-dropout.py
 
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 import triton
@@ -196,6 +196,11 @@ def dropout(
 
 
 class FusedDropoutBias(torch.nn.Module):
+    """
+    A layer which fuses the computation of Dropout(Activation(x))
+    in a single GPU kernel
+    """
+
     def __init__(
         self,
         p: float,
@@ -216,14 +221,23 @@ class FusedDropoutBias(torch.nn.Module):
             if bias_shape is not None
             else None
         )
-        self.activation = get_triton_activation_kernel(activation)
-        self.pytorch_activation = build_activation(self.activation_type)
-        self.activation_grad = get_triton_activation_bwd_kernel(activation)
+
+        self.activation: Optional[Any] = None
+        self.activation_grad: Optional[Any] = None
+        self.activation_pytorch: Optional[Any] = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Convenience, catch a possible type or device mismatch
         if self.bias is not None:
             self.bias = self.bias.to(dtype=x.dtype, device=x.device)  # type: ignore
+
+        # Lazy init (helps with pickling)
+        if self.activation is None:
+            self.activation = get_triton_activation_kernel(self.activation_type)
+            self.pytorch_activation = build_activation(self.activation_type)
+            self.activation_grad = get_triton_activation_bwd_kernel(
+                self.activation_type
+            )
 
         # Train/inference
         p = self.p if self.training else 0.0
