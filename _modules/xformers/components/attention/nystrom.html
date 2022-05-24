@@ -284,24 +284,29 @@
     <span class="n">use_razavi_pinverse</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span>
 
 
-<span class="k">def</span> <span class="nf">get_avg_pool</span><span class="p">(</span><span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-    <span class="k">def</span> <span class="nf">avg_pool</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">AvgPool</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">=</span> <span class="n">n</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
         <span class="c1"># Average independently for every segment in the sequence dimension</span>
         <span class="n">seq_len</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
         <span class="n">head_dim</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
-        <span class="n">segments</span> <span class="o">=</span> <span class="n">seq_len</span> <span class="o">//</span> <span class="n">n</span>
+        <span class="n">segments</span> <span class="o">=</span> <span class="n">seq_len</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span>
+        <span class="k">assert</span> <span class="n">segments</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;num_landmarks should be smaller than the sequence length&quot;</span>
 
         <span class="c1"># Dimensions are a match</span>
-        <span class="k">if</span> <span class="n">seq_len</span> <span class="o">%</span> <span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">seq_len</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
                 <span class="o">-</span><span class="mi">1</span><span class="p">,</span>
-                <span class="n">n</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">,</span>
                 <span class="n">segments</span><span class="p">,</span>
                 <span class="n">head_dim</span><span class="p">,</span>
             <span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">2</span><span class="p">)</span>
 
         <span class="c1"># Handle the last segment boundary being off</span>
-        <span class="n">n_round</span> <span class="o">=</span> <span class="n">n</span> <span class="o">-</span> <span class="n">seq_len</span> <span class="o">%</span> <span class="n">n</span>
+        <span class="n">n_round</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">-</span> <span class="n">seq_len</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span>
 
         <span class="n">x_avg_round</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">x</span><span class="p">[:,</span> <span class="p">:</span> <span class="n">n_round</span> <span class="o">*</span> <span class="n">segments</span><span class="p">,</span> <span class="p">:]</span>
@@ -310,12 +315,10 @@
         <span class="p">)</span>
         <span class="n">x_avg_off</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">x</span><span class="p">[:,</span> <span class="n">n_round</span> <span class="o">*</span> <span class="n">segments</span> <span class="p">:,</span> <span class="p">:]</span>
-            <span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span> <span class="o">-</span> <span class="n">n_round</span><span class="p">,</span> <span class="n">segments</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">-</span> <span class="n">n_round</span><span class="p">,</span> <span class="n">segments</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">)</span>
             <span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">2</span><span class="p">)</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">x_avg_round</span><span class="p">,</span> <span class="n">x_avg_off</span><span class="p">),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">2</span><span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">avg_pool</span>
 
 
 <div class="viewcode-block" id="NystromAttention"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.NystromAttention">[docs]</a><span class="nd">@register_attention</span><span class="p">(</span><span class="s2">&quot;nystrom&quot;</span><span class="p">,</span> <span class="n">NystromSelfAttentionConfig</span><span class="p">)</span>
@@ -374,7 +377,7 @@
         <span class="k">if</span> <span class="n">landmark_pooling</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">landmark_pooling</span> <span class="o">=</span> <span class="n">landmark_pooling</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">landmark_pooling</span> <span class="o">=</span> <span class="n">get_avg_pool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">landmark_pooling</span> <span class="o">=</span> <span class="n">AvgPool</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span><span class="p">)</span>
 
         <span class="c1"># Optional lower triangular masks for causal attention</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">causal_mask_1</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
