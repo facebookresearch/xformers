@@ -286,12 +286,18 @@ __device__ __forceinline__ void compute_and_update_scaling_coeffs(
 #pragma unroll
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
     m_delta[q_item_idx] = std::exp(m_prime[q_item_idx] - m_i[q_item_idx]);
+    m_delta[q_item_idx] =
+        isfinite(m_delta[q_item_idx]) ? m_delta[q_item_idx] : scalar_t(0);
     m_prime[q_item_idx] = m_i[q_item_idx];
     s_prime[q_item_idx] = s_prime[q_item_idx] * m_delta[q_item_idx];
 #pragma unroll
     for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK; k_item_idx++) {
       s_delta[q_item_idx][k_item_idx] =
           std::exp(si[q_item_idx][k_item_idx] - m_i[q_item_idx]);
+      s_delta[q_item_idx][k_item_idx] =
+          isfinite(s_delta[q_item_idx][k_item_idx])
+          ? s_delta[q_item_idx][k_item_idx]
+          : scalar_t(0);
       s_prime[q_item_idx] += s_delta[q_item_idx][k_item_idx];
     }
   }

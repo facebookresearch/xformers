@@ -272,3 +272,61 @@ def test_dropout_backward(device, q_len, kv_len, batch_size, k_len, p):
     assert torch.allclose(
         grad_v, value.grad, atol=atol
     ), f"grad_v doesn't match {(grad_v - value.grad).abs().max()}"
+
+
+@pytest.mark.parametrize("k_len", [32])
+@pytest.mark.parametrize("batch_size", [1])
+@pytest.mark.parametrize("kv_len", [3 * 32])
+@pytest.mark.parametrize("q_len", [3 * 32])
+@pytest.mark.parametrize("device", _devices)
+def test_memory_efficient_attention_full_block_masked(
+    device, q_len, kv_len, batch_size, k_len
+):
+    scale = 3
+    query = torch.randn((batch_size, q_len, k_len), device=device) * scale
+    key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+
+    # in this case, most of the blocks in a row get masked
+    attn_bias = torch.full((3, 32), float("-inf"), device=device)
+    attn_bias[:2, :4] = 0
+    attn_bias = attn_bias.flatten()[None, None, :].expand(1, q_len, -1)
+
+    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias)
+    ref = ref_attention(query, key, value, attn_bias)
+
+    assert torch.allclose(out, ref, atol=2e-4)
+
+    query.requires_grad_(True)
+    key.requires_grad_(True)
+    value.requires_grad_(True)
+
+    grad_out = torch.ones_like(query)
+
+    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias)
+    out.backward(grad_out)
+
+    grad_q = query.grad
+    grad_k = key.grad
+    grad_v = value.grad
+
+    query.grad = None
+    key.grad = None
+    value.grad = None
+
+    ref = ref_attention(query, key, value, attn_bias)
+    ref.backward(grad_out)
+
+    # there is some extra precision loss in the CPU implementation due to an
+    # extra accumulation step in grad_q, which is not present in the CUDA
+    # implementation
+    atol = 5e-4 if device == "cuda" else 6e-4
+    assert torch.allclose(
+        grad_q, query.grad, atol=atol
+    ), f"grad_q doesn't match {(grad_q - query.grad).abs().max()}"
+    assert torch.allclose(
+        grad_k, key.grad, atol=atol
+    ), f"grad_k doesn't match {(grad_k - key.grad).abs().max()}"
+    assert torch.allclose(
+        grad_v, value.grad, atol=atol
+    ), f"grad_v doesn't match {(grad_v - value.grad).abs().max()}"
