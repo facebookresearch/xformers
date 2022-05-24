@@ -57,24 +57,29 @@ class NystromSelfAttentionConfig(AttentionConfig):
     use_razavi_pinverse: Optional[bool]
 
 
-def get_avg_pool(n: int):
-    def avg_pool(x: torch.Tensor):
+class AvgPool(nn.Module):
+    def __init__(self, n: int):
+        super().__init__()
+        self.n = n
+
+    def forward(self, x: torch.Tensor):
         # Average independently for every segment in the sequence dimension
         seq_len = x.shape[1]
         head_dim = x.shape[2]
-        segments = seq_len // n
+        segments = seq_len // self.n
+        assert segments > 0, "num_landmarks should be smaller than the sequence length"
 
         # Dimensions are a match
-        if seq_len % n == 0:
+        if seq_len % self.n == 0:
             return x.reshape(
                 -1,
-                n,
+                self.n,
                 segments,
                 head_dim,
             ).mean(dim=-2)
 
         # Handle the last segment boundary being off
-        n_round = n - seq_len % n
+        n_round = self.n - seq_len % self.n
 
         x_avg_round = (
             x[:, : n_round * segments, :]
@@ -83,12 +88,10 @@ def get_avg_pool(n: int):
         )
         x_avg_off = (
             x[:, n_round * segments :, :]
-            .reshape(-1, n - n_round, segments + 1, head_dim)
+            .reshape(-1, self.n - n_round, segments + 1, head_dim)
             .mean(dim=-2)
         )
         return torch.cat((x_avg_round, x_avg_off), dim=-2)
-
-    return avg_pool
 
 
 @register_attention("nystrom", NystromSelfAttentionConfig)
@@ -147,7 +150,7 @@ class NystromAttention(Attention):
         if landmark_pooling is not None:
             self.landmark_pooling = landmark_pooling
         else:
-            self.landmark_pooling = get_avg_pool(self.num_landmarks)
+            self.landmark_pooling = AvgPool(n=self.num_landmarks)
 
         # Optional lower triangular masks for causal attention
         self.causal_mask_1: Optional[torch.Tensor] = None
