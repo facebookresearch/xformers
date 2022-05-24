@@ -67,6 +67,7 @@ class AvgPool(nn.Module):
         seq_len = x.shape[1]
         head_dim = x.shape[2]
         segments = seq_len // self.n
+        assert segments > 0, "num_landmarks should be smaller than the sequence length"
 
         # Dimensions are a match
         if seq_len % self.n == 0:
