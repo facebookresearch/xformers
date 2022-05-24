@@ -7,7 +7,7 @@
 from typing import Optional
 
 import torch
-
+import math
 
 def masked_matmul(a, b, mask=None):
     if torch.overrides.has_torch_function((a, b, mask)):
@@ -31,11 +31,22 @@ def masked_matmul(a, b, mask=None):
     return att
 
 
-class _MemoryEfficientAttentionOp(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, query, key, value, attn_bias, p):
-        out, lse, rng_seed, rng_offset = torch.ops.xformers.efficient_attention(
-            query, key, value, True, attn_bias, p
+class MemoryEfficientAttentionOp(torch.autograd.Function):
+    FORWARD_OPERATOR = torch.ops.xformers.efficient_attention
+    SUPPORTED_DEVICES = {"cuda", "cpu"}
+    SUPPORTED_MAX_K = 32
+    SUPPORTS_ATTN_BIAS = True
+    SUPPORTS_DROPOUT = True
+
+    @classmethod
+    def forward(cls, ctx, query, key, value, attn_bias, p):
+        out, lse, rng_seed, rng_offset = cls.FORWARD_OPERATOR(
+            query=query,
+            key=key,
+            value=value,
+            compute_logsumexp=True,
+            attn_bias=attn_bias,
+            p=p
         )
         ctx.save_for_backward(query, key, value, lse, attn_bias)
         ctx.p = p
@@ -55,12 +66,22 @@ class _MemoryEfficientAttentionOp(torch.autograd.Function):
         return grad_q, grad_k, grad_v, None, None
 
 
+class MemoryEfficientAttentionGenericForwardOp(MemoryEfficientAttentionOp):
+    FORWARD_OPERATOR = torch.ops.xformers.efficient_attention_forward_generic
+    SUPPORTED_DEVICES = {"cuda"}
+    SUPPORTED_MAX_K = math.inf
+    SUPPORTS_ATTN_BIAS = False
+    SUPPORTS_DROPOUT = False
+
+
 def memory_efficient_attention(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
     attn_bias: Optional[torch.Tensor] = None,
     p: float = 0.0,
+    *,
+    op = MemoryEfficientAttentionOp
 ):
     """
     Implements the memory-efficient attention mechanism following
@@ -69,7 +90,7 @@ def memory_efficient_attention(
     """
     # fast-path that doesn't require computing the logsumexp for backward computation
     if all(x.requires_grad is False for x in [query, key, value]):
-        return torch.ops.xformers.efficient_attention(
+        return op.FORWARD_OPERATOR(
             query, key, value, False, attn_bias, p
         )[0]
-    return _MemoryEfficientAttentionOp.apply(query, key, value, attn_bias, p)
+    return op.apply(query, key, value, attn_bias, p)
