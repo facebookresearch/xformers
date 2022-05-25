@@ -5,10 +5,7 @@
 
 
 import itertools
-import pprint
-from collections import defaultdict
 from functools import partial
-from typing import Dict
 
 import torch
 from torch.utils import benchmark
