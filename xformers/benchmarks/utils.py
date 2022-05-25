@@ -309,7 +309,7 @@ def benchmark_main_helper(
             torch.cuda.synchronize()
             results.append(measurement)
             name = measurement.task_spec.description
-            memory = torch.cuda.max_memory_allocated() / 2**20
+            memory = torch.cuda.max_memory_allocated() / 2 ** 20
             mem_use[name][measurement.task_spec.sub_label] = memory
             pbar.write(f"{name}: memory used: {memory} MB")
 

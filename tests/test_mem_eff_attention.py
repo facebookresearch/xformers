@@ -115,7 +115,7 @@ def test_logsumexp(
     value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
 
     _, lse, _, _ = op.FORWARD_OPERATOR(query, key, value, True, None, 0.0)
-    ref_lse = ((query / k_len**0.5) @ key.transpose(-2, -1)).logsumexp(-1)
+    ref_lse = ((query / k_len ** 0.5) @ key.transpose(-2, -1)).logsumexp(-1)
 
     assert torch.allclose(lse, ref_lse, atol=2e-4)
 
