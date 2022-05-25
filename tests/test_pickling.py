@@ -7,14 +7,17 @@
 # https://github.com/facebookresearch/xformers/issues/203
 
 import pickle
+from copy import deepcopy
 
+import pytest
 from torch import nn
 
+from xformers import _is_triton_available
 from xformers.factory import xFormer, xFormerConfig
 
 test_config = [
     {
-        "reversible": False,  # Turn on to test the effect of using reversible layers
+        "reversible": False,
         "block_type": "encoder",
         "num_layers": 2,
         "dim_model": 768,
@@ -30,7 +33,7 @@ test_config = [
             },
         },
         "feedforward_config": {
-            "name": "MLP",  # FIXME: Test with FusedMLP also
+            "name": "FusedMLP",
             "dropout": 0.1,
             "activation": "gelu",
             "hidden_layer_multiplier": 4,
@@ -40,11 +43,20 @@ test_config = [
 
 
 class ViT(nn.Module):
-    def __init__(self):
+    def __init__(self, mlp):
         super().__init__()
-        self.xformer = xFormer.from_config(xFormerConfig(test_config))
+        test_config[0]["feedforward_config"]["name"] = mlp
+        xformer_config = xFormerConfig(test_config)
+        self.xformer = xFormer.from_config(xformer_config)
 
 
-def test_pickling():
-    test = ViT()
-    pickle.dumps(test)
+MLPs = ["MLP"]
+if _is_triton_available:
+    MLPs.append("FusedMLP")
+
+
+@pytest.mark.parametrize("mlp", MLPs)
+def test_pickling(mlp):
+    test = ViT(mlp)
+    _ = pickle.dumps(test)
+    _ = deepcopy(test)
