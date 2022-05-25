@@ -282,7 +282,7 @@ def benchmark_main_helper(
                                 continue
                         results_compare_to.append(r)
 
-    pbar = tqdm.tqdm(cases)
+    pbar = tqdm.tqdm(cases, leave=False)
     for case in pbar:
         # pbar.set_description(str(case))
         pbar.write(f"====== {str(case)} ======")
