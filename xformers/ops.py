@@ -35,7 +35,7 @@ def masked_matmul(a, b, mask=None):
 class MemoryEfficientAttentionOp(torch.autograd.Function):
     FORWARD_OPERATOR = torch.ops.xformers.efficient_attention
     SUPPORTED_DEVICES = {"cuda", "cpu"}
-    SUPPORTED_MAX_K = 32
+    SUPPORTED_MAX_K: float = 32
     SUPPORTS_ATTN_BIAS = True
     SUPPORTS_DROPOUT = True
 

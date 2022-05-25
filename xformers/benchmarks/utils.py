@@ -243,7 +243,7 @@ def benchmark_main_helper(
 
     results_compare_to = []
     results = []
-    mem_use = defaultdict(dict)
+    mem_use: Dict[str, Dict[str, float]] = defaultdict(dict)
 
     store_results_folder = os.path.join(".benchmarks", benchmark_fn.__name__)
     optimized_label = "optimized" if args.label is None else args.label

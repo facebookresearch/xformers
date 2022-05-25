@@ -188,6 +188,12 @@ def test_memory_efficient_attention_backward(
     # implementation
     atol = 7e-4 if device == "cuda" else 6e-4
     atol = 2e-3
+
+    # (for mypy)
+    assert isinstance(query.grad, torch.Tensor)
+    assert isinstance(key.grad, torch.Tensor)
+    assert isinstance(value.grad, torch.Tensor)
+
     assert torch.allclose(
         grad_q, query.grad, atol=atol
     ), f"grad_q doesn't match {(grad_q - query.grad).abs().max()}"
