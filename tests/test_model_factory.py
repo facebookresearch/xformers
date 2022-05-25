@@ -8,7 +8,8 @@ from contextlib import nullcontext
 import pytest
 import torch
 
-from xformers.factory.model_factory import xFormer, xFormerConfig
+import xformers.factory.weight_init as xformers_weight_init
+from xformers.factory import xFormer, xFormerConfig, xFormerWeightInit
 
 BATCH = 2
 SEQ = 16
@@ -195,3 +196,22 @@ def test_presets(config, reversible, tie_embedding_weights, layer_norm_style, de
         # If we requested tied embedding weights, check that this is the case indeed
         if tie_embedding_weights and not reversible:
             assert model.encoders[0].pose_encoding == model.decoders[0].pose_encoding
+
+
+@pytest.mark.parametrize("weight_init", [w.value for w in xFormerWeightInit])
+@pytest.mark.parametrize("device", DEVICES)
+def test_weight_init(weight_init, device):
+    torch.cuda.manual_seed(42)
+    torch.manual_seed(42)
+
+    config = test_configs_dict
+
+    # Make sure that all the init methods catch all the weights
+    xformers_weight_init._assert_if_not_initialized = True
+
+    # Build the model
+    config_instance = xFormerConfig(  # noqa
+        config, tie_embedding_weights=False, weight_init=weight_init
+    )
+
+    _ = xFormer.from_config(config_instance).to(device)

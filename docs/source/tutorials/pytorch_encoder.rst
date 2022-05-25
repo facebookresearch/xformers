@@ -261,12 +261,12 @@ Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xForm
 Build an `xFormer` model with Hydra
 -----------------------------------
 
-Alternatively, you can use Hydra_ to build an xFormer model. 
+Alternatively, you can use Hydra_ to build an xFormer model.
 We've included an example `here <https://github.com/facebookresearch/xformers/tree/main/examples/build_model/>`_.
-The example replicates the model from the above example and demonstrates one way to use Hydra to minimize config duplication. 
-The example is built on top of some more advanced Hydra features. If you are new to Hydra, you can start these docs:  
-`basic tutorials <https://hydra.cc/docs/tutorials/intro/>`_, `extending configs <https://hydra.cc/docs/patterns/extending_configs/>`_, 
-`Hydra packages <https://hydra.cc/docs/advanced/overriding_packages/>`_ and 
+The example replicates the model from the above example and demonstrates one way to use Hydra to minimize config duplication.
+The example is built on top of some more advanced Hydra features. If you are new to Hydra, you can start these docs:
+`basic tutorials <https://hydra.cc/docs/tutorials/intro/>`_, `extending configs <https://hydra.cc/docs/patterns/extending_configs/>`_,
+`Hydra packages <https://hydra.cc/docs/advanced/overriding_packages/>`_ and
 `instantiation API <https://hydra.cc/docs/advanced/instantiate_objects/overview/>`_.
 
 .. _Hydra: https://hydra.cc/
@@ -274,17 +274,17 @@ The example is built on top of some more advanced Hydra features. If you are new
 .. code-block:: yaml
 
     defaults:
-        - /stack@xformer.stack_configs: 
+        - /stack@xformer.stack_configs:
             - encoder_local
             - encoder_random
             - decoder_nystrom_favor
         - _self_
 
     xformer:
-        _target_: xformers.factory.model_factory.xFormer 
+        _target_: xformers.factory.model_factory.xFormer
 
 
-Building a model this way makes it possible for you to leverage many features Hydra has to offer. 
+Building a model this way makes it possible for you to leverage many features Hydra has to offer.
 For example, you can override the model architecture from the commandline:
 
 .. code-block:: bash
@@ -304,7 +304,7 @@ For example, you can override the model architecture from the commandline:
                 (attention): LocalAttention(
                 (attn_drop): Dropout(p=0.0, inplace=False)
                 )
-                (in_proj_container): InProjContainer()
+                (in_proj_container): InputProjection()
                 (resid_drop): Dropout(p=0, inplace=False)
                 (proj): Linear(in_features=384, out_features=384, bias=True)
             )
@@ -324,7 +324,7 @@ For example, you can override the model architecture from the commandline:
                     (attention): LocalAttention(
                     (attn_drop): Dropout(p=0.0, inplace=False)
                     )
-                    (in_proj_container): InProjContainer()
+                    (in_proj_container): InputProjection()
                     (resid_drop): Dropout(p=0, inplace=False)
                     (proj): Linear(in_features=384, out_features=384, bias=True)
                 )
@@ -356,7 +356,7 @@ For example, you can override the model architecture from the commandline:
 You can also launch multiple runs of your application with different architectures:
 
 .. code-block:: bash
-    
+
     $ python my_model.py  --multirun 'stack@xformer.stack_configs=[encoder_local], [encoder_random]'
     [HYDRA] Launching 2 jobs locally
     [HYDRA]        #0 : stack@xformer.stack_configs=[encoder_local]
@@ -373,7 +373,7 @@ You can also launch multiple runs of your application with different architectur
             (attention): LocalAttention(
             (attn_drop): Dropout(p=0.0, inplace=False)
             )
-            (in_proj_container): InProjContainer()
+            (in_proj_container): InputProjection()
             (resid_drop): Dropout(p=0, inplace=False)
             (proj): Linear(in_features=384, out_features=384, bias=True)
         )
@@ -393,7 +393,7 @@ You can also launch multiple runs of your application with different architectur
                 (attention): LocalAttention(
                 (attn_drop): Dropout(p=0.0, inplace=False)
                 )
-                (in_proj_container): InProjContainer()
+                (in_proj_container): InputProjection()
                 (resid_drop): Dropout(p=0, inplace=False)
                 (proj): Linear(in_features=384, out_features=384, bias=True)
             )
@@ -434,7 +434,7 @@ You can also launch multiple runs of your application with different architectur
             (attention): RandomAttention(
             (attn_drop): Dropout(p=0.0, inplace=False)
             )
-            (in_proj_container): InProjContainer()
+            (in_proj_container): InputProjection()
             (resid_drop): Dropout(p=0, inplace=False)
             (proj): Linear(in_features=384, out_features=384, bias=True)
         )
@@ -454,7 +454,7 @@ You can also launch multiple runs of your application with different architectur
                 (attention): RandomAttention(
                 (attn_drop): Dropout(p=0.0, inplace=False)
                 )
-                (in_proj_container): InProjContainer()
+                (in_proj_container): InputProjection()
                 (resid_drop): Dropout(p=0, inplace=False)
                 (proj): Linear(in_features=384, out_features=384, bias=True)
             )

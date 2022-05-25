@@ -93,6 +93,8 @@ class MetaVisionTransformer(VisionTransformer):
 
         # Now instantiate the metaformer trunk
         config = xFormerConfig(xformer_config)
+        config.weight_init = "moco"
+
         print(config)
         self.trunk = xFormer.from_config(config)
         print(self.trunk)

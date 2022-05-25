@@ -53,7 +53,7 @@ class GPT(pl.LightningModule):
                 "block_type": "encoder",
                 "num_layers": self.hparams.n_layer,
                 "dim_model": self.hparams.n_embd,
-                "layer_norm_style": "pre",
+                "layer_norm_style": "post",
                 "position_encoding_config": {
                     "name": "vocab",
                     "seq_len": self.hparams.block_size,
@@ -81,6 +81,7 @@ class GPT(pl.LightningModule):
         ]
 
         config = xFormerConfig(xformer_config)
+        config.weight_init = "small"
         self.model = xFormer.from_config(config)
 
         # decoder head
@@ -274,7 +275,7 @@ if __name__ == "__main__":
     # Adjust batch depending on the available memory on your machine.
     # You can also use reversible layers to save memory
     REF_BATCH = 512
-    BATCH = 256
+    BATCH = 128
 
     WORKERS = 4
     EPOCHS = 1
@@ -312,9 +313,7 @@ if __name__ == "__main__":
         gpus=1,
         max_epochs=EPOCHS,
         precision=16,
-        gradient_clip_val=1,  # Use to catch divergent gradients, if experimenting
         log_every_n_steps=1,
-        # detect_anomaly=True,  # Use to catch NaNs, if experimenting
         accumulate_grad_batches=REF_BATCH // BATCH,
     )
 

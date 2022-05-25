@@ -12,7 +12,7 @@ import torch.nn as nn
 from torch.nn.init import constant_
 
 from xformers.components.attention import Attention
-from xformers.components.in_proj_container import InProjContainer, InProjParams
+from xformers.components.input_projection import InputProjection, InputProjectionConfig
 from xformers.components.positional_embedding import RotaryEmbedding
 
 
@@ -25,7 +25,7 @@ class MultiHeadDispatchConfig:
     residual_dropout: float
     dim_key: Optional[int]
     dim_value: Optional[int]
-    in_proj_container: Optional[InProjContainer]
+    in_proj_container: Optional[InputProjection]
     use_separate_proj_weight: Optional[bool]
     use_rotary_embeddings: Optional[bool]
     out_proj: Optional[nn.Module]
@@ -59,10 +59,10 @@ class MultiHeadDispatch(nn.Module):
         attention: Attention,
         bias: bool = True,
         residual_dropout: float = 0.0,
+        use_separate_proj_weight: bool = True,
         dim_key: Optional[int] = None,
         dim_value: Optional[int] = None,
-        in_proj_container: Optional[InProjContainer] = None,
-        use_separate_proj_weight: Optional[bool] = False,
+        in_proj_container: Optional[InputProjection] = None,
         use_rotary_embeddings: Optional[bool] = False,
         out_proj: Optional[nn.Module] = None,
         *args,
@@ -79,33 +79,36 @@ class MultiHeadDispatch(nn.Module):
         dim_key, dim_value = map(lambda x: x if x else dim_model, (dim_key, dim_value))
 
         self.num_heads = num_heads
-        self.dim_k = dim_key // num_heads
-        self.dim_value = dim_value
+        self.dim_key_head = dim_key // num_heads
+        self.dim_value_head = dim_value // num_heads
         self.dim_model = dim_model
         self.attention = attention
 
         # key, query, value projections for all heads
         # critical options are
         # - are we sharing weights ?
-        # - are we adding biases, and if yes are they shared ?
+        # - are we adding biases ?
         if attention.requires_input_projection:
             self.in_proj_container = (
                 in_proj_container
                 if in_proj_container is not None
-                else InProjContainer(
-                    query_proj_params=InProjParams(dim_model, dim_key, bias=bias),
-                    key_proj_params=InProjParams(dim_model, dim_key, bias=bias)
-                    if use_separate_proj_weight
-                    else None,
-                    value_proj_params=InProjParams(dim_model, dim_value, bias=bias)
-                    if use_separate_proj_weight
-                    else None,
+                else InputProjection(
+                    query_proj_params=InputProjectionConfig(
+                        dim_model, dim_key, bias=bias
+                    ),
+                    key_proj_params=InputProjectionConfig(
+                        dim_model, dim_key, bias=bias
+                    ),
+                    value_proj_params=InputProjectionConfig(
+                        dim_model, dim_value, bias=bias
+                    ),
+                    use_separate_proj_weight=use_separate_proj_weight,
                 )
             )
 
         # Optional rotary embeddings
         self.rotary_embeddings = (
-            RotaryEmbedding(self.dim_k) if use_rotary_embeddings else None
+            RotaryEmbedding(self.dim_key_head) if use_rotary_embeddings else None
         )
 
         # Regularization
@@ -190,9 +193,9 @@ class MultiHeadDispatch(nn.Module):
         # Optional: rotary embedding, add relative positioning information
         if self.rotary_embeddings:
             # rotary requires the head dimension
-            q = _split_heads(q, B, S_Q, self.num_heads, self.dim_k)
-            k = _split_heads(k, B, S_K, self.num_heads, self.dim_k)
-            v = _split_heads(v, B, S_K, self.num_heads, self.dim_k)
+            q = _split_heads(q, B, S_Q, self.num_heads, self.dim_key_head)
+            k = _split_heads(k, B, S_K, self.num_heads, self.dim_key_head)
+            v = _split_heads(v, B, S_K, self.num_heads, self.dim_value_head)
 
             q, k = self.rotary_embeddings(q=q, k=k)
 
@@ -205,16 +208,16 @@ class MultiHeadDispatch(nn.Module):
                 _split_heads if self.attention.requires_head_dimension else _fold_heads
             )
 
-            q = reshape_fn(q, B, S_Q, self.num_heads, self.dim_k)
-            k = reshape_fn(k, B, S_K, self.num_heads, self.dim_k)
-            v = reshape_fn(v, B, S_K, self.num_heads, self.dim_k)
+            q = reshape_fn(q, B, S_Q, self.num_heads, self.dim_key_head)
+            k = reshape_fn(k, B, S_K, self.num_heads, self.dim_key_head)
+            v = reshape_fn(v, B, S_K, self.num_heads, self.dim_value_head)
 
         # Self-attend
         y = self.attention(q, k, v, **kw_mask_args)
 
         # Re-assemble all head outputs side by side
         y = (
-            y.view(B, self.num_heads, S_Q, self.dim_k)
+            y.view(B, self.num_heads, S_Q, self.dim_value_head)
             .transpose(1, 2)
             .flatten(start_dim=2, end_dim=3)
         )

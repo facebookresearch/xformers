@@ -35,7 +35,6 @@ if _is_triton_available:
             "attention": {
                 "name": "scaled_dot_product",
                 "dropout": DROP,
-                "causal": False,
                 "seq_len": SEQ,
             },
             "dim_model": EMB,
@@ -62,7 +61,6 @@ if _is_triton_available:
             "attention": {
                 "name": "scaled_dot_product",
                 "dropout": DROP,
-                "causal": False,
                 "seq_len": SEQ,
             },
         },
@@ -74,7 +72,6 @@ if _is_triton_available:
             "attention": {
                 "name": "scaled_dot_product",
                 "dropout": DROP,
-                "causal": False,
                 "seq_len": SEQ,
             },
         },
@@ -90,8 +87,9 @@ if _is_triton_available:
     _test_config = [_test_config_encoder, _test_config_decoder]
 
     def reset_seeds():
-        torch.manual_seed(0)
-        random.seed(0)
+        torch.manual_seed(42)
+        torch.cuda.manual_seed(42)
+        random.seed(42)
 
     @pytest.mark.skipif(
         not torch.cuda.is_available(), reason="This test requires a gpu"
@@ -140,8 +138,7 @@ if _is_triton_available:
 
         fit_ratio_xformer = eval_start_xformer / eval_stop_xformer
         fit_ratio_pytorch = eval_start_pytorch / eval_stop_pytorch
-
-        print(fit_ratio_pytorch, fit_ratio_xformer)
+        print("fit ratios: ", fit_ratio_pytorch, fit_ratio_xformer)
 
         # Catch a broken training
         assert fit_ratio_xformer > 120
@@ -172,7 +169,6 @@ if _is_triton_available:
             dim_feedforward=4 * EMB,
             dropout=DROP,
             activation=ACTIVATION,
-            layer_norm_eps=1e-06,
             batch_first=True,  # (batch, seq, feature)
             device=device,
         )
