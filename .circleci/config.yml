@@ -137,7 +137,7 @@ run_black: &run_black
       when: always
       command: |
         source $BASH_ENV
-        $CONDA_PYTHON -m black --check .
+        $CONDA_PYTHON -m black --check . --exclude "third_party/"
 
 run_mypy: &run_mypy
    - run:
