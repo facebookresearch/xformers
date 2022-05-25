@@ -307,7 +307,7 @@ template <typename scalar_t, typename vec_t, int kBlockSizeK, int kBlockSizeQ>
 __device__ void add_attn_bias(
     scalar_t si[kBlockSizeQ][kBlockSizeK],
     scalar_t* attn_bias_i) {
-  // TODO: use vector loads if possible
+// TODO: use vector loads if possible
 #pragma unroll
   for (int64_t q_item_idx = 0; q_item_idx < kBlockSizeQ; q_item_idx++) {
 #pragma unroll
