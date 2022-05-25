@@ -126,6 +126,7 @@ install_experimental_repo: &install_experimental_repo
 run_isort: &run_isort
    - run:
       name: Run Linter (isort)
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON -m isort . --check --profile black
@@ -133,6 +134,7 @@ run_isort: &run_isort
 run_black: &run_black
    - run:
       name: Run Linter (black)
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON -m black --check .
@@ -140,6 +142,7 @@ run_black: &run_black
 run_mypy: &run_mypy
    - run:
        name: Run type-checking (mypy)
+       when: always
        command: |
         source $BASH_ENV
         $CONDA_PYTHON -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ --exclude stubs/ .
@@ -147,6 +150,7 @@ run_mypy: &run_mypy
 run_flake8: &run_flake8
   - run:
       name: Run Linter (flake8)
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON -m flake8 --config .flake8 --show-source --statistics
@@ -154,6 +158,7 @@ run_flake8: &run_flake8
 run_clang_format: &run_clang_format
   - run:
       name: Run Linter (clang-format)
+      when: always
       command: |
         # install clang-format here, so that it gets cached
         sudo apt-get update
@@ -165,6 +170,7 @@ run_clang_format: &run_clang_format
 run_coverage: &run_coverage
   - run:
       name: Run Unit Tests With Coverage
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./ tests
@@ -174,6 +180,7 @@ run_coverage: &run_coverage
 run_unittests: &run_unittests
   - run:
       name: Run Unit Tests
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 tests
@@ -181,6 +188,7 @@ run_unittests: &run_unittests
 run_experimental_unittests: &run_experimental_unittests
   - run:
       name: Run Unit Tests
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON -m pytest experimental/tests
@@ -188,6 +196,7 @@ run_experimental_unittests: &run_experimental_unittests
 run_benchmarks: &run_benchmarks
   - run:
       name: Run Benchmarks
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 128 -bs 16 -heads 4
@@ -195,6 +204,7 @@ run_benchmarks: &run_benchmarks
 run_pytorch_benchmark: &run_pytorch_benchmark
   - run:
       name: Run Pytorch benchmark
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON xformers/benchmarks/benchmark_pytorch_transformer.py
@@ -202,6 +212,7 @@ run_pytorch_benchmark: &run_pytorch_benchmark
 run_vit_benchmark: &run_vit_benchmark
   - run:
       name: Run ViT Timm benchmark
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON xformers/benchmarks/benchmark_vit_timm.py
@@ -211,6 +222,7 @@ run_vit_benchmark: &run_vit_benchmark
 run_doc_build: &run_doc_build
    - run:
       name: Testing doc build
+      when: always
       command: |
         source $BASH_ENV
         cd docs
