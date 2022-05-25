@@ -245,7 +245,7 @@ def benchmark_main_helper(
     results = []
     mem_use: Dict[str, Dict[str, float]] = defaultdict(dict)
 
-    store_results_folder = os.path.join(".benchmarks", benchmark_fn.__name__)
+    store_results_folder = os.path.expanduser(os.path.join("~", ".cache", "xformers", "benchmarks", benchmark_fn.__name__))
     optimized_label = "optimized" if args.label is None else args.label
 
     try:
@@ -317,12 +317,12 @@ def benchmark_main_helper(
             mem_use[name][measurement.task_spec.sub_label] = memory
             pbar.write(f"{name}: memory used: {memory} MB")
 
-    # Save runs to a file
-    if args.label is not None:
-        with open(
-            os.path.join(store_results_folder, f"{optimized_label}.{env}.pkl"), "wb+"
-        ) as fd:
-            pickle.dump(results, fd)
-
     pprint.pprint(mem_use)
     benchmark.Compare(results + results_compare_to).print()
+
+    # Save runs to a file
+    if args.label is not None:
+        write_to_path = os.path.join(store_results_folder, f"{optimized_label}.{env}.pkl")
+        with open(write_to_path, "wb+") as fd:
+            pickle.dump(results, fd)
+        print(f"Saved results to {write_to_path}")
