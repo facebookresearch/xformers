@@ -287,25 +287,29 @@ def benchmark_main_helper(
         # pbar.set_description(str(case))
         pbar.write(f"====== {str(case)} ======")
         try:
-            benchmark_optimized, benchmark_vanilla = benchmark_fn(**case)
+            benchmarks_generator = benchmark_fn(**case)
         except NotImplementedError:
             # pbar.write(f"Skipped (NotImplementedError)")
             continue
-        benchmark_optimized._task_spec = replace(
-            benchmark_optimized._task_spec, description=optimized_label
-        )
-        if (
-            benchmark_vanilla._task_spec.sub_label,
-            benchmark_vanilla._task_spec.num_threads,
-        ) in skip_vanilla_tasks:
-            benchmark_vanilla = None
-        for benchmark_object in [benchmark_optimized, benchmark_vanilla]:
+
+        for benchmark_object, is_optimized in zip(benchmarks_generator, [True, False]):
             if benchmark_object is None:
                 continue
-            torch.cuda.reset_peak_memory_stats()
+            if is_optimized:
+                benchmark_object._task_spec = replace(
+                    benchmark_object._task_spec, description=optimized_label
+                )
+            elif (
+                benchmark_object._task_spec.sub_label,
+                benchmark_object._task_spec.num_threads,
+            ) in skip_vanilla_tasks:
+                continue
+
             torch.cuda.synchronize()
+            torch.cuda.reset_peak_memory_stats()
             benchmark_object._task_spec = replace(benchmark_object._task_spec, env=env)
             measurement = benchmark_object.blocked_autorange(min_run_time=min_run_time)
+            del benchmark_object
             torch.cuda.synchronize()
             results.append(measurement)
             name = measurement.task_spec.description

@@ -41,6 +41,7 @@ SHAPES = list(
 SHAPES = list(set(SHAPES))
 SHAPES.sort()
 
+
 p = 0.0
 op = xformers.ops.MemoryEfficientAttentionOp
 # op = xformers.ops.MemoryEfficientAttentionGenericForwardOp
@@ -80,7 +81,7 @@ def benchmark_forward(shape, num_threads: int, use_attn_bias: bool):
         assert (r - rr).abs().max() < 1e-5
         del r, rr
 
-    return benchmark.Timer(
+    yield benchmark.Timer(
         stmt="fn(q, q, q, attn_bias, p)",
         globals={
             "q": q,
@@ -92,7 +93,8 @@ def benchmark_forward(shape, num_threads: int, use_attn_bias: bool):
         description="optimized",
         sub_label=sub_label,
         num_threads=num_threads,
-    ), benchmark.Timer(
+    )
+    yield benchmark.Timer(
         stmt="fn(q, q, q, attn_bias, p)",
         globals={
             "q": q,
@@ -135,7 +137,7 @@ def benchmark_backward(shape, num_threads: int, use_attn_bias: bool):
     out = xformers.ops.memory_efficient_attention(q, q, q, attn_bias, p, op=op)
     grad = torch.ones_like(q)
 
-    return benchmark.Timer(
+    yield benchmark.Timer(
         stmt="out.backward(grad, retain_graph=True)",
         globals={
             "out": out,
@@ -145,7 +147,10 @@ def benchmark_backward(shape, num_threads: int, use_attn_bias: bool):
         description="optimized",
         sub_label=sub_label,
         num_threads=num_threads,
-    ), benchmark.Timer(
+    )
+    del out
+
+    yield benchmark.Timer(
         stmt="out.backward(grad, retain_graph=True)",
         globals={
             "out": ref_attention(q, q, q, attn_bias, p),
