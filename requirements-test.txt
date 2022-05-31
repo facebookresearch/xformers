@@ -3,7 +3,7 @@
 
 
 # Tools for static checking.
-black == 20.8b1
+black == 22.3.0
 flake8 == 3.8.4
 flake8-copyright
 isort == 5.7.0
