@@ -46,16 +46,26 @@ if torch.cuda.is_available():
                 dim_mlp = hidden_layer_multiplier * dim_model
 
                 self.mlp = nn.Sequential(
-                    nn.Linear(in_features=dim_model, out_features=dim_mlp, bias=bias),
+                    nn.Linear(
+                        in_features=dim_model, out_features=dim_mlp, bias=False
+                    ),  # bias is handled in the next layer
                     # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize
                     # the `FusedLinear` import.
                     FusedDropoutBias(
-                        p=dropout, bias_shape=dim_mlp, activation=activation
+                        p=dropout,
+                        bias_shape=dim_mlp if bias else None,
+                        activation=activation,
                     ),
-                    nn.Linear(in_features=dim_mlp, out_features=dim_model, bias=bias),
+                    nn.Linear(
+                        in_features=dim_mlp, out_features=dim_model, bias=False
+                    ),  # bias is handled in the next layer
                     # pyre-ignore[16]: TODO(T101400990): Pyre did not recognize
                     # the `FusedLinear` import.
-                    FusedDropoutBias(p=dropout, bias_shape=dim_model, activation=None),
+                    FusedDropoutBias(
+                        p=dropout,
+                        bias_shape=dim_model if bias else None,
+                        activation=None,
+                    ),
                 )
                 self.requires_cuda = True
 

@@ -19,8 +19,8 @@ SHAPES = [
     (8, 512, 1024),
     (4, 1024, 1024),
     (2, 2048, 2048),
-    (1, 2048, 12288),
-    (2, 4096, 4096),
+    (1, 2048, 4096),
+    (1, 1024, 12288),
 ]
 
 HIDDEN_LAYER_MULTIPLIER = [4]
@@ -70,7 +70,7 @@ def bench_MLP(backward: bool, bias: bool, dropout: float, activation: Activation
                 for testcase in [
                     TestCase(
                         mlp_standard,
-                        "standard - {} - {}bias - {} drop - fw{}".format(
+                        "standard - {} - {} bias - {} drop - fw{}".format(
                             activation,
                             "no" if not bias else "",
                             dropout,
@@ -88,7 +88,7 @@ def bench_MLP(backward: bool, bias: bool, dropout: float, activation: Activation
                     ),
                 ]:
                     time = triton.testing.do_bench(testcase.function)[0]
-                    key = f"B={B}, M={M}, K={K}, HLM={hlm}"
+                    key = f"{B} x {M} x {K} - {hlm}"
                     if key not in results:
                         results[key] = {}
 
@@ -97,7 +97,7 @@ def bench_MLP(backward: bool, bias: bool, dropout: float, activation: Activation
         pretty_print(
             results,
             title=f"\n --- Type: {dtype} --- ",
-            units="runtime in ms, lower is better",
+            units="runtime in ms, lower is better. BMK - mul: ",
         )
         pretty_plot(
             results,
