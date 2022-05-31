@@ -32,8 +32,20 @@ def masked_matmul(a, b, mask=None):
     return att
 
 
+def _get_xformers_operator(name: str):
+    def no_such_operator(*args, **kwargs):
+        raise RuntimeError(
+            f"No such operator xformers::{name} - did you forget to build xformers with `python setup.py develop`?"
+        )
+
+    try:
+        return getattr(torch.ops.xformers, name)
+    except RuntimeError:
+        return no_such_operator
+
+
 class MemoryEfficientAttentionOp(torch.autograd.Function):
-    FORWARD_OPERATOR = torch.ops.xformers.efficient_attention
+    FORWARD_OPERATOR = _get_xformers_operator("efficient_attention")
     SUPPORTED_DEVICES = {"cuda", "cpu"}
     SUPPORTED_MAX_K: float = 32
     SUPPORTS_ATTN_BIAS = True
@@ -68,7 +80,7 @@ class MemoryEfficientAttentionOp(torch.autograd.Function):
 
 
 class MemoryEfficientAttentionGenericForwardOp(MemoryEfficientAttentionOp):
-    FORWARD_OPERATOR = torch.ops.xformers.efficient_attention_forward_generic
+    FORWARD_OPERATOR = _get_xformers_operator("efficient_attention_forward_generic")
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_MAX_K = math.inf
     SUPPORTS_ATTN_BIAS = False
@@ -82,7 +94,7 @@ def memory_efficient_attention(
     attn_bias: Optional[torch.Tensor] = None,
     p: float = 0.0,
     *,
-    op=MemoryEfficientAttentionOp
+    op=MemoryEfficientAttentionOp,
 ):
     """
     Implements the memory-efficient attention mechanism following
