@@ -148,7 +148,7 @@ def test_attention_fwd_bwd(
     ]
 
     def loss_fn(x):
-        return (x ** 2).mean()
+        return (x**2).mean()
 
     # Triton:
     n_blocks = n_ctx // block

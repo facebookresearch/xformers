@@ -11,6 +11,7 @@ from torch import Tensor, complex64
 DType = TypeVar("DType")
 
 Ts = TypeVarTuple("Ts")
+
 @overload
 def fft(
     input: Tensor[DType, Unpack[Ts]],
