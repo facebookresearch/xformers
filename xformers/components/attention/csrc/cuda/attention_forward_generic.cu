@@ -248,11 +248,11 @@ struct AttentionKernel {
       // Compute threadblock location
       cutlass::gemm::GemmCoord tb_tile_offset = {0, blockN, 0};
 
-      cutlass::MatrixCoord tb_offset_A{tb_tile_offset.m() * Mma::Shape::kM,
-                                       tb_tile_offset.k()};
+      cutlass::MatrixCoord tb_offset_A{
+          tb_tile_offset.m() * Mma::Shape::kM, tb_tile_offset.k()};
 
-      cutlass::MatrixCoord tb_offset_B{tb_tile_offset.k(),
-                                       tb_tile_offset.n() * Mma::Shape::kN};
+      cutlass::MatrixCoord tb_offset_B{
+          tb_tile_offset.k(), tb_tile_offset.n() * Mma::Shape::kN};
 
       // Construct iterators to A and B operands
       typename Mma::IteratorA iterator_A(
@@ -481,11 +481,11 @@ struct AttentionKernel {
     // Compute threadblock location
     cutlass::gemm::GemmCoord tb_tile_offset = {0, 0, 0};
 
-    cutlass::MatrixCoord tb_offset_A{tb_tile_offset.m() * Mma::Shape::kM,
-                                     tb_tile_offset.k()};
+    cutlass::MatrixCoord tb_offset_A{
+        tb_tile_offset.m() * Mma::Shape::kM, tb_tile_offset.k()};
 
-    cutlass::MatrixCoord tb_offset_B{tb_tile_offset.k(),
-                                     tb_tile_offset.n() * Mma::Shape::kN};
+    cutlass::MatrixCoord tb_offset_B{
+        tb_tile_offset.k(), tb_tile_offset.n() * Mma::Shape::kN};
 
     // Construct iterators to A and B operands
     typename Mma::IteratorA iterator_A(
@@ -522,10 +522,11 @@ struct AttentionKernel {
     typename Mma::Operator::IteratorC iterator_C(
         {&si[0][0], kSiDim1}, my_lane_id);
 
-    iterator_C.add_tile_offset({(tb_tile_offset.m() * Mma::WarpCount::kM) +
-                                    (my_warp_id % Mma::WarpCount::kM),
-                                (tb_tile_offset.n() * Mma::WarpCount::kN) +
-                                    (my_warp_id / Mma::WarpCount::kM)});
+    iterator_C.add_tile_offset(
+        {(tb_tile_offset.m() * Mma::WarpCount::kM) +
+             (my_warp_id % Mma::WarpCount::kM),
+         (tb_tile_offset.n() * Mma::WarpCount::kN) +
+             (my_warp_id / Mma::WarpCount::kM)});
 
     iterator_C.store(accum);
     __syncthreads();

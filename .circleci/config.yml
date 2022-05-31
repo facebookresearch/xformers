@@ -163,6 +163,7 @@ run_clang_format: &run_clang_format
         # install clang-format here, so that it gets cached
         sudo apt-get update
         sudo apt-get install clang-format
+        clang-format --version
 
         # apply to our files
         ./.circleci/run-clang-format.py -r xformers/components/attention/csrc
