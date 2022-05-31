@@ -11,6 +11,7 @@ mypy == 0.812
 pyre-check == 0.9.8
 pyre-extensions == 0.0.23
 click == 8.0.4
+protobuf==3.20.1
 
 # Tools for unit tests & coverage.
 pytest == 5.4.1
