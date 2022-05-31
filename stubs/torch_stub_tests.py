@@ -1695,9 +1695,9 @@ def test__lt__() -> None:
 def test_pow() -> None:
     x: Tensor[torch.float32, L[2], L[3], L[4]]
 
-    y: Tensor[torch.float32, L[2], L[3], L[4]] = x ** 4
+    y: Tensor[torch.float32, L[2], L[3], L[4]] = x**4
     # pyre-fixme[9]: Expected error.
-    y_error: Tensor[torch.float32, L[2], L[3], L[99]] = x ** 4
+    y_error: Tensor[torch.float32, L[2], L[3], L[99]] = x**4
 
 
 def test_item() -> None:

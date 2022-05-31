@@ -154,7 +154,7 @@ def get_deepnorm_coefficients(
     else:
         # Encoder/decoder
         encoder_coeffs = DeepNormCoefficients(
-            alpha=0.81 * ((N ** 4) * M) ** 0.0625, beta=0.87 * ((N ** 4) * M) ** -0.0625
+            alpha=0.81 * ((N**4) * M) ** 0.0625, beta=0.87 * ((N**4) * M) ** -0.0625
         )
 
         decoder_coeffs = DeepNormCoefficients(

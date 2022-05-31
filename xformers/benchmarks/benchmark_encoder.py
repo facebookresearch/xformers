@@ -118,7 +118,7 @@ def _train_for_several_steps(
 
     if _use_cuda:
         torch.cuda.synchronize()
-        max_memory = torch.cuda.max_memory_allocated() / 2 ** 20
+        max_memory = torch.cuda.max_memory_allocated() / 2**20
     else:
         max_memory = -1
     run_time = time.time() - start_time

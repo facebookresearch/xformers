@@ -15,6 +15,7 @@ DType = TypeVar("DType")
 DType2 = TypeVar("DType2")
 
 Ts = TypeVarTuple("Ts")
+
 @overload
 def softmax(
     input: Tensor[DType, Unpack[Ts]], dim: int, dtype: Optional[DType2]

@@ -376,7 +376,7 @@ class Experiment(object):
         fn()
         fn()
         torch.cuda.synchronize()
-        return torch.cuda.max_memory_allocated() // 2 ** 20
+        return torch.cuda.max_memory_allocated() // 2**20
 
     def gen_config(self):
         raise NotImplementedError("Not setup")
