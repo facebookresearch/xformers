@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
+
 import pytest
 import torch
 from scipy.stats import binom_test
@@ -115,7 +117,7 @@ def test_logsumexp(
     value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
 
     _, lse, _, _ = op.FORWARD_OPERATOR(query, key, value, True, None, 0.0)
-    ref_lse = ((query / k_len ** 0.5) @ key.transpose(-2, -1)).logsumexp(-1)
+    ref_lse = ((query / k_len**0.5) @ key.transpose(-2, -1)).logsumexp(-1)
 
     assert torch.allclose(lse, ref_lse, atol=2e-4)
 
@@ -186,8 +188,7 @@ def test_memory_efficient_attention_backward(
     # there is some extra precision loss in the CPU implementation due to an
     # extra accumulation step in grad_q, which is not present in the CUDA
     # implementation
-    atol = 7e-4 if device == "cuda" else 6e-4
-    atol += 1e-6 * k_len * kv_len
+    atol = 1e-4 + 2e-6 * k_len * kv_len * math.sqrt(batch_size) * math.sqrt(q_len)
 
     # (for mypy)
     assert isinstance(query.grad, torch.Tensor)
@@ -201,8 +202,7 @@ def test_memory_efficient_attention_backward(
     ]:
         assert torch.allclose(
             calc_grad, ref_grad, atol=atol
-        ), f"""{name} doesn't match
-        max={(calc_grad - ref_grad).abs().max()}"""
+        ), f"{name} doesn't match (max_diff={(calc_grad - ref_grad).abs().max()} > {atol})"
 
 
 def _vec_binom_test(x, n, p):
