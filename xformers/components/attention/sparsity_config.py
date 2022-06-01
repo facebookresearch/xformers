@@ -1,3 +1,7 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
 """
 The code has been adopted from DeepSpeed
 (https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/ops/sparse_attention/sparsity_config.py)
@@ -14,12 +18,11 @@ class SparsityConfig:
     needs to extend it based on required property and functionality.
     """
 
-    def __init__(self, num_heads, block=16, different_layout_per_head=False):
+    def __init__(self, num_heads, block_size=16, different_layout_per_head=False):
         """Initialize the Sparsity Pattern Config.
-        For usage example please see, TODO DeepSpeed Sparse Transformer Tutorial
         Arguments:
              num_heads: required: an integer determining number of attention heads of the layer.
-             block: optional: an integer determining the block size. Current implementation of
+             block_size: optional: an integer determining the block size. Current implementation of
              sparse self-attention is based on blocked sparse matrices. In which this parameter
              defines size of such blocks, `Block X Block`.
              different_layout_per_head: optional: a boolean determining if each head should be
@@ -28,7 +31,7 @@ class SparsityConfig:
         """
 
         self.num_heads = num_heads
-        self.block = block
+        self.block_size = block_size
         self.different_layout_per_head = different_layout_per_head
         self.num_layout_heads = num_heads if different_layout_per_head else 1
 
@@ -41,11 +44,11 @@ class SparsityConfig:
                 of all head; initialized with zero
         """
 
-        if seq_len % self.block != 0:
+        if seq_len % self.block_size != 0:
             raise ValueError(
-                f"Sequence Length, {seq_len}, needs to be dividable by Block size {self.block}!"
+                f"Sequence Length, {seq_len}, needs to be dividable by Block size {self.block_size}!"
             )
-        num_blocks = seq_len // self.block
+        num_blocks = seq_len // self.block_size
         # TODO Currently we allocate layout per head; needs to be updated if heads share a single layout.
         layout = torch.zeros(
             (self.num_heads, num_blocks, num_blocks), dtype=torch.int64
@@ -111,7 +114,7 @@ class FixedSparsityConfig(SparsityConfig):
     def __init__(
         self,
         num_heads,
-        block=16,
+        block_size=16,
         different_layout_per_head=False,
         num_local_blocks=4,
         num_global_blocks=1,
@@ -123,7 +126,7 @@ class FixedSparsityConfig(SparsityConfig):
         For usage example please see, TODO DeepSpeed Sparse Transformer Tutorial
         Arguments:
              num_heads: required: an integer determining number of attention heads of the layer.
-             block: optional: an integer determining the block size. Current implementation of
+             block_size: optional: an integer determining the block size. Current implementation of
                 sparse self-attention is based on blocked sparse matrices. In which this parameter
                 defines size of such blocks, `Block X Block`.
              different_layout_per_head: optional: a boolean determining if each head should be
@@ -152,7 +155,7 @@ class FixedSparsityConfig(SparsityConfig):
                 Of course, there is a limitation based on num_local_blocks and num_global_blocks.
         """
 
-        super().__init__(num_heads, block, different_layout_per_head)
+        super().__init__(num_heads, block_size, different_layout_per_head)
 
         self.num_local_blocks = num_local_blocks
 
@@ -297,7 +300,7 @@ class VariableSparsityConfig(SparsityConfig):
     def __init__(
         self,
         num_heads,
-        block=16,
+        block_size=16,
         different_layout_per_head=False,
         num_random_blocks=0,
         local_window_blocks=[4],
@@ -310,7 +313,7 @@ class VariableSparsityConfig(SparsityConfig):
         For usage example please see, TODO DeepSpeed Sparse Transformer Tutorial
         Arguments:
              num_heads: required: an integer determining number of attention heads of the layer.
-             block: optional: an integer determining the block size. Current implementation of sparse
+             block_size: optional: an integer determining the block size. Current implementation of sparse
                 self-attention is based on blocked sparse matrices. In which this parameter defines
                 size of such blocks, `Block X Block`.
              different_layout_per_head: optional: a boolean determining if each head should be assigned a
@@ -346,7 +349,7 @@ class VariableSparsityConfig(SparsityConfig):
                 attention not only includes the vertical blocks, but also horizontal blocks.
         """
 
-        super().__init__(num_heads, block, different_layout_per_head)
+        super().__init__(num_heads, block_size, different_layout_per_head)
 
         self.num_random_blocks = num_random_blocks
         self.local_window_blocks = local_window_blocks
@@ -510,7 +513,7 @@ class BigBirdSparsityConfig(SparsityConfig):
     def __init__(
         self,
         num_heads,
-        block=16,
+        block_size=16,
         different_layout_per_head=False,
         num_random_blocks=1,
         num_sliding_window_blocks=3,
@@ -521,7 +524,7 @@ class BigBirdSparsityConfig(SparsityConfig):
         For usage example please see, TODO DeepSpeed Sparse Transformer Tutorial
         Arguments:
              num_heads: required: an integer determining number of attention heads of the layer.
-             block: optional: an integer determining the block size. Current implementation of
+             block_size: optional: an integer determining the block size. Current implementation of
                 sparse self-attention is based on blocked sparse matrices. In which this parameter
                 defines size of such blocks, `Block X Block`.
              different_layout_per_head: optional: a boolean determining if each head should be assigned
@@ -542,7 +545,7 @@ class BigBirdSparsityConfig(SparsityConfig):
                 matrix is mirror of the lower triangular in the above figure.
         """
 
-        super().__init__(num_heads, block, different_layout_per_head)
+        super().__init__(num_heads, block_size, different_layout_per_head)
 
         self.num_random_blocks = num_random_blocks
         self.num_sliding_window_blocks = num_sliding_window_blocks
@@ -670,7 +673,7 @@ class BSLongformerSparsityConfig(SparsityConfig):
     def __init__(
         self,
         num_heads,
-        block=16,
+        block_size=16,
         different_layout_per_head=False,
         num_sliding_window_blocks=3,
         global_block_indices=[0],
@@ -681,7 +684,7 @@ class BSLongformerSparsityConfig(SparsityConfig):
         For usage example please see, TODO DeepSpeed Sparse Transformer Tutorial
         Arguments:
              num_heads: required: an integer determining number of attention heads of the layer.
-             block: optional: an integer determining the block size. Current implementation of sparse
+             block_size: optional: an integer determining the block size. Current implementation of sparse
                 self-attention is based on blocked sparse matrices. In which this parameter defines size
                 of such blocks, `Block X Block`.
              different_layout_per_head: optional: a boolean determining if each head should be assigned a
@@ -707,7 +710,7 @@ class BSLongformerSparsityConfig(SparsityConfig):
                 matrix is mirror of the lower triangular in the above figure.
         """
 
-        super().__init__(num_heads, block, different_layout_per_head)
+        super().__init__(num_heads, block_size, different_layout_per_head)
 
         self.num_sliding_window_blocks = num_sliding_window_blocks
         self.global_block_indices = global_block_indices

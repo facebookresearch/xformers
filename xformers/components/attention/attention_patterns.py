@@ -268,22 +268,22 @@ def alibi_pattern(threshold: float, mask_shape: torch.Size) -> torch.Tensor:
 
 
 def quick_fixed_layout(num_heads: int, block_size: int, seq_len: int):
-    config = FixedSparsityConfig(num_heads=num_heads, block=block_size)
+    config = FixedSparsityConfig(num_heads=num_heads, block_size=block_size)
     return config.make_layout(seq_len)
 
 
 def quick_variable_layout(num_heads: int, block_size: int, seq_len: int):
-    config = VariableSparsityConfig(num_heads=num_heads, block=block_size)
+    config = VariableSparsityConfig(num_heads=num_heads, block_size=block_size)
     return config.make_layout(seq_len)
 
 
 def quick_bigbird_layout(num_heads: int, block_size: int, seq_len: int):
-    config = BigBirdSparsityConfig(num_heads=num_heads, block=block_size)
+    config = BigBirdSparsityConfig(num_heads=num_heads, block_size=block_size)
     return config.make_layout(seq_len)
 
 
 def quick_bslongformer_layout(num_heads: int, block_size: int, seq_len: int):
-    config = BSLongformerSparsityConfig(num_heads=num_heads, block=block_size)
+    config = BSLongformerSparsityConfig(num_heads=num_heads, block_size=block_size)
     return config.make_layout(seq_len)
 
 
