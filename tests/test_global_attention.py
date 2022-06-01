@@ -11,6 +11,9 @@ from xformers.components.attention import GlobalAttention, ScaledDotProduct
 def test_global_attention():
     b, s, d = 2, 90, 40
 
+    torch.cuda.manual_seed(42)
+    torch.manual_seed(42)
+
     def test_ratio(global_attention_ratio: float):
         # Make sure that Global and Normal attention get the same results for the corresponding tokens
         a = torch.rand(b, s, d)
