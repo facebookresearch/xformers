@@ -188,7 +188,7 @@ def test_memory_efficient_attention_backward(
     # there is some extra precision loss in the CPU implementation due to an
     # extra accumulation step in grad_q, which is not present in the CUDA
     # implementation
-    atol = 1e-4 + 2e-6 * k_len * kv_len * math.sqrt(batch_size) * math.sqrt(q_len)
+    atol = 2e-4 + 2e-6 * k_len * kv_len * math.sqrt(batch_size) * math.sqrt(q_len)
 
     # (for mypy)
     assert isinstance(query.grad, torch.Tensor)
