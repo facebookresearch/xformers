@@ -30,10 +30,6 @@ class xFormerWeightInit(str, Enum):
     Small = "small"
 
 
-# TODO: Check with a bunch of quick trainings whether all the inits are in the green
-# TODO: Check test coverage
-
-
 def get_weight_init_fn(init_choice: xFormerWeightInit):
     """
     Provide the xFormers factory with weight init routines.

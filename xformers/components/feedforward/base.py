@@ -35,7 +35,12 @@ class Feedforward(nn.Module, metaclass=ABCMeta):
         **kwargs,
     ):
         super().__init__()
+
+        # This feedforward requires a CUDA accelerator
         self.requires_cuda = False
+
+        # This feedforward requires a context length which is squared, often due to 2D pooling
+        self.requires_squared_context = False
 
     @classmethod
     def from_config(cls: Type[Self], config: FeedforwardConfig) -> Self:

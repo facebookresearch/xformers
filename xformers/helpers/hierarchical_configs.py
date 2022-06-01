@@ -27,6 +27,7 @@ def get_hierarchical_configuration(
     use_rotary_embeddings: bool = True,
     mlp_multiplier: int = 4,
     dim_head=32,
+    feedforward="MLP",
 ):
     """
     A small helper to generate hierarchical xformers configurations,
@@ -49,7 +50,7 @@ def get_hierarchical_configuration(
             },
         },
         "feedforward_config": {
-            "name": "MLP",
+            "name": feedforward,
             "activation": "gelu",
             "hidden_layer_multiplier": mlp_multiplier,
             "dropout": 0.0,
