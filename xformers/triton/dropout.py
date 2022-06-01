@@ -226,6 +226,11 @@ class FusedDropoutBias(torch.nn.Module):
         self.activation_grad: Optional[Any] = None
         self.activation_pytorch: Optional[Any] = None
 
+    def init_weights(self, *args, **kwargs):
+        with torch.no_grad():
+            if self.bias is not None:
+                self.bias.fill_(0.0)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Convenience, catch a possible type or device mismatch
         if self.bias is not None:

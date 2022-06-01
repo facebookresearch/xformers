@@ -26,7 +26,7 @@ from torch.utils.data import DataLoader, random_split
 from torchmetrics import Accuracy
 from torchvision import transforms
 
-from xformers.factory import xFormer, xFormerConfig
+from xformers.factory import xFormer, xFormerConfig, xFormerWeightInit
 
 
 class Classifier(str, Enum):
@@ -182,7 +182,7 @@ class VisionTransformer(pl.LightningModule):
                 }
             ]
 
-            config = xFormerConfig(xformer_config)
+            config = xFormerConfig(xformer_config, weight_init=xFormerWeightInit.Timm)
             self.transformer = xFormer.from_config(config)
 
             # init positional embedding with 0.02 from BERT
