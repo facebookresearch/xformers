@@ -190,11 +190,12 @@ class FusedLayerNorm(nn.Module):
         return layer_norm(x, self.weight, self.bias, self.epsilon)
 
     def init_weights(self, *args, **kwargs):
-        if self.weight is not None:
-            self.weight.fill_(1.0)
+        with torch.no_grad():
+            if self.weight is not None:
+                self.weight.fill_(1.0)
 
-        if self.bias is not None:
-            self.bias.fill_(0.0)
+            if self.bias is not None:
+                self.bias.fill_(0.0)
 
 
 def layer_norm(
