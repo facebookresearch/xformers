@@ -61,10 +61,6 @@ def is_ffn(n):
     return "feedforward" in n or ("wrap_ff" in n and not n.endswith("norm"))
 
 
-def is_out_mha_proj_w(n):
-    return "mha.proj" in n and "weight" in n
-
-
 def is_mha_input_projection(n):
     return "q_proj" in n or "k_proj" in n or "v_proj" in n
 
@@ -125,8 +121,19 @@ def _variance_scaling(tensor, scale=1.0, mode="fan_in", distribution="normal"):
         raise ValueError(f"invalid distribution {distribution}")
 
 
-def _lecun_normal(tensor):
-    _variance_scaling(tensor, mode="fan_in", distribution="truncated_normal")
+def _lecun_normal(tensor, gain=1.0):
+    fan_in, _ = _calculate_fan_in_and_fan_out(tensor)
+    denom = fan_in
+    variance = gain / denom
+
+    # constant is stddev of standard normal truncated to (-2, 2)
+    _no_grad_trunc_normal_(
+        tensor,
+        mean=0.0,
+        std=math.sqrt(variance) / 0.87962566103423978,
+        a=-2.0,
+        b=2.0,
+    )
 
 
 # Helpers to keep all the functions typesafe, and handle corner cases and common behaviours in one place
@@ -187,7 +194,7 @@ def _init_weights_vit_jax(
         _maybe_init_tensor(module, "bias", nn.init.zeros_)
 
     elif isinstance(module, nn.Conv2d):
-        _maybe_init_tensor(module, "weight", _lecun_normal)
+        _maybe_init_tensor(module, "weight", _lecun_normal, gain=gain)
         _maybe_init_tensor(module, "bias", nn.init.zeros_)
 
     elif hasattr(module, "init_weights"):

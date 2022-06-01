@@ -199,12 +199,17 @@ def test_presets(config, reversible, tie_embedding_weights, layer_norm_style, de
 
 
 @pytest.mark.parametrize("weight_init", [w.value for w in xFormerWeightInit])
+@pytest.mark.parametrize("deepnorm", [False, True])
 @pytest.mark.parametrize("device", DEVICES)
-def test_weight_init(weight_init, device):
+def test_weight_init(weight_init, deepnorm, device):
     torch.cuda.manual_seed(42)
     torch.manual_seed(42)
 
     config = test_configs_dict
+
+    if deepnorm:
+        config["encoder"]["layer_norm_style"] = "deepnorm"
+        config["decoder"]["layer_norm_style"] = "deepnorm"
 
     # Make sure that all the init methods catch all the weights
     xformers_weight_init._assert_if_not_initialized = True
