@@ -426,7 +426,7 @@ def test_fixed_sparsity_config():
     )
     with pytest.raises(expected_exception=ValueError):
         FixedSparsityConfig(num_heads=1, num_local_blocks=3, num_global_blocks=2)
-    with pytest.raises(expected_exception=ValueError):
+    with pytest.raises(expected_exception=NotImplementedError):
         FixedSparsityConfig(num_heads=1, attention="directional")
     with pytest.raises(expected_exception=ValueError):
         FixedSparsityConfig(
