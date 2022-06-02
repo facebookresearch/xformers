@@ -14,6 +14,7 @@ from xformers.components.attention.sparsity_config import (
     BSLongformerSparsityConfig,
     DenseSparsityConfig,
     FixedSparsityConfig,
+    VariableSparsityConfig,
 )
 
 
@@ -312,9 +313,9 @@ def test_quick_layouts():
     )
 
     # BigBird (just the shape)
-    assert AP.quick_variable_layout(
-        num_heads, block_size, seq_size
-    ).shape == torch.Size([num_heads, seq_size // block_size, seq_size // block_size])
+    assert AP.quick_bigbird_layout(num_heads, block_size, seq_size).shape == torch.Size(
+        [num_heads, seq_size // block_size, seq_size // block_size]
+    )
 
 
 def test_layout_to_pattern():
@@ -378,6 +379,8 @@ def test_big_bird_sparsity_config():
     )
     with pytest.raises(expected_exception=ValueError):
         sc.make_layout(seq_len=16)
+    with pytest.raises(expected_exception=NotImplementedError):
+        BigBirdSparsityConfig(num_heads=1, attention="directional")
 
 
 def test_bslongformer_sparsity_config():
@@ -445,3 +448,28 @@ def test_fixed_sparsity_config():
             num_local_blocks=4,
             num_global_blocks=1,
         )
+
+
+def test_variable_sparsity_config():
+    sc = VariableSparsityConfig(num_heads=1, global_block_end_indices=[1])
+    assert torch.allclose(
+        sc.make_layout(128),
+        torch.Tensor(
+            [
+                [
+                    [1, 1, 1, 1, 0, 0, 0, 0],
+                    [1, 1, 1, 1, 0, 0, 0, 0],
+                    [1, 1, 1, 1, 0, 0, 0, 0],
+                    [1, 1, 1, 1, 0, 0, 0, 0],
+                    [1, 0, 0, 0, 1, 1, 1, 1],
+                    [1, 0, 0, 0, 1, 1, 1, 1],
+                    [1, 0, 0, 0, 1, 1, 1, 1],
+                    [1, 0, 0, 0, 1, 1, 1, 1],
+                ]
+            ]
+        ).long(),
+    )
+    with pytest.raises(expected_exception=ValueError):
+        VariableSparsityConfig(num_heads=1, global_block_end_indices=[])
+    with pytest.raises(expected_exception=ValueError):
+        VariableSparsityConfig(num_heads=1, global_block_end_indices=[-1])
