@@ -43,7 +43,7 @@ def bench_multihead_dispatch(backward: bool, self_attention: bool):
                     residual_dropout=0.0,
                     num_heads=heads,
                     attention=ScaledDotProduct(),
-                    bias=True,
+                    bias=(True, True, True, True),
                 ).to(device=device, dtype=dtype)
                 torch_multi_head = nn.MultiheadAttention(
                     embed_dim=K, num_heads=heads, batch_first=True

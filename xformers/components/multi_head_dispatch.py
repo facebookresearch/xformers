@@ -4,8 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import logging
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -49,6 +50,20 @@ class MultiHeadDispatch(nn.Module):
     This can be used to wrap the proposed attention mechanisms and make them multi-head aware,
     but it is optional.
 
+    Args:
+        dim_model: The model/embedding dimension
+        num_heads: The number of heads being used
+        attention: The attention mechanism (needs to be registered to the xformers library)
+        bias: Whether to use bias for the projections : (Q, K, V, Output)
+        residual_dropout: Amount of dropout on the residual path
+        use_separate_proj_weight: Use different weights for the Q, K, V projections
+        dim_key: Optionally use a different dimension for the key
+        dim_value:  Optionally use a different dimension for the value
+        in_proj_container: Optionally provide the input projection module
+        use_rotary_embeddings: Use rotary embeddings
+        out_proj: Optionally provide the output projection module
+
+
     .. _`Attention is all you need`: https://arxiv.org/abs/1706.03762v5
     """
 
@@ -57,7 +72,7 @@ class MultiHeadDispatch(nn.Module):
         dim_model: int,
         num_heads: int,
         attention: Attention,
-        bias: bool = True,
+        bias: Tuple[bool, bool, bool, bool] = (True, True, True, True),
         residual_dropout: float = 0.0,
         use_separate_proj_weight: bool = True,
         dim_key: Optional[int] = None,
@@ -69,6 +84,13 @@ class MultiHeadDispatch(nn.Module):
         **kwargs,
     ):
         super().__init__()
+
+        if isinstance(bias, bool):
+            logging.warning(
+                "Single bias value provided for the MHA projections."
+                + f" Assuming the same parameter ({bias}) is to be used everywhere"
+            )
+            bias = (bias, bias, bias, bias)
 
         assert (
             dim_model % num_heads == 0
@@ -94,13 +116,13 @@ class MultiHeadDispatch(nn.Module):
                 if in_proj_container is not None
                 else InputProjection(
                     query_proj_params=InputProjectionConfig(
-                        dim_model, dim_key, bias=bias
+                        dim_model, dim_key, bias=bias[0]
                     ),
                     key_proj_params=InputProjectionConfig(
-                        dim_model, dim_key, bias=bias
+                        dim_model, dim_key, bias=bias[1]
                     ),
                     value_proj_params=InputProjectionConfig(
-                        dim_model, dim_value, bias=bias
+                        dim_model, dim_value, bias=bias[2]
                     ),
                     use_separate_proj_weight=use_separate_proj_weight,
                 )
@@ -115,7 +137,9 @@ class MultiHeadDispatch(nn.Module):
         self.resid_drop = nn.Dropout(residual_dropout, inplace=False)
 
         # Output projection
-        self.proj = out_proj if out_proj else nn.Linear(dim_model, dim_model, bias=bias)
+        self.proj = (
+            out_proj if out_proj else nn.Linear(dim_model, dim_model, bias=bias[3])
+        )
         if isinstance(self.proj, nn.Linear) and self.proj.bias is not None:
             constant_(self.proj.bias, 0.0)
 
