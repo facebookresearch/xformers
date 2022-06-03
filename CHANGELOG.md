@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed dupliacated biases in the FusedMLP layers [#317]
 
 ### Added
+- Four blocksparsity layouts from DeepSpeed [#320]
 
 ## [0.0.11] - 2022-05-30
 ### Fixed

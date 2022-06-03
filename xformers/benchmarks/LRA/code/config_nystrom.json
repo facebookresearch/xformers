@@ -50,7 +50,7 @@
                         "hidden_layer_multiplier": 2
                     }
                 }
-            
+
             ],
             "extra_settings": {
                 "attention": {
@@ -199,7 +199,7 @@
                         "hidden_layer_multiplier": 2
                     }
                 }
-            
+
             ],
             "extra_settings": {
                 "attention": {
