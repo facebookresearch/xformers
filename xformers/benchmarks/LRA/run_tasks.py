@@ -31,8 +31,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from xformers.benchmarks.LRA.code.dataset import LRADataset
 from xformers.benchmarks.LRA.code.model_wrapper import ModelForSC, ModelForSCDual
+from xformers.benchmarks.utils import temp_files_ctx
 from xformers.components.attention import ATTENTION_REGISTRY
-from xformers.utils import temp_files_ctx
 
 
 class Task(str, Enum):

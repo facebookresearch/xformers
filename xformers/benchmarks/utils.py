@@ -3,9 +3,12 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import contextlib
 import logging
+import os
+import tempfile
 from collections import namedtuple
-from typing import Any, Dict, List
+from typing import Any, Dict, Generator, List
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -179,3 +182,23 @@ def pretty_barplot(results, title, units: str, filename=None, dash_key=""):
 
     plt.savefig(filename, bbox_inches="tight")
     plt.close(f)
+
+
+def rmf(filename: str) -> None:
+    """Remove a file like rm -f."""
+    try:
+        os.remove(filename)
+    except FileNotFoundError:
+        pass
+
+
+@contextlib.contextmanager
+def temp_files_ctx(num: int) -> Generator:
+    """A context to get tempfiles and ensure they are cleaned up."""
+    files = [tempfile.mkstemp()[1] for _ in range(num)]
+
+    yield tuple(files)
+
+    # temp files could have been removed, so we use rmf.
+    for name in files:
+        rmf(name)
