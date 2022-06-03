@@ -15,7 +15,6 @@ import torch.nn as nn
 
 from xformers.components import Activation, build_activation
 from xformers.components.feedforward import Feedforward, FeedforwardConfig
-from xformers.factory.weight_init import _no_grad_trunc_normal_
 
 from . import register_feedforward
 
@@ -73,14 +72,7 @@ class Conv2DFeedforward(Feedforward):
     def init_weights(self, **kwargs):
         # Follow the original init, but also make it possible to initialize from the outside
         def init_module(m: nn.Module):
-            if isinstance(m, nn.Linear):
-                _no_grad_trunc_normal_(m.weight, mean=0.0, std=0.02, a=2.0, b=-2.0)
-                if isinstance(m, nn.Linear) and m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.LayerNorm):
-                nn.init.constant_(m.bias, 0)
-                nn.init.constant_(m.weight, 1.0)
-            elif isinstance(m, nn.Conv2d):
+            if isinstance(m, nn.Conv2d):
                 fan_out = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
                 fan_out //= m.groups
                 m.weight.data.normal_(0, math.sqrt(2.0 / fan_out))
