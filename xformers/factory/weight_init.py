@@ -92,35 +92,6 @@ def _small_init_(tensor: torch.Tensor, gain: float = 1.0) -> torch.Tensor:
     return _no_grad_uniform_(tensor, -a, a)
 
 
-def _variance_scaling(tensor, scale=1.0, mode="fan_in", distribution="normal"):
-    fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
-    if mode == "fan_in":
-        denom = fan_in
-    elif mode == "fan_out":
-        denom = fan_out
-    elif mode == "fan_avg":
-        denom = (fan_in + fan_out) / 2
-
-    variance = scale / denom
-
-    if distribution == "truncated_normal":
-        # constant is stddev of standard normal truncated to (-2, 2)
-        _no_grad_trunc_normal_(
-            tensor,
-            mean=0.0,
-            std=math.sqrt(variance) / 0.87962566103423978,
-            a=-2.0,
-            b=2.0,
-        )
-    elif distribution == "normal":
-        tensor.normal_(std=math.sqrt(variance))
-    elif distribution == "uniform":
-        bound = math.sqrt(3 * variance)
-        tensor.uniform_(-bound, bound)
-    else:
-        raise ValueError(f"invalid distribution {distribution}")
-
-
 def _lecun_normal(tensor, gain=1.0):
     fan_in, _ = _calculate_fan_in_and_fan_out(tensor)
     denom = fan_in
@@ -203,9 +174,10 @@ def _init_weights_vit_jax(
     else:
         _maybe_report_no_init(module, name)
 
-    # Recurse over the children
-    for child_name, child_module in module.named_children():
-        _init_weights_vit_jax(child_module, f"{name}.{child_name}", head_bias, gain)
+    # Recurse over the children, if the weight init is being handled here
+    if not hasattr(module, "init_weights"):
+        for child_name, child_module in module.named_children():
+            _init_weights_vit_jax(child_module, f"{name}.{child_name}", head_bias, gain)
 
 
 def _init_weights_vit_moco(
@@ -240,9 +212,10 @@ def _init_weights_vit_moco(
     else:
         _maybe_report_no_init(module, name)
 
-    # Recurse over the children
-    for child_name, child_module in module.named_children():
-        _init_weights_vit_moco(child_module, child_name, gain)
+    # Recurse over the children, if the weight init is being handled here
+    if not hasattr(module, "init_weights"):
+        for child_name, child_module in module.named_children():
+            _init_weights_vit_moco(child_module, child_name, gain)
 
 
 def _init_weights_small(
@@ -277,9 +250,10 @@ def _init_weights_small(
     else:
         _maybe_report_no_init(module, name)
 
-    # Recurse over the children
-    for child_name, child_module in module.named_children():
-        _init_weights_small(child_module, f"{name}.{child_name}", head_bias, gain)
+    # Recurse over the children, if the weight init is being handled here
+    if not hasattr(module, "init_weights"):
+        for child_name, child_module in module.named_children():
+            _init_weights_small(child_module, f"{name}.{child_name}", head_bias, gain)
 
 
 def _init_weights_vit_timm(
@@ -314,6 +288,7 @@ def _init_weights_vit_timm(
     else:
         _maybe_report_no_init(module, name)
 
-    # Recurse over the children
-    for child_name, child_module in module.named_children():
-        _init_weights_vit_timm(child_module, child_name, gain)
+    # Recurse over the children, if the weight init is being handled here
+    if not hasattr(module, "init_weights"):
+        for child_name, child_module in module.named_children():
+            _init_weights_vit_timm(child_module, child_name, gain)
