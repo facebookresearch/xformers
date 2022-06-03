@@ -29,8 +29,8 @@ class ConvMlpConfig(FeedforwardConfig):
     dropout: float
 
 
-@register_feedforward("ConvMLP", ConvMlpConfig)
-class ConvMLP(Feedforward):
+@register_feedforward("Conv2DFeedforward", ConvMlpConfig)
+class Conv2DFeedforward(Feedforward):
     """
     A Convolutional feed-forward network, as proposed in VAN_ (Vision Attention Network, Guo et al.)
 
@@ -93,7 +93,7 @@ class ConvMLP(Feedforward):
         # The conv layers expect NCHW, we have NLC by default
         B, L, C = x.shape
         HW = int(math.sqrt(x.shape[-2]))
-        assert HW**2 == L, "ConvMLP is 2D by default, and it assumes square pictures"
+        assert HW**2 == L, "Conv2DFeedforward requires squared context lengths"
 
         x = x.reshape((B, HW, HW, C)).swapdims(1, -1)
 

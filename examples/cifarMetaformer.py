@@ -89,7 +89,7 @@ class MetaVisionTransformer(VisionTransformer):
             use_rotary_embeddings=use_rotary_embeddings,
             mlp_multiplier=4,
             dim_head=32,
-            feedforward="ConvMLP",
+            feedforward="Conv2DFeedforward",
         )
 
         # Now instantiate the metaformer trunk
