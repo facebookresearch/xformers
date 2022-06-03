@@ -7,6 +7,10 @@ import pytest
 import torch
 
 from xformers.components.positional_embedding import RotaryEmbedding
+from xformers.components.positional_embedding.rotary import (
+    apply_rotary_pos_emb,
+    rotate_half,
+)
 
 DEVICES = (
     [torch.device("cpu")]
@@ -19,6 +23,32 @@ BATCH = 2
 SEQ = 32
 HEADS = 2
 EMB = 32
+
+
+def test_helper_methods():
+    # rotate_half
+    tens = torch.tensor([[0, 1, 2, 3], [3, 1, 2, 0], [0, 1, 0, 1], [1, 0, 1, 0]])
+    tens_rotated = rotate_half(tens)
+    assert torch.equal(
+        tens_rotated,
+        torch.tensor([[-2, -3, 0, 1], [-2, 0, 3, 1], [0, -1, 0, 1], [-1, 0, 1, 0]]),
+    )
+
+    # apply_rotary_pos_emb
+    cos_test = torch.ones((1, 1, 4, 4))
+    sin_test = cos_test.clone()
+    q_test = 3 * torch.ones((2, 2, 3, 4))
+    q_applied = apply_rotary_pos_emb(q_test, cos_test, sin_test)
+    assert torch.equal(
+        q_applied,
+        torch.concat(
+            (
+                torch.zeros((2, 2, 3, 2), dtype=torch.float),
+                6 * torch.ones((2, 2, 3, 2), dtype=torch.float),
+            ),
+            dim=-1,
+        ),
+    )
 
 
 @pytest.mark.parametrize("device", DEVICES)
