@@ -84,9 +84,9 @@ class _dropout(torch.autograd.Function):
 
     @staticmethod
     @custom_bwd
-    def backward(ctx, grad_out):
-        # pragma: no cover  # This is covered, but called from C++ and not tracked
-
+    def backward(
+        ctx, grad_out
+    ):  # pragma: no cover  # This is covered, but called from C++ and not tracked
         (seeds, bias, inputs) = ctx.saved_tensors
 
         # Soft-flatten an hypothetical 3rd dimension
