@@ -85,6 +85,8 @@ class _dropout(torch.autograd.Function):
     @staticmethod
     @custom_bwd
     def backward(ctx, grad_out):
+        # pragma: no cover  # This is covered, but called from C++ and not tracked
+
         (seeds, bias, inputs) = ctx.saved_tensors
 
         # Soft-flatten an hypothetical 3rd dimension
@@ -225,6 +227,11 @@ class FusedDropoutBias(torch.nn.Module):
         self.activation: Optional[Any] = None
         self.activation_grad: Optional[Any] = None
         self.activation_pytorch: Optional[Any] = None
+
+    def init_weights(self, *args, **kwargs):
+        with torch.no_grad():
+            if self.bias is not None:
+                self.bias.fill_(0.0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Convenience, catch a possible type or device mismatch

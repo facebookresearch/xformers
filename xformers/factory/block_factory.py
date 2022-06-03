@@ -130,12 +130,19 @@ class xFormerEncoderBlock(torch.nn.Module):
             residual_scale=residual_scale,
         )
 
-        self.mha = build_multi_head_attention(config.multi_head_config)
-        self.feedforward = build_feedforward(asdict(config.feedforward_config))
+        mha = build_multi_head_attention(config.multi_head_config)
+        feedforward = build_feedforward(asdict(config.feedforward_config))
+
+        # Expose attention specific capabilities
+        self.supports_attention_mask = mha.attention.supports_attention_mask
+        self.requires_same_k_q_dimensions = mha.attention.requires_same_k_q_dimensions
+        self.causal = (
+            mha.attention.causal if hasattr(mha.attention, "causal") else False
+        )
 
         # Wrappers handle the different layer norm styles (pre- and post-) and the residual path
-        self.wrap_att = ln_factory(self.mha)
-        self.wrap_ff: Union[Residual, PostNorm] = ln_factory(self.feedforward)
+        self.wrap_att = ln_factory(mha)
+        self.wrap_ff: Union[Residual, PostNorm] = ln_factory(feedforward)
         if (
             config.layer_norm_style == LayerNormStyle.Pre
             and config.layer_position.is_last()
@@ -264,13 +271,22 @@ class xFormerDecoderBlock(torch.nn.Module):
             residual_scale=residual_scale,
         )
 
-        self.mha = build_multi_head_attention(config.multi_head_config_masked)
-        self.cross_mha = build_multi_head_attention(config.multi_head_config_cross)
-        self.feedforward = build_feedforward(config.feedforward_config)
+        mha = build_multi_head_attention(config.multi_head_config_masked)
+        cross_mha = build_multi_head_attention(config.multi_head_config_cross)
+        feedforward = build_feedforward(config.feedforward_config)
 
-        self.wrap_att = ln_factory(self.mha)
-        self.wrap_cross = ln_factory(self.cross_mha)
-        self.wrap_ff: Union[Residual, PostNorm] = ln_factory(self.feedforward)
+        # Expose attention specific capabilities
+        self.supports_attention_mask = mha.attention.supports_attention_mask
+        self.requires_same_k_q_dimensions = mha.attention.requires_same_k_q_dimensions
+        self.causal_attention = (
+            mha.attention.causal if hasattr(mha.attention, "causal") else False
+        )
+
+        # Wrappers handle the different layer norm styles (pre- and post-) and the residual path
+        self.wrap_att = ln_factory(mha)
+        self.wrap_cross = ln_factory(cross_mha)
+        self.wrap_ff: Union[Residual, PostNorm] = ln_factory(feedforward)
+
         if (
             config.layer_norm_style == LayerNormStyle.Pre
             and config.layer_position.is_last()

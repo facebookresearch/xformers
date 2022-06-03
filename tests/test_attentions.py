@@ -9,7 +9,11 @@ from typing import Tuple
 import pytest
 import torch
 
-from xformers.components import InProjContainer, InProjParams, MultiHeadDispatch
+from xformers.components import (
+    InputProjection,
+    InputProjectionConfig,
+    MultiHeadDispatch,
+)
 
 # Automatically test all the registered attentions
 from xformers.components.attention import (
@@ -40,6 +44,7 @@ def _get_multihead(
     heads,
     device,
     skip_output_projection=False,
+    use_seperate_proj_weights=True,
 ):
     test_config = {
         "name": attention_name,
@@ -52,6 +57,7 @@ def _get_multihead(
         "num_heads": heads,
         "dim_head": MODEL / heads,
         "num_rules": 2,  # Compositional Attention
+        "r": 0.5,  # random attention, ratio of tokens that the attention can attend to
     }
 
     if skip_output_projection:
@@ -77,6 +83,7 @@ def _get_multihead(
         residual_dropout=res_dropout,
         num_heads=heads,
         attention=attention,
+        use_separate_proj_weight=use_seperate_proj_weights,
     ).to(device)
 
     return multi_head
@@ -101,9 +108,16 @@ def test_order_invariance(
         pytest.skip(f"{attention_name} requires squared sequence lengths")
 
     torch.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
 
     multi_head = _get_multihead(
-        attention_name, attn_dropout, residual_dropout, causal, heads, device
+        attention_name,
+        attn_dropout,
+        residual_dropout,
+        causal,
+        heads,
+        device,
+        use_seperate_proj_weights=False,
     )
 
     # Check that a shuffled input produces the same results
@@ -177,13 +191,10 @@ def test_kqv_ordering(
     assert torch.allclose(res_false[0, :, :], res_false[1, :, :])
 
 
-@pytest.mark.parametrize("small_init", [False, True])
 @pytest.mark.parametrize("proj_bias", [False, True])
 @pytest.mark.parametrize("same_sizes", [False, True])
 @pytest.mark.parametrize("same_settings", [False, True])
-def test_inproj(
-    small_init: bool, proj_bias: bool, same_sizes: bool, same_settings: bool
-):
+def test_inproj(proj_bias: bool, same_sizes: bool, same_settings: bool):
 
     test_config = {
         "name": "scaled_dot_product",
@@ -198,14 +209,19 @@ def test_inproj(
     attention = build_attention(test_config)
 
     # Construct the initial projection, test different options
-    in_params = InProjParams(MODEL, MODEL, proj_bias, small_init)
+    in_params = InputProjectionConfig(MODEL, MODEL, proj_bias)
 
     if same_settings:
-        in_proj = InProjContainer(in_params, None, None)
+        in_proj = InputProjection(in_params, None, None)
+        out_features = MODEL
     else:
         out_features = MODEL if same_sizes else MODEL // 2
-        in_params_flip = InProjParams(MODEL, out_features, proj_bias, small_init)
-        in_proj = InProjContainer(in_params, in_params_flip, in_params_flip)
+        in_params_flip = InputProjectionConfig(MODEL, out_features, proj_bias)
+        in_proj = InputProjection(
+            in_params_flip,  # Q proj
+            in_params_flip,  # K proj
+            in_params,  # V proj
+        )
 
     # build a multi head dispatch to test this attention mechanism
     multi_head = MultiHeadDispatch(
@@ -215,6 +231,8 @@ def test_inproj(
         num_heads=1,
         attention=attention,
         in_proj_container=in_proj,
+        dim_key=out_features,
+        dim_value=MODEL,
     )
 
     # Check kqv are not flipped

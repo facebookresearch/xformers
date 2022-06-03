@@ -113,7 +113,8 @@ def test_xformer_encoder_block(
 
     # Check that we support attention masking, at least interface wise (do not check correctness yet)
     att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
-    if block.mha.attention.supports_attention_mask:
+
+    if block.supports_attention_mask:
         _ = block(inputs, att_mask=att_mask)
     else:
         with pytest.raises(AssertionError):
@@ -230,14 +231,14 @@ def test_xformer_decoder_block(
     input_mask[input_mask < 0.0] = -float("inf")
 
     encoded = encoder_block(inputs)
-    if decoder_block.mha.attention.supports_attention_mask:
+    if decoder_block.supports_attention_mask:
         _ = decoder_block(
             inputs, encoded, encoder_att_mask=att_mask, input_mask=input_mask
         )
 
     # Test different sequence lengths when encoding and decoding
-    if not decoder_block.mha.attention.requires_same_k_q_dimensions:
-        if not causal or not hasattr(decoder_block.mha.attention, "causal"):
+    if not decoder_block.requires_same_k_q_dimensions:
+        if not causal or not decoder_block.causal_attention:
             _ = decoder_block(inputs[:, :-16], encoded)
         else:
             # Check that we assert properly
@@ -313,7 +314,7 @@ def test_embedding_projection():
     _ = block(inputs)
 
     # Check that we support attention masking, at least interface wise (do not check correctness yet)
-    if block.mha.attention.supports_attention_mask:
+    if block.supports_attention_mask:
         att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
         _ = block(inputs, att_mask=att_mask)
 

@@ -18,6 +18,7 @@ from xformers.factory.block_configs import (
     xFormerEncoderConfig,
 )
 from xformers.factory.block_factory import xFormerDecoderBlock, xFormerEncoderBlock
+from xformers.factory.weight_init import get_weight_init_fn, xFormerWeightInit
 
 
 @dataclass(init=False)
@@ -72,11 +73,13 @@ class xFormerConfig:
 
     stack_configs: Union[List[xFormerBlockConfig], Dict[str, xFormerBlockConfig]]
     tie_embedding_weights: bool = False
+    weight_init: xFormerWeightInit = xFormerWeightInit.ViT
 
     def __init__(
         self,
         stack_configs: Union[List[Dict[str, Any]], Dict[str, Dict[str, Any]]],
         tie_embedding_weights: bool = False,
+        weight_init: xFormerWeightInit = xFormerWeightInit.ViT,
     ):
         # Type all the configurations. Possible typos are caught here
         if isinstance(stack_configs, dict):
@@ -95,6 +98,7 @@ class xFormerConfig:
                     self.stack_configs.append(xFormerDecoderConfig(**config))
 
         self.tie_embedding_weights = tie_embedding_weights
+        self.weight_init = weight_init
 
 
 class xFormer(torch.nn.Module):
@@ -104,6 +108,7 @@ class xFormer(torch.nn.Module):
             xFormerBlockConfig, List[xFormerBlockConfig], Dict[str, xFormerBlockConfig]
         ],
         tie_embedding_weights: bool = False,
+        weight_init: xFormerWeightInit = xFormerWeightInit.ViT,
     ):
         """
         Given a serialized configuration, generate the corresponding model.
@@ -186,86 +191,19 @@ class xFormer(torch.nn.Module):
         )
         self.decoders = torch.nn.ModuleList(decoders)
 
-        use_deepnorm_init = stack_configs[0].layer_norm_style == LayerNormStyle.DeepNorm
+        use_deepnorm = stack_configs[0].layer_norm_style == LayerNormStyle.DeepNorm
 
         assert (
-            not use_deepnorm_init or not self.reversible_encoder
+            not use_deepnorm or not self.reversible_encoder
         ), "Reversible layers and deepnorm is not supported for now"
 
-        if use_deepnorm_init:
-            self._deepnorm_weight_init()
+        self.init_weights(weight_init=weight_init, use_deep_norm=use_deepnorm)
 
     @classmethod
     def from_config(cls, config: xFormerConfig):
-        return cls(config.stack_configs, config.tie_embedding_weights)
-
-    def _deepnorm_weight_init(self):
-        r"""Initiate parameters in the transformer model, using the DeepNorm_ method."""
-
-        def is_ffn_w(n):
-            return "feedforward" in n and "weight" in n
-
-        def is_out_mha_proj_w(n):
-            return "mha.proj" in n and "weight" in n
-
-        def is_v_proj_weight(n):
-            return "v_proj_weight" in n
-
-        def is_self_attn_proj_weight(n):
-            return "in_proj_weight" in n
-
-        encoder_coefficients, decoder_coefficients = get_deepnorm_coefficients(
-            encoder_layers=len(self.encoders), decoder_layers=len(self.decoders)  # type: ignore
+        return cls(
+            config.stack_configs, config.tie_embedding_weights, config.weight_init
         )
-
-        encoder_gain = (
-            encoder_coefficients.beta if encoder_coefficients is not None else 1.0
-        )
-        decoder_gain = (
-            decoder_coefficients.beta if decoder_coefficients is not None else 1.0
-        )
-
-        # Initialize all the encoder weights
-        for n, p in self.encoders.named_parameters():
-            if is_ffn_w(n) or is_out_mha_proj_w(n) or is_v_proj_weight(n):
-                torch.nn.init.xavier_normal_(p, gain=encoder_gain)
-            elif is_self_attn_proj_weight(n):
-                # The input projection is packed in a single weight matrix
-                # Init normally, then scale the slice which corresponds to the value projection
-                # The Value projection is the last chunk, the projection matrix is
-                # 3K x N
-                M, _ = p.shape
-                K = M // 3
-                torch.nn.init.xavier_normal_(p[:K, :], gain=1)
-                torch.nn.init.xavier_normal_(p[K:-K, :], gain=1)
-                torch.nn.init.xavier_normal_(p[-K:, :], gain=encoder_gain)
-            elif "weight" in n and p.ndim > 1:
-                torch.nn.init.xavier_normal_(p, gain=1)
-
-        # Initialize all the decoder weights
-        for n, p in self.decoders.named_parameters():
-            if is_ffn_w(n) or is_out_mha_proj_w(n) or is_v_proj_weight(n):
-                torch.nn.init.xavier_normal_(p, gain=decoder_gain)
-            elif is_self_attn_proj_weight(n):
-                # The input projection is packed in a single weight matrix
-                # Init normally, then scale the slice which corresponds to the value projection
-                # The Value projection is the last chunk, the projection matrix is
-                # 3K x N
-                M, _ = p.shape
-                K = M // 3
-                torch.nn.init.xavier_normal_(p[:K, :], gain=1)
-                torch.nn.init.xavier_normal_(p[K:-K, :], gain=1)
-                torch.nn.init.xavier_normal_(p[-K:, :], gain=decoder_gain)
-            elif "weight" in n and p.ndim > 1:
-                torch.nn.init.xavier_normal_(p, gain=1)
-
-    def _reset_parameters(self):
-        r"""Initiate parameters in the transformer model
-        following the Xavier distribution."""
-
-        for p in self.parameters():
-            if p.dim() > 1:
-                torch.nn.init.xavier_uniform_(p)
 
     def _verify_reversible(self, stack_configs: List[xFormerBlockConfig]):
         reversible = [
@@ -287,6 +225,33 @@ class xFormer(torch.nn.Module):
             "All layers need to have the same deepnorm setting. "
             + f"Currently {deepnorm}"
         )
+
+    def init_weights(self, weight_init: xFormerWeightInit, use_deep_norm: bool):
+        # The deepnorm weight initialization method requires different gain factors for the encoder
+        # and decoder, depending on the general model structure (number of respective layers)
+        if use_deep_norm:
+            encoder_coefficients, decoder_coefficients = get_deepnorm_coefficients(
+                encoder_layers=len(self.encoders), decoder_layers=len(self.decoders)  # type: ignore
+            )
+        else:
+            encoder_coefficients, decoder_coefficients = None, None
+
+        encoder_gain = (
+            encoder_coefficients.beta if encoder_coefficients is not None else 1.0
+        )
+        decoder_gain = (
+            decoder_coefficients.beta if decoder_coefficients is not None else 1.0
+        )
+
+        # Pick the desired init function
+        init_fn = get_weight_init_fn(weight_init)
+
+        # Initialize all the encoder weights
+        for name, module in self.encoders.named_children():
+            init_fn(module=module, name=name, gain=encoder_gain)
+
+        for name, module in self.decoders.named_children():
+            init_fn(module=module, name=name, gain=decoder_gain)
 
     def forward(
         self,

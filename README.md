@@ -196,6 +196,26 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 </p></details>
 
+<details><summary>Initializations </summary><p>
+  This is completely optional, and will only occur when generating full models through xFormers, not when picking parts individually.
+  There are basically two initialization mechanisms exposed, but the user is free to initialize weights as he/she sees fit after the fact.
+  - Parts can expose a `init_weights()` method, which define sane defaults
+  - xFormers supports [specific init schemes](xformers/factory/weight_init.py) which *can take precedence* over the init_weights()
+
+  If the second code path is being used (construct model through the model factory), we check that all the weights have been initialized, and possibly error out if it's not the case
+  (if you set `xformers.factory.weight_init.__assert_if_not_initialized = True`)
+
+  Supported initialization schemes are:
+  - [Small init](https://arxiv.org/abs/1910.05895)
+  - [Timm defaults](https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py)
+  - [ViT defaults](https://github.com/google-research/vision_transformer)
+  - [Moco v3 defaults](https://github.com/facebookresearch/moco-v3)
+
+  One way to specify the init scheme is to set the `config.weight_init` field to the matching enum value.
+  This could easily be extended, feel free to submit a PR !
+
+</p></details>
+
 ### Key Features
 
 1. Many attention mechanisms, interchangeables
@@ -249,3 +269,4 @@ The following repositories are used in xFormers, either in close to original for
 * [RevTorch](https://github.com/RobinBruegger/RevTorch)
 * [Nystromformer](https://github.com/mlpen/Nystromformer)
 * [FairScale](https://github.com/facebookresearch/fairscale/)
+* [Pytorch Image Models](https://github.com/rwightman/pytorch-image-models)

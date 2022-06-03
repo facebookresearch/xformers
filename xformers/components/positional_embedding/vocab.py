@@ -40,14 +40,16 @@ class VocabEmbedding(PositionEmbedding):
         self.dim_model = dim_model
 
         self.dropout = torch.nn.Dropout(p=dropout)
-
         self.position_embeddings = nn.Embedding(seq_len, self.dim_model)
-        torch.nn.init.normal_(self.position_embeddings.weight, std=0.02)
+        self.word_embeddings = nn.Embedding(self.vocab_size, self.dim_model)
 
         self.position_ids: Optional[torch.Tensor] = None
 
-        self.word_embeddings = nn.Embedding(self.vocab_size, self.dim_model)
-        torch.nn.init.normal_(self.word_embeddings.weight, std=0.02)
+        self.init_weights()
+
+    def init_weights(self, gain: float = 1.0):
+        torch.nn.init.normal_(self.position_embeddings.weight, std=0.02 * gain)
+        torch.nn.init.normal_(self.word_embeddings.weight, std=0.02 * gain)
 
     def forward(self, x: torch.Tensor):
         position_ids = torch.arange(x.shape[1], dtype=torch.long, device=x.device)[
