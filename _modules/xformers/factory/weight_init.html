@@ -317,35 +317,6 @@
     <span class="k">return</span> <span class="n">_no_grad_uniform_</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="o">-</span><span class="n">a</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_variance_scaling</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;fan_in&quot;</span><span class="p">,</span> <span class="n">distribution</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span><span class="p">):</span>
-    <span class="n">fan_in</span><span class="p">,</span> <span class="n">fan_out</span> <span class="o">=</span> <span class="n">_calculate_fan_in_and_fan_out</span><span class="p">(</span><span class="n">tensor</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;fan_in&quot;</span><span class="p">:</span>
-        <span class="n">denom</span> <span class="o">=</span> <span class="n">fan_in</span>
-    <span class="k">elif</span> <span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;fan_out&quot;</span><span class="p">:</span>
-        <span class="n">denom</span> <span class="o">=</span> <span class="n">fan_out</span>
-    <span class="k">elif</span> <span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;fan_avg&quot;</span><span class="p">:</span>
-        <span class="n">denom</span> <span class="o">=</span> <span class="p">(</span><span class="n">fan_in</span> <span class="o">+</span> <span class="n">fan_out</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
-
-    <span class="n">variance</span> <span class="o">=</span> <span class="n">scale</span> <span class="o">/</span> <span class="n">denom</span>
-
-    <span class="k">if</span> <span class="n">distribution</span> <span class="o">==</span> <span class="s2">&quot;truncated_normal&quot;</span><span class="p">:</span>
-        <span class="c1"># constant is stddev of standard normal truncated to (-2, 2)</span>
-        <span class="n">_no_grad_trunc_normal_</span><span class="p">(</span>
-            <span class="n">tensor</span><span class="p">,</span>
-            <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
-            <span class="n">std</span><span class="o">=</span><span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">variance</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.87962566103423978</span><span class="p">,</span>
-            <span class="n">a</span><span class="o">=-</span><span class="mf">2.0</span><span class="p">,</span>
-            <span class="n">b</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span>
-        <span class="p">)</span>
-    <span class="k">elif</span> <span class="n">distribution</span> <span class="o">==</span> <span class="s2">&quot;normal&quot;</span><span class="p">:</span>
-        <span class="n">tensor</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="n">std</span><span class="o">=</span><span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">variance</span><span class="p">))</span>
-    <span class="k">elif</span> <span class="n">distribution</span> <span class="o">==</span> <span class="s2">&quot;uniform&quot;</span><span class="p">:</span>
-        <span class="n">bound</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">variance</span><span class="p">)</span>
-        <span class="n">tensor</span><span class="o">.</span><span class="n">uniform_</span><span class="p">(</span><span class="o">-</span><span class="n">bound</span><span class="p">,</span> <span class="n">bound</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;invalid distribution </span><span class="si">{</span><span class="n">distribution</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-
 <span class="k">def</span> <span class="nf">_lecun_normal</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="n">gain</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>
     <span class="n">fan_in</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_calculate_fan_in_and_fan_out</span><span class="p">(</span><span class="n">tensor</span><span class="p">)</span>
     <span class="n">denom</span> <span class="o">=</span> <span class="n">fan_in</span>
@@ -428,9 +399,10 @@
     <span class="k">else</span><span class="p">:</span>
         <span class="n">_maybe_report_no_init</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
 
-    <span class="c1"># Recurse over the children</span>
-    <span class="k">for</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">child_module</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
-        <span class="n">_init_weights_vit_jax</span><span class="p">(</span><span class="n">child_module</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">child_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">head_bias</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
+    <span class="c1"># Recurse over the children, if the weight init is being handled here</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="s2">&quot;init_weights&quot;</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">child_module</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
+            <span class="n">_init_weights_vit_jax</span><span class="p">(</span><span class="n">child_module</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">child_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">head_bias</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">_init_weights_vit_moco</span><span class="p">(</span>
@@ -465,9 +437,10 @@
     <span class="k">else</span><span class="p">:</span>
         <span class="n">_maybe_report_no_init</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
 
-    <span class="c1"># Recurse over the children</span>
-    <span class="k">for</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">child_module</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
-        <span class="n">_init_weights_vit_moco</span><span class="p">(</span><span class="n">child_module</span><span class="p">,</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
+    <span class="c1"># Recurse over the children, if the weight init is being handled here</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="s2">&quot;init_weights&quot;</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">child_module</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
+            <span class="n">_init_weights_vit_moco</span><span class="p">(</span><span class="n">child_module</span><span class="p">,</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">_init_weights_small</span><span class="p">(</span>
@@ -502,9 +475,10 @@
     <span class="k">else</span><span class="p">:</span>
         <span class="n">_maybe_report_no_init</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
 
-    <span class="c1"># Recurse over the children</span>
-    <span class="k">for</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">child_module</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
-        <span class="n">_init_weights_small</span><span class="p">(</span><span class="n">child_module</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">child_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">head_bias</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
+    <span class="c1"># Recurse over the children, if the weight init is being handled here</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="s2">&quot;init_weights&quot;</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">child_module</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
+            <span class="n">_init_weights_small</span><span class="p">(</span><span class="n">child_module</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">child_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">head_bias</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">_init_weights_vit_timm</span><span class="p">(</span>
@@ -539,9 +513,10 @@
     <span class="k">else</span><span class="p">:</span>
         <span class="n">_maybe_report_no_init</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
 
-    <span class="c1"># Recurse over the children</span>
-    <span class="k">for</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">child_module</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
-        <span class="n">_init_weights_vit_timm</span><span class="p">(</span><span class="n">child_module</span><span class="p">,</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
+    <span class="c1"># Recurse over the children, if the weight init is being handled here</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="s2">&quot;init_weights&quot;</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">child_module</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
+            <span class="n">_init_weights_vit_timm</span><span class="p">(</span><span class="n">child_module</span><span class="p">,</span> <span class="n">child_name</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
 </pre></div>
 
               </article>
