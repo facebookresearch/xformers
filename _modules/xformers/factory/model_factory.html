@@ -243,6 +243,7 @@
     <span class="n">xFormerEncoderConfig</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xformers.factory.block_factory</span> <span class="kn">import</span> <span class="n">xFormerDecoderBlock</span><span class="p">,</span> <span class="n">xFormerEncoderBlock</span>
+<span class="kn">from</span> <span class="nn">xformers.factory.weight_init</span> <span class="kn">import</span> <span class="n">get_weight_init_fn</span><span class="p">,</span> <span class="n">xFormerWeightInit</span>
 
 
 <div class="viewcode-block" id="xFormerConfig"><a class="viewcode-back" href="../../../factory/model.html#xformers.factory.model_factory.xFormerConfig">[docs]</a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
@@ -297,11 +298,13 @@
 
     <span class="n">stack_configs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">xFormerBlockConfig</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">xFormerBlockConfig</span><span class="p">]]</span>
     <span class="n">tie_embedding_weights</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">weight_init</span><span class="p">:</span> <span class="n">xFormerWeightInit</span> <span class="o">=</span> <span class="n">xFormerWeightInit</span><span class="o">.</span><span class="n">ViT</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">stack_configs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]],</span>
         <span class="n">tie_embedding_weights</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">weight_init</span><span class="p">:</span> <span class="n">xFormerWeightInit</span> <span class="o">=</span> <span class="n">xFormerWeightInit</span><span class="o">.</span><span class="n">ViT</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="c1"># Type all the configurations. Possible typos are caught here</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stack_configs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
@@ -319,7 +322,8 @@
                 <span class="k">else</span><span class="p">:</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">stack_configs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">xFormerDecoderConfig</span><span class="p">(</span><span class="o">**</span><span class="n">config</span><span class="p">))</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">tie_embedding_weights</span> <span class="o">=</span> <span class="n">tie_embedding_weights</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tie_embedding_weights</span> <span class="o">=</span> <span class="n">tie_embedding_weights</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weight_init</span> <span class="o">=</span> <span class="n">weight_init</span></div>
 
 
 <div class="viewcode-block" id="xFormer"><a class="viewcode-back" href="../../../factory/model.html#xformers.factory.model_factory.xFormer">[docs]</a><span class="k">class</span> <span class="nc">xFormer</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
@@ -329,6 +333,7 @@
             <span class="n">xFormerBlockConfig</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">xFormerBlockConfig</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">xFormerBlockConfig</span><span class="p">]</span>
         <span class="p">],</span>
         <span class="n">tie_embedding_weights</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">weight_init</span><span class="p">:</span> <span class="n">xFormerWeightInit</span> <span class="o">=</span> <span class="n">xFormerWeightInit</span><span class="o">.</span><span class="n">ViT</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Given a serialized configuration, generate the corresponding model.</span>
@@ -411,86 +416,19 @@
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">decoders</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">(</span><span class="n">decoders</span><span class="p">)</span>
 
-        <span class="n">use_deepnorm_init</span> <span class="o">=</span> <span class="n">stack_configs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span>
+        <span class="n">use_deepnorm</span> <span class="o">=</span> <span class="n">stack_configs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span>
 
         <span class="k">assert</span> <span class="p">(</span>
-            <span class="ow">not</span> <span class="n">use_deepnorm_init</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">reversible_encoder</span>
+            <span class="ow">not</span> <span class="n">use_deepnorm</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">reversible_encoder</span>
         <span class="p">),</span> <span class="s2">&quot;Reversible layers and deepnorm is not supported for now&quot;</span>
 
-        <span class="k">if</span> <span class="n">use_deepnorm_init</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_deepnorm_weight_init</span><span class="p">()</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">init_weights</span><span class="p">(</span><span class="n">weight_init</span><span class="o">=</span><span class="n">weight_init</span><span class="p">,</span> <span class="n">use_deep_norm</span><span class="o">=</span><span class="n">use_deepnorm</span><span class="p">)</span></div>
 
 <div class="viewcode-block" id="xFormer.from_config"><a class="viewcode-back" href="../../../factory/model.html#xformers.factory.model_factory.xFormer.from_config">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_config</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">xFormerConfig</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">stack_configs</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">tie_embedding_weights</span><span class="p">)</span></div>
-
-    <span class="k">def</span> <span class="nf">_deepnorm_weight_init</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="sa">r</span><span class="sd">&quot;&quot;&quot;Initiate parameters in the transformer model, using the DeepNorm_ method.&quot;&quot;&quot;</span>
-
-        <span class="k">def</span> <span class="nf">is_ffn_w</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-            <span class="k">return</span> <span class="s2">&quot;feedforward&quot;</span> <span class="ow">in</span> <span class="n">n</span> <span class="ow">and</span> <span class="s2">&quot;weight&quot;</span> <span class="ow">in</span> <span class="n">n</span>
-
-        <span class="k">def</span> <span class="nf">is_out_mha_proj_w</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-            <span class="k">return</span> <span class="s2">&quot;mha.proj&quot;</span> <span class="ow">in</span> <span class="n">n</span> <span class="ow">and</span> <span class="s2">&quot;weight&quot;</span> <span class="ow">in</span> <span class="n">n</span>
-
-        <span class="k">def</span> <span class="nf">is_v_proj_weight</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-            <span class="k">return</span> <span class="s2">&quot;v_proj_weight&quot;</span> <span class="ow">in</span> <span class="n">n</span>
-
-        <span class="k">def</span> <span class="nf">is_self_attn_proj_weight</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-            <span class="k">return</span> <span class="s2">&quot;in_proj_weight&quot;</span> <span class="ow">in</span> <span class="n">n</span>
-
-        <span class="n">encoder_coefficients</span><span class="p">,</span> <span class="n">decoder_coefficients</span> <span class="o">=</span> <span class="n">get_deepnorm_coefficients</span><span class="p">(</span>
-            <span class="n">encoder_layers</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">encoders</span><span class="p">),</span> <span class="n">decoder_layers</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">decoders</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
-        <span class="p">)</span>
-
-        <span class="n">encoder_gain</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">encoder_coefficients</span><span class="o">.</span><span class="n">beta</span> <span class="k">if</span> <span class="n">encoder_coefficients</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">1.0</span>
-        <span class="p">)</span>
-        <span class="n">decoder_gain</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">decoder_coefficients</span><span class="o">.</span><span class="n">beta</span> <span class="k">if</span> <span class="n">decoder_coefficients</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">1.0</span>
-        <span class="p">)</span>
-
-        <span class="c1"># Initialize all the encoder weights</span>
-        <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoders</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">():</span>
-            <span class="k">if</span> <span class="n">is_ffn_w</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="ow">or</span> <span class="n">is_out_mha_proj_w</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="ow">or</span> <span class="n">is_v_proj_weight</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">gain</span><span class="o">=</span><span class="n">encoder_gain</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="n">is_self_attn_proj_weight</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-                <span class="c1"># The input projection is packed in a single weight matrix</span>
-                <span class="c1"># Init normally, then scale the slice which corresponds to the value projection</span>
-                <span class="c1"># The Value projection is the last chunk, the projection matrix is</span>
-                <span class="c1"># 3K x N</span>
-                <span class="n">M</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">shape</span>
-                <span class="n">K</span> <span class="o">=</span> <span class="n">M</span> <span class="o">//</span> <span class="mi">3</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="n">p</span><span class="p">[:</span><span class="n">K</span><span class="p">,</span> <span class="p">:],</span> <span class="n">gain</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="n">K</span><span class="p">:</span><span class="o">-</span><span class="n">K</span><span class="p">,</span> <span class="p">:],</span> <span class="n">gain</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="o">-</span><span class="n">K</span><span class="p">:,</span> <span class="p">:],</span> <span class="n">gain</span><span class="o">=</span><span class="n">encoder_gain</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="s2">&quot;weight&quot;</span> <span class="ow">in</span> <span class="n">n</span> <span class="ow">and</span> <span class="n">p</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">gain</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-
-        <span class="c1"># Initialize all the decoder weights</span>
-        <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">decoders</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">():</span>
-            <span class="k">if</span> <span class="n">is_ffn_w</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="ow">or</span> <span class="n">is_out_mha_proj_w</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="ow">or</span> <span class="n">is_v_proj_weight</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">gain</span><span class="o">=</span><span class="n">decoder_gain</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="n">is_self_attn_proj_weight</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-                <span class="c1"># The input projection is packed in a single weight matrix</span>
-                <span class="c1"># Init normally, then scale the slice which corresponds to the value projection</span>
-                <span class="c1"># The Value projection is the last chunk, the projection matrix is</span>
-                <span class="c1"># 3K x N</span>
-                <span class="n">M</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">shape</span>
-                <span class="n">K</span> <span class="o">=</span> <span class="n">M</span> <span class="o">//</span> <span class="mi">3</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="n">p</span><span class="p">[:</span><span class="n">K</span><span class="p">,</span> <span class="p">:],</span> <span class="n">gain</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="n">K</span><span class="p">:</span><span class="o">-</span><span class="n">K</span><span class="p">,</span> <span class="p">:],</span> <span class="n">gain</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="o">-</span><span class="n">K</span><span class="p">:,</span> <span class="p">:],</span> <span class="n">gain</span><span class="o">=</span><span class="n">decoder_gain</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="s2">&quot;weight&quot;</span> <span class="ow">in</span> <span class="n">n</span> <span class="ow">and</span> <span class="n">p</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">gain</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-
-    <span class="k">def</span> <span class="nf">_reset_parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="sa">r</span><span class="sd">&quot;&quot;&quot;Initiate parameters in the transformer model</span>
-<span class="sd">        following the Xavier distribution.&quot;&quot;&quot;</span>
-
-        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
-            <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">dim</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_uniform_</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">stack_configs</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">tie_embedding_weights</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">weight_init</span>
+        <span class="p">)</span></div>
 
     <span class="k">def</span> <span class="nf">_verify_reversible</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stack_configs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">xFormerBlockConfig</span><span class="p">]):</span>
         <span class="n">reversible</span> <span class="o">=</span> <span class="p">[</span>
@@ -512,6 +450,33 @@
             <span class="s2">&quot;All layers need to have the same deepnorm setting. &quot;</span>
             <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;Currently </span><span class="si">{</span><span class="n">deepnorm</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
+
+<div class="viewcode-block" id="xFormer.init_weights"><a class="viewcode-back" href="../../../factory/model.html#xformers.factory.model_factory.xFormer.init_weights">[docs]</a>    <span class="k">def</span> <span class="nf">init_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">weight_init</span><span class="p">:</span> <span class="n">xFormerWeightInit</span><span class="p">,</span> <span class="n">use_deep_norm</span><span class="p">:</span> <span class="nb">bool</span><span class="p">):</span>
+        <span class="c1"># The deepnorm weight initialization method requires different gain factors for the encoder</span>
+        <span class="c1"># and decoder, depending on the general model structure (number of respective layers)</span>
+        <span class="k">if</span> <span class="n">use_deep_norm</span><span class="p">:</span>
+            <span class="n">encoder_coefficients</span><span class="p">,</span> <span class="n">decoder_coefficients</span> <span class="o">=</span> <span class="n">get_deepnorm_coefficients</span><span class="p">(</span>
+                <span class="n">encoder_layers</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">encoders</span><span class="p">),</span> <span class="n">decoder_layers</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">decoders</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">encoder_coefficients</span><span class="p">,</span> <span class="n">decoder_coefficients</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="n">encoder_gain</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">encoder_coefficients</span><span class="o">.</span><span class="n">beta</span> <span class="k">if</span> <span class="n">encoder_coefficients</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">1.0</span>
+        <span class="p">)</span>
+        <span class="n">decoder_gain</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">decoder_coefficients</span><span class="o">.</span><span class="n">beta</span> <span class="k">if</span> <span class="n">decoder_coefficients</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">1.0</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Pick the desired init function</span>
+        <span class="n">init_fn</span> <span class="o">=</span> <span class="n">get_weight_init_fn</span><span class="p">(</span><span class="n">weight_init</span><span class="p">)</span>
+
+        <span class="c1"># Initialize all the encoder weights</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">module</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoders</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
+            <span class="n">init_fn</span><span class="p">(</span><span class="n">module</span><span class="o">=</span><span class="n">module</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">gain</span><span class="o">=</span><span class="n">encoder_gain</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">module</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">decoders</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
+            <span class="n">init_fn</span><span class="p">(</span><span class="n">module</span><span class="o">=</span><span class="n">module</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">gain</span><span class="o">=</span><span class="n">decoder_gain</span><span class="p">)</span></div>
 
 <div class="viewcode-block" id="xFormer.forward"><a class="viewcode-back" href="../../../factory/model.html#xformers.factory.model_factory.xFormer.forward">[docs]</a>    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>

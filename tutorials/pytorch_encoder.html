@@ -494,7 +494,7 @@ Built a model with <span class="m">1</span> stack: dict_keys<span class="o">([</
             <span class="o">(</span>attention<span class="o">)</span>: LocalAttention<span class="o">(</span>
             <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
             <span class="o">)</span>
-            <span class="o">(</span>in_proj_container<span class="o">)</span>: InProjContainer<span class="o">()</span>
+            <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
             <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
             <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
         <span class="o">)</span>
@@ -514,7 +514,7 @@ Built a model with <span class="m">1</span> stack: dict_keys<span class="o">([</
                 <span class="o">(</span>attention<span class="o">)</span>: LocalAttention<span class="o">(</span>
                 <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
                 <span class="o">)</span>
-                <span class="o">(</span>in_proj_container<span class="o">)</span>: InProjContainer<span class="o">()</span>
+                <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
                 <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
                 <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
             <span class="o">)</span>
@@ -560,7 +560,7 @@ xFormer<span class="o">(</span>
         <span class="o">(</span>attention<span class="o">)</span>: LocalAttention<span class="o">(</span>
         <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
         <span class="o">)</span>
-        <span class="o">(</span>in_proj_container<span class="o">)</span>: InProjContainer<span class="o">()</span>
+        <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
         <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
         <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
     <span class="o">)</span>
@@ -580,7 +580,7 @@ xFormer<span class="o">(</span>
             <span class="o">(</span>attention<span class="o">)</span>: LocalAttention<span class="o">(</span>
             <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
             <span class="o">)</span>
-            <span class="o">(</span>in_proj_container<span class="o">)</span>: InProjContainer<span class="o">()</span>
+            <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
             <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
             <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
         <span class="o">)</span>
@@ -621,7 +621,7 @@ xFormer<span class="o">(</span>
         <span class="o">(</span>attention<span class="o">)</span>: RandomAttention<span class="o">(</span>
         <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
         <span class="o">)</span>
-        <span class="o">(</span>in_proj_container<span class="o">)</span>: InProjContainer<span class="o">()</span>
+        <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
         <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
         <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
     <span class="o">)</span>
@@ -641,7 +641,7 @@ xFormer<span class="o">(</span>
             <span class="o">(</span>attention<span class="o">)</span>: RandomAttention<span class="o">(</span>
             <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
             <span class="o">)</span>
-            <span class="o">(</span>in_proj_container<span class="o">)</span>: InProjContainer<span class="o">()</span>
+            <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
             <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
             <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
         <span class="o">)</span>
