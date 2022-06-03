@@ -199,9 +199,10 @@ def test_presets(config, reversible, tie_embedding_weights, layer_norm_style, de
 
 
 @pytest.mark.parametrize("weight_init", [w.value for w in xFormerWeightInit])
+@pytest.mark.parametrize("feedforward", ["MLP", "Conv2DFeedforward"])
 @pytest.mark.parametrize("deepnorm", [False, True])
 @pytest.mark.parametrize("device", DEVICES)
-def test_weight_init(weight_init, deepnorm, device):
+def test_weight_init(weight_init, feedforward, deepnorm, device):
     torch.cuda.manual_seed(42)
     torch.manual_seed(42)
 
@@ -209,6 +210,8 @@ def test_weight_init(weight_init, deepnorm, device):
 
     if deepnorm:
         config["encoder"]["layer_norm_style"] = "deepnorm"
+        config["encoder"]["feedforward_config"]["name"] = feedforward
+
         config["decoder"]["layer_norm_style"] = "deepnorm"
 
     # Make sure that all the init methods catch all the weights

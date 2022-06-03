@@ -237,7 +237,10 @@ def test_xformer_decoder_block(
         )
 
     # Test different sequence lengths when encoding and decoding
-    if not decoder_block.requires_same_k_q_dimensions:
+    if (
+        not decoder_block.requires_same_k_q_dimensions
+        and not decoder_block.requires_squared_context_length
+    ):
         if not causal or not decoder_block.causal_attention:
             _ = decoder_block(inputs[:, :-16], encoded)
         else:
