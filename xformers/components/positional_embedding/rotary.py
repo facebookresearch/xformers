@@ -61,12 +61,14 @@ class RotaryEmbedding(torch.nn.Module):
 
         # Reset the tables if the sequence length has changed,
         # or if we're on a new device (possibly due to tracing for instance)
-        if seq_len != self._seq_len_cached or self._cos_cached.device != x.device:
+        if (
+            seq_len != self._seq_len_cached
+            or self._cos_cached.device != x.device
+            or self._cos_cached.dtype != x.dtype
+        ):
             self._seq_len_cached = seq_len
-            t = torch.arange(x.shape[seq_dimension], device=x.device).type_as(
-                self.inv_freq
-            )
-            freqs = torch.einsum("i,j->ij", t, self.inv_freq)
+            t = torch.arange(x.shape[seq_dimension], device=x.device, dtype=x.dtype)
+            freqs = torch.einsum("i,j->ij", t, self.inv_freq.to(x.dtype))
             emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
 
             self._cos_cached = emb.cos()[None, None, :, :]
