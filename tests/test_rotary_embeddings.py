@@ -68,6 +68,9 @@ def test_rotary_embeddings(device, dtype):
     assert k_rot.dtype == k.dtype
 
     # Check that the sequences now encode relative position information
+    q, k = q.float(), k.float()
+    q_rot, k_rot = q_rot.float(), k_rot.float()
+
     att = torch.einsum("bhne,bhme->bhnm", q, k)
     att_rot = torch.einsum("bhne,bhme->bhnm", q_rot, k_rot)
 
