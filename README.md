@@ -199,6 +199,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 <details><summary>Initializations </summary><p>
   This is completely optional, and will only occur when generating full models through xFormers, not when picking parts individually.
+  
   There are basically two initialization mechanisms exposed, but the user is free to initialize weights as he/she sees fit after the fact.
   - Parts can expose a `init_weights()` method, which define sane defaults
   - xFormers supports [specific init schemes](xformers/factory/weight_init.py) which *can take precedence* over the init_weights()
