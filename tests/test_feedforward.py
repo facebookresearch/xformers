@@ -12,7 +12,7 @@ from xformers.components.feedforward.mixture_of_experts import GateConfig
 from xformers.helpers.test_utils import init_torch_distributed_local
 
 BATCH = 4
-SEQ = 512
+SEQ = 256
 EMBD = 16
 LATENT = 128
 DROPOUT = 0.5

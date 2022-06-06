@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Four blocksparsity layouts from DeepSpeed [#320]
 - Support several initialization options [#312]
+- Conv2DFeedforward feedforward part [#321]
 
 
 ## [0.0.11] - 2022-05-30

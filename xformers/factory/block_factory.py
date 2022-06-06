@@ -275,9 +275,11 @@ class xFormerDecoderBlock(torch.nn.Module):
         cross_mha = build_multi_head_attention(config.multi_head_config_cross)
         feedforward = build_feedforward(config.feedforward_config)
 
-        # Expose attention specific capabilities
+        # Expose attention or feedforward specific capabilities
         self.supports_attention_mask = mha.attention.supports_attention_mask
         self.requires_same_k_q_dimensions = mha.attention.requires_same_k_q_dimensions
+        self.requires_squared_context_length = feedforward.requires_squared_context
+
         self.causal_attention = (
             mha.attention.causal if hasattr(mha.attention, "causal") else False
         )
