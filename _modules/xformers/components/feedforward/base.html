@@ -262,7 +262,12 @@
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+        <span class="c1"># This feedforward requires a CUDA accelerator</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">requires_cuda</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="c1"># This feedforward requires a context length which is squared, often due to 2D pooling</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">requires_squared_context</span> <span class="o">=</span> <span class="kc">False</span>
 
 <div class="viewcode-block" id="Feedforward.from_config"><a class="viewcode-back" href="../../../../components/feedforward.html#xformers.components.feedforward.Feedforward.from_config">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_config</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Self</span><span class="p">],</span> <span class="n">config</span><span class="p">:</span> <span class="n">FeedforwardConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>

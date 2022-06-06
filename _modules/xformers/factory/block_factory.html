@@ -500,9 +500,11 @@
         <span class="n">cross_mha</span> <span class="o">=</span> <span class="n">build_multi_head_attention</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">multi_head_config_cross</span><span class="p">)</span>
         <span class="n">feedforward</span> <span class="o">=</span> <span class="n">build_feedforward</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">feedforward_config</span><span class="p">)</span>
 
-        <span class="c1"># Expose attention specific capabilities</span>
+        <span class="c1"># Expose attention or feedforward specific capabilities</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">supports_attention_mask</span> <span class="o">=</span> <span class="n">mha</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">supports_attention_mask</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">requires_same_k_q_dimensions</span> <span class="o">=</span> <span class="n">mha</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">requires_same_k_q_dimensions</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">requires_squared_context_length</span> <span class="o">=</span> <span class="n">feedforward</span><span class="o">.</span><span class="n">requires_squared_context</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">causal_attention</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">mha</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">causal</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">mha</span><span class="o">.</span><span class="n">attention</span><span class="p">,</span> <span class="s2">&quot;causal&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="kc">False</span>
         <span class="p">)</span>
