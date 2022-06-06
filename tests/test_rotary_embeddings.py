@@ -52,16 +52,25 @@ def test_helper_methods():
 
 
 @pytest.mark.parametrize("device", DEVICES)
-def test_rotary_embeddings(device):
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_rotary_embeddings(device, dtype):
     rotary = RotaryEmbedding(EMB).to(device)
 
     # Generate dummy inputs
-    q = torch.ones((BATCH, HEADS, SEQ, EMB), device=device)  # uniform on purpose
+    q = torch.ones(
+        (BATCH, HEADS, SEQ, EMB), device=device, dtype=dtype
+    )  # uniform on purpose
     k = q.clone()
 
     q_rot, k_rot = rotary(q, k)
 
+    assert q_rot.dtype == q.dtype
+    assert k_rot.dtype == k.dtype
+
     # Check that the sequences now encode relative position information
+    q, k = q.float(), k.float()
+    q_rot, k_rot = q_rot.float(), k_rot.float()
+
     att = torch.einsum("bhne,bhme->bhnm", q, k)
     att_rot = torch.einsum("bhne,bhme->bhnm", q_rot, k_rot)
 
