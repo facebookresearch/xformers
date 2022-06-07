@@ -20,7 +20,7 @@ _device_list = ["cpu", "cuda:0"] if torch.cuda.is_available() else ["cpu"]
 
 @pytest.mark.skipif(timm is None, reason="requires timm")
 @pytest.mark.parametrize("device", _device_list)
-def test_timm_wrapper(device):
+def test_timm_sparse_attention(device):
     img_size = 224
     patch_size = 16
     batch = 8
