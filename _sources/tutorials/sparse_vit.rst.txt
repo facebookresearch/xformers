@@ -12,7 +12,7 @@ when considering other model sources. In any case, please check the notebooks in
     import timm
     from timm.models.vision_transformer import VisionTransformer
     from xformers.components.attention import ScaledDotProduct
-    from xformers.components.attention.helpers import TimmAttentionWrapper
+    from xformers.helpers.timm_sparse_attention import TimmSparseAttention
     img_size = 224
     patch_size = 16
 
@@ -33,15 +33,16 @@ when considering other model sources. In any case, please check the notebooks in
         if isinstance(module, timm.models.vision_transformer.Attention):
             qkv = module.qkv
             dim = qkv.weight.shape[1] * module.num_heads
-            # Extra parameters can be exposed in TimmAttentionWrapper, this is a minimal example
-            module_output = TimmAttentionWrapper(dim, module.num_heads, attn_mask=att_mask)
+            # Extra parameters can be exposed in TimmSparseAttention, this is a minimal example
+            module_output = TimmSparseAttention(dim, module.num_heads, attn_mask=att_mask)
         for name, child in module.named_children():
             module_output.add_module(name, replace_attn_with_xformers_one(child, att_mask))
         del module
+
         return module_output
 
     # Now we can just patch our reference model, and get a sparse-aware variation
-    model = replace_attn_with_xformers_one(model, mask)
+    model = replace_attn_with_xformers_one(model, my_fancy_mask)
 
 Note that in practice exchanging all the attentions with a sparse alternative may not be a good idea, as the attentions closer to the output are not typically exhibiting a clear sparsity pattern. You can alter `replace_attn_with_xformers_one` above, or replace manually the attentions which would like to sparsify, but not all
 
