@@ -159,7 +159,7 @@ Let's say you're used to working with a given Transformer based model, and want 
 import timm
 from timm.models.vision_transformer import VisionTransformer
 from xformers.components.attention import ScaledDotProduct
-from xformers.components.attention.helpers import TimmAttentionWrapper
+from xformers.helpers.timm_sparse_attention import TimmSparseAttention
 img_size = 224
 patch_size = 16
 
@@ -180,11 +180,12 @@ def replace_attn_with_xformers_one(module, att_mask):
     if isinstance(module, timm.models.vision_transformer.Attention):
         qkv = module.qkv
         dim = qkv.weight.shape[1] * module.num_heads
-        # Extra parameters can be exposed in TimmAttentionWrapper, this is a minimal example
-        module_output = TimmAttentionWrapper(dim, module.num_heads, attn_mask=att_mask)
+        # Extra parameters can be exposed in TimmSparseAttention, this is a minimal example
+        module_output = TimmSparseAttention(dim, module.num_heads, attn_mask=att_mask)
     for name, child in module.named_children():
         module_output.add_module(name, replace_attn_with_xformers_one(child, att_mask))
     del module
+
     return module_output
 
 # Now we can just patch our reference model, and get a sparse-aware variation
