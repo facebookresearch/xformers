@@ -5,6 +5,7 @@
 
 
 import itertools
+import math
 from functools import partial
 
 import torch
@@ -22,7 +23,8 @@ def ref_attention(q, k, v, attn_bias=None, p=0.0):
         # equivalent to (q @ k.transpose(-2, -1) + m).softmax(-1) @ v
         # but faster, and is what is used in PyTorch now
         attn = torch.baddbmm(attn_bias, q, k.transpose(-2, -1))
-    attn = attn.softmax(-1)
+    dtype = attn.dtype
+    attn = attn.to(torch.float).softmax(-1).to(dtype)
     if p > 0:
         attn = torch.nn.functional.dropout(attn, p=p)
     return attn @ v
@@ -32,9 +34,7 @@ min_run_time = 2
 device = torch.device("cuda")
 
 NUM_THREADS = [1] if device.type == "cuda" else [1, 40]
-SHAPES = list(
-    itertools.product([1, 8, 32, 256], [127, 128, 512, 513, 1023, 1024], [16, 32])
-) + list(itertools.product([32, 256], [128, 512, 1024, 2048], [16, 32, 64, 128, 256]))
+SHAPES = list(itertools.product([32, 256], [128, 512, 1024], [16, 32, 128]))
 SHAPES = list(set(SHAPES))
 SHAPES.sort()
 
@@ -56,26 +56,37 @@ CASES = list(
         shape=SHAPES,
         num_threads=NUM_THREADS,
         use_attn_bias=[False, True],
+        dtype=[torch.half, torch.float],
     )
 )
 
 
-def benchmark_forward(shape, num_threads: int, use_attn_bias: bool):
+def benchmark_forward(shape, num_threads: int, use_attn_bias: bool, dtype):
     B, M, K = shape
-    q = torch.rand(shape, device=device)
+    if (
+        K > op.SUPPORTED_MAX_K
+        or (use_attn_bias and not op.SUPPORTS_ATTN_BIAS)
+        or (dtype not in op.SUPPORTED_DTYPES)
+    ):
+        return
+    q = torch.rand(shape, device=device, dtype=dtype)
     attn_bias = None
     if use_attn_bias:
-        attn_bias = torch.rand(shape[0], 1, shape[1], device=device).expand(
-            shape[0], shape[1], shape[1]
-        )
-    sub_label = f"B={B}, M={M}, K={K}"
+        attn_bias = torch.rand(
+            shape[0], 1, shape[1], device=device, dtype=dtype
+        ).expand(shape[0], shape[1], shape[1])
+    dtype_str = {
+        torch.half: "f16",
+        torch.float: "f32",
+    }[dtype]
+    sub_label = f"{dtype_str} B={B}, M={M}, K={K}"
 
-    if K > op.SUPPORTED_MAX_K or (use_attn_bias and not op.SUPPORTS_ATTN_BIAS):
-        raise NotImplementedError()
     if True:
-        r = xformers.ops.memory_efficient_attention(q, q, q, attn_bias, op=op)
-        rr = ref_attention(q, q, q, attn_bias)
-        assert (r - rr).abs().max() < 1e-5
+        r = xformers.ops.memory_efficient_attention(q, q, q, attn_bias, op=op).float()
+        rr = ref_attention(
+            q.float(), q.float(), q.float(), attn_bias.float() if attn_bias else None
+        )
+        assert (r - rr).abs().max() < 2e-4, (r - rr).abs().max()
         del r, rr
 
     yield benchmark.Timer(
@@ -106,9 +117,9 @@ def benchmark_forward(shape, num_threads: int, use_attn_bias: bool):
     )
 
 
-def benchmark_backward(shape, num_threads: int, use_attn_bias: bool):
+def benchmark_backward(shape, num_threads: int, use_attn_bias: bool, dtype):
     B, M, K = shape
-    q = torch.rand(shape, device=device, requires_grad=True)
+    q = torch.rand(shape, device=device, dtype=dtype, requires_grad=True)
     attn_bias = None
     if use_attn_bias:
         attn_bias = torch.rand(shape[0], 1, shape[1], device=device).expand(
@@ -116,8 +127,13 @@ def benchmark_backward(shape, num_threads: int, use_attn_bias: bool):
         )
     sub_label = f"B={B}, M={M}, K={K}"
 
-    if K > op.SUPPORTED_MAX_K or (use_attn_bias and not op.SUPPORTS_ATTN_BIAS):
-        raise NotImplementedError()
+    if (
+        K > op.SUPPORTED_MAX_K
+        or (use_attn_bias and not op.SUPPORTS_ATTN_BIAS)
+        # only fp32 is supported at the moment
+        or (dtype not in {torch.float})
+    ):
+        return
     if True:
         r = xformers.ops.memory_efficient_attention(q, q, q, attn_bias, op=op)
         r.backward(torch.ones_like(q))
@@ -127,7 +143,8 @@ def benchmark_backward(shape, num_threads: int, use_attn_bias: bool):
 
         rr = ref_attention(q, q, q, attn_bias)
         rr.backward(torch.ones_like(q))
-        assert (grad - q.grad).abs().max() < 1e-5, f"{(grad - q.grad).abs().max()}"
+        atol = 2e-4 + 2e-6 * K * M * math.sqrt(B) * math.sqrt(M)
+        assert (grad - q.grad).abs().max() < atol, f"{(grad - q.grad).abs().max()}"
         q.grad = None
         del r, rr, grad
 

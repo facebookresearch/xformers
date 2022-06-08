@@ -622,6 +622,7 @@ struct numeric_limits<cutlass::half_t> {
   static cutlass::half_t round_error() { return cutlass::half_t(0.5f); }
 
   /// Returns smallest finite value
+  CUTLASS_HOST_DEVICE
   static cutlass::half_t infinity() { return cutlass::half_t::bitcast(0x7c00); }
 
   /// Returns smallest finite value

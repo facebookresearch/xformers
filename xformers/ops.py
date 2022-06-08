@@ -47,6 +47,7 @@ def _get_xformers_operator(name: str):
 class MemoryEfficientAttentionOp(torch.autograd.Function):
     FORWARD_OPERATOR = _get_xformers_operator("efficient_attention")
     SUPPORTED_DEVICES = {"cuda", "cpu"}
+    SUPPORTED_DTYPES = {torch.float}
     SUPPORTED_MAX_K: float = 32
     SUPPORTS_ATTN_BIAS = True
     SUPPORTS_DROPOUT = True
@@ -82,6 +83,7 @@ class MemoryEfficientAttentionOp(torch.autograd.Function):
 class MemoryEfficientAttentionGenericForwardOp(MemoryEfficientAttentionOp):
     FORWARD_OPERATOR = _get_xformers_operator("efficient_attention_forward_generic")
     SUPPORTED_DEVICES = {"cuda"}
+    SUPPORTED_DTYPES = {torch.float, torch.half}
     SUPPORTED_MAX_K = math.inf
     SUPPORTS_ATTN_BIAS = False
     SUPPORTS_DROPOUT = False

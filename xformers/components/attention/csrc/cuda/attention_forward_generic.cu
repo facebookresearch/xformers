@@ -3,6 +3,8 @@
 #include <cmath>
 #include <vector>
 
+#include <cuda_fp16.h>
+
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 
@@ -19,32 +21,86 @@
 
 #include <inttypes.h>
 
+// #define FP16_ONLY_USE_TENSORCORES
+
+// XXX: Maybe CUDA will wake up one day and provide this
+template <typename scalar_t>
+struct math;
+
+template <>
+struct math<cutlass::half_t> {
+  using scalar_t = cutlass::half_t;
+  using torch_dtype = half;
+  static constexpr at::ScalarType kAtScalarType = at::ScalarType::Half;
+
+  static __device__ __forceinline__ cutlass::half_t exp(
+      cutlass::half_t const& h) {
+    return cutlass::half_t(hexp(h.to_half()));
+  }
+  template <int nDim>
+  static __host__ at::PackedTensorAccessor<scalar_t, nDim> packed_accessor(
+      at::Tensor const& tensor) {
+    return at::PackedTensorAccessor<scalar_t, nDim>(
+        (scalar_t*)(tensor.data_ptr()),
+        tensor.sizes().data(),
+        tensor.strides().data());
+  }
+};
+constexpr at::ScalarType math<cutlass::half_t>::kAtScalarType;
+
+template <>
+struct math<float> {
+  using scalar_t = float;
+  using torch_dtype = float;
+  static constexpr at::ScalarType kAtScalarType = at::ScalarType::Float;
+
+  static __device__ __forceinline__ float exp(float const& h) {
+    return expf(h);
+  }
+  template <int nDim>
+  static __host__ at::PackedTensorAccessor<scalar_t, nDim> packed_accessor(
+      at::Tensor const& tensor) {
+    return tensor.packed_accessor<scalar_t, nDim>();
+  }
+};
+constexpr at::ScalarType math<float>::kAtScalarType;
+
 namespace {
 template <typename integer>
 constexpr __host__ __device__ inline integer ceil_div(integer n, integer m) {
   return (n + m - 1) / m;
 }
 
-template <typename scalar_t_>
+template <
+    typename scalar_t_,
+    typename accum_t_ = float,
+    typename output_t_ = float>
 struct AttentionKernel {
   using scalar_t = scalar_t_;
+  using accum_t = accum_t_;
+  using output_t = output_t_;
 
-  // Blocks
-  // NOTE: Looks like 16 works better for K <= 64
+// Blocks
+// NOTE: Looks like 16 works better for K <= 64
+#ifdef FP16_ONLY_USE_TENSORCORES
+  static constexpr int64_t kQueriesPerBlock = 64;
+  static constexpr int64_t kWarpSize = 32;
+  static constexpr int64_t kNumWarpsPerBlock = 2;
+#else
   static constexpr int64_t kQueriesPerBlock = 32;
+  static constexpr int64_t kWarpSize = 32;
+  static constexpr int64_t kNumWarpsPerBlock = 4;
+#endif
   static constexpr int64_t kNumBlocksX = 1;
   static int64_t getNumBlocksY(int64_t num_queries) {
     return ceil_div(num_queries, kQueriesPerBlock);
   }
-  // Threads
-  static constexpr int64_t kWarpSize = 32;
-  static constexpr int64_t kNumWarpsPerBlock = 4;
 
   static constexpr int64_t kSiDim1 = kNumWarpsPerBlock * kWarpSize;
 
   static void __device__ attention_kernel(
-      at::TensorAccessor<scalar_t, 2> output,
-      at::TensorAccessor<scalar_t, 1> logsumexp,
+      at::TensorAccessor<output_t, 2> output,
+      at::TensorAccessor<accum_t, 1> logsumexp,
       at::TensorAccessor<scalar_t, 2> query,
       at::TensorAccessor<scalar_t, 2> key,
       at::TensorAccessor<scalar_t, 2> value) {
@@ -60,18 +116,18 @@ struct AttentionKernel {
     int32_t num_queries = query.size(0);
     int32_t K = key.size(1);
 
-    scalar_t __shared__ m_prime[kQueriesPerBlock];
-    scalar_t __shared__ mi[kQueriesPerBlock];
-    scalar_t __shared__ s_prime[kQueriesPerBlock];
-    scalar_t __shared__ si[kQueriesPerBlock][kSiDim1];
+    __shared__ cutlass::Array<accum_t, kQueriesPerBlock> m_prime;
+    __shared__ cutlass::Array<accum_t, kQueriesPerBlock> mi;
+    __shared__ cutlass::Array<accum_t, kQueriesPerBlock> s_prime;
+    accum_t __shared__ si[kQueriesPerBlock][kSiDim1];
 
     for (int32_t q = 0; q + lane_id < kQueriesPerBlock; q += kWarpSize) {
-      mi[q + lane_id] = -std::numeric_limits<scalar_t>::infinity();
+      mi[q + lane_id] = -std::numeric_limits<accum_t>::infinity();
     }
     if (warp_id == 0) {
       for (int32_t q = 0; q + lane_id < kQueriesPerBlock; q += kWarpSize) {
-        s_prime[q + lane_id] = 0;
-        m_prime[q + lane_id] = -std::numeric_limits<scalar_t>::infinity();
+        s_prime[q + lane_id] = accum_t(0);
+        m_prime[q + lane_id] = -std::numeric_limits<accum_t>::infinity();
       }
     }
 
@@ -95,19 +151,19 @@ struct AttentionKernel {
       for (int32_t q = warp_id; q < kQueriesPerBlock;
            q += kNumWarpsPerBlock) { // parallel warps
         // 3. Update s_prime
-        scalar_t sp = 0;
-        scalar_t my_mi = mi[q];
+        accum_t sp = accum_t(0);
+        accum_t my_mi = mi[q];
         static_assert(
             kNumWarpsPerBlock * kWarpSize % kWarpSize == 0,
             ".. or add a condition to loop below");
         for (int32_t key_id = lane_id; key_id < kNumWarpsPerBlock * kWarpSize;
              key_id += kWarpSize) { // parallel lanes
-          scalar_t si_exp = expf(si[q][key_id] - my_mi) *
-              (key_id + iter_key_start < num_keys);
+          accum_t si_exp = math<accum_t>::exp(si[q][key_id] - my_mi);
+          si_exp *= accum_t(key_id + iter_key_start < num_keys);
           sp += si_exp;
           si[q][key_id] = si_exp;
         }
-        scalar_t m_prime_exp = expf(m_prime[q] - my_mi);
+        accum_t m_prime_exp = math<accum_t>::exp(m_prime[q] - my_mi);
         sp = warpSum(sp) + s_prime[q] * m_prime_exp;
 
         m_prime[q] = m_prime_exp;
@@ -135,14 +191,15 @@ struct AttentionKernel {
         int32_t(num_queries - warp_id - query_start()));
     if (iter_col_last > 0 && iter_query_last > 0) {
       // &output[query_start()][thread_id]
-      scalar_t* output_line_ptr =
+      output_t* output_line_ptr =
           output.data() + (query_start() + warp_id) * output_stride0 + lane_id;
       for (int32_t q = 0; q < iter_query_last;
            q += kNumWarpsPerBlock) { // parallel warps
-        scalar_t line_s_prime = s_prime[q + warp_id];
+        auto line_s_prime = s_prime[q + warp_id];
         for (int32_t value_col = 0; value_col < iter_col_last;
              value_col += kWarpSize) { // parallel lanes
-          output_line_ptr[value_col] /= line_s_prime;
+          output_line_ptr[value_col] =
+              output_t(accum_t(output_line_ptr[value_col]) / line_s_prime);
         }
         output_line_ptr += output_stride0 * kNumWarpsPerBlock;
       }
@@ -155,7 +212,7 @@ struct AttentionKernel {
       for (int64_t q = thread_id(); q < iter_query_last;
            q += kNumWarpsPerBlock * kWarpSize) {
         *(logsumexp.data() + query_start() + q) =
-            m_prime[q] + std::log(s_prime[q]);
+            accum_t(m_prime[q]) + std::log(accum_t(s_prime[q]));
       }
     }
   }
@@ -164,9 +221,9 @@ struct AttentionKernel {
   static __device__ void compute_dot_product_att_value(
       int32_t const& iter_key_start,
       at::TensorAccessor<scalar_t, 2>& value,
-      scalar_t m_prime[kQueriesPerBlock],
-      scalar_t si[kQueriesPerBlock][kSiDim1],
-      at::TensorAccessor<scalar_t, 2>& output) {
+      cutlass::Array<accum_t, kQueriesPerBlock> const& m_prime,
+      accum_t si[kQueriesPerBlock][kSiDim1],
+      at::TensorAccessor<output_t, 2>& output) {
     using ThreadblockShape = cutlass::gemm::
         GemmShape<kQueriesPerBlock, kNumWarpsPerBlock * kWarpSize, 8>;
     using WarpShape = cutlass::gemm::GemmShape<kQueriesPerBlock, kWarpSize, 8>;
@@ -177,15 +234,17 @@ struct AttentionKernel {
         ThreadblockShape, // ThreadblockShape,
         WarpShape, // WarpShape,
         InstructionShape, // InstructionShape,
-        scalar_t, // ElementA,
+        accum_t, // ElementA,
         cutlass::layout::RowMajor, // LayoutA,
         scalar_t, // ElementB,
         cutlass::layout::RowMajor, // LayoutB,
-        scalar_t, // ElementC,
+        accum_t, // ElementC,
         cutlass::layout::RowMajor, // LayoutC,
         // Just use `cutlass::arch::OpClassTensorOp` for TensorCores (requires
         // sm>7.0)
-        cutlass::arch::OpClassSimt, // OpClass,
+        cutlass::arch::
+            OpClassSimt, // OpClass:
+                         // OpClassSimt/OpClassWmmaTensorOp/OpClassTensorOp
         2, // Stages,
         cutlass::arch::OpMultiplyAdd // Operator,
         >;
@@ -272,14 +331,6 @@ struct AttentionKernel {
       // Construct thread-scoped matrix multiply
       Mma mma(shared_storage, thread_id(), warp_id(), lane_id());
 
-      // Output results
-      // cutlass::gemm::warp::MmaSimtTileIterator<cutlass::MatrixShape<16, 32>,
-      // cutlass::gemm::Operand::kC, float, cutlass::layout::RowMajor,
-      // cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<4, 8>,
-      // cutlass::layout::RowMajorInterleaved<1>, cutlass::gemm::GemmShape<4, 4,
-      // 1>>, 1, 1>
-      typename Mma::Operator::IteratorC iterator_C(
-          {&output[query_start()][0], output.stride(0)}, lane_id());
       auto iterator_C_offset_m = (tb_tile_offset.m() * Mma::WarpCount::kM) +
           (warp_id() % Mma::WarpCount::kM);
       auto iterator_C_offset_n = (tb_tile_offset.n() * Mma::WarpCount::kN) +
@@ -292,7 +343,6 @@ struct AttentionKernel {
           cutlass::MatrixCoord(
               Mma::Operator::IteratorC::Policy::LaneMmaShape::kM,
               Mma::Operator::IteratorC::Policy::LaneMmaShape::kN);
-      iterator_C.add_tile_offset({iterator_C_offset_m, iterator_C_offset_n});
 
       typename Mma::FragmentC accum, accum2; // cutlass::Array<float, 16, true>
       // TODO: We could avoid all this mess using cutlass's Epilogue concept I
@@ -302,7 +352,7 @@ struct AttentionKernel {
           Mma::WarpGemm::kM * iterator_C_offset_m + lane_offset.row();
       const int32_t thread_offset_n =
           Mma::WarpGemm::kN * iterator_C_offset_n + lane_offset.column();
-      scalar_t* output_ptr = &output[query_start()][0];
+      output_t* output_ptr = &output[query_start()][0];
       const int32_t output_s0 = output.stride(0);
       const int32_t max_m = output.size(0) - query_start();
       const int32_t max_n = output.size(1);
@@ -318,9 +368,11 @@ struct AttentionKernel {
           accum2,
           thread_offset_m,
           thread_offset_n,
-          [&](scalar_t& accum_v, int32_t m, int32_t n) {
+          [&](typename Mma::FragmentC::reference accum_v,
+              int32_t m,
+              int32_t n) {
             if (m < max_m && n < max_n) {
-              accum_v = output_ptr[m * output_s0 + n] * m_prime[m];
+              accum_v = accum_t(output_ptr[m * output_s0 + n]) * m_prime[m];
             }
           });
       int gemm_k_iterations =
@@ -335,7 +387,7 @@ struct AttentionKernel {
         auto it1 = accum.begin();
         auto it2 = accum2.begin();
         while (it1 != accum.end()) {
-          *it1 += *it2;
+          *it1 = *it1 + *it2;
           ++it1;
           ++it2;
         }
@@ -344,9 +396,11 @@ struct AttentionKernel {
           accum,
           thread_offset_m,
           thread_offset_n,
-          [&](scalar_t& accum_v, int32_t const& m, int32_t const& n) {
+          [&](typename Mma::FragmentC::reference accum_v,
+              int32_t const& m,
+              int32_t const& n) {
             if (m < max_m && n < max_n) {
-              output_ptr[m * output_s0 + n] = accum_v;
+              output_ptr[m * output_s0 + n] = output_t(accum_v);
             }
           });
     }
@@ -364,8 +418,6 @@ struct AttentionKernel {
     using Delta = typename Iterator::Delta;
     using Iterations = typename Iterator::Iterations;
     using Element = typename Iterator::Element;
-
-    static_assert(Fragment::kStorageElements == kQueriesPerBlock);
 
     CUTLASS_PRAGMA_UNROLL
     for (int mma_m = 0; mma_m < Iterations::kRow; ++mma_m) { // 0
@@ -396,9 +448,9 @@ struct AttentionKernel {
       int32_t const& iter_key_start,
       at::TensorAccessor<scalar_t, 2>& query,
       at::TensorAccessor<scalar_t, 2>& key,
-      scalar_t m_prime[kQueriesPerBlock],
-      scalar_t si[kQueriesPerBlock][kSiDim1],
-      scalar_t mi[kQueriesPerBlock]) {
+      cutlass::Array<accum_t, kQueriesPerBlock>& m_prime,
+      accum_t si[kQueriesPerBlock][kSiDim1],
+      cutlass::Array<accum_t, kQueriesPerBlock>& mi) {
     /*
     Computes the block-matrix product of:
     (a) query[query_start:query_end, :]
@@ -406,12 +458,19 @@ struct AttentionKernel {
     (b) key[iter_key_start:iter_key_start + kNumWarpsPerBlock * kWarpSize]
     and stores that into `si`
     */
-
+#ifdef FP16_ONLY_USE_TENSORCORES
+    using ThreadblockShape = cutlass::gemm::
+        GemmShape<kQueriesPerBlock, kNumWarpsPerBlock * kWarpSize, 32>;
+    using WarpShape = cutlass::gemm::GemmShape<kQueriesPerBlock, kWarpSize, 32>;
+    using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
+    using OpClass = cutlass::arch::OpClassTensorOp; // OpClassWmmaTensorOp?
+#else
     using ThreadblockShape = cutlass::gemm::
         GemmShape<kQueriesPerBlock, kNumWarpsPerBlock * kWarpSize, 8>;
     using WarpShape = cutlass::gemm::GemmShape<kQueriesPerBlock, kWarpSize, 8>;
     using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;
-
+    using OpClass = cutlass::arch::OpClassSimt;
+#endif
     using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
         ThreadblockShape, // ThreadblockShape,
         WarpShape, // WarpShape,
@@ -420,11 +479,9 @@ struct AttentionKernel {
         cutlass::layout::RowMajor, // LayoutA,
         scalar_t, // ElementB,
         cutlass::layout::ColumnMajor, // LayoutB,
-        scalar_t, // ElementC,
+        accum_t, // ElementC,
         cutlass::layout::RowMajor, // LayoutC,
-        // Just use `cutlass::arch::OpClassTensorOp` for TensorCores (requires
-        // sm>7.0)
-        cutlass::arch::OpClassSimt, // OpClass,
+        OpClass,
         2, // Stages,
         cutlass::arch::OpMultiplyAdd // Operator,
         >;
@@ -533,14 +590,14 @@ struct AttentionKernel {
 
     // 2. Update `mi`
     int64_t num_keys = key.size(0);
-    scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
+    accum_t scale = accum_t(1.0 / std::sqrt(float(K)));
     static_assert(kQueriesPerBlock % kNumWarpsPerBlock == 0);
     for (int16_t q = 0; q < kQueriesPerBlock;
          q += kNumWarpsPerBlock) { // parallel warps
       if (query_start() + q + warp_id() >= num_queries) {
         continue;
       }
-      scalar_t currentMax = m_prime[q + warp_id()];
+      accum_t currentMax = m_prime[q + warp_id()];
       CUTLASS_PRAGMA_UNROLL
       for (int64_t key_id = 0; key_id < kSiDim1;
            key_id += kWarpSize) { // parallel lanes
@@ -549,7 +606,7 @@ struct AttentionKernel {
         }
         // TODO: Scaling could be done as part of an epilogue
         // in the cutlass calculation above
-        scalar_t dot_product = si[q + warp_id()][key_id + lane_id()];
+        accum_t dot_product = si[q + warp_id()][key_id + lane_id()];
         dot_product *= scale;
         si[q + warp_id()][key_id + lane_id()] = dot_product;
         currentMax = std::max(currentMax, dot_product);
@@ -560,17 +617,19 @@ struct AttentionKernel {
     }
   }
 
-  static __device__ __forceinline__ scalar_t warpMax(scalar_t val) {
+  static __device__ __forceinline__ accum_t warpMax(accum_t val) {
     for (int stride = kWarpSize / 2; stride > 0; stride >>= 1) {
-      scalar_t tmp = __shfl_xor_sync(0xffffffff, val, stride, kWarpSize);
+      accum_t tmp =
+          accum_t(__shfl_xor_sync(0xffffffff, val, stride, kWarpSize));
       val = tmp > val ? tmp : val;
     }
     return val;
   }
 
-  static __device__ __forceinline__ scalar_t warpSum(scalar_t val) {
+  static __device__ __forceinline__ accum_t warpSum(accum_t val) {
     for (int stride = kWarpSize / 2; stride > 0; stride >>= 1) {
-      scalar_t tmp = __shfl_xor_sync(0xffffffff, val, stride, kWarpSize);
+      accum_t tmp =
+          accum_t(__shfl_xor_sync(0xffffffff, val, stride, kWarpSize));
       val += tmp;
     }
     return val;
@@ -599,8 +658,8 @@ __global__ void __launch_bounds__(
     // number of resident blocks per multiprocessor
     12 / AK::kNumWarpsPerBlock)
     attention_kernel_batched(
-        at::PackedTensorAccessor<typename AK::scalar_t, 3> output,
-        at::PackedTensorAccessor<typename AK::scalar_t, 2> logsumexp,
+        at::PackedTensorAccessor<typename AK::output_t, 3> output,
+        at::PackedTensorAccessor<typename AK::accum_t, 2> logsumexp,
         at::PackedTensorAccessor<typename AK::scalar_t, 3> query,
         at::PackedTensorAccessor<typename AK::scalar_t, 3> key,
         at::PackedTensorAccessor<typename AK::scalar_t, 3> value) {
@@ -644,12 +703,6 @@ efficient_attention_forward_generic(
   TORCH_CHECK(key.is_contiguous());
   TORCH_CHECK(value.is_contiguous());
 
-  TORCH_CHECK(
-      query.scalar_type() == at::ScalarType::Float &&
-          key.scalar_type() == at::ScalarType::Float &&
-          value.scalar_type() == at::ScalarType::Float,
-      "Only float32 type is supported for now");
-
   at::Tensor attn_bias;
   if (attn_bias_.has_value()) {
     attn_bias = *attn_bias_;
@@ -667,22 +720,58 @@ efficient_attention_forward_generic(
   int64_t M = query.size(1);
   int64_t N = key.size(1);
   int64_t K = query.size(2);
-  at::Tensor res = at::zeros({B, M, K}, query.options());
-  at::Tensor logsumexp =
-      at::empty({B, compute_logsumexp ? M : 0}, query.options());
 
-  typedef float scalar_t;
-  using AK = AttentionKernel<scalar_t>;
+  using accum_t = float;
 
-  dim3 grid(AK::kNumBlocksX, AK::getNumBlocksY(M), B);
-  dim3 block(AK::kWarpSize, AK::kNumWarpsPerBlock, 1);
+  at::Tensor res;
+  at::Tensor logsumexp = at::empty(
+      {B, compute_logsumexp ? M : 0},
+      query.options().dtype(at::ScalarType::Float));
 
-  attention_kernel_batched<AK><<<grid, block>>>(
-      res.packed_accessor<scalar_t, 3>(),
-      logsumexp.packed_accessor<scalar_t, 2>(),
-      query.packed_accessor<scalar_t, 3>(),
-      key.packed_accessor<scalar_t, 3>(),
-      value.packed_accessor<scalar_t, 3>());
+  if (query.scalar_type() == at::ScalarType::Float) {
+#ifdef FP16_ONLY_USE_TENSORCORES
+    TORCH_CHECK(
+        false, "Only support f32 with FP16_ONLY_USE_TENSORCORES defined");
+#else
+    using scalar_t = float;
+    using output_t = float;
+    using AK = AttentionKernel<scalar_t, accum_t, output_t>;
+    using m = math<scalar_t>;
+
+    res = at::zeros(
+        {B, M, K}, query.options().dtype(math<output_t>::kAtScalarType));
+
+    dim3 grid(AK::kNumBlocksX, AK::getNumBlocksY(M), B);
+    dim3 block(AK::kWarpSize, AK::kNumWarpsPerBlock, 1);
+
+    attention_kernel_batched<AK><<<grid, block>>>(
+        math<output_t>::packed_accessor<3>(res),
+        logsumexp.packed_accessor<accum_t, 2>(),
+        m::packed_accessor<3>(query),
+        m::packed_accessor<3>(key),
+        m::packed_accessor<3>(value));
+#endif
+  } else if (query.scalar_type() == at::ScalarType::Half) {
+    using scalar_t = cutlass::half_t;
+    using output_t = float;
+    using AK = AttentionKernel<scalar_t, accum_t, output_t>;
+    using m = math<scalar_t>;
+
+    res = at::zeros(
+        {B, M, K}, query.options().dtype(math<output_t>::kAtScalarType));
+
+    dim3 grid(AK::kNumBlocksX, AK::getNumBlocksY(M), B);
+    dim3 block(AK::kWarpSize, AK::kNumWarpsPerBlock, 1);
+
+    attention_kernel_batched<AK><<<grid, block>>>(
+        math<output_t>::packed_accessor<3>(res),
+        logsumexp.packed_accessor<accum_t, 2>(),
+        m::packed_accessor<3>(query),
+        m::packed_accessor<3>(key),
+        m::packed_accessor<3>(value));
+  } else {
+    TORCH_CHECK(false, "Only fp32 & half supported at the moment");
+  }
 
   AT_CUDA_CHECK(cudaGetLastError());
   return std::make_tuple(res, logsumexp, int64_t(), int64_t());

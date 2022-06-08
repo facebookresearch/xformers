@@ -11,15 +11,20 @@ from scipy.stats import binom_test
 
 import xformers.ops
 
+torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
+    q = q.float()
+    k = k.float()
+    v = v.float()
+
     q = q * (1 / q.shape[-1] ** 0.5)
     attn = q @ k.transpose(-2, -1)
     if attn_bias is not None:
-        attn = attn + attn_bias
+        attn = attn + attn_bias.float()
     attn = attn.softmax(-1)
     if drop_mask is not None:
         attn = attn * (drop_mask / (1 - p))
@@ -32,6 +37,7 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 64, 128])
 @pytest.mark.parametrize("q_len", [2, 3, 5, 32, 128])
 @pytest.mark.parametrize("device", _devices)
+@pytest.mark.parametrize("dtype", [torch.float, torch.half])
 @pytest.mark.parametrize(
     "op",
     [
@@ -46,25 +52,31 @@ def test_memory_efficient_attention(
     batch_size,
     k_len,
     use_attn_bias,
+    dtype,
     op: xformers.ops.MemoryEfficientAttentionOp,
 ):
     if (
         device not in op.SUPPORTED_DEVICES
         or k_len > op.SUPPORTED_MAX_K
         or (use_attn_bias and not op.SUPPORTS_ATTN_BIAS)
+        or dtype not in op.SUPPORTED_DTYPES
     ):
         return  # Or `pytest.xfail` ?
 
     scale = 3
-    query = torch.randn((batch_size, q_len, k_len), device=device) * scale
-    key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
-    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
+    key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
+    value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
     attn_bias = None
     if use_attn_bias:
-        attn_bias = torch.randn((batch_size, 1, kv_len), device=device) * scale
+        attn_bias = (
+            torch.randn((batch_size, 1, kv_len), device=device, dtype=dtype) * scale
+        )
         attn_bias = attn_bias.expand(batch_size, q_len, kv_len)
 
-    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, op=op)
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias, op=op
+    ).float()
     ref = ref_attention(query, key, value, attn_bias)
 
     assert torch.allclose(out, ref, atol=2e-4)
@@ -93,6 +105,7 @@ def test_key_query_all_ones(device, q_len, kv_len, batch_size, k_len):
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
 @pytest.mark.parametrize("q_len", [2, 3, 5])
 @pytest.mark.parametrize("device", _devices)
+@pytest.mark.parametrize("dtype", [torch.float, torch.half])
 @pytest.mark.parametrize(
     "op",
     [
@@ -106,18 +119,25 @@ def test_logsumexp(
     kv_len,
     batch_size,
     k_len,
+    dtype,
     op: xformers.ops.MemoryEfficientAttentionOp,
 ):
-    if device not in op.SUPPORTED_DEVICES or k_len > op.SUPPORTED_MAX_K:
+    if (
+        device not in op.SUPPORTED_DEVICES
+        or k_len > op.SUPPORTED_MAX_K
+        or dtype not in op.SUPPORTED_DTYPES
+    ):
         return
 
     scale = 3
-    query = torch.randn((batch_size, q_len, k_len), device=device) * scale
-    key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
-    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
+    key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
+    value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
 
     _, lse, _, _ = op.FORWARD_OPERATOR(query, key, value, True, None, 0.0)
-    ref_lse = ((query / k_len**0.5) @ key.transpose(-2, -1)).logsumexp(-1)
+    ref_lse = (
+        (query.float() / k_len**0.5) @ key.float().transpose(-2, -1)
+    ).logsumexp(-1)
 
     assert torch.allclose(lse, ref_lse, atol=2e-4)
 
@@ -129,6 +149,7 @@ def test_logsumexp(
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 64, 128])
 @pytest.mark.parametrize("q_len", [2, 3, 5, 32, 128])
 @pytest.mark.parametrize("device", _devices)
+@pytest.mark.parametrize("dtype", [torch.float])
 @pytest.mark.parametrize(
     "op",
     [
@@ -144,23 +165,27 @@ def test_memory_efficient_attention_backward(
     k_len,
     grad_out_contiguous,
     use_attn_bias,
+    dtype,
     op: xformers.ops.MemoryEfficientAttentionOp,
 ):
     if (
         device not in op.SUPPORTED_DEVICES
         or k_len > op.SUPPORTED_MAX_K
         or (use_attn_bias and not op.SUPPORTS_ATTN_BIAS)
+        or dtype not in op.SUPPORTED_DTYPES
     ):
         return
 
     scale = 3
-    query = torch.randn((batch_size, q_len, k_len), device=device) * scale
-    key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
-    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
+    key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
+    value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
 
     attn_bias = None
     if use_attn_bias:
-        attn_bias = torch.randn((batch_size, 1, kv_len), device=device) * scale
+        attn_bias = (
+            torch.randn((batch_size, 1, kv_len), device=device, dtype=dtype) * scale
+        )
         attn_bias = attn_bias.expand(batch_size, q_len, kv_len)
 
     query.requires_grad_(True)
@@ -185,9 +210,6 @@ def test_memory_efficient_attention_backward(
     ref = ref_attention(query, key, value, attn_bias)
     ref.backward(grad_out)
 
-    # there is some extra precision loss in the CPU implementation due to an
-    # extra accumulation step in grad_q, which is not present in the CUDA
-    # implementation
     atol = 2e-4 + 2e-6 * k_len * kv_len * math.sqrt(batch_size) * math.sqrt(q_len)
 
     # (for mypy)
@@ -202,7 +224,7 @@ def test_memory_efficient_attention_backward(
     ]:
         assert torch.allclose(
             calc_grad, ref_grad, atol=atol
-        ), f"{name} doesn't match (max_diff={(calc_grad - ref_grad).abs().max()} > {atol})"
+        ), f"{name} doesn't match (max_diff={(calc_grad - ref_grad).abs().max()} > {atol}) - dtype={dtype}"
 
 
 def _vec_binom_test(x, n, p):
