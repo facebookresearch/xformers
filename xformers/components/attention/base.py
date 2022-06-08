@@ -53,6 +53,9 @@ class Attention(nn.Module, metaclass=ABCMeta):
         # so that the MHA wrapper should skip it
         self.requires_skip_multi_head = False
 
+        # This attention requires a context length which is squared, often due to 2D pooling
+        self.requires_squared_context = False
+
         # Whether this attention mechanism supports attention masks
         self.supports_attention_mask = True
         self.supports_key_padding_mask = False

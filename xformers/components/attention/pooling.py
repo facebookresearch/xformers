@@ -62,6 +62,10 @@ class Pooling(Attention):
         # This operator does not really handle q,k,v
         self.requires_same_k_q_dimensions = True
 
+        # This attention requires the 2d structure out of the context,
+        # implictly assumed to be a squared length
+        self.requires_squared_context = True
+
     def forward(self, q: torch.Tensor, *_, **__):
         # Expose the 2D token structure
         B, HW, C = q.shape

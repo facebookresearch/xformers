@@ -167,6 +167,9 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 - [2D Pooling](xformers/components/attention/pooling.py)
   - *[Metaformer is actually what you need for vision, Yu et al.](https://arxiv.org/pdf/2111.11418v1.pdf)*
 
+- [Visual Attention](xformers/components/attention/visual.py)
+  - *[`Visual Attention Network`_, Guo et al](https://arxiv.org/pdf/2202.09741.pdf)*
+
 - ... add a new one [see Contribution.md](CONTRIBUTING.md)
 
 </p></details>
@@ -199,7 +202,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 <details><summary>Initializations </summary><p>
   This is completely optional, and will only occur when generating full models through xFormers, not when picking parts individually.
-  
+
   There are basically two initialization mechanisms exposed, but the user is free to initialize weights as he/she sees fit after the fact.
   - Parts can expose a `init_weights()` method, which define sane defaults
   - xFormers supports [specific init schemes](xformers/factory/weight_init.py) which *can take precedence* over the init_weights()
