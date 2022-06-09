@@ -147,6 +147,7 @@ def test_attention_fwd_bwd(
         for _ in range(3)
     ]
 
+    torch.manual_seed(0)
     att_mask = torch.randint(0,2,[batch_size, n_heads, 1, n_ctx]).bool().cuda()
 
     def loss_fn(x):
