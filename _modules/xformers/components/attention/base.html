@@ -280,6 +280,9 @@
         <span class="c1"># so that the MHA wrapper should skip it</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">requires_skip_multi_head</span> <span class="o">=</span> <span class="kc">False</span>
 
+        <span class="c1"># This attention requires a context length which is squared, often due to 2D pooling</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">requires_squared_context</span> <span class="o">=</span> <span class="kc">False</span>
+
         <span class="c1"># Whether this attention mechanism supports attention masks</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">supports_attention_mask</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">supports_key_padding_mask</span> <span class="o">=</span> <span class="kc">False</span>
