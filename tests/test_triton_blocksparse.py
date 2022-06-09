@@ -130,7 +130,7 @@ def test_softmax(BLOCK, WIDTH, DTYPE):
 @pytest.mark.parametrize("block", [32, 43, 128])  # 16, 32,
 def test_attention_fwd_bwd(
     block,
-    input_scale=1.0,
+    input_scale=2.0,
     scale=1 / 8.0,
     n_ctx=384,
     dtype=torch.float16,
@@ -146,6 +146,8 @@ def test_attention_fwd_bwd(
         .cuda()
         for _ in range(3)
     ]
+
+    att_mask = torch.randint(0,2,[batch_size, n_heads, 1, n_ctx]).bool().cuda()
 
     def loss_fn(x):
         return (x**2).mean()
@@ -165,7 +167,7 @@ def test_attention_fwd_bwd(
             _ = BlockSparseAttention(layout, block)
     else:
         block_sparse_attention = BlockSparseAttention(layout, block)
-        attn_out = block_sparse_attention(q=query, k=key, v=value, scale=scale)
+        attn_out = block_sparse_attention(q=query, k=key, v=value, scale=scale, att_mask=att_mask)
 
         # ad hoc loss
         loss = loss_fn(attn_out)
@@ -178,7 +180,8 @@ def test_attention_fwd_bwd(
         torch_q.retain_grad()
         torch_k.retain_grad()
         torch_v.retain_grad()
-        scores = scale * torch.einsum("bhsd,bhtd->bhst", torch_q, torch_k)
+        float_att_mask = 1e6*(-1.0+att_mask.half())
+        scores = scale * torch.einsum("bhsd,bhtd->bhst", torch_q, torch_k) + float_att_mask
         probs = torch.softmax(scores, dim=-1)
         torch_attn_out = torch.einsum("bhst,bhtd->bhsd", probs, torch_v)
 

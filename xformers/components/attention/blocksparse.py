@@ -12,6 +12,7 @@ import torch
 
 from xformers import _is_triton_available
 from xformers.components.attention import Attention, AttentionConfig, register_attention
+from xformers.components.attention.utils import bool_mask_to_additive
 
 if _is_triton_available:
     from triton.ops.blocksparse import matmul as blocksparse_matmul  # type: ignore
@@ -96,8 +97,14 @@ if _is_triton_available:
             self.requires_same_k_q_dimensions = True
 
             # The underlying triton op does not support per element attention mask
-            self.supports_attention_mask = False
+            self.supports_attention_mask = True
             self.supports_key_padding_mask = False
+        
+        def update_mask_type(self, mask: torch.Tensor):
+            logging.warning(
+                "Mask has to be additive. Fixing that but this slows things down"
+            )
+            mask = bool_mask_to_additive(mask)
 
         def create_triton_kernels(self, device):
             # blocksparse operators
@@ -124,30 +131,42 @@ if _is_triton_available:
                 self.block_size,
                 device=device,
             )
+            
+            self.to_gather = [] #use this if different masks per head
+            self.broadcast_to_gather = [] #use this if broadcasting same mask across heads
+            num_col_blocks=self.layout.shape[-1]
+            for idx, (h, i, j) in enumerate(zip(*self.layout.nonzero(as_tuple=True))):
+                #assumes per-example masks are 1D, otherwise very expensive
+                self.to_gather.append(h*num_col_blocks+j)
+                self.broadcast_to_gather.append(j)
+
+            self.to_gather = torch.tensor(self.to_gather).long().to(device)
+            self.broadcast_to_gather = torch.tensor(self.broadcast_to_gather).long().to(device)
 
         def forward(
             self,
             q: torch.Tensor,
             k: torch.Tensor,
             v: torch.Tensor,
+            att_mask = None,
             scale: float = 1.0,
             *args,
             **kwargs,
         ) -> torch.Tensor:
-            assert (
-                "att_mask" not in kwargs.keys() and "att_mask" not in args
-            ), "This attention does not support an attention mask, but you can specify causality."
 
             r"""
             A thin wrap around the Triton blockparse attention operation
 
-            .. note: Per element attention mask is not supported, but you can specify causality
             """
 
             # Delayed triton init, to make sure that we get the right device
             # Infer device from query
             if not hasattr(self, "sparse_dot_sdd"):
                 self.create_triton_kernels(q.device)
+            
+            if att_mask is not None and att_mask.dtype == torch.bool:
+                mask=self.update_mask_type(att_mask)
+
 
             assert (
                 q.shape[-2] == k.shape[-2]
@@ -169,12 +188,29 @@ if _is_triton_available:
             # Blocksparse only works on fp16
             q_dtype = q.dtype
             q, k, v = q.half(), k.half(), v.half()
+            if att_mask is not None:
+                att_mask = att_mask.half() 
 
             # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
             # When the computations are block sparse, the matrix types change along the way:
             # - (sparse) attention matrix = (dense) Kt * (dense) Q
             q = q / math.sqrt(q.size(-1))
             sparse_att_mat = self.sparse_dot_sdd(q, k)
+            
+            #apply masks
+            if att_mask is not None:
+                #mask shape is either (B,1,1,S) or (B,nh,1,S)
+                assert att_mask.shape[0]==q.shape[0] and att_mask.shape[1] in [q.shape[1],1] and att_mask.shape[-1]==q.shape[-2]
+                #reshape input mask into blocks
+                block_att_mask = att_mask.reshape(att_mask.shape[0],att_mask.shape[1]*att_mask.shape[-1]//self.block_size,self.block_size)
+                #gather based on predefined layout
+                if att_mask.shape[1]==1:
+                    block_att_mask = block_att_mask[:,self.broadcast_to_gather,:]
+                else:
+                    block_att_mask = block_att_mask[:,self.to_gather,:]
+                
+                #broadcast across the attention matrix blocks row dimension since we assume masking is 1Di
+                sparse_att_mat += block_att_mask.unsqueeze(-2)
 
             # - softmax on the sparse attention matrix
             sparse_att_mat = self.sparse_softmax(
