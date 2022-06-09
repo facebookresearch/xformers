@@ -31,6 +31,7 @@ class MetaVisionTransformer(VisionTransformer):
         num_classes=10,
         dim=384,
         attention="scaled_dot_product",
+        feedforward="MLP",
         layer_norm_style="pre",
         use_rotary_embeddings=True,
         linear_warmup_ratio=0.1,
@@ -45,8 +46,7 @@ class MetaVisionTransformer(VisionTransformer):
         # Generate the skeleton of our hierarchical Transformer
 
         # This is a small poolformer configuration, adapted to the small CIFAR10 pictures (32x32)
-        # Any other related config would work,
-        # and the attention mechanisms don't have to be the same across layers
+        # Any other related config would work, and the attention mechanisms don't have to be the same across layers
         base_hierarchical_configs = [
             BasicLayerConfig(
                 embedding=64,
@@ -121,8 +121,8 @@ if __name__ == "__main__":
 
     # Adjust batch depending on the available memory on your machine.
     # You can also use reversible layers to save memory
-    REF_BATCH = 512
-    BATCH = 512  # lower if not enough GPU memory
+    REF_BATCH = 768
+    BATCH = 256  # lower if not enough GPU memory
 
     MAX_EPOCHS = 50
     NUM_WORKERS = 4
@@ -172,6 +172,7 @@ if __name__ == "__main__":
         num_classes=num_classes,
         attention="scaled_dot_product",
         layer_norm_style="pre",
+        feedforward="MLP",
         use_rotary_embeddings=True,
     )
     trainer = pl.Trainer(

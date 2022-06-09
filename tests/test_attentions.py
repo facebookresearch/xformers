@@ -27,13 +27,15 @@ DEVICES = (
 )
 
 BATCH = 2
-SEQ = 128 if torch.cuda.is_available() else 32
+SEQ = 128 if torch.cuda.is_available() else 36
 MODEL = 128 if torch.cuda.is_available() else 16
 GLOBAL_ATTENTION_RATIO = (
     _DENSITY_THRESHOLD * 0.9
 )  # Make sure that we test the sparse implementation, no matter the threshold
 
 assert ATTENTION_REGISTRY.keys(), "Attention layers should have been registered"
+
+_non_order_invariant_attentions = ["visual", "pooling"]
 
 
 def _get_multihead(
@@ -93,7 +95,9 @@ def _get_multihead(
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("heads", [1, 4])
-@pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
+@pytest.mark.parametrize(
+    "attention_name", ATTENTION_REGISTRY.keys() - _non_order_invariant_attentions
+)
 @pytest.mark.parametrize("device", DEVICES)
 def test_order_invariance(
     attention_name: str,
@@ -103,9 +107,6 @@ def test_order_invariance(
     causal: bool,
     device: torch.device,
 ):
-
-    if int(math.sqrt(SEQ)) ** 2 != SEQ and attention_name == "pooling":
-        pytest.skip(f"{attention_name} requires squared sequence lengths")
 
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
@@ -119,6 +120,12 @@ def test_order_invariance(
         device,
         use_seperate_proj_weights=False,
     )
+
+    if (
+        int(math.sqrt(SEQ)) ** 2 != SEQ
+        and multi_head.attention.requires_squared_context
+    ):
+        pytest.skip(f"{attention_name} requires squared sequence lengths")
 
     # Check that a shuffled input produces the same results
     seqs = [SEQ, SEQ // 2] if (attention_name != "blocksparse") else [SEQ]
@@ -304,11 +311,14 @@ def test_broadcast_batch_dimension(
     device: torch.device,
     batch_sizes: Tuple[int, int, int],
 ):
-    if int(math.sqrt(SEQ)) ** 2 != SEQ and attention_name == "pooling":
-        pytest.skip(f"{attention_name} requires squared sequence lengths")
-
     Q_BATCH, K_BATCH, V_BATCH = batch_sizes
     multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
+
+    if (
+        int(math.sqrt(SEQ)) ** 2 != SEQ
+        and multi_head.attention.requires_squared_context
+    ):
+        pytest.skip(f"{attention_name} requires squared sequence lengths")
 
     if multi_head.attention.requires_same_k_q_dimensions:
         # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
@@ -388,13 +398,19 @@ def test_torch_script_ability(
     heads: int,
     attn_dropout: float,
 ):
-    if attention_name in {"favor", "global", "local", "random", "pooling"}:
+    if attention_name in {"favor", "global", "local", "random"}:
         # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
         pytest.skip(f"{attention_name} does not support scripting yet.")
 
     device = torch.device("cpu")
 
     multi_head = _get_multihead(attention_name, attn_dropout, 0.0, False, heads, device)
+
+    if (
+        int(math.sqrt(SEQ)) ** 2 != SEQ
+        and multi_head.attention.requires_squared_context
+    ):
+        pytest.skip(f"{attention_name} requires squared sequence lengths")
 
     # input for tracing the function
     q = torch.rand((BATCH, SEQ, MODEL), device=device)
