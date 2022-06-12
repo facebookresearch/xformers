@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support several initialization options [#312]
 - Conv2DFeedforward feedforward part [#321]
 - VisualAttention [#329]
-
+- EfficientFormer example [#338]
 
 ## [0.0.11] - 2022-05-30
 ### Fixed

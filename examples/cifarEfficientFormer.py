@@ -7,33 +7,34 @@
 import pytorch_lightning as pl
 import torch
 from pl_bolts.datamodules import CIFAR10DataModule
-from pl_bolts.transforms.dataset_normalizations import cifar10_normalization
 from torch import nn
 from torchmetrics import Accuracy
-from torchvision import transforms
 
-from examples.microViT import Classifier, VisionTransformer
+from examples.cifarViT import Classifier, VisionTransformer
+from xformers.components import MultiHeadDispatch
+from xformers.components.attention import ScaledDotProduct
+from xformers.components.patch_embedding import PatchEmbeddingConfig  # noqa
+from xformers.components.patch_embedding import build_patch_embedding  # noqa
 from xformers.factory import xFormer, xFormerConfig
 from xformers.helpers.hierarchical_configs import (
     BasicLayerConfig,
     get_hierarchical_configuration,
 )
 
+# This example is very close to the generic "cifarMetaFormer" example, but this time
+# implements a more specific "EfficientFormer" (https://arxiv.org/abs/2206.01191) model
 
-class MetaVisionTransformer(VisionTransformer):
+
+class EfficientFormer(VisionTransformer):
     def __init__(
         self,
         steps,
-        learning_rate=5e-3,
+        learning_rate=1e-2,
         betas=(0.9, 0.99),
         weight_decay=0.03,
         image_size=32,
         num_classes=10,
         dim=384,
-        attention="scaled_dot_product",
-        feedforward="MLP",
-        layer_norm_style="pre",
-        use_rotary_embeddings=True,
         linear_warmup_ratio=0.1,
         classifier=Classifier.GAP,
     ):
@@ -44,61 +45,67 @@ class MetaVisionTransformer(VisionTransformer):
         self.save_hyperparameters()
 
         # Generate the skeleton of our hierarchical Transformer
-
-        # This is a small poolformer configuration, adapted to the small CIFAR10 pictures (32x32)
-        # Any other related config would work, and the attention mechanisms don't have to be the same across layers
+        # This implements a model close to the L1 suggested in "EfficientFormer" (https://arxiv.org/abs/2206.01191)
+        # but a pooling layer has been removed, due to the very small image dimensions in Cifar (32x32)
         base_hierarchical_configs = [
             BasicLayerConfig(
                 embedding=64,
-                attention_mechanism=attention,
+                attention_mechanism="pooling",
                 patch_size=3,
                 stride=2,
                 padding=1,
                 seq_len=image_size * image_size // 4,
+                feedforward="Conv2DFeedforward",
             ),
             BasicLayerConfig(
                 embedding=128,
-                attention_mechanism=attention,
+                attention_mechanism="pooling",
                 patch_size=3,
                 stride=2,
                 padding=1,
                 seq_len=image_size * image_size // 16,
+                feedforward="Conv2DFeedforward",
             ),
             BasicLayerConfig(
                 embedding=320,
-                attention_mechanism=attention,
+                attention_mechanism="pooling",
                 patch_size=3,
                 stride=2,
                 padding=1,
                 seq_len=image_size * image_size // 64,
+                feedforward="Conv2DFeedforward",
             ),
-            BasicLayerConfig(
-                embedding=512,
-                attention_mechanism=attention,
-                patch_size=3,
-                stride=2,
-                padding=1,
-                seq_len=image_size * image_size // 256,
-            ),
+            # L1 would have an extra layer here, similar to the above,
+            # bringing the sequence length down to HxW / 1024
         ]
 
         # Fill in the gaps in the config
         xformer_config = get_hierarchical_configuration(
             base_hierarchical_configs,
-            layernorm_style=layer_norm_style,
-            use_rotary_embeddings=use_rotary_embeddings,
+            layernorm_style="pre",
+            use_rotary_embeddings=False,
             mlp_multiplier=4,
-            dim_head=32,
-            feedforward="Conv2DFeedforward",
+            in_channels=3,  # 24 if L1, there's another stem prior to the trunk
         )
 
-        # Now instantiate the metaformer trunk
+        # Now instantiate the EfficientFormer trunk
         config = xFormerConfig(xformer_config)
         config.weight_init = "moco"
 
-        print(config)
         self.trunk = xFormer.from_config(config)
-        print(self.trunk)
+
+        # L1 model
+        # # This model requires a pre-stem (a conv prior to going through all the layers above)
+        # self.pre_stem = build_patch_embedding(
+        #     PatchEmbeddingConfig(
+        #         in_channels=3, out_channels=24, kernel_size=3, stride=2, padding=1
+        #     )
+        # )
+
+        # This model requires a final Attention step
+        self.attention = MultiHeadDispatch(
+            dim_model=320, num_heads=4, attention=ScaledDotProduct()
+        )
 
         # The classifier head
         dim = base_hierarchical_configs[-1].embedding
@@ -108,7 +115,10 @@ class MetaVisionTransformer(VisionTransformer):
         self.val_accuracy = Accuracy()
 
     def forward(self, x):
+        x = x.flatten(-2, -1).transpose(-1, -2)  # BCHW to BSE
+        # x = self.pre_stem(x) # L1 model
         x = self.trunk(x)
+        x = self.attention(x)
         x = self.ln(x)
 
         x = x.mean(dim=1)  # mean over sequence len
@@ -122,7 +132,7 @@ if __name__ == "__main__":
     # Adjust batch depending on the available memory on your machine.
     # You can also use reversible layers to save memory
     REF_BATCH = 768
-    BATCH = 256  # lower if not enough GPU memory
+    BATCH = 768  # lower if not enough GPU memory
 
     MAX_EPOCHS = 50
     NUM_WORKERS = 4
@@ -130,22 +140,6 @@ if __name__ == "__main__":
 
     torch.cuda.manual_seed_all(42)
     torch.manual_seed(42)
-
-    train_transforms = transforms.Compose(
-        [
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            cifar10_normalization(),
-        ]
-    )
-
-    test_transforms = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            cifar10_normalization(),
-        ]
-    )
 
     # We'll use a datamodule here, which already handles dataset/dataloader/sampler
     # See https://pytorchlightning.github.io/lightning-tutorials/notebooks/lightning_examples/cifar10-baseline.html
@@ -156,9 +150,6 @@ if __name__ == "__main__":
         num_workers=NUM_WORKERS,
         pin_memory=True,
     )
-    dm.train_transforms = train_transforms
-    dm.test_transforms = test_transforms
-    dm.val_transforms = test_transforms
 
     image_size = dm.size(-1)  # 32 for CIFAR
     num_classes = dm.num_classes  # 10 for CIFAR
@@ -166,14 +157,10 @@ if __name__ == "__main__":
     # compute total number of steps
     batch_size = BATCH * GPUS
     steps = dm.num_samples // REF_BATCH * MAX_EPOCHS
-    lm = MetaVisionTransformer(
+    lm = EfficientFormer(
         steps=steps,
         image_size=image_size,
         num_classes=num_classes,
-        attention="scaled_dot_product",
-        layer_norm_style="pre",
-        feedforward="MLP",
-        use_rotary_embeddings=True,
     )
     trainer = pl.Trainer(
         gpus=GPUS,
