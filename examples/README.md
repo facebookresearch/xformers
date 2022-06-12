@@ -20,14 +20,23 @@ and finally an inference example or some test loss and accuracy.
 If your current machine does not expose enough RAM and the example reports an `OutOfMemoryError`, please adjust the batch size.
 
 
-### MicroViT
+## NLP: microGPT
+
+This is an hommage to [minGPT](https://github.com/karpathy/minGPT), in particular the training over Shakespeare dialogs of an autoregressive model. The default configuration is that of a standard Transformer, but you can change parts as you see fit. You can get to reasonable results within an hour or so on a single GPU.
+
+## Vision models
+
+You can find a couple of very small examples, of models being trained on the CIFAR10 dataset. They can be modified to training on something like ImageNet with minimal changes, but running them out of the box requires a bit more work in that case.
+
+
+### ViT
 
 This is meant to be an easy introduction to using xformers in practice, mirroring closely [this Pytorch Lightning](https://pytorchlightning.github.io/lightning-tutorials/notebooks/lightning_examples/cifar10-baseline.html) tutorial. The default settings are close to this tutorial, which trains a 11M parameters ResNet on the CIFAR dataset, we train a 10.6M ViT on the same dataset. The ViT configuration is not optimal for CIFAR, since the pictures have a very small size to begin with and information is probably lost given the patches. Nevertheless you should be able to reach about 80% accuracy within about an hour on a single GPU.
 
 ![Example curves](../docs/assets/microViT.png)
 
 
-### MicroMetaformer
+### Metaformer
 
 This is very close to the MicroViT example above, but illustrating the use of a hierarchical Transformer ([Metaformer](https://arxiv.org/pdf/2111.11418.pdf)) this time, through a helper function which generates the required configuration given the pooling parameters. The suggested configuration is about 6.6M parameters big (half of a ResNet18) and trains to about 86% top-1 Cifar10 within minutes.
 

@@ -26,6 +26,7 @@ A small helper is provided to make it easier to generate matching configurations
             stride=4,
             padding=2,
             seq_len=image_size * image_size // 16,
+            feedforward="MLP",
         ),
         BasicLayerConfig(
             embedding=128,
@@ -34,6 +35,7 @@ A small helper is provided to make it easier to generate matching configurations
             stride=2,
             padding=1,
             seq_len=image_size * image_size // 64,
+            feedforward="MLP",
         ),
         BasicLayerConfig(
             embedding=320,
@@ -42,6 +44,7 @@ A small helper is provided to make it easier to generate matching configurations
             stride=2,
             padding=1,
             seq_len=image_size * image_size // 256,
+            feedforward="MLP",
         ),
     ]
 

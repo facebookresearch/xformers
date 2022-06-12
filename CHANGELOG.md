@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Conv2DFeedforward feedforward part [#321]
 - VisualAttention [#329]
 - Automatic blocksparse for causal attention [#334]
-
+- Better hierarchical transformer  generation [#345]
 
 ## [0.0.11] - 2022-05-30
 ### Fixed

@@ -7,17 +7,24 @@
 import pytorch_lightning as pl
 import torch
 from pl_bolts.datamodules import CIFAR10DataModule
-from pl_bolts.transforms.dataset_normalizations import cifar10_normalization
 from torch import nn
 from torchmetrics import Accuracy
-from torchvision import transforms
 
-from examples.microViT import Classifier, VisionTransformer
+from examples.cifar_ViT import Classifier, VisionTransformer
 from xformers.factory import xFormer, xFormerConfig
 from xformers.helpers.hierarchical_configs import (
     BasicLayerConfig,
     get_hierarchical_configuration,
 )
+
+# This is very close to the cifarViT example, and reuses a lot of the training code, only the model part is different.
+# There are many ways one can use xformers to write down a MetaFormer, for instance by
+# picking up the parts from `xformers.components` and implementing the model explicitly,
+# or by patching another existing ViT-like implementation.
+
+# This example takes another approach, as we define the whole model configuration in one go (dict structure)
+# and then use the xformers factory to generate the model. This obfuscates a lot of the model building
+# (though you can inspect the resulting implementation), but makes it trivial to do some hyperparameter search
 
 
 class MetaVisionTransformer(VisionTransformer):
@@ -44,9 +51,10 @@ class MetaVisionTransformer(VisionTransformer):
         self.save_hyperparameters()
 
         # Generate the skeleton of our hierarchical Transformer
-
-        # This is a small poolformer configuration, adapted to the small CIFAR10 pictures (32x32)
-        # Any other related config would work, and the attention mechanisms don't have to be the same across layers
+        # - This is a small poolformer configuration, adapted to the small CIFAR10 pictures (32x32)
+        # - Please note that this does not match the L1 configuration in the paper, as this would correspond to repeated
+        #   layers. CIFAR pictures are too small for this config to be directly meaningful (although that would run)
+        # - Any other related config would work, and the attention mechanisms don't have to be the same across layers
         base_hierarchical_configs = [
             BasicLayerConfig(
                 embedding=64,
@@ -55,6 +63,8 @@ class MetaVisionTransformer(VisionTransformer):
                 stride=2,
                 padding=1,
                 seq_len=image_size * image_size // 4,
+                feedforward=feedforward,
+                repeat_layer=1,
             ),
             BasicLayerConfig(
                 embedding=128,
@@ -63,6 +73,8 @@ class MetaVisionTransformer(VisionTransformer):
                 stride=2,
                 padding=1,
                 seq_len=image_size * image_size // 16,
+                feedforward=feedforward,
+                repeat_layer=1,
             ),
             BasicLayerConfig(
                 embedding=320,
@@ -71,6 +83,8 @@ class MetaVisionTransformer(VisionTransformer):
                 stride=2,
                 padding=1,
                 seq_len=image_size * image_size // 64,
+                feedforward=feedforward,
+                repeat_layer=1,
             ),
             BasicLayerConfig(
                 embedding=512,
@@ -79,6 +93,8 @@ class MetaVisionTransformer(VisionTransformer):
                 stride=2,
                 padding=1,
                 seq_len=image_size * image_size // 256,
+                feedforward=feedforward,
+                repeat_layer=1,
             ),
         ]
 
@@ -89,7 +105,6 @@ class MetaVisionTransformer(VisionTransformer):
             use_rotary_embeddings=use_rotary_embeddings,
             mlp_multiplier=4,
             dim_head=32,
-            feedforward="Conv2DFeedforward",
         )
 
         # Now instantiate the metaformer trunk
@@ -131,34 +146,16 @@ if __name__ == "__main__":
     torch.cuda.manual_seed_all(42)
     torch.manual_seed(42)
 
-    train_transforms = transforms.Compose(
-        [
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            cifar10_normalization(),
-        ]
-    )
-
-    test_transforms = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            cifar10_normalization(),
-        ]
-    )
-
     # We'll use a datamodule here, which already handles dataset/dataloader/sampler
-    # See https://pytorchlightning.github.io/lightning-tutorials/notebooks/lightning_examples/cifar10-baseline.html
+    # - See https://pytorchlightning.github.io/lightning-tutorials/notebooks/lightning_examples/cifar10-baseline.html
     # for a full tutorial
+    # - Please note that default transforms are being used
     dm = CIFAR10DataModule(
         data_dir="data",
         batch_size=BATCH,
         num_workers=NUM_WORKERS,
         pin_memory=True,
     )
-    dm.train_transforms = train_transforms
-    dm.test_transforms = test_transforms
-    dm.val_transforms = test_transforms
 
     image_size = dm.size(-1)  # 32 for CIFAR
     num_classes = dm.num_classes  # 10 for CIFAR
