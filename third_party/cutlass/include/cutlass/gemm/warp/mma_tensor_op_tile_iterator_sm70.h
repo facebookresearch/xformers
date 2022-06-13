@@ -1729,11 +1729,15 @@ class MmaVoltaTensorOpMultiplicandTileIterator<
 
         // swap higher 64bit and lower 64bit
         if (k_group_idx_ &  0x2) {
-            uint64_t *low = reinterpret_cast<uint64_t *>(&frag) + access_idx * 2;
-            uint64_t *high = reinterpret_cast<uint64_t *>(&frag) + access_idx * 2 + 1;
-            uint64_t tmp = *low;
-            *low = *high;
-            *high = tmp;
+            uint32_t *low = reinterpret_cast<uint32_t *>(&frag) + access_idx * 2 * 2;
+            uint32_t *high = reinterpret_cast<uint32_t *>(&frag) + access_idx * 2 * 2 + 2;
+            uint64_t tmp = low[0];
+            low[0] = high[0];
+            high[0] = tmp;
+
+            tmp = low[1];
+            low[1] = high[1];
+            high[1] = tmp;
         }
       }
     }
