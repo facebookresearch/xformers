@@ -4,7 +4,7 @@
 _target_: xformers.factory.block_factory.xFormerEncoderConfig
 reversible: False
 num_layers: 4
-user_triton: True
+use_triton: True
 dim_model: ${emb}
 layer_norm_style: pre
 position_encoding_config:
