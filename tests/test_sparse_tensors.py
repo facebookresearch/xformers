@@ -69,12 +69,12 @@ def _get_dtype_atol(tensor_type, device: str):
         # TF32 has the precision of fp16 but the range of fp32
         # See https://blogs.nvidia.com/blog/2020/05/14/tensorfloat-32-precision-format/
         torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True  # type: ignore
         return torch.float32, 1e-1
 
     # Force pytorch to keep its computations as float32 (will default to tf32 with recent cuda and ampere+ GPU)
     torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False  # type: ignore
 
     return torch.float32, 1e-5
 
