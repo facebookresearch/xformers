@@ -12,6 +12,8 @@ import torch
 
 from xformers import _is_sparse_available, _is_triton_available
 from xformers.components.attention.attention_mask import AttentionMask
+from xformers.components.attention.blocksparse import BlockSparseAttention
+from xformers.components.attention.utils import split_heads
 
 if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
@@ -61,7 +63,9 @@ def _broadcast_batch(mask, batch_size):
 
 
 def _matmul_with_mask(
-    a: torch.Tensor, b: torch.Tensor, mask: Optional[Union[torch.Tensor, "SparseCS"]]
+    a: torch.Tensor,
+    b: torch.Tensor,
+    mask: Optional[Union[torch.Tensor, "SparseCS"]],
 ) -> torch.Tensor:
     if mask is None:
         return a @ b
@@ -216,12 +220,43 @@ def scaled_dot_product_attention(
     v: torch.Tensor,
     att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
     dropout: Optional[torch.nn.Module] = None,
+    num_heads: int = 1,
 ) -> torch.Tensor:
     autocast_disabled = (
         _is_sparse_available
         and isinstance(att_mask, SparseCS)
         or (att_mask is not None and att_mask.is_sparse)
     )
+
+    # Check if causal is required but mask is not sparse; if fp16 or under amp context
+    switch_to_blocksparse = (
+        _is_triton_available
+        and (att_mask is not None and not att_mask.is_sparse)  # redundant?
+        and (isinstance(att_mask, AttentionMask) and att_mask.is_causal)
+        and (q.dtype == torch.float16 or torch.is_autocast_enabled())
+    )
+
+    if switch_to_blocksparse:
+        drop_prob = dropout.p if isinstance(dropout, torch.nn.Dropout) else 0.0
+        seq = q.shape[-2]
+        block_size = 16  # default
+        blocks = seq // block_size
+
+        if q.dim() == 3:
+            # reshape from (N, S, hs) to (B, nh, S, hs) where N = B x nh
+            batch_qk = q.shape[0] // num_heads
+            batch_v = v.shape[0] // num_heads
+            q = split_heads(q, batch_qk, q.shape[1], num_heads, q.shape[-1])
+            k = split_heads(k, batch_qk, k.shape[1], num_heads, k.shape[-1])
+            v = split_heads(v, batch_v, v.shape[1], num_heads, v.shape[-1])
+
+        layout_fill = torch.ones((num_heads, blocks, blocks), dtype=torch.long)
+
+        bsp_attention = BlockSparseAttention(
+            layout=layout_fill, block_size=block_size, dropout=drop_prob, causal=True
+        )
+        att = bsp_attention(q, k, v)
+        return att
 
     with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
         if autocast_disabled:

@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from xformers.components.attention._sputnik_sparse import SparseCS
+from xformers.components.attention.attention_mask import AttentionMask
 from xformers.components.attention.core import scaled_dot_product_attention
 
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
@@ -28,7 +29,6 @@ def test_core_attention():
 
 
 def test_core_attention_mask_types():
-
     b, s, d = 4, 90, 16
     prob = 0.8  # make sure that we trigger the sparse kernels
 
@@ -106,6 +106,55 @@ def test_amp_attention_sparsecs(device):
 
     with torch.cuda.amp.autocast():
         r = scaled_dot_product_attention(a, a, a, m)
+
+    expected_device = torch.float32
+    assert r.dtype == expected_device
+
+
+@pytest.mark.parametrize("device", ["cuda"])
+@pytest.mark.parametrize("data_type", [torch.float16, torch.float32])
+def test_switch_blocksparse(device, data_type):
+    b, s, d = 8, 128, 32
+
+    a = torch.rand(b, s, d, device=device, dtype=data_type)
+
+    # custom causal mask
+    m_custom = torch.triu(
+        torch.ones(s, s, device=device, dtype=a.dtype) * float("-inf"), diagonal=1
+    )
+    m_custom_bool = m_custom != float("-inf")
+    m_sparse = SparseCS(m_custom_bool, device)
+    # causal mask with causal flag
+    m_att_mask = AttentionMask.make_causal(s, s, device, dtype=a.dtype)
+
+    # Check that a switch to blocksparse is only triggered by causal flag
+    with torch.cuda.amp.autocast():
+        r_custom = scaled_dot_product_attention(a, a, a, m_custom)
+        r_sparse = scaled_dot_product_attention(a, a, a, m_sparse)
+        r_att_mask = scaled_dot_product_attention(a, a, a, m_att_mask)
+
+    r_att_mask = r_att_mask.squeeze()
+
+    expected_device = torch.float32
+    assert r_sparse.dtype == expected_device
+
+    if r_custom.dtype == r_att_mask.dtype:
+        assert torch.allclose(r_custom, r_att_mask, atol=1e-6, rtol=1e-3)
+
+
+@pytest.mark.parametrize("device", ["cuda"])
+def test_switch_blocksparse_dims(device):
+    b, s, d, nh = 8, 128, 32, 8
+    hs = d // nh
+
+    data_type = torch.float32
+    a = torch.rand(b, nh, s, hs, device=device, dtype=data_type)
+    # causal mask with causal flag
+    m_att_mask = AttentionMask.make_causal(s, s, device, dtype=a.dtype)
+
+    # Check that passing qkv with shape (B, nh, S, hs) is properly handled
+    with torch.cuda.amp.autocast():
+        r = scaled_dot_product_attention(a, a, a, m_att_mask)
 
     expected_device = torch.float32
     assert r.dtype == expected_device

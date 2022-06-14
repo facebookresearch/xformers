@@ -106,3 +106,13 @@ def bool_mask_to_additive(
     mask_ = torch.zeros_like(mask, dtype=dtype)
     mask_[~mask] = float("-inf")
     return mask_
+
+
+# Move head forward and fold into batch dim. dimensions from (B, S, D) to (B * nh, S, hs)
+def fold_heads(t: torch.Tensor, B: int, S: int, nH: int, Hs: int):
+    return t.view(B, S, nH, Hs).transpose(1, 2).flatten(start_dim=0, end_dim=1)
+
+
+# (B, S, D) to (B, S, nh, hs)
+def split_heads(t: torch.Tensor, B: int, S: int, nH: int, Hs: int):
+    return t.view(B, S, nH, Hs).transpose(1, 2)
