@@ -118,13 +118,13 @@ def test_switch_blocksparse(device, data_type):
 
     a = torch.rand(b, s, d, device=device, dtype=data_type)
 
-    # custom causal mask
+    # Custom causal mask
     m_custom = torch.triu(
         torch.ones(s, s, device=device, dtype=a.dtype) * float("-inf"), diagonal=1
     )
     m_custom_bool = m_custom != float("-inf")
     m_sparse = SparseCS(m_custom_bool, device)
-    # causal mask with causal flag
+    # Mask with causal flag
     m_att_mask = AttentionMask.make_causal(s, s, device, dtype=a.dtype)
 
     # Check that a switch to blocksparse is only triggered by causal flag
@@ -132,8 +132,6 @@ def test_switch_blocksparse(device, data_type):
         r_custom = scaled_dot_product_attention(a, a, a, m_custom)
         r_sparse = scaled_dot_product_attention(a, a, a, m_sparse)
         r_att_mask = scaled_dot_product_attention(a, a, a, m_att_mask)
-
-    r_att_mask = r_att_mask.squeeze()
 
     expected_device = torch.float32
     assert r_sparse.dtype == expected_device
@@ -149,7 +147,7 @@ def test_switch_blocksparse_dims(device):
 
     data_type = torch.float32
     a = torch.rand(b, nh, s, hs, device=device, dtype=data_type)
-    # causal mask with causal flag
+    # Mask with causal flag
     m_att_mask = AttentionMask.make_causal(s, s, device, dtype=a.dtype)
 
     # Check that passing qkv with shape (B, nh, S, hs) is properly handled
@@ -158,3 +156,20 @@ def test_switch_blocksparse_dims(device):
 
     expected_device = torch.float32
     assert r.dtype == expected_device
+
+
+@pytest.mark.parametrize("device", _devices)
+def test_switch_blocksparse_padding(device):
+    b, s, d = 8, 165, 32
+
+    a = torch.rand(b, s, d, device=device)
+
+    # Mask with causal flag
+    m_att_mask = AttentionMask.make_causal(s, s, device)
+
+    # Check for when the sequence length is not divisible by block size; should not switch to blocksparse
+    with torch.cuda.amp.autocast():
+        r_att_mask = scaled_dot_product_attention(a, a, a, m_att_mask)
+
+    expected_device = torch.float16 if device == "cuda" else torch.float32
+    assert r_att_mask.dtype == expected_device

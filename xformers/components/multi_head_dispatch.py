@@ -13,7 +13,6 @@ import torch.nn as nn
 from torch.nn.init import constant_
 
 from xformers.components.attention import Attention
-from xformers.components.attention.utils import fold_heads, split_heads
 from xformers.components.input_projection import InputProjection, InputProjectionConfig
 from xformers.components.positional_embedding import RotaryEmbedding
 
@@ -218,9 +217,9 @@ class MultiHeadDispatch(nn.Module):
         # Optional: rotary embedding, add relative positioning information
         if self.rotary_embeddings:
             # rotary requires the head dimension
-            q = split_heads(q, B, S_Q, self.num_heads, self.dim_key_head)
-            k = split_heads(k, B, S_K, self.num_heads, self.dim_key_head)
-            v = split_heads(v, B, S_K, self.num_heads, self.dim_value_head)
+            q = _split_heads(q, B, S_Q, self.num_heads, self.dim_key_head)
+            k = _split_heads(k, B, S_K, self.num_heads, self.dim_key_head)
+            v = _split_heads(v, B, S_K, self.num_heads, self.dim_value_head)
 
             q, k = self.rotary_embeddings(q=q, k=k)
 
@@ -230,7 +229,7 @@ class MultiHeadDispatch(nn.Module):
         else:
             # Reshape k/q/v to either expose the heads, or fold the head dimension into the batch
             reshape_fn = (
-                split_heads if self.attention.requires_head_dimension else fold_heads
+                _split_heads if self.attention.requires_head_dimension else _fold_heads
             )
 
             q = reshape_fn(q, B, S_Q, self.num_heads, self.dim_key_head)

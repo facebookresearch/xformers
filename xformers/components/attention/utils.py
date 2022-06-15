@@ -108,11 +108,11 @@ def bool_mask_to_additive(
     return mask_
 
 
-# Move head forward and fold into batch dim. dimensions from (B, S, D) to (B * nh, S, hs)
-def fold_heads(t: torch.Tensor, B: int, S: int, nH: int, Hs: int):
-    return t.view(B, S, nH, Hs).transpose(1, 2).flatten(start_dim=0, end_dim=1)
-
-
 # (B, S, D) to (B, S, nh, hs)
-def split_heads(t: torch.Tensor, B: int, S: int, nH: int, Hs: int):
-    return t.view(B, S, nH, Hs).transpose(1, 2)
+def split_heads(t: torch.Tensor, B: int, nH: int, S: int, Hs: int):
+    return t.view(B, nH, S, Hs)
+
+
+# (B, nh, S, hs) back to (N, S, hs)
+def reshape_heads(t: torch.Tensor, B: int, nH: int, S: int, Hs: int):
+    return t.view(B * nH, S, Hs)
