@@ -62,7 +62,7 @@ class MemoryEfficientAttentionOp(torch.autograd.Function):
             attn_bias=attn_bias,
             p=p,
         )
-        ctx.save_for_backward(query, key, value, lse, attn_bias)
+        ctx.save_for_backward(query, key, value, lse, attn_bias, out)
         ctx.p = p
         ctx.rng_seed = rng_seed
         ctx.rng_offset = rng_offset
@@ -70,12 +70,12 @@ class MemoryEfficientAttentionOp(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad):
-        query, key, value, lse, attn_bias = ctx.saved_tensors
+        query, key, value, lse, attn_bias, out = ctx.saved_tensors
         p = ctx.p
         rng_seed = ctx.rng_seed
         rng_offset = ctx.rng_offset
         grad_q, grad_k, grad_v = torch.ops.xformers.efficient_attention_backward(
-            grad, query, key, value, lse, attn_bias, p, rng_seed, rng_offset
+            grad, query, key, value, lse, out, attn_bias, p, rng_seed, rng_offset
         )
         return grad_q, grad_k, grad_v, None, None
 

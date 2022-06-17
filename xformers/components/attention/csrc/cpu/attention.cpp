@@ -271,6 +271,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
     const at::Tensor& key,
     const at::Tensor& value,
     const at::Tensor& logsumexp,
+    const at::Tensor& output,
     const c10::optional<at::Tensor>& attn_bias_,
     double p,
     int64_t rng_seed,
