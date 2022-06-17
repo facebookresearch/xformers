@@ -147,7 +147,9 @@ class xFormerEncoderBlock(torch.nn.Module):
             config.layer_norm_style == LayerNormStyle.Pre
             and config.layer_position.is_last()
         ):
-            self.wrap_ff = PostNorm(config.dim_model, self.wrap_ff)
+            self.wrap_ff = PostNorm(
+                config.dim_model, self.wrap_ff, use_triton=config.use_triton
+            )
 
         # Simplicial embeddings are only used if specified, and on the last layer
         self.simplicial_embedding: Optional[SimplicialEmbedding] = None
