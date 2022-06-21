@@ -372,7 +372,9 @@
             <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">Pre</span>
             <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">is_last</span><span class="p">()</span>
         <span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span> <span class="o">=</span> <span class="n">PostNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span> <span class="o">=</span> <span class="n">PostNorm</span><span class="p">(</span>
+                <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span><span class="p">,</span> <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span>
+            <span class="p">)</span>
 
         <span class="c1"># Simplicial embeddings are only used if specified, and on the last layer</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">simplicial_embedding</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">SimplicialEmbedding</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
