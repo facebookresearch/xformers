@@ -158,7 +158,7 @@ Models are thus not implemented in monolithic files, which are typically complic
 Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 - [Random](xformers/components/attention/random.py)
   - See BigBird, Longformers,..
-- [Global](xformers/components/attention/random.py)
+- [Global](xformers/components/attention/global_tokens.py)
   - See BigBird, Longformers,..
 - [FourierMix](xformers/components/attention/fourier_mix.py)
   - *[FNet: Mixing Tokens with Fourier Transforms, Lee-Thorp et al.](https://arxiv.org/abs/2105.03824v1)*
