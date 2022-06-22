@@ -5,6 +5,7 @@
 
 import pytest
 import torch
+from torch import nn
 
 from xformers.components.attention._sputnik_sparse import SparseCS
 from xformers.components.attention.attention_mask import AttentionMask
@@ -148,28 +149,34 @@ def test_switch_blocksparse_dims(device):
     data_type = torch.float32
     a = torch.rand(b, nh, s, hs, device=device, dtype=data_type)
     # Mask with causal flag
-    m_att_mask = AttentionMask.make_causal(s, s, device, dtype=a.dtype)
+    m = AttentionMask.make_causal(s, s, device, dtype=a.dtype)
 
     # Check that passing qkv with shape (B, nh, S, hs) is properly handled
     with torch.cuda.amp.autocast():
-        r = scaled_dot_product_attention(a, a, a, m_att_mask)
+        r = scaled_dot_product_attention(a, a, a, m)
 
     expected_device = torch.float32
     assert r.dtype == expected_device
 
 
-@pytest.mark.parametrize("device", _devices)
-def test_switch_blocksparse_padding(device):
-    b, s, d = 8, 165, 32
+@pytest.mark.parametrize("device", ["cuda"])
+@pytest.mark.parametrize("training", [True, False])
+@pytest.mark.parametrize("drop_prob", [0.0, 0.3])
+def test_switch_blocksparse_dropout(device, training, drop_prob):
+    b, s, d = 8, 128, 32
 
     a = torch.rand(b, s, d, device=device)
 
-    # Mask with causal flag
-    m_att_mask = AttentionMask.make_causal(s, s, device)
+    m = AttentionMask.make_causal(s, s, device)
+    dropout = nn.Dropout(drop_prob)
+    dropout.train(training).cuda()
 
-    # Check for when the sequence length is not divisible by block size; should not switch to blocksparse
     with torch.cuda.amp.autocast():
-        r_att_mask = scaled_dot_product_attention(a, a, a, m_att_mask)
+        r = scaled_dot_product_attention(a, a, a, m)
+        r_drop = scaled_dot_product_attention(a, a, a, m, dropout)
 
-    expected_device = torch.float16 if device == "cuda" else torch.float32
-    assert r_att_mask.dtype == expected_device
+    # Check for dropout when applicable
+    if dropout.p and dropout.training:
+        assert (r_drop != r).any()
+    else:
+        assert torch.allclose(r, r_drop)

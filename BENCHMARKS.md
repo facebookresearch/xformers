@@ -127,3 +127,13 @@ __Some results:__
 - Estimated flops and peak memory are on the ListOps task, using 4 GPUs. Note that LRA is not completely well defined, in that hyperparameters and model architectures can vary (should the same architecture be used everywhere ? Similar hyperparams ?). This could be improved in the future, but in the meantime one should probably not read too much into small differences for some tasks, probably not meaningful.
 
 _Note_: The estimated flops currently miss accounting for many operators, and are almost certainly an undercount. See issue [#154](https://github.com/fairinternal/xformers/issues/154)
+
+
+## Casual Attention Blocksparse Optimization
+
+FP16            | FP32
+:-------------------------:|:-------------------------:
+![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Runtime_FW_fp16_Blocksize128.png)  |  ![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Runtime_FW_fp32_Blocksize128.png)
+![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Runtime_FW+BW_fp16_Blocksize128.png)  |  ![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Runtime_FW+BW_fp32_Blocksize128.png)
+![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW+BW_fp16_Blocksize128.png)  |  ![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW+BW_fp32_Blocksize128.png)
+![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW+BW_fp16_Blocksize128.png)  |  ![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW+BW_fp32_Blocksize128.png)

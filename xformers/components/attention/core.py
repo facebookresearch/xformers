@@ -6,6 +6,7 @@
 
 import math
 from contextlib import nullcontext
+from functools import lru_cache
 from typing import Optional, Union
 
 import torch
@@ -214,39 +215,53 @@ def scaled_query_key_softmax(
     return att
 
 
+# 128 is default maxsize
+@lru_cache(maxsize=128)
+def _retrieve_blocksparse(
+    num_heads: int, seq_len: int, block_size: int
+) -> BlockSparseAttention:
+    # Checks if blocksparse object exists in cache
+
+    blocks = seq_len // block_size
+    print("Made uncached blocksparse")
+    layout_fill = torch.ones((num_heads, blocks, blocks), dtype=torch.long)
+    return BlockSparseAttention(layout=layout_fill, block_size=block_size, causal=True)
+
+
 def blocksparse_attention(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
     dropout: Optional[torch.nn.Module] = None,
-    block_size: int = 16,
+    block_size: int = 128,
 ) -> torch.Tensor:
 
-    # Dropout is a no-op in evaluation mode
-    if isinstance(dropout, torch.nn.Dropout) and dropout.training:
-        drop_prob = dropout.p
-    else:
-        drop_prob = 0.0
     orig_dim = q.dim()
     seq_len = q.shape[-2]
-    blocks = seq_len // block_size
-    num_heads = 1
+    # Layout head dimension: 1 or batch size (q.shape[0])
+    layout_heads = 1
 
     # TODO perhaps add functionality to pad qkv if sequence length is not divisible by block size?
     assert seq_len % block_size == 0, "Sequence length must be divisible by block size"
 
     if orig_dim == 3:
-        # Reshape from (N, S, hs) to (B, nh, S, hs) where N = B x nh
+        # Reshape from (N, S, hs) to (B, nh, S, hs) where N = B x nh, hs = D / nh
         # Assuming num_heads = 1, (N, S, hs) to (B, 1, S, hs)
-        q = q.unsqueeze(1)
-        k = k.unsqueeze(1)
-        v = v.unsqueeze(1)
+        if layout_heads == 1:
+            q = q.unsqueeze(1)
+            k = k.unsqueeze(1)
+            v = v.unsqueeze(1)
+        else:
+            q = q.unsqueeze(0)
+            k = k.unsqueeze(0)
+            v = v.unsqueeze(0)
 
-    layout_fill = torch.ones((num_heads, blocks, blocks), dtype=torch.long)
-
-    blocksparse_attention = BlockSparseAttention(
-        layout=layout_fill, block_size=block_size, dropout=drop_prob, causal=True
-    )
+    blocksparse_attention = _retrieve_blocksparse(layout_heads, seq_len, block_size)
+    # Dropout is a no-op in evaluation mode
+    if isinstance(dropout, torch.nn.Dropout):
+        blocksparse_attention.attn_drop = dropout
+    else:
+        blocksparse_attention.attn_drop = torch.nn.Dropout(0.0)
     att = blocksparse_attention(q, k, v)
 
     # Reshape attention (B, nh, S, hs) back to (N, S, hs)
@@ -261,6 +276,7 @@ def scaled_dot_product_attention(
     v: torch.Tensor,
     att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
     dropout: Optional[torch.nn.Module] = None,
+    block_size=128,
 ) -> torch.Tensor:
     autocast_disabled = (
         _is_sparse_available
@@ -276,10 +292,14 @@ def scaled_dot_product_attention(
         and (q.dtype == torch.float16 or torch.is_autocast_enabled())
     )
 
-    # switch only if sequence length is divisible by block size
+    # Switch only if sequence length is divisible by block size
+    # Blocksparse requires the same dimensions for K and Q for now
     seq_len = q.shape[-2]
-    block_size = 16  # default
-    if switch_to_blocksparse and not seq_len % block_size:
+    if (
+        switch_to_blocksparse
+        and not seq_len % block_size
+        and q.shape[-2] == k.shape[-2]
+    ):
         # print("switching to blocksparse...")
         return blocksparse_attention(q, k, v, dropout, block_size)
 

@@ -37,6 +37,7 @@ def _fold_heads(t: torch.Tensor, B: int, S: int, H: int, Hs: int):
     return t.view(B, S, H, Hs).transpose(1, 2).flatten(start_dim=0, end_dim=1)
 
 
+# Move head forward and fold into batch dim. dimensions become (B, nh, S, hs)
 def _split_heads(t: torch.Tensor, B: int, S: int, H: int, Hs: int):
     return t.view(B, S, H, Hs).transpose(1, 2)
 
