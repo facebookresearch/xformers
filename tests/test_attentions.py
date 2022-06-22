@@ -127,27 +127,33 @@ def test_order_invariance(
     ):
         pytest.skip(f"{attention_name} requires squared sequence lengths")
 
-    # Check that a shuffled input produces the same results
-    seqs = [SEQ, SEQ // 2] if (attention_name != "blocksparse") else [SEQ]
+    # Check that we can pass a smaller sequence
+    seqs = (
+        [SEQ, SEQ // 2]
+        if not multi_head.attention.requires_same_k_q_dimensions
+        else [SEQ]
+    )
 
     for seq in seqs:
-        # Check that we can pass a smaller sequence
+        # Check that the attention is invariant to a permutation of K, V
         inputs = torch.rand(BATCH, seq, MODEL, device=device)
         shuffle = torch.randperm(inputs.shape[1])
         inputs_shuffled = inputs[:, shuffle, :].clone()
 
         results = multi_head(inputs, inputs, inputs)
-        results_shuffled = multi_head(inputs_shuffled, inputs_shuffled, inputs_shuffled)
+        results_shuffled = multi_head(inputs, inputs_shuffled, inputs_shuffled)
+        torch.allclose(results, results_shuffled)
 
+        # Check that the attention is equivariant to a permutation of Q,
+        # meaning that the result is permuted in the same way
+        results_shuffled = multi_head(inputs_shuffled, inputs, inputs)
         torch.allclose(results[:, shuffle, :], results_shuffled)
-
-        # Test the non-self-attention codepath
-        att = multi_head(inputs, inputs_shuffled, inputs)
 
         # Check that dropout actually drops some values
         if attn_dropout > 0:
+            att_1 = multi_head(inputs, inputs_shuffled, inputs)
             att_2 = multi_head(inputs, inputs_shuffled, inputs)
-            assert (att != att_2).any()
+            assert (att_1 != att_2).any()
 
         # Test AMP, if available
         if device.type == "cuda":
