@@ -18,7 +18,7 @@ if _is_triton_available:
 from collections import namedtuple
 
 
-class LayerNormStyle(str, Enum):
+class ResidualNormStyle(str, Enum):
     """Support different layer norm styles.
     See "On Layer Normalization in the Transformer Architecture",
     Xiong et al., https://arxiv.org/pdf/2002.04745v1.pdf
@@ -27,6 +27,29 @@ class LayerNormStyle(str, Enum):
     Pre = "pre"
     Post = "post"
     DeepNorm = "deepnorm"
+
+
+class NormalizationType(str, Enum):
+    BatchNorm = "batchnorm"
+    LayerNorm = "layernorm"
+    GroupNorm = "groupnorm"
+    Skip = "skip"
+
+
+def get_normalization_layer(normalization_type: NormalizationType):
+    class Skip(nn.Module):
+        def __init__(self, *_, **__) -> None:
+            super().__init__()
+
+        def forward(self, x: torch.Tensor, **_):
+            return x
+
+    return {
+        NormalizationType.BatchNorm: nn.BatchNorm1d,
+        NormalizationType.LayerNorm: nn.LayerNorm,
+        NormalizationType.GroupNorm: nn.GroupNorm,
+        NormalizationType.Skip: Skip,
+    }[normalization_type]
 
 
 class RequiresWrappedInputs:
@@ -69,16 +92,27 @@ class Residual(nn.Module, RequiresWrappedInputs):
 
 
 class PreNorm(nn.Module, RequiresWrappedInputs):
-    """Adds LayerNorm before computing attention
+    """Adds a normalization before computing attention
 
     ..Note: If a list of inputs is passed, all of them get normalized"""
 
-    def __init__(self, d_model: int, sublayer: nn.Module, use_triton: bool = True):
+    def __init__(
+        self,
+        d_norm: int,
+        sublayer: nn.Module,
+        normalization: NormalizationType,
+        use_triton: bool = True,
+    ):
+
         super().__init__()
-        if _is_triton_available and use_triton:
-            self.norm: Union[nn.LayerNorm, FusedLayerNorm] = FusedLayerNorm(d_model)
+        if (
+            _is_triton_available
+            and use_triton
+            and normalization == NormalizationType.LayerNorm
+        ):
+            self.norm: Union[nn.LayerNorm, FusedLayerNorm] = FusedLayerNorm(d_norm)
         else:
-            self.norm = nn.LayerNorm(d_model)
+            self.norm = get_normalization_layer(normalization)(d_norm)
 
         self.sublayer = sublayer
         self.wrap_inputs = isinstance(sublayer, RequiresWrappedInputs)
@@ -105,12 +139,22 @@ class PreNorm(nn.Module, RequiresWrappedInputs):
 class PostNorm(nn.Module, RequiresWrappedInputs):
     """Adds LayerNorm after computing attention"""
 
-    def __init__(self, d_model: int, sublayer: nn.Module, use_triton: bool = True):
+    def __init__(
+        self,
+        d_norm: int,
+        sublayer: nn.Module,
+        normalization: NormalizationType,
+        use_triton: bool = True,
+    ):
         super().__init__()
-        if _is_triton_available and use_triton:
-            self.norm: Union[nn.LayerNorm, FusedLayerNorm] = FusedLayerNorm(d_model)
+        if (
+            _is_triton_available
+            and use_triton
+            and normalization == NormalizationType.LayerNorm
+        ):
+            self.norm: Union[nn.LayerNorm, FusedLayerNorm] = FusedLayerNorm(d_norm)
         else:
-            self.norm = nn.LayerNorm(d_model)
+            self.norm = get_normalization_layer(normalization)(d_norm)
 
         self.sublayer = sublayer
         self.wrap_inputs = isinstance(sublayer, RequiresWrappedInputs)

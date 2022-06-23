@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 import torch
 
 from xformers.components import reversible as rv
-from xformers.components.residual import LayerNormStyle, get_deepnorm_coefficients
+from xformers.components.residual import ResidualNormStyle, get_deepnorm_coefficients
 from xformers.factory.block_configs import (
     xFormerBlockConfig,
     xFormerDecoderConfig,
@@ -191,7 +191,7 @@ class xFormer(torch.nn.Module):
         )
         self.decoders = torch.nn.ModuleList(decoders)
 
-        use_deepnorm = stack_configs[0].layer_norm_style == LayerNormStyle.DeepNorm
+        use_deepnorm = stack_configs[0].layer_norm_style == ResidualNormStyle.DeepNorm
 
         assert (
             not use_deepnorm or not self.reversible_encoder
@@ -218,7 +218,7 @@ class xFormer(torch.nn.Module):
 
     def _verify_deepnorm(self, stack_configs: List[xFormerBlockConfig]):
         deepnorm = [
-            c.layer_norm_style == LayerNormStyle.DeepNorm for c in stack_configs
+            c.layer_norm_style == ResidualNormStyle.DeepNorm for c in stack_configs
         ]
 
         assert all(deepnorm) or not any(deepnorm), (

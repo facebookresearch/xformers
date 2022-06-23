@@ -31,7 +31,7 @@ class EfficientFormer(VisionTransformer):
     def __init__(
         self,
         steps,
-        learning_rate=1e-2,
+        learning_rate=5e-4,
         betas=(0.9, 0.99),
         weight_decay=0.03,
         image_size=32,
@@ -48,7 +48,6 @@ class EfficientFormer(VisionTransformer):
 
         # Generate the skeleton of our hierarchical Transformer
         # This implements a model close to the L1 suggested in "EfficientFormer" (https://arxiv.org/abs/2206.01191)
-        # but a pooling layer has been removed, due to the very small image dimensions in Cifar (32x32)
         base_hierarchical_configs = [
             BasicLayerConfig(
                 embedding=48,
@@ -57,7 +56,8 @@ class EfficientFormer(VisionTransformer):
                 stride=2,
                 padding=1,
                 seq_len=image_size * image_size // 16,
-                feedforward="Conv2DFeedforward",
+                feedforward="ConvBN",
+                normalization="skip",
             ),
             BasicLayerConfig(
                 embedding=96,
@@ -66,7 +66,8 @@ class EfficientFormer(VisionTransformer):
                 stride=2,
                 padding=1,
                 seq_len=image_size * image_size // 64,
-                feedforward="Conv2DFeedforward",
+                feedforward="ConvBN",
+                normalization="skip",
             ),
             BasicLayerConfig(
                 embedding=224,
@@ -75,7 +76,8 @@ class EfficientFormer(VisionTransformer):
                 stride=2,
                 padding=1,
                 seq_len=image_size * image_size // 256,
-                feedforward="Conv2DFeedforward",
+                feedforward="ConvBN",
+                normalization="skip",
             ),
             BasicLayerConfig(
                 embedding=448,
@@ -84,7 +86,8 @@ class EfficientFormer(VisionTransformer):
                 stride=2,
                 padding=1,
                 seq_len=image_size * image_size // 1024,
-                feedforward="Conv2DFeedforward",
+                feedforward="ConvBN",
+                normalization="skip",
             ),
         ]
 
@@ -94,7 +97,7 @@ class EfficientFormer(VisionTransformer):
             layernorm_style="pre",
             use_rotary_embeddings=False,
             mlp_multiplier=4,
-            in_channels=24,  # 24 if L1, there's a stem prior to the trunk
+            in_channels=24,
         )
 
         # Now instantiate the EfficientFormer trunk
@@ -102,6 +105,7 @@ class EfficientFormer(VisionTransformer):
         config.weight_init = "moco"
 
         self.trunk = xFormer.from_config(config)
+        print(self.trunk)
 
         # This model requires a pre-stem (a conv prior to going through all the layers above)
         self.pre_stem = build_patch_embedding(
@@ -139,11 +143,11 @@ if __name__ == "__main__":
 
     # Adjust batch depending on the available memory on your machine.
     # You can also use reversible layers to save memory
-    REF_BATCH = 128
-    BATCH = 32  # lower if not enough GPU memory
+    REF_BATCH = 1024
+    BATCH = 512  # lower if not enough GPU memory
 
     MAX_EPOCHS = 50
-    NUM_WORKERS = 4
+    NUM_WORKERS = 3
     GPUS = 1
 
     torch.cuda.manual_seed_all(42)
@@ -160,10 +164,11 @@ if __name__ == "__main__":
         batch_size=BATCH,
         num_workers=NUM_WORKERS,
         pin_memory=True,
+        shuffle=True,
     )
 
-    image_size = dm.size(-1)  # 32 for CIFAR
-    num_classes = dm.num_classes  # 10 for CIFAR
+    image_size = 224
+    num_classes = 1000
 
     # compute total number of steps
     batch_size = BATCH * GPUS
@@ -176,10 +181,10 @@ if __name__ == "__main__":
     trainer = pl.Trainer(
         gpus=GPUS,
         max_epochs=MAX_EPOCHS,
-        precision=16,
+        precision="bf16",
         accumulate_grad_batches=REF_BATCH // BATCH,
     )
     trainer.fit(lm, dm)
 
     # check the training
-    trainer.test(lm, datamodule=dm)
+    # trainer.test(lm, datamodule=dm)

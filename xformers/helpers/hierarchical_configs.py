@@ -8,7 +8,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from xformers.components.residual import LayerNormStyle
+from xformers.components.residual import ResidualNormStyle
 
 
 @dataclass
@@ -20,11 +20,12 @@ class BasicLayerConfig:
     padding: int
     seq_len: int
     feedforward: str
+    normalization: str = "layernorm"
 
 
 def get_hierarchical_configuration(
     layer_base_configs: List[BasicLayerConfig],
-    layernorm_style: LayerNormStyle = LayerNormStyle.Pre,
+    layernorm_style: ResidualNormStyle = ResidualNormStyle.Pre,
     use_rotary_embeddings: bool = True,
     mlp_multiplier: int = 4,
     in_channels: int = 3,
@@ -74,6 +75,8 @@ def get_hierarchical_configuration(
 
     for layer_base_config in layer_base_configs:
         lc = copy.deepcopy(base_config)
+
+        lc["normalization"] = layer_base_config.normalization
 
         # Fill in the changing model dimensions
         lc["dim_model"] = layer_base_config.embedding
