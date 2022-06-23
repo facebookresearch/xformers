@@ -45,4 +45,4 @@ This is very close to the MicroViT example above, but illustrating the use of a 
 
 ### EfficientFormer
 
-This is a variant of the MetaFormers, and reproduces the architecture proposed in [EfficientFormers](https://arxiv.org/pdf/2206.01191.pdf). It is also very close to the ViT example, and just proposed here as a all-in-one example.
+This is a variant of the MetaFormers, and reproduces the architecture proposed in [EfficientFormers](https://arxiv.org/pdf/2206.01191.pdf). It is also very close to the ViT example, and just proposed here as a all-in-one example, this time using ImageNet as a dataset by default.
