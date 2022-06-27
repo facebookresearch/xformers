@@ -273,7 +273,7 @@ at::Tensor attention(
   using scalar_t = float;
 
   if (K % 128 == 0) {
-  constexpr int kBlockItemsY = 4;
+  constexpr int kBlockItemsY = 16;
   constexpr int kBlockItemsX = 32;
   constexpr int kBlockItemsK = 128;
   constexpr int kBlockWidth = 8;
@@ -294,7 +294,7 @@ at::Tensor attention(
       value.packed_accessor<scalar_t, 3>());
 
   } else if (K % 64 == 0) {
-  constexpr int kBlockItemsY = 4;
+  constexpr int kBlockItemsY = 16;
   constexpr int kBlockItemsX = 32;
   constexpr int kBlockItemsK = 64;
   constexpr int kBlockWidth = 8;
@@ -315,7 +315,7 @@ at::Tensor attention(
       value.packed_accessor<scalar_t, 3>());
 
   } else {
-  constexpr int kBlockItemsY = 4;
+  constexpr int kBlockItemsY = 16;
   constexpr int kBlockItemsX = 32;
   constexpr int kBlockItemsK = 32;
   constexpr int kBlockWidth = 8;
