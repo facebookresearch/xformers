@@ -6,12 +6,15 @@
 
 import math
 from contextlib import nullcontext
+from functools import lru_cache
 from typing import Optional, Union
 
 import torch
 
 from xformers import _is_sparse_available, _is_triton_available
 from xformers.components.attention.attention_mask import AttentionMask
+from xformers.components.attention.blocksparse import BlockSparseAttention
+from xformers.components.attention.utils import reshape_heads
 
 if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
@@ -61,7 +64,9 @@ def _broadcast_batch(mask, batch_size):
 
 
 def _matmul_with_mask(
-    a: torch.Tensor, b: torch.Tensor, mask: Optional[Union[torch.Tensor, "SparseCS"]]
+    a: torch.Tensor,
+    b: torch.Tensor,
+    mask: Optional[Union[torch.Tensor, "SparseCS"]],
 ) -> torch.Tensor:
     if mask is None:
         return a @ b
@@ -210,18 +215,93 @@ def scaled_query_key_softmax(
     return att
 
 
+# 128 is default maxsize
+@lru_cache(maxsize=128)
+def _retrieve_blocksparse(
+    num_heads: int, seq_len: int, block_size: int
+) -> BlockSparseAttention:
+    # Checks if blocksparse object exists in cache
+
+    blocks = seq_len // block_size
+    print("Made uncached blocksparse")
+    layout_fill = torch.ones((num_heads, blocks, blocks), dtype=torch.long)
+    return BlockSparseAttention(layout=layout_fill, block_size=block_size, causal=True)
+
+
+def blocksparse_attention(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    dropout: Optional[torch.nn.Module] = None,
+    block_size: int = 128,
+) -> torch.Tensor:
+
+    orig_dim = q.dim()
+    seq_len = q.shape[-2]
+    # Layout head dimension: 1 or batch size (q.shape[0])
+    layout_heads = 1
+
+    # TODO perhaps add functionality to pad qkv if sequence length is not divisible by block size?
+    assert seq_len % block_size == 0, "Sequence length must be divisible by block size"
+
+    if orig_dim == 3:
+        # Reshape from (N, S, hs) to (B, nh, S, hs) where N = B x nh, hs = D / nh
+        # Assuming num_heads = 1, (N, S, hs) to (B, 1, S, hs)
+        if layout_heads == 1:
+            q = q.unsqueeze(1)
+            k = k.unsqueeze(1)
+            v = v.unsqueeze(1)
+        else:
+            q = q.unsqueeze(0)
+            k = k.unsqueeze(0)
+            v = v.unsqueeze(0)
+
+    blocksparse_attention = _retrieve_blocksparse(layout_heads, seq_len, block_size)
+    # Dropout is a no-op in evaluation mode
+    if isinstance(dropout, torch.nn.Dropout):
+        blocksparse_attention.attn_drop = dropout
+    else:
+        blocksparse_attention.attn_drop = torch.nn.Dropout(0.0)
+    att = blocksparse_attention(q, k, v)
+
+    # Reshape attention (B, nh, S, hs) back to (N, S, hs)
+    if orig_dim == 3:
+        return reshape_heads(att, *att.size())
+    return att
+
+
 def scaled_dot_product_attention(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
     att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
     dropout: Optional[torch.nn.Module] = None,
+    block_size=128,
 ) -> torch.Tensor:
     autocast_disabled = (
         _is_sparse_available
         and isinstance(att_mask, SparseCS)
         or (att_mask is not None and att_mask.is_sparse)
     )
+
+    # Check if causal is required but mask is not sparse; if fp16 or under amp context
+    switch_to_blocksparse = (
+        _is_triton_available
+        and (att_mask is not None and not att_mask.is_sparse)
+        and (isinstance(att_mask, AttentionMask) and att_mask.is_causal)
+        and (q.dtype == torch.float16 or torch.is_autocast_enabled())
+    )
+
+    # Switch only if sequence length is divisible by block size
+    # Blocksparse requires the same dimensions for K and Q for now
+    seq_len = q.shape[-2]
+    if (
+        switch_to_blocksparse
+        and not seq_len % block_size
+        and q.shape[-2] == k.shape[-2]
+    ):
+        # print("switching to blocksparse...")
+        return blocksparse_attention(q, k, v, dropout, block_size)
 
     with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
         if autocast_disabled:

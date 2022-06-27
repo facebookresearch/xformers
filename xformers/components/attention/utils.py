@@ -106,3 +106,13 @@ def bool_mask_to_additive(
     mask_ = torch.zeros_like(mask, dtype=dtype)
     mask_[~mask] = float("-inf")
     return mask_
+
+
+# (B, S, D) to (B, S, nh, hs)
+def split_heads(t: torch.Tensor, B: int, nH: int, S: int, Hs: int):
+    return t.view(B, nH, S, Hs)
+
+
+# (B, nh, S, hs) back to (N, S, hs)
+def reshape_heads(t: torch.Tensor, B: int, nH: int, S: int, Hs: int):
+    return t.view(B * nH, S, Hs)
