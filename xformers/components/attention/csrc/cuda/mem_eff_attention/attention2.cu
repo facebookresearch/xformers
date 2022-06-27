@@ -101,9 +101,7 @@ __global__ void attention_kernel(
   using vec_t = float4;
 
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
-
   constexpr int kThreadItemsK = kBlockItemsK / kBlockWidth / kVecSize;
-  constexpr int kThreadItemsX = kBlockItemsX / kBlockWidth / kVecSize;
 
   int KK = K / kVecSize;
 
@@ -114,33 +112,14 @@ __global__ void attention_kernel(
   vec_t rhs_fragment[kBlockItemsK * kBlockItemsX / kBlockWidth / kVecSize];
 
   auto out_i = reinterpret_cast<vec_t*>(output[batch_idx][query_idx].data());
-  int nnz = N;
 
   scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
 
-  for (int kv_idx = 0; kv_idx < nnz; kv_idx += kBlockItemsX) {
+  for (int kv_idx = 0; kv_idx < N; kv_idx += kBlockItemsX) {
     scalar_t attn_fragment[kBlockItemsX] = {};
 
     auto query_i = reinterpret_cast<vec_t*>(query[batch_idx][query_idx].data());
     auto kkey_j = reinterpret_cast<vec_t*>(key[batch_idx].data());
-
-    /*
-    int nonzeros = min(nnz - kv_idx, kBlockItemsX) - threadIdx.x;
-    int* column_idxs_tile = col_idx + kv_idx + threadIdx.x;
-    int* ci = column_indices_tile + threadIdx.x;
-#pragma unroll
-    for (int x_item_idx = 0; x_item_idx < kBlockItemsX;
-         x_item_idx += kBlockWidth) {
-      if (nonzeros > 0) {
-        *ci = *column_idxs_tile * KK;
-      } else {
-        *ci = 0;
-      }
-      nonzeros -= kBlockWidth;
-      column_idxs_tile += kBlockWidth;
-      ci += kBlockWidth;
-    }
-    __syncthreads();*/
 
     for (int k = K; k >= kBlockItemsK; k -= kBlockItemsK) {
       // load queries
@@ -154,7 +133,6 @@ __global__ void attention_kernel(
       // load keys
 #pragma unroll
       for (int x_item_idx = 0; x_item_idx < kBlockItemsX; ++x_item_idx) {
-        //int offset = column_indices_tile[x_item_idx];
         int offset = (kv_idx + x_item_idx) * KK;
         auto key_j = kkey_j + offset;
 #pragma unroll
@@ -166,6 +144,7 @@ __global__ void attention_kernel(
       }
       kkey_j += kBlockItemsK / kVecSize;
 
+      // compute queries @ keys.T
 #pragma unroll
       for (int k_item_idx = 0; k_item_idx < kThreadItemsK; ++k_item_idx) {
         const vec_t lhs_value = lhs_fragment[k_item_idx];
@@ -179,9 +158,10 @@ __global__ void attention_kernel(
       }
     }
 
-    int end_iter = nnz - kv_idx;
+    int end_iter = N - kv_idx;
     scalar_t m_i = m_prime;
 
+    // aggregate over different threads in a warp and compute max over wap
 #pragma unroll
     for (int x_item_idx = 0; x_item_idx < kBlockItemsX; ++x_item_idx) {
       attn_fragment[x_item_idx] =
@@ -217,7 +197,6 @@ __global__ void attention_kernel(
       // load values
 #pragma unroll
       for (int x_item_idx = 0; x_item_idx < kBlockItemsX; ++x_item_idx) {
-        //int offset = column_indices_tile[x_item_idx];
         int offset = (kv_idx + x_item_idx) * KK;
         auto key_j = value_j + offset;
 #pragma unroll
@@ -229,7 +208,7 @@ __global__ void attention_kernel(
       }
       value_j += kBlockItemsK / kVecSize;
 
-      // perform computation
+      // perform attn @ values computation
 #pragma unroll
       for (int k_item_idx = 0; k_item_idx < kThreadItemsK; ++k_item_idx) {
         vec_t lhs_value = lhs_fragment[k_item_idx];
