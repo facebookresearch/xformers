@@ -55,7 +55,9 @@ def pretty_print(results, title, units):
     print("")
 
 
-def pretty_plot(results, title, units: str, filename=None, dash_key=""):
+def pretty_plot(
+    results, title, units: str, filename=None, dash_key="", legend_loc="bottom_right"
+):
     """Graph out the contents of a dict.
     Dash key means that if the result label has this key, then it will be displayed with a dash"""
 
@@ -86,7 +88,7 @@ def pretty_plot(results, title, units: str, filename=None, dash_key=""):
             plt.plot(list(results.keys()), v)
 
     plt.title(title)
-    plt.legend(list(workloads.keys()), loc="lower right")
+    plt.legend(list(workloads.keys()), loc=legend_loc)
     plt.ylabel(units)
     plt.xticks(rotation=45)
 

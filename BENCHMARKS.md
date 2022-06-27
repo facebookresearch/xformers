@@ -129,7 +129,7 @@ __Some results:__
 _Note_: The estimated flops currently miss accounting for many operators, and are almost certainly an undercount. See issue [#154](https://github.com/fairinternal/xformers/issues/154)
 
 
-## Casual Attention Blocksparse Optimization
+## Causal Attention Blocksparse Optimization
 
 FP16            | FP32
 :-------------------------:|:-------------------------:
