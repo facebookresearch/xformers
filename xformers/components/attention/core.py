@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import logging
 import math
 from contextlib import nullcontext
 from functools import lru_cache
@@ -13,14 +14,20 @@ import torch
 
 from xformers import _is_sparse_available, _is_triton_available
 from xformers.components.attention.attention_mask import AttentionMask
-from xformers.components.attention.blocksparse import BlockSparseAttention
-from xformers.components.attention.utils import reshape_heads
 
 if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
 
 if _is_triton_available:
     from xformers.triton.softmax import softmax as triton_softmax
+    from xformers.triton.utils import gpu_capabilities_older_than_70
+
+_is_blocksparse_available = (
+    _is_triton_available and not gpu_capabilities_older_than_70()
+)
+
+if _is_blocksparse_available:
+    from xformers.components.attention.blocksparse import BlockSparseAttention
 
 
 def _create_random_sparsity(matrix, sparsity, divisible_by=4):
@@ -215,17 +222,19 @@ def scaled_query_key_softmax(
     return att
 
 
-# 128 is default maxsize
-@lru_cache(maxsize=128)
-def _retrieve_blocksparse(
-    num_heads: int, seq_len: int, block_size: int
-) -> BlockSparseAttention:
-    # Checks if blocksparse object exists in cache
+if _is_blocksparse_available:
+    # 128 is default maxsize
+    @lru_cache(maxsize=128)
+    def _retrieve_blocksparse(
+        num_heads: int, seq_len: int, block_size: int
+    ) -> BlockSparseAttention:
+        # Checks if blocksparse object exists in cache
 
-    blocks = seq_len // block_size
-    print("Made uncached blocksparse")
-    layout_fill = torch.ones((num_heads, blocks, blocks), dtype=torch.long)
-    return BlockSparseAttention(layout=layout_fill, block_size=block_size, causal=True)
+        blocks = seq_len // block_size
+        layout_fill = torch.ones((num_heads, blocks, blocks), dtype=torch.long)
+        return BlockSparseAttention(
+            layout=layout_fill, block_size=block_size, causal=True
+        )
 
 
 def blocksparse_attention(
@@ -266,7 +275,7 @@ def blocksparse_attention(
 
     # Reshape attention (B, nh, S, hs) back to (N, S, hs)
     if orig_dim == 3:
-        return reshape_heads(att, *att.size())
+        return att.flatten(0, 1)
     return att
 
 
@@ -276,31 +285,31 @@ def scaled_dot_product_attention(
     v: torch.Tensor,
     att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
     dropout: Optional[torch.nn.Module] = None,
-    block_size=128,
+    block_size: int = 128,
 ) -> torch.Tensor:
     autocast_disabled = (
         _is_sparse_available
         and isinstance(att_mask, SparseCS)
         or (att_mask is not None and att_mask.is_sparse)
     )
+    seq_len = q.shape[-2]
 
-    # Check if causal is required but mask is not sparse; if fp16 or under amp context
+    # switch if:
+    #   causal is required but mask is not sparse
+    #   fp16 or under amp context
+    #   sequence length is divisible by block size
+    #   same seq len for K and Q
     switch_to_blocksparse = (
-        _is_triton_available
+        _is_blocksparse_available
         and (att_mask is not None and not att_mask.is_sparse)
         and (isinstance(att_mask, AttentionMask) and att_mask.is_causal)
         and (q.dtype == torch.float16 or torch.is_autocast_enabled())
-    )
-
-    # Switch only if sequence length is divisible by block size
-    # Blocksparse requires the same dimensions for K and Q for now
-    seq_len = q.shape[-2]
-    if (
-        switch_to_blocksparse
         and not seq_len % block_size
         and q.shape[-2] == k.shape[-2]
-    ):
-        # print("switching to blocksparse...")
+    )
+
+    if switch_to_blocksparse:
+        logging.info("Switching causal attention to Triton blocksparse...")
         return blocksparse_attention(q, k, v, dropout, block_size)
 
     with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
