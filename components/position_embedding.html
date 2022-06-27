@@ -229,8 +229,85 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
-  <section id="position-embeddings">
-<h1>Position Embeddings<a class="headerlink" href="#position-embeddings" title="Permalink to this headline">¶</a></h1>
+  <section id="module-xformers.components.positional_embedding">
+<span id="position-embeddings"></span><h1>Position Embeddings<a class="headerlink" href="#module-xformers.components.positional_embedding" title="Permalink to this headline">¶</a></h1>
+<dl class="py class">
+<dt id="xformers.components.positional_embedding.RotaryEmbedding">
+<em class="property">class </em><code class="sig-prename descclassname">xformers.components.positional_embedding.</code><code class="sig-name descname">RotaryEmbedding</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">dim_model</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span></em>, <em class="sig-param"><span class="o">*</span><span class="n">_</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">__</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/positional_embedding/rotary.html#RotaryEmbedding"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.positional_embedding.RotaryEmbedding" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://pytorch.org/docs/master/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch vmaster (1.13.0a0+gitc2d395c ))"><code class="xref py py-class docutils literal notranslate"><span class="pre">torch.nn.modules.module.Module</span></code></a></p>
+<p>The rotary position embeddings from <a class="reference external" href="https://arxiv.org/abs/2104.09864">RoFormer</a> (Su et. al).
+A crucial insight from the method is that the query and keys are
+transformed by rotation matrices which depend on the relative positions.</p>
+<p>Other implementations are available in the Rotary Transformer <a class="reference external" href="https://github.com/ZhuiyiTechnology/roformer">repo</a> and in
+<a class="reference external" href="https://github.com/EleutherAI/gpt-neox">GPT-NeoX</a>, GPT-NeoX was an inspiration</p>
+<dl class="py method">
+<dt id="xformers.components.positional_embedding.RotaryEmbedding.forward">
+<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">q</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.13.0a0+gitc2d395c ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">k</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.13.0a0+gitc2d395c ))">torch.Tensor</a></span></em><span class="sig-paren">)</span> &#x2192; Tuple<span class="p">[</span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.13.0a0+gitc2d395c ))">torch.Tensor</a><span class="p">, </span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.13.0a0+gitc2d395c ))">torch.Tensor</a><span class="p">]</span><a class="reference internal" href="../_modules/xformers/components/positional_embedding/rotary.html#RotaryEmbedding.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.positional_embedding.RotaryEmbedding.forward" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt id="xformers.components.positional_embedding.RotaryEmbedding.training">
+<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.components.positional_embedding.RotaryEmbedding.training" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="xformers.components.positional_embedding.SinePositionalEmbedding">
+<em class="property">class </em><code class="sig-prename descclassname">xformers.components.positional_embedding.</code><code class="sig-name descname">SinePositionalEmbedding</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">dim_model</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/positional_embedding/sine.html#SinePositionalEmbedding"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.positional_embedding.SinePositionalEmbedding" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">xformers.components.positional_embedding.base.PositionEmbedding</span></code></p>
+<dl class="py method">
+<dt id="xformers.components.positional_embedding.SinePositionalEmbedding.forward">
+<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.13.0a0+gitc2d395c ))">torch.Tensor</a></span></em><span class="sig-paren">)</span> &#x2192; <a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.13.0a0+gitc2d395c ))">torch.Tensor</a><a class="reference internal" href="../_modules/xformers/components/positional_embedding/sine.html#SinePositionalEmbedding.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.positional_embedding.SinePositionalEmbedding.forward" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt id="xformers.components.positional_embedding.SinePositionalEmbedding.training">
+<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.components.positional_embedding.SinePositionalEmbedding.training" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="xformers.components.positional_embedding.VocabEmbedding">
+<em class="property">class </em><code class="sig-prename descclassname">xformers.components.positional_embedding.</code><code class="sig-name descname">VocabEmbedding</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">dim_model</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span></em>, <em class="sig-param"><span class="n">seq_len</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span></em>, <em class="sig-param"><span class="n">vocab_size</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span></em>, <em class="sig-param"><span class="n">dropout</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#float" title="(in Python v3.6)">float</a></span> <span class="o">=</span> <span class="default_value">0.0</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/positional_embedding/vocab.html#VocabEmbedding"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.positional_embedding.VocabEmbedding" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">xformers.components.positional_embedding.base.PositionEmbedding</span></code></p>
+<dl class="py method">
+<dt id="xformers.components.positional_embedding.VocabEmbedding.init_weights">
+<code class="sig-name descname">init_weights</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">gain</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#float" title="(in Python v3.6)">float</a></span> <span class="o">=</span> <span class="default_value">1.0</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/positional_embedding/vocab.html#VocabEmbedding.init_weights"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.positional_embedding.VocabEmbedding.init_weights" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt id="xformers.components.positional_embedding.VocabEmbedding.forward">
+<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.13.0a0+gitc2d395c ))">torch.Tensor</a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/positional_embedding/vocab.html#VocabEmbedding.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.positional_embedding.VocabEmbedding.forward" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt id="xformers.components.positional_embedding.VocabEmbedding.training">
+<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.components.positional_embedding.VocabEmbedding.training" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt id="xformers.components.positional_embedding.build_positional_embedding">
+<code class="sig-prename descclassname">xformers.components.positional_embedding.</code><code class="sig-name descname">build_positional_embedding</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">config</span><span class="p">:</span> <span class="n">Union<span class="p">[</span>Dict<span class="p">[</span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)">str</a><span class="p">, </span>Any<span class="p">]</span><span class="p">, </span>xformers.components.positional_embedding.base.PositionEmbeddingConfig<span class="p">]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/positional_embedding.html#build_positional_embedding"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.positional_embedding.build_positional_embedding" title="Permalink to this definition">¶</a></dt>
+<dd><p>Builds a position encoding from a config.</p>
+<p>This assumes a ‘name’ key in the config which is used to determine what
+attention class to instantiate. For instance, a config <cite>{“name”: “my_position_encoding”,
+“foo”: “bar”}</cite> will find a class that was registered as “my_position_encoding”
+(see <a class="reference internal" href="#xformers.components.positional_embedding.register_positional_embedding" title="xformers.components.positional_embedding.register_positional_embedding"><code class="xref py py-func docutils literal notranslate"><span class="pre">register_positional_embedding()</span></code></a>) and call .from_config on it.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt id="xformers.components.positional_embedding.register_positional_embedding">
+<code class="sig-prename descclassname">xformers.components.positional_embedding.</code><code class="sig-name descname">register_positional_embedding</code><span class="sig-paren">(</span><em class="sig-param">name: str</em>, <em class="sig-param">config: Any = &lt;class 'xformers.components.positional_embedding.base.PositionEmbeddingConfig'&gt;</em><span class="sig-paren">)</span><a class="headerlink" href="#xformers.components.positional_embedding.register_positional_embedding" title="Permalink to this definition">¶</a></dt>
+<dd><p>Registers a subclass.</p>
+<p>This decorator allows xFormers to instantiate a given subclass
+from a configuration file, even if the class itself is not part of the
+xFormers library.</p>
+</dd></dl>
+
 </section>
 
 
