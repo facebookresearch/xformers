@@ -14,12 +14,12 @@ import torch
 
 from xformers import _is_sparse_available, _is_triton_available
 from xformers.components.attention.attention_mask import AttentionMask
-from xformers.components.attention.blocksparse import BlockSparseAttention
 
 if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
 
 if _is_triton_available:
+    from xformers.components.attention.blocksparse import BlockSparseAttention
     from xformers.triton.softmax import softmax as triton_softmax
 
 
