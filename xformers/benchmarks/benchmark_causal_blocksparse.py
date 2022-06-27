@@ -122,12 +122,14 @@ def bench_blocksparse_compare(backward: bool):
                 title=f"Causal Blocksparse Runtime FW{bw.upper()} {datatype} Blocksize:{BS}",
                 units="runtime in ms",
                 dash_key="torch",
+                legend_loc="upper left",
             )
             pretty_plot(
                 results_mem,
                 title=f"Causal Blocksparse Memory FW{bw.upper()} {datatype} Blocksize:{BS}",
                 units="peak memory usage in MB",
                 dash_key="torch",
+                legend_loc="upper left",
             )
 
 

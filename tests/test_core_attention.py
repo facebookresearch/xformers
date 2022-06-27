@@ -138,7 +138,9 @@ def test_switch_blocksparse(device, data_type):
     assert r_sparse.dtype == expected_device
 
     if r_custom.dtype == r_att_mask.dtype:
-        assert torch.allclose(r_custom, r_att_mask, atol=1e-6, rtol=1e-3)
+        assert torch.allclose(r_custom, r_att_mask, atol=1e-6, rtol=1e-2)
+    else:  # r_custom fp16, r_att_mask fp32
+        assert torch.allclose(r_custom, r_att_mask.half(), atol=1e-6, rtol=1e-2)
 
 
 @pytest.mark.parametrize("device", ["cuda"])
