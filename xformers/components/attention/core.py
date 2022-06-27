@@ -19,8 +19,15 @@ if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
 
 if _is_triton_available:
-    from xformers.components.attention.blocksparse import BlockSparseAttention
     from xformers.triton.softmax import softmax as triton_softmax
+    from xformers.triton.utils import gpu_capabilities_older_than_70
+
+_is_blocksparse_available = (
+    _is_triton_available and not gpu_capabilities_older_than_70()
+)
+
+if _is_blocksparse_available:
+    from xformers.components.attention.blocksparse import BlockSparseAttention
 
 
 def _create_random_sparsity(matrix, sparsity, divisible_by=4):
@@ -215,16 +222,19 @@ def scaled_query_key_softmax(
     return att
 
 
-# 128 is default maxsize
-@lru_cache(maxsize=128)
-def _retrieve_blocksparse(
-    num_heads: int, seq_len: int, block_size: int
-) -> BlockSparseAttention:
-    # Checks if blocksparse object exists in cache
+if _is_blocksparse_available:
+    # 128 is default maxsize
+    @lru_cache(maxsize=128)
+    def _retrieve_blocksparse(
+        num_heads: int, seq_len: int, block_size: int
+    ) -> BlockSparseAttention:
+        # Checks if blocksparse object exists in cache
 
-    blocks = seq_len // block_size
-    layout_fill = torch.ones((num_heads, blocks, blocks), dtype=torch.long)
-    return BlockSparseAttention(layout=layout_fill, block_size=block_size, causal=True)
+        blocks = seq_len // block_size
+        layout_fill = torch.ones((num_heads, blocks, blocks), dtype=torch.long)
+        return BlockSparseAttention(
+            layout=layout_fill, block_size=block_size, causal=True
+        )
 
 
 def blocksparse_attention(
@@ -290,7 +300,7 @@ def scaled_dot_product_attention(
     #   sequence length is divisible by block size
     #   same seq len for K and Q
     switch_to_blocksparse = (
-        _is_triton_available
+        _is_blocksparse_available
         and (att_mask is not None and not att_mask.is_sparse)
         and (isinstance(att_mask, AttentionMask) and att_mask.is_causal)
         and (q.dtype == torch.float16 or torch.is_autocast_enabled())

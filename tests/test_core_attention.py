@@ -7,9 +7,17 @@ import pytest
 import torch
 from torch import nn
 
+from xformers import _is_triton_available
 from xformers.components.attention._sputnik_sparse import SparseCS
 from xformers.components.attention.attention_mask import AttentionMask
 from xformers.components.attention.core import scaled_dot_product_attention
+
+if _is_triton_available:
+    from xformers.triton.utils import gpu_capabilities_older_than_70
+
+_is_blocksparse_available = (
+    _is_triton_available and not gpu_capabilities_older_than_70()
+)
 
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
@@ -112,6 +120,9 @@ def test_amp_attention_sparsecs(device):
     assert r.dtype == expected_device
 
 
+@pytest.mark.skipif(
+    not _is_blocksparse_available, reason="Blocksparse is not available"
+)
 @pytest.mark.parametrize("device", ["cuda"])
 @pytest.mark.parametrize("data_type", [torch.float16, torch.float32])
 def test_switch_blocksparse(device, data_type):
@@ -143,6 +154,9 @@ def test_switch_blocksparse(device, data_type):
         assert torch.allclose(r_custom, r_att_mask.half(), atol=1e-6, rtol=1e-2)
 
 
+@pytest.mark.skipif(
+    not _is_blocksparse_available, reason="Blocksparse is not available"
+)
 @pytest.mark.parametrize("device", ["cuda"])
 def test_switch_blocksparse_dims(device):
     b, s, d, nh = 8, 128, 32, 8
@@ -161,6 +175,9 @@ def test_switch_blocksparse_dims(device):
     assert r.dtype == expected_device
 
 
+@pytest.mark.skipif(
+    not _is_blocksparse_available, reason="Blocksparse is not available"
+)
 @pytest.mark.parametrize("device", ["cuda"])
 @pytest.mark.parametrize("training", [True, False])
 @pytest.mark.parametrize("drop_prob", [0.0, 0.3])
