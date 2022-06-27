@@ -192,7 +192,9 @@ __global__ void attention_kernel(
       for (int k_item_idx = 0; k_item_idx < kThreadItemsK; ++k_item_idx) {
         lhs_fragment[k_item_idx] = __ldg(out_i_tmp + threadIdx.x);
         iMul(m_delta, lhs_fragment + k_item_idx);
+        out_i_tmp += kBlockWidth;
       }
+      out_i_tmp -= kBlockWidth * kThreadItemsK;
 
       // load values
 #pragma unroll
@@ -220,8 +222,8 @@ __global__ void attention_kernel(
               attn_fragment[x_item_idx], rhs_value, &lhs_value);
         }
         out_i_tmp[threadIdx.x] = lhs_value;
+        out_i_tmp += kBlockWidth;
       }
-      out_i_tmp += kBlockWidth;
     }
   }
   // avoid division by 0 when row is fully masked
