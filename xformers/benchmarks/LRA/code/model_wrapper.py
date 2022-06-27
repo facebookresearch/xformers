@@ -9,6 +9,7 @@
 
 from enum import Enum
 
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 
@@ -113,11 +114,12 @@ class SCHeadDual(nn.Module):
         return seq_score
 
 
-class ModelTrunk(nn.Module):
+class ModelTrunk(pl.LightningModule):
     def __init__(self, config, model_name):
         super().__init__()
 
         config_model = config["model"]
+        self.config_training=config["training"]
 
         self.enable_amp = config["training"]["mixed_precision"]
         self.pooling_mode = Pooling(config_model["pooling_mode"])
@@ -134,6 +136,62 @@ class ModelTrunk(nn.Module):
             * ff_config["hidden_layer_multiplier"]
         )
 
+    def training_step(self, batch, batch_idx):
+        outputs = self(**batch)
+        return outputs
+
+    def training_epoch_end(self, outputs):
+        logs = self.eval_epoch_end(outputs)
+        return {f"train_{k}": v for k, v in logs.items()}
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(
+            self.parameters(),
+            lr=self.config_training["learning_rate"],
+            betas=(0.9, 0.999),
+            eps=1e-6,
+            weight_decay=self.config_training["weight_decay"],
+        )
+
+        lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer=optimizer,
+            max_lr=self.config_training["learning_rate"],
+            pct_start=self.config_training["warmup"] / self.config_training["num_train_steps"],
+            anneal_strategy=self.config_training["lr_decay"],
+            total_steps=self.config_training["num_train_steps"],
+        )
+
+        return [optimizer], [lr_scheduler]
+
+    def eval_step(self, batch, batch_idx):
+        outputs = self(**batch)
+        return outputs
+
+    def eval_epoch_end(self, outputs):
+        logs = {}
+        counts = torch.tensor([x["count"] for x in outputs]).float()
+        logs["count"] = counts.sum()
+        for key in ("accu", "loss"):
+            logs[key] = (torch.tensor([x[key] for x in outputs]) * counts).sum() / logs["count"]
+        self.logger.log_metrics(logs)
+        return logs
+
+    def validation_step(self, batch, batch_idx):
+        outputs = self.eval_step(batch, batch_idx)
+        self.log("val_accu", outputs["accu"], sync_dist=True)
+        return outputs
+
+    def validation_epoch_end(self, outputs):
+        logs = self.eval_epoch_end(outputs)
+        return {f"val_{k}": v for k, v in logs.items()}
+
+    def test_step(self, batch, batch_idx):
+        return self.eval_step(batch, batch_idx)
+
+    def test_epoch_end(self, outputs):
+        logs = self.eval_epoch_end(outputs)
+        return {f"test_{k}": v for k, v in logs.items()}
+
 
 class ModelForSC(ModelTrunk):
     def __init__(self, config, model_name):
@@ -148,23 +206,22 @@ class ModelForSC(ModelTrunk):
 
     def forward(self, input_ids_0, mask_0, label):
 
-        with torch.cuda.amp.autocast(enabled=self.enable_amp):
-            if self.pooling_mode == Pooling.CLS:
-                input_ids_0, mask_0 = append_cls(input_ids_0, mask_0, self.vocab_size)
+        if self.pooling_mode == Pooling.CLS:
+            input_ids_0, mask_0 = append_cls(input_ids_0, mask_0, self.vocab_size)
 
-            token_out = self.norm(
-                self.model(input_ids_0, encoder_input_mask=mask_0)
-            ) * mask_0.unsqueeze(-1)
+        token_out = self.norm(
+            self.model(input_ids_0, encoder_input_mask=mask_0)
+        ) * mask_0.unsqueeze(-1)
 
-            seq_scores = self.seq_classifer(token_out)
+        seq_scores = self.seq_classifer(token_out)
 
-            seq_loss = torch.nn.CrossEntropyLoss(reduction="none")(seq_scores, label)
-            seq_accu = (seq_scores.argmax(dim=-1) == label).to(torch.float32)
-            outputs = {
-                "loss": seq_loss.mean(),
-                "accu": seq_accu.mean(),
-                "count": label.size(0),
-            }
+        seq_loss = torch.nn.CrossEntropyLoss(reduction="none")(seq_scores, label)
+        seq_accu = (seq_scores.argmax(dim=-1) == label).to(torch.float32)
+        outputs = {
+            "loss": seq_loss.mean(),
+            "accu": seq_accu.mean(),
+            "count": label.size(0),
+        }
 
         return outputs
 
@@ -182,29 +239,28 @@ class ModelForSCDual(ModelTrunk):
 
     def forward(self, input_ids_0, input_ids_1, mask_0, mask_1, label):
 
-        with torch.cuda.amp.autocast(enabled=self.enable_amp):
-            mask_0, mask_1 = mask_0.long(), mask_1.long()
+        mask_0, mask_1 = mask_0.long(), mask_1.long()
 
-            if self.pooling_mode == Pooling.CLS:
-                input_ids_0, mask_0 = append_cls(input_ids_0, mask_0, self.vocab_size)
-                input_ids_1, mask_1 = append_cls(input_ids_1, mask_1, self.vocab_size)
+        if self.pooling_mode == Pooling.CLS:
+            input_ids_0, mask_0 = append_cls(input_ids_0, mask_0, self.vocab_size)
+            input_ids_1, mask_1 = append_cls(input_ids_1, mask_1, self.vocab_size)
 
-            # Concatenate the two inputs into one batch
-            input_ids = torch.cat([input_ids_0, input_ids_1], dim=0)
-            masks = torch.cat([mask_0, mask_1], dim=0)
+        # Concatenate the two inputs into one batch
+        input_ids = torch.cat([input_ids_0, input_ids_1], dim=0)
+        masks = torch.cat([mask_0, mask_1], dim=0)
 
-            tokens_out = self.norm(
-                self.model(input_ids, encoder_input_mask=masks)
-            ) * masks.unsqueeze(-1)
+        tokens_out = self.norm(
+            self.model(input_ids, encoder_input_mask=masks)
+        ) * masks.unsqueeze(-1)
 
-            seq_scores = self.seq_classifer(*torch.chunk(tokens_out, 2, dim=0))
+        seq_scores = self.seq_classifer(*torch.chunk(tokens_out, 2, dim=0))
 
-            seq_loss = torch.nn.CrossEntropyLoss(reduction="none")(seq_scores, label)
-            seq_accu = (seq_scores.argmax(dim=-1) == label).to(torch.float32)
-            outputs = {
-                "loss": seq_loss.mean(),
-                "accu": seq_accu.mean(),
-                "count": label.size(0),
-            }
+        seq_loss = torch.nn.CrossEntropyLoss(reduction="none")(seq_scores, label)
+        seq_accu = (seq_scores.argmax(dim=-1) == label).to(torch.float32)
+        outputs = {
+            "loss": seq_loss.mean(),
+            "accu": seq_accu.mean(),
+            "count": label.size(0),
+        }
 
         return outputs
