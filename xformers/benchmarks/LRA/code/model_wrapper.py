@@ -138,11 +138,13 @@ class ModelTrunk(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         outputs = self(**batch)
+        self.logger.log_metrics({f"train_{k}": v for k, v in outputs.items()})
+        self.log("train_accu", outputs["accu"], sync_dist=True)
         return outputs
 
     def training_epoch_end(self, outputs):
         logs = self.eval_epoch_end(outputs)
-        return {f"train_{k}": v for k, v in logs.items()}
+        self.log(f"train_accu_mean", logs["accu"], sync_dist=True)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
@@ -167,30 +169,29 @@ class ModelTrunk(pl.LightningModule):
         outputs = self(**batch)
         return outputs
 
-    def eval_epoch_end(self, outputs):
+    def eval_epoch_end(self, outputs, prefix="train"):
         logs = {}
         counts = torch.tensor([x["count"] for x in outputs]).float()
         logs["count"] = counts.sum()
         for key in ("accu", "loss"):
             logs[key] = (torch.tensor([x[key] for x in outputs]) * counts).sum() / logs["count"]
-        self.logger.log_metrics(logs)
+        self.log(f"{prefix}_accu_mean", logs["accu"], sync_dist=True)
         return logs
 
     def validation_step(self, batch, batch_idx):
         outputs = self.eval_step(batch, batch_idx)
+        self.logger.log_metrics({f"val_{k}": v for k, v in outputs.items()})
         self.log("val_accu", outputs["accu"], sync_dist=True)
         return outputs
 
     def validation_epoch_end(self, outputs):
-        logs = self.eval_epoch_end(outputs)
-        return {f"val_{k}": v for k, v in logs.items()}
+        self.eval_epoch_end(outputs, prefix="val")
 
     def test_step(self, batch, batch_idx):
         return self.eval_step(batch, batch_idx)
 
     def test_epoch_end(self, outputs):
-        logs = self.eval_epoch_end(outputs)
-        return {f"test_{k}": v for k, v in logs.items()}
+        self.eval_epoch_end(outputs, prefix="test")
 
 
 class ModelForSC(ModelTrunk):
