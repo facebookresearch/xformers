@@ -23,8 +23,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader
 
 from xformers.benchmarks.LRA.code.dataset import LRADataset
-from xformers.benchmarks.LRA.code.model_wrapper import ModelForSC,\
-        ModelForSCDual
+from xformers.benchmarks.LRA.code.model_wrapper import ModelForSC, ModelForSCDual
 from xformers.components.attention import ATTENTION_REGISTRY
 
 
@@ -155,7 +154,7 @@ def rewrite_hyper(config, rewrites):
             return
         first_key = k.split(":")[0]
         assert first_key in config_dict, first_key
-        k = k[len(first_key) + 1:]
+        k = k[len(first_key) + 1 :]
         replace(config_dict[first_key], k, v)
 
     for k, v in rewrites.items():
