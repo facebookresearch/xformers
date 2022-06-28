@@ -14,7 +14,6 @@ from glob import glob
 from pathlib import Path
 from typing import Dict, Tuple
 
-import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -24,7 +23,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader
 
 from xformers.benchmarks.LRA.code.dataset import LRADataset
-from xformers.benchmarks.LRA.code.model_wrapper import ModelForSC, ModelForSCDual
+from xformers.benchmarks.LRA.code.model_wrapper import ModelForSC,\
+        ModelForSCDual
 from xformers.components.attention import ATTENTION_REGISTRY
 
 
@@ -59,9 +59,8 @@ def build_model(args: argparse.Namespace, config: Dict) -> nn.Module:
         model = ModelForSC(config[f"{task}"], attention_name)
 
     logging.info(model)
-    logging.info(
-        f"num_parameter: {np.sum([np.prod(weight.size()) for weight in model.parameters()]) // 1e3 / 1e3}M"
-    )
+    summary = pl.utilities.model_summary.LayerSummary(model)
+    logging.info(f"num_parameter: {summary.num_parameters // 1e3 / 1e3}M")
 
     with torch.no_grad():
         # Check the flops
@@ -156,7 +155,7 @@ def rewrite_hyper(config, rewrites):
             return
         first_key = k.split(":")[0]
         assert first_key in config_dict, first_key
-        k = k[len(first_key) + 1 :]
+        k = k[len(first_key) + 1:]
         replace(config_dict[first_key], k, v)
 
     for k, v in rewrites.items():
@@ -185,7 +184,9 @@ def build_dataloaders(
         config_training["batch_size"] // args.world_size // accumu_steps
     )
     logging.warning(
-        f"Requested batch size: {config_training['batch_size']}. Given world size and grad accumulation, per-gpu batch is {per_gpu_batch_size}"
+        f"Requested batch size: {config_training['batch_size']}. Given world\
+                size and grad accumulation, per-gpu batch is\
+                {per_gpu_batch_size}"
     )
 
     # Training epochs
@@ -199,7 +200,8 @@ def build_dataloaders(
         / len(datasets["train"])
     )
     logging.warning(
-        "Requested train steps: {config_training['num_train_steps']}. Given dataset, this translates into {args.epochs} epochs."
+        "Requested train steps: {config_training['num_train_steps']}. Given\
+                dataset, this translates into {args.epochs} epochs."
     )
 
     dataloaders = {
@@ -268,7 +270,10 @@ def benchmark(args):
 
     ckpt_path = sorted(
         glob(
-            os.path.join(args.checkpoint_dir, f"*.{checkpoint_callback.FILE_EXTENSION}")
+            os.path.join(
+                args.checkpoint_dir,
+                f"*.{checkpoint_callback.FILE_EXTENSION}",
+            )
         ),
         key=os.path.getctime,
         reverse=True,
