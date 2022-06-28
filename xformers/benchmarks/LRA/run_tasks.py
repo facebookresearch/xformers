@@ -4,38 +4,27 @@
 # LICENSE file in the root directory of this source tree.
 
 
-# CREDITS: adapted from the Nystromformer repo
-# https://github.com/mlpen/Nystromformer
-
 import argparse
-import datetime
 import json
 import logging
 import math
 import os
-import random
-import sys
-import time
-from contextlib import suppress
 from enum import Enum
 from glob import glob
 from pathlib import Path
-from typing import Any, Dict
+from typing import Dict, Tuple
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
-import torch.distributed as dist
 import torch.nn as nn
 from fvcore.nn import FlopCountAnalysis, flop_count_str
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
-from torch.utils.data import DataLoader, DistributedSampler
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader
 
 from xformers.benchmarks.LRA.code.dataset import LRADataset
 from xformers.benchmarks.LRA.code.model_wrapper import ModelForSC, ModelForSCDual
-from xformers.benchmarks.utils import temp_files_ctx
 from xformers.components.attention import ATTENTION_REGISTRY
 
 
@@ -149,13 +138,14 @@ def get_arg_parser():
     return parser
 
 
-def setup_log(args, rank, attention_name, task):
+def setup_log(args, attention_name, task) -> Tuple[str, TensorBoardLogger]:
+    experiment_name = f"{task}__{attention_name}"
     logger = TensorBoardLogger(
         save_dir=args.checkpoint_dir,
-        name='',  # remove lightning_logs subdirectory
-        version=f"{task}__{attention_name}__{rank}"
+        name="",  # remove lightning_logs subdirectory
+        version=experiment_name,
     )
-    log_dir = os.path.join(logger._save_dir, logger._version)
+    log_dir = os.path.join(logger._save_dir, experiment_name)
     return log_dir, logger
 
 
@@ -175,10 +165,10 @@ def rewrite_hyper(config, rewrites):
 
 
 def build_dataloaders(
-        args: argparse.Namespace,
-        config_training: Dict,
-        num_workers: int = 4,
-    ) -> Dict[str, DataLoader]:
+    args: argparse.Namespace,
+    config_training: Dict,
+    num_workers: int = 4,
+) -> Dict[str, DataLoader]:
     datasets = {}
     for component in ("train", "dev", "test"):
         datasets[component] = LRADataset(
@@ -226,7 +216,7 @@ def build_dataloaders(
 
 
 def benchmark(args):
-    log_dir, logger = setup_log(args, "main", f"{args.attention}", f"{args.task}")
+    log_dir, logger = setup_log(args, f"{args.attention}", f"{args.task}")
     args.logger = logger
 
     config = load_config(args.config)
@@ -277,9 +267,11 @@ def benchmark(args):
         )
 
     ckpt_path = sorted(
-        glob(os.path.join(args.checkpoint_dir, f"*.{checkpoint_callback.FILE_EXTENSION}")),
+        glob(
+            os.path.join(args.checkpoint_dir, f"*.{checkpoint_callback.FILE_EXTENSION}")
+        ),
         key=os.path.getctime,
-        reverse=True
+        reverse=True,
     )[-1]
     trainer.validate(
         model,

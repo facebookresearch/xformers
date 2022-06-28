@@ -119,7 +119,7 @@ class ModelTrunk(pl.LightningModule):
         super().__init__()
 
         config_model = config["model"]
-        self.config_training=config["training"]
+        self.config_training = config["training"]
 
         self.enable_amp = config["training"]["mixed_precision"]
         self.pooling_mode = Pooling(config_model["pooling_mode"])
@@ -158,7 +158,8 @@ class ModelTrunk(pl.LightningModule):
         lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer=optimizer,
             max_lr=self.config_training["learning_rate"],
-            pct_start=self.config_training["warmup"] / self.config_training["num_train_steps"],
+            pct_start=self.config_training["warmup"]
+            / self.config_training["num_train_steps"],
             anneal_strategy=self.config_training["lr_decay"],
             total_steps=self.config_training["num_train_steps"],
         )
@@ -174,7 +175,9 @@ class ModelTrunk(pl.LightningModule):
         counts = torch.tensor([x["count"] for x in outputs]).float()
         logs["count"] = counts.sum()
         for key in ("accu", "loss"):
-            logs[key] = (torch.tensor([x[key] for x in outputs]) * counts).sum() / logs["count"]
+            logs[key] = (torch.tensor([x[key] for x in outputs]) * counts).sum() / logs[
+                "count"
+            ]
         self.log(f"{prefix}_accu_mean", logs["accu"], sync_dist=True)
         return logs
 
