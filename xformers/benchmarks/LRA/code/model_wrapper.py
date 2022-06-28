@@ -144,7 +144,7 @@ class ModelTrunk(pl.LightningModule):
 
     def training_epoch_end(self, outputs):
         logs = self.eval_epoch_end(outputs)
-        self.log(f"train_accu_mean", logs["accu"], sync_dist=True)
+        self.log("train_accu_mean", logs["accu"], sync_dist=True)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
