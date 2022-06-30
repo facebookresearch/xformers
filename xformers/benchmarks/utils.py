@@ -294,6 +294,7 @@ def benchmark_main_helper(
             # pbar.write(f"Skipped (NotImplementedError)")
             continue
 
+        name = None
         for benchmark_object, is_optimized in zip(benchmarks_generator, [True, False]):
             if benchmark_object is None:
                 continue
@@ -318,6 +319,23 @@ def benchmark_main_helper(
             memory = torch.cuda.max_memory_allocated() / 2**20
             mem_use[name][measurement.task_spec.sub_label] = memory
             pbar.write(f"{name}: memory used: {memory} MB")
+        # Display results for benchmarks we just calculated
+        if name is not None:
+
+            def matches_current(r):
+                return (
+                    r.task_spec.sub_label == results[-1].task_spec.sub_label
+                    and r.task_spec.label == results[-1].task_spec.label
+                )
+
+            pbar.write(
+                str(
+                    benchmark.Compare(
+                        list(filter(matches_current, results))
+                        + list(filter(matches_current, results_compare_to))
+                    )
+                )
+            )
 
     pprint.pprint(mem_use)
     benchmark.Compare(results + results_compare_to).print()

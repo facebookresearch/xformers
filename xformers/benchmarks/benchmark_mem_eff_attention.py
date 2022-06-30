@@ -84,7 +84,10 @@ def benchmark_forward(shape, num_threads: int, use_attn_bias: bool, dtype):
     if True:
         r = xformers.ops.memory_efficient_attention(q, q, q, attn_bias, op=op).float()
         rr = ref_attention(
-            q.float(), q.float(), q.float(), attn_bias.float() if attn_bias else None
+            q.float(),
+            q.float(),
+            q.float(),
+            attn_bias.float() if attn_bias is not None else None,
         )
         assert (r - rr).abs().max() < 2e-4, (r - rr).abs().max()
         del r, rr
