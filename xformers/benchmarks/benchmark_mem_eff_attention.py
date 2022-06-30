@@ -7,6 +7,7 @@
 import itertools
 import math
 from functools import partial
+from typing import cast
 
 import torch
 from torch.utils import benchmark
@@ -40,8 +41,9 @@ SHAPES.sort()
 
 
 p = 0.0
-op = xformers.ops.MemoryEfficientAttentionOp
-# op = xformers.ops.MemoryEfficientAttentionGenericForwardOp
+FORCE_OP = None
+# FORCE_OP = xformers.ops.MemoryEfficientAttentionOp
+# FORCE_OP = xformers.ops.MemoryEfficientAttentionGenericForwardOp
 
 
 def product_dict(**kwargs):
@@ -63,23 +65,28 @@ CASES = list(
 
 def benchmark_forward(shape, num_threads: int, use_attn_bias: bool, dtype):
     B, M, K = shape
-    if (
-        K > op.SUPPORTED_MAX_K
-        or (use_attn_bias and not op.SUPPORTS_ATTN_BIAS)
-        or (dtype not in op.SUPPORTED_DTYPES)
-    ):
-        return
     q = torch.rand(shape, device=device, dtype=dtype)
     attn_bias = None
     if use_attn_bias:
         attn_bias = torch.rand(
             shape[0], 1, shape[1], device=device, dtype=dtype
         ).expand(shape[0], shape[1], shape[1])
+
+    dispatch = xformers.ops.AttentionOpDispatch(
+        dtype=dtype, device=device, k=K, has_attn_bias=use_attn_bias, has_dropout=False
+    )
+    try:
+        op = dispatch.op if FORCE_OP is None else FORCE_OP
+    except NotImplementedError:
+        return
+    if not op.supports(dispatch):
+        return
+
     dtype_str = {
         torch.half: "f16",
         torch.float: "f32",
     }[dtype]
-    sub_label = f"{dtype_str} B={B}, M={M}, K={K}"
+    sub_label = f"{dtype_str} {op.NAME} B={B}, M={M}, K={K}"
 
     if True:
         r = xformers.ops.memory_efficient_attention(q, q, q, attn_bias, op=op).float()
@@ -128,25 +135,34 @@ def benchmark_backward(shape, num_threads: int, use_attn_bias: bool, dtype):
         attn_bias = torch.rand(shape[0], 1, shape[1], device=device).expand(
             shape[0], shape[1], shape[1]
         )
-    sub_label = f"B={B}, M={M}, K={K}"
 
-    if (
-        K > op.SUPPORTED_MAX_K
-        or (use_attn_bias and not op.SUPPORTS_ATTN_BIAS)
-        # only fp32 is supported at the moment
-        or (dtype not in {torch.float})
-    ):
+    dispatch = xformers.ops.AttentionOpDispatch(
+        dtype=dtype, device=device, k=K, has_attn_bias=use_attn_bias, has_dropout=False
+    )
+    try:
+        op = dispatch.op if FORCE_OP is None else FORCE_OP
+    except NotImplementedError:
         return
+    if not op.supports(dispatch):
+        return
+
+    dtype_str = {
+        torch.half: "f16",
+        torch.float: "f32",
+    }[dtype]
+    sub_label = f"{dtype_str} {op.NAME} B={B}, M={M}, K={K}"
+
     if True:
         r = xformers.ops.memory_efficient_attention(q, q, q, attn_bias, op=op)
         r.backward(torch.ones_like(q))
 
-        grad = q.grad
+        grad = cast(torch.Tensor, q.grad)
         q.grad = None
 
         rr = ref_attention(q, q, q, attn_bias)
         rr.backward(torch.ones_like(q))
         atol = 2e-4 + 2e-6 * K * M * math.sqrt(B) * math.sqrt(M)
+        # type: ignore
         assert (grad - q.grad).abs().max() < atol, f"{(grad - q.grad).abs().max()}"
         q.grad = None
         del r, rr, grad
