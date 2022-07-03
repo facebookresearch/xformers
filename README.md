@@ -25,15 +25,14 @@ For recent changes, you can have a look at the [changelog](CHANGELOG.md)
 
 ### Installation
 
-To install xFormers, it is recommended to use a dedicated virtual environment, as often with python, through `python-virtualenv` or `conda` for instance.
+To install xFormers, it is recommended to use a dedicated virtual environment, as often with python, through `python-virtualenv` or `conda` for instance. A preset conda environment is provided for convenience, you can use it as follows:
 
 ```bash
-  conda create --name xformer_env
-  conda activate xformer_env
+  conda env create --file=environment_conda.yaml
+  conda activate xformers
 ```
 
-*Please note that, until Pytorch 1.12 is released, xformers requires Pytorch nightly to be installed. You can fetch it using `pip` or `conda` [here](https://pytorch.org/get-started/locally/)*
-
+*Please note that Pytorch 1.12 or newer is required. You can fetch it using `pip` or `conda` [here](https://pytorch.org/get-started/locally/)*
 
 There are two ways you can install xFormers locally:
 

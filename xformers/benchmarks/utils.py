@@ -56,7 +56,7 @@ def pretty_print(results, title, units):
 
 
 def pretty_plot(
-    results, title, units: str, filename=None, dash_key="", legend_loc="bottom_right"
+    results, title, units: str, filename=None, dash_key="", legend_loc="lower right"
 ):
     """Graph out the contents of a dict.
     Dash key means that if the result label has this key, then it will be displayed with a dash"""
