@@ -29,7 +29,7 @@ To install xFormers, it is recommended to use a dedicated virtual environment, a
 
 ```bash
   conda env create --file=environment_conda.yaml
-  conda activate xformer
+  conda activate xformers
 ```
 
 *Please note that Pytorch 1.12 or newer is required. You can fetch it using `pip` or `conda` [here](https://pytorch.org/get-started/locally/)*
