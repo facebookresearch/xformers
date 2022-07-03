@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed dupliacated biases in the FusedMLP layers [#317]
 - Rotary embeddings respecting input types [#326]
 - Poolformer style instantiating useless projection layers [#349]
+- Fix layer position not being properly tracked, causing extra layernorms for programatic xformers [#348]
 
 ### Added
 - Four blocksparsity layouts from DeepSpeed [#320]

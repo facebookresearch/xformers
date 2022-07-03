@@ -175,10 +175,7 @@ class xFormerEncoderBlock(torch.nn.Module):
         # Optional patch embedding
         self.patch_emb: Optional[nn.Module] = None
 
-        if (
-            config.patch_embedding_config is not None
-            and config.layer_position.is_first()
-        ):
+        if config.patch_embedding_config is not None:
             self.patch_emb = build_patch_embedding(
                 PatchEmbeddingConfig(**config.patch_embedding_config)
             )
