@@ -8,6 +8,7 @@
 # https://github.com/mlpen/Nystromformer
 
 from enum import Enum
+from typing import Dict, Union
 
 import pytorch_lightning as pl
 import torch
@@ -17,6 +18,8 @@ from xformers.components import build_attention
 from xformers.components.multi_head_dispatch import MultiHeadDispatchConfig
 from xformers.factory import xFormer, xFormerConfig, xFormerEncoderConfig
 from xformers.utils import generate_matching_config
+
+PLOutput = Dict[str, Union[float, torch.Tensor]]
 
 
 class Pooling(str, Enum):
@@ -136,9 +139,16 @@ class ModelTrunk(pl.LightningModule):
             * ff_config["hidden_layer_multiplier"]
         )
 
-    def training_step(self, batch, batch_idx):
+    def get_progress_bar_dict(self):
+        return {
+            k: v for k, v in super().get_progress_bar_dict().items() if k != "v_num"
+        }
+
+    def training_step(  # type: ignore
+        self, batch: Dict[str, torch.Tensor], batch_idx: int
+    ) -> PLOutput:
         outputs = self(**batch)
-        self.logger.log_metrics({f"train_{k}": v for k, v in outputs.items()})
+        self.logger.log_metrics({f"train_{k}": v for k, v in outputs.items()})  # type: ignore
         self.log("train_accu", outputs["accu"], sync_dist=True)
         return outputs
 
@@ -166,11 +176,11 @@ class ModelTrunk(pl.LightningModule):
 
         return [optimizer], [lr_scheduler]
 
-    def eval_step(self, batch, batch_idx):
+    def eval_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> PLOutput:
         outputs = self(**batch)
         return outputs
 
-    def eval_epoch_end(self, outputs, prefix="train"):
+    def eval_epoch_end(self, outputs, prefix: str = "train"):
         logs = {}
         counts = torch.tensor([x["count"] for x in outputs]).float()
         logs["count"] = counts.sum()
@@ -181,16 +191,20 @@ class ModelTrunk(pl.LightningModule):
         self.log(f"{prefix}_accu_mean", logs["accu"], sync_dist=True)
         return logs
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(  # type: ignore
+        self, batch: Dict[str, torch.Tensor], batch_idx: int
+    ) -> PLOutput:
         outputs = self.eval_step(batch, batch_idx)
-        self.logger.log_metrics({f"val_{k}": v for k, v in outputs.items()})
-        self.log("val_accu", outputs["accu"], sync_dist=True)
+        self.logger.log_metrics({f"val_{k}": v for k, v in outputs.items()})  # type: ignore
+        self.log("val_accu", outputs["accu"], sync_dist=True, prog_bar=True)
         return outputs
 
     def validation_epoch_end(self, outputs):
         self.eval_epoch_end(outputs, prefix="val")
 
-    def test_step(self, batch, batch_idx):
+    def test_step(  # type: ignore
+        self, batch: Dict[str, torch.Tensor], batch_idx: int
+    ) -> PLOutput:
         return self.eval_step(batch, batch_idx)
 
     def test_epoch_end(self, outputs):
@@ -208,7 +222,9 @@ class ModelForSC(ModelTrunk):
             dim_mlp=self.dim_mlp,
         )
 
-    def forward(self, input_ids_0, mask_0, label):
+    def forward(  # type: ignore
+        self, input_ids_0: torch.Tensor, mask_0: torch.Tensor, label: torch.Tensor
+    ):
 
         if self.pooling_mode == Pooling.CLS:
             input_ids_0, mask_0 = append_cls(input_ids_0, mask_0, self.vocab_size)
@@ -241,7 +257,14 @@ class ModelForSCDual(ModelTrunk):
             dim_mlp=self.dim_mlp,
         )
 
-    def forward(self, input_ids_0, input_ids_1, mask_0, mask_1, label):
+    def forward(  # type: ignore
+        self,
+        input_ids_0: torch.Tensor,
+        input_ids_1: torch.Tensor,
+        mask_0: torch.Tensor,
+        mask_1: torch.Tensor,
+        label: torch.Tensor,
+    ):
 
         mask_0, mask_1 = mask_0.long(), mask_1.long()
 

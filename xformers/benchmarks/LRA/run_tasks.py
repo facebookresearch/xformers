@@ -7,10 +7,8 @@
 import argparse
 import json
 import logging
-import math
 import os
 from enum import Enum
-from glob import glob
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -20,6 +18,7 @@ import torch.nn as nn
 from fvcore.nn import FlopCountAnalysis, flop_count_str
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.strategies import DDPStrategy
 from torch.utils.data import DataLoader
 
 from xformers.benchmarks.LRA.code.dataset import LRADataset
@@ -184,8 +183,8 @@ def build_dataloaders(
     )
     logging.warning(
         f"Requested batch size: {config_training['batch_size']}. Given world\
-                size and grad accumulation, per-gpu batch is\
-                {per_gpu_batch_size}"
+            size and grad accumulation, per-gpu batch is\
+            {per_gpu_batch_size}"
     )
 
     # Training epochs
@@ -193,15 +192,6 @@ def build_dataloaders(
         config_training["num_train_steps"] *= accumu_steps
         config_training["num_eval_steps"] *= accumu_steps
         config_training["eval_frequency"] *= accumu_steps
-    args.epochs = math.ceil(
-        config_training["num_train_steps"]
-        * config_training["batch_size"]
-        / len(datasets["train"])
-    )
-    logging.warning(
-        "Requested train steps: {config_training['num_train_steps']}. Given\
-                dataset, this translates into {args.epochs} epochs."
-    )
 
     dataloaders = {
         k: DataLoader(
@@ -244,20 +234,20 @@ def benchmark(args):
         every_n_train_steps=config_training["eval_frequency"],
     )
 
-    # args.epochs is saved as side effect of build_dataloaders
-    steps_per_epoch = config_training["num_train_steps"] / args.epochs
-
     trainer = pl.Trainer(
-        accelerator="ddp",
+        accelerator="gpu",
+        strategy=DDPStrategy(find_unused_parameters=args.debug),
         accumulate_grad_batches=config_training["gradient_accumulation"],
         callbacks=[checkpoint_callback],
         detect_anomaly=args.debug,
         deterministic=True,
         gpus=args.world_size,
+        limit_val_batches=config_training["num_eval_steps"],
         logger=logger,
         max_steps=config_training["num_train_steps"],
         precision=16 if config_training["mixed_precision"] else 32,
-        val_check_interval=config_training["eval_frequency"] / steps_per_epoch,
+        val_check_interval=config_training["eval_frequency"]
+        / float(len(dataloaders["train"])),
     )
 
     if not args.skip_train:
@@ -267,20 +257,10 @@ def benchmark(args):
             val_dataloaders=dataloaders["dev"],
         )
 
-    ckpt_path = sorted(
-        glob(
-            os.path.join(
-                args.checkpoint_dir,
-                f"*.{checkpoint_callback.FILE_EXTENSION}",
-            )
-        ),
-        key=os.path.getctime,
-        reverse=True,
-    )[-1]
     trainer.validate(
         model,
         dataloaders=dataloaders["test"],
-        ckpt_path=ckpt_path,
+        ckpt_path=checkpoint_callback.best_model_path,
     )
 
 
