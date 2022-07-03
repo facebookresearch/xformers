@@ -239,9 +239,9 @@ class FusedDropoutBias(torch.nn.Module):
             self.bias = self.bias.to(dtype=x.dtype, device=x.device)  # type: ignore
 
         # Lazy init (helps with pickling)
-        if self.activation is None:
+        if self.activation is None or self.activation_pytorch is None:
             self.activation = get_triton_activation_kernel(self.activation_type)
-            self.pytorch_activation = build_activation(self.activation_type)
+            self.activation_pytorch = build_activation(self.activation_type)
             self.activation_grad = get_triton_activation_bwd_kernel(
                 self.activation_type
             )
@@ -255,7 +255,7 @@ class FusedDropoutBias(torch.nn.Module):
         # Catch a non-cuda setup, fallback to pytorch
         if not x.is_cuda or not perf_check or p == 0.0:
             x = x + self.bias if self.bias is not None else x
-            x = self.pytorch_activation(x)
+            x = self.activation_pytorch(x)
             return torch.nn.functional.dropout(x, p) if p > 0.0 else x
 
         # The normal, Triton-backed path

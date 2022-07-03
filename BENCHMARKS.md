@@ -134,6 +134,6 @@ _Note_: The estimated flops currently miss accounting for many operators, and ar
 FP16            | FP32
 :-------------------------:|:-------------------------:
 ![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Runtime_FW_fp16_Blocksize128.png)  |  ![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Runtime_FW_fp32_Blocksize128.png)
-![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Runtime_FW+BW_fp16_Blocksize128.png)  |  ![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Runtime_FW+BW_fp32_Blocksize128.png)
-![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW+BW_fp16_Blocksize128.png)  |  ![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW+BW_fp32_Blocksize128.png)
-![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW+BW_fp16_Blocksize128.png)  |  ![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW+BW_fp32_Blocksize128.png)
+![fw+bw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Runtime_FW+BW_fp16_Blocksize128.png)  |  ![fw+bw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Runtime_FW+BW_fp32_Blocksize128.png)
+![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW_fp16_Blocksize128.png)  |  ![fw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW_fp32_Blocksize128.png)
+![fw+bw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW+BW_fp16_Blocksize128.png)  |  ![fw+bw](docs/plots/causal_attention_blocksparse/Causal_Blocksparse_Memory_FW+BW_fp32_Blocksize128.png)
