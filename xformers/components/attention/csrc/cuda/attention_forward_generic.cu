@@ -13,6 +13,8 @@
 #include "cutlass/layout/vector.h"
 #include "cutlass/numeric_types.h"
 
+#include "cutlass/gemm/device/default_gemm_configuration.h"
+#include "cutlass/gemm/threadblock/default_mma.h"
 #include "cutlass/gemm/threadblock/default_mma_core_simt.h"
 #include "cutlass/gemm/threadblock/default_mma_core_sm70.h"
 #include "cutlass/gemm/threadblock/default_mma_core_sm75.h"
@@ -20,6 +22,7 @@
 #include "cutlass/matrix_shape.h"
 #include "cutlass/platform/platform.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
+#include "find_default_mma.h"
 
 #include <inttypes.h>
 
@@ -71,53 +74,54 @@ constexpr __host__ __device__ inline integer ceil_div(integer n, integer m) {
   return (n + m - 1) / m;
 }
 
-template <
-    int kQueriesPerBlock,
-    int kNumWarpsPerBlock,
-    int kWarpSize,
-    typename scalar_t_,
-    bool Aligned64bits>
-struct HeuristicsMM0 {
+template <typename ArchTag, typename scalar_t_, typename Enable = void>
+struct GemmTypeQK {
   // Default GEMM with simt
-  using ThreadblockShape = cutlass::gemm::
-      GemmShape<kQueriesPerBlock, kNumWarpsPerBlock * kWarpSize, 8>;
-  using WarpShape = cutlass::gemm::GemmShape<kQueriesPerBlock, kWarpSize, 8>;
+  static constexpr int ThreadK = 8;
+  static constexpr int WarpK = 8;
   using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;
   using OpClass = cutlass::arch::OpClassSimt;
+  using Operator = cutlass::arch::OpMultiplyAdd;
 };
 
 // Using GEMM with TensorCores when available
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 700)
-template <int kQueriesPerBlock, int kNumWarpsPerBlock, int kWarpSize>
-struct HeuristicsMM0<
-    kQueriesPerBlock,
-    kNumWarpsPerBlock,
-    kWarpSize,
-    cutlass::half_t, // scalar_t_
-    true, // Aligned64bits
-    > {
-  using ThreadblockShape = cutlass::gemm::
-      GemmShape<kQueriesPerBlock, kNumWarpsPerBlock * kWarpSize, 32>;
-  using WarpShape = cutlass::gemm::GemmShape<kQueriesPerBlock, kWarpSize, 32>;
+template <typename ArchTag>
+struct GemmTypeQK<
+    ArchTag,
+    float, // scalar_t_
+    typename std::enable_if<ArchTag::kMinComputeCapability >= 80>::type> {
+  static constexpr int ThreadK = 32;
+  static constexpr int WarpK = 32;
   using OpClass = cutlass::arch::OpClassTensorOp;
-
-#if (__CUDA_ARCH__ >= 750)
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;
-#else
-  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
-#endif
+  using Operator = cutlass::arch::OpMultiplyAddFastF32;
 };
-#endif
+
+template <typename ArchTag>
+struct GemmTypeQK<
+    ArchTag,
+    cutlass::half_t, // scalar_t_
+    typename std::enable_if<ArchTag::kMinComputeCapability >= 70>::type> {
+  static constexpr int ThreadK = 32;
+  static constexpr int WarpK = 32;
+  using OpClass = cutlass::arch::OpClassTensorOp;
+  using InstructionShape = typename std::conditional<
+      ArchTag::kMinComputeCapability >= 75,
+      cutlass::gemm::GemmShape<16, 8, 8>,
+      cutlass::gemm::GemmShape<8, 8, 4>>::type;
+  using Operator = cutlass::arch::OpMultiplyAdd;
+};
 
 template <
     typename scalar_t_,
     typename accum_t_,
     typename output_t_,
-    bool Aligned64bits>
-struct AttentionKernel {
+    bool isAligned_>
+struct AttentionKernelInfo {
   using scalar_t = scalar_t_;
   using accum_t = accum_t_;
   using output_t = output_t_;
+  static constexpr bool kIsAligned = isAligned_;
 
   // Blocks
   // NOTE: Looks like 16 works better for K <= 64
@@ -126,26 +130,85 @@ struct AttentionKernel {
   static constexpr int64_t kWarpSize = 32;
   static constexpr int64_t kNumBlocksX = 1;
 
-  struct MM0 {
-    using Heuristics = HeuristicsMM0<
-        kQueriesPerBlock,
-        kNumWarpsPerBlock,
-        kWarpSize,
-        scalar_t,
-        Aligned64bits>;
-    using ThreadblockShape = typename Heuristics::ThreadblockShape;
+  static int64_t getNumBlocksY(int64_t num_queries) {
+    return ceil_div(num_queries, kQueriesPerBlock);
+  }
+};
 
-    using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
-        ThreadblockShape, // ThreadblockShape,
-        typename Heuristics::WarpShape, // WarpShape,
-        typename Heuristics::InstructionShape, // InstructionShape,
+template <typename KernelInfo, typename ArchTag>
+struct AttentionKernel {
+  using scalar_t = typename KernelInfo::scalar_t;
+  using accum_t = typename KernelInfo::accum_t;
+  using output_t = typename KernelInfo::output_t;
+  static constexpr bool kIsAligned = KernelInfo::kIsAligned;
+  static constexpr int64_t kQueriesPerBlock = KernelInfo::kQueriesPerBlock;
+  static constexpr int64_t kNumWarpsPerBlock = KernelInfo::kNumWarpsPerBlock;
+  static constexpr int64_t kWarpSize = KernelInfo::kWarpSize;
+
+  struct MM0 {
+    using GemmType = GemmTypeQK<ArchTag, scalar_t>;
+
+    using OpClass = typename GemmType::OpClass;
+    using DefaultConfig =
+        typename cutlass::gemm::device::DefaultGemmConfiguration<
+            OpClass,
+            ArchTag,
+            scalar_t,
+            scalar_t,
+            accum_t, // ElementC
+            accum_t // ElementAccumulator
+            >;
+    static constexpr int64_t kAlignmentA =
+        kIsAligned ? DefaultConfig::kAlignmentA : 1;
+    static constexpr int64_t kAlignmentB =
+        kIsAligned ? DefaultConfig::kAlignmentB : 1;
+    using ThreadblockShape = cutlass::gemm::GemmShape<
+        kQueriesPerBlock,
+        kNumWarpsPerBlock * kWarpSize,
+        GemmType::ThreadK>;
+    using WarpShape =
+        cutlass::gemm::GemmShape<kQueriesPerBlock, kWarpSize, GemmType::WarpK>;
+    using DefaultMma = typename cutlass::gemm::threadblock::FindDefaultMma<
         scalar_t, // ElementA,
         cutlass::layout::RowMajor, // LayoutA,
+        kAlignmentA,
         scalar_t, // ElementB,
         cutlass::layout::ColumnMajor, // LayoutB,
+        kAlignmentB,
+        accum_t,
+        cutlass::layout::RowMajor, // LayoutC,
+        OpClass,
+        ArchTag, // ArchTag
+        ThreadblockShape, // ThreadblockShape
+        WarpShape, // WarpShape
+        typename GemmType::InstructionShape, // InstructionShape
+        2, // Should use `DefaultConfig::kStages`, but that uses too much smem
+        typename GemmType::Operator // Operator
+        >::DefaultMma;
+    using MmaCore = typename DefaultMma::MmaCore;
+    using IteratorA = typename DefaultMma::IteratorA;
+    using IteratorB = typename DefaultMma::IteratorB;
+    using Mma = typename DefaultMma::ThreadblockMma;
+  };
+
+  struct MM1 {
+    using ThreadblockShape = cutlass::gemm::
+        GemmShape<kQueriesPerBlock, kNumWarpsPerBlock * kWarpSize, 8>;
+    using WarpShape = cutlass::gemm::GemmShape<kQueriesPerBlock, kWarpSize, 8>;
+    using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;
+
+    // default_mma_core_simt.h
+    using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+        ThreadblockShape, // ThreadblockShape,
+        WarpShape, // WarpShape,
+        InstructionShape, // InstructionShape,
+        accum_t, // ElementA,
+        cutlass::layout::RowMajor, // LayoutA,
+        scalar_t, // ElementB,
+        cutlass::layout::RowMajor, // LayoutB,
         accum_t, // ElementC,
         cutlass::layout::RowMajor, // LayoutC,
-        typename Heuristics::OpClass,
+        cutlass::arch::OpClassSimt,
         2, // Stages,
         cutlass::arch::OpMultiplyAdd // Operator,
         >;
@@ -155,7 +218,11 @@ struct AttentionKernel {
         typename MmaCore::ElementA,
         typename MmaCore::LayoutA,
         1,
-        typename MmaCore::IteratorThreadMapA>;
+        typename MmaCore::IteratorThreadMapA,
+        MmaCore::IteratorThreadMapA::kElementsPerAccess, // AccessSize
+        false, // Gather
+        false // LoadFromGlobalMemoryOnly
+        >;
 
     // Define iterators over tiles from the B operand
     using IteratorB = cutlass::transform::threadblock::PredicatedTileIterator<
@@ -174,17 +241,144 @@ struct AttentionKernel {
         typename MmaCore::ElementC,
         typename MmaCore::LayoutC,
         typename MmaCore::MmaPolicy>;
+
+    static __device__ void compute_dot_product_att_value(
+        typename Mma::SharedStorage& shared_storage,
+        int32_t const& iter_key_start,
+        at::TensorAccessor<scalar_t, 2, at::DefaultPtrTraits, int32_t>& value,
+        cutlass::Array<accum_t, kQueriesPerBlock> const& m_prime,
+        accum_t si[kQueriesPerBlock][kNumWarpsPerBlock * kWarpSize],
+        at::TensorAccessor<output_t, 2, at::DefaultPtrTraits, int32_t>&
+            output) {
+      cutlass::gemm::GemmCoord problem_size(
+          std::min(
+              (int32_t)kQueriesPerBlock, output.size(0) - query_start()), // M
+          value.size(1), // N
+          std::min(
+              int32_t(kNumWarpsPerBlock * kWarpSize),
+              value.size(0) - iter_key_start) // K
+      );
+      typename IteratorA::Params params_A(kNumWarpsPerBlock * kWarpSize);
+      typename IteratorA::TensorRef ref_A(
+          &si[0][0], kNumWarpsPerBlock * kWarpSize);
+
+      typename IteratorB::Params params_B(
+          typename MmaCore::LayoutB(value.stride(0)));
+      typename IteratorB::TensorRef ref_B(
+          &value[iter_key_start][0], value.stride(0));
+
+      static_assert(
+          MmaCore::WarpCount::kM * MmaCore::WarpCount::kN *
+              MmaCore::WarpCount::kK ==
+          kNumWarpsPerBlock);
+
+      const int64_t nBlockN =
+          ceil_div((int64_t)problem_size.n(), int64_t(ThreadblockShape::kN));
+      for (int blockN = 0; blockN < nBlockN; ++blockN) {
+        // Compute threadblock location
+        cutlass::gemm::GemmCoord tb_tile_offset = {0, blockN, 0};
+
+        cutlass::MatrixCoord tb_offset_A{
+            tb_tile_offset.m() * Mma::Shape::kM, tb_tile_offset.k()};
+
+        cutlass::MatrixCoord tb_offset_B{
+            tb_tile_offset.k(), tb_tile_offset.n() * Mma::Shape::kN};
+
+        // Construct iterators to A and B operands
+        typename Mma::IteratorA iterator_A(
+            params_A,
+            ref_A.data(),
+            {problem_size.m(), problem_size.k()},
+            thread_id(),
+            tb_offset_A);
+
+        typename Mma::IteratorB iterator_B(
+            params_B,
+            ref_B.data(),
+            {problem_size.k(), problem_size.n()},
+            thread_id(),
+            tb_offset_B);
+
+        // Construct thread-scoped matrix multiply
+        Mma mma(shared_storage, thread_id(), warp_id(), lane_id());
+
+        auto iterator_C_offset_m = (tb_tile_offset.m() * Mma::WarpCount::kM) +
+            (warp_id() % Mma::WarpCount::kM);
+        auto iterator_C_offset_n = (tb_tile_offset.n() * Mma::WarpCount::kN) +
+            (warp_id() / Mma::WarpCount::kM);
+        using LaneMmaShape = typename Mma::Policy;
+        typename Mma::Operator::IteratorC::Policy::LaneLayout lane_layout =
+            Mma::Operator::IteratorC::Policy::get_lane_layout();
+        cutlass::MatrixCoord lane_offset =
+            lane_layout.inverse(lane_id()) *
+            cutlass::MatrixCoord(
+                Mma::Operator::IteratorC::Policy::LaneMmaShape::kM,
+                Mma::Operator::IteratorC::Policy::LaneMmaShape::kN);
+
+        typename Mma::FragmentC accum,
+            accum2; // cutlass::Array<float, 16, true>
+        // TODO: We could avoid all this mess using cutlass's Epilogue concept I
+        // think but I got lost in templates and reimplemented everything
+
+        const int32_t thread_offset_m =
+            Mma::WarpGemm::kM * iterator_C_offset_m + lane_offset.row();
+        const int32_t thread_offset_n =
+            Mma::WarpGemm::kN * iterator_C_offset_n + lane_offset.column();
+        output_t* output_ptr = &output[query_start()][0];
+        const int32_t output_s0 = output.stride(0);
+        const int32_t max_m = output.size(0) - query_start();
+        const int32_t max_n = output.size(1);
+
+        // Load data already calculated, and rescale it (as the max value for
+        // the softmax might have changed) Technically, we could do that on
+        // `accum`, but then we would have to wait for load to finish to start
+        // the gemm calculations. Let's rather load it in parallel (software
+        // pipelining) on another register `accum2`
+        accum.clear();
+        accum2.clear();
+        iterate_on_frag<Mma::Operator::IteratorC>(
+            accum2,
+            thread_offset_m,
+            thread_offset_n,
+            [&](typename Mma::FragmentC::reference accum_v,
+                int32_t m,
+                int32_t n) {
+              if (m < max_m && n < max_n) {
+                accum_v = accum_t(output_ptr[m * output_s0 + n]) * m_prime[m];
+              }
+            });
+        int gemm_k_iterations =
+            (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
+
+        // Compute threadblock-scoped matrix multiply-add
+        mma(gemm_k_iterations, accum, iterator_A, iterator_B, accum);
+
+        // Add discounted `v_prime` (stored in `accum2`) to `accum` (which will
+        // be stored to `output`)
+        accum = cutlass::plus<decltype(accum)>()(accum, accum2);
+        iterate_on_frag<Mma::Operator::IteratorC>(
+            accum,
+            thread_offset_m,
+            thread_offset_n,
+            [&](typename Mma::FragmentC::reference accum_v,
+                int32_t const& m,
+                int32_t const& n) {
+              if (m < max_m && n < max_n) {
+                output_ptr[m * output_s0 + n] = output_t(accum_v);
+              }
+            });
+      }
+    }
   };
 
-  static int64_t getNumBlocksY(int64_t num_queries) {
-    return ceil_div(num_queries, kQueriesPerBlock);
-  }
-
-  static constexpr int64_t kSiDim1 = kNumWarpsPerBlock * kWarpSize;
+  static constexpr int64_t kAlignmentQ = MM0::kAlignmentA;
+  static constexpr int64_t kAlignmentK = MM0::kAlignmentB;
+  static constexpr int64_t kAlignmentV = 1;
 
   struct SharedStorageGlobal {
-    accum_t si[kQueriesPerBlock][kSiDim1];
+    accum_t si[kQueriesPerBlock][kNumWarpsPerBlock * kWarpSize];
     cutlass::Array<accum_t, kQueriesPerBlock> mi;
+    typename MM1::Mma::SharedStorage mm1;
   };
 
   union SharedStorage {
@@ -267,7 +461,13 @@ struct AttentionKernel {
 
       // 4. Partial matmull with the values we have and V
       // `v* <- v* . exp(m* - mi) + v_i . exp(si - mi)`
-      compute_dot_product_att_value(iter_key_start, value, m_prime, si, output);
+      MM1::compute_dot_product_att_value(
+          shared_storage.after_mm0.mm1,
+          iter_key_start,
+          value,
+          m_prime,
+          si,
+          output);
       __syncthreads(); // we modify `m_prime` after
 
       // 5. `m_prime` <- `mi`
@@ -308,188 +508,6 @@ struct AttentionKernel {
         *(logsumexp.data() + query_start() + q) =
             accum_t(m_prime[q]) + std::log(accum_t(s_prime[q]));
       }
-    }
-  }
-
-  // cutlass version
-  static __device__ void compute_dot_product_att_value(
-      int32_t const& iter_key_start,
-      at::TensorAccessor<scalar_t, 2, at::DefaultPtrTraits, int32_t>& value,
-      cutlass::Array<accum_t, kQueriesPerBlock> const& m_prime,
-      accum_t si[kQueriesPerBlock][kSiDim1],
-      at::TensorAccessor<output_t, 2, at::DefaultPtrTraits, int32_t>& output) {
-    using ThreadblockShape = cutlass::gemm::
-        GemmShape<kQueriesPerBlock, kNumWarpsPerBlock * kWarpSize, 8>;
-    using WarpShape = cutlass::gemm::GemmShape<kQueriesPerBlock, kWarpSize, 8>;
-    using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;
-
-    // default_mma_core_simt.h
-    using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
-        ThreadblockShape, // ThreadblockShape,
-        WarpShape, // WarpShape,
-        InstructionShape, // InstructionShape,
-        accum_t, // ElementA,
-        cutlass::layout::RowMajor, // LayoutA,
-        scalar_t, // ElementB,
-        cutlass::layout::RowMajor, // LayoutB,
-        accum_t, // ElementC,
-        cutlass::layout::RowMajor, // LayoutC,
-        // Just use `cutlass::arch::OpClassTensorOp` for TensorCores (requires
-        // sm>7.0)
-        cutlass::arch::
-            OpClassSimt, // OpClass:
-                         // OpClassSimt/OpClassWmmaTensorOp/OpClassTensorOp
-        2, // Stages,
-        cutlass::arch::OpMultiplyAdd // Operator,
-        >;
-
-    using IteratorA = cutlass::transform::threadblock::PredicatedTileIterator<
-        cutlass::MatrixShape<ThreadblockShape::kM, ThreadblockShape::kK>,
-        typename MmaCore::ElementA,
-        typename MmaCore::LayoutA,
-        1,
-        typename MmaCore::IteratorThreadMapA,
-        MmaCore::IteratorThreadMapA::kElementsPerAccess, // AccessSize
-        false, // Gather
-        false // LoadFromGlobalMemoryOnly
-        >;
-
-    // Define iterators over tiles from the B operand
-    using IteratorB = cutlass::transform::threadblock::PredicatedTileIterator<
-        cutlass::MatrixShape<ThreadblockShape::kK, ThreadblockShape::kN>,
-        typename MmaCore::ElementB,
-        typename MmaCore::LayoutB,
-        0,
-        typename MmaCore::IteratorThreadMapB>;
-
-    using Mma = cutlass::gemm::threadblock::MmaPipelined<
-        typename MmaCore::Shape,
-        IteratorA,
-        typename MmaCore::SmemIteratorA,
-        IteratorB,
-        typename MmaCore::SmemIteratorB,
-        typename MmaCore::ElementC,
-        typename MmaCore::LayoutC,
-        typename MmaCore::MmaPolicy>;
-
-    cutlass::gemm::GemmCoord problem_size(
-        std::min(
-            (int32_t)kQueriesPerBlock, output.size(0) - query_start()), // M
-        value.size(1), // N
-        std::min(
-            int32_t(kNumWarpsPerBlock * kWarpSize),
-            value.size(0) - iter_key_start) // K
-    );
-    typename IteratorA::Params params_A(kSiDim1);
-    typename IteratorA::TensorRef ref_A(&si[0][0], kSiDim1);
-
-    typename IteratorB::Params params_B(
-        typename MmaCore::LayoutB(value.stride(0)));
-    typename IteratorB::TensorRef ref_B(
-        &value[iter_key_start][0], value.stride(0));
-
-    static_assert(
-        MmaCore::WarpCount::kM * MmaCore::WarpCount::kN *
-            MmaCore::WarpCount::kK ==
-        kNumWarpsPerBlock);
-
-    const int64_t nBlockN =
-        ceil_div((int64_t)problem_size.n(), int64_t(ThreadblockShape::kN));
-    for (int blockN = 0; blockN < nBlockN; ++blockN) {
-      // Shared storage needed by threadblock-scoped matrix multiply-accumulate
-      __shared__ typename Mma::SharedStorage shared_storage;
-
-      // Compute threadblock location
-      cutlass::gemm::GemmCoord tb_tile_offset = {0, blockN, 0};
-
-      cutlass::MatrixCoord tb_offset_A{
-          tb_tile_offset.m() * Mma::Shape::kM, tb_tile_offset.k()};
-
-      cutlass::MatrixCoord tb_offset_B{
-          tb_tile_offset.k(), tb_tile_offset.n() * Mma::Shape::kN};
-
-      // Construct iterators to A and B operands
-      typename Mma::IteratorA iterator_A(
-          params_A,
-          ref_A.data(),
-          {problem_size.m(), problem_size.k()},
-          thread_id(),
-          tb_offset_A);
-
-      typename Mma::IteratorB iterator_B(
-          params_B,
-          ref_B.data(),
-          {problem_size.k(), problem_size.n()},
-          thread_id(),
-          tb_offset_B);
-
-      // Construct thread-scoped matrix multiply
-      Mma mma(shared_storage, thread_id(), warp_id(), lane_id());
-
-      auto iterator_C_offset_m = (tb_tile_offset.m() * Mma::WarpCount::kM) +
-          (warp_id() % Mma::WarpCount::kM);
-      auto iterator_C_offset_n = (tb_tile_offset.n() * Mma::WarpCount::kN) +
-          (warp_id() / Mma::WarpCount::kM);
-      using LaneMmaShape = typename Mma::Policy;
-      typename Mma::Operator::IteratorC::Policy::LaneLayout lane_layout =
-          Mma::Operator::IteratorC::Policy::get_lane_layout();
-      cutlass::MatrixCoord lane_offset =
-          lane_layout.inverse(lane_id()) *
-          cutlass::MatrixCoord(
-              Mma::Operator::IteratorC::Policy::LaneMmaShape::kM,
-              Mma::Operator::IteratorC::Policy::LaneMmaShape::kN);
-
-      typename Mma::FragmentC accum, accum2; // cutlass::Array<float, 16, true>
-      // TODO: We could avoid all this mess using cutlass's Epilogue concept I
-      // think but I got lost in templates and reimplemented everything
-
-      const int32_t thread_offset_m =
-          Mma::WarpGemm::kM * iterator_C_offset_m + lane_offset.row();
-      const int32_t thread_offset_n =
-          Mma::WarpGemm::kN * iterator_C_offset_n + lane_offset.column();
-      output_t* output_ptr = &output[query_start()][0];
-      const int32_t output_s0 = output.stride(0);
-      const int32_t max_m = output.size(0) - query_start();
-      const int32_t max_n = output.size(1);
-
-      // Load data already calculated, and rescale it (as the max value for the
-      // softmax might have changed) Technically, we could do that on `accum`,
-      // but then we would have to wait for load to finish to start the gemm
-      // calculations. Let's rather load it in parallel (software pipelining) on
-      // another register `accum2`
-      accum.clear();
-      accum2.clear();
-      iterate_on_frag<Mma::Operator::IteratorC>(
-          accum2,
-          thread_offset_m,
-          thread_offset_n,
-          [&](typename Mma::FragmentC::reference accum_v,
-              int32_t m,
-              int32_t n) {
-            if (m < max_m && n < max_n) {
-              accum_v = accum_t(output_ptr[m * output_s0 + n]) * m_prime[m];
-            }
-          });
-      int gemm_k_iterations =
-          (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
-
-      // Compute threadblock-scoped matrix multiply-add
-      mma(gemm_k_iterations, accum, iterator_A, iterator_B, accum);
-
-      // Add discounted `v_prime` (stored in `accum2`) to `accum` (which will be
-      // stored to `output`)
-      accum = cutlass::plus<decltype(accum)>()(accum, accum2);
-      iterate_on_frag<Mma::Operator::IteratorC>(
-          accum,
-          thread_offset_m,
-          thread_offset_n,
-          [&](typename Mma::FragmentC::reference accum_v,
-              int32_t const& m,
-              int32_t const& n) {
-            if (m < max_m && n < max_n) {
-              output_ptr[m * output_s0 + n] = output_t(accum_v);
-            }
-          });
     }
   }
 
@@ -619,7 +637,7 @@ struct AttentionKernel {
 
     // Output results
     typename Mma::Operator::IteratorC iterator_C(
-        {&si[0][0], kSiDim1}, my_lane_id);
+        {&si[0][0], kNumWarpsPerBlock * kWarpSize}, my_lane_id);
 
     iterator_C.add_tile_offset(
         {(tb_tile_offset.m() * Mma::WarpCount::kM) +
@@ -645,7 +663,7 @@ struct AttentionKernel {
       }
       accum_t currentMax = m_prime[q + warp_id()];
       CUTLASS_PRAGMA_UNROLL
-      for (int64_t key_id = 0; key_id < kSiDim1;
+      for (int64_t key_id = 0; key_id < kNumWarpsPerBlock * kWarpSize;
            key_id += kWarpSize) { // parallel lanes
         bool within_bounds = iter_key_start + key_id + lane_id() < num_keys;
 
@@ -697,22 +715,40 @@ struct AttentionKernel {
   }
 };
 
-template <typename AK>
+template <typename AKInfo>
 __global__ void __launch_bounds__(
     // maxThreadsPerBlock specifies the maximum number of threads per block with
     // which the application will ever launch
-    AK::kWarpSize* AK::kNumWarpsPerBlock,
+    AKInfo::kWarpSize* AKInfo::kNumWarpsPerBlock,
     // minBlocksPerMultiprocessor is optional and specifies the desired minimum
     // number of resident blocks per multiprocessor
-    12 / AK::kNumWarpsPerBlock)
+    12 / AKInfo::kNumWarpsPerBlock)
     attention_kernel_batched(
-        at::PackedTensorAccessor32<typename AK::output_t, 3> output,
-        at::PackedTensorAccessor32<typename AK::accum_t, 2> logsumexp,
-        at::PackedTensorAccessor32<typename AK::scalar_t, 3> query,
-        at::PackedTensorAccessor32<typename AK::scalar_t, 3> key,
-        at::PackedTensorAccessor32<typename AK::scalar_t, 3> value) {
+        at::PackedTensorAccessor32<typename AKInfo::output_t, 3> output,
+        at::PackedTensorAccessor32<typename AKInfo::accum_t, 2> logsumexp,
+        at::PackedTensorAccessor32<typename AKInfo::scalar_t, 3> query,
+        at::PackedTensorAccessor32<typename AKInfo::scalar_t, 3> key,
+        at::PackedTensorAccessor32<typename AKInfo::scalar_t, 3> value) {
+#ifndef __CUDA_ARCH__
+  using CurrentArch = cutlass::arch::Sm80;
+#elif (__CUDA_ARCH__ >= 800)
+  using CurrentArch = cutlass::arch::Sm80;
+#elif (__CUDA_ARCH__ >= 750)
+  using CurrentArch = cutlass::arch::Sm75;
+#elif (__CUDA_ARCH__ >= 700)
+  using CurrentArch = cutlass::arch::Sm70;
+#elif (__CUDA_ARCH__ >= 500)
+  using CurrentArch = cutlass::arch::Sm50;
+#else
+#error "Unsupported architecture in __CUDA_ARCH__"
+#endif
+
+#ifdef __CUDA_ARCH__
+  static_assert(CurrentArch::kMinComputeCapability * 10 <= __CUDA_ARCH__);
+#endif
+
   auto batch_id = blockIdx.z;
-  AK::attention_kernel(
+  AttentionKernel<AKInfo, CurrentArch>::attention_kernel(
       output[batch_id],
       logsumexp[batch_id],
       query[batch_id],
@@ -776,6 +812,30 @@ efficient_attention_forward_generic(
       {B, compute_logsumexp ? M : 0},
       query.options().dtype(at::ScalarType::Float));
 
+  cudaDeviceProp* properties =
+      at::cuda::getDeviceProperties(query.device().index());
+  const int computeCapability = properties->major * 10 + properties->minor;
+
+#define DISPATCH_ARCHTAG(func)                                            \
+  {                                                                       \
+    if (computeCapability >= 80) {                                        \
+      using ArchTag = cutlass::arch::Sm80;                                \
+      func();                                                             \
+    } else if (computeCapability >= 75) {                                 \
+      using ArchTag = cutlass::arch::Sm75;                                \
+      func();                                                             \
+    } else if (computeCapability >= 70) {                                 \
+      using ArchTag = cutlass::arch::Sm75;                                \
+      func();                                                             \
+    } else if (computeCapability >= 50) {                                 \
+      using ArchTag = cutlass::arch::Sm50;                                \
+      func();                                                             \
+    } else {                                                              \
+      TORCH_CHECK(                                                        \
+          false,                                                          \
+          "Your device is too old. We require compute capability >= 50"); \
+    }                                                                     \
+  }
 // Dispatch to the right kernel
 #define DISPATCH_TYPES(func)                                          \
   {                                                                   \
@@ -804,28 +864,42 @@ efficient_attention_forward_generic(
   }
 
   DISPATCH_TYPES(([&]() {
-    constexpr int8_t elementsPer64bits =
-        64 / cutlass::sizeof_bits<scalar_t>::value;
-    bool aligned64bits =
-        (query.stride(1) % elementsPer64bits == 0 &&
-         query.stride(0) % elementsPer64bits == 0 &&
-         key.stride(1) % elementsPer64bits == 0 &&
-         key.stride(0) % elementsPer64bits == 0 &&
-         value.stride(1) % elementsPer64bits == 0 &&
-         value.stride(0) % elementsPer64bits == 0);
+    // Run a more efficient kernel (with `isAligned=True`) if memory is
+    // correctly aligned
+    using AlignedAKI = AttentionKernelInfo<scalar_t, accum_t, output_t, true>;
+    bool isAligned;
+    DISPATCH_ARCHTAG(([&]() {
+      using AlignedAK = AttentionKernel<AlignedAKI, ArchTag>;
+      isAligned =
+          (query.stride(1) % AlignedAK::kAlignmentQ == 0 &&
+           key.stride(1) % AlignedAK::kAlignmentK == 0 &&
+           value.stride(1) % AlignedAK::kAlignmentV == 0);
+    }));
     DISPATCH_BOOL(
-        aligned64bits, Aligned64bits, ([&]() {
-          using AK =
-              AttentionKernel<scalar_t, accum_t, output_t, Aligned64bits>;
+        isAligned, IsAligned, ([&]() {
+          using AKI =
+              AttentionKernelInfo<scalar_t, accum_t, output_t, IsAligned>;
+          DISPATCH_ARCHTAG(([&]() {
+            using AK = AttentionKernel<AKI, ArchTag>;
+            TORCH_INTERNAL_ASSERT(
+                query.stride(1) % AK::kAlignmentQ == 0,
+                "query is not correctly aligned");
+            TORCH_INTERNAL_ASSERT(
+                key.stride(1) % AK::kAlignmentK == 0,
+                "key is not correctly aligned");
+            TORCH_INTERNAL_ASSERT(
+                value.stride(1) % AK::kAlignmentV == 0,
+                "value is not correctly aligned");
+          }));
           using m = math<scalar_t>;
 
           res = at::zeros(
               {B, M, K}, query.options().dtype(math<output_t>::kAtScalarType));
 
-          dim3 grid(AK::kNumBlocksX, AK::getNumBlocksY(M), B);
-          dim3 block(AK::kWarpSize, AK::kNumWarpsPerBlock, 1);
+          dim3 grid(AKI::kNumBlocksX, AKI::getNumBlocksY(M), B);
+          dim3 block(AKI::kWarpSize, AKI::kNumWarpsPerBlock, 1);
 
-          attention_kernel_batched<AK><<<grid, block>>>(
+          attention_kernel_batched<AKI><<<grid, block>>>(
               math<output_t>::packed_accessor<3>(res),
               logsumexp.packed_accessor32<accum_t, 2>(),
               m::packed_accessor<3>(query),
