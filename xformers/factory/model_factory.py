@@ -149,10 +149,12 @@ class xFormer(torch.nn.Module):
             for i in range(config.num_layers):
                 # Label where this layer is in the stack
                 # (for instance useful for the positional encoding, or late layer norm)
-                if i > 0:
+                if len(recipient) > 0:
                     config.layer_position.mark_not_first()
-                if i < config.num_layers - 1:
+
+                if config != stack_configs[-1] or i < config.num_layers - 1:
                     config.layer_position.mark_not_last()
+
                 block = builder(config)  # type: ignore
 
                 # If reversible: extract the reversible sub-parts, else append the block as-is
