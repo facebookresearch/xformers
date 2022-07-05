@@ -10,16 +10,6 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
-reference_steps = {
-    "image": 35176,
-    "listops": 10000,
-    "pathfinder32-curv_contour_length_14": 62400,
-    "pathfinder32-curv_baseline": 62400,
-    "pathfinder32-curv_contour_length_9": 62400,
-    "text": 20000,
-    "retrieval": 30000,
-}
-
 if __name__ == "__main__":
     # Get the user requests
     parser = argparse.ArgumentParser(
@@ -38,10 +28,10 @@ if __name__ == "__main__":
 
     for attention in filter(lambda x: x.is_dir(), root.iterdir()):
         logging.info(f"\nFound results for {attention.stem}")
-        task_logs = attention.glob("*/*.log")
+        task_jsons = attention.glob("*/test_eval_summary.json")
         results[attention.stem] = {}
 
-        for task in filter(lambda x: "__0" in str(x), task_logs):
+        for task in task_jsons:
             task_name = task.stem.split("__")[0]
             logging.info(f"Logs found for task: {task_name}")
             results[attention.stem][task_name] = -1
@@ -49,25 +39,17 @@ if __name__ == "__main__":
 
             # - collect the individual results
             with open(task, "r") as result_file:
-                for line in reversed(result_file.readlines()):
-                    if '"component": "test"' in line:
-                        found_result = True
+                dct = json.load(result_file)
+                if "test_accu_mean" in dct:
+                    found_result = True
+                    results[attention.stem][task_name] = dct["test_accu_mean"]
 
-                        # Check that all the steps are done
-                        res = json.loads(line)
-
-                        if res["train_step_idx"] == reference_steps[task_name]:
-                            results[attention.stem][task_name] = res["best_accu"]
-                            logging.info(
-                                f"Final result found for {task_name}: {results[attention.stem][task_name]}"
-                            )
-                        else:
-                            logging.info(
-                                "Current step: {}/{}. Not finished".format(
-                                    res["train_step_idx"], reference_steps[task_name]
-                                )
-                            )
-                        break
+                    logging.info(
+                        f"Final result found for {task_name} at epoch {dct['train_step_idx']}: "
+                        f"{results[attention.stem][task_name]}"
+                    )
+                else:
+                    break
 
             # - report an error if no result was found
             if not found_result:

@@ -139,11 +139,6 @@ class ModelTrunk(pl.LightningModule):
             * ff_config["hidden_layer_multiplier"]
         )
 
-    def get_progress_bar_dict(self):
-        return {
-            k: v for k, v in super().get_progress_bar_dict().items() if k != "v_num"
-        }
-
     def training_step(  # type: ignore
         self, batch: Dict[str, torch.Tensor], batch_idx: int
     ) -> PLOutput:
@@ -184,11 +179,11 @@ class ModelTrunk(pl.LightningModule):
         logs = {}
         counts = torch.tensor([x["count"] for x in outputs]).float()
         logs["count"] = counts.sum()
-        for key in ("accu", "loss"):
-            logs[key] = (torch.tensor([x[key] for x in outputs]) * counts).sum() / logs[
+        for k in ("accu", "loss"):
+            logs[k] = (torch.tensor([x[k] for x in outputs]) * counts).sum() / logs[
                 "count"
             ]
-        self.log(f"{prefix}_accu_mean", logs["accu"], sync_dist=True)
+            self.log(f"{prefix}_{k}_mean", logs[k], sync_dist=True)
         return logs
 
     def validation_step(  # type: ignore

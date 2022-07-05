@@ -16,7 +16,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from fvcore.nn import FlopCountAnalysis, flop_count_str
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.strategies import DDPStrategy
 from torch.utils.data import DataLoader
@@ -51,10 +51,11 @@ def build_model(args: argparse.Namespace, config: Dict) -> nn.Module:
     task = args.task
     attention_name = args.attention
 
-    if task == Task.Retrieval:
-        model: nn.Module = ModelForSCDual(config[f"{task}"], attention_name)
-    else:
-        model = ModelForSC(config[f"{task}"], attention_name)
+    model: pl.LightningModule = (
+        ModelForSCDual(config[f"{task}"], attention_name)
+        if task == Task.Retrieval
+        else ModelForSC(config[f"{task}"], attention_name)
+    )
 
     logging.info(model)
     summary = pl.utilities.model_summary.LayerSummary(model)
@@ -110,6 +111,11 @@ def get_arg_parser():
         help="Path to the checkpoint directory",
         dest="checkpoint_dir",
         default=f"/checkpoints/{os.getenv('USER')}/xformers",
+    )
+    parser.add_argument(
+        "--checkpoint_path",
+        type=str,
+        help="Path to checkpoint",
     )
     parser.add_argument(
         "--debug",
@@ -187,12 +193,6 @@ def build_dataloaders(
             {per_gpu_batch_size}"
     )
 
-    # Training epochs
-    if accumu_steps > 1:
-        config_training["num_train_steps"] *= accumu_steps
-        config_training["num_eval_steps"] *= accumu_steps
-        config_training["eval_frequency"] *= accumu_steps
-
     dataloaders = {
         k: DataLoader(
             v,
@@ -204,6 +204,20 @@ def build_dataloaders(
         for k, v in datasets.items()
     }
     return dataloaders
+
+
+def get_eval_summary(trainer: pl.Trainer) -> Dict[str, float]:
+    eval_summary: Dict[str, float] = {"train_step_idx": trainer.global_step}
+    for k, v in trainer.callback_metrics.items():
+        eval_summary[k] = v.item()
+    return eval_summary
+
+
+class BasicProgressBar(TQDMProgressBar):
+    def get_metrics(self, trainer, model):
+        items = super().get_metrics(trainer, model)
+        items.pop("v_num", None)
+        return items
 
 
 def benchmark(args):
@@ -226,6 +240,7 @@ def benchmark(args):
 
     model = build_model(args, config)
 
+    progress_bar = BasicProgressBar()
     checkpoint_callback = ModelCheckpoint(
         monitor="val_accu",
         mode="max",
@@ -236,15 +251,18 @@ def benchmark(args):
 
     trainer = pl.Trainer(
         accelerator="gpu",
-        strategy=DDPStrategy(find_unused_parameters=args.debug),
+        strategy=DDPStrategy(find_unused_parameters=args.debug)
+        if not args.skip_train
+        else None,
         accumulate_grad_batches=config_training["gradient_accumulation"],
-        callbacks=[checkpoint_callback],
+        callbacks=[progress_bar, checkpoint_callback],
         detect_anomaly=args.debug,
         deterministic=True,
         gpus=args.world_size,
         limit_val_batches=config_training["num_eval_steps"],
         logger=logger,
         max_steps=config_training["num_train_steps"],
+        num_sanity_val_steps=int(not args.skip_train),
         precision=16 if config_training["mixed_precision"] else 32,
         val_check_interval=config_training["eval_frequency"]
         / float(len(dataloaders["train"])),
@@ -256,15 +274,24 @@ def benchmark(args):
             train_dataloaders=dataloaders["train"],
             val_dataloaders=dataloaders["dev"],
         )
+        ckpt_path = checkpoint_callback.best_model_path
+    else:
+        ckpt_path = args.checkpoint_path
 
-    trainer.validate(
+    trainer.test(
         model,
         dataloaders=dataloaders["test"],
-        ckpt_path=checkpoint_callback.best_model_path,
+        ckpt_path=ckpt_path,
     )
+    eval_summary = get_eval_summary(trainer)
+    with open(os.path.join(log_dir, "test_eval_summary.json"), "w") as f:
+        logging.info(f"Saving test results at {f.name}")
+        json.dump(eval_summary, f)
 
 
 if __name__ == "__main__":
     parser = get_arg_parser()
     args = parser.parse_args()
+    if args.skip_train and args.checkpoint_path is None:
+        raise parser.error("Must provide --checkpoint_path if --skip_train=True")
     benchmark(args)
