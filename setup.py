@@ -10,7 +10,9 @@ import glob
 import os
 import re
 import shutil
+import subprocess
 import sys
+from pathlib import Path
 
 import setuptools
 import torch
@@ -44,6 +46,84 @@ def find_version(version_file_path):
         raise RuntimeError("Unable to find version string.")
 
 
+def get_cuda_version(cuda_dir) -> int:
+    nvcc_bin = "nvcc" if cuda_dir is None else cuda_dir + "/bin/nvcc"
+    raw_output = subprocess.check_output([nvcc_bin, "-V"], universal_newlines=True)
+    output = raw_output.split()
+    release_idx = output.index("release") + 1
+    release = output[release_idx].split(".")
+    bare_metal_major = int(release[0])
+    bare_metal_minor = int(release[1][0])
+
+    assert bare_metal_minor < 100
+    return bare_metal_major * 100 + bare_metal_minor
+
+
+def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
+    # Figure out default archs to target
+    DEFAULT_ARCHS_LIST = ""
+    if cuda_version > 1100:
+        DEFAULT_ARCHS_LIST = "7.5;8.0;8.6"
+    elif cuda_version >= 1100:
+        DEFAULT_ARCHS_LIST = "7.5;8.0"
+    else:
+        return []
+
+    archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST", DEFAULT_ARCHS_LIST)
+    nvcc_archs_flags = []
+    for arch in archs_list.split(";"):
+        assert len(arch) >= 3, f"Invalid sm version: {arch}"
+
+        num = 10 * int(arch[0]) + int(arch[2])
+        # Need at least 7.0
+        if num < 75:
+            continue
+        nvcc_archs_flags.append(f"-gencode=arch=compute_{num},code=sm_{num}")
+        if arch.endswith("+PTX"):
+            nvcc_archs_flags.append(f"-gencode=arch=compute_{num},code=compute_{num}")
+    if not nvcc_archs_flags:
+        return []
+
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    flash_root = os.path.join(this_dir, "third_party", "flash-attention")
+    return [
+        CUDAExtension(
+            name="xformers._C_flashattention",
+            sources=[
+                os.path.join(this_dir, "third_party", "flash-attention", path)
+                for path in [
+                    "csrc/flash_attn/fmha_api.cpp",
+                    "csrc/flash_attn/src/fmha_fprop_fp16_kernel.sm80.cu",
+                    "csrc/flash_attn/src/fmha_dgrad_fp16_kernel_loop.sm80.cu",
+                    "csrc/flash_attn/src/fmha_block_fprop_fp16_kernel.sm80.cu",
+                    "csrc/flash_attn/src/fmha_block_dgrad_fp16_kernel_loop.sm80.cu",
+                ]
+            ],
+            extra_compile_args={
+                **extra_compile_args,
+                "nvcc": extra_compile_args.get("nvcc", [])
+                + [
+                    "-O3",
+                    "-U__CUDA_NO_HALF_OPERATORS__",
+                    "-U__CUDA_NO_HALF_CONVERSIONS__",
+                    "--expt-relaxed-constexpr",
+                    "--expt-extended-lambda",
+                    "--use_fast_math",
+                    "--ptxas-options=-v",
+                    "-lineinfo",
+                ]
+                + nvcc_archs_flags,
+            },
+            include_dirs=[
+                Path(flash_root) / "csrc" / "flash_attn",
+                Path(flash_root) / "csrc" / "flash_attn" / "src",
+                #            Path(flash_root) / 'csrc' / 'flash_attn' / 'cutlass' / 'include',
+                Path(this_dir) / "third_party" / "cutlass" / "include",
+            ],
+        )
+    ]
+
+
 def get_extensions():
     this_dir = os.path.dirname(os.path.abspath(__file__))
     extensions_dir = os.path.join(
@@ -57,6 +137,7 @@ def get_extensions():
     )
 
     sources = main_file + source_cpu
+
     source_cuda = glob.glob(os.path.join(extensions_dir, "cuda", "*.cu"))
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
@@ -74,6 +155,7 @@ def get_extensions():
         extra_compile_args["cxx"].append("-fopenmp")
 
     include_dirs = [extensions_dir]
+    ext_modules = []
 
     if (torch.cuda.is_available() and ((CUDA_HOME is not None))) or os.getenv(
         "FORCE_CUDA", "0"
@@ -86,11 +168,18 @@ def get_extensions():
             nvcc_flags = []
         else:
             nvcc_flags = nvcc_flags.split(" ")
+        cuda_version = get_cuda_version(CUDA_HOME)
+        if cuda_version >= 1102:
+            nvcc_flags += ["--threads", "4"]
         extra_compile_args["nvcc"] = nvcc_flags
+        if cuda_version >= 1100:
+            ext_modules += get_flash_attention_extensions(
+                cuda_version=cuda_version, extra_compile_args=extra_compile_args
+            )
 
     sources = [os.path.join(extensions_dir, s) for s in sources]
 
-    ext_modules = [
+    ext_modules.append(
         extension(
             "xformers._C",
             sorted(sources),
@@ -98,7 +187,7 @@ def get_extensions():
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
         )
-    ]
+    )
 
     return ext_modules
 

@@ -16,6 +16,14 @@ cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires C
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
+def assert_allclose(
+    out: torch.Tensor, ref: torch.Tensor, msg: str = "failed", **kwargs
+) -> None:
+    assert torch.allclose(
+        out, ref, **kwargs
+    ), f"{msg}: max_diff={(out - ref).abs().max()} / atol={kwargs.get('atol', 1e-8)}"
+
+
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     q = q.float()
     k = k.float()
@@ -43,6 +51,7 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     [
         xformers.ops.MemoryEfficientAttentionOp,
         xformers.ops.MemoryEfficientAttentionGenericForwardOp,
+        xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
     ],
 )
 def test_memory_efficient_attention(
@@ -55,14 +64,6 @@ def test_memory_efficient_attention(
     dtype,
     op: xformers.ops.MemoryEfficientAttentionOp,
 ):
-    if (
-        device not in op.SUPPORTED_DEVICES
-        or k_len > op.SUPPORTED_MAX_K
-        or (use_attn_bias and not op.SUPPORTS_ATTN_BIAS)
-        or dtype not in op.SUPPORTED_DTYPES
-    ):
-        return  # Or `pytest.xfail` ?
-
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
@@ -74,12 +75,19 @@ def test_memory_efficient_attention(
         )
         attn_bias = attn_bias.expand(batch_size, q_len, kv_len)
 
+    if not op.supports(
+        xformers.ops.AttentionOpDispatch.from_arguments(
+            query=query, key=key, value=value, attn_bias=attn_bias
+        )
+    ):
+        pytest.skip("unsupported configuration")
+
     out = xformers.ops.memory_efficient_attention(
         query, key, value, attn_bias, op=op
     ).float()
     ref = ref_attention(query, key, value, attn_bias)
 
-    assert torch.allclose(out, ref, atol=2e-4)
+    assert_allclose(out, ref, atol=op.FORWARD_ERROR_ATOL)
 
 
 @pytest.mark.parametrize("k_len", [5, 6, 32])
@@ -97,7 +105,7 @@ def test_key_query_all_ones(device, q_len, kv_len, batch_size, k_len):
     # this should be equivalent to the average over value
     ref = value.mean(1, keepdim=True).expand_as(query)
 
-    assert torch.allclose(out, ref, atol=1e-5)
+    assert_allclose(out, ref, atol=1e-5)
 
 
 @pytest.mark.parametrize("k_len", [5, 6, 32])
@@ -122,24 +130,24 @@ def test_logsumexp(
     dtype,
     op: xformers.ops.MemoryEfficientAttentionOp,
 ):
-    if (
-        device not in op.SUPPORTED_DEVICES
-        or k_len > op.SUPPORTED_MAX_K
-        or dtype not in op.SUPPORTED_DTYPES
-    ):
-        return
-
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
     value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
+
+    if not op.supports(
+        xformers.ops.AttentionOpDispatch.from_arguments(
+            query=query, key=key, value=value
+        )
+    ):
+        pytest.skip("unsupported configuration")
 
     _, lse, _, _ = op.FORWARD_OPERATOR(query, key, value, True, None, 0.0)
     ref_lse = (
         (query.float() / k_len**0.5) @ key.float().transpose(-2, -1)
     ).logsumexp(-1)
 
-    assert torch.allclose(lse, ref_lse, atol=2e-4)
+    assert_allclose(lse, ref_lse, atol=2e-4)
 
 
 @pytest.mark.parametrize("use_attn_bias", [False, True])
@@ -149,12 +157,13 @@ def test_logsumexp(
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 64, 128])
 @pytest.mark.parametrize("q_len", [2, 3, 5, 32, 128])
 @pytest.mark.parametrize("device", _devices)
-@pytest.mark.parametrize("dtype", [torch.float])
+@pytest.mark.parametrize("dtype", [torch.float, torch.half])
 @pytest.mark.parametrize(
     "op",
     [
         xformers.ops.MemoryEfficientAttentionOp,
         xformers.ops.MemoryEfficientAttentionGenericForwardOp,
+        xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
     ],
 )
 def test_memory_efficient_attention_backward(
@@ -168,14 +177,6 @@ def test_memory_efficient_attention_backward(
     dtype,
     op: xformers.ops.MemoryEfficientAttentionOp,
 ):
-    if (
-        device not in op.SUPPORTED_DEVICES
-        or k_len > op.SUPPORTED_MAX_K
-        or (use_attn_bias and not op.SUPPORTS_ATTN_BIAS)
-        or dtype not in op.SUPPORTED_DTYPES
-    ):
-        return
-
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
@@ -187,6 +188,13 @@ def test_memory_efficient_attention_backward(
             torch.randn((batch_size, 1, kv_len), device=device, dtype=dtype) * scale
         )
         attn_bias = attn_bias.expand(batch_size, q_len, kv_len)
+
+    if not op.supports(
+        xformers.ops.AttentionOpDispatch.from_arguments(
+            query=query, key=key, value=value, attn_bias=attn_bias
+        )
+    ):
+        pytest.skip("unsupported configuration")
 
     query.requires_grad_(True)
     key.requires_grad_(True)
@@ -211,6 +219,10 @@ def test_memory_efficient_attention_backward(
     ref.backward(grad_out)
 
     atol = 2e-4 + 2e-6 * k_len * kv_len * math.sqrt(batch_size) * math.sqrt(q_len)
+    rtol = 1e-8
+    if dtype is torch.half:
+        atol = 3e-2
+        rtol = 1e-2
 
     # (for mypy)
     assert isinstance(query.grad, torch.Tensor)
@@ -222,9 +234,7 @@ def test_memory_efficient_attention_backward(
         ("key", grad_k, key.grad),
         ("value", grad_v, value.grad),
     ]:
-        assert torch.allclose(
-            calc_grad, ref_grad, atol=atol
-        ), f"{name} doesn't match (max_diff={(calc_grad - ref_grad).abs().max()} > {atol}) - dtype={dtype}"
+        assert_allclose(calc_grad, ref_grad, name, atol=atol, rtol=rtol)
 
 
 def _vec_binom_test(x, n, p):
@@ -276,7 +286,7 @@ def test_dropout(device, q_len, kv_len, batch_size, k_len, p, seed):
     torch.manual_seed(seed)
     out2 = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, p)
 
-    assert torch.allclose(out, out2)
+    assert_allclose(out, out2)
 
     mask = torch.empty((batch_size, q_len, kv_len), device=device)
 
@@ -284,7 +294,7 @@ def test_dropout(device, q_len, kv_len, batch_size, k_len, p, seed):
     mask = torch.ops.xformers._temp_dropout(mask, p)
 
     ref = ref_attention(query, key, value, attn_bias, mask, p)
-    assert torch.allclose(out, ref, atol=2e-4), f"{(out - ref).abs().max()}"
+    assert_allclose(out, ref, atol=2e-4), f"{(out - ref).abs().max()}"
 
     num_trials = 1000
     p_val_tol = 0.0001
@@ -348,15 +358,9 @@ def test_dropout_backward(device, q_len, kv_len, batch_size, k_len, p):
     # extra accumulation step in grad_q, which is not present in the CUDA
     # implementation
     atol = 5e-4 if device == "cuda" else 6e-4
-    assert torch.allclose(
-        grad_q, query.grad, atol=atol
-    ), f"grad_q doesn't match {(grad_q - query.grad).abs().max()}"
-    assert torch.allclose(
-        grad_k, key.grad, atol=atol
-    ), f"grad_k doesn't match {(grad_k - key.grad).abs().max()}"
-    assert torch.allclose(
-        grad_v, value.grad, atol=atol
-    ), f"grad_v doesn't match {(grad_v - value.grad).abs().max()}"
+    assert_allclose(grad_q, query.grad, "grad_q", atol=atol)
+    assert_allclose(grad_k, key.grad, "grad_k", atol=atol)
+    assert_allclose(grad_v, value.grad, "grad_v", atol=atol)
 
 
 @pytest.mark.parametrize("k_len", [32])
@@ -380,7 +384,7 @@ def test_memory_efficient_attention_full_block_masked(
     out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias)
     ref = ref_attention(query, key, value, attn_bias)
 
-    assert torch.allclose(out, ref, atol=2e-4)
+    assert_allclose(out, ref, atol=2e-4)
 
     query.requires_grad_(True)
     key.requires_grad_(True)
@@ -406,12 +410,6 @@ def test_memory_efficient_attention_full_block_masked(
     # extra accumulation step in grad_q, which is not present in the CUDA
     # implementation
     atol = 5e-4 if device == "cuda" else 6e-4
-    assert torch.allclose(
-        grad_q, query.grad, atol=atol
-    ), f"grad_q doesn't match {(grad_q - query.grad).abs().max()}"
-    assert torch.allclose(
-        grad_k, key.grad, atol=atol
-    ), f"grad_k doesn't match {(grad_k - key.grad).abs().max()}"
-    assert torch.allclose(
-        grad_v, value.grad, atol=atol
-    ), f"grad_v doesn't match {(grad_v - value.grad).abs().max()}"
+    assert_allclose(grad_q, query.grad, "grad_q", atol=atol)
+    assert_allclose(grad_k, key.grad, "grad_k", atol=atol)
+    assert_allclose(grad_v, value.grad, "grad_v", atol=atol)

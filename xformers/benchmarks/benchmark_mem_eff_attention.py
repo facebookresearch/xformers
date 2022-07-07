@@ -44,6 +44,7 @@ p = 0.0
 FORCE_OP = None
 # FORCE_OP = xformers.ops.MemoryEfficientAttentionOp
 # FORCE_OP = xformers.ops.MemoryEfficientAttentionGenericForwardOp
+# FORCE_OP = xformers.ops.MemoryEfficientAttentionFlashAttentionOp
 
 
 def product_dict(**kwargs):
@@ -96,7 +97,7 @@ def benchmark_forward(shape, num_threads: int, use_attn_bias: bool, dtype):
             q.float(),
             attn_bias.float() if attn_bias is not None else None,
         )
-        assert (r - rr).abs().max() < 2e-4, (r - rr).abs().max()
+        assert (r - rr).abs().max() < 4e-3, (r - rr).abs().max()
         del r, rr
 
     yield benchmark.Timer(

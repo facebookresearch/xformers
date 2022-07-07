@@ -10,6 +10,13 @@ from typing import Any, List, Optional, Set, Type, Union
 
 import torch
 
+try:
+    from . import _C_flashattention
+
+    has_flashattention = True
+except ImportError:
+    has_flashattention = False
+
 
 def masked_matmul(a, b, mask=None):
     if torch.overrides.has_torch_function((a, b, mask)):
@@ -76,12 +83,31 @@ class AttentionOpBase(torch.autograd.Function):
     """
 
     FORWARD_OPERATOR: Any
+    FORWARD_ERROR_ATOL: float = 2e-4
     SUPPORTED_DEVICES: Set[str]
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
     SUPPORTS_ATTN_BIAS: bool
     SUPPORTS_DROPOUT: bool
     NAME: str
+
+    @classmethod
+    def forward_no_grad(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_bias: Optional[torch.Tensor],
+        p: float,
+    ) -> torch.Tensor:
+        return cls.FORWARD_OPERATOR(
+            query=query,
+            key=key,
+            value=value,
+            compute_logsumexp=False,
+            attn_bias=attn_bias,
+            p=p,
+        )[0]
 
     @classmethod
     def forward(cls, ctx, query, key, value, attn_bias, p):
@@ -166,6 +192,241 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
         return grad_q, grad_k, grad_v, None, None
 
 
+class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
+    """
+    This is a wrapper to make FlashAttention compatible with xformers's API
+    Most of this code was taken from:
+    https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attn_interface.py
+    """
+
+    FORWARD_OPERATOR = None
+    FORWARD_ERROR_ATOL = 5e-2
+    SUPPORTED_DEVICES = {"cuda"}
+    SUPPORTED_DTYPES = {torch.half}
+    SUPPORTED_MAX_K = 128
+    SUPPORTS_ATTN_BIAS = False
+    SUPPORTS_DROPOUT = False
+    NAME = "flshatt"
+
+    @classmethod
+    def supports(cls, d: "AttentionOpDispatch") -> bool:
+        if not has_flashattention:
+            return False
+        if not super(MemoryEfficientAttentionFlashAttentionOp, cls).supports(d):
+            return False
+        # We know `d.device` is cuda now
+        # d=128 is only supported on A100
+        is_sm80 = torch.cuda.get_device_capability(d.device)[0] >= 8
+        if d.k not in [16, 32, 64, 128] or (d.k == 128 and not is_sm80):
+            return False
+        return True
+
+    @classmethod
+    def forward_no_grad(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_bias: Optional[torch.Tensor],
+        p: float,
+    ) -> torch.Tensor:
+        return cls.forward(
+            ctx=None, query=query, key=key, value=value, attn_bias=attn_bias, p=p
+        )
+
+    @classmethod
+    def forward(cls, ctx, query, key, value, attn_bias, p):
+        causal = False
+        return_softmax = False
+
+        assert attn_bias is None, "Not implemented"
+        batch = query.shape[0]
+        seqlen_q = query.shape[1]
+        seqlen_k = key.shape[1]
+        head_dim_q = query.shape[2]
+        head_dim_v = query.shape[2]
+
+        cu_seqlens_k = torch.arange(
+            0,
+            (batch + 1) * seqlen_k,
+            step=seqlen_k,
+            dtype=torch.int32,
+            device=query.device,
+        )
+        if seqlen_q == seqlen_k:
+            cu_seqlens_q = cu_seqlens_k
+        else:
+            cu_seqlens_q = torch.arange(
+                0,
+                (batch + 1) * seqlen_q,
+                step=seqlen_q,
+                dtype=torch.int32,
+                device=query.device,
+            )
+
+        # Initially we have `query.shape = [batch, seqlen, head_dim_q]`
+        # We want format `[batch * seqlen, num_heads, head_dim_q]`
+        query_api_input_shape = query.shape
+        key_api_input_shape = key.shape
+        value_api_input_shape = value.shape
+        query = query.reshape([batch * seqlen_q, 1, head_dim_q])
+        key = key.reshape([batch * seqlen_k, 1, head_dim_q])
+        value = value.reshape([batch * seqlen_k, 1, head_dim_v])
+
+        # Save rng_state because the backward pass will regenerate the dropout mask
+        rng_state = torch.cuda.get_rng_state() if p > 0 else None
+        softmax_scale = query.shape[-1] ** (-0.5)
+        out, softmax_lse, S_dmask = cls._flash_attn_forward(
+            query,
+            key,
+            value,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            seqlen_q,
+            seqlen_k,
+            p,
+            softmax_scale,
+            causal=causal,
+            return_softmax=return_softmax,
+        )
+        if ctx is not None:
+            ctx.save_for_backward(
+                query,
+                key,
+                value,
+                out,
+                softmax_lse,
+                cu_seqlens_q,
+                cu_seqlens_k,
+                rng_state,
+            )
+            ctx.dropout_p = p
+            ctx.max_seqlen_q = seqlen_q
+            ctx.max_seqlen_k = seqlen_k
+            ctx.softmax_scale = softmax_scale
+            ctx.causal = causal
+            ctx.kernel_output_shape = out.shape
+            ctx.query_api_input_shape = query_api_input_shape
+            ctx.key_api_input_shape = key_api_input_shape
+            ctx.value_api_input_shape = value_api_input_shape
+        return out.reshape([batch, seqlen_q, head_dim_v])
+
+    @classmethod
+    def backward(cls, ctx, grad):
+        (
+            q,
+            k,
+            v,
+            out,
+            softmax_lse,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            rng_state,
+        ) = ctx.saved_tensors
+        if rng_state is not None:
+            cur_rng_state = torch.cuda.get_rng_state()
+            torch.cuda.set_rng_state(rng_state)
+        dq, dk, dv = torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
+        assert grad.dtype == torch.half
+        cls._flash_attn_backward(
+            grad.reshape(ctx.kernel_output_shape),
+            q,
+            k,
+            v,
+            out,
+            softmax_lse,
+            dq,
+            dk,
+            dv,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            ctx.max_seqlen_q,
+            ctx.max_seqlen_k,
+            ctx.dropout_p,
+            ctx.softmax_scale,
+            ctx.causal,
+        )
+        if rng_state is not None:
+            torch.cuda.set_rng_state(cur_rng_state)
+        dq = dq.reshape(ctx.query_api_input_shape)
+        dk = dk.reshape(ctx.key_api_input_shape)
+        dv = dv.reshape(ctx.value_api_input_shape)
+        return dq, dk, dv, None, None
+
+    @staticmethod
+    def _flash_attn_forward(
+        q,
+        k,
+        v,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        max_seqlen_q,
+        max_seqlen_k,
+        dropout_p,
+        softmax_scale,
+        causal,
+        return_softmax,
+    ):
+        out, softmax_lse, *rest = _C_flashattention.fwd(
+            q,
+            k,
+            v,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            max_seqlen_q,
+            max_seqlen_k,
+            dropout_p,
+            softmax_scale,
+            False,
+            causal,
+            return_softmax,
+            None,
+        )
+        S_dmask = rest[0] if return_softmax else None
+        return out, softmax_lse, S_dmask
+
+    @staticmethod
+    def _flash_attn_backward(
+        dout,
+        q,
+        k,
+        v,
+        out,
+        softmax_lse,
+        dq,
+        dk,
+        dv,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        max_seqlen_q,
+        max_seqlen_k,
+        dropout_p,
+        softmax_scale,
+        causal,
+    ):
+        softmax_d = _C_flashattention.bwd(
+            dout,
+            q,
+            k,
+            v,
+            out,
+            softmax_lse,
+            dq,
+            dk,
+            dv,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            max_seqlen_q,
+            max_seqlen_k,
+            dropout_p,
+            softmax_scale,
+            False,
+            causal,
+            None,
+        )
+        return dq, dk, dv, softmax_d
+
+
 @dataclass
 class AttentionOpDispatch:
     dtype: torch.dtype
@@ -177,6 +438,7 @@ class AttentionOpDispatch:
     @property
     def op(self) -> Type[AttentionOpBase]:
         priority_list_ops: List[Type[AttentionOpBase]] = [
+            MemoryEfficientAttentionFlashAttentionOp,
             MemoryEfficientAttentionOp,
             MemoryEfficientAttentionGenericForwardOp,
         ]
@@ -184,6 +446,23 @@ class AttentionOpDispatch:
             if op.supports(self):
                 return op
         raise NotImplementedError(f"No operator found for this attention: {self}")
+
+    @classmethod
+    def from_arguments(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_bias: Optional[torch.Tensor] = None,
+        p: float = 0.0,
+    ) -> "AttentionOpDispatch":
+        return AttentionOpDispatch(
+            dtype=query.dtype,
+            device=query.device,
+            k=query.shape[-1],
+            has_dropout=p > 0.0,
+            has_attn_bias=attn_bias is not None,
+        )
 
 
 def memory_efficient_attention(
@@ -201,14 +480,12 @@ def memory_efficient_attention(
 
     """
     if op is None:
-        op = AttentionOpDispatch(
-            dtype=query.dtype,
-            device=query.device,
-            k=query.shape[-1],
-            has_dropout=p > 0.0,
-            has_attn_bias=attn_bias is not None,
+        op = AttentionOpDispatch.from_arguments(
+            query=query, key=key, value=value, attn_bias=attn_bias, p=p
         ).op
     # fast-path that doesn't require computing the logsumexp for backward computation
     if all(x.requires_grad is False for x in [query, key, value]):
-        return op.FORWARD_OPERATOR(query, key, value, False, attn_bias, p)[0]
+        return op.forward_no_grad(
+            query=query, key=key, value=value, attn_bias=attn_bias, p=p
+        )
     return op.apply(query, key, value, attn_bias, p)
