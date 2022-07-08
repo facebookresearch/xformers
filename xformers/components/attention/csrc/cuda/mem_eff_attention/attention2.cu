@@ -78,6 +78,7 @@ __device__ __forceinline__ scalar_t warpMax(scalar_t val) {
 
 template <
     typename scalar_t,
+    typename vec_t,
     int kBlockWidth,
     int kBlockItemsY,
     int kBlockItemsX,
@@ -98,8 +99,6 @@ __global__ void attention_kernel(
 
   if (query_idx >= M)
     return;
-
-  using vec_t = float4;
 
   constexpr int kVecSize = sizeof(vec_t) / sizeof(scalar_t);
   constexpr int kThreadItemsK = kBlockItemsK / kBlockWidth / kVecSize;
@@ -122,7 +121,8 @@ __global__ void attention_kernel(
     auto query_i = reinterpret_cast<vec_t*>(query[batch_idx][query_idx].data());
     auto kkey_j = reinterpret_cast<vec_t*>(key[batch_idx].data());
 
-    for (int k = K; k >= kBlockItemsK; k -= kBlockItemsK) {
+    int k = K;
+    for (; k >= kBlockItemsK; k -= kBlockItemsK) {
       // load queries
 #pragma unroll
       for (int k_item_idx = 0; k_item_idx < kThreadItemsK; ++k_item_idx) {
@@ -158,6 +158,42 @@ __global__ void attention_kernel(
         }
       }
     }
+    // residue computation
+    if (k > 0) {
+      k -= threadIdx.x * kVecSize;
+      // load queries
+      int residue = k;
+#pragma unroll
+      for (int k_item_idx = 0; k_item_idx < kThreadItemsK; ++k_item_idx) {
+        if (residue > 0) {
+          lhs_fragment[k_item_idx] = __ldg(query_i + threadIdx.x);
+          iMul(scale, lhs_fragment + k_item_idx);
+        }
+        query_i += kBlockWidth;
+        residue -= kBlockWidth * kVecSize;
+      }
+
+      // load keys and compute
+      residue = k;
+#pragma unroll
+      for (int x_item_idx = 0; x_item_idx < kBlockItemsX; ++x_item_idx) {
+        int offset = (kv_idx + x_item_idx) * KK;
+        auto key_j = kkey_j + offset;
+        int inner_residue = residue;
+#pragma unroll
+        for (int k_item_idx = 0; k_item_idx < kThreadItemsK; ++k_item_idx) {
+          if (inner_residue > 0) {
+            int fragment_offset = x_item_idx * kThreadItemsK + k_item_idx;
+            rhs_fragment[fragment_offset] = __ldg(key_j + threadIdx.x);
+
+            sputnik::VectorCompute<vec_t>::Dot(
+                lhs_fragment[k_item_idx], rhs_fragment[fragment_offset], attn_fragment + x_item_idx);
+          }
+          key_j += kBlockWidth;
+          inner_residue -= kBlockWidth * kVecSize;
+        }
+      }
+    }
 
     int end_iter = N - kv_idx;
     scalar_t m_i = m_prime;
@@ -187,7 +223,8 @@ __global__ void attention_kernel(
 
     vec_t* out_i_tmp = out_i;
     auto value_j = reinterpret_cast<vec_t*>(value[batch_idx].data());
-    for (int k = K; k >= kBlockItemsK; k -= kBlockItemsK) {
+    k = K;
+    for (; k >= kBlockItemsK; k -= kBlockItemsK) {
       // load output
 #pragma unroll
       for (int k_item_idx = 0; k_item_idx < kThreadItemsK; ++k_item_idx) {
@@ -224,6 +261,53 @@ __global__ void attention_kernel(
         }
         out_i_tmp[threadIdx.x] = lhs_value;
         out_i_tmp += kBlockWidth;
+      }
+    }
+
+    // residue handling
+    if (k > 0) {
+      k -= threadIdx.x * kVecSize;
+      // load queries
+      int residue = k;
+#pragma unroll
+      for (int k_item_idx = 0; k_item_idx < kThreadItemsK; ++k_item_idx) {
+        if (residue > 0) {
+          lhs_fragment[k_item_idx] = __ldg(out_i_tmp + threadIdx.x);
+          iMul(m_delta, lhs_fragment + k_item_idx);
+        }
+        out_i_tmp += kBlockWidth;
+        residue -= kBlockWidth * kVecSize;
+      }
+      out_i_tmp -= kBlockWidth * kThreadItemsK;
+
+      // load keys and compute
+      residue = k;
+#pragma unroll
+      for (int x_item_idx = 0; x_item_idx < kBlockItemsX; ++x_item_idx) {
+        int offset = (kv_idx + x_item_idx) * KK;
+        auto key_j = value_j + offset;
+        int inner_residue = residue;
+#pragma unroll
+        for (int k_item_idx = 0; k_item_idx < kThreadItemsK; ++k_item_idx) {
+          if (inner_residue > 0) {
+            int fragment_offset = x_item_idx * kThreadItemsK + k_item_idx;
+            rhs_fragment[fragment_offset] = __ldg(key_j + threadIdx.x);
+
+            sputnik::VectorCompute<vec_t>::FMA(
+              attn_fragment[x_item_idx], rhs_fragment[fragment_offset], lhs_fragment + k_item_idx);
+          }
+          key_j += kBlockWidth;
+          inner_residue -= kBlockWidth * kVecSize;
+        }
+      }
+
+#pragma unroll
+      for (int k_item_idx = 0; k_item_idx < kThreadItemsK; ++k_item_idx) {
+        if (residue > 0) {
+          out_i_tmp[threadIdx.x] = lhs_fragment[k_item_idx];
+        }
+        out_i_tmp += kBlockWidth;
+        residue -= kBlockWidth;
       }
     }
   }
@@ -273,8 +357,6 @@ std::tuple<at::Tensor, at::Tensor> attention(
   int64_t N = key.size(1);
   int64_t K = query.size(2);
 
-  TORCH_CHECK(K % 32 == 0, "For now only K % 32 == 0 is supported. Let us know if you hit this and we will fix it");
-
   at::Tensor res = at::zeros({B, M, K}, query.options());
   at::Tensor logsumexp = at::empty(
       {B, compute_logsumexp ? M : 0},
@@ -282,51 +364,6 @@ std::tuple<at::Tensor, at::Tensor> attention(
 
   using scalar_t = float;
 
-  if (K % 128 == 0) {
-  constexpr int kBlockItemsY = 16;
-  constexpr int kBlockItemsX = 32;
-  constexpr int kBlockItemsK = 128;
-  constexpr int kBlockWidth = 8;
-
-  dim3 grid(ceil_div(M, int64_t(kBlockItemsY)), B);
-  dim3 block(kBlockWidth, kBlockItemsY);
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-
-  attention_kernel<
-      scalar_t,
-      kBlockWidth,
-      kBlockItemsY,
-      kBlockItemsX,
-      kBlockItemsK><<<grid, block, 0, stream>>>(
-      res.packed_accessor<scalar_t, 3>(),
-      logsumexp.packed_accessor<scalar_t, 2>(),
-      query.packed_accessor<scalar_t, 3>(),
-      key.packed_accessor<scalar_t, 3>(),
-      value.packed_accessor<scalar_t, 3>());
-
-  } else if (K % 64 == 0) {
-  constexpr int kBlockItemsY = 16;
-  constexpr int kBlockItemsX = 32;
-  constexpr int kBlockItemsK = 64;
-  constexpr int kBlockWidth = 8;
-
-  dim3 grid(ceil_div(M, int64_t(kBlockItemsY)), B);
-  dim3 block(kBlockWidth, kBlockItemsY);
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-
-  attention_kernel<
-      scalar_t,
-      kBlockWidth,
-      kBlockItemsY,
-      kBlockItemsX,
-      kBlockItemsK><<<grid, block, 0, stream>>>(
-      res.packed_accessor<scalar_t, 3>(),
-      logsumexp.packed_accessor<scalar_t, 2>(),
-      query.packed_accessor<scalar_t, 3>(),
-      key.packed_accessor<scalar_t, 3>(),
-      value.packed_accessor<scalar_t, 3>());
-
-  } else {
   constexpr int kBlockItemsY = 16;
   constexpr int kBlockItemsX = 32;
   constexpr int kBlockItemsK = 32;
@@ -336,17 +373,45 @@ std::tuple<at::Tensor, at::Tensor> attention(
   dim3 block(kBlockWidth, kBlockItemsY);
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-  attention_kernel<
-      scalar_t,
-      kBlockWidth,
-      kBlockItemsY,
-      kBlockItemsX,
-      kBlockItemsK><<<grid, block, 0, stream>>>(
-      res.packed_accessor<scalar_t, 3>(),
-      logsumexp.packed_accessor<scalar_t, 2>(),
-      query.packed_accessor<scalar_t, 3>(),
-      key.packed_accessor<scalar_t, 3>(),
-      value.packed_accessor<scalar_t, 3>());
+  if ((K % 4) == 0) {
+    attention_kernel<
+        scalar_t,
+        float4,
+        kBlockWidth,
+        kBlockItemsY,
+        kBlockItemsX,
+        kBlockItemsK><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
+  } else if ((K % 2) == 0) {
+    attention_kernel<
+        scalar_t,
+        float2,
+        kBlockWidth,
+        kBlockItemsY,
+        kBlockItemsX,
+        kBlockItemsK><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
+  } else {
+    attention_kernel<
+        scalar_t,
+        float,
+        kBlockWidth,
+        kBlockItemsY,
+        kBlockItemsX,
+        kBlockItemsK><<<grid, block, 0, stream>>>(
+        res.packed_accessor<scalar_t, 3>(),
+        logsumexp.packed_accessor<scalar_t, 2>(),
+        query.packed_accessor<scalar_t, 3>(),
+        key.packed_accessor<scalar_t, 3>(),
+        value.packed_accessor<scalar_t, 3>());
   }
 
   AT_CUDA_CHECK(cudaGetLastError());
