@@ -11,7 +11,7 @@ import triton
 
 from xformers.benchmarks.utils import TestCase, pretty_plot, pretty_print
 from xformers.components import Activation, build_activation
-from xformers.components.nvfuser.bias_relu_dropout import FusedBiasReluDropout
+from xformers.components.nvfuser.bias_act_dropout import FusedBiasActivationDropout
 from xformers.triton import FusedDropoutBias
 
 SHAPES = [
@@ -55,7 +55,7 @@ def bench_dropout(bias: bool, backward: bool, activation: Activation):
             triton_dropout = FusedDropoutBias(
                 P, bias_shape=K if bias else None, activation=activation
             )
-            nvfuser_dropout = FusedBiasReluDropout(
+            nvfuser_dropout = FusedBiasActivationDropout(
                 P, bias_shape=K if bias else None, activation=activation
             )
 
@@ -128,7 +128,7 @@ def bench_dropout(bias: bool, backward: bool, activation: Activation):
 
 
 # for activation in [Activation.GeLU, None, Activation.SquaredReLU]:
-for activation in [Activation.ReLU]:
+for activation in [Activation.ReLU, Activation.GeLU]:
     for bw in [True, False]:
         for bias in [True, False]:
             bench_dropout(bias, bw, activation)

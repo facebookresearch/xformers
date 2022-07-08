@@ -10,20 +10,20 @@ from typing import Any, Optional
 
 import torch
 import torch.nn as nn
-from functorch.compile import clear_compile_cache, memory_efficient_fusion
+from functorch.compile import memory_efficient_fusion
 
 from xformers.components import Activation, build_activation
 from xformers.components.nvfuser import Fused, FusedConfig, register_fused
 
 
 @dataclass
-class FusedBiasReluDropoutConfig(FusedConfig):
+class FusedBiasActivationDropoutConfig(FusedConfig):
     p: float
     activation: Activation
     bias_shape: Optional[int]
 
 
-def fn(
+def _fn(
     activation: Activation, prob: float, x: torch.Tensor, bias: torch.Tensor
 ) -> torch.Tensor:
     if bias is not None:
@@ -32,10 +32,10 @@ def fn(
     return torch.nn.functional.dropout(y, prob) if prob > 0.0 else y
 
 
-@register_fused("fused_bias_relu_dropout", FusedBiasReluDropoutConfig)
-class FusedBiasReluDropout(Fused):
+@register_fused("fused_bias_activation_dropout", FusedBiasActivationDropoutConfig)
+class FusedBiasActivationDropout(Fused):
     """
-    A layer which fuses the computation of Dropout(Relu(x))
+    A layer which fuses the computation of Dropout(Activation(x))
     with AOTAutograd and nvFuser
     """
 
@@ -49,9 +49,16 @@ class FusedBiasReluDropout(Fused):
 
         self.p = float(p)
 
+        allowed_activations = [Activation.ReLU, Activation.GeLU]
+
         assert (
             self.p < 1.0
         ), f"We don't want to drop all the values, most probably p={self.p} is not properly set"
+
+        assert activation in [
+            Activation.ReLU,
+            Activation.GeLU,
+        ], f"Activation provided is not one of {allowed_activations}"
 
         self.activation = activation
         self.pytorch_activation = build_activation(self.activation)
@@ -82,5 +89,5 @@ class FusedBiasReluDropout(Fused):
             return torch.nn.functional.dropout(x, p) if p > 0.0 else x
 
         # AOTAutograd, NVFuser backed path
-        aot_fn = memory_efficient_fusion(fn=fn, static_argnums=(0, 1))
+        aot_fn = memory_efficient_fusion(fn=_fn, static_argnums=(0, 1))
         return aot_fn(self.pytorch_activation, p, x, self.bias)

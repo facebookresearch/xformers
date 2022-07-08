@@ -9,9 +9,12 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
+from xformers import _is_functorch_available
 from xformers.components import Activation, build_activation
 from xformers.components.feedforward import Feedforward, FeedforwardConfig
-from xformers.components.nvfuser.bias_relu_dropout import FusedBiasReluDropout
+
+if _is_functorch_available:
+    from xformers.components.nvfuser.bias_act_dropout import FusedBiasActivationDropout
 
 from . import register_feedforward
 
@@ -37,10 +40,10 @@ class MLP(Feedforward):
 
         dim_mlp = hidden_layer_multiplier * dim_model
 
-        if activation == "relu":
+        if activation in {Activation.ReLU, Activation.GeLU} and _is_functorch_available:
             self.mlp = nn.Sequential(
                 nn.Linear(dim_model, hidden_layer_multiplier * dim_model, bias=False),
-                FusedBiasReluDropout(
+                FusedBiasActivationDropout(
                     p=dropout,
                     bias_shape=dim_mlp if bias else None,
                     activation=activation,
