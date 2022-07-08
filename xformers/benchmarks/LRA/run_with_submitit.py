@@ -76,7 +76,7 @@ class Trainer(object):
 
     def __call__(self):
         self._setup_gpu_args()
-        benchmark(self.args.rank, self.args)
+        benchmark(self.args)
 
     def checkpoint(self):
         self.args.dist_url = get_init_file().as_uri()

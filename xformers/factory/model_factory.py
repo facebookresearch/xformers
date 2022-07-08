@@ -277,7 +277,9 @@ class xFormer(torch.nn.Module):
 
                 # Apply the optional input masking
                 if encoder_input_mask is not None:
-                    x += encoder_input_mask.unsqueeze(0).unsqueeze(-1)
+                    if x.dim() - encoder_input_mask.dim() > 1:
+                        encoder_input_mask.unsqueeze(0)
+                    x += encoder_input_mask.unsqueeze(-1)
 
                 x = encoders(x)
                 memory = torch.stack(x.chunk(2, dim=-1)).mean(dim=0)
