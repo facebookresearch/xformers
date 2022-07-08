@@ -61,7 +61,7 @@ class xFormerBlockConfig:
     feedforward_config: FeedforwardConfig
     position_encoding_config: Optional[PositionEmbeddingConfig]
     block_type: BlockType
-    layer_norm_style: ResidualNormStyle
+    residual_norm_style: ResidualNormStyle
     normalization: NormalizationType
     layer_position: LayerPosition
     use_triton: bool
@@ -74,7 +74,7 @@ class xFormerBlockConfig:
         feedforward_config: Dict[str, Any],
         position_encoding_config: Optional[Dict[str, Any]],
         block_type: BlockType,
-        layer_norm_style: ResidualNormStyle = ResidualNormStyle("post"),
+        residual_norm_style: ResidualNormStyle = ResidualNormStyle("post"),
         normalization: NormalizationType = NormalizationType.LayerNorm,
         reversible: bool = False,
         num_layers: int = 1,
@@ -83,7 +83,7 @@ class xFormerBlockConfig:
 
         self.dim_model = dim_model
         self.block_type = block_type
-        self.layer_norm_style = layer_norm_style
+        self.residual_norm_style = residual_norm_style
         self.reversible = reversible
         self.num_layers = num_layers
         self.normalization = normalization
@@ -127,7 +127,7 @@ class xFormerEncoderConfig(xFormerBlockConfig):
         feedforward_config: Dict[str, Any],
         multi_head_config: Dict[str, Any],
         position_encoding_config: Optional[Dict[str, Any]] = None,
-        layer_norm_style: str = "post",
+        residual_norm_style: str = "post",
         normalization: NormalizationType = NormalizationType.LayerNorm,
         use_triton: bool = True,
         simplicial_embeddings: Optional[Dict[str, Any]] = None,
@@ -164,7 +164,7 @@ class xFormerEncoderConfig(xFormerBlockConfig):
             dim_model=dim_model,
             feedforward_config=feedforward_config,
             position_encoding_config=position_encoding_config,
-            layer_norm_style=ResidualNormStyle(layer_norm_style),
+            residual_norm_style=ResidualNormStyle(residual_norm_style),
             normalization=NormalizationType(normalization),
             **kwargs,
         )
@@ -194,7 +194,7 @@ class xFormerDecoderConfig(xFormerBlockConfig):
         multi_head_config_masked: Dict[str, Any],
         multi_head_config_cross: Dict[str, Any],
         position_encoding_config: Optional[Dict[str, Any]] = None,
-        layer_norm_style: str = "post",
+        residual_norm_style: str = "post",
         normalization: NormalizationType = NormalizationType.LayerNorm,
         use_triton: bool = True,
         **kwargs,
@@ -227,7 +227,7 @@ class xFormerDecoderConfig(xFormerBlockConfig):
             dim_model=dim_model,
             feedforward_config=feedforward_config,
             position_encoding_config=position_encoding_config,
-            layer_norm_style=ResidualNormStyle(layer_norm_style),
+            residual_norm_style=ResidualNormStyle(residual_norm_style),
             normalization=NormalizationType(normalization),
             **kwargs,
         )

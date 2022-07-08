@@ -39,7 +39,7 @@ class MetaVisionTransformer(VisionTransformer):
         dim=384,
         attention="scaled_dot_product",
         feedforward="MLP",
-        layer_norm_style="pre",
+        residual_norm_style="pre",
         use_rotary_embeddings=True,
         linear_warmup_ratio=0.1,
         classifier=Classifier.GAP,
@@ -101,7 +101,7 @@ class MetaVisionTransformer(VisionTransformer):
         # Fill in the gaps in the config
         xformer_config = get_hierarchical_configuration(
             base_hierarchical_configs,
-            layernorm_style=layer_norm_style,
+            residual_norm_style=residual_norm_style,
             use_rotary_embeddings=use_rotary_embeddings,
             mlp_multiplier=4,
             dim_head=32,
@@ -168,7 +168,7 @@ if __name__ == "__main__":
         image_size=image_size,
         num_classes=num_classes,
         attention="scaled_dot_product",
-        layer_norm_style="pre",
+        residual_norm_style="pre",
         feedforward="MLP",
         use_rotary_embeddings=True,
     )

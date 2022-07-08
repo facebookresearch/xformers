@@ -33,7 +33,7 @@
                     "reversible": false,
                     "block_type": "encoder",
                     "num_layers": 4,
-                    "layer_norm_style": "post",
+                    "residual_norm_style": "post",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -54,16 +54,16 @@
             "extra_settings": {
                 "attention": {
                     "favor": {
-                    "dim_features": 256,
-                    "iter_before_redraw": 1000
+                        "dim_features": 256,
+                        "iter_before_redraw": 1000
                     },
                     "nystrom": {
-                    "conv_kernel_size": 35,
-                    "num_landmarks": 128
+                        "conv_kernel_size": 35,
+                        "num_landmarks": 128
                     },
                     "sinkhorn": {
-                    "num_heads": 4,
-                    "block_size": 256
+                        "num_heads": 4,
+                        "block_size": 256
                     }
                 }
             }
@@ -102,7 +102,7 @@
                     "reversible": true,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "post",
+                    "residual_norm_style": "post",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -167,7 +167,7 @@
                     "reversible": false,
                     "block_type": "encoder",
                     "num_layers": 4,
-                    "layer_norm_style": "post",
+                    "residual_norm_style": "post",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -188,12 +188,12 @@
             "extra_settings": {
                 "attention": {
                     "favor": {
-                    "dim_features": 256,
-                    "iter_before_redraw": 1000
+                        "dim_features": 256,
+                        "iter_before_redraw": 1000
                     },
                     "nystrom": {
-                    "conv_kernel_size": 35,
-                    "num_landmarks": 128
+                        "conv_kernel_size": 35,
+                        "num_landmarks": 128
                     },
                     "sinkhorn": {
                         "num_heads": 4,
@@ -231,7 +231,7 @@
                     "reversible": true,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "post",
+                    "residual_norm_style": "post",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -296,7 +296,7 @@
                     "reversible": true,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "post",
+                    "residual_norm_style": "post",
                     "position_encoding_config": {
                         "name": "vocab"
                     },

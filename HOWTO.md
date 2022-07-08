@@ -405,7 +405,7 @@ VOCAB = 64
 
 encoder_config = {
     "dim_model": EMB,
-    "layer_norm_style": "pre",  # Optional, pre/post
+    "residual_norm_style": "pre",  # Optional, pre/post
     "position_encoding_config": {
         "name": "vocab",  # whatever position encodinhg makes sense
         "seq_len": SEQ,
@@ -489,7 +489,7 @@ my_config = [
         "block_type": "encoder",
         "num_layers": 3,  # Optional, this means that this config will repeat N times
         "dim_model": EMB,
-        "layer_norm_style": "pre",  # Optional, pre/post
+        "residual_norm_style": "pre",  # Optional, pre/post
         "position_encoding_config": {
             "name": "vocab",  # whatever position encodinhg makes sense
             "seq_len": 1024,
@@ -520,7 +520,7 @@ my_config = [
         "block_type": "decoder",
         "num_layers": 3,  # Optional, this means that this config will repeat N times
         "dim_model": EMB,
-        "layer_norm_style": "pre",  # Optional, pre/post
+        "residual_norm_style": "pre",  # Optional, pre/post
         "position_encoding_config": {
             "name": "vocab",  # whatever position encodinhg makes sense
             "seq_len": SEQ,
@@ -803,7 +803,7 @@ A small helper is provided to make it easier to generate matching configurations
     # Fill in the gaps in the config
     xformer_config = get_hierarchical_configuration(
         base_hierarchical_configs,
-        layernorm_style="pre",
+        residual_norm_style="pre",
         use_rotary_embeddings=False,
         mlp_multiplier=4,
         dim_head=32,

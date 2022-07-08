@@ -45,7 +45,7 @@ class VisionTransformer(pl.LightningModule):
         attn_pdrop=0.0,
         mlp_pdrop=0.0,
         attention="scaled_dot_product",
-        layer_norm_style="pre",
+        residual_norm_style="pre",
         hidden_layer_multiplier=4,
         use_rotary_embeddings=True,
         linear_warmup_ratio=0.1,
@@ -67,7 +67,7 @@ class VisionTransformer(pl.LightningModule):
                 "block_type": "encoder",
                 "num_layers": n_layer,
                 "dim_model": dim,
-                "layer_norm_style": layer_norm_style,
+                "residual_norm_style": residual_norm_style,
                 "multi_head_config": {
                     "num_heads": n_head,
                     "residual_dropout": resid_pdrop,
@@ -226,7 +226,7 @@ if __name__ == "__main__":
         num_classes=num_classes,
         attention="scaled_dot_product",
         classifier=Classifier.TOKEN,
-        layer_norm_style="pre",
+        residual_norm_style="pre",
         use_rotary_embeddings=True,
     )
     trainer = pl.Trainer(

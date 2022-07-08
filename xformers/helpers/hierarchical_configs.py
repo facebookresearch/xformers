@@ -26,7 +26,7 @@ class BasicLayerConfig:
 
 def get_hierarchical_configuration(
     layer_base_configs: List[BasicLayerConfig],
-    layernorm_style: ResidualNormStyle = ResidualNormStyle.Pre,
+    residual_norm_style: ResidualNormStyle = ResidualNormStyle.Pre,
     use_rotary_embeddings: bool = True,
     mlp_multiplier: int = 4,
     in_channels: int = 3,
@@ -44,7 +44,7 @@ def get_hierarchical_configuration(
         "block_type": "encoder",
         "dim_model": 0,
         "use_triton": False,
-        "layer_norm_style": str(layernorm_style),
+        "residual_norm_style": str(residual_norm_style),
         "multi_head_config": {
             "num_heads": 1,
             "use_rotary_embeddings": use_rotary_embeddings,

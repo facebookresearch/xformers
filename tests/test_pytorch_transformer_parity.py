@@ -27,7 +27,7 @@ if _is_triton_available:
         "block_type": "encoder",
         "dim_model": EMB,
         "num_layers": LAYERS,
-        "layer_norm_style": "post",
+        "residual_norm_style": "post",
         "multi_head_config": {
             "num_heads": HEADS,
             "residual_dropout": DROP,
@@ -52,7 +52,7 @@ if _is_triton_available:
         "block_type": "decoder",
         "dim_model": EMB,
         "num_layers": LAYERS,
-        "layer_norm_style": "post",
+        "residual_norm_style": "post",
         "multi_head_config_masked": {
             "num_heads": HEADS,
             "residual_dropout": DROP,

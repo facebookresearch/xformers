@@ -41,7 +41,7 @@ class xFormerConfig:
                 "block_type": "encoder",
                 "num_layers": LAYERS,
                 "dim_model": EMB,
-                "layer_norm_style": "pre",
+                "residual_norm_style": "pre",
                 "position_encoding_config": {
                     "name": "vocab",
                     "seq_len": CONTEXT,
@@ -193,7 +193,9 @@ class xFormer(torch.nn.Module):
         )
         self.decoders = torch.nn.ModuleList(decoders)
 
-        use_deepnorm = stack_configs[0].layer_norm_style == ResidualNormStyle.DeepNorm
+        use_deepnorm = (
+            stack_configs[0].residual_norm_style == ResidualNormStyle.DeepNorm
+        )
 
         assert (
             not use_deepnorm or not self.reversible_encoder
@@ -220,7 +222,7 @@ class xFormer(torch.nn.Module):
 
     def _verify_deepnorm(self, stack_configs: List[xFormerBlockConfig]):
         deepnorm = [
-            c.layer_norm_style == ResidualNormStyle.DeepNorm for c in stack_configs
+            c.residual_norm_style == ResidualNormStyle.DeepNorm for c in stack_configs
         ]
 
         assert all(deepnorm) or not any(deepnorm), (

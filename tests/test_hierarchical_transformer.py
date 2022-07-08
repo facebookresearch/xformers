@@ -54,7 +54,7 @@ def test_hierarchical_transformer():
     # Fill in the gaps in the config
     xformer_config = get_hierarchical_configuration(
         base_hierarchical_configs,
-        layernorm_style="pre",
+        residual_norm_style="pre",
         use_rotary_embeddings=False,
         mlp_multiplier=4,
         dim_head=32,
