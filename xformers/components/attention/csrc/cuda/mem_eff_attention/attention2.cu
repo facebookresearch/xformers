@@ -84,6 +84,7 @@ template <
     int kBlockItemsK>
 __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> output,
+    at::PackedTensorAccessor<scalar_t, 2> logsumexp,
     at::PackedTensorAccessor<scalar_t, 3> query,
     at::PackedTensorAccessor<scalar_t, 3> key,
     at::PackedTensorAccessor<scalar_t, 3> value) {
@@ -108,8 +109,8 @@ __global__ void attention_kernel(
   scalar_t s_prime = 0;
   scalar_t m_prime = -std::numeric_limits<scalar_t>::infinity();
 
-  vec_t lhs_fragment[kBlockItemsK / kBlockWidth / kVecSize];
-  vec_t rhs_fragment[kBlockItemsK * kBlockItemsX / kBlockWidth / kVecSize];
+  vec_t lhs_fragment[kThreadItemsK];
+  vec_t rhs_fragment[kBlockItemsX * kThreadItemsK];
 
   auto out_i = reinterpret_cast<vec_t*>(output[batch_idx][query_idx].data());
 
@@ -226,6 +227,9 @@ __global__ void attention_kernel(
       }
     }
   }
+  if (logsumexp.size(1) > 0) {
+    logsumexp[batch_idx][query_idx] = m_prime + std::log(s_prime);
+  }
   // avoid division by 0 when row is fully masked
   if (s_prime > 0)
     s_prime = 1.0 / s_prime;
@@ -234,10 +238,11 @@ __global__ void attention_kernel(
   }
 }
 
-at::Tensor attention(
+std::tuple<at::Tensor, at::Tensor> attention(
     const at::Tensor& query,
     const at::Tensor& key,
-    const at::Tensor& value) {
+    const at::Tensor& value,
+    bool compute_logsumexp) {
 
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
@@ -271,6 +276,9 @@ at::Tensor attention(
   TORCH_CHECK(K % 32 == 0, "For now only K % 32 == 0 is supported. Let us know if you hit this and we will fix it");
 
   at::Tensor res = at::zeros({B, M, K}, query.options());
+  at::Tensor logsumexp = at::empty(
+      {B, compute_logsumexp ? M : 0},
+      query.options().dtype(at::ScalarType::Float));
 
   using scalar_t = float;
 
@@ -291,6 +299,7 @@ at::Tensor attention(
       kBlockItemsX,
       kBlockItemsK><<<grid, block, 0, stream>>>(
       res.packed_accessor<scalar_t, 3>(),
+      logsumexp.packed_accessor<scalar_t, 2>(),
       query.packed_accessor<scalar_t, 3>(),
       key.packed_accessor<scalar_t, 3>(),
       value.packed_accessor<scalar_t, 3>());
@@ -312,6 +321,7 @@ at::Tensor attention(
       kBlockItemsX,
       kBlockItemsK><<<grid, block, 0, stream>>>(
       res.packed_accessor<scalar_t, 3>(),
+      logsumexp.packed_accessor<scalar_t, 2>(),
       query.packed_accessor<scalar_t, 3>(),
       key.packed_accessor<scalar_t, 3>(),
       value.packed_accessor<scalar_t, 3>());
@@ -333,6 +343,7 @@ at::Tensor attention(
       kBlockItemsX,
       kBlockItemsK><<<grid, block, 0, stream>>>(
       res.packed_accessor<scalar_t, 3>(),
+      logsumexp.packed_accessor<scalar_t, 2>(),
       query.packed_accessor<scalar_t, 3>(),
       key.packed_accessor<scalar_t, 3>(),
       value.packed_accessor<scalar_t, 3>());
@@ -340,7 +351,7 @@ at::Tensor attention(
 
   AT_CUDA_CHECK(cudaGetLastError());
 
-  return res;
+  return std::make_tuple(res, logsumexp);
 }
 
 } // namespace
