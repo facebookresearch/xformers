@@ -11,7 +11,7 @@ import triton
 
 from xformers.benchmarks.utils import TestCase, pretty_plot, pretty_print
 from xformers.components import Activation, build_activation
-from xformers.components.nvfuser.bias_act_dropout import FusedBiasActivationDropout
+from xformers.components.nvfuser.bias_act_dropout import NVFusedBiasActivationDropout
 from xformers.triton import FusedDropoutBias
 
 SHAPES = [
@@ -37,7 +37,7 @@ def to_gbs_fw(a, ms, bias):
     return total * 1e-9 / (ms * 1e-3)
 
 
-def bench_dropout(bias: bool, backward: bool, activation: Activation):
+def bench_bias_act_dropout(bias: bool, backward: bool, activation: Activation):
     device = torch.device("cuda")
 
     for dtype in [
@@ -55,8 +55,8 @@ def bench_dropout(bias: bool, backward: bool, activation: Activation):
             triton_dropout = FusedDropoutBias(
                 P, bias_shape=K if bias else None, activation=activation
             )
-            nvfuser_dropout = FusedBiasActivationDropout(
-                P, bias_shape=K if bias else None, activation=activation
+            nvfuser_dropout = NVFusedBiasActivationDropout(
+                p=P, bias_shape=K if bias else None, activation=activation
             )
 
             def torch_step(x):
@@ -118,7 +118,7 @@ def bench_dropout(bias: bool, backward: bool, activation: Activation):
         pretty_print(results, title="\n --- Type: {} --- ".format(dtype), units="GB/s")
         pretty_plot(
             results,
-            title="Dropout-Bias-{}-FW{}-{}-Act: {}".format(
+            title="Dropout-Act-Bias-{}-FW{}-{}-Act: {}".format(
                 bias, "+BW" if backward else "", dtype, activation
             ),
             units="GB/s",
@@ -131,4 +131,4 @@ def bench_dropout(bias: bool, backward: bool, activation: Activation):
 for activation in [Activation.ReLU, Activation.GeLU]:
     for bw in [True, False]:
         for bias in [True, False]:
-            bench_dropout(bias, bw, activation)
+            bench_bias_act_dropout(bias, bw, activation)

@@ -83,7 +83,7 @@ if _is_triton_available:
 if _is_functorch_available:
     try:
         from xformers.components.nvfuser.bias_act_dropout import (  # noqa
-            FusedBiasActivationDropout,
+            NVFusedBiasActivationDropout,
         )
     except ImportError as e:
         logging.warning(

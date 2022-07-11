@@ -5,7 +5,6 @@
 
 
 import logging
-from dataclasses import dataclass
 from typing import Any, Optional
 
 import torch
@@ -13,18 +12,10 @@ import torch.nn as nn
 from functorch.compile import memory_efficient_fusion
 
 from xformers.components import Activation, build_activation
-from xformers.components.nvfuser import Fused, FusedConfig, register_fused
-
-
-@dataclass
-class FusedBiasActivationDropoutConfig(FusedConfig):
-    p: float
-    activation: Activation
-    bias_shape: Optional[int]
 
 
 def _fn(
-    activation: Activation, prob: float, x: torch.Tensor, bias: torch.Tensor
+    x: torch.Tensor, bias: torch.Tensor, activation: Activation, prob: float
 ) -> torch.Tensor:
     if bias is not None:
         x = torch.add(x, bias)
@@ -32,10 +23,9 @@ def _fn(
     return torch.nn.functional.dropout(y, prob) if prob > 0.0 else y
 
 
-@register_fused("fused_bias_activation_dropout", FusedBiasActivationDropoutConfig)
-class FusedBiasActivationDropout(Fused):
+class NVFusedBiasActivationDropout(torch.nn.Module):
     """
-    A layer which fuses the computation of Dropout(Activation(x))
+    A layer which fuses the computation of Dropout(Activation(x) + Bias)
     with AOTAutograd and nvFuser
     """
 
@@ -63,11 +53,8 @@ class FusedBiasActivationDropout(Fused):
         self.activation = activation
         self.pytorch_activation = build_activation(self.activation)
 
-        self.bias = (
-            torch.zeros(bias_shape, requires_grad=True)
-            if bias_shape is not None
-            else None
-        )
+        self.bias_shape = bias_shape
+        self.bias = None
 
     def init_weights(self, *args, **kwargs):
         with torch.no_grad():
@@ -75,19 +62,20 @@ class FusedBiasActivationDropout(Fused):
                 self.bias.fill_(0.0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Convenience, catch a possible type or device mismatch
-        if self.bias is not None:
-            self.bias = self.bias.to(dtype=x.dtype, device=x.device)  # type: ignore
+        # Lazy creation of learnable bias, to match input device
+        if self.bias_shape is not None and self.bias is None:
+            nn.Parameter(torch.zeros(self.bias_shape, device=x.device))
 
         # Train/inference
         p = self.p if self.training else 0.0
 
         # Catch a non-cuda setup, fallback to pytorch
         if not x.is_cuda or p == 0.0:
+            # TODO just call _fn??????
             x = x + self.bias if self.bias is not None else x
             x = self.pytorch_activation(x)
             return torch.nn.functional.dropout(x, p) if p > 0.0 else x
 
         # AOTAutograd, NVFuser backed path
-        aot_fn = memory_efficient_fusion(fn=_fn, static_argnums=(0, 1))
-        return aot_fn(self.pytorch_activation, p, x, self.bias)
+        aot_fn = memory_efficient_fusion(_fn, static_argnums=(2, 3))
+        return aot_fn(x, self.bias, self.pytorch_activation, p)

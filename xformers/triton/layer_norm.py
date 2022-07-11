@@ -224,7 +224,7 @@ def layer_norm(
         _triton_registered_warnings = True
         logging.warning(
             "Triton layernorm kernel register spillover or invalid image caught. "
-            "Deactivating this kernel, please file an issue int the xFormers repository"
+            "Deactivating this kernel, please file an issue in the xFormers repository"
         )
         logging.warning(e)
 
