@@ -24,8 +24,7 @@ def ref_attention(q, k, v, attn_bias=None, p=0.0):
         # equivalent to (q @ k.transpose(-2, -1) + m).softmax(-1) @ v
         # but faster, and is what is used in PyTorch now
         attn = torch.baddbmm(attn_bias, q, k.transpose(-2, -1))
-    dtype = attn.dtype
-    attn = attn.to(torch.float).softmax(-1).to(dtype)
+    attn = attn.softmax(-1)
     if p > 0:
         attn = torch.nn.functional.dropout(attn, p=p)
     return attn @ v
@@ -59,7 +58,7 @@ CASES = list(
         shape=SHAPES,
         num_threads=NUM_THREADS,
         use_attn_bias=[False, True],
-        dtype=[torch.half, torch.float],
+        dtype=[torch.half, torch.bfloat16, torch.float],
     )
 )
 
@@ -84,6 +83,7 @@ def benchmark_forward(shape, num_threads: int, use_attn_bias: bool, dtype):
         return
 
     dtype_str = {
+        torch.bfloat16: "b16",
         torch.half: "f16",
         torch.float: "f32",
     }[dtype]
@@ -148,6 +148,7 @@ def benchmark_backward(shape, num_threads: int, use_attn_bias: bool, dtype):
         return
 
     dtype_str = {
+        torch.bfloat16: "b16",
         torch.half: "f16",
         torch.float: "f32",
     }[dtype]

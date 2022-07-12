@@ -19,9 +19,13 @@ _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 def assert_allclose(
     out: torch.Tensor, ref: torch.Tensor, msg: str = "failed", **kwargs
 ) -> None:
-    assert torch.allclose(
-        out, ref, **kwargs
-    ), f"{msg}: max_diff={(out - ref).abs().max()} / atol={kwargs.get('atol', 1e-8)}"
+    flatten_diff = (out - ref).abs().flatten()
+    max_pos = flatten_diff.argmax()
+    assert torch.allclose(out, ref, **kwargs), (
+        f"{msg}: max_diff={flatten_diff.max()}: "
+        f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} "
+        f"/ atol={kwargs.get('atol', 1e-8)}"
+    )
 
 
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
@@ -45,7 +49,7 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 64, 128])
 @pytest.mark.parametrize("q_len", [2, 3, 5, 32, 128])
 @pytest.mark.parametrize("device", _devices)
-@pytest.mark.parametrize("dtype", [torch.float, torch.half])
+@pytest.mark.parametrize("dtype", [torch.float, torch.half, torch.bfloat16])
 @pytest.mark.parametrize(
     "op",
     [
@@ -157,7 +161,7 @@ def test_logsumexp(
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 64, 128])
 @pytest.mark.parametrize("q_len", [2, 3, 5, 32, 128])
 @pytest.mark.parametrize("device", _devices)
-@pytest.mark.parametrize("dtype", [torch.float, torch.half])
+@pytest.mark.parametrize("dtype", [torch.float, torch.half, torch.bfloat16])
 @pytest.mark.parametrize(
     "op",
     [
@@ -223,6 +227,10 @@ def test_memory_efficient_attention_backward(
     if dtype is torch.half:
         atol = 3e-2
         rtol = 1e-2
+    if dtype is torch.bfloat16:
+        # I've seen (out=0.29 / ref=0.03)
+        atol = 0.3
+        rtol = 0.1
 
     # (for mypy)
     assert isinstance(query.grad, torch.Tensor)

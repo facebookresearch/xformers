@@ -202,7 +202,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     FORWARD_OPERATOR = None
     FORWARD_ERROR_ATOL = 5e-2
     SUPPORTED_DEVICES = {"cuda"}
-    SUPPORTED_DTYPES = {torch.half}
+    SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 128
     SUPPORTS_ATTN_BIAS = False
     SUPPORTS_DROPOUT = False
@@ -218,6 +218,8 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         # d=128 is only supported on A100
         is_sm80 = torch.cuda.get_device_capability(d.device)[0] >= 8
         if d.k not in [16, 32, 64, 128] or (d.k == 128 and not is_sm80):
+            return False
+        if d.dtype is torch.bfloat16 and not is_sm80:
             return False
         return True
 
@@ -327,7 +329,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
             cur_rng_state = torch.cuda.get_rng_state()
             torch.cuda.set_rng_state(rng_state)
         dq, dk, dv = torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
-        assert grad.dtype == torch.half
+        assert grad.dtype in cls.SUPPORTED_DTYPES
         cls._flash_attn_backward(
             grad.reshape(ctx.kernel_output_shape),
             q,
