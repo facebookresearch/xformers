@@ -42,37 +42,40 @@ class MLP(Feedforward):
 
         dim_mlp = hidden_layer_multiplier * dim_model
 
-        fused_bias_act_dropout = False
-
         # check if fused Bias Activaton Dropout is applicable
         if activation in {Activation.ReLU, Activation.GeLU} and _is_functorch_available:
-            fused_bias_act_dropout = True
             self.requires_cuda = True
 
-            BiasActivationDropout = [
+            self.mlp = nn.Sequential(
+                nn.Linear(
+                    in_features=dim_model, out_features=dim_mlp, bias=False
+                ),  # bias is handled in the next layer
                 NVFusedBiasActivationDropout(
                     p=dropout,
                     bias_shape=dim_mlp if bias else None,
                     activation=activation,
-                )
-            ]
+                ),
+                nn.Linear(
+                    hidden_layer_multiplier * dim_model, dim_model, bias=False
+                ),  # bias is handled in the next layer
+                NVFusedBiasActivationDropout(
+                    p=dropout,
+                    bias_shape=dim_model if bias else None,
+                    activation=None,
+                ),
+            )
         else:
-            BiasActivationDropout = [
+            self.mlp = nn.Sequential(
+                nn.Linear(
+                    dim_model,
+                    hidden_layer_multiplier * dim_model,
+                    bias=bias,
+                ),
                 build_activation(activation),
                 nn.Dropout(dropout),
-            ]
-
-        self.mlp = nn.Sequential(
-            # bias is taken care of in fused op (if used)
-            nn.Linear(
-                dim_model,
-                hidden_layer_multiplier * dim_model,
-                bias=False if fused_bias_act_dropout else bias,
-            ),
-            *BiasActivationDropout,
-            nn.Linear(hidden_layer_multiplier * dim_model, dim_model, bias=bias),
-            nn.Dropout(dropout),
-        )
+                nn.Linear(hidden_layer_multiplier * dim_model, dim_model, bias=bias),
+                nn.Dropout(dropout),
+            )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.mlp(inputs)
