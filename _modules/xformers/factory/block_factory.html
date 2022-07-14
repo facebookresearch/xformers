@@ -237,11 +237,11 @@
 <span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
 
 <span class="kn">from</span> <span class="nn">xformers.components</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">LayerNormStyle</span><span class="p">,</span>
     <span class="n">PatchEmbeddingConfig</span><span class="p">,</span>
     <span class="n">PostNorm</span><span class="p">,</span>
     <span class="n">PreNorm</span><span class="p">,</span>
     <span class="n">Residual</span><span class="p">,</span>
+    <span class="n">ResidualNormStyle</span><span class="p">,</span>
     <span class="n">build_multi_head_attention</span><span class="p">,</span>
     <span class="n">build_patch_embedding</span><span class="p">,</span>
 <span class="p">)</span>
@@ -249,14 +249,19 @@
 <span class="kn">from</span> <span class="nn">xformers.components.positional_embedding</span> <span class="kn">import</span> <span class="n">build_positional_embedding</span>
 <span class="kn">from</span> <span class="nn">xformers.components.residual</span> <span class="kn">import</span> <span class="n">get_deepnorm_coefficients</span>
 <span class="kn">from</span> <span class="nn">xformers.components.simplicial_embedding</span> <span class="kn">import</span> <span class="n">SimplicialEmbedding</span>
-<span class="kn">from</span> <span class="nn">xformers.factory.block_configs</span> <span class="kn">import</span> <span class="n">xFormerDecoderConfig</span><span class="p">,</span> <span class="n">xFormerEncoderConfig</span>
+<span class="kn">from</span> <span class="nn">xformers.factory.block_configs</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">NormalizationType</span><span class="p">,</span>
+    <span class="n">xFormerDecoderConfig</span><span class="p">,</span>
+    <span class="n">xFormerEncoderConfig</span><span class="p">,</span>
+<span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">_get_ln_factory</span><span class="p">(</span>
     <span class="n">d_model</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-    <span class="n">layer_norm_style</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LayerNormStyle</span><span class="p">],</span>
+    <span class="n">residual_norm_style</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ResidualNormStyle</span><span class="p">],</span>
     <span class="n">use_triton</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
     <span class="n">residual</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">normalization</span><span class="p">:</span> <span class="n">NormalizationType</span> <span class="o">=</span> <span class="n">NormalizationType</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">,</span>
     <span class="n">residual_scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
 <span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
@@ -268,37 +273,42 @@
     <span class="k">def</span> <span class="nf">get_layer_wrapper</span><span class="p">(</span>
         <span class="n">d_model</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">sublayer</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
-        <span class="n">layer_norm_style</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LayerNormStyle</span><span class="p">],</span>
+        <span class="n">residual_norm_style</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ResidualNormStyle</span><span class="p">],</span>
         <span class="n">residual</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
         <span class="n">residual_scale</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="k">if</span> <span class="n">residual</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">Pre</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">residual_norm_style</span> <span class="o">==</span> <span class="n">ResidualNormStyle</span><span class="o">.</span><span class="n">Pre</span><span class="p">:</span>
                 <span class="k">return</span> <span class="n">Residual</span><span class="p">(</span>
-                    <span class="n">layer</span><span class="o">=</span><span class="n">PreNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">use_triton</span><span class="p">),</span> <span class="n">scale</span><span class="o">=</span><span class="kc">None</span>
+                    <span class="n">layer</span><span class="o">=</span><span class="n">PreNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">normalization</span><span class="p">,</span> <span class="n">use_triton</span><span class="p">),</span>
+                    <span class="n">scale</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                 <span class="p">)</span>
-            <span class="k">elif</span> <span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">Post</span><span class="p">:</span>
+            <span class="k">elif</span> <span class="n">residual_norm_style</span> <span class="o">==</span> <span class="n">ResidualNormStyle</span><span class="o">.</span><span class="n">Post</span><span class="p">:</span>
                 <span class="k">return</span> <span class="n">PostNorm</span><span class="p">(</span>
-                    <span class="n">d_model</span><span class="p">,</span> <span class="n">Residual</span><span class="p">(</span><span class="n">layer</span><span class="o">=</span><span class="n">sublayer</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="kc">None</span><span class="p">),</span> <span class="n">use_triton</span>
+                    <span class="n">d_model</span><span class="p">,</span>
+                    <span class="n">Residual</span><span class="p">(</span><span class="n">layer</span><span class="o">=</span><span class="n">sublayer</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="kc">None</span><span class="p">),</span>
+                    <span class="n">normalization</span><span class="p">,</span>
+                    <span class="n">use_triton</span><span class="p">,</span>
                 <span class="p">)</span>
-            <span class="k">elif</span> <span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span><span class="p">:</span>
+            <span class="k">elif</span> <span class="n">residual_norm_style</span> <span class="o">==</span> <span class="n">ResidualNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span><span class="p">:</span>
                 <span class="k">return</span> <span class="n">PostNorm</span><span class="p">(</span>
                     <span class="n">d_model</span><span class="p">,</span>
                     <span class="n">Residual</span><span class="p">(</span><span class="n">layer</span><span class="o">=</span><span class="n">sublayer</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">residual_scale</span><span class="p">),</span>
+                    <span class="n">normalization</span><span class="p">,</span>
                     <span class="n">use_triton</span><span class="o">=</span><span class="n">use_triton</span><span class="p">,</span>
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span>
 
         <span class="k">return</span> <span class="p">(</span>
-            <span class="n">PreNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">use_triton</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">Pre</span>
-            <span class="k">else</span> <span class="n">PostNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">use_triton</span><span class="p">)</span>
+            <span class="n">PreNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">normalization</span><span class="p">,</span> <span class="n">use_triton</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">residual_norm_style</span> <span class="o">==</span> <span class="n">ResidualNormStyle</span><span class="o">.</span><span class="n">Pre</span>
+            <span class="k">else</span> <span class="n">PostNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">normalization</span><span class="p">,</span> <span class="n">use_triton</span><span class="p">)</span>
         <span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">ln_factory</span><span class="p">(</span><span class="n">sublayer</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">get_layer_wrapper</span><span class="p">(</span>
-            <span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">layer_norm_style</span><span class="p">,</span> <span class="n">residual</span><span class="p">,</span> <span class="n">residual_scale</span>
+            <span class="n">d_model</span><span class="p">,</span> <span class="n">sublayer</span><span class="p">,</span> <span class="n">residual_norm_style</span><span class="p">,</span> <span class="n">residual</span><span class="p">,</span> <span class="n">residual_scale</span>
         <span class="p">)</span>
 
     <span class="k">return</span> <span class="n">ln_factory</span>
@@ -312,7 +322,7 @@
 
         <span class="bp">self</span><span class="o">.</span><span class="n">reversible_f</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">reversible_g</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">residual_norm_style</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">residual_norm_style</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">dim_model</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span>
 
         <span class="c1"># If this layer is the first one, and a pose encoding has been requested</span>
@@ -335,7 +345,7 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="o">=</span> <span class="kc">None</span>
 
-        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">residual_norm_style</span> <span class="o">==</span> <span class="n">ResidualNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span><span class="p">:</span>
             <span class="c1"># Just use the layer norm coefficient here,</span>
             <span class="c1"># the init will be handled at the xformers level (knows about encoder and decoder blocks)</span>
             <span class="n">deep_norm_coefficients</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">get_deepnorm_coefficients</span><span class="p">(</span>
@@ -346,13 +356,14 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">residual_scale</span> <span class="o">=</span> <span class="mf">1.0</span>
 
-        <span class="c1"># mini helper, builds a LayerNorm with the right Pre/Post config, residuals, and the right dimensions</span>
+        <span class="c1"># mini helper, builds a normalization layer with the right Pre/Post config, residuals, and the right dimensions</span>
         <span class="n">ln_factory</span> <span class="o">=</span> <span class="n">_get_ln_factory</span><span class="p">(</span>
             <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">,</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">residual_norm_style</span><span class="p">,</span>
             <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span><span class="p">,</span>
             <span class="n">residual</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">residual_scale</span><span class="o">=</span><span class="n">residual_scale</span><span class="p">,</span>
+            <span class="n">normalization</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">normalization</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="n">mha</span> <span class="o">=</span> <span class="n">build_multi_head_attention</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">multi_head_config</span><span class="p">)</span>
@@ -369,11 +380,14 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">wrap_att</span> <span class="o">=</span> <span class="n">ln_factory</span><span class="p">(</span><span class="n">mha</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Residual</span><span class="p">,</span> <span class="n">PostNorm</span><span class="p">]</span> <span class="o">=</span> <span class="n">ln_factory</span><span class="p">(</span><span class="n">feedforward</span><span class="p">)</span>
         <span class="k">if</span> <span class="p">(</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">Pre</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">residual_norm_style</span> <span class="o">==</span> <span class="n">ResidualNormStyle</span><span class="o">.</span><span class="n">Pre</span>
             <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">is_last</span><span class="p">()</span>
         <span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span> <span class="o">=</span> <span class="n">PostNorm</span><span class="p">(</span>
-                <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span><span class="p">,</span> <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span>
+                <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span><span class="p">,</span>
+                <span class="n">normalization</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">normalization</span><span class="p">,</span>
+                <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span><span class="p">,</span>
             <span class="p">)</span>
 
         <span class="c1"># Simplicial embeddings are only used if specified, and on the last layer</span>
@@ -386,10 +400,7 @@
         <span class="c1"># Optional patch embedding</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">patch_emb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
-        <span class="k">if</span> <span class="p">(</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">patch_embedding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">is_first</span><span class="p">()</span>
-        <span class="p">):</span>
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">patch_embedding_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">patch_emb</span> <span class="o">=</span> <span class="n">build_patch_embedding</span><span class="p">(</span>
                 <span class="n">PatchEmbeddingConfig</span><span class="p">(</span><span class="o">**</span><span class="n">config</span><span class="o">.</span><span class="n">patch_embedding_config</span><span class="p">)</span>
             <span class="p">)</span>
@@ -402,9 +413,10 @@
     <span class="k">def</span> <span class="nf">get_reversible_layer</span><span class="p">(</span><span class="n">config</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">]:</span>
         <span class="n">ln_factory</span> <span class="o">=</span> <span class="n">_get_ln_factory</span><span class="p">(</span>
             <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">,</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">residual_norm_style</span><span class="p">,</span>
             <span class="n">residual</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
             <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span><span class="p">,</span>
+            <span class="n">normalization</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">normalization</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="n">mha</span> <span class="o">=</span> <span class="n">build_multi_head_attention</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">multi_head_config</span><span class="p">)</span>
@@ -478,7 +490,7 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="o">=</span> <span class="kc">None</span>
 
-        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">residual_norm_style</span> <span class="o">==</span> <span class="n">ResidualNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span><span class="p">:</span>
             <span class="c1"># Just use the layer norm coefficient here,</span>
             <span class="c1"># the init will be handled at the xformers level (knows about encoder and decoder blocks)</span>
             <span class="n">_</span><span class="p">,</span> <span class="n">deep_norm_coefficients</span> <span class="o">=</span> <span class="n">get_deepnorm_coefficients</span><span class="p">(</span>
@@ -492,10 +504,11 @@
         <span class="c1"># mini helper, builds a LayerNorm with the right Pre/Post config and the right dimensions</span>
         <span class="n">ln_factory</span> <span class="o">=</span> <span class="n">_get_ln_factory</span><span class="p">(</span>
             <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span><span class="p">,</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">residual_norm_style</span><span class="p">,</span>
             <span class="n">use_triton</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">use_triton</span><span class="p">,</span>
             <span class="n">residual</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">residual_scale</span><span class="o">=</span><span class="n">residual_scale</span><span class="p">,</span>
+            <span class="n">normalization</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">normalization</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="n">mha</span> <span class="o">=</span> <span class="n">build_multi_head_attention</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">multi_head_config_masked</span><span class="p">)</span>
@@ -520,10 +533,14 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Residual</span><span class="p">,</span> <span class="n">PostNorm</span><span class="p">]</span> <span class="o">=</span> <span class="n">ln_factory</span><span class="p">(</span><span class="n">feedforward</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="p">(</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">Pre</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">residual_norm_style</span> <span class="o">==</span> <span class="n">ResidualNormStyle</span><span class="o">.</span><span class="n">Pre</span>
             <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">is_last</span><span class="p">()</span>
         <span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span> <span class="o">=</span> <span class="n">PostNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span> <span class="o">=</span> <span class="n">PostNorm</span><span class="p">(</span>
+                <span class="n">config</span><span class="o">.</span><span class="n">dim_model</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">wrap_ff</span><span class="p">,</span>
+                <span class="n">normalization</span><span class="o">=</span><span class="n">NormalizationType</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">,</span>
+            <span class="p">)</span>
 
 <div class="viewcode-block" id="xFormerDecoderBlock.from_config"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerDecoderBlock.from_config">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_config</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">xFormerDecoderConfig</span><span class="p">):</span>

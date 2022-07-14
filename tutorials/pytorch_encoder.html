@@ -276,7 +276,7 @@
 
 <span class="n">encoder_config</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;dim_model&quot;</span><span class="p">:</span> <span class="n">EMB</span><span class="p">,</span>
-    <span class="s2">&quot;layer_norm_style&quot;</span><span class="p">:</span> <span class="s2">&quot;pre&quot;</span><span class="p">,</span>  <span class="c1"># Optional, pre/post</span>
+    <span class="s2">&quot;residual_norm_style&quot;</span><span class="p">:</span> <span class="s2">&quot;pre&quot;</span><span class="p">,</span>  <span class="c1"># Optional, pre/post</span>
     <span class="s2">&quot;position_encoding_config&quot;</span><span class="p">:</span> <span class="p">{</span>
         <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;vocab&quot;</span><span class="p">,</span>  <span class="c1"># whatever position encodinhg makes sense</span>
         <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="n">SEQ</span><span class="p">,</span>
@@ -365,7 +365,7 @@ There’s also an added flexibility with xFormers in that attention mechanisms c
         <span class="s2">&quot;block_type&quot;</span><span class="p">:</span> <span class="s2">&quot;encoder&quot;</span><span class="p">,</span>
         <span class="s2">&quot;num_layers&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>  <span class="c1"># Optional, this means that this config will repeat N times</span>
         <span class="s2">&quot;dim_model&quot;</span><span class="p">:</span> <span class="n">EMB</span><span class="p">,</span>
-        <span class="s2">&quot;layer_norm_style&quot;</span><span class="p">:</span> <span class="s2">&quot;pre&quot;</span><span class="p">,</span>  <span class="c1"># Optional, pre/post</span>
+        <span class="s2">&quot;residual_norm_style&quot;</span><span class="p">:</span> <span class="s2">&quot;pre&quot;</span><span class="p">,</span>  <span class="c1"># Optional, pre/post</span>
         <span class="s2">&quot;position_encoding_config&quot;</span><span class="p">:</span> <span class="p">{</span>
             <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;vocab&quot;</span><span class="p">,</span>  <span class="c1"># whatever position encodinhg makes sense</span>
             <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
@@ -393,7 +393,7 @@ There’s also an added flexibility with xFormers in that attention mechanisms c
         <span class="s2">&quot;block_type&quot;</span><span class="p">:</span> <span class="s2">&quot;decoder&quot;</span><span class="p">,</span>
         <span class="s2">&quot;num_layers&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>  <span class="c1"># Optional, this means that this config will repeat N times</span>
         <span class="s2">&quot;dim_model&quot;</span><span class="p">:</span> <span class="n">EMB</span><span class="p">,</span>
-        <span class="s2">&quot;layer_norm_style&quot;</span><span class="p">:</span> <span class="s2">&quot;pre&quot;</span><span class="p">,</span>  <span class="c1"># Optional, pre/post</span>
+        <span class="s2">&quot;residual_norm_style&quot;</span><span class="p">:</span> <span class="s2">&quot;pre&quot;</span><span class="p">,</span>  <span class="c1"># Optional, pre/post</span>
         <span class="s2">&quot;position_encoding_config&quot;</span><span class="p">:</span> <span class="p">{</span>
             <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;vocab&quot;</span><span class="p">,</span>  <span class="c1"># whatever position encodinhg makes sense</span>
             <span class="s2">&quot;seq_len&quot;</span><span class="p">:</span> <span class="n">SEQ</span><span class="p">,</span>

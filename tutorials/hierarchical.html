@@ -249,6 +249,7 @@
         <span class="n">stride</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
         <span class="n">padding</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
         <span class="n">seq_len</span><span class="o">=</span><span class="n">image_size</span> <span class="o">*</span> <span class="n">image_size</span> <span class="o">//</span> <span class="mi">16</span><span class="p">,</span>
+        <span class="n">feedforward</span><span class="o">=</span><span class="s2">&quot;MLP&quot;</span><span class="p">,</span>
     <span class="p">),</span>
     <span class="n">BasicLayerConfig</span><span class="p">(</span>
         <span class="n">embedding</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span>
@@ -257,6 +258,7 @@
         <span class="n">stride</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
         <span class="n">padding</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
         <span class="n">seq_len</span><span class="o">=</span><span class="n">image_size</span> <span class="o">*</span> <span class="n">image_size</span> <span class="o">//</span> <span class="mi">64</span><span class="p">,</span>
+        <span class="n">feedforward</span><span class="o">=</span><span class="s2">&quot;MLP&quot;</span><span class="p">,</span>
     <span class="p">),</span>
     <span class="n">BasicLayerConfig</span><span class="p">(</span>
         <span class="n">embedding</span><span class="o">=</span><span class="mi">320</span><span class="p">,</span>
@@ -265,13 +267,14 @@
         <span class="n">stride</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
         <span class="n">padding</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
         <span class="n">seq_len</span><span class="o">=</span><span class="n">image_size</span> <span class="o">*</span> <span class="n">image_size</span> <span class="o">//</span> <span class="mi">256</span><span class="p">,</span>
+        <span class="n">feedforward</span><span class="o">=</span><span class="s2">&quot;MLP&quot;</span><span class="p">,</span>
     <span class="p">),</span>
 <span class="p">]</span>
 
 <span class="c1"># Fill in the gaps in the config</span>
 <span class="n">xformer_config</span> <span class="o">=</span> <span class="n">get_hierarchical_configuration</span><span class="p">(</span>
     <span class="n">base_hierarchical_configs</span><span class="p">,</span>
-    <span class="n">layernorm_style</span><span class="o">=</span><span class="s2">&quot;pre&quot;</span><span class="p">,</span>
+    <span class="n">residual_norm_style</span><span class="o">=</span><span class="s2">&quot;pre&quot;</span><span class="p">,</span>
     <span class="n">use_rotary_embeddings</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">mlp_multiplier</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
     <span class="n">dim_head</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span>

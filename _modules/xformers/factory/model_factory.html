@@ -236,7 +236,7 @@
 <span class="kn">import</span> <span class="nn">torch</span>
 
 <span class="kn">from</span> <span class="nn">xformers.components</span> <span class="kn">import</span> <span class="n">reversible</span> <span class="k">as</span> <span class="n">rv</span>
-<span class="kn">from</span> <span class="nn">xformers.components.residual</span> <span class="kn">import</span> <span class="n">LayerNormStyle</span><span class="p">,</span> <span class="n">get_deepnorm_coefficients</span>
+<span class="kn">from</span> <span class="nn">xformers.components.residual</span> <span class="kn">import</span> <span class="n">ResidualNormStyle</span><span class="p">,</span> <span class="n">get_deepnorm_coefficients</span>
 <span class="kn">from</span> <span class="nn">xformers.factory.block_configs</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">xFormerBlockConfig</span><span class="p">,</span>
     <span class="n">xFormerDecoderConfig</span><span class="p">,</span>
@@ -266,7 +266,7 @@
 <span class="sd">                &quot;block_type&quot;: &quot;encoder&quot;,</span>
 <span class="sd">                &quot;num_layers&quot;: LAYERS,</span>
 <span class="sd">                &quot;dim_model&quot;: EMB,</span>
-<span class="sd">                &quot;layer_norm_style&quot;: &quot;pre&quot;,</span>
+<span class="sd">                &quot;residual_norm_style&quot;: &quot;pre&quot;,</span>
 <span class="sd">                &quot;position_encoding_config&quot;: {</span>
 <span class="sd">                    &quot;name&quot;: &quot;vocab&quot;,</span>
 <span class="sd">                    &quot;seq_len&quot;: CONTEXT,</span>
@@ -374,10 +374,12 @@
             <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">num_layers</span><span class="p">):</span>
                 <span class="c1"># Label where this layer is in the stack</span>
                 <span class="c1"># (for instance useful for the positional encoding, or late layer norm)</span>
-                <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">recipient</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
                     <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">mark_not_first</span><span class="p">()</span>
-                <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">config</span><span class="o">.</span><span class="n">num_layers</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+
+                <span class="k">if</span> <span class="n">config</span> <span class="o">!=</span> <span class="n">stack_configs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">or</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">config</span><span class="o">.</span><span class="n">num_layers</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
                     <span class="n">config</span><span class="o">.</span><span class="n">layer_position</span><span class="o">.</span><span class="n">mark_not_last</span><span class="p">()</span>
+
                 <span class="n">block</span> <span class="o">=</span> <span class="n">builder</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
 
                 <span class="c1"># If reversible: extract the reversible sub-parts, else append the block as-is</span>
@@ -416,7 +418,9 @@
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">decoders</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">(</span><span class="n">decoders</span><span class="p">)</span>
 
-        <span class="n">use_deepnorm</span> <span class="o">=</span> <span class="n">stack_configs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span>
+        <span class="n">use_deepnorm</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">stack_configs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">residual_norm_style</span> <span class="o">==</span> <span class="n">ResidualNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span>
+        <span class="p">)</span>
 
         <span class="k">assert</span> <span class="p">(</span>
             <span class="ow">not</span> <span class="n">use_deepnorm</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">reversible_encoder</span>
@@ -443,7 +447,7 @@
 
     <span class="k">def</span> <span class="nf">_verify_deepnorm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stack_configs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">xFormerBlockConfig</span><span class="p">]):</span>
         <span class="n">deepnorm</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">c</span><span class="o">.</span><span class="n">layer_norm_style</span> <span class="o">==</span> <span class="n">LayerNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">stack_configs</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">residual_norm_style</span> <span class="o">==</span> <span class="n">ResidualNormStyle</span><span class="o">.</span><span class="n">DeepNorm</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">stack_configs</span>
         <span class="p">]</span>
 
         <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="n">deepnorm</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="n">deepnorm</span><span class="p">),</span> <span class="p">(</span>
