@@ -6,17 +6,17 @@ reversible: False
 num_layers: 4
 use_triton: True
 dim_model: ${emb}
-layer_norm_style: pre
+residual_norm_style: pre
 position_encoding_config:
   name: vocab
   seq_len: 1024
   vocab_size: ${vocab}
   dropout: 0
-multi_head_config: 
+multi_head_config:
   num_heads: 4
   residual_dropout: 0
   attention: ???
-feedforward_config: 
+feedforward_config:
   name: MLP
   dropout: 0
   activation: relu

@@ -21,7 +21,7 @@ test_config = [
         "block_type": "encoder",
         "num_layers": 2,
         "dim_model": 768,
-        "layer_norm_style": "pre",
+        "residual_norm_style": "pre",
         "multi_head_config": {
             "num_heads": 12,
             "residual_dropout": 0.1,

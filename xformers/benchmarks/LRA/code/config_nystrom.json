@@ -33,7 +33,7 @@
                     "reversible": false,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "pre",
+                    "residual_norm_style": "pre",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -50,24 +50,26 @@
                         "hidden_layer_multiplier": 2
                     }
                 }
-
             ],
             "extra_settings": {
                 "attention": {
                     "favor": {
-                    "dim_features": 256,
-                    "iter_before_redraw": 1000
+                        "dim_features": 256,
+                        "iter_before_redraw": 1000
                     },
                     "nystrom": {
-                    "conv_kernel_size": 35,
-                    "num_landmarks": 128
+                        "conv_kernel_size": 35,
+                        "num_landmarks": 128
                     },
                     "sinkhorn": {
-                    "num_heads": 2,
-                    "block_size": 256
+                        "num_heads": 2,
+                        "block_size": 256
                     },
-                    "lsh_reformer": {"num_heads": 2, "num_hash": 2},
-                    "longshort":{
+                    "lsh_reformer": {
+                        "num_heads": 2,
+                        "num_hash": 2
+                    },
+                    "longshort": {
                         "num_landmarks": 32,
                         "window_size": 256,
                         "global_tokens": 2
@@ -109,7 +111,7 @@
                     "reversible": false,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "pre",
+                    "residual_norm_style": "pre",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -141,7 +143,7 @@
                         "num_heads": 2,
                         "block_size": 256
                     },
-                    "longshort":{
+                    "longshort": {
                         "num_landmarks": 32,
                         "window_size": 8
                     }
@@ -182,7 +184,7 @@
                     "reversible": false,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "pre",
+                    "residual_norm_style": "pre",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -199,23 +201,22 @@
                         "hidden_layer_multiplier": 2
                     }
                 }
-
             ],
             "extra_settings": {
                 "attention": {
                     "favor": {
-                    "dim_features": 256,
-                    "iter_before_redraw": 1000
+                        "dim_features": 256,
+                        "iter_before_redraw": 1000
                     },
                     "nystrom": {
-                    "conv_kernel_size": 35,
-                    "num_landmarks": 128
+                        "conv_kernel_size": 35,
+                        "num_landmarks": 128
                     },
                     "sinkhorn": {
                         "num_heads": 2,
                         "block_size": 256
                     },
-                    "longshort":{
+                    "longshort": {
                         "num_landmarks": 32,
                         "window_size": 8
                     }
@@ -251,7 +252,7 @@
                     "reversible": true,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "post",
+                    "residual_norm_style": "post",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -316,7 +317,7 @@
                     "reversible": true,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "post",
+                    "residual_norm_style": "post",
                     "position_encoding_config": {
                         "name": "vocab"
                     },

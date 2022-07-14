@@ -28,7 +28,7 @@ encoder_configs = {
     "reversible": False,
     "block_type": "encoder",
     "dim_model": EMB,
-    "layer_norm_style": "pre",
+    "residual_norm_style": "pre",
     "position_encoding_config": {
         "name": "vocab",
         "seq_len": SEQ,
@@ -61,7 +61,7 @@ encoder_configs = {
 decoder_configs = {
     "block_type": "decoder",
     "dim_model": EMB,
-    "layer_norm_style": "pre",
+    "residual_norm_style": "pre",
     "position_encoding_config": {
         "name": "vocab",
         "seq_len": SEQ,
@@ -109,9 +109,11 @@ test_configs_dict = {"encoder": encoder_configs, "decoder": decoder_configs}
 @pytest.mark.parametrize("config", [test_configs_list, test_configs_dict])
 @pytest.mark.parametrize("reversible", [True, False])
 @pytest.mark.parametrize("tie_embedding_weights", [True, False])
-@pytest.mark.parametrize("layer_norm_style", ["pre", "post", "deepnorm"])
+@pytest.mark.parametrize("residual_norm_style", ["pre", "post", "deepnorm"])
 @pytest.mark.parametrize("device", DEVICES)
-def test_presets(config, reversible, tie_embedding_weights, layer_norm_style, device):
+def test_presets(
+    config, reversible, tie_embedding_weights, residual_norm_style, device
+):
     torch.cuda.manual_seed(42)
     torch.manual_seed(42)
 
@@ -120,12 +122,12 @@ def test_presets(config, reversible, tie_embedding_weights, layer_norm_style, de
         # Only the encoder can be reversible
         config[0]["reversible"] = reversible
 
-        config[0]["layer_norm_style"] = layer_norm_style
-        config[1]["layer_norm_style"] = layer_norm_style
+        config[0]["residual_norm_style"] = residual_norm_style
+        config[1]["residual_norm_style"] = residual_norm_style
     else:
         config["encoder"]["reversible"] = reversible
-        config["encoder"]["layer_norm_style"] = layer_norm_style
-        config["decoder"]["layer_norm_style"] = layer_norm_style
+        config["encoder"]["residual_norm_style"] = residual_norm_style
+        config["decoder"]["residual_norm_style"] = residual_norm_style
 
     modelConfig = xFormerConfig(config, tie_embedding_weights)
     if isinstance(modelConfig.stack_configs, dict):
@@ -137,7 +139,7 @@ def test_presets(config, reversible, tie_embedding_weights, layer_norm_style, de
 
     context = (
         pytest.raises(AssertionError)
-        if reversible and (tie_embedding_weights or layer_norm_style == "deepnorm")
+        if reversible and (tie_embedding_weights or residual_norm_style == "deepnorm")
         else nullcontext()
     )
 
@@ -152,7 +154,7 @@ def test_presets(config, reversible, tie_embedding_weights, layer_norm_style, de
             assert change > 0.1
 
         # Check deepnorm init, if applicable
-        if layer_norm_style == "deepnorm":
+        if residual_norm_style == "deepnorm":
             for n, p in model.encoders.named_parameters():
                 # Check the MHA
                 if "in_proj_weight" in n:
@@ -209,10 +211,10 @@ def test_weight_init(weight_init, feedforward, deepnorm, device):
     config = test_configs_dict
 
     if deepnorm:
-        config["encoder"]["layer_norm_style"] = "deepnorm"
+        config["encoder"]["residual_norm_style"] = "deepnorm"
         config["encoder"]["feedforward_config"]["name"] = feedforward
 
-        config["decoder"]["layer_norm_style"] = "deepnorm"
+        config["decoder"]["residual_norm_style"] = "deepnorm"
 
     # Make sure that all the init methods catch all the weights
     xformers_weight_init._assert_if_not_initialized = True

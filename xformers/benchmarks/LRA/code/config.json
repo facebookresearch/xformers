@@ -32,7 +32,7 @@
                     "reversible": false,
                     "block_type": "encoder",
                     "num_layers": 4,
-                    "layer_norm_style": "pre",
+                    "residual_norm_style": "pre",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -97,7 +97,7 @@
                     "reversible": false,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "pre",
+                    "residual_norm_style": "pre",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -162,7 +162,7 @@
                     "reversible": true,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "pre",
+                    "residual_norm_style": "pre",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -222,7 +222,7 @@
                     "reversible": true,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "pre",
+                    "residual_norm_style": "pre",
                     "position_encoding_config": {
                         "name": "vocab"
                     },
@@ -287,7 +287,7 @@
                     "reversible": true,
                     "block_type": "encoder",
                     "num_layers": 2,
-                    "layer_norm_style": "pre",
+                    "residual_norm_style": "pre",
                     "position_encoding_config": {
                         "name": "vocab"
                     },

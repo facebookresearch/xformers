@@ -59,7 +59,7 @@ With this said, you can build an encoder directly as follows:
 
     encoder_config = {
         "dim_model": EMB,
-        "layer_norm_style": "pre",  # Optional, pre/post
+        "residual_norm_style": "pre",  # Optional, pre/post
         "position_encoding_config": {
             "name": "vocab",  # whatever position encodinhg makes sense
             "seq_len": SEQ,
@@ -158,7 +158,7 @@ There's also an added flexibility with xFormers in that attention mechanisms can
             "block_type": "encoder",
             "num_layers": 3,  # Optional, this means that this config will repeat N times
             "dim_model": EMB,
-            "layer_norm_style": "pre",  # Optional, pre/post
+            "residual_norm_style": "pre",  # Optional, pre/post
             "position_encoding_config": {
                 "name": "vocab",  # whatever position encodinhg makes sense
                 "seq_len": 1024,
@@ -186,7 +186,7 @@ There's also an added flexibility with xFormers in that attention mechanisms can
             "block_type": "decoder",
             "num_layers": 3,  # Optional, this means that this config will repeat N times
             "dim_model": EMB,
-            "layer_norm_style": "pre",  # Optional, pre/post
+            "residual_norm_style": "pre",  # Optional, pre/post
             "position_encoding_config": {
                 "name": "vocab",  # whatever position encodinhg makes sense
                 "seq_len": SEQ,

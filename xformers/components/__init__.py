@@ -17,11 +17,12 @@ from .multi_head_dispatch import MultiHeadDispatch  # noqa
 from .multi_head_dispatch import MultiHeadDispatchConfig
 from .patch_embedding import PatchEmbeddingConfig  # noqa
 from .patch_embedding import build_patch_embedding  # noqa
-from .residual import LayerNormStyle  # noqa; noqa
+from .residual import NormalizationType  # noqa
 from .residual import PostNorm  # noqa
 from .residual import PreNorm  # noqa
 from .residual import RequiresWrappedInputs  # noqa
 from .residual import Residual  # noqa
+from .residual import ResidualNormStyle  # noqa
 
 # automatically import any Python files in the directory
 import_all_modules(str(Path(__file__).parent), "xformers.components")

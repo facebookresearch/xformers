@@ -6,21 +6,21 @@ reversible: False  # Optionally make these layers reversible to save memory
 num_layers: 3  # Optional this means that this config will repeat N times
 block_type: decoder
 dim_model: ${emb}
-layer_norm_style: pre  # Optional pre/post
-position_encoding_config: 
+residual_norm_style: pre  # Optional pre/post
+position_encoding_config:
   name: vocab  # whatever position encodinhg makes sense
   seq_len: ${seq}
   vocab_size: ${vocab}
   dropout: 0
-multi_head_config_masked: 
+multi_head_config_masked:
   num_heads: 4
   residual_dropout: 0
   attention: ???
-multi_head_config_cross: 
+multi_head_config_cross:
   num_heads: 4
   residual_dropout: 0
   attention: ???
-feedforward_config: 
+feedforward_config:
   name: MLP
   dropout: 0
   activation: relu
