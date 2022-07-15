@@ -36,6 +36,8 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     q = q * (1 / q.shape[-1] ** 0.5)
     attn = q @ k.transpose(-2, -1)
     if attn_bias is not None:
+        if isinstance(attn_bias, xformers.ops.AttentionMask):
+            attn_bias = attn_bias.to_tensor()
         attn = attn + attn_bias.float()
     attn = attn.softmax(-1)
     if drop_mask is not None:
@@ -43,7 +45,22 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     return attn @ v
 
 
-@pytest.mark.parametrize("use_attn_bias", [False, True])
+def create_attn_bias(
+    bias_type, batch_size: int, q_len: int, kv_len: int, device, dtype
+):
+    if bias_type is None:
+        return None
+    if bias_type is torch.Tensor:
+        attn_bias = torch.randn((batch_size, 1, kv_len), device=device, dtype=dtype) * 3
+        return attn_bias.expand(batch_size, q_len, kv_len)
+    if bias_type is xformers.ops.LowerTriangularMask:
+        return bias_type([batch_size, q_len, kv_len], dtype=dtype, device=device)
+    assert False, f"Unsupported bias type: {bias_type}"
+
+
+@pytest.mark.parametrize(
+    "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
+)
 @pytest.mark.parametrize("k_len", [5, 6, 32, 128])
 @pytest.mark.parametrize("batch_size", [1, 4])
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 64, 128])
@@ -64,7 +81,7 @@ def test_memory_efficient_attention(
     kv_len,
     batch_size,
     k_len,
-    use_attn_bias,
+    attn_bias_type,
     dtype,
     op: xformers.ops.MemoryEfficientAttentionOp,
 ):
@@ -73,11 +90,15 @@ def test_memory_efficient_attention(
     key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
     value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
     attn_bias = None
-    if use_attn_bias:
-        attn_bias = (
-            torch.randn((batch_size, 1, kv_len), device=device, dtype=dtype) * scale
+    if attn_bias_type is not None:
+        attn_bias = create_attn_bias(
+            attn_bias_type,
+            batch_size=batch_size,
+            q_len=q_len,
+            kv_len=kv_len,
+            dtype=dtype,
+            device=device,
         )
-        attn_bias = attn_bias.expand(batch_size, q_len, kv_len)
 
     if not op.supports(
         xformers.ops.AttentionOpDispatch.from_arguments(
@@ -154,7 +175,9 @@ def test_logsumexp(
     assert_allclose(lse, ref_lse, atol=2e-4)
 
 
-@pytest.mark.parametrize("use_attn_bias", [False, True])
+@pytest.mark.parametrize(
+    "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
+)
 @pytest.mark.parametrize("grad_out_contiguous", [False, True])
 @pytest.mark.parametrize("k_len", [5, 6, 32, 128])
 @pytest.mark.parametrize("batch_size", [1, 4])
@@ -177,7 +200,7 @@ def test_memory_efficient_attention_backward(
     batch_size,
     k_len,
     grad_out_contiguous,
-    use_attn_bias,
+    attn_bias_type,
     dtype,
     op: xformers.ops.MemoryEfficientAttentionOp,
 ):
@@ -187,11 +210,15 @@ def test_memory_efficient_attention_backward(
     value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
 
     attn_bias = None
-    if use_attn_bias:
-        attn_bias = (
-            torch.randn((batch_size, 1, kv_len), device=device, dtype=dtype) * scale
+    if attn_bias_type is not None:
+        attn_bias = create_attn_bias(
+            attn_bias_type,
+            batch_size=batch_size,
+            q_len=q_len,
+            kv_len=kv_len,
+            dtype=dtype,
+            device=device,
         )
-        attn_bias = attn_bias.expand(batch_size, q_len, kv_len)
 
     if not op.supports(
         xformers.ops.AttentionOpDispatch.from_arguments(

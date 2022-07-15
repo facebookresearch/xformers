@@ -16,7 +16,23 @@ from utils import benchmark_main_helper
 import xformers.ops
 
 
+def create_attn_bias(
+    bias_type, batch_size: int, q_len: int, kv_len: int, device, dtype
+):
+    NoneType = type(None)
+    if bias_type is NoneType:
+        return None
+    if bias_type is torch.Tensor:
+        attn_bias = torch.randn((batch_size, 1, kv_len), device=device, dtype=dtype) * 3
+        return attn_bias.expand(batch_size, q_len, kv_len)
+    if bias_type is xformers.ops.LowerTriangularMask:
+        return bias_type([batch_size, q_len, kv_len], dtype=dtype, device=device)
+    assert False, f"Unsupported bias type: {bias_type}"
+
+
 def ref_attention(q, k, v, attn_bias=None, p=0.0):
+    if isinstance(attn_bias, xformers.ops.AttentionMask):
+        attn_bias = attn_bias.to_tensor().to(q.dtype)
     q = q * (1.0 / q.shape[-1] ** 0.5)
     if attn_bias is None:
         attn = q @ k.transpose(-2, -1)
@@ -57,23 +73,22 @@ CASES = list(
     product_dict(
         shape=SHAPES,
         num_threads=NUM_THREADS,
-        use_attn_bias=[False, True],
+        attn_bias_type=[type(None), torch.Tensor, xformers.ops.LowerTriangularMask],
         dtype=[torch.half, torch.bfloat16, torch.float],
     )
 )
 
 
-def benchmark_forward(shape, num_threads: int, use_attn_bias: bool, dtype):
+def benchmark_forward(shape, num_threads: int, attn_bias_type, dtype):
     B, M, K = shape
     q = torch.rand(shape, device=device, dtype=dtype)
-    attn_bias = None
-    if use_attn_bias:
-        attn_bias = torch.rand(
-            shape[0], 1, shape[1], device=device, dtype=dtype
-        ).expand(shape[0], shape[1], shape[1])
 
     dispatch = xformers.ops.AttentionOpDispatch(
-        dtype=dtype, device=device, k=K, has_attn_bias=use_attn_bias, has_dropout=False
+        dtype=dtype,
+        device=device,
+        k=K,
+        attn_bias_type=attn_bias_type,
+        has_dropout=False,
     )
     try:
         op = dispatch.op if FORCE_OP is None else FORCE_OP
@@ -81,6 +96,15 @@ def benchmark_forward(shape, num_threads: int, use_attn_bias: bool, dtype):
         return
     if not op.supports(dispatch):
         return
+
+    attn_bias = create_attn_bias(
+        attn_bias_type,
+        batch_size=B,
+        q_len=M,
+        kv_len=M,
+        device=device,
+        dtype=dtype,
+    )
 
     dtype_str = {
         torch.bfloat16: "b16",
@@ -95,7 +119,7 @@ def benchmark_forward(shape, num_threads: int, use_attn_bias: bool, dtype):
             q.float(),
             q.float(),
             q.float(),
-            attn_bias.float() if attn_bias is not None else None,
+            attn_bias,
         )
         assert (r - rr).abs().max() < 4e-3, (r - rr).abs().max()
         del r, rr
@@ -108,7 +132,7 @@ def benchmark_forward(shape, num_threads: int, use_attn_bias: bool, dtype):
             "p": p,
             "fn": partial(xformers.ops.memory_efficient_attention, op=op),
         },
-        label=f"attention (use_attn_bias={use_attn_bias})",
+        label=f"attention (attn_bias={attn_bias_type})",
         description="optimized",
         sub_label=sub_label,
         num_threads=num_threads,
@@ -121,24 +145,23 @@ def benchmark_forward(shape, num_threads: int, use_attn_bias: bool, dtype):
             "p": p,
             "fn": ref_attention,
         },
-        label=f"attention (use_attn_bias={use_attn_bias})",
+        label=f"attention (attn_bias={attn_bias_type})",
         description="vanilla",
         sub_label=sub_label,
         num_threads=num_threads,
     )
 
 
-def benchmark_backward(shape, num_threads: int, use_attn_bias: bool, dtype):
+def benchmark_backward(shape, num_threads: int, attn_bias_type, dtype):
     B, M, K = shape
     q = torch.rand(shape, device=device, dtype=dtype, requires_grad=True)
-    attn_bias = None
-    if use_attn_bias:
-        attn_bias = torch.rand(shape[0], 1, shape[1], device=device).expand(
-            shape[0], shape[1], shape[1]
-        )
 
     dispatch = xformers.ops.AttentionOpDispatch(
-        dtype=dtype, device=device, k=K, has_attn_bias=use_attn_bias, has_dropout=False
+        dtype=dtype,
+        device=device,
+        k=K,
+        attn_bias_type=attn_bias_type,
+        has_dropout=False,
     )
     try:
         op = dispatch.op if FORCE_OP is None else FORCE_OP
@@ -146,6 +169,15 @@ def benchmark_backward(shape, num_threads: int, use_attn_bias: bool, dtype):
         return
     if not op.supports(dispatch):
         return
+
+    attn_bias = create_attn_bias(
+        attn_bias_type,
+        batch_size=B,
+        q_len=M,
+        kv_len=M,
+        device=device,
+        dtype=dtype,
+    )
 
     dtype_str = {
         torch.bfloat16: "b16",
@@ -178,7 +210,7 @@ def benchmark_backward(shape, num_threads: int, use_attn_bias: bool, dtype):
             "out": out,
             "grad": grad,
         },
-        label=f"attention backward (use_attn_bias={use_attn_bias})",
+        label=f"attention backward (attn_bias={attn_bias_type})",
         description="optimized",
         sub_label=sub_label,
         num_threads=num_threads,
@@ -191,7 +223,7 @@ def benchmark_backward(shape, num_threads: int, use_attn_bias: bool, dtype):
             "out": ref_attention(q, q, q, attn_bias, p),
             "grad": grad,
         },
-        label=f"attention backward (use_attn_bias={use_attn_bias})",
+        label=f"attention backward (attn_bias={attn_bias_type})",
         description="vanilla",
         sub_label=sub_label,
         num_threads=num_threads,

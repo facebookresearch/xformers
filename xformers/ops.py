@@ -52,9 +52,43 @@ def _get_xformers_operator(name: str):
         return no_such_operator
 
 
+class AttentionMask:
+    def to_tensor(self) -> torch.Tensor:
+        raise NotImplementedError()
+
+
+class LowerTriangularMask(AttentionMask):
+    def __init__(self, *tensor_args, **tensor_kwargs) -> None:
+        self._tensor: Optional[torch.Tensor] = None
+        self._tensor_kwargs = tensor_kwargs
+        self._tensor_args = tensor_args
+
+    def to_tensor(self) -> torch.Tensor:
+        if self._tensor is None:
+            # Work around for "triu_tril_cuda_template" not implemented for 'BFloat16'
+            dtype = self._tensor_kwargs.pop("dtype", torch.float)
+            create_as = dtype if dtype is not torch.bfloat16 else torch.float32
+            self._tensor = torch.full(  # type: ignore
+                *self._tensor_args,
+                **self._tensor_kwargs,
+                dtype=create_as,
+                fill_value=float("-inf"),
+            )
+            self._tensor = torch.triu(self._tensor, diagonal=1).to(dtype)  # type: ignore
+        return self._tensor
+
+
 def _ref_attention(
-    query, key, value, compute_logsumexp: bool, attn_bias=None, p: float = 0.0
+    query,
+    key,
+    value,
+    compute_logsumexp: bool,
+    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+    p: float = 0.0,
 ):
+    if attn_bias is not None and isinstance(attn_bias, AttentionMask):
+        attn_bias = attn_bias.to_tensor()
+
     query = query * (1.0 / query.shape[-1] ** 0.5)
     if attn_bias is None:
         attn = query @ key.transpose(-2, -1)
@@ -87,7 +121,7 @@ class AttentionOpBase(torch.autograd.Function):
     SUPPORTED_DEVICES: Set[str]
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
-    SUPPORTS_ATTN_BIAS: bool
+    SUPPORTS_attn_bias_type: Set[Any] = {type(None)}
     SUPPORTS_DROPOUT: bool
     NAME: str
 
@@ -97,7 +131,7 @@ class AttentionOpBase(torch.autograd.Function):
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        attn_bias: Optional[torch.Tensor],
+        attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
     ) -> torch.Tensor:
         return cls.FORWARD_OPERATOR(
@@ -134,7 +168,7 @@ class AttentionOpBase(torch.autograd.Function):
             return False
         if d.k > cls.SUPPORTED_MAX_K:
             return False
-        if d.has_attn_bias and not cls.SUPPORTS_ATTN_BIAS:
+        if d.attn_bias_type not in cls.SUPPORTS_attn_bias_type:
             return False
         if d.has_dropout and not cls.SUPPORTS_DROPOUT:
             return False
@@ -146,7 +180,7 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
     SUPPORTED_DEVICES = {"cuda", "cpu"}
     SUPPORTED_DTYPES = {torch.float}
     SUPPORTED_MAX_K: float = 32
-    SUPPORTS_ATTN_BIAS = True
+    SUPPORTS_attn_bias_type: Set[Any] = {type(None), torch.Tensor}
     SUPPORTS_DROPOUT = True
     NAME = "small_k"
 
@@ -167,7 +201,7 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.float, torch.half}
     SUPPORTED_MAX_K = math.inf
-    SUPPORTS_ATTN_BIAS = False
+    SUPPORTS_attn_bias_type: Set[Any] = {type(None)}
     SUPPORTS_DROPOUT = False
     NAME = "fwd_gen"
 
@@ -204,7 +238,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 128
-    SUPPORTS_ATTN_BIAS = False
+    SUPPORTS_attn_bias_type: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
     NAME = "flshatt"
 
@@ -229,7 +263,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        attn_bias: Optional[torch.Tensor],
+        attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
     ) -> torch.Tensor:
         return cls.forward(
@@ -238,10 +272,9 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
 
     @classmethod
     def forward(cls, ctx, query, key, value, attn_bias, p):
-        causal = False
+        causal = isinstance(attn_bias, LowerTriangularMask)
         return_softmax = False
 
-        assert attn_bias is None, "Not implemented"
         batch = query.shape[0]
         seqlen_q = query.shape[1]
         seqlen_k = key.shape[1]
@@ -435,7 +468,7 @@ class AttentionOpDispatch:
     device: Union[torch.device, str]
     k: int
     has_dropout: bool
-    has_attn_bias: bool
+    attn_bias_type: Any
 
     @property
     def op(self) -> Type[AttentionOpBase]:
@@ -455,7 +488,7 @@ class AttentionOpDispatch:
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        attn_bias: Optional[torch.Tensor] = None,
+        attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
         p: float = 0.0,
     ) -> "AttentionOpDispatch":
         return AttentionOpDispatch(
@@ -463,7 +496,7 @@ class AttentionOpDispatch:
             device=query.device,
             k=query.shape[-1],
             has_dropout=p > 0.0,
-            has_attn_bias=attn_bias is not None,
+            attn_bias_type=type(attn_bias),
         )
 
 
@@ -471,7 +504,7 @@ def memory_efficient_attention(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    attn_bias: Optional[torch.Tensor] = None,
+    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
     p: float = 0.0,
     *,
     op=None,
@@ -485,6 +518,7 @@ def memory_efficient_attention(
         op = AttentionOpDispatch.from_arguments(
             query=query, key=key, value=value, attn_bias=attn_bias, p=p
         ).op
+
     # fast-path that doesn't require computing the logsumexp for backward computation
     if all(x.requires_grad is False for x in [query, key, value]):
         return op.forward_no_grad(
