@@ -13,7 +13,7 @@ from functorch.compile import memory_efficient_fusion
 
 def _fn(
     x: torch.Tensor,
-    bias: torch.Tensor,
+    bias: Optional[torch.Tensor],
     prob: float,
     res: torch.Tensor,
 ) -> torch.Tensor:

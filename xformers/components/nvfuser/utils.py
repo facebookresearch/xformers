@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Any, Dict, List, Optional
+
 import torch.nn as nn
 
 from xformers.components import Activation, LayerNormStyle
@@ -19,11 +21,11 @@ def build_nvfused(
     bias: bool,
     activation: Activation,
     p: float,
-    layer_norm_style: LayerNormStyle,
+    layer_norm_style: Optional[LayerNormStyle],
 ):
     bias_shape = shape[-1] if bias else None
     d_model = shape[-1]
-    init_args = {
+    init_args: Dict[nn.Module, List[Any]] = {
         NVFusedBiasActivationDropout: [p, activation, bias_shape],
         NVFusedBiasDropoutRes: [p, bias_shape],
         NVFusedBiasDropoutResLayerNorm: [p, d_model, bias_shape, layer_norm_style],

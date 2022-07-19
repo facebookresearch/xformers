@@ -15,9 +15,9 @@ from xformers.components import LayerNormStyle
 
 def _fn(
     x: torch.Tensor,
-    bias: torch.Tensor,
+    bias: Optional[torch.Tensor],
     prob: float,
-    layer_norm_style: LayerNormStyle,
+    layer_norm_style: Optional[LayerNormStyle],
     norm: nn.Module,
     res: torch.Tensor,
 ) -> torch.Tensor:

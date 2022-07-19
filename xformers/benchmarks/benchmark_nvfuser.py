@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from functools import partial
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -51,10 +51,10 @@ def to_gbs_fw(a, ms, bias):
 def build_torch_fn(
     pattern: nn.Module,
     shape: tuple,
-    bias: torch.Tensor,
-    activation: Activation,
+    bias: Optional[torch.Tensor],
+    activation: Optional[Activation],
     p: float,
-    layer_norm_style: LayerNormStyle,
+    layer_norm_style: Optional[LayerNormStyle],
     dtype: torch.dtype,
 ):
     torch_act = build_activation(activation)
@@ -80,7 +80,7 @@ def bench_nvfused(
     bias: bool,
     backward: bool,
     activation: Activation,
-    layer_norm_style: LayerNormStyle,
+    layer_norm_style: Optional[LayerNormStyle],
 ):
     device = torch.device("cuda")
 
@@ -135,10 +135,10 @@ def bench_nvfused(
             testcases = [
                 TestCase(
                     partial(step, fn=torch_fn, res=residual),
-                    "pytorch- bias: {} - fw{} - act: {}{}".format(
+                    "pytorch- bias: {} - fw{}{}{}".format(
                         bias,
                         "+bw" if backward else "",
-                        activation,
+                        f" - Act: {activation}" if activation is not None else "",
                         f" - Style: {layer_norm_style}"
                         if layer_norm_style is not None
                         else "",
@@ -146,10 +146,10 @@ def bench_nvfused(
                 ),
                 TestCase(
                     partial(step, fn=nvfuser_fn, res=residual),
-                    "nvFuser- bias: {} - fw{} - act: {}{}".format(
+                    "nvFuser- bias: {} - fw{}{}{}".format(
                         bias,
                         "+bw" if backward else "",
-                        activation,
+                        f" - Act: {activation}" if activation is not None else "",
                         f" - Style: {layer_norm_style}"
                         if layer_norm_style is not None
                         else "",
@@ -159,10 +159,10 @@ def bench_nvfused(
             if triton_fn is not None:
                 triton_test = TestCase(
                     partial(step, fn=triton_fn, res=residual),
-                    "triton- bias: {} - fw{} - act: {}{}".format(
+                    "triton- bias: {} - fw{}{}{}".format(
                         bias,
                         "+bw" if backward else "",
-                        activation,
+                        f" - Act: {activation}" if activation is not None else "",
                         f" - Style: {layer_norm_style}"
                         if layer_norm_style is not None
                         else "",
@@ -189,12 +189,12 @@ def bench_nvfused(
         )
         pretty_plot(
             results,
-            title="{}-{}-FW{}-{}-{}{}".format(
+            title="{}-FW{}-{}{}-{}{}".format(
                 pattern_str,
-                bias,
                 "+BW" if backward else "",
+                bias,
+                f"-{activation}" if activation is not None else "",
                 dtype,
-                activation,
                 f"-{layer_norm_style}" if layer_norm_style is not None else "",
             ),
             units="GB/s",
@@ -204,11 +204,20 @@ def bench_nvfused(
 
 
 # for activation in [Activation.GeLU, None, Activation.SquaredReLU]:
-for pattern in [NVFusedBiasDropoutResLayerNorm]:
-    for activation in [Activation.ReLU, Activation.GeLU]:
+for pattern in [
+    NVFusedBiasActivationDropout,
+    NVFusedBiasDropoutRes,
+    NVFusedBiasDropoutResLayerNorm,
+]:
+    activations: List[Optional[Activation]] = (
+        [Activation.ReLU, Activation.GeLU]
+        if pattern == NVFusedBiasActivationDropout
+        else [None]
+    )
+    for activation in activations:
         for bw in [True, False]:
             for bias in [True, False]:
-                styles = (
+                styles: List[Optional[LayerNormStyle]] = (
                     [LayerNormStyle.Pre, LayerNormStyle.Post]
                     if pattern == NVFusedBiasDropoutResLayerNorm
                     else [None]
