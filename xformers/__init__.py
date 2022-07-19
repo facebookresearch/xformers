@@ -82,9 +82,7 @@ if _is_triton_available:
 
 if _is_functorch_available:
     try:
-        from xformers.components.nvfuser.bias_act_dropout import (  # noqa
-            NVFusedBiasActivationDropout,
-        )
+        from xformers.components.nvfuser import NVFusedBiasActivationDropout  # noqa
     except ImportError as e:
         logging.warning(
             f"Functorch is not available, some optimizations will not be enabled.\nError {e}"

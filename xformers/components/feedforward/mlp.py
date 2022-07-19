@@ -24,6 +24,8 @@ from . import register_feedforward
 @dataclass
 class MlpConfig(FeedforwardConfig):
     hidden_layer_multiplier: int
+    bias: bool
+    nvfuser: bool
 
 
 @register_feedforward("MLP", MlpConfig)
@@ -35,15 +37,15 @@ class MLP(Feedforward):
         activation: Activation,
         hidden_layer_multiplier: int,
         bias: bool = True,
+        nvfuser: bool = True,
         *args,
         **kwargs,
     ):
         super().__init__()
 
         dim_mlp = hidden_layer_multiplier * dim_model
-
-        # check if fused Bias Activaton Dropout is applicable
-        if activation in {Activation.ReLU, Activation.GeLU} and _is_functorch_available:
+        # check if fused Bias Activation Dropout is applicable
+        if _is_functorch_available and nvfuser:
             self.requires_cuda = True
 
             self.mlp = nn.Sequential(
@@ -56,7 +58,7 @@ class MLP(Feedforward):
                     activation=activation,
                 ),
                 nn.Linear(
-                    hidden_layer_multiplier * dim_model, dim_model, bias=False
+                    in_features=dim_mlp, out_features=dim_model, bias=False
                 ),  # bias is handled in the next layer
                 NVFusedBiasActivationDropout(
                     p=dropout,
@@ -66,14 +68,10 @@ class MLP(Feedforward):
             )
         else:
             self.mlp = nn.Sequential(
-                nn.Linear(
-                    dim_model,
-                    hidden_layer_multiplier * dim_model,
-                    bias=bias,
-                ),
+                nn.Linear(in_features=dim_model, out_features=dim_mlp, bias=bias),
                 build_activation(activation),
                 nn.Dropout(dropout),
-                nn.Linear(hidden_layer_multiplier * dim_model, dim_model, bias=bias),
+                nn.Linear(in_features=dim_mlp, out_features=dim_model, bias=bias),
                 nn.Dropout(dropout),
             )
 
