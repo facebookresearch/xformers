@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Any, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -14,7 +14,7 @@ from xformers.components import Activation, build_activation
 
 
 def _fn(
-    x: torch.Tensor, bias: torch.Tensor, activation: Activation, prob: float
+    x: torch.Tensor, bias: torch.Tensor, activation: nn.Module, prob: float
 ) -> torch.Tensor:
     if bias is not None:
         x = torch.add(x, bias)
@@ -37,19 +37,7 @@ class NVFusedBiasActivationDropout(torch.nn.Module):
         super().__init__()
 
         self.p = float(p)
-
-        allowed_activations = [Activation.ReLU, Activation.GeLU]
-
-        assert (
-            self.p < 1.0
-        ), f"We don't want to drop all the values, most probably p={self.p} is not properly set"
-
-        assert activation in [
-            None,
-            Activation.ReLU,
-            Activation.GeLU,
-        ], f"Activation provided is not one of {allowed_activations}"
-
+        self.requires_residual = False
         self.activation = activation
         self.pytorch_activation = build_activation(self.activation)
 
@@ -58,6 +46,10 @@ class NVFusedBiasActivationDropout(torch.nn.Module):
             if bias_shape is not None
             else None
         )
+
+        assert (
+            self.p < 1.0
+        ), f"We don't want to drop all the values, most probably p={self.p} is not properly set"
 
     def init_weights(self, *args, **kwargs):
         with torch.no_grad():
@@ -68,8 +60,10 @@ class NVFusedBiasActivationDropout(torch.nn.Module):
         # Train/inference
         p = self.p if self.training else 0.0
 
+        # TODO perf check, is slower than pytorch for small buffers, bypassing it in that case
+
         # Catch a non-cuda setup, fallback to pytorch
-        if not x.is_cuda or p == 0.0:
+        if not x.is_cuda:
             return _fn(x, self.bias, self.pytorch_activation, p)
 
         # AOTAutograd, NVFuser backed path
