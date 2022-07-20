@@ -76,6 +76,63 @@ __device__ __forceinline__ scalar_t warpMax(scalar_t val) {
   return val;
 }
 
+template <typename scalar_t, typename vec_t, int kBlockSizeK>
+//__device__ __forceinline__ void apply_masking(
+__device__ void apply_masking(
+    scalar_t s_delta[kBlockSizeK],
+    at::PhiloxCudaState philox_args,
+    int64_t global_offset,
+    scalar_t p,
+    int64_t col_offset) {
+  // strategy: initialize the rng so that each element in the attention
+  // matrix has its own subsequence, so that we can easily retrieve
+  // the element during backward
+
+  curandStatePhilox4_32_10_t state;
+  auto seeds = at::cuda::philox::unpack(philox_args);
+
+  // we will always sample 4 random floats at a time
+  // as it's more efficient
+  constexpr int kSampled = 4;
+
+  // because the forward and the backward have different
+  // access patterns, we round the rng offset so that it's
+  // a multiple of kSampled, and add the delta needed
+  int delta = col_offset & (kSampled - 1);
+  col_offset = col_offset - delta;
+
+#pragma unroll
+  for (int64_t k_item_idx = 0; k_item_idx < kBlockSizeK;
+       k_item_idx += kSampled) {
+    int64_t offset = global_offset + k_item_idx + col_offset;
+    // ideally we would use the code below, but initializing the rng
+    // takes a significant portion of time. So we instead modify the seed
+    // so that each thread has a different seed. This has fewer statistical
+    // guarantees than by doing it properly, but is much faster
+    curand_init(
+        std::get<0>(seeds), offset, std::get<1>(seeds) + delta, &state);
+    // curand_init(std::get<0>(seeds) + (offset << 8) + std::get<1>(seeds), 0,
+    // 0, &state);
+    float4 rand = curand_uniform4(&state);
+    for (int kk = 0; kk < kSampled; kk++) {
+      if (k_item_idx + kk < kBlockSizeK)
+        s_delta[k_item_idx + kk] *= (&rand.x)[kk] < p;
+    }
+  }
+}
+
+template <typename scalar_t>
+at::PackedTensorAccessor<scalar_t, 3> _packed_tensor_accessor_or_dummy(
+    const at::Tensor& attn_bias) {
+  if (attn_bias.defined()) {
+    return attn_bias.packed_accessor<scalar_t, 3>();
+  } else {
+    const std::array<int64_t, 3> zeros{{0}};
+    return at::PackedTensorAccessor<scalar_t, 3>(
+        nullptr, zeros.data(), zeros.data());
+  }
+}
+
 template <
     typename scalar_t,
     typename vec_t,
@@ -88,7 +145,11 @@ __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 2> logsumexp,
     at::PackedTensorAccessor<scalar_t, 3> query,
     at::PackedTensorAccessor<scalar_t, 3> key,
-    at::PackedTensorAccessor<scalar_t, 3> value) {
+    at::PackedTensorAccessor<scalar_t, 3> value,
+    at::PackedTensorAccessor<scalar_t, 3> attn_bias_,
+    scalar_t p,
+    at::PhiloxCudaState philox_args
+    ) {
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -114,6 +175,8 @@ __global__ void attention_kernel(
   auto out_i = reinterpret_cast<vec_t*>(output[batch_idx][query_idx].data());
 
   scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
+
+  auto attn_bias = attn_bias_[batch_idx][query_idx].data();
 
   for (int kv_idx = 0; kv_idx < N; kv_idx += kBlockItemsX) {
     scalar_t attn_fragment[kBlockItemsX] = {};
@@ -204,6 +267,10 @@ __global__ void attention_kernel(
       attn_fragment[x_item_idx] =
           warpSum<scalar_t, kBlockWidth>(attn_fragment[x_item_idx]);
 
+      if (attn_bias != nullptr && (x_item_idx < end_iter)) {
+        attn_fragment[x_item_idx] += __ldg(attn_bias + kv_idx + x_item_idx);
+      }
+
       if (x_item_idx >= end_iter)
         attn_fragment[x_item_idx] =
             -std::numeric_limits<scalar_t>::infinity();
@@ -219,6 +286,14 @@ __global__ void attention_kernel(
       attn_fragment[x_item_idx] = std::exp(attn_fragment[x_item_idx] - m_i);
       attn_fragment[x_item_idx] = isfinite(attn_fragment[x_item_idx]) ? attn_fragment[x_item_idx] : scalar_t(0);
       s_prime += attn_fragment[x_item_idx];
+    }
+
+    if (p < 1.0) {
+      // this approach is suboptimal as different threads compute the
+      // same mask value, and this could be parallelized
+      int global_offset = batch_idx * M * N + query_idx * N;
+      apply_masking<scalar_t, vec_t, kBlockItemsX>(
+          attn_fragment, philox_args, global_offset, p, kv_idx);
     }
 
     vec_t* out_i_tmp = out_i;
@@ -314,6 +389,8 @@ __global__ void attention_kernel(
   if (logsumexp.size(1) > 0) {
     logsumexp[batch_idx][query_idx] = m_prime + std::log(s_prime);
   }
+  // update normalization constant with dropout probability
+  s_prime *= p;
   // avoid division by 0 when row is fully masked
   if (s_prime > 0)
     s_prime = 1.0 / s_prime;
@@ -322,17 +399,29 @@ __global__ void attention_kernel(
   }
 }
 
-std::tuple<at::Tensor, at::Tensor> attention(
+std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
-    bool compute_logsumexp) {
+    bool compute_logsumexp,
+    const c10::optional<at::Tensor>& attn_bias_,
+    double p) {
 
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
   TORCH_CHECK(query.dim() == 3);
   TORCH_CHECK(query.size(2) == key.size(2));
   TORCH_CHECK(query.size(0) == key.size(0));
+
+  at::Tensor attn_bias;
+  if (attn_bias_.has_value()) {
+    attn_bias = *attn_bias_;
+    TORCH_CHECK(query.dim() == attn_bias.dim());
+    TORCH_CHECK(query.size(0) == attn_bias.size(0));
+    TORCH_CHECK(query.size(1) == attn_bias.size(1));
+    TORCH_CHECK(key.size(1) == attn_bias.size(2));
+    TORCH_CHECK(attn_bias.stride(1) == 0);
+  }
 
   TORCH_CHECK(query.size(0) == value.size(0));
   TORCH_CHECK(key.size(1) == value.size(1));
@@ -373,6 +462,25 @@ std::tuple<at::Tensor, at::Tensor> attention(
   dim3 block(kBlockWidth, kBlockItemsY);
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
+  // invert from drop probability to keep probability
+  p = 1.0 - p;
+
+  auto gen = at::get_generator_or_default<at::CUDAGeneratorImpl>(
+      c10::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
+
+  at::PhiloxCudaState rng_engine_inputs;
+  {
+    // See Note [Acquire lock when using random generators]
+    std::lock_guard<std::mutex> lock(gen->mutex_);
+    // each element in the attention matrix will have its own subsequence
+    // in the generator, so the offset is 1 globally
+    // int64_t counter_offset = p > 0 ? 1 : 0;
+    int64_t counter_offset = p > 0 ? 4 : 0;
+    rng_engine_inputs = gen->philox_cuda_state(counter_offset);
+  }
+
+  auto attn_bias_packed = _packed_tensor_accessor_or_dummy<scalar_t>(attn_bias);
+
   if ((K % 4) == 0) {
     attention_kernel<
         scalar_t,
@@ -385,7 +493,10 @@ std::tuple<at::Tensor, at::Tensor> attention(
         logsumexp.packed_accessor<scalar_t, 2>(),
         query.packed_accessor<scalar_t, 3>(),
         key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
+        value.packed_accessor<scalar_t, 3>(),
+        attn_bias_packed,
+        p,
+        rng_engine_inputs);
   } else if ((K % 2) == 0) {
     attention_kernel<
         scalar_t,
@@ -398,7 +509,10 @@ std::tuple<at::Tensor, at::Tensor> attention(
         logsumexp.packed_accessor<scalar_t, 2>(),
         query.packed_accessor<scalar_t, 3>(),
         key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
+        value.packed_accessor<scalar_t, 3>(),
+        attn_bias_packed,
+        p,
+        rng_engine_inputs);
   } else {
     attention_kernel<
         scalar_t,
@@ -411,12 +525,21 @@ std::tuple<at::Tensor, at::Tensor> attention(
         logsumexp.packed_accessor<scalar_t, 2>(),
         query.packed_accessor<scalar_t, 3>(),
         key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>());
+        value.packed_accessor<scalar_t, 3>(),
+        attn_bias_packed,
+        p,
+        rng_engine_inputs);
   }
 
   AT_CUDA_CHECK(cudaGetLastError());
 
-  return std::make_tuple(res, logsumexp);
+  // uint64_t -> int64_t bitwise casting as PyTorch don't support uint64_t
+  // so just fake it as a int64_t
+  int64_t seed, offset;
+  std::memcpy(&seed, &rng_engine_inputs.seed_, sizeof(seed));
+  std::memcpy(&offset, &rng_engine_inputs.offset_.val, sizeof(offset));
+
+  return std::make_tuple(res, logsumexp, seed, offset);
 }
 
 } // namespace
