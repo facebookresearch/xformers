@@ -25,29 +25,19 @@ static __device__ __forceinline__ float atomicMaxFloat(
 
 All of this is done on registers, before we store all of this
 on shared memory for the next matmul with Value.
+
+We have multiple implementations, because each configuration has a different way
+of iterating in the accumulators.
 */
 
-template <typename T, typename accum_t, int kQueriesPerBlock, int kWarpSize>
-struct AttentionScalingCoefsUpdaterSm80 {
-  static_assert(
-      std::is_same<typename T::Layout, cutlass::layout::RowMajor>::value);
-
-  using Policy = typename T::Policy;
-  using InstructionShape = typename T::InstructionShape;
-  using OpDelta = typename T::OpDelta;
-  using Shape = typename T::Shape;
-  static int const kElementsPerAccess = InstructionShape::kN / 4;
-  static int const kRowsPerTile = 8;
-  static int const kAccumulatorRows = InstructionShape::kM / kRowsPerTile;
-
-  static cutlass::MatrixCoord __device__
-  get_lane_offset(int8_t lane_id, int8_t warp_id) {
-    int quad = (lane_id >> 2);
-    int lane_in_quad = (lane_id & 3);
-    return cutlass::MatrixCoord(quad, lane_in_quad * kElementsPerAccess);
-  }
-
-  static __device__ __forceinline__ void update(
+template <
+    typename BASE,
+    typename T,
+    typename accum_t,
+    int kQueriesPerBlock,
+    int kWarpSize>
+struct RegisterOps {
+  __device__ __forceinline__ static void update(
       typename T::Fragment& frag,
       cutlass::Array<accum_t, kQueriesPerBlock>& mi,
       cutlass::Array<accum_t, kQueriesPerBlock>& m_prime,
@@ -56,54 +46,12 @@ struct AttentionScalingCoefsUpdaterSm80 {
       int8_t warp_id,
       int16_t max_col,
       typename T::TensorCoord const& tile_offset) {
-    // See cutlass/gemm/warp/mma_tensor_op_tile_iterator.h
-
-    cutlass::MatrixCoord lane_offset(
-        tile_offset.row() * Shape::kRow, tile_offset.column() * Shape::kColumn);
-    lane_offset += get_lane_offset(lane_id, warp_id);
-    int lane_in_quad = (lane_id & 3);
-
-    // In each warp, 4 threads will work on the same row
-    // - the ones with the same `quad`
-    auto reduceSameRow = [&](auto& myValue, auto fn) {
-      auto otherV = __shfl_xor_sync(0xffffffff, myValue, 1);
-      myValue = fn(myValue, otherV);
-      otherV = __shfl_xor_sync(0xffffffff, myValue, 2);
-      myValue = fn(myValue, otherV);
-      return lane_in_quad == 0;
-    };
-
-    auto iterateRowFirst = [&](auto beginRow, auto op, auto endRow) {
-      CUTLASS_PRAGMA_UNROLL
-      for (int mma_m = 0; mma_m < Policy::MmaIterations::kRow; ++mma_m) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int row = 0; row < kAccumulatorRows; ++row) {
-          int accum_m = mma_m * InstructionShape::kM * OpDelta::kRow +
-              row * kRowsPerTile + lane_offset.row();
-          beginRow(accum_m);
-
-          CUTLASS_PRAGMA_UNROLL
-          for (int mma_n = 0; mma_n < Policy::MmaIterations::kColumn; ++mma_n) {
-            int mma_accum_start = kAccumulatorRows * kElementsPerAccess *
-                (mma_n * Policy::MmaIterations::kRow + mma_m);
-            CUTLASS_PRAGMA_UNROLL
-            for (int col = 0; col < kElementsPerAccess; ++col) {
-              int accum_n = mma_n * InstructionShape::kN * OpDelta::kColumn +
-                  col + lane_offset.column();
-              int idx = mma_accum_start + row * kElementsPerAccess + col;
-              op(accum_m, accum_n, idx);
-            }
-          }
-
-          endRow(accum_m);
-        }
-      }
-    };
-
+    auto lane_offset = BASE::get_lane_offset(lane_id, warp_id, tile_offset);
     // First update `mi` to the max per-row
     {
       accum_t max;
-      iterateRowFirst(
+      BASE::iterateRows(
+          lane_offset,
           [&](int accum_m) { max = -std::numeric_limits<accum_t>::infinity(); },
           [&](int accum_m, int accum_n, int idx) {
             if (accum_n < max_col) {
@@ -131,7 +79,8 @@ struct AttentionScalingCoefsUpdaterSm80 {
     // Update accum_m, accum_n, ...
     {
       accum_t mi_row, total_row;
-      iterateRowFirst(
+      BASE::iterateRows(
+          lane_offset,
           [&](int accum_m) {
             mi_row = mi[accum_m];
             total_row = 0.0;
@@ -142,8 +91,10 @@ struct AttentionScalingCoefsUpdaterSm80 {
             total_row += frag[idx];
           },
           [&](int accum_m) {
-            if (reduceSameRow(
-                    total_row, [](accum_t a, accum_t b) { return a + b; })) {
+            if (BASE::reduceSameRow(
+                    lane_id, total_row, [](accum_t a, accum_t b) {
+                      return a + b;
+                    })) {
               atomicAdd(&s_prime[accum_m], total_row);
             }
           });
@@ -151,12 +102,102 @@ struct AttentionScalingCoefsUpdaterSm80 {
   }
 };
 
+template <typename T, typename accum_t, int kQueriesPerBlock, int kWarpSize>
+struct AttentionScalingCoefsUpdaterSm80 : RegisterOps<
+                                              AttentionScalingCoefsUpdaterSm80<
+                                                  T,
+                                                  accum_t,
+                                                  kQueriesPerBlock,
+                                                  kWarpSize>,
+                                              T,
+                                              accum_t,
+                                              kQueriesPerBlock,
+                                              kWarpSize> {
+  static_assert(
+      std::is_same<typename T::Layout, cutlass::layout::RowMajor>::value);
+
+  using Policy = typename T::Policy;
+  using InstructionShape = typename T::InstructionShape;
+  using OpDelta = typename T::OpDelta;
+  using Shape = typename T::Shape;
+  static int const kElementsPerAccess = InstructionShape::kN / 4;
+  static int const kRowsPerTile = 8;
+  static int const kAccumulatorRows = InstructionShape::kM / kRowsPerTile;
+
+  static cutlass::MatrixCoord __device__ get_lane_offset(
+      int8_t lane_id,
+      int8_t warp_id,
+      typename T::TensorCoord const& tile_offset) {
+    int quad = (lane_id >> 2);
+    int lane_in_quad = (lane_id & 3);
+    return cutlass::MatrixCoord(
+        quad + tile_offset.row() * Shape::kRow,
+        lane_in_quad * kElementsPerAccess +
+            tile_offset.column() * Shape::kColumn);
+  }
+
+  template <typename FA, typename FB, typename FC>
+  __device__ static void iterateRows(
+      cutlass::MatrixCoord& lane_offset,
+      FA beginRow,
+      FB op,
+      FC endRow) {
+    // See cutlass/gemm/warp/mma_tensor_op_tile_iterator.h
+    CUTLASS_PRAGMA_UNROLL
+    for (int mma_m = 0; mma_m < Policy::MmaIterations::kRow; ++mma_m) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int row = 0; row < kAccumulatorRows; ++row) {
+        int accum_m = mma_m * InstructionShape::kM * OpDelta::kRow +
+            row * kRowsPerTile + lane_offset.row();
+        beginRow(accum_m);
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int mma_n = 0; mma_n < Policy::MmaIterations::kColumn; ++mma_n) {
+          int mma_accum_start = kAccumulatorRows * kElementsPerAccess *
+              (mma_n * Policy::MmaIterations::kRow + mma_m);
+          CUTLASS_PRAGMA_UNROLL
+          for (int col = 0; col < kElementsPerAccess; ++col) {
+            int accum_n = mma_n * InstructionShape::kN * OpDelta::kColumn +
+                col + lane_offset.column();
+            int idx = mma_accum_start + row * kElementsPerAccess + col;
+            op(accum_m, accum_n, idx);
+          }
+        }
+
+        endRow(accum_m);
+      }
+    }
+  }
+
+  template <typename DT, typename F>
+  __device__ static bool reduceSameRow(int lane_id, DT& myValue, F fn) {
+    // In each warp, 4 threads will work on the same row
+    // - the ones with the same `quad`
+    auto otherV = __shfl_xor_sync(0xffffffff, myValue, 1);
+    myValue = fn(myValue, otherV);
+    otherV = __shfl_xor_sync(0xffffffff, myValue, 2);
+    myValue = fn(myValue, otherV);
+    int lane_in_quad = (lane_id & 3);
+    return lane_in_quad == 0;
+  };
+};
+
 // cutlass::gemm::warp::MmaVoltaTensorOpAccumulatorTileIterator<cutlass::MatrixShape<32,
 // 32>, float, cutlass::layout::RowMajor, cutlass::gemm::GemmShape<16, 16, 4>,
 // cutlass::MatrixShape<1, 1>> See
 // cutlass/gemm/warp/mma_tensor_op_tile_iterator_sm70.h
 template <typename T, typename accum_t, int kQueriesPerBlock, int kWarpSize>
-struct AttentionScalingCoefsUpdaterVolta {
+struct AttentionScalingCoefsUpdaterVolta
+    : RegisterOps<
+          AttentionScalingCoefsUpdaterVolta<
+              T,
+              accum_t,
+              kQueriesPerBlock,
+              kWarpSize>,
+          T,
+          accum_t,
+          kQueriesPerBlock,
+          kWarpSize> {
   static_assert(
       std::is_same<typename T::Layout, cutlass::layout::RowMajor>::value);
 
@@ -175,8 +216,10 @@ struct AttentionScalingCoefsUpdaterVolta {
   static int const kAccumulatorPatials = 2;
   using QuadShapePerPatialMma = cutlass::MatrixShape<4, 4>;
 
-  static cutlass::MatrixCoord __device__
-  get_lane_offset(int8_t lane_id, int8_t warp_id) {
+  static cutlass::MatrixCoord __device__ get_lane_offset(
+      int8_t lane_id,
+      int8_t warp_id,
+      typename T::TensorCoord const& tile_offset) {
     int quad = (lane_id >> 2);
     int lane_in_quad = (lane_id & 3);
     int accum_m, accum_n;
@@ -193,144 +236,135 @@ struct AttentionScalingCoefsUpdaterVolta {
           lane_in_quad; // (quad[2],quad[0])
       accum_n = ((quad >> 1) & 0x1) * kElementsPerPartial * kAccumulatorPatials;
     }
-    return cutlass::MatrixCoord(accum_m, accum_n);
+    return cutlass::MatrixCoord(
+        accum_m + tile_offset.row() * Shape::kRow,
+        accum_n + tile_offset.column() * Shape::kColumn);
   }
 
-  static __device__ __forceinline__ void update(
-      typename T::Fragment& frag,
-      cutlass::Array<accum_t, kQueriesPerBlock>& mi,
-      cutlass::Array<accum_t, kQueriesPerBlock>& m_prime,
-      cutlass::Array<accum_t, kQueriesPerBlock>& s_prime,
-      int8_t lane_id,
-      int8_t warp_id,
-      int16_t max_col,
-      typename T::TensorCoord const& tile_offset) {
-    // See cutlass/gemm/warp/mma_tensor_op_tile_iterator_sm70.h
+  template <typename DT, typename F>
+  __device__ static bool reduceSameRow(int lane_id, DT& myValue, F fn) {
+    return true; // TODO: Figure out which threads operate on the same rows
+  };
 
-    cutlass::MatrixCoord lane_offset(
-        tile_offset.row() * Shape::kRow, tile_offset.column() * Shape::kColumn);
-    lane_offset += get_lane_offset(lane_id, warp_id);
-
-    auto iterateRowFirst = [&](auto beginRow, auto op, auto endRow) {
+  template <typename FA, typename FB, typename FC>
+  __device__ static void iterateRows(
+      cutlass::MatrixCoord& lane_offset,
+      FA beginRow,
+      FB op,
+      FC endRow) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int tile_m = 0; tile_m < Policy::TileIterations::kRow; ++tile_m) {
       CUTLASS_PRAGMA_UNROLL
-      for (int tile_m = 0; tile_m < Policy::TileIterations::kRow; ++tile_m) {
+      for (int mma_m = 0; mma_m < Policy::MmaIterations::kRow; ++mma_m) {
         CUTLASS_PRAGMA_UNROLL
-        for (int mma_m = 0; mma_m < Policy::MmaIterations::kRow; ++mma_m) {
-          CUTLASS_PRAGMA_UNROLL
-          for (int m = 0; m < EleShapePerPatial::kRow; ++m) {
-            int accum_m = tile_m * Policy::InterleavedTile::kRow +
-                mma_m * QuadShapePerPatialMma::kRow + m * 2 + lane_offset.row();
-            beginRow(accum_m);
+        for (int m = 0; m < EleShapePerPatial::kRow; ++m) {
+          int accum_m = tile_m * Policy::InterleavedTile::kRow +
+              mma_m * QuadShapePerPatialMma::kRow + m * 2 + lane_offset.row();
+          beginRow(accum_m);
 
+          CUTLASS_PRAGMA_UNROLL
+          for (int tile_n = 0; tile_n < Policy::TileIterations::kColumn;
+               ++tile_n) {
             CUTLASS_PRAGMA_UNROLL
-            for (int tile_n = 0; tile_n < Policy::TileIterations::kColumn;
-                 ++tile_n) {
+            for (int mma_n = 0; mma_n < Policy::MmaIterations::kColumn;
+                 ++mma_n) {
               CUTLASS_PRAGMA_UNROLL
-              for (int mma_n = 0; mma_n < Policy::MmaIterations::kColumn;
-                   ++mma_n) {
+              for (int p = 0; p < kAccumulatorPatials; ++p) {
                 CUTLASS_PRAGMA_UNROLL
-                for (int p = 0; p < kAccumulatorPatials; ++p) {
-                  CUTLASS_PRAGMA_UNROLL
-                  for (int n = 0; n < EleShapePerPatial::kColumn; ++n) {
-                    int mma_accum_start =
-                        (((tile_n * Policy::TileIterations::kRow + tile_m) *
-                              Policy::MmaIterations::kColumn +
-                          mma_n) *
-                             Policy::MmaIterations::kRow +
-                         mma_m) *
-                        kElementsPerMma;
-                    int accum_n = tile_n * Policy::InterleavedTile::kColumn +
-                        mma_n * QuadShapePerPatialMma::kColumn +
-                        p * Policy::InterleavedTile::kColumn / 2 + n +
-                        lane_offset.column();
-                    int idx = mma_accum_start + p * kElementsPerPartial +
-                        m * EleShapePerPatial::kColumn + n;
-                    op(accum_m, accum_n, idx);
-                  }
+                for (int n = 0; n < EleShapePerPatial::kColumn; ++n) {
+                  int mma_accum_start =
+                      (((tile_n * Policy::TileIterations::kRow + tile_m) *
+                            Policy::MmaIterations::kColumn +
+                        mma_n) *
+                           Policy::MmaIterations::kRow +
+                       mma_m) *
+                      kElementsPerMma;
+                  int accum_n = tile_n * Policy::InterleavedTile::kColumn +
+                      mma_n * QuadShapePerPatialMma::kColumn +
+                      p * Policy::InterleavedTile::kColumn / 2 + n +
+                      lane_offset.column();
+                  int idx = mma_accum_start + p * kElementsPerPartial +
+                      m * EleShapePerPatial::kColumn + n;
+                  op(accum_m, accum_n, idx);
                 }
               }
             }
-            endRow(accum_m);
           }
+          endRow(accum_m);
         }
       }
-    };
-
-    // First update `mi` to the max per-row
-    {
-      accum_t max;
-      iterateRowFirst(
-          [&](int accum_m) { max = -std::numeric_limits<accum_t>::infinity(); },
-          [&](int accum_m, int accum_n, int idx) {
-            if (accum_n < max_col) {
-              max = std::max(max, frag[idx]);
-            }
-          },
-          [&](int accum_m) {
-            // Having 4x atomicMax seems faster than reduce within warp
-            // first...
-            atomicMaxFloat(&mi[accum_m], max);
-          });
-    }
-
-    // Make sure we all share the update values for `mi`
-    __syncthreads();
-
-    if (warp_id == 0) {
-      static_assert(kQueriesPerBlock == kWarpSize);
-      auto m_prime_exp = expf(m_prime[lane_id] - mi[lane_id]);
-      m_prime[lane_id] = m_prime_exp;
-      s_prime[lane_id] *= m_prime_exp;
-    }
-    __syncthreads();
-
-    // Update accum_m, accum_n, ...
-    {
-      accum_t mi_row, total_row;
-      iterateRowFirst(
-          [&](int accum_m) {
-            mi_row = mi[accum_m];
-            total_row = 0.0;
-          },
-          [&](int accum_m, int accum_n, int idx) {
-            frag[idx] =
-                (accum_n < max_col) ? expf(frag[idx] - mi_row) : accum_t(0.0);
-            total_row += frag[idx];
-          },
-          [&](int accum_m) { atomicAdd(&s_prime[accum_m], total_row); });
     }
   }
 };
 
 template <typename T, typename accum_t, int kQueriesPerBlock, int kWarpSize>
-struct AttentionScalingCoefsUpdaterSimt {
+struct AttentionScalingCoefsUpdaterSimt : RegisterOps<
+                                              AttentionScalingCoefsUpdaterSimt<
+                                                  T,
+                                                  accum_t,
+                                                  kQueriesPerBlock,
+                                                  kWarpSize>,
+                                              T,
+                                              accum_t,
+                                              kQueriesPerBlock,
+                                              kWarpSize> {
+  using Policy = typename T::Policy;
+  using Iterations = typename T::Iterations;
+  using Element = typename T::Element;
+  using Delta = typename T::Delta;
+  using Shape = typename T::Shape;
   static_assert(
       std::is_same<typename T::Layout, cutlass::layout::RowMajor>::value);
   static_assert(
       std::is_same<typename T::Iterations, typename T::Iterations>::value);
 
-  static __device__ __forceinline__ void update(
-      typename T::Fragment& frag,
-      cutlass::Array<accum_t, kQueriesPerBlock>& mi,
-      cutlass::Array<accum_t, kQueriesPerBlock>& m_prime,
-      cutlass::Array<accum_t, kQueriesPerBlock>& s_prime,
+  template <typename DT, typename F>
+  __device__ static bool reduceSameRow(int lane_id, DT& myValue, F fn) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int bit = 1; bit < Policy::WarpShape::kColumn; bit *= 2) {
+      auto otherV = __shfl_xor_sync(0xffffffff, myValue, bit);
+      myValue = fn(myValue, otherV);
+    }
+    return (lane_id & (Policy::WarpShape::kColumn - 1)) == 0;
+  }
+
+  template <typename FA, typename FB, typename FC>
+  __device__ static void iterateRows(
+      cutlass::MatrixCoord& lane_offset,
+      FA beginRow,
+      FB op,
+      FC endRow) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int mma_m = 0; mma_m < Iterations::kRow; ++mma_m) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int m = 0; m < Policy::LaneMmaShape::kM; ++m) {
+        int accum_m = mma_m * Delta::kRow + m + lane_offset.row();
+        beginRow(accum_m);
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int mma_n = 0; mma_n < Iterations::kColumn; ++mma_n) {
+          int accum_n =
+              mma_n * Policy::WarpShape::kColumn * Policy::LaneMmaShape::kN +
+              lane_offset.column();
+          CUTLASS_PRAGMA_UNROLL
+          for (int n = 0; n < Policy::LaneMmaShape::kN; ++n) {
+            int idx = n +
+                Policy::LaneMmaShape::kN *
+                    (mma_n +
+                     Iterations::kColumn *
+                         (m + mma_m * Policy::LaneMmaShape::kM));
+            op(accum_m, accum_n + n, idx);
+          }
+        }
+        endRow(accum_m);
+      }
+    }
+  }
+
+  static cutlass::MatrixCoord __device__ get_lane_offset(
       int8_t lane_id,
       int8_t warp_id,
-      int16_t max_col,
       typename T::TensorCoord const& tile_offset) {
-    using Policy = typename T::Policy;
-    using Iterations = typename T::Iterations;
-    using Element = typename T::Element;
-    using Delta = typename T::Delta;
-    using Shape = typename T::Shape;
-
-    // compute offset based on thread ID and lane layout
-    /* Policy=
-     cutlass::gemm::warp::MmaSimtPolicy<
-          WarpShape_=cutlass::MatrixShape<4, 8>,
-          LaneLayout_=cutlass::layout::RowMajorInterleaved<1>,
-          LaneMmaShape_=cutlass::gemm::GemmShape<8, 4, 1>>
-        */
     static_assert(std::is_same<
                   typename Policy::LaneLayout,
                   cutlass::layout::RowMajorInterleaved<1>>::value);
@@ -339,94 +373,8 @@ struct AttentionScalingCoefsUpdaterSimt {
     cutlass::MatrixCoord lane_offset = lane_layout.inverse(lane_id) *
         cutlass::MatrixCoord(Policy::LaneMmaShape::kM,
                              Policy::LaneMmaShape::kN);
-    lane_offset +=
+    return lane_offset +
         tile_offset * cutlass::MatrixCoord(Shape::kRow, Shape::kColumn);
-
-    auto reduceSameRow = [&](auto& myValue, auto fn) {
-      CUTLASS_PRAGMA_UNROLL
-      for (int bit = 1; bit < Policy::WarpShape::kColumn; bit *= 2) {
-        auto otherV = __shfl_xor_sync(0xffffffff, myValue, bit);
-        myValue = fn(myValue, otherV);
-      }
-      return (lane_id & (Policy::WarpShape::kColumn - 1)) == 0;
-    };
-
-    auto iterateRowFirst = [&](auto beginRow, auto op, auto endRow) {
-      CUTLASS_PRAGMA_UNROLL
-      for (int mma_m = 0; mma_m < Iterations::kRow; ++mma_m) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int m = 0; m < Policy::LaneMmaShape::kM; ++m) {
-          int accum_m = mma_m * Delta::kRow + m + lane_offset.row();
-          beginRow(accum_m);
-
-          CUTLASS_PRAGMA_UNROLL
-          for (int mma_n = 0; mma_n < Iterations::kColumn; ++mma_n) {
-            int accum_n =
-                mma_n * Policy::WarpShape::kColumn * Policy::LaneMmaShape::kN +
-                lane_offset.column();
-            CUTLASS_PRAGMA_UNROLL
-            for (int n = 0; n < Policy::LaneMmaShape::kN; ++n) {
-              int idx = n +
-                  Policy::LaneMmaShape::kN *
-                      (mma_n +
-                       Iterations::kColumn *
-                           (m + mma_m * Policy::LaneMmaShape::kM));
-              op(accum_m, accum_n + n, idx);
-            }
-          }
-          endRow(accum_m);
-        }
-      }
-    };
-
-    // First update `mi` to the max per-row
-    {
-      accum_t max;
-      iterateRowFirst(
-          [&](int accum_m) { max = -std::numeric_limits<accum_t>::infinity(); },
-          [&](int accum_m, int accum_n, int idx) {
-            if (accum_n < max_col) {
-              max = std::max(max, frag[idx]);
-            }
-          },
-          [&](int accum_m) {
-            // Having 4x atomicMax seems faster than reduce within warp
-            // first...
-            atomicMaxFloat(&mi[accum_m], max);
-          });
-    }
-
-    // Make sure we all share the update values for `mi`
-    __syncthreads();
-
-    if (warp_id == 0) {
-      static_assert(kQueriesPerBlock == kWarpSize);
-      auto m_prime_exp = expf(m_prime[lane_id] - mi[lane_id]);
-      m_prime[lane_id] = m_prime_exp;
-      s_prime[lane_id] *= m_prime_exp;
-    }
-    __syncthreads();
-
-    // Update accum_m, accum_n, ...
-    {
-      accum_t mi_row, total_row;
-      iterateRowFirst(
-          [&](int accum_m) {
-            mi_row = mi[accum_m];
-            total_row = 0.0;
-          },
-          [&](int accum_m, int accum_n, int idx) {
-            frag[idx] =
-                (accum_n < max_col) ? expf(frag[idx] - mi_row) : accum_t(0.0);
-            total_row += frag[idx];
-          },
-          [&](int accum_m) {
-            if (reduceSameRow(
-                    total_row, [](accum_t a, accum_t b) { return a + b; })) {
-              atomicAdd(&s_prime[accum_m], total_row);
-            }
-          });
-    }
   }
 };
 
@@ -467,7 +415,7 @@ struct DefaultAttentionScalingCoefsUpdater<
       kWarpSize>;
 };
 
-// Volta
+// TensorOp - Volta
 template <
     typename S1,
     typename S2,
@@ -498,7 +446,7 @@ struct DefaultAttentionScalingCoefsUpdater<
       kWarpSize>;
 };
 
-// TensorOp - Sm80
+// TensorOp - Sm75+
 template <
     typename S1,
     typename S2,
