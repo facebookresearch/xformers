@@ -166,9 +166,12 @@ if _is_triton_available:
                 q.shape[-2], self.block_size
             )
 
-            # Blocksparse only works on fp16
+            # Blocksparse only works on fp16 or bf16
             q_dtype = q.dtype
-            q, k, v = q.half(), k.half(), v.half()
+            if q_dtype == torch.bfloat16:
+                q, k, v = q.bfloat16(), k.bfloat16(), v.bfloat16()
+            else:
+                q, k, v = q.half(), k.half(), v.half()
 
             # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
             # When the computations are block sparse, the matrix types change along the way:
