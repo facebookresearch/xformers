@@ -148,7 +148,8 @@ __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> value,
     at::PackedTensorAccessor<scalar_t, 3> attn_bias_,
     scalar_t p,
-    at::PhiloxCudaState philox_args
+    at::PhiloxCudaState philox_args,
+    bool is_causal
     ) {
   int64_t K = query.size(2);
   int64_t B = query.size(0);
@@ -177,8 +178,11 @@ __global__ void attention_kernel(
   scalar_t scale = 1.0 / std::sqrt(scalar_t(K));
 
   auto attn_bias = attn_bias_[batch_idx][query_idx].data();
+  int end = N;
+  if (is_causal)
+    end = std::min(int(query_idx) + 1, end);
 
-  for (int kv_idx = 0; kv_idx < N; kv_idx += kBlockItemsX) {
+  for (int kv_idx = 0; kv_idx < end; kv_idx += kBlockItemsX) {
     scalar_t attn_fragment[kBlockItemsX] = {};
 
     auto query_i = reinterpret_cast<vec_t*>(query[batch_idx][query_idx].data());
@@ -258,7 +262,7 @@ __global__ void attention_kernel(
       }
     }
 
-    int end_iter = N - kv_idx;
+    int end_iter = end - kv_idx;
     scalar_t m_i = m_prime;
 
     // aggregate over different threads in a warp and compute max over wap
@@ -405,7 +409,8 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
     const at::Tensor& value,
     bool compute_logsumexp,
     const c10::optional<at::Tensor>& attn_bias_,
-    double p) {
+    double p,
+    bool is_causal) {
 
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
@@ -420,7 +425,6 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
     TORCH_CHECK(query.size(0) == attn_bias.size(0));
     TORCH_CHECK(query.size(1) == attn_bias.size(1));
     TORCH_CHECK(key.size(1) == attn_bias.size(2));
-    TORCH_CHECK(attn_bias.stride(1) == 0);
   }
 
   TORCH_CHECK(query.size(0) == value.size(0));
@@ -496,7 +500,8 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
         value.packed_accessor<scalar_t, 3>(),
         attn_bias_packed,
         p,
-        rng_engine_inputs);
+        rng_engine_inputs,
+        is_causal);
   } else if ((K % 2) == 0) {
     attention_kernel<
         scalar_t,
@@ -512,7 +517,8 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
         value.packed_accessor<scalar_t, 3>(),
         attn_bias_packed,
         p,
-        rng_engine_inputs);
+        rng_engine_inputs,
+        is_causal);
   } else {
     attention_kernel<
         scalar_t,
@@ -528,7 +534,8 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
         value.packed_accessor<scalar_t, 3>(),
         attn_bias_packed,
         p,
-        rng_engine_inputs);
+        rng_engine_inputs,
+        is_causal);
   }
 
   AT_CUDA_CHECK(cudaGetLastError());
