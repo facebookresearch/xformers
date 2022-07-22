@@ -12,7 +12,9 @@ __version__ = "0.0.12.dev"
 
 _is_sparse_available = True
 _is_triton_available = torch.cuda.is_available()
-_is_functorch_available = True
+
+# Set to true to utilize functorch
+_is_functorch_available = False
 
 
 def _register_extensions():

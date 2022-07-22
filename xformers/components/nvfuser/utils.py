@@ -19,7 +19,7 @@ def build_nvfused(
     fused_pattern: nn.Module,
     shape: tuple,
     bias: bool,
-    activation: Activation,
+    activation: Optional[Activation],
     p: float,
     layer_norm_style: Optional[LayerNormStyle],
 ):

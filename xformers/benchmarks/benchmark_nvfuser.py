@@ -37,13 +37,18 @@ SHAPES = [
 P = 0.1
 
 
-def to_gbs_fw(a, ms, bias):
+def to_gbs(a, ms, bw, bias, residual):
     # Read and write the full array
     total = 2 * a.numel() * a.element_size()
 
+    if residual:
+        # Only read
+        total += a.numel() * a.element_size()
     if bias:
         # Read the bias, ideally only once
         total += a.shape[-1] * a.element_size()
+    if bw:
+        total *= 2
 
     return total * 1e-9 / (ms * 1e-3)
 
@@ -79,7 +84,7 @@ def bench_nvfused(
     fused_pattern: nn.Module,
     bias: bool,
     backward: bool,
-    activation: Activation,
+    activation: Optional[Activation],
     layer_norm_style: Optional[LayerNormStyle],
 ):
     device = torch.device("cuda")
@@ -95,6 +100,7 @@ def bench_nvfused(
         torch.float32,
     ]:
         results: Dict[str, Any] = {}
+        results_mem: Dict[str, Any] = {}
 
         for B, M, K in SHAPES:
             a = torch.rand(
@@ -115,6 +121,8 @@ def bench_nvfused(
             nvfuser_fn = build_nvfused(
                 fused_pattern, (B, M, K), bias, activation, P, layer_norm_style
             )
+            nvfuser_fn.cuda()
+            nvfuser_fn.to(device=device, dtype=dtype)
             residual = nvfuser_fn.requires_residual
 
             triton_fn = (
@@ -125,8 +133,8 @@ def bench_nvfused(
                 else None
             )
 
-            def step(fn, res, x):
-                y = fn(x=x, res=x) if res else fn(x)
+            def step(fn, residual, x):
+                y = fn(x=x, residual=x) if residual else fn(x)
                 if backward:
                     y.grad = None
                     torch.norm(y).backward()
@@ -134,7 +142,7 @@ def bench_nvfused(
 
             testcases = [
                 TestCase(
-                    partial(step, fn=torch_fn, res=residual),
+                    partial(step, fn=torch_fn, residual=residual),
                     "pytorch- bias: {} - fw{}{}{}".format(
                         bias,
                         "+bw" if backward else "",
@@ -145,7 +153,7 @@ def bench_nvfused(
                     ),
                 ),
                 TestCase(
-                    partial(step, fn=nvfuser_fn, res=residual),
+                    partial(step, fn=nvfuser_fn, residual=residual),
                     "nvFuser- bias: {} - fw{}{}{}".format(
                         bias,
                         "+bw" if backward else "",
@@ -158,7 +166,7 @@ def bench_nvfused(
             ]
             if triton_fn is not None:
                 triton_test = TestCase(
-                    partial(step, fn=triton_fn, res=residual),
+                    partial(step, fn=triton_fn, residual=residual),
                     "triton- bias: {} - fw{}{}{}".format(
                         bias,
                         "+bw" if backward else "",
@@ -171,25 +179,43 @@ def bench_nvfused(
                 testcases.append(triton_test)
 
             for testcase in testcases:
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.synchronize()
+
                 time = triton.testing.do_bench(
                     lambda: testcase.function(x=a), grad_to_none=[a, b]
                 )[0]
+
+                torch.cuda.synchronize()
+                max_memory = torch.cuda.max_memory_allocated() / 2**20
+
                 key = f"B={B}, M={M}, K={K}"
                 if key not in results:
                     results[key] = {}
 
                 # Record BW
-                bandwidth = to_gbs_fw(a, time, bias)
+                bandwidth = to_gbs(a, time, backward, bias, residual)
                 results[key][testcase.name] = f"{bandwidth:.1f}"
+
+                # Record peak mem usage
+                if key not in results_mem:
+                    results_mem[key] = {}
+                results_mem[key][testcase.name] = f"{max_memory:.1f}"
 
         pretty_print(
             results,
-            title="\n --- Type: {}{} --- ".format(pattern_str, dtype),
+            title="\n --- RUNTIME Type: {} {} --- ".format(pattern_str, dtype),
             units="GB/s",
+        )
+        pretty_print(
+            results,
+            title="\n --- PEAK MEMORY Type: {} {} --- ".format(pattern_str, dtype),
+            units="MB",
         )
         pretty_plot(
             results,
-            title="{}-FW{}-{}{}-{}{}".format(
+            title="RUNTIME-{}-FW{}-{}{}-{}{}".format(
                 pattern_str,
                 "+BW" if backward else "",
                 bias,
@@ -198,6 +224,20 @@ def bench_nvfused(
                 f"-{layer_norm_style}" if layer_norm_style is not None else "",
             ),
             units="GB/s",
+            dash_key="pytorch",
+            legend_loc="upper left",
+        )
+        pretty_plot(
+            results,
+            title="MAXMEM-{}-FW{}-{}{}-{}{}".format(
+                pattern_str,
+                "+BW" if backward else "",
+                bias,
+                f"-{activation}" if activation is not None else "",
+                dtype,
+                f"-{layer_norm_style}" if layer_norm_style is not None else "",
+            ),
+            units="MB",
             dash_key="pytorch",
             legend_loc="upper left",
         )
@@ -210,7 +250,7 @@ for pattern in [
     NVFusedBiasDropoutResLayerNorm,
 ]:
     activations: List[Optional[Activation]] = (
-        [Activation.ReLU, Activation.GeLU]
+        [Activation.ReLU, Activation.GeLU, Activation.SquaredReLU]
         if pattern == NVFusedBiasActivationDropout
         else [None]
     )

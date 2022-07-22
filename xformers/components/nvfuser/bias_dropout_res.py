@@ -15,11 +15,11 @@ def _fn(
     x: torch.Tensor,
     bias: Optional[torch.Tensor],
     prob: float,
-    res: torch.Tensor,
+    residual: torch.Tensor,
 ) -> torch.Tensor:
     a = torch.add(x, bias) if bias is not None else x
     b = torch.nn.functional.dropout(a, prob) if prob > 0.0 else a
-    return torch.add(b, res)
+    return torch.add(b, residual)
 
 
 class NVFusedBiasDropoutRes(torch.nn.Module):
@@ -39,9 +39,7 @@ class NVFusedBiasDropoutRes(torch.nn.Module):
         self.requires_residual = True
 
         self.bias = (
-            nn.Parameter(torch.zeros(bias_shape, device=torch.device("cuda")))
-            if bias_shape is not None
-            else None
+            nn.Parameter(torch.zeros(bias_shape)) if bias_shape is not None else None
         )
 
         assert (
@@ -53,7 +51,7 @@ class NVFusedBiasDropoutRes(torch.nn.Module):
             if self.bias is not None:
                 self.bias.fill_(0.0)
 
-    def forward(self, x: torch.Tensor, res: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, residual: torch.Tensor) -> torch.Tensor:
         # Train/inference
         p = self.p if self.training else 0.0
 
@@ -61,8 +59,8 @@ class NVFusedBiasDropoutRes(torch.nn.Module):
 
         # Catch a non-cuda setup, fallback to pytorch
         if not x.is_cuda:
-            return _fn(x, self.bias, p, res)
+            return _fn(x, self.bias, p, residual)
 
         # AOTAutograd, NVFuser backed path
         aot_fn = memory_efficient_fusion(fn=_fn, static_argnums=(2))
-        return aot_fn(x, self.bias, p, res)
+        return aot_fn(x, self.bias, p, residual)

@@ -9,11 +9,11 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from xformers import _is_functorch_available
+import xformers
 from xformers.components import Activation, build_activation
 from xformers.components.feedforward import Feedforward, FeedforwardConfig
 
-if _is_functorch_available:
+if xformers._is_functorch_available:
     from xformers.components.nvfuser.bias_act_dropout import (
         NVFusedBiasActivationDropout,
     )
@@ -37,17 +37,14 @@ class MLP(Feedforward):
         activation: Activation,
         hidden_layer_multiplier: int,
         bias: bool = True,
-        nvfuser: bool = True,
         *args,
         **kwargs,
     ):
         super().__init__()
-
         dim_mlp = hidden_layer_multiplier * dim_model
         # check if fused Bias Activation Dropout is applicable
-        if _is_functorch_available and nvfuser:
+        if xformers._is_functorch_available:
             self.requires_cuda = True
-
             self.mlp = nn.Sequential(
                 nn.Linear(
                     in_features=dim_model, out_features=dim_mlp, bias=False

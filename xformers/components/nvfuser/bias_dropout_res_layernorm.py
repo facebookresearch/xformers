@@ -19,15 +19,15 @@ def _fn(
     prob: float,
     layer_norm_style: Optional[LayerNormStyle],
     norm: nn.Module,
-    res: torch.Tensor,
+    residual: torch.Tensor,
 ) -> torch.Tensor:
     a = torch.add(x, bias) if bias is not None else x
     b = torch.nn.functional.dropout(a, prob) if prob > 0.0 else a
     if layer_norm_style == LayerNormStyle.Pre:
         c = norm(b)
-        return torch.add(c, res)
+        return torch.add(c, residual)
     elif layer_norm_style == LayerNormStyle.Post:
-        c = torch.add(b, res)
+        c = torch.add(b, residual)
         return norm(c)
     else:
         raise ValueError
@@ -54,9 +54,7 @@ class NVFusedBiasDropoutResLayerNorm(torch.nn.Module):
         self.layer_norm_style = layer_norm_style
 
         self.bias = (
-            nn.Parameter(torch.zeros(bias_shape, device=torch.device("cuda")))
-            if bias_shape is not None
-            else None
+            nn.Parameter(torch.zeros(bias_shape)) if bias_shape is not None else None
         )
         self.norm = nn.LayerNorm(d_model)
 
@@ -69,23 +67,16 @@ class NVFusedBiasDropoutResLayerNorm(torch.nn.Module):
             if self.bias is not None:
                 self.bias.fill_(0.0)
 
-    def forward(self, x: torch.Tensor, res: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, residual: torch.Tensor) -> torch.Tensor:
         # Train/inference
         p = self.p if self.training else 0.0
-
-        # Catch possible type or device mismatch
-        self.norm = self.norm.to(dtype=x.dtype, device=x.device)
-        if self.bias is not None and self.bias.dtype != x.dtype:
-            self.bias = nn.Parameter(
-                torch.zeros_like(self.bias, dtype=x.dtype, device=x.device)
-            )
 
         # TODO perf check, is slower than pytorch for small buffers, bypassing it in that case
 
         # Catch a non-cuda setup, fallback to pytorch
         if not x.is_cuda:
-            return _fn(x, self.bias, p, self.layer_norm_style, self.norm, res)
+            return _fn(x, self.bias, p, self.layer_norm_style, self.norm, residual)
 
         # AOTAutograd, NVFuser backed path
         aot_fn = memory_efficient_fusion(fn=_fn, static_argnums=(2, 3, 4))
-        return aot_fn(x, self.bias, p, self.layer_norm_style, self.norm, res)
+        return aot_fn(x, self.bias, p, self.layer_norm_style, self.norm, residual)

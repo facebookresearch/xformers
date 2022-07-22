@@ -42,9 +42,7 @@ class NVFusedBiasActivationDropout(torch.nn.Module):
         self.pytorch_activation = build_activation(self.activation)
 
         self.bias = (
-            nn.Parameter(torch.zeros(bias_shape, device=torch.device("cuda")))
-            if bias_shape is not None
-            else None
+            nn.Parameter(torch.zeros(bias_shape)) if bias_shape is not None else None
         )
 
         assert (

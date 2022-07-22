@@ -9,13 +9,13 @@ import torch
 import torch.nn as nn
 from torch.cuda.amp.autocast_mode import autocast
 
-from xformers import _is_functorch_available
+import xformers
 from xformers.components import Activation, LayerNormStyle
 from xformers.components.feedforward import build_feedforward
 
 _gpu_available = torch.cuda.is_available()
 
-if _is_functorch_available:
+if xformers._is_functorch_available:
     from xformers.components.nvfuser import (
         NVFusedBiasActivationDropout,
         NVFusedBiasDropoutRes,
@@ -43,7 +43,9 @@ DEVICES = [torch.device("cuda")]
 
 
 @pytest.mark.skipif(not _gpu_available, reason="GPU is not available")
-@pytest.mark.skipif(not _is_functorch_available, reason="Functorch is not available")
+@pytest.mark.skipif(
+    not xformers._is_functorch_available, reason="Functorch is not available"
+)
 @pytest.mark.parametrize(
     "fused_pattern",
     [
@@ -55,7 +57,16 @@ DEVICES = [torch.device("cuda")]
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [False, True])
 @pytest.mark.parametrize("bias", [False, True])
-@pytest.mark.parametrize("activation", [Activation.ReLU, Activation.GeLU])
+@pytest.mark.parametrize(
+    "activation",
+    [
+        Activation.ReLU,
+        Activation.GeLU,
+        Activation.LeakyReLU,
+        Activation.SquaredReLU,
+        Activation.SmeLU,
+    ],
+)
 @pytest.mark.parametrize("p", [0, 0.1, 0.5])
 @pytest.mark.parametrize("layer_norm_style", [LayerNormStyle.Pre, LayerNormStyle.Post])
 def test_nvfused_pattern_parity(
@@ -104,7 +115,9 @@ def test_nvfused_pattern_parity(
             assert torch.allclose(torch_res, nvfused_res, atol=1e-6, rtol=1e-2)
 
 
-@pytest.mark.skipif(not _is_functorch_available, reason="Functorch is not available")
+@pytest.mark.skipif(
+    not xformers._is_functorch_available, reason="Functorch is not available"
+)
 @pytest.mark.parametrize("activation", [Activation.ReLU, Activation.GeLU])
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("p", [0, 0.1, 0.5])
@@ -122,7 +135,10 @@ def test_nvfused_mlp(activation: Activation, device: torch.device, p: float):
     torch.cuda.manual_seed_all(0)
 
     mlp = build_feedforward(test_config)
-    mlp_default = build_feedforward(test_config | {"nvfuser": False})
+    # Creates non-fused default MLP
+    xformers._is_functorch_available = False
+    mlp_default = build_feedforward(test_config)
+    xformers._is_functorch_available = True
 
     if mlp.requires_cuda and not device.type == "cuda":
         # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
