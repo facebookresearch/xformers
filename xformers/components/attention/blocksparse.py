@@ -166,13 +166,6 @@ if _is_triton_available:
                 q.shape[-2], self.block_size
             )
 
-            # Blocksparse only works on fp16 or bf16
-            q_dtype = q.dtype
-            if q_dtype == torch.bfloat16:
-                q, k, v = q.bfloat16(), k.bfloat16(), v.bfloat16()
-            else:
-                q, k, v = q.half(), k.half(), v.half()
-
             # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
             # When the computations are block sparse, the matrix types change along the way:
             # - (sparse) attention matrix = (dense) Kt * (dense) Q
@@ -188,4 +181,4 @@ if _is_triton_available:
 
             # - then (dense) attention is (sparse) attention matrix * dense (value)
             a = self.sparse_dot_dsd(sparse_att_mat, v)
-            return a.to(q_dtype)
+            return a
