@@ -23,6 +23,16 @@ if xformers._is_functorch_available:
     )
     from xformers.components.nvfuser.utils import build_nvfused
 
+FUSED_PATTERNS = (
+    [
+        NVFusedBiasActivationDropout,
+        NVFusedBiasDropoutRes,
+        NVFusedBiasDropoutResLayerNorm,
+    ]
+    if xformers._is_functorch_available
+    else []
+)
+
 # Testing odd (non-power-of-two for instance) shapes on purpose
 SHAPES = [
     (384, 512),
@@ -41,32 +51,24 @@ EMBD = 16
 LATENT = 128
 DEVICES = [torch.device("cuda")]
 
+ACTIVATIONS = [
+    Activation.ReLU,
+    Activation.GeLU,
+    Activation.LeakyReLU,
+    Activation.SquaredReLU,
+    Activation.SmeLU,
+]
 
-@pytest.mark.skipif(not _gpu_available, reason="GPU is not available")
+
 @pytest.mark.skipif(
     not xformers._is_functorch_available, reason="Functorch is not available"
 )
-@pytest.mark.parametrize(
-    "fused_pattern",
-    [
-        NVFusedBiasActivationDropout,
-        NVFusedBiasDropoutRes,
-        NVFusedBiasDropoutResLayerNorm,
-    ],
-)
+@pytest.mark.skipif(not _gpu_available, reason="GPU is not available")
+@pytest.mark.parametrize("fused_pattern", FUSED_PATTERNS)
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [False, True])
 @pytest.mark.parametrize("bias", [False, True])
-@pytest.mark.parametrize(
-    "activation",
-    [
-        Activation.ReLU,
-        Activation.GeLU,
-        Activation.LeakyReLU,
-        Activation.SquaredReLU,
-        Activation.SmeLU,
-    ],
-)
+@pytest.mark.parametrize("activation", ACTIVATIONS)
 @pytest.mark.parametrize("p", [0, 0.1, 0.5])
 @pytest.mark.parametrize("layer_norm_style", [LayerNormStyle.Pre, LayerNormStyle.Post])
 def test_nvfused_pattern_parity(
@@ -118,7 +120,7 @@ def test_nvfused_pattern_parity(
 @pytest.mark.skipif(
     not xformers._is_functorch_available, reason="Functorch is not available"
 )
-@pytest.mark.parametrize("activation", [Activation.ReLU, Activation.GeLU])
+@pytest.mark.parametrize("activation", ACTIVATIONS)
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("p", [0, 0.1, 0.5])
 def test_nvfused_mlp(activation: Activation, device: torch.device, p: float):

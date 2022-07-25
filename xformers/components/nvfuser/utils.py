@@ -26,8 +26,13 @@ def build_nvfused(
     bias_shape = shape[-1] if bias else None
     d_model = shape[-1]
     init_args: Dict[nn.Module, List[Any]] = {
-        NVFusedBiasActivationDropout: [p, activation, bias_shape],
-        NVFusedBiasDropoutRes: [p, bias_shape],
-        NVFusedBiasDropoutResLayerNorm: [p, d_model, bias_shape, layer_norm_style],
+        NVFusedBiasActivationDropout: [p, activation, bias_shape],  # type: ignore
+        NVFusedBiasDropoutRes: [p, bias_shape],  # type: ignore
+        NVFusedBiasDropoutResLayerNorm: [  # type: ignore
+            p,
+            d_model,
+            bias_shape,
+            layer_norm_style,
+        ],
     }
     return fused_pattern(*init_args[fused_pattern])

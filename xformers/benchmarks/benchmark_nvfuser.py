@@ -93,7 +93,9 @@ def bench_nvfused(
         NVFusedBiasActivationDropout: "Bias_Act_Dropout",
         NVFusedBiasDropoutRes: "Bias_Dropout_Res",
         NVFusedBiasDropoutResLayerNorm: "Bias_Dropout_Res_LayerNorm",
-    }[fused_pattern]
+    }[
+        fused_pattern  # type: ignore
+    ]
 
     for dtype in [
         torch.float16,
@@ -181,13 +183,13 @@ def bench_nvfused(
             for testcase in testcases:
                 torch.cuda.empty_cache()
                 torch.cuda.reset_peak_memory_stats()
-                torch.cuda.synchronize()
+                # torch.cuda.synchronize()
 
                 time = triton.testing.do_bench(
                     lambda: testcase.function(x=a), grad_to_none=[a, b]
                 )[0]
 
-                torch.cuda.synchronize()
+                # torch.cuda.synchronize()
                 max_memory = torch.cuda.max_memory_allocated() / 2**20
 
                 key = f"B={B}, M={M}, K={K}"
@@ -243,12 +245,13 @@ def bench_nvfused(
         )
 
 
-# for activation in [Activation.GeLU, None, Activation.SquaredReLU]:
-for pattern in [
+PATTERNS = [
     NVFusedBiasActivationDropout,
     NVFusedBiasDropoutRes,
     NVFusedBiasDropoutResLayerNorm,
-]:
+]
+
+for pattern in PATTERNS:
     activations: List[Optional[Activation]] = (
         [Activation.ReLU, Activation.GeLU, Activation.SquaredReLU]
         if pattern == NVFusedBiasActivationDropout
@@ -263,4 +266,4 @@ for pattern in [
                     else [None]
                 )
                 for style in styles:
-                    bench_nvfused(pattern, bias, bw, activation, style)
+                    bench_nvfused(pattern, bias, bw, activation, style)  # type: ignore

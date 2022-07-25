@@ -14,7 +14,10 @@ from xformers.components import Activation, build_activation
 
 
 def _fn(
-    x: torch.Tensor, bias: Optional[torch.Tensor], activation: nn.Module, prob: float
+    x: torch.Tensor,
+    bias: Optional[torch.nn.parameter.Parameter],
+    activation: nn.Module,
+    prob: float,
 ) -> torch.Tensor:
     if bias is not None:
         x = torch.add(x, bias)

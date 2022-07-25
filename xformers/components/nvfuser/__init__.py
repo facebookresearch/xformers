@@ -6,7 +6,7 @@
 
 from xformers import _is_functorch_available
 
-if _is_functorch_available:
+if _is_functorch_available:  # noqa
     try:
         from .bias_act_dropout import NVFusedBiasActivationDropout  # noqa
         from .bias_dropout_res import NVFusedBiasDropoutRes  # noqa

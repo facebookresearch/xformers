@@ -14,6 +14,7 @@ from xformers import _is_triton_available
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 
 if _is_triton_available:
+
     from triton.ops.blocksparse import matmul as blocksparse_matmul  # type: ignore
     from triton.ops.blocksparse import softmax as blocksparse_softmax  # type: ignore
 
