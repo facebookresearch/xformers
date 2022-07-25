@@ -183,14 +183,14 @@ def bench_nvfused(
             for testcase in testcases:
                 torch.cuda.empty_cache()
                 torch.cuda.reset_peak_memory_stats()
-                # torch.cuda.synchronize()
+                torch.cuda.synchronize()
 
                 time = triton.testing.do_bench(
                     lambda: testcase.function(x=a), grad_to_none=[a, b]
                 )[0]
 
-                # torch.cuda.synchronize()
-                max_memory = torch.cuda.max_memory_allocated() / 2**20
+                torch.cuda.synchronize()
+                max_memory = torch.cuda.max_memory_allocated() // 2**20
 
                 key = f"B={B}, M={M}, K={K}"
                 if key not in results:
@@ -211,7 +211,7 @@ def bench_nvfused(
             units="GB/s",
         )
         pretty_print(
-            results,
+            results_mem,
             title="\n --- PEAK MEMORY Type: {} {} --- ".format(pattern_str, dtype),
             units="MB",
         )
@@ -230,7 +230,7 @@ def bench_nvfused(
             legend_loc="upper left",
         )
         pretty_plot(
-            results,
+            results_mem,
             title="MAXMEM-{}-FW{}-{}{}-{}{}".format(
                 pattern_str,
                 "+BW" if backward else "",

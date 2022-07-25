@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import logging
+
 import pytest
 import torch
 import torch.nn as nn
@@ -15,13 +17,17 @@ from xformers.components.feedforward import build_feedforward
 
 _gpu_available = torch.cuda.is_available()
 
-if xformers._is_functorch_available:
+xformers._is_functorch_available = True
+
+try:
     from xformers.components.nvfuser import (
         NVFusedBiasActivationDropout,
         NVFusedBiasDropoutRes,
         NVFusedBiasDropoutResLayerNorm,
     )
     from xformers.components.nvfuser.utils import build_nvfused
+except ImportError as e:
+    logging.warning(f"Functorch is not available in test_nvfuser.py. \nError {e}")
 
 FUSED_PATTERNS = (
     [
