@@ -14,7 +14,7 @@ _is_sparse_available: bool = True
 _is_triton_available: bool = torch.cuda.is_available()
 
 # Set to true to utilize functorch
-_is_functorch_available: bool = False
+_is_functorch_available: bool = True
 
 
 def _register_extensions():

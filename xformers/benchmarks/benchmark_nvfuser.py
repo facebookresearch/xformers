@@ -37,22 +37,6 @@ SHAPES = [
 P = 0.1
 
 
-def to_gbs(a, ms, bw, bias, residual):
-    # Read and write the full array
-    total = 2 * a.numel() * a.element_size()
-
-    if residual:
-        # Only read
-        total += a.numel() * a.element_size()
-    if bias:
-        # Read the bias, ideally only once
-        total += a.shape[-1] * a.element_size()
-    if bw:
-        total *= 2
-
-    return total * 1e-9 / (ms * 1e-3)
-
-
 def build_torch_fn(
     pattern: nn.Module,
     shape: tuple,
@@ -196,9 +180,7 @@ def bench_nvfused(
                 if key not in results:
                     results[key] = {}
 
-                # Record BW
-                bandwidth = to_gbs(a, time, backward, bias, residual)
-                results[key][testcase.name] = f"{bandwidth:.1f}"
+                results[key][testcase.name] = f"{time:.3f}"
 
                 # Record peak mem usage
                 if key not in results_mem:
@@ -208,7 +190,7 @@ def bench_nvfused(
         pretty_print(
             results,
             title="\n --- RUNTIME Type: {} {} --- ".format(pattern_str, dtype),
-            units="GB/s",
+            units="ms",
         )
         pretty_print(
             results_mem,
@@ -225,7 +207,7 @@ def bench_nvfused(
                 dtype,
                 f"-{layer_norm_style}" if layer_norm_style is not None else "",
             ),
-            units="GB/s",
+            units="ms",
             dash_key="pytorch",
             legend_loc="upper left",
         )
