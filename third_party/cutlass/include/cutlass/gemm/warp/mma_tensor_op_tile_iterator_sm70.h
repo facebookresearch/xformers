@@ -1205,7 +1205,7 @@ class MmaVoltaTensorOpAccumulatorTileIterator {
                     InterleavedTile::kColumn / InstructionShape::kN>;
   };
 
-private:
+public:
 
   // Assume accumulator tile is multipile interleaved 32x32 tile.
   static int const kElementsPerPartial = 4;

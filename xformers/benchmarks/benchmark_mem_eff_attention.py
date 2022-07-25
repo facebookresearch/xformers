@@ -15,6 +15,8 @@ from utils import benchmark_main_helper
 
 import xformers.ops
 
+torch.backends.cuda.matmul.allow_tf32 = False
+
 
 def create_attn_bias(
     bias_type, batch_size: int, q_len: int, kv_len: int, device, dtype
@@ -89,6 +91,7 @@ def benchmark_forward(shape, num_threads: int, attn_bias_type, dtype):
         k=K,
         attn_bias_type=attn_bias_type,
         has_dropout=False,
+        kv_len=M,
     )
     try:
         op = dispatch.op if FORCE_OP is None else FORCE_OP
@@ -162,6 +165,7 @@ def benchmark_backward(shape, num_threads: int, attn_bias_type, dtype):
         k=K,
         attn_bias_type=attn_bias_type,
         has_dropout=False,
+        kv_len=M,
     )
     try:
         op = dispatch.op if FORCE_OP is None else FORCE_OP

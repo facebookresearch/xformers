@@ -112,7 +112,7 @@ def test_memory_efficient_attention(
     ).float()
     ref = ref_attention(query, key, value, attn_bias)
 
-    assert_allclose(out, ref, atol=op.FORWARD_ERROR_ATOL)
+    assert_allclose(out, ref, atol=op.FORWARD_ERROR_ATOL[dtype])
 
 
 @pytest.mark.parametrize("k_len", [5, 6, 32])

@@ -6,7 +6,7 @@
 
 import math
 from dataclasses import dataclass
-from typing import Any, List, Optional, Set, Type, Union
+from typing import Any, List, Mapping, Optional, Set, Type, Union
 
 import torch
 
@@ -117,11 +117,15 @@ class AttentionOpBase(torch.autograd.Function):
     """
 
     FORWARD_OPERATOR: Any
-    FORWARD_ERROR_ATOL: float = 2e-4
+    FORWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
+        torch.float: 2e-4,
+        torch.half: 2e-3,
+        torch.bfloat16: 2e-3,
+    }
     SUPPORTED_DEVICES: Set[str]
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
-    SUPPORTS_attn_bias_type: Set[Any] = {type(None)}
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None)}
     SUPPORTS_DROPOUT: bool
     NAME: str
 
@@ -168,7 +172,7 @@ class AttentionOpBase(torch.autograd.Function):
             return False
         if d.k > cls.SUPPORTED_MAX_K:
             return False
-        if d.attn_bias_type not in cls.SUPPORTS_attn_bias_type:
+        if d.attn_bias_type not in cls.SUPPORTED_ATTN_BIAS_TYPES:
             return False
         if d.has_dropout and not cls.SUPPORTS_DROPOUT:
             return False
@@ -180,7 +184,7 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
     SUPPORTED_DEVICES = {"cuda", "cpu"}
     SUPPORTED_DTYPES = {torch.float}
     SUPPORTED_MAX_K: float = 32
-    SUPPORTS_attn_bias_type: Set[Any] = {type(None), torch.Tensor}
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), torch.Tensor}
     SUPPORTS_DROPOUT = True
     NAME = "small_k"
 
@@ -201,9 +205,34 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.float, torch.half}
     SUPPORTED_MAX_K = math.inf
-    SUPPORTS_attn_bias_type: Set[Any] = {type(None)}
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None)}
     SUPPORTS_DROPOUT = False
     NAME = "fwd_gen"
+
+    @classmethod
+    def uses_tensorcores(cls, d: "AttentionOpDispatch", is_half: bool) -> bool:
+        sm_major = torch.cuda.get_device_capability(d.device)[0]
+        if sm_major >= 8:
+            return True
+        if sm_major >= 7:
+            return is_half
+        return False
+
+    @classmethod
+    def supports(cls, d: "AttentionOpDispatch") -> bool:
+        if not super(MemoryEfficientAttentionGenericForwardOp, cls).supports(d):
+            return False
+        is_sm80 = torch.cuda.get_device_capability(d.device)[0] >= 8
+        bits_per_scalar = {torch.float: 32, torch.half: 16, torch.bfloat16: 16}[d.dtype]
+        uses_tensorcores = cls.uses_tensorcores(d, bits_per_scalar == 16)
+        if is_sm80 and d.k % 4 != 0:
+            return False
+        if uses_tensorcores and d.k % (64 / bits_per_scalar) != 0:
+            return False
+        warp_shape = 32 if uses_tensorcores else 8
+        if d.kv_len > warp_shape and d.kv_len % warp_shape != 0:
+            return False
+        return True
 
     @classmethod
     def backward(cls, ctx, grad):
@@ -234,11 +263,14 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     """
 
     FORWARD_OPERATOR = None
-    FORWARD_ERROR_ATOL = 5e-2
+    FORWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
+        torch.half: 5e-2,
+        torch.bfloat16: 5e-2,
+    }
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 128
-    SUPPORTS_attn_bias_type: Set[Any] = {type(None), LowerTriangularMask}
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
     NAME = "flshatt"
 
@@ -469,13 +501,14 @@ class AttentionOpDispatch:
     k: int
     has_dropout: bool
     attn_bias_type: Any
+    kv_len: int
 
     @property
     def op(self) -> Type[AttentionOpBase]:
         priority_list_ops: List[Type[AttentionOpBase]] = [
             MemoryEfficientAttentionFlashAttentionOp,
-            MemoryEfficientAttentionOp,
             MemoryEfficientAttentionGenericForwardOp,
+            MemoryEfficientAttentionOp,
         ]
         for op in priority_list_ops:
             if op.supports(self):
@@ -497,6 +530,7 @@ class AttentionOpDispatch:
             k=query.shape[-1],
             has_dropout=p > 0.0,
             attn_bias_type=type(attn_bias),
+            kv_len=value.shape[-2],
         )
 
 

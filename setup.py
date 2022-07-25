@@ -172,7 +172,10 @@ def get_extensions():
         if cuda_version >= 1102:
             nvcc_flags += ["--threads", "4"]
         extra_compile_args["nvcc"] = nvcc_flags
-        if cuda_version >= 1100 and os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") == "0":
+        if (
+            cuda_version >= 1100
+            and os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") == "0"
+        ):
             ext_modules += get_flash_attention_extensions(
                 cuda_version=cuda_version, extra_compile_args=extra_compile_args
             )
