@@ -165,6 +165,7 @@ run_clang_format: &run_clang_format
 run_coverage: &run_coverage
   - run:
       name: Run Unit Tests With Coverage
+      parallel: true
       command: |
         source $BASH_ENV
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
@@ -176,6 +177,7 @@ run_coverage: &run_coverage
 run_unittests: &run_unittests
   - run:
       name: Run Unit Tests
+      parallel: true
       command: |
         source $BASH_ENV
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
@@ -185,6 +187,7 @@ run_unittests: &run_unittests
 run_experimental_unittests: &run_experimental_unittests
   - run:
       name: Run Unit Tests
+      parallel: true
       command: |
         source $BASH_ENV
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
@@ -273,6 +276,8 @@ jobs:
 
     working_directory: ~/xformers
 
+    parallelism: 4
+
     steps:
       - checkout
 
@@ -315,6 +320,8 @@ jobs:
 
     working_directory: ~/xformers
 
+    parallelism: 4
+
     steps:
       - checkout
 
@@ -356,6 +363,8 @@ jobs:
     <<: *gpu_cu114
 
     working_directory: ~/xformers
+
+    parallelism: 4
 
     steps:
       - checkout
