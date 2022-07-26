@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import torch.nn as nn
 
-from xformers.components import Activation, LayerNormStyle
+from xformers.components import Activation, ResidualNormStyle
 from xformers.components.nvfuser import (
     NVFusedBiasActivationDropout,
     NVFusedBiasDropoutRes,
@@ -21,7 +21,7 @@ def build_nvfused(
     bias: bool,
     activation: Optional[Activation],
     p: float,
-    layer_norm_style: Optional[LayerNormStyle],
+    layer_norm_style: Optional[ResidualNormStyle],
 ):
     bias_shape = shape[-1] if bias else None
     d_model = shape[-1]

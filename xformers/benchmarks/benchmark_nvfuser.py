@@ -11,7 +11,7 @@ import torch.nn as nn
 import triton
 
 from xformers.benchmarks.utils import TestCase, pretty_plot, pretty_print
-from xformers.components import Activation, LayerNormStyle, build_activation
+from xformers.components import Activation, ResidualNormStyle, build_activation
 from xformers.components.nvfuser import (
     NVFusedBiasActivationDropout,
     NVFusedBiasDropoutRes,
@@ -43,7 +43,7 @@ def build_torch_fn(
     bias: Optional[torch.Tensor],
     activation: Optional[Activation],
     p: float,
-    layer_norm_style: Optional[LayerNormStyle],
+    layer_norm_style: Optional[ResidualNormStyle],
     dtype: torch.dtype,
 ):
     torch_act = build_activation(activation)
@@ -69,7 +69,7 @@ def bench_nvfused(
     bias: bool,
     backward: bool,
     activation: Optional[Activation],
-    layer_norm_style: Optional[LayerNormStyle],
+    layer_norm_style: Optional[ResidualNormStyle],
 ):
     device = torch.device("cuda")
 
@@ -242,8 +242,8 @@ for pattern in PATTERNS:
     for activation in activations:
         for bw in [True, False]:
             for bias in [True, False]:
-                styles: List[Optional[LayerNormStyle]] = (
-                    [LayerNormStyle.Pre, LayerNormStyle.Post]
+                styles: List[Optional[ResidualNormStyle]] = (
+                    [ResidualNormStyle.Pre, ResidualNormStyle.Post]
                     if pattern == NVFusedBiasDropoutResLayerNorm
                     else [None]
                 )

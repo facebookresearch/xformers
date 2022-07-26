@@ -37,11 +37,11 @@ binary_common: &binary_common
     cu_version:
       description: "CUDA version to build against, in CU format (e.g., cpu or cu100)"
       type: string
-      default: "cu102"
+      default: "cu101"
     wheel_docker_image:
       description: "Wheel only: what docker image to use"
       type: string
-      default: "pytorch/manylinux-cuda102"
+      default: "pytorch/manylinux-cuda101"
   environment:
       CU_VERSION: << parameters.cu_version >>
       PYTHON_VERSION: << parameters.python_version >>

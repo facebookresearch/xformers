@@ -10,23 +10,23 @@ import torch
 import torch.nn as nn
 from functorch.compile import memory_efficient_fusion
 
-from xformers.components import LayerNormStyle
+from xformers.components import ResidualNormStyle
 
 
 def _fn(
     x: torch.Tensor,
     bias: Optional[torch.nn.parameter.Parameter],
     prob: float,
-    layer_norm_style: Optional[LayerNormStyle],
+    layer_norm_style: Optional[ResidualNormStyle],
     norm: nn.Module,
     residual: torch.Tensor,
 ) -> torch.Tensor:
     a = torch.add(x, bias) if bias is not None else x
     b = torch.nn.functional.dropout(a, prob) if prob > 0.0 else a
-    if layer_norm_style == LayerNormStyle.Pre:
+    if layer_norm_style == ResidualNormStyle.Pre:
         c = norm(b)
         return torch.add(c, residual)
-    elif layer_norm_style == LayerNormStyle.Post:
+    elif layer_norm_style == ResidualNormStyle.Post:
         c = torch.add(b, residual)
         return norm(c)
     else:
@@ -45,7 +45,7 @@ class NVFusedBiasDropoutResLayerNorm(torch.nn.Module):
         p: float,
         d_model: int,
         bias_shape: Optional[int] = None,
-        layer_norm_style: LayerNormStyle = LayerNormStyle.Post,
+        layer_norm_style: ResidualNormStyle = ResidualNormStyle.Post,
     ) -> None:
         super().__init__()
 

@@ -13,7 +13,7 @@ import torch.nn as nn
 from torch.cuda.amp.autocast_mode import autocast
 
 import xformers
-from xformers.components import Activation, LayerNormStyle
+from xformers.components import Activation, ResidualNormStyle
 from xformers.components.feedforward import build_feedforward
 
 _gpu_available = torch.cuda.is_available()
@@ -80,7 +80,7 @@ ACTIVATIONS = [
 @pytest.mark.parametrize("activation", ACTIVATIONS)
 @pytest.mark.parametrize("p", [0, 0.1, 0.5])
 @pytest.mark.parametrize(
-    "layer_norm_style", [None, LayerNormStyle.Pre, LayerNormStyle.Post]
+    "layer_norm_style", [None, ResidualNormStyle.Pre, ResidualNormStyle.Post]
 )
 def test_nvfused_pattern_parity(
     fused_pattern: nn.Module,
@@ -89,12 +89,12 @@ def test_nvfused_pattern_parity(
     bias: bool,
     activation: Activation,
     p: float,
-    layer_norm_style: LayerNormStyle,
+    layer_norm_style: ResidualNormStyle,
 ):
 
     if (
         fused_pattern != NVFusedBiasDropoutResLayerNorm
-        and layer_norm_style != LayerNormStyle.Pre
+        and layer_norm_style != ResidualNormStyle.Pre
     ):
         pytest.skip(
             "Layer norm style doesn't apply, the same relevant params already tested once."
