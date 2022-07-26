@@ -61,8 +61,6 @@ class NVFusedBiasActivationDropout(torch.nn.Module):
         # Train/inference
         p = self.p if self.training else 0.0
 
-        # TODO perf check, is slower than pytorch for small buffers, bypassing it in that case
-
         # Catch a non-cuda setup, fallback to pytorch
         if not x.is_cuda:
             return _fn(x, self.bias, self.pytorch_activation, p)

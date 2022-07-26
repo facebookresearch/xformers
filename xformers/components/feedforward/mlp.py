@@ -25,7 +25,6 @@ from . import register_feedforward
 class MlpConfig(FeedforwardConfig):
     hidden_layer_multiplier: int
     bias: bool
-    nvfuser: bool
 
 
 @register_feedforward("MLP", MlpConfig)

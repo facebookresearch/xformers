@@ -5,6 +5,7 @@
 
 
 import logging
+from contextlib import nullcontext
 
 import pytest
 import torch
@@ -20,9 +21,11 @@ _gpu_available = torch.cuda.is_available()
 xformers._is_functorch_available = True
 
 try:
-    from xformers.components.nvfuser import (
+    from xformers.components.nvfuser.bias_act_dropout import (
         NVFusedBiasActivationDropout,
-        NVFusedBiasDropoutRes,
+    )
+    from xformers.components.nvfuser.bias_dropout_res import NVFusedBiasDropoutRes
+    from xformers.components.nvfuser.bias_dropout_res_layernorm import (
         NVFusedBiasDropoutResLayerNorm,
     )
     from xformers.components.nvfuser.utils import build_nvfused
@@ -76,7 +79,9 @@ ACTIVATIONS = [
 @pytest.mark.parametrize("bias", [False, True])
 @pytest.mark.parametrize("activation", ACTIVATIONS)
 @pytest.mark.parametrize("p", [0, 0.1, 0.5])
-@pytest.mark.parametrize("layer_norm_style", [LayerNormStyle.Pre, LayerNormStyle.Post])
+@pytest.mark.parametrize(
+    "layer_norm_style", [None, LayerNormStyle.Pre, LayerNormStyle.Post]
+)
 def test_nvfused_pattern_parity(
     fused_pattern: nn.Module,
     shape: tuple,
@@ -89,7 +94,7 @@ def test_nvfused_pattern_parity(
 
     if (
         fused_pattern != NVFusedBiasDropoutResLayerNorm
-        and layer_norm_style == LayerNormStyle.Post
+        and layer_norm_style != LayerNormStyle.Pre
     ):
         pytest.skip(
             "Layer norm style doesn't apply, the same relevant params already tested once."
@@ -100,7 +105,9 @@ def test_nvfused_pattern_parity(
     x = torch.normal(0, 1, size=shape, device="cuda", requires_grad=True)
     x_cpu = x.clone().cpu()
 
-    with autocast(enabled=amp):
+    with autocast(enabled=amp), pytest.raises(
+        ValueError
+    ) if layer_norm_style is None else nullcontext():
         fused = build_nvfused(
             fused_pattern, shape, bias, activation, p, layer_norm_style
         )
@@ -126,6 +133,7 @@ def test_nvfused_pattern_parity(
 @pytest.mark.skipif(
     not xformers._is_functorch_available, reason="Functorch is not available"
 )
+@pytest.mark.skipif(not _gpu_available, reason="GPU is not available")
 @pytest.mark.parametrize("activation", ACTIVATIONS)
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("p", [0, 0.1, 0.5])
@@ -147,10 +155,6 @@ def test_nvfused_mlp(activation: Activation, device: torch.device, p: float):
     xformers._is_functorch_available = False
     mlp_default = build_feedforward(test_config)
     xformers._is_functorch_available = True
-
-    if mlp.requires_cuda and not device.type == "cuda":
-        # pyre-fixme[29]: The library function `pytest.skip` is not supported by Pyre.
-        pytest.skip("This MLP requires CUDA and current device does not match")
 
     inputs = torch.rand(BATCH, SEQ, LATENT, device=device)
     mlp.train()
