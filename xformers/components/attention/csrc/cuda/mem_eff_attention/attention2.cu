@@ -13,6 +13,79 @@
 
 #include "sputnik/vector_utils.h"
 
+#include "sputnik/common.h"
+
+namespace sputnik {
+
+// very similar to sputnik/sddmm/all_reduce.h but with a minor
+// fix so that this works for more sizes
+template <typename LoadType, int kBlockItemsX, int kBlockWidth>
+struct AllReduce {
+  //
+  /// Static members.
+  //
+
+  // The number of values that will be loaded per-thread, per-load.
+  static constexpr int kValuesPerLoad = sizeof(LoadType) / sizeof(float);
+
+  // The number of outputs each thread is responsible for.
+  static constexpr int kThreadItemsX = kBlockItemsX / kBlockWidth;
+
+  //
+  /// Member variables.
+  //
+
+  // Thread mask used for warp shuffle operations.
+  const uint32_t kShflMask;
+
+  // Register file fragment storing the thread local partial results.
+  float* inputs;
+
+  // Registe file fragment for storing each threads results.
+  float* outputs;
+
+  __device__ __forceinline__ AllReduce(const uint32_t thread_mask,
+                                       float* inputs_, float* outputs_)
+      : kShflMask(thread_mask), inputs(inputs_), outputs(outputs_) {}
+  __device__ __forceinline__ void Swap(int i, int j, float* x) {
+    float t = x[i];
+    x[i] = x[j];
+    x[j] = t;
+  }
+
+  __device__ __forceinline__ void ReduceStep(int lane, int i, int j) {
+    const int kStep = Log2(lane);
+    if ((threadIdx.x >> kStep) & 1) Swap(i, j, inputs);
+    inputs[i] += __shfl_xor_sync(kShflMask, inputs[j], lane, kBlockWidth);
+  }
+
+  __device__ __forceinline__ void Reduce() {
+#pragma unroll
+    for (int base_idx = 0; base_idx < kBlockItemsX; base_idx += kBlockWidth) {
+#pragma unroll
+      for (int k_item_idx = 1; k_item_idx < kBlockWidth; k_item_idx *= 2) {
+        const int kBoundX = kBlockWidth / (k_item_idx * 2);
+#pragma unroll
+        for (int x_item_idx = 0; x_item_idx < kBoundX; ++x_item_idx) {
+          const int idx_a = x_item_idx * 2 * kValuesPerLoad * k_item_idx;
+          const int idx_b = (x_item_idx * 2 + 1) * kValuesPerLoad * k_item_idx;
+          ReduceStep(k_item_idx, base_idx + idx_a, base_idx + idx_b);
+        }
+      }
+    }
+
+    // Move the last four values to the first four of the output. This
+    // should get cleaned up during register allocation.
+#pragma unroll
+    for (int out_idx = 0; out_idx < kThreadItemsX; ++out_idx) {
+      outputs[out_idx] = inputs[out_idx * kBlockWidth];
+    }
+  }
+};
+
+}  // namespace sputnik
+
+
 namespace {
 
 template <typename integer>
@@ -266,30 +339,38 @@ __global__ void attention_kernel(
     scalar_t m_i = m_prime;
 
     // aggregate over different threads in a warp and compute max over wap
+    // the reduced values will be shared across different threads, such that
+    // threadIdx.x will have values of index i s.t. that i % kBlockWidth == threadIdx.x
+    sputnik::AllReduce<scalar_t, kBlockItemsX, kBlockWidth> all_reduce(0xffffffff, attn_fragment, attn_fragment);
+    all_reduce.Reduce();
+
 #pragma unroll
-    for (int x_item_idx = 0; x_item_idx < kBlockItemsX; ++x_item_idx) {
-      attn_fragment[x_item_idx] =
-          warpSum<scalar_t, kBlockWidth>(attn_fragment[x_item_idx]);
-
-      if (attn_bias != nullptr && (x_item_idx < end_iter)) {
-        attn_fragment[x_item_idx] += __ldg(attn_bias + kv_idx + x_item_idx);
-      }
-
-      if (x_item_idx >= end_iter)
-        attn_fragment[x_item_idx] =
-            -std::numeric_limits<scalar_t>::infinity();
-
+    for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth; ++x_item_idx) {
+      bool in_bounds = x_item_idx * kBlockWidth + threadIdx.x < end_iter;
+      if (!in_bounds)
+        attn_fragment[x_item_idx] = -std::numeric_limits<scalar_t>::infinity();
+      if ((attn_bias != nullptr) && in_bounds)
+        attn_fragment[x_item_idx] += __ldg(attn_bias + kv_idx + x_item_idx * kBlockWidth + threadIdx.x);
       m_i = max(attn_fragment[x_item_idx], m_i);
     }
+    m_i = warpMax<scalar_t, kBlockWidth>(m_i);
 
     scalar_t m_delta = std::exp(m_prime - m_i);
     m_delta = isfinite(m_delta) ? m_delta : scalar_t(0);
     s_prime = s_prime * m_delta;
     m_prime = m_i;
-    for (int x_item_idx = 0; x_item_idx < kBlockItemsX; x_item_idx++) {
+#pragma unroll
+    for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth; x_item_idx++) {
       attn_fragment[x_item_idx] = std::exp(attn_fragment[x_item_idx] - m_i);
       attn_fragment[x_item_idx] = isfinite(attn_fragment[x_item_idx]) ? attn_fragment[x_item_idx] : scalar_t(0);
       s_prime += attn_fragment[x_item_idx];
+    }
+
+    // distribute aggregated attention values to all threads in the warp
+#pragma unroll
+    for (int x_item_idx = kBlockItemsX - 1; x_item_idx >= 0; x_item_idx--) {
+      scalar_t val = attn_fragment[x_item_idx / kBlockWidth];
+      attn_fragment[x_item_idx] = __shfl_sync(0xffffffff, val, x_item_idx % kBlockWidth, kBlockWidth);
     }
 
     if (p < 1.0) {
@@ -390,6 +471,7 @@ __global__ void attention_kernel(
       }
     }
   }
+  s_prime = warpSum<scalar_t, kBlockWidth>(s_prime);
   if (logsumexp.size(1) > 0) {
     logsumexp[batch_idx][query_idx] = m_prime + std::log(s_prime);
   }
