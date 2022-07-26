@@ -31,6 +31,9 @@ class MultiHeadDispatchConfig:
     use_rotary_embeddings: Optional[bool]
     out_proj: Optional[nn.Module]
 
+    def __getitem__(self, item):
+        return getattr(self, item)
+
 
 # Move head forward and fold into batch dim. dimensions become (B * nh, S, hs)
 def _fold_heads(t: torch.Tensor, B: int, S: int, H: int, Hs: int):

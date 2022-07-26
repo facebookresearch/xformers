@@ -33,7 +33,7 @@ VOCAB_SIZE = 64
 @pytest.mark.parametrize("activation", [a.value for a in Activation])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
-@pytest.mark.parametrize("layer_norm_style", ["pre", "post", "deepnorm"])
+@pytest.mark.parametrize("residual_norm_style", ["pre", "post", "deepnorm"])
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("reversible", [True, False])
 @pytest.mark.skipif(
@@ -46,7 +46,7 @@ def test_xformer_encoder_block(
     attn_dropout: float,
     residual_dropout: float,
     activation: Activation,
-    layer_norm_style: str,
+    residual_norm_style: str,
     device: torch.device,
     reversible: bool,
 ):
@@ -100,7 +100,7 @@ def test_xformer_encoder_block(
         multi_head_config=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
-        layer_norm_style=layer_norm_style,
+        residual_norm_style=residual_norm_style,
         reversible=reversible,
     )
 
@@ -136,7 +136,7 @@ def test_xformer_encoder_block(
 @pytest.mark.parametrize("rotary_embeddings", [False, True])
 @pytest.mark.parametrize("attention_name", ATTENTION_REGISTRY.keys())
 @pytest.mark.parametrize("feedforward_name", FEEDFORWARD_REGISTRY.keys())
-@pytest.mark.parametrize("layer_norm_style", ["pre", "post", "deepnorm"])
+@pytest.mark.parametrize("residual_norm_style", ["pre", "post", "deepnorm"])
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.skipif(
     not torch.cuda.is_available(), reason="This test requires a CUDA device"
@@ -150,7 +150,7 @@ def test_xformer_decoder_block(
     residual_dropout: float,
     causal: bool,
     activation: Activation,
-    layer_norm_style: str,
+    residual_norm_style: str,
     device: torch.device,
 ):
 
@@ -202,7 +202,7 @@ def test_xformer_decoder_block(
         multi_head_config=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
-        layer_norm_style=layer_norm_style,
+        residual_norm_style=residual_norm_style,
     )
 
     decoder_block_config = xFormerDecoderConfig(
@@ -211,7 +211,7 @@ def test_xformer_decoder_block(
         multi_head_config_cross=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
-        layer_norm_style=layer_norm_style,
+        residual_norm_style=residual_norm_style,
     )
 
     # Test that the whole block can be instantiated
@@ -303,7 +303,7 @@ def test_embedding_projection():
         multi_head_config=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
-        layer_norm_style="pre",
+        residual_norm_style="pre",
         reversible=False,
     )
 
@@ -371,7 +371,7 @@ def test_simplicial_embedding(
         multi_head_config=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
-        layer_norm_style="pre",
+        residual_norm_style="pre",
         reversible=False,
         simplicial_embeddings={"L": 4},
     )
@@ -398,7 +398,7 @@ def test_simplicial_embedding(
         multi_head_config=multi_head_config,
         feedforward_config=feedforward_config,
         position_encoding_config=position_encoding_config,
-        layer_norm_style="pre",
+        residual_norm_style="pre",
         reversible=False,
         simplicial_embeddings={"L": 3},
     )

@@ -37,14 +37,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--partition", default="a100", type=str, help="Partition where to submit"
     )
-    parser.add_argument(
-        "-tb",
-        "--tb_path",
-        type=str,
-        help="Path to the tensorboard directory",
-        dest="tb_dir",
-        default=f"/{default_checkpoint_path}/{os.getenv('USER')}/xformers/tb",
-    )
     args = parser.parse_args()
 
     for attention in args.attentions:
@@ -54,5 +46,4 @@ if __name__ == "__main__":
                 + f" --attention {attention}  --task {task} --config {args.config_path}"
                 + f" --checkpoint_dir {args.checkpoint_path}/{attention}/{task}"
                 + f" --partition {args.partition}"
-                + f" --tb_dir {args.tb_dir}/{attention}/{task}"
             )

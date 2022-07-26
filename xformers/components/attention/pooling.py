@@ -58,6 +58,7 @@ class Pooling(Attention):
 
         # This "attention" (token mixing) skips the multihead attention altogether
         self.requires_skip_multi_head = True
+        self.requires_input_projection = False
 
         # This operator does not really handle q,k,v
         self.requires_same_k_q_dimensions = True

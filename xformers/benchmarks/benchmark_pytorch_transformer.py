@@ -116,7 +116,7 @@ def bench_pytorch_encoder(
                         "block_type": "encoder",
                         "dim_model": emb,
                         "num_layers": layers,
-                        "layer_norm_style": "post",
+                        "residual_norm_style": "post",
                         "multi_head_config": {
                             "num_heads": n_heads,
                             "residual_dropout": dropout,

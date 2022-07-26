@@ -12,11 +12,11 @@ import torch
 import torch.nn as nn
 
 from xformers.components import (
-    LayerNormStyle,
     PatchEmbeddingConfig,
     PostNorm,
     PreNorm,
     Residual,
+    ResidualNormStyle,
     build_multi_head_attention,
     build_patch_embedding,
 )
@@ -24,14 +24,19 @@ from xformers.components.feedforward import build_feedforward
 from xformers.components.positional_embedding import build_positional_embedding
 from xformers.components.residual import get_deepnorm_coefficients
 from xformers.components.simplicial_embedding import SimplicialEmbedding
-from xformers.factory.block_configs import xFormerDecoderConfig, xFormerEncoderConfig
+from xformers.factory.block_configs import (
+    NormalizationType,
+    xFormerDecoderConfig,
+    xFormerEncoderConfig,
+)
 
 
 def _get_ln_factory(
     d_model: int,
-    layer_norm_style: Optional[LayerNormStyle],
+    residual_norm_style: Optional[ResidualNormStyle],
     use_triton: bool,
     residual: bool,
+    normalization: NormalizationType = NormalizationType.LayerNorm,
     residual_scale: float = 1.0,
 ):
     """
@@ -43,37 +48,42 @@ def _get_ln_factory(
     def get_layer_wrapper(
         d_model: int,
         sublayer: nn.Module,
-        layer_norm_style: Optional[LayerNormStyle],
+        residual_norm_style: Optional[ResidualNormStyle],
         residual: bool,
         residual_scale: float,
     ):
         if residual:
-            if layer_norm_style == LayerNormStyle.Pre:
+            if residual_norm_style == ResidualNormStyle.Pre:
                 return Residual(
-                    layer=PreNorm(d_model, sublayer, use_triton), scale=None
+                    layer=PreNorm(d_model, sublayer, normalization, use_triton),
+                    scale=None,
                 )
-            elif layer_norm_style == LayerNormStyle.Post:
+            elif residual_norm_style == ResidualNormStyle.Post:
                 return PostNorm(
-                    d_model, Residual(layer=sublayer, scale=None), use_triton
+                    d_model,
+                    Residual(layer=sublayer, scale=None),
+                    normalization,
+                    use_triton,
                 )
-            elif layer_norm_style == LayerNormStyle.DeepNorm:
+            elif residual_norm_style == ResidualNormStyle.DeepNorm:
                 return PostNorm(
                     d_model,
                     Residual(layer=sublayer, scale=residual_scale),
+                    normalization,
                     use_triton=use_triton,
                 )
             else:
                 raise ValueError
 
         return (
-            PreNorm(d_model, sublayer, use_triton)
-            if layer_norm_style == LayerNormStyle.Pre
-            else PostNorm(d_model, sublayer, use_triton)
+            PreNorm(d_model, sublayer, normalization, use_triton)
+            if residual_norm_style == ResidualNormStyle.Pre
+            else PostNorm(d_model, sublayer, normalization, use_triton)
         )
 
     def ln_factory(sublayer: nn.Module):
         return get_layer_wrapper(
-            d_model, sublayer, layer_norm_style, residual, residual_scale
+            d_model, sublayer, residual_norm_style, residual, residual_scale
         )
 
     return ln_factory
@@ -87,7 +97,7 @@ class xFormerEncoderBlock(torch.nn.Module):
 
         self.reversible_f = None
         self.reversible_g = None
-        self.layer_norm_style = config.layer_norm_style
+        self.residual_norm_style = config.residual_norm_style
         self.dim_model = config.dim_model
 
         # If this layer is the first one, and a pose encoding has been requested
@@ -110,7 +120,7 @@ class xFormerEncoderBlock(torch.nn.Module):
         else:
             self.pose_encoding = None
 
-        if config.layer_norm_style == LayerNormStyle.DeepNorm:
+        if config.residual_norm_style == ResidualNormStyle.DeepNorm:
             # Just use the layer norm coefficient here,
             # the init will be handled at the xformers level (knows about encoder and decoder blocks)
             deep_norm_coefficients, _ = get_deepnorm_coefficients(
@@ -121,13 +131,14 @@ class xFormerEncoderBlock(torch.nn.Module):
         else:
             residual_scale = 1.0
 
-        # mini helper, builds a LayerNorm with the right Pre/Post config, residuals, and the right dimensions
+        # mini helper, builds a normalization layer with the right Pre/Post config, residuals, and the right dimensions
         ln_factory = _get_ln_factory(
             config.dim_model,
-            config.layer_norm_style,
+            config.residual_norm_style,
             use_triton=config.use_triton,
             residual=True,
             residual_scale=residual_scale,
+            normalization=config.normalization,
         )
 
         mha = build_multi_head_attention(config.multi_head_config)
@@ -144,11 +155,14 @@ class xFormerEncoderBlock(torch.nn.Module):
         self.wrap_att = ln_factory(mha)
         self.wrap_ff: Union[Residual, PostNorm] = ln_factory(feedforward)
         if (
-            config.layer_norm_style == LayerNormStyle.Pre
+            config.residual_norm_style == ResidualNormStyle.Pre
             and config.layer_position.is_last()
         ):
             self.wrap_ff = PostNorm(
-                config.dim_model, self.wrap_ff, use_triton=config.use_triton
+                config.dim_model,
+                self.wrap_ff,
+                normalization=config.normalization,
+                use_triton=config.use_triton,
             )
 
         # Simplicial embeddings are only used if specified, and on the last layer
@@ -161,10 +175,7 @@ class xFormerEncoderBlock(torch.nn.Module):
         # Optional patch embedding
         self.patch_emb: Optional[nn.Module] = None
 
-        if (
-            config.patch_embedding_config is not None
-            and config.layer_position.is_first()
-        ):
+        if config.patch_embedding_config is not None:
             self.patch_emb = build_patch_embedding(
                 PatchEmbeddingConfig(**config.patch_embedding_config)
             )
@@ -177,9 +188,10 @@ class xFormerEncoderBlock(torch.nn.Module):
     def get_reversible_layer(config) -> Tuple[nn.Module, nn.Module]:
         ln_factory = _get_ln_factory(
             config.dim_model,
-            config.layer_norm_style,
+            config.residual_norm_style,
             residual=False,
             use_triton=config.use_triton,
+            normalization=config.normalization,
         )
 
         mha = build_multi_head_attention(config.multi_head_config)
@@ -253,7 +265,7 @@ class xFormerDecoderBlock(torch.nn.Module):
         else:
             self.pose_encoding = None
 
-        if config.layer_norm_style == LayerNormStyle.DeepNorm:
+        if config.residual_norm_style == ResidualNormStyle.DeepNorm:
             # Just use the layer norm coefficient here,
             # the init will be handled at the xformers level (knows about encoder and decoder blocks)
             _, deep_norm_coefficients = get_deepnorm_coefficients(
@@ -267,10 +279,11 @@ class xFormerDecoderBlock(torch.nn.Module):
         # mini helper, builds a LayerNorm with the right Pre/Post config and the right dimensions
         ln_factory = _get_ln_factory(
             config.dim_model,
-            config.layer_norm_style,
+            config.residual_norm_style,
             use_triton=config.use_triton,
             residual=True,
             residual_scale=residual_scale,
+            normalization=config.normalization,
         )
 
         mha = build_multi_head_attention(config.multi_head_config_masked)
@@ -295,10 +308,14 @@ class xFormerDecoderBlock(torch.nn.Module):
         self.wrap_ff: Union[Residual, PostNorm] = ln_factory(feedforward)
 
         if (
-            config.layer_norm_style == LayerNormStyle.Pre
+            config.residual_norm_style == ResidualNormStyle.Pre
             and config.layer_position.is_last()
         ):
-            self.wrap_ff = PostNorm(config.dim_model, self.wrap_ff)
+            self.wrap_ff = PostNorm(
+                config.dim_model,
+                self.wrap_ff,
+                normalization=NormalizationType.LayerNorm,
+            )
 
     @classmethod
     def from_config(cls, config: xFormerDecoderConfig):

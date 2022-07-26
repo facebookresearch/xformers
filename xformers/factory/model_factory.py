@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 import torch
 
 from xformers.components import reversible as rv
-from xformers.components.residual import LayerNormStyle, get_deepnorm_coefficients
+from xformers.components.residual import ResidualNormStyle, get_deepnorm_coefficients
 from xformers.factory.block_configs import (
     xFormerBlockConfig,
     xFormerDecoderConfig,
@@ -41,7 +41,7 @@ class xFormerConfig:
                 "block_type": "encoder",
                 "num_layers": LAYERS,
                 "dim_model": EMB,
-                "layer_norm_style": "pre",
+                "residual_norm_style": "pre",
                 "position_encoding_config": {
                     "name": "vocab",
                     "seq_len": CONTEXT,
@@ -149,10 +149,12 @@ class xFormer(torch.nn.Module):
             for i in range(config.num_layers):
                 # Label where this layer is in the stack
                 # (for instance useful for the positional encoding, or late layer norm)
-                if i > 0:
+                if len(recipient) > 0:
                     config.layer_position.mark_not_first()
-                if i < config.num_layers - 1:
+
+                if config != stack_configs[-1] or i < config.num_layers - 1:
                     config.layer_position.mark_not_last()
+
                 block = builder(config)  # type: ignore
 
                 # If reversible: extract the reversible sub-parts, else append the block as-is
@@ -191,7 +193,9 @@ class xFormer(torch.nn.Module):
         )
         self.decoders = torch.nn.ModuleList(decoders)
 
-        use_deepnorm = stack_configs[0].layer_norm_style == LayerNormStyle.DeepNorm
+        use_deepnorm = (
+            stack_configs[0].residual_norm_style == ResidualNormStyle.DeepNorm
+        )
 
         assert (
             not use_deepnorm or not self.reversible_encoder
@@ -218,7 +222,7 @@ class xFormer(torch.nn.Module):
 
     def _verify_deepnorm(self, stack_configs: List[xFormerBlockConfig]):
         deepnorm = [
-            c.layer_norm_style == LayerNormStyle.DeepNorm for c in stack_configs
+            c.residual_norm_style == ResidualNormStyle.DeepNorm for c in stack_configs
         ]
 
         assert all(deepnorm) or not any(deepnorm), (
@@ -277,7 +281,9 @@ class xFormer(torch.nn.Module):
 
                 # Apply the optional input masking
                 if encoder_input_mask is not None:
-                    x += encoder_input_mask.unsqueeze(0).unsqueeze(-1)
+                    if x.dim() - encoder_input_mask.dim() > 1:
+                        encoder_input_mask.unsqueeze(0)
+                    x += encoder_input_mask.unsqueeze(-1)
 
                 x = encoders(x)
                 memory = torch.stack(x.chunk(2, dim=-1)).mean(dim=0)

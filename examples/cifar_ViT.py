@@ -19,7 +19,6 @@ import torch
 from pl_bolts.datamodules import CIFAR10DataModule
 from torch import nn
 from torchmetrics import Accuracy
-from torchvision import transforms
 
 from xformers.factory import xFormer, xFormerConfig
 
@@ -46,7 +45,7 @@ class VisionTransformer(pl.LightningModule):
         attn_pdrop=0.0,
         mlp_pdrop=0.0,
         attention="scaled_dot_product",
-        layer_norm_style="pre",
+        residual_norm_style="pre",
         hidden_layer_multiplier=4,
         use_rotary_embeddings=True,
         linear_warmup_ratio=0.1,
@@ -68,7 +67,7 @@ class VisionTransformer(pl.LightningModule):
                 "block_type": "encoder",
                 "num_layers": n_layer,
                 "dim_model": dim,
-                "layer_norm_style": layer_norm_style,
+                "residual_norm_style": residual_norm_style,
                 "multi_head_config": {
                     "num_heads": n_head,
                     "residual_dropout": resid_pdrop,
@@ -163,7 +162,6 @@ class VisionTransformer(pl.LightningModule):
     def training_step(self, batch, _):
         x, y = batch
         y_hat = self(x)
-
         loss = self.criterion(y_hat, y)
 
         self.logger.log_metrics(
@@ -205,33 +203,15 @@ if __name__ == "__main__":
     NUM_WORKERS = 4
     GPUS = 1
 
-    train_transforms = transforms.Compose(
-        [
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ]
-    )
-
-    test_transforms = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ]
-    )
-
     # We'll use a datamodule here, which already handles dataset/dataloader/sampler
-    # See https://pytorchlightning.github.io/lightning-tutorials/notebooks/lightning_examples/cifar10-baseline.html
+    # - See https://pytorchlightning.github.io/lightning-tutorials/notebooks/lightning_examples/cifar10-baseline.html
     # for a full tutorial
+    # - Please note that default transforms are being used
     dm = CIFAR10DataModule(
         data_dir="data",
         batch_size=BATCH,
         num_workers=NUM_WORKERS,
         pin_memory=True,
-        train_transforms=train_transforms,
-        test_transforms=test_transforms,
-        val_transforms=test_transforms,
     )
 
     image_size = dm.size(-1)  # 32 for CIFAR
@@ -246,7 +226,7 @@ if __name__ == "__main__":
         num_classes=num_classes,
         attention="scaled_dot_product",
         classifier=Classifier.TOKEN,
-        layer_norm_style="pre",
+        residual_norm_style="pre",
         use_rotary_embeddings=True,
     )
     trainer = pl.Trainer(

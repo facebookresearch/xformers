@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Removed dupliacated biases in the FusedMLP layers [#317]
 - Rotary embeddings respecting input types [#326]
+- Poolformer style instantiating useless projection layers [#349]
+- Fix layer position not being properly tracked, causing extra layernorms for programatic xformers [#348]
 
 ### Added
 - Four blocksparsity layouts from DeepSpeed [#320]
@@ -16,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Conv2DFeedforward feedforward part [#321]
 - VisualAttention [#329]
 - Automatic blocksparse for causal attention [#334]
-
+- Better hierarchical transformer  generation [#345]
 
 ## [0.0.11] - 2022-05-30
 ### Fixed
