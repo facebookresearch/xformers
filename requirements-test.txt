@@ -30,4 +30,4 @@ fairscale >= 0.4.5
 triton == 2.0.0.dev20220403
 
 # Dependency for fused layers, optional
-functorch == 0.2.0
+git+https://github.com/pytorch/functorch@v0.2.0
