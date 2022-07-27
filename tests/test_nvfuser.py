@@ -31,6 +31,7 @@ try:
     from xformers.components.nvfuser.utils import build_nvfused
 except ImportError as e:
     logging.warning(f"Functorch is not available in test_nvfuser.py. \nError {e}")
+    xformers._is_functorch_available = False
 
 FUSED_PATTERNS = (
     [

@@ -23,6 +23,13 @@ gpu_cu114: &gpu_cu114
     image: ubuntu-2004-cuda-11.4:202110-01
     resource_class: gpu.nvidia.medium
 
+gpu_cu112: &gpu_cu112
+  environment:
+    CUDA_VERSION: "11.2"
+    CUDA_HOME: /usr/local/cuda-11.2
+  machine:
+    image: ubuntu-2004-cuda-11.2:202103-01
+    resource_class: gpu.nvidia.medium
 
 binary_common: &binary_common
   parameters:
@@ -37,11 +44,11 @@ binary_common: &binary_common
     cu_version:
       description: "CUDA version to build against, in CU format (e.g., cpu or cu100)"
       type: string
-      default: "cu101"
+      default: "cu102"
     wheel_docker_image:
       description: "Wheel only: what docker image to use"
       type: string
-      default: "pytorch/manylinux-cuda101"
+      default: "pytorch/manylinux-cuda102"
   environment:
       CU_VERSION: << parameters.cu_version >>
       PYTHON_VERSION: << parameters.python_version >>
@@ -305,7 +312,7 @@ jobs:
 
 
   gpu_tests:
-    <<: *gpu_cu114
+    <<: *gpu_cu112
 
     working_directory: ~/xformers
 
@@ -317,7 +324,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-114-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-gpu-112-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *setup_conda
       - <<: *install_dep
@@ -331,7 +338,7 @@ jobs:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-gpu-114-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-gpu-112-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_repo
 
@@ -347,7 +354,7 @@ jobs:
           path: test-results
 
   gpu_experimental_tests:
-    <<: *gpu_cu114
+    <<: *gpu_cu112
 
     working_directory: ~/xformers
 
@@ -359,7 +366,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-gpu-exp-112-{{ checksum "experimental/requirements.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *setup_conda
       - <<: *install_dep_exp
@@ -374,7 +381,7 @@ jobs:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-gpu-exp-112-{{ checksum "experimental/requirements.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_experimental_repo
       - <<: *run_experimental_unittests
