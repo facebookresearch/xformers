@@ -30,7 +30,7 @@ try:
     )
     from xformers.components.nvfuser.utils import build_nvfused
 except ImportError as e:
-    logging.warning(f"Functorch is not available in test_nvfuser.py. \nError {e}")
+    logging.warning(f"Functorch is not available to run test_nvfuser.py. \nError {e}")
     xformers._is_functorch_available = False
 
 
@@ -188,3 +188,6 @@ def test_nvfused_mlp(activation: Activation, device: torch.device, p: float):
 
     if p == 0.0:
         assert torch.allclose(unfused_res, fused_res, atol=1e-6, rtol=1e-2)
+
+
+xformers._is_functorch_available = False

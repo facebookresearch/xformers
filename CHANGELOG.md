@@ -7,10 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## TBD
 ### Fixed
-- Removed dupliacated biases in the FusedMLP layers [#317]
+- Removed duplicated biases in the FusedMLP layers [#317]
 - Rotary embeddings respecting input types [#326]
 - Poolformer style instantiating useless projection layers [#349]
-- Fix layer position not being properly tracked, causing extra layernorms for programatic xformers [#348]
+- Fix layer position not being properly tracked, causing extra layernorms for programmatic xformers [#348]
 
 ### Added
 - Four blocksparsity layouts from DeepSpeed [#320]
@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Conv2DFeedforward feedforward part [#321]
 - VisualAttention [#329]
 - Automatic blocksparse for causal attention [#334]
-- Better hierarchical transformer  generation [#345]
+- Better hierarchical transformer generation [#345]
+- Fused operation layers with AOTAutograd/NVFuser, integration into MLP [#352]
 
 ## [0.0.11] - 2022-05-30
 ### Fixed
@@ -40,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.10] - 2022-03-14
 ### Fixed
 - Expose bias flag for feedforwards, same default as Timm [#220]
-- Update eps value for layernormm, same default as torch [#221]
+- Update eps value for layernorm, same default as torch [#221]
 - PreNorm bugfix, only one input was normalized [#233]
 - Fix bug where embedding dimensions that did not match model dim would lead to a crash [#244]
 

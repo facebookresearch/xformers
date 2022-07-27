@@ -23,14 +23,6 @@ gpu_cu114: &gpu_cu114
     image: ubuntu-2004-cuda-11.4:202110-01
     resource_class: gpu.nvidia.medium
 
-gpu_cu102: &gpu_cu102
-  environment:
-    CUDA_VERSION: "10.2"
-    CUDA_HOME: /usr/local/cuda-10.2
-  machine:
-    image: ubuntu-1604-cuda-10.2:202012-01
-    resource_class: gpu.nvidia.medium
-
 binary_common: &binary_common
   parameters:
     pytorch_version:
