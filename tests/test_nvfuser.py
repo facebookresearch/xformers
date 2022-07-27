@@ -21,17 +21,16 @@ _gpu_available = torch.cuda.is_available()
 xformers._is_functorch_available = True
 
 try:
-    from xformers.components.nvfuser.bias_act_dropout import (
+    from xformers.components.nvfuser import (
         NVFusedBiasActivationDropout,
-    )
-    from xformers.components.nvfuser.bias_dropout_res import NVFusedBiasDropoutRes
-    from xformers.components.nvfuser.bias_dropout_res_layernorm import (
+        NVFusedBiasDropoutRes,
         NVFusedBiasDropoutResLayerNorm,
     )
     from xformers.components.nvfuser.utils import build_nvfused
 except ImportError as e:
     logging.warning(f"Functorch is not available in test_nvfuser.py. \nError {e}")
     xformers._is_functorch_available = False
+
 
 FUSED_PATTERNS = (
     [
