@@ -191,7 +191,7 @@ run_experimental_unittests: &run_experimental_unittests
       command: |
         source $BASH_ENV
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
-        TESTFILES=$(circleci tests glob experimental/tests/test*.py | circleci tests split --split-by=timings)
+        TESTFILES=$(circleci tests glob /experimental/tests/test*.py | circleci tests split --split-by=timings)
         $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml $TESTFILES
 
 run_benchmarks: &run_benchmarks
