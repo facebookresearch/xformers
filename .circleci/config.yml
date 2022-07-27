@@ -23,12 +23,12 @@ gpu_cu114: &gpu_cu114
     image: ubuntu-2004-cuda-11.4:202110-01
     resource_class: gpu.nvidia.medium
 
-gpu_cu112: &gpu_cu112
+gpu_cu102: &gpu_cu102
   environment:
-    CUDA_VERSION: "11.2"
-    CUDA_HOME: /usr/local/cuda-11.2
+    CUDA_VERSION: "10.2"
+    CUDA_HOME: /usr/local/cuda-10.2
   machine:
-    image: ubuntu-2004-cuda-11.2:202103-01
+    image: ubuntu-1604-cuda-10.2:202012-01
     resource_class: gpu.nvidia.medium
 
 binary_common: &binary_common
@@ -312,7 +312,7 @@ jobs:
 
 
   gpu_tests:
-    <<: *gpu_cu112
+    <<: *gpu_cu102
 
     working_directory: ~/xformers
 
@@ -324,7 +324,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-112-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-gpu-102-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *setup_conda
       - <<: *install_dep
@@ -338,7 +338,7 @@ jobs:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-gpu-112-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-gpu-102-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_repo
 
@@ -354,7 +354,7 @@ jobs:
           path: test-results
 
   gpu_experimental_tests:
-    <<: *gpu_cu112
+    <<: *gpu_cu102
 
     working_directory: ~/xformers
 
@@ -366,7 +366,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-exp-112-{{ checksum "experimental/requirements.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-gpu-exp-102-{{ checksum "experimental/requirements.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *setup_conda
       - <<: *install_dep_exp
@@ -381,7 +381,7 @@ jobs:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-gpu-exp-112-{{ checksum "experimental/requirements.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-gpu-exp-102-{{ checksum "experimental/requirements.txt"}}-{{ checksum ".circleci/config.yml"}}
 
       - <<: *install_experimental_repo
       - <<: *run_experimental_unittests
