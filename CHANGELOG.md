@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - VisualAttention [#329]
 - Automatic blocksparse for causal attention [#334]
 - Better hierarchical transformer generation [#345]
-- Fused operation layers with AOTAutograd/NVFuser, integration into MLP [#352]
+- Fused operations with AOTAutograd/NVFuser, integration into MLP [#352]
 
 ## [0.0.11] - 2022-05-30
 ### Fixed
@@ -54,12 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Experimental Ragged attention [#189]
 - Mixture of Experts [#181]
 - BlockSparseTensor [#202]
-- nd-tensor support for triton softmax [#210]
+- Nd-tensor support for triton softmax [#210]
 
 ### Fixed
-- bugfix Favor, single feature map [#183]
-- sanity check blocksparse settings [#207]
-- fixed some pickability [#204]
+- Bugfix Favor, single feature map [#183]
+- Sanity check blocksparse settings [#207]
+- Fixed some picklability [#204]
 
 ## [0.0.8] - 2022-01-07
 ### Fixed

@@ -78,21 +78,28 @@ Some advices related to building these CUDA-specific components, tentatively adr
 
 <details><summary> Triton </summary><p>
 
-Some parts of xFormers use [Triton](http://www.triton-lang.org), and will only expose themselves if Functorch is installed, and a compatible GPU is present (nVidia GPU with tensor cores). If Triton was not installed as part of the testing procedure, you can install it directly by running `pip install triton`. You can optionally test that the installation is successful by running one of the Triton-related benchmarks, for instance `python3 xformers/benchmarks/benchmark_triton_softmax.py`
+Some parts of xFormers use [Triton](http://www.triton-lang.org), and will only expose themselves if Triton is installed, and a compatible GPU is present (nVidia GPU with tensor cores). If Triton was not installed as part of the testing procedure, you can install it directly by running `pip install triton`. You can optionally test that the installation is successful by running one of the Triton-related benchmarks, for instance `python3 xformers/benchmarks/benchmark_triton_softmax.py`
 
 Triton will cache the compiled kernels to `/tmp/triton` by default. If this becomes an issue, this path can be specified through the `TRITON_CACHE_DIR` environment variable.
 
 </p></details>
 
-<details><summary> NVFuser </summary><p>
+<details><summary> AOTAutograd/NVFuser </summary><p>
 
-Some parts of xFormers use AOT Autograd from the [functorch](https://pytorch.org/functorch/stable/) library, and will only expose themselves if functorch is installed, and a compatible GPU is present (nVidia GPU with tensor cores). If functorch was not installed as part of the testing procedure, you can install it directly through pip.
+Some parts of xFormers use AOT Autograd from the [FuncTorch](https://pytorch.org/functorch/stable/) library, and will only expose themselves if FuncTorch is installed, and a compatible GPU is present. If functorch was not installed as part of the testing procedure, you can install it directly through pip.
 
   ```bash
   pip install functorch
   ```
 
- Once installed, set the flag `_is_functorch_available : bool = True` in `xformers/__init__.py`. You can optionally test that the installation is successful by running one of the functorch-related benchmarks `python3 xformers/benchmarks/benchmark_nvfuser.py`
+ Once installed, set the flag `_is_functorch_available = True` in `xformers/__init__.py`. You can optionally test that the installation is successful by running one of the functorch-related benchmarks `python3 xformers/benchmarks/benchmark_nvfuser.py`
+
+ If you are importing the xFormers library in a script, you can modify the flag as such:
+
+  ```python
+  import xformers
+  xformers._is_functorch_available = True
+  ```
 
 </p></details>
 

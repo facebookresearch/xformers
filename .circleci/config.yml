@@ -374,7 +374,7 @@ jobs:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_experimental_repo
       - <<: *run_experimental_unittests
