@@ -170,7 +170,7 @@ run_coverage: &run_coverage
         source $BASH_ENV
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
         TESTFILES=$(circleci tests glob tests/test*.py | circleci tests split --split-by=timings)
-        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./ TESTFILES
+        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./ $TESTFILES
         #Uploading test coverage for Python code
         bash <(curl -s https://codecov.io/bash) -f coverage.xml -cF Python
 
@@ -182,7 +182,7 @@ run_unittests: &run_unittests
         source $BASH_ENV
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
         TESTFILES=$(circleci tests glob tests/test*.py | circleci tests split --split-by=timings)
-        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 TESTFILES
+        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 $TESTFILES
 
 run_experimental_unittests: &run_experimental_unittests
   - run:
@@ -192,7 +192,7 @@ run_experimental_unittests: &run_experimental_unittests
         source $BASH_ENV
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
         TESTFILES=$(circleci tests glob experimental/tests/test*.py | circleci tests split --split-by=timings)
-        $CONDA_PYTHON -m pytest TESTFILES
+        $CONDA_PYTHON -m pytest $TESTFILES
 
 run_benchmarks: &run_benchmarks
   - run:
