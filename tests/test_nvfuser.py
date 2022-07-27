@@ -5,6 +5,7 @@
 
 
 import logging
+from collections import OrderedDict
 from contextlib import nullcontext
 
 import pytest
@@ -13,12 +14,13 @@ import torch.nn as nn
 from torch.cuda.amp.autocast_mode import autocast
 
 import xformers
-from xformers.components import Activation, ResidualNormStyle
-from xformers.components.feedforward import build_feedforward
-
-_gpu_available = torch.cuda.is_available()
 
 xformers._is_functorch_available = True
+
+from xformers.components import Activation, ResidualNormStyle  # noqa : E402
+from xformers.components.feedforward import build_feedforward  # noqa : E402
+
+_gpu_available = torch.cuda.is_available()
 
 try:
     from xformers.components.nvfuser import (
@@ -172,5 +174,17 @@ def test_nvfused_mlp(activation: Activation, device: torch.device, p: float):
     # Check fused pattern w/ unfused default (switch happens within MLP)
     mlp.cuda()
     mlp_default.cuda()
+
+    # Load same weight parameters into both models
+    default_param_dict = OrderedDict(
+        [
+            ("mlp.2.weight", v) if k == "mlp.3.weight" else (k, v)
+            for k, v in mlp_default.state_dict().items()
+        ]
+    )
+    mlp.load_state_dict(default_param_dict)
     fused_res = mlp(inputs)
     unfused_res = mlp_default(inputs)
+
+    if p == 0.0:
+        assert torch.allclose(unfused_res, fused_res, atol=1e-6, rtol=1e-2)

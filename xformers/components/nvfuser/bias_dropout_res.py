@@ -57,7 +57,6 @@ class NVFusedBiasDropoutRes(torch.nn.Module):
 
         # Catch a non-cuda setup, fallback to pytorch
         if not x.is_cuda:
-            print("defaulting")
             return _fn(x, self.bias, p, residual)
 
         # AOTAutograd, NVFuser backed path
