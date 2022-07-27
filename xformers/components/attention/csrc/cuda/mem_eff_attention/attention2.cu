@@ -537,15 +537,6 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
       {B, compute_logsumexp ? M : 0},
       query.options().dtype(at::ScalarType::Float));
 
-  using scalar_t = float;
-
-  constexpr int kBlockItemsY = 16;
-  constexpr int kBlockItemsX = 32;
-  constexpr int kBlockItemsK = 32;
-  constexpr int kBlockWidth = 8;
-
-  dim3 grid(ceil_div(M, int64_t(kBlockItemsY)), B);
-  dim3 block(kBlockWidth, kBlockItemsY);
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   // invert from drop probability to keep probability
@@ -565,60 +556,48 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
     rng_engine_inputs = gen->philox_cuda_state(counter_offset);
   }
 
+  using scalar_t = float;
+
   auto attn_bias_packed = _packed_tensor_accessor_or_dummy<scalar_t>(attn_bias);
 
-  if ((K % 4) == 0) {
-    attention_kernel<
-        scalar_t,
-        float4,
-        kBlockWidth,
-        kBlockItemsY,
-        kBlockItemsX,
-        kBlockItemsK><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        logsumexp.packed_accessor<scalar_t, 2>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>(),
-        attn_bias_packed,
-        p,
-        rng_engine_inputs,
-        is_causal);
-  } else if ((K % 2) == 0) {
-    attention_kernel<
-        scalar_t,
-        float2,
-        kBlockWidth,
-        kBlockItemsY,
-        kBlockItemsX,
-        kBlockItemsK><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        logsumexp.packed_accessor<scalar_t, 2>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>(),
-        attn_bias_packed,
-        p,
-        rng_engine_inputs,
-        is_causal);
-  } else {
-    attention_kernel<
-        scalar_t,
-        float,
-        kBlockWidth,
-        kBlockItemsY,
-        kBlockItemsX,
-        kBlockItemsK><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        logsumexp.packed_accessor<scalar_t, 2>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>(),
-        attn_bias_packed,
-        p,
-        rng_engine_inputs,
-        is_causal);
+#define LAUNCH_KERNEL(VEC_T, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth)  \
+    dim3 grid(ceil_div(M, int64_t(kBlockItemsY)), B);                                \
+    dim3 block(kBlockWidth, kBlockItemsY);                                           \
+    attention_kernel<                                                                \
+        scalar_t,                                                                    \
+        VEC_T,                                                                       \
+        kBlockWidth,                                                                 \
+        kBlockItemsY,                                                                \
+        kBlockItemsX,                                                                \
+        kBlockItemsK><<<grid, block, 0, stream>>>(                                   \
+        res.packed_accessor<scalar_t, 3>(),                                          \
+        logsumexp.packed_accessor<scalar_t, 2>(),                                    \
+        query.packed_accessor<scalar_t, 3>(),                                        \
+        key.packed_accessor<scalar_t, 3>(),                                          \
+        value.packed_accessor<scalar_t, 3>(),                                        \
+        attn_bias_packed,                                                            \
+        p,                                                                           \
+        rng_engine_inputs,                                                           \
+        is_causal)
+
+#define LAUNCH_BLOCK(K, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth)    \
+  if ((K % 4) == 0) {                                                             \
+    LAUNCH_KERNEL(float4, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth); \
+  } else if ((K % 2) == 0) {                                                      \
+    LAUNCH_KERNEL(float2, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth); \
+  } else {                                                                        \
+    LAUNCH_KERNEL(float, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth);  \
   }
+
+  if (K <= 32) {
+    // kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth
+    LAUNCH_BLOCK(K, 128, 64, 4, 1)
+  } else {
+    LAUNCH_BLOCK(K, 16, 32, 32, 8)
+  }
+
+#undef LAUNCH_KERNEL
+#undef LAUNCH_BLOCK
 
   AT_CUDA_CHECK(cudaGetLastError());
 
