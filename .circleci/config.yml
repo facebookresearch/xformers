@@ -169,8 +169,9 @@ run_coverage: &run_coverage
       command: |
         source $BASH_ENV
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
-        TESTFILES=$(circleci tests glob tests/test*.py | circleci tests split --split-by=timings)
-        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./ $TESTFILES
+        mkdir ~/test-results
+        TESTFILES=$(circleci tests glob "tests/test*.py" | circleci tests split --split-by=timings --timings-type=classname --time-default=0.01s)
+        $CONDA_PYTHON -m pytest --junitxml=~/test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./ $TESTFILES
         #Uploading test coverage for Python code
         bash <(curl -s https://codecov.io/bash) -f coverage.xml -cF Python
 
@@ -181,8 +182,9 @@ run_unittests: &run_unittests
       command: |
         source $BASH_ENV
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
-        TESTFILES=$(circleci tests glob tests/test*.py | circleci tests split --split-by=timings)
-        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 $TESTFILES
+        mkdir ~/test-results
+        TESTFILES=$(circleci tests glob "tests/test*.py" | circleci tests split --split-by=timings --timings-type=classname --time-default=0.01s)
+        $CONDA_PYTHON -m pytest --junitxml=~/test-results/junit.xml --verbose --timeout 600 $TESTFILES
 
 run_experimental_unittests: &run_experimental_unittests
   - run:
@@ -191,8 +193,9 @@ run_experimental_unittests: &run_experimental_unittests
       command: |
         source $BASH_ENV
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
-        TESTFILES=$(circleci tests glob /xformers/experimental/tests/test*.py | circleci tests split --split-by=timings)
-        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml $TESTFILES
+        mkdir ~/test-results
+        TESTFILES=$(circleci tests glob "experimental/tests/test*.py" | circleci tests split --split-by=timings --timings-type=classname --time-default=0.01s)
+        $CONDA_PYTHON -m pytest --junitxml=~/test-results/junit.xml $TESTFILES
 
 run_benchmarks: &run_benchmarks
   - run:
@@ -276,7 +279,7 @@ jobs:
 
     working_directory: ~/xformers
 
-    parallelism: 5
+    parallelism: 4
 
     steps:
       - checkout
@@ -312,10 +315,10 @@ jobs:
       - <<: *run_doc_build
 
       - store_test_results:
-          path: test-results
+          path: ~/test-results
 
       - store_artifacts:
-          path: test-results
+          path: ~/test-results
 
 
 
@@ -324,7 +327,7 @@ jobs:
 
     working_directory: ~/xformers
 
-    parallelism: 5
+    parallelism: 6
 
     steps:
       - checkout
@@ -348,7 +351,7 @@ jobs:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-gpu-114-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+          key: cache-key-gpu-114-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_repo
 
@@ -361,17 +364,17 @@ jobs:
       - <<: *run_vit_benchmark
 
       - store_test_results:
-          path: test-results
+          path: ~/test-results
 
       - store_artifacts:
-          path: test-results
+          path: ~/test-results
 
   gpu_experimental_tests:
     <<: *gpu_cu114
 
     working_directory: ~/xformers
 
-    parallelism: 5
+    parallelism: 4
 
     steps:
       - checkout
@@ -401,8 +404,11 @@ jobs:
       - <<: *install_experimental_repo
       - <<: *run_experimental_unittests
 
+      - store_test_results:
+          path: ~/test-results
+
       - store_artifacts:
-          path: test-results
+          path: ~/test-results
 
   binary_linux_wheel:
     <<: *binary_common
