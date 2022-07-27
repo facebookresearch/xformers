@@ -14,7 +14,7 @@ from xformers.components import Activation, build_activation
 from xformers.components.feedforward import Feedforward, FeedforwardConfig
 
 if xformers._is_functorch_available:
-    from xformers.components.nvfuser.bias_act_dropout import (
+    from xformers.components.nvfuser import (  # noqa
         NVFusedBiasActivationDropout,
     )
 
@@ -43,6 +43,12 @@ class MLP(Feedforward):
         dim_mlp = hidden_layer_multiplier * dim_model
         # check if fused Bias Activation Dropout is applicable
         if xformers._is_functorch_available:
+
+            # Catch unimported fused layer
+            from xformers.components.nvfuser.bias_act_dropout import (  # noqa
+                NVFusedBiasActivationDropout,
+            )
+
             self.requires_cuda = True
             self.mlp = nn.Sequential(
                 nn.Linear(

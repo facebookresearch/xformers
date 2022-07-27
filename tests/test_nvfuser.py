@@ -14,15 +14,18 @@ import torch.nn as nn
 from torch.cuda.amp.autocast_mode import autocast
 
 import xformers
+from xformers.components import Activation, ResidualNormStyle
 
+# Store original and possible flag setting
+flag_orig = xformers._is_functorch_available
+flag_new = True
 xformers._is_functorch_available = True
 
-from xformers.components import Activation, ResidualNormStyle  # noqa : E402
-from xformers.components.feedforward import build_feedforward  # noqa : E402
 
 _gpu_available = torch.cuda.is_available()
 
 try:
+    import xformers.components.feedforward as ff
     from xformers.components.nvfuser import (
         NVFusedBiasActivationDropout,
         NVFusedBiasDropoutRes,
@@ -31,8 +34,9 @@ try:
     from xformers.components.nvfuser.utils import build_nvfused
 except ImportError as e:
     logging.warning(f"Functorch is not available to run test_nvfuser.py. \nError {e}")
-    xformers._is_functorch_available = False
+    flag_new = False
 
+xformers._is_functorch_available = flag_orig
 
 FUSED_PATTERNS = (
     [
@@ -40,7 +44,7 @@ FUSED_PATTERNS = (
         NVFusedBiasDropoutRes,
         NVFusedBiasDropoutResLayerNorm,
     ]
-    if xformers._is_functorch_available
+    if flag_new
     else []
 )
 
@@ -71,9 +75,7 @@ ACTIVATIONS = [
 ]
 
 
-@pytest.mark.skipif(
-    not xformers._is_functorch_available, reason="Functorch is not available"
-)
+@pytest.mark.skipif(not flag_new, reason="Functorch is not available")
 @pytest.mark.skipif(not _gpu_available, reason="GPU is not available")
 @pytest.mark.parametrize("fused_pattern", FUSED_PATTERNS)
 @pytest.mark.parametrize("shape", SHAPES)
@@ -93,6 +95,8 @@ def test_nvfused_pattern_parity(
     p: float,
     layer_norm_style: ResidualNormStyle,
 ):
+    # Enable global flag
+    xformers._is_functorch_available = flag_new
 
     if (
         fused_pattern != NVFusedBiasDropoutResLayerNorm
@@ -131,10 +135,11 @@ def test_nvfused_pattern_parity(
             # Check fused and unfused paths are the same
             assert torch.allclose(torch_res, nvfused_res, atol=1e-6, rtol=1e-2)
 
+    # Restore original flag configuration
+    xformers._is_functorch_available = flag_orig
 
-@pytest.mark.skipif(
-    not xformers._is_functorch_available, reason="Functorch is not available"
-)
+
+@pytest.mark.skipif(not flag_new, reason="Functorch is not available")
 @pytest.mark.skipif(not _gpu_available, reason="GPU is not available")
 @pytest.mark.parametrize("activation", ACTIVATIONS)
 @pytest.mark.parametrize("device", DEVICES)
@@ -148,15 +153,17 @@ def test_nvfused_mlp(activation: Activation, device: torch.device, p: float):
         "hidden_layer_multiplier": 4,
         "bias": False,
     }
+    # Enable global flag
+    xformers._is_functorch_available = flag_new
 
     torch.random.manual_seed(0)
     torch.cuda.manual_seed_all(0)
 
-    mlp = build_feedforward(test_config)
+    mlp = ff.build_feedforward(test_config)
     # Creates non-fused default MLP
     xformers._is_functorch_available = False
-    mlp_default = build_feedforward(test_config)
-    xformers._is_functorch_available = True
+    mlp_default = ff.build_feedforward(test_config)
+    xformers._is_functorch_available = flag_new
 
     inputs = torch.rand(BATCH, SEQ, LATENT, device=device)
     mlp.train()
@@ -189,5 +196,5 @@ def test_nvfused_mlp(activation: Activation, device: torch.device, p: float):
     if p == 0.0:
         assert torch.allclose(unfused_res, fused_res, atol=1e-6, rtol=1e-2)
 
-
-xformers._is_functorch_available = False
+    # Restore original flag configuration
+    xformers._is_functorch_available = flag_orig

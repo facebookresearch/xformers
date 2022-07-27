@@ -13,7 +13,6 @@ The `memory_efficient_fusion`_ wrapper function provides a convenient way to lev
 XFormers uses `memory_efficient_fusion` to combine sequences of fusable operations together into single fused function layers.
 These parts can be found inside `xformers/components/nvfuser`. A notable example is `NVFusedBiasActivationDropout`, which is readily used inside the `MLP`_ feedforward component.
 
-.. _NVFusedBiasActivationDropout: https://github.com/facebookresearch/xformers/blob/main/xformers/components/nvfuser/bias_act_dropout.py
 .. _MLP: https://github.com/facebookresearch/xformers/blob/main/xformers/components/feedforward/mlp.py
 
 A benchmark of these fused patterns across some representative shapes shows significant speed increases compared to the unfused,
