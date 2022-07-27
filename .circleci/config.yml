@@ -314,6 +314,10 @@ jobs:
       - store_test_results:
           path: test-results
 
+      - store_artifacts:
+          path: test-results
+
+
 
   gpu_tests:
     <<: *gpu_cu114
@@ -359,6 +363,9 @@ jobs:
       - store_test_results:
           path: test-results
 
+      - store_artifacts:
+          path: test-results
+
   gpu_experimental_tests:
     <<: *gpu_cu114
 
@@ -393,6 +400,9 @@ jobs:
 
       - <<: *install_experimental_repo
       - <<: *run_experimental_unittests
+
+      - store_artifacts:
+          path: test-results
 
   binary_linux_wheel:
     <<: *binary_common
