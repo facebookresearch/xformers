@@ -23,6 +23,7 @@ gpu_cu114: &gpu_cu114
     image: ubuntu-2004-cuda-11.4:202110-01
     resource_class: gpu.nvidia.medium
 
+
 binary_common: &binary_common
   parameters:
     pytorch_version:
