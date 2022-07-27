@@ -276,7 +276,7 @@ jobs:
 
     working_directory: ~/xformers
 
-    parallelism: 4
+    parallelism: 5
 
     steps:
       - checkout
@@ -324,7 +324,7 @@ jobs:
 
     working_directory: ~/xformers
 
-    parallelism: 4
+    parallelism: 5
 
     steps:
       - checkout
@@ -371,7 +371,7 @@ jobs:
 
     working_directory: ~/xformers
 
-    parallelism: 4
+    parallelism: 5
 
     steps:
       - checkout
