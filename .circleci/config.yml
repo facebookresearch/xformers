@@ -11,9 +11,9 @@ version: 2.1
 # -------------------------------------------------------------------------------------
 # Environments to run the jobs in
 # -------------------------------------------------------------------------------------
-cpu_py38: &cpu_py38
+cpu_py39: &cpu_py39
   docker:
-    - image: cimg/python:3.8
+    - image: cimg/python:3.9
   resource_class: large
 
 gpu_cu114: &gpu_cu114
@@ -34,7 +34,7 @@ binary_common: &binary_common
     python_version:
       description: "Python version to build against (e.g., 3.7)"
       type: string
-      default: "3.8"
+      default: "3.9"
     cu_version:
       description: "CUDA version to build against, in CU format (e.g., cpu or cu100)"
       type: string
@@ -72,7 +72,7 @@ setup_conda: &setup_conda
         conda config --set always_yes yes
         conda update conda
         conda info -a
-        conda create -p /home/circleci/venv python=3.8.0 pip  # pip is required here, else the system pip will be used
+        conda create -p /home/circleci/venv python=3.9.0 pip  # pip is required here, else the system pip will be used
 
 
 install_dep: &install_dep
@@ -263,8 +263,8 @@ commands:
 # -------------------------------------------------------------------------------------
 
 jobs:
-  cpu_tests_py38:
-    <<: *cpu_py38
+  cpu_tests_py39:
+    <<: *cpu_py39
 
     working_directory: ~/xformers
 
@@ -274,7 +274,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-cpu-py39-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *setup_conda
 
@@ -289,7 +289,7 @@ jobs:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+          key: cache-key-cpu-py39-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_repo
 
@@ -430,7 +430,7 @@ workflows:
   version: 2
   build:
     jobs:
-      - cpu_tests_py38:
+      - cpu_tests_py39:
         filters:
           branches:
             ignore:
