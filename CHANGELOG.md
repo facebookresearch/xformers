@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - VisualAttention [#329]
 - Automatic blocksparse for causal attention [#334]
 - Better hierarchical transformer generation [#345]
-- Fused operations with AOTAutograd/NVFuser, integration into MLP [#352]
+- Fused operations with AOTAutograd/NVFuser, integration into MLP [#357]
 
 ## [0.0.11] - 2022-05-30
 ### Fixed
