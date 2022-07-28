@@ -277,6 +277,8 @@ jobs:
   cpu_tests_py38:
     <<: *cpu_py38
 
+    working_directory: ~/
+
     parallelism: 4
 
     steps:
@@ -323,6 +325,8 @@ jobs:
   gpu_tests:
     <<: *gpu_cu114
 
+    working_directory: ~/
+
     parallelism: 6
 
     steps:
@@ -367,6 +371,8 @@ jobs:
 
   gpu_experimental_tests:
     <<: *gpu_cu114
+
+    working_directory: ~/
 
     parallelism: 4
 
