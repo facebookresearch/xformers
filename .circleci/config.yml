@@ -171,7 +171,7 @@ run_coverage: &run_coverage
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
         mkdir test-results
         TESTFILES=$(circleci tests glob "tests/test*.py" | circleci tests split --split-by=timings --timings-type=classname --time-default=0.01s)
-        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./ $TESTFILES
+        $CONDA_PYTHON -m pytest --junitxml=~/test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./ $TESTFILES
         #Uploading test coverage for Python code
         bash <(curl -s https://codecov.io/bash) -f coverage.xml -cF Python
 
@@ -184,7 +184,7 @@ run_unittests: &run_unittests
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
         mkdir test-results
         TESTFILES=$(circleci tests glob "tests/test*.py" | circleci tests split --split-by=timings --timings-type=classname --time-default=0.01s)
-        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 $TESTFILES
+        $CONDA_PYTHON -m pytest --junitxml=~/test-results/junit.xml --verbose --timeout 600 $TESTFILES
 
 run_experimental_unittests: &run_experimental_unittests
   - run:
@@ -195,7 +195,7 @@ run_experimental_unittests: &run_experimental_unittests
         cp -f .circleci/resources/pytest_build_config.ini pytest.ini
         mkdir test-results
         TESTFILES=$(circleci tests glob "experimental/tests/test*.py" | circleci tests split --split-by=timings --timings-type=classname --time-default=0.01s)
-        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml $TESTFILES
+        $CONDA_PYTHON -m pytest --junitxml=~/test-results/junit.xml $TESTFILES
 
 run_benchmarks: &run_benchmarks
   - run:
@@ -277,8 +277,6 @@ jobs:
   cpu_tests_py38:
     <<: *cpu_py38
 
-    working_directory: ~/
-
     parallelism: 4
 
     steps:
@@ -315,17 +313,15 @@ jobs:
       - <<: *run_doc_build
 
       - store_test_results:
-          path: test-results
+          path: ~/test-results
 
       - store_artifacts:
-          path: test-results
+          path: ~/test-results
 
 
 
   gpu_tests:
     <<: *gpu_cu114
-
-    working_directory: ~/
 
     parallelism: 6
 
@@ -364,15 +360,13 @@ jobs:
       - <<: *run_vit_benchmark
 
       - store_test_results:
-          path: test-results
+          path: ~/test-results
 
       - store_artifacts:
-          path: test-results
+          path: ~/test-results
 
   gpu_experimental_tests:
     <<: *gpu_cu114
-
-    working_directory: ~/
 
     parallelism: 4
 
@@ -404,10 +398,10 @@ jobs:
       - <<: *run_experimental_unittests
 
       - store_test_results:
-          path: test-results
+          path: ~/test-results
 
       - store_artifacts:
-          path: test-results
+          path: ~/test-results
 
   binary_linux_wheel:
     <<: *binary_common
