@@ -84,6 +84,25 @@ Triton will cache the compiled kernels to `/tmp/triton` by default. If this beco
 
 </p></details>
 
+<details><summary> AOTAutograd/NVFuser </summary><p>
+
+Some parts of xFormers use AOT Autograd from the [FuncTorch](https://pytorch.org/functorch/stable/) library, and will only expose themselves if FuncTorch is installed, and a compatible GPU is present. If functorch was not installed as part of the testing procedure, you can install it directly through pip.
+
+  ```bash
+  pip install functorch
+  ```
+
+ Once installed, set the flag `_is_functorch_available = True` in `xformers/__init__.py`. You can optionally test that the installation is successful by running one of the functorch-related benchmarks `python3 xformers/benchmarks/benchmark_nvfuser.py`
+
+ If you are importing the xFormers library in a script, you can modify the flag as such:
+
+  ```python
+  import xformers
+  xformers._is_functorch_available = True
+  ```
+
+</p></details>
+
 ### Testing the installation
 
 This will run a benchmark of the attention mechanisms exposed by xFormers, and generate a runtime and memory plot.

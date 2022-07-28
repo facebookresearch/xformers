@@ -10,8 +10,11 @@ import torch
 # Please update the doc version in docs/source/conf.py as well.
 __version__ = "0.0.12.dev"
 
-_is_sparse_available = True
-_is_triton_available = torch.cuda.is_available()
+_is_sparse_available: bool = True
+_is_triton_available: bool = torch.cuda.is_available()
+
+# Set to true to utilize functorch
+_is_functorch_available: bool = False
 
 
 def _register_extensions():
@@ -77,3 +80,13 @@ if _is_triton_available:
             f"Triton is not available, some optimizations will not be enabled.\nError {e}"
         )
         _is_triton_available = False
+
+
+if _is_functorch_available:
+    try:
+        from xformers.components.nvfuser import NVFusedBiasActivationDropout  # noqa
+    except ImportError as e:
+        logging.warning(
+            f"Functorch is not available, some optimizations will not be enabled.\nError {e}"
+        )
+        _is_functorch_available = False

@@ -12,6 +12,7 @@ Let's present here a couple of code snippets on how to solve a couple of questio
     - [Replace all attentions from an existing ViT model with a sparse equivalent ?](#replace-all-attentions-from-an-existing-vit-model-with-a-sparse-equivalent-)
     - [Some more examples](#some-more-examples)
   - [BlockSparseAttention](#blocksparseattention)
+  - [How to Enable Fused Operations Using AOTAutograd and NVFuser](#how-to-enable-fused-operations-using-aotautograd-and-nvfuser)
   - [From cherry picking attentions to building whole models](#from-cherry-picking-attentions-to-building-whole-models)
     - [Testing out an attention mechanism](#testing-out-an-attention-mechanism)
     - [Building an encoder, comparing to PyTorch](#building-an-encoder-comparing-to-pytorch)
@@ -294,6 +295,18 @@ On a V100, with PyTorch 1.9, Triton 1.1 and xFormers 0.0.2 this reports somethin
 ```
 
 Note that the pattern here is not that sparse (half of the matrix is empty), the more sparse it gets the more biased the result will get towards BlockSparseAttention.
+
+## How to Enable Fused Operations Using AOTAutograd and NVFuser
+
+AOT Autograd is a toolkit from [FuncTorch](https://pytorch.org/functorch/stable/) which can be used to accelerate model training in xFormers. Broadly, it extracts a computational graph of the forward and backward passes of a model ahead of time. This allows for some joint graph optimizations and enables deep learning compilers such as [NVFuser](https://github.com/pytorch/pytorch/blob/release/1.12/torch/csrc/jit/codegen/cuda/README.md) to perform operator fusion. The [`memory_efficient_fusion`](https://pytorch.org/functorch/stable/generated/functorch.compile.memory_efficient_fusion.html#functorch.compile.memory_efficient_fusion) wrapper function provides a convenient way to leverage AOTAutograd and NVFuser on GPU.
+
+XFormers uses `memory_efficient_fusion` to combine sequences of fusable operations together into single fused function layers. These parts can be found [here](xformers/components/nvfuser). A notable example is [`NVFusedBiasActivationDropout`](xformers/components/nvfuser/bias_act_dropout.py), which is readily used inside the [`MLP`](xformers/components/feedforward/mlp.py) feedforward component.
+
+A benchmark of these fused patterns across some representative shapes shows significant speed increases compared to the unfused, Pytorch eager approach&mdash;up to 3.5x speedup for the forward pass and 2.2x for the forward and backward passes together. On average, peak memory usage of fused patterns is also lower, although we see some infrequent cases of up to 1.6x Pytorch peak memory usage on larger shapes. We also see better overall performance against our implementation of fused Bias, Activation, and Dropout using Triton ([see](xformers/triton/dropout.py)) as well. Full benchmark plots can be found [here](docs/plots/nvfuser/).
+
+Please note from README that the `_is_functorch_available` flag must be enabled for xFormers to use these optimizations. This allows the fused layers to be used and changes the behavior of the `MLP` feedforward component, causing it to default to using the fused `NVFusedBiasActivationDropout` layer.
+
+AOT Autograd offers a great deal a flexibility to the user, as `memory_efficient_fusion` can accept either a Python function or an entire `nn.Module` as input for fusion. Currently in xFormers, however, it is only used with Python function inputs because initial attempts with fusing xFormers layers and blocks have yielded memory issues and other CUDA errors. We are currently exploring further testing and benchmarking.
 
 ## From cherry picking attentions to building whole models
 

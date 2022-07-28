@@ -113,7 +113,7 @@ def bench_blocksparse_compare(backward: bool):
             )
             pretty_print(
                 results_mem,
-                title=f"\n --- Type: {datatype}Block Size: {BS} --- ",
+                title=f"\n --- Type: {datatype} Block Size: {BS} --- ",
                 units="peak memory usage in MB",
             )
 
