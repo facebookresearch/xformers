@@ -14,6 +14,7 @@ from xformers.components import Activation, build_activation
 from xformers.components.feedforward import Feedforward, FeedforwardConfig
 
 if xformers._is_functorch_available:
+    from functorch.compile import memory_efficient_fusion
     from xformers.components.nvfuser import (  # noqa
         NVFusedBiasActivationDropout,
     )
@@ -36,13 +37,14 @@ class MLP(Feedforward):
         activation: Activation,
         hidden_layer_multiplier: int,
         bias: bool = True,
+        pattern: bool = False,
         *args,
         **kwargs,
     ):
         super().__init__()
         dim_mlp = hidden_layer_multiplier * dim_model
         # check if fused Bias Activation Dropout is applicable
-        if xformers._is_functorch_available:
+        if pattern and xformers._is_functorch_available:
 
             # Catch unimported fused layer
             from xformers.components.nvfuser.bias_act_dropout import (  # noqa
@@ -68,6 +70,18 @@ class MLP(Feedforward):
                     activation=None,
                 ),
             )
+        elif xformers._is_functorch_available:
+            self.requires_cuda = True
+
+            # print("using NVFused MLP")
+            self.mlp = nn.Sequential(
+                nn.Linear(in_features=dim_model, out_features=dim_mlp, bias=bias),
+                build_activation(activation),
+                nn.Dropout(dropout),
+                nn.Linear(in_features=dim_mlp, out_features=dim_model, bias=bias),
+                nn.Dropout(dropout),
+            )
+            self.mlp = memory_efficient_fusion(self.mlp)
         else:
             self.mlp = nn.Sequential(
                 nn.Linear(in_features=dim_model, out_features=dim_mlp, bias=bias),
