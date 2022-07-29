@@ -467,7 +467,7 @@ __global__ void attention_kernel(
           out_i_tmp[threadIdx.x] = lhs_fragment[k_item_idx];
         }
         out_i_tmp += kBlockWidth;
-        residue -= kBlockWidth;
+        residue -= kBlockWidth * kVecSize;
       }
     }
   }
