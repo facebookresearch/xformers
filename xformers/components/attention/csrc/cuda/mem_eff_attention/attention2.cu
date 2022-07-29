@@ -366,6 +366,29 @@ __global__ void attention_kernel(
       s_prime += attn_fragment[x_item_idx];
     }
 
+    if (kBlockWidth > 1) {
+      if (p < 1.0) {
+        // if multiple threads work in parallel for every element of the attention matrix, let's
+        // generate the dropout in parallel and reshuffle it to the right coordinates
+        // so that representations are compatible
+        scalar_t mask[kBlockItemsX / kBlockWidth];
+#pragma unroll
+        for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth; x_item_idx++) {
+          mask[x_item_idx] = scalar_t(1);
+        }
+        int global_offset = batch_idx * M * N + query_idx * N;
+        apply_masking<scalar_t, vec_t, kBlockItemsX / kBlockWidth>(
+            mask, philox_args, global_offset, p, kv_idx);
+#pragma unroll
+        for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth; x_item_idx++) {
+          int global = x_item_idx * kBlockWidth + threadIdx.x;
+          int i = global % (kBlockItemsX / kBlockWidth);
+          int j = global / (kBlockItemsX / kBlockWidth);
+          attn_fragment[x_item_idx] *= __shfl_sync(0xffffffff, mask[i], j, kBlockWidth);
+        }
+      }
+    }
+
     // distribute aggregated attention values to all threads in the warp
 #pragma unroll
     for (int x_item_idx = kBlockItemsX - 1; x_item_idx >= 0; x_item_idx--) {
@@ -373,12 +396,15 @@ __global__ void attention_kernel(
       attn_fragment[x_item_idx] = __shfl_sync(0xffffffff, val, x_item_idx % kBlockWidth, kBlockWidth);
     }
 
-    if (p < 1.0) {
-      // this approach is suboptimal as different threads compute the
-      // same mask value, and this could be parallelized
-      int global_offset = batch_idx * M * N + query_idx * N;
-      apply_masking<scalar_t, vec_t, kBlockItemsX>(
-          attn_fragment, philox_args, global_offset, p, kv_idx);
+    if (kBlockWidth == 1) {
+      if (p < 1.0) {
+        // this approach is suboptimal as different threads compute the
+        // same mask value, but as there is only one thread working here
+        // this is fine
+        int global_offset = batch_idx * M * N + query_idx * N;
+        apply_masking<scalar_t, vec_t, kBlockItemsX>(
+            attn_fragment, philox_args, global_offset, p, kv_idx);
+      }
     }
 
     vec_t* out_i_tmp = out_i;
