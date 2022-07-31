@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rotary embeddings respecting input types [#326]
 - Poolformer style instantiating useless projection layers [#349]
 - Fix layer position not being properly tracked, causing extra layernorms for programmatic xformers [#348]
+- Blocksparse respecting native type [#354]
 
 ### Added
 - Four blocksparsity layouts from DeepSpeed [#320]

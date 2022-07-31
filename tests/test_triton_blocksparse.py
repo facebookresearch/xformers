@@ -42,6 +42,8 @@ if _triton_available:
         logging.warning(f"Triton is not available: {e}. Some tests will be skipped")
         _triton_available = False
 
+torch.backends.cuda.matmul.allow_tf32 = True
+
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
 @pytest.mark.skipif(
@@ -52,10 +54,14 @@ if _triton_available:
 @pytest.mark.parametrize("TRANS_A", [False, True])
 @pytest.mark.parametrize("TRANS_B", [False, True])
 @pytest.mark.parametrize("BLOCK", [16, 32, 64])
-@pytest.mark.parametrize("DTYPE", [torch.float16])
+@pytest.mark.parametrize("DTYPE", [torch.float16, torch.bfloat16, torch.float32])
 def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K=256):
     # set seed
     torch.random.manual_seed(0)
+
+    # Triton defaults to tf32 accumulations
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True  # type: ignore
 
     # create inputs
     a = torch.randn(
@@ -94,7 +100,13 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
     tc = block_sparsify_tensor(tc, layout, BLOCK) if MODE == "sdd" else tc
 
     # compare
-    assert_almost_equal(rc, tc)
+    if DTYPE != torch.float16:
+        decimal = 1  # parity is worse for types other than float16, even with tf32 accumulation
+        rc = rc.float()
+        tc = tc.float()
+    else:
+        decimal = 2
+    assert_almost_equal(rc, tc, decimal=decimal)
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
@@ -128,18 +140,24 @@ def test_softmax(BLOCK, WIDTH, DTYPE):
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
 @pytest.mark.parametrize("block", [32, 43, 128])  # 16, 32,
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
 def test_attention_fwd_bwd(
     block,
+    dtype,
     input_scale=1.0,
-    scale=1 / 8.0,
     n_ctx=384,
-    dtype=torch.float16,
     batch_size=2,
     n_heads=2,
 ):
+    # Triton defaults to tf32 accumulations
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True  # type: ignore
+
     # inputs
     head_dim = 64
     qkv_shape = (batch_size, n_heads, n_ctx, head_dim)
+    scale = 1.0 / head_dim
+
     qkvs = [
         torch.nn.Parameter(input_scale * torch.randn(qkv_shape), requires_grad=True)
         .to(dtype)
@@ -188,16 +206,17 @@ def test_attention_fwd_bwd(
         torch_grads = [torch_q.grad, torch_k.grad, torch_v.grad]
 
         # comparison
-        assert_almost_equal(
-            loss, torch_loss, err_msg=f"Triton loss {loss} and torch loss {torch_loss}"
-        )
+        if loss.dtype == torch.bfloat16:
+            # c
+            loss, torch_loss = loss.float(), torch_loss.float()
+
+        assert_almost_equal(loss, torch_loss)
 
         for g1, g2 in zip(grads, torch_grads):
-            assert_almost_equal(
-                torch.norm(g1),
-                torch.norm(g2),
-                err_msg=f"Triton grad {torch.norm(g1).item()} and torch grad {torch.norm(g2).item()}",
-            )
+            if g1.dtype == torch.bfloat16:
+                g1, g2 = g1.float(), g2.float()
+
+            assert_almost_equal(torch.norm(g1), torch.norm(g2))
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
