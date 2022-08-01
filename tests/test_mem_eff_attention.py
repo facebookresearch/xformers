@@ -17,14 +17,18 @@ _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
 def assert_allclose(
-    out: torch.Tensor, ref: torch.Tensor, msg: str = "failed", **kwargs
+    out: torch.Tensor,
+    ref: torch.Tensor,
+    msg: str = "failed",
+    atol: float = 1e-8,
+    rtol: float = 1e-5,
 ) -> None:
-    flatten_diff = (out - ref).abs().flatten()
+    flatten_diff = ((out - ref).abs() - atol - ref.abs() * rtol).flatten()
     max_pos = flatten_diff.argmax()
-    assert torch.allclose(out, ref, **kwargs), (
+    assert torch.allclose(out, ref, rtol=rtol, atol=atol), (
         f"{msg}: max_diff={flatten_diff.max()}: "
         f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} "
-        f"/ atol={kwargs.get('atol', 1e-8)}"
+        f"/ atol={atol}, rtol={rtol}"
     )
 
 
@@ -172,7 +176,7 @@ def test_logsumexp(
         (query.float() / k_len**0.5) @ key.float().transpose(-2, -1)
     ).logsumexp(-1)
 
-    assert_allclose(lse, ref_lse, atol=2e-4)
+    assert_allclose(lse[:, : ref_lse.shape[1]], ref_lse, atol=2e-4)
 
 
 @pytest.mark.parametrize(
@@ -204,6 +208,7 @@ def test_memory_efficient_attention_backward(
     dtype,
     op: xformers.ops.MemoryEfficientAttentionOp,
 ):
+    torch.manual_seed(batch_size * q_len + kv_len * k_len)
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
@@ -252,7 +257,7 @@ def test_memory_efficient_attention_backward(
     atol = 2e-4 + 2e-6 * k_len * kv_len * math.sqrt(batch_size) * math.sqrt(q_len)
     rtol = 1e-8
     if dtype is torch.half:
-        atol = 3e-2
+        atol = 4e-2
         rtol = 1e-2
     if dtype is torch.bfloat16:
         # I've seen (out=0.29 / ref=0.03)

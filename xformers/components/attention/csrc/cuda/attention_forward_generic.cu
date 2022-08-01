@@ -28,122 +28,17 @@
 #include "cutlass/matrix_shape.h"
 #include "cutlass/platform/platform.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
+#include "debug_utils.h"
 #include "epilogue_rescale_output.h"
 #include "find_default_mma.h"
+#include "gemm_kernel_utils.h"
 #include "mma_from_smem.h"
 
 #include <inttypes.h>
 
-////////////////////////////////////////////////////////////////////////////////
-// Some helper functions
-////////////////////////////////////////////////////////////////////////////////
-
-#define DISPATCH_BOOL(BOOL_V, BOOL_NAME, F) \
-  {                                         \
-    if (BOOL_V) {                           \
-      constexpr bool BOOL_NAME = true;      \
-      F();                                  \
-    } else {                                \
-      constexpr bool BOOL_NAME = false;     \
-      F();                                  \
-    }                                       \
-  }
-
-template <typename scalar_t>
-struct TypeTraits;
-
-template <>
-struct TypeTraits<cutlass::half_t> {
-  using scalar_t = cutlass::half_t;
-  using torch_dtype = half;
-  static constexpr at::ScalarType kAtScalarType = at::ScalarType::Half;
-
-  template <int nDim>
-  static __host__ at::PackedTensorAccessor32<scalar_t, nDim> packed_accessor(
-      at::Tensor const& tensor) {
-    return at::PackedTensorAccessor32<scalar_t, nDim>(
-        (scalar_t*)(tensor.data_ptr()),
-        tensor.sizes().data(),
-        tensor.strides().data());
-  }
-};
-constexpr at::ScalarType TypeTraits<cutlass::half_t>::kAtScalarType;
-
-template <>
-struct TypeTraits<float> {
-  using scalar_t = float;
-  using torch_dtype = float;
-  static constexpr at::ScalarType kAtScalarType = at::ScalarType::Float;
-
-  template <int nDim>
-  static __host__ at::PackedTensorAccessor32<scalar_t, nDim> packed_accessor(
-      at::Tensor const& tensor) {
-    return tensor.packed_accessor32<scalar_t, nDim>();
-  }
-};
-constexpr at::ScalarType TypeTraits<float>::kAtScalarType;
+using namespace gemm_kernel_utils;
 
 namespace {
-template <typename integer>
-constexpr __host__ __device__ inline integer ceil_div(integer n, integer m) {
-  return (n + m - 1) / m;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Determine the type of GEMM we do (TensorCores or not, Shapes ...)
-// TODO: Maybe we could rely on Cutlass's DefaultGemm templates
-////////////////////////////////////////////////////////////////////////////////
-
-// Fallback to Simt (FMA on cuda cores) if not in a special case below
-template <typename ArchTag, typename scalar_t_, typename Enable = void>
-struct DefaultGemmType {
-  static constexpr int ThreadK = 8;
-  static constexpr int WarpK = 8;
-  static constexpr int kMinimumAlignment = 1;
-  using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;
-  using OpClass = cutlass::arch::OpClassSimt;
-  using Operator = cutlass::arch::OpMultiplyAdd;
-};
-
-// Specialization for tensorcores with f32
-template <typename ArchTag>
-struct DefaultGemmType<
-    ArchTag,
-    float,
-    typename std::enable_if<ArchTag::kMinComputeCapability >= 80>::type> {
-  static constexpr int ThreadK = 32;
-  static constexpr int WarpK = 32;
-  static constexpr int kMinimumAlignment = 4;
-  using OpClass = cutlass::arch::OpClassTensorOp;
-  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;
-  using Operator = cutlass::arch::OpMultiplyAddFastF32;
-};
-
-// Specialization for tensorcores with f16 - Sm75+
-template <typename ArchTag>
-struct DefaultGemmType<
-    ArchTag,
-    cutlass::half_t,
-    typename std::enable_if<ArchTag::kMinComputeCapability >= 75>::type> {
-  static constexpr int ThreadK = 32;
-  static constexpr int WarpK = 32;
-  static constexpr int kMinimumAlignment = 4;
-  using OpClass = cutlass::arch::OpClassTensorOp;
-  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;
-  using Operator = cutlass::arch::OpMultiplyAdd;
-};
-
-// Specialization for tensorcores with f16 - Volta
-template <>
-struct DefaultGemmType<cutlass::arch::Sm70, cutlass::half_t, void> {
-  static constexpr int ThreadK = 32;
-  static constexpr int WarpK = 32;
-  static constexpr int kMinimumAlignment = 2;
-  using OpClass = cutlass::arch::OpClassTensorOp;
-  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
-  using Operator = cutlass::arch::OpMultiplyAdd;
-};
-
 template <
     // The datatype of Q/K/V
     typename scalar_t_,
@@ -236,7 +131,6 @@ struct AttentionKernel {
     using ScalingCoefsUpdater = typename DefaultAttentionScalingCoefsUpdater<
         typename Mma::Operator::IteratorC,
         accum_t,
-        kQueriesPerBlock,
         kWarpSize>::Updater;
 
     // Epilogue to store to shared-memory in a format that we can use later for
@@ -533,11 +427,16 @@ struct AttentionKernel {
     }
 
     // 7. Calculate logsumexp
+    // To make the backward easier, we pad logsumexp with `inf`
+    // this avoids a few bound checks, and is not more expensive during fwd
     if (logsumexp.size(0) && warp_id == 0) {
       static_assert(kQueriesPerBlock == kWarpSize);
       if (query_start() + lane_id < num_queries) {
         logsumexp[query_start() + lane_id] =
             accum_t(m_prime[lane_id]) + std::log(accum_t(s_prime[lane_id]));
+      } else {
+        logsumexp[query_start() + lane_id] =
+            std::numeric_limits<accum_t>::infinity();
       }
     }
   }
@@ -641,7 +540,7 @@ struct AttentionKernel {
         (tb_tile_offset.n() * Mma::WarpCount::kN) +
             (my_warp_id / Mma::WarpCount::kM)};
     // Update `mi` from accum stored in registers
-    MM0::ScalingCoefsUpdater::update(
+    MM0::ScalingCoefsUpdater::update<kQueriesPerBlock>(
         accum,
         mi,
         m_prime,
@@ -770,9 +669,7 @@ efficient_attention_forward_generic(
   using accum_t = float;
 
   at::Tensor res;
-  at::Tensor logsumexp = at::empty(
-      {B, compute_logsumexp ? M : 0},
-      query.options().dtype(at::ScalarType::Float));
+  at::Tensor logsumexp;
 
   cudaDeviceProp* properties =
       at::cuda::getDeviceProperties(query.device().index());
@@ -851,20 +748,26 @@ efficient_attention_forward_generic(
 
           res = at::zeros(
               {B, M, K},
-              query.options().dtype(TypeTraits<output_t>::kAtScalarType));
+              query.options().dtype(TypeTraits<output_t>::atScalarType()));
+          // NOTE: Should be aligned (by padding) in case M is not a good number
+          // for loading during backward
+          constexpr decltype(M) kAlignLSE = 32; // block size of backward
+          logsumexp = at::empty(
+              {B, compute_logsumexp ? ceil_div(M, kAlignLSE) * kAlignLSE : 0},
+              query.options().dtype(at::ScalarType::Float));
 
           dim3 grid(AKI::kNumBlocksX, AKI::getNumBlocksY(M), B);
           dim3 block(AKI::kWarpSize, AKI::kNumWarpsPerBlock, 1);
 
           constexpr auto kernel_fn = attention_kernel_batched<AKI>;
-          if (smem_bytes > 48000) {
+          if (smem_bytes > 0xc000) {
             TORCH_INTERNAL_ASSERT(
                 computeCapability >= 70,
                 "This kernel requires too much shared memory on this machine!");
-            cudaFuncSetAttribute(
+            AT_CUDA_CHECK(cudaFuncSetAttribute(
                 kernel_fn,
                 cudaFuncAttributeMaxDynamicSharedMemorySize,
-                smem_bytes);
+                smem_bytes));
           }
 
           using m = TypeTraits<scalar_t>;

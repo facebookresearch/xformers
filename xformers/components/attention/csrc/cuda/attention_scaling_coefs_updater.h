@@ -1,3 +1,5 @@
+#pragma once
+
 #include "cutlass/gemm/warp/mma_simt_tile_iterator.h"
 #include "cutlass/gemm/warp/mma_tensor_op_tile_iterator_sm70.h"
 #include "cutlass/gemm/warp/mma_tensor_op_tile_iterator_sm80.h"
@@ -30,13 +32,9 @@ We have multiple implementations, because each configuration has a different way
 of iterating in the accumulators.
 */
 
-template <
-    typename BASE,
-    typename T,
-    typename accum_t,
-    int kQueriesPerBlock,
-    int kWarpSize>
+template <typename BASE, typename T, typename accum_t, int kWarpSize>
 struct RegisterOps {
+  template <int kQueriesPerBlock>
   __device__ __forceinline__ static void update(
       typename T::Fragment& frag,
       cutlass::Array<accum_t, kQueriesPerBlock>& mi,
@@ -102,17 +100,13 @@ struct RegisterOps {
   }
 };
 
-template <typename T, typename accum_t, int kQueriesPerBlock, int kWarpSize>
-struct AttentionScalingCoefsUpdaterSm80 : RegisterOps<
-                                              AttentionScalingCoefsUpdaterSm80<
-                                                  T,
-                                                  accum_t,
-                                                  kQueriesPerBlock,
-                                                  kWarpSize>,
-                                              T,
-                                              accum_t,
-                                              kQueriesPerBlock,
-                                              kWarpSize> {
+template <typename T, typename accum_t, int kWarpSize>
+struct AttentionScalingCoefsUpdaterSm80
+    : RegisterOps<
+          AttentionScalingCoefsUpdaterSm80<T, accum_t, kWarpSize>,
+          T,
+          accum_t,
+          kWarpSize> {
   static_assert(
       std::is_same<typename T::Layout, cutlass::layout::RowMajor>::value);
 
@@ -186,17 +180,12 @@ struct AttentionScalingCoefsUpdaterSm80 : RegisterOps<
 // 32>, float, cutlass::layout::RowMajor, cutlass::gemm::GemmShape<16, 16, 4>,
 // cutlass::MatrixShape<1, 1>> See
 // cutlass/gemm/warp/mma_tensor_op_tile_iterator_sm70.h
-template <typename T, typename accum_t, int kQueriesPerBlock, int kWarpSize>
+template <typename T, typename accum_t, int kWarpSize>
 struct AttentionScalingCoefsUpdaterVolta
     : RegisterOps<
-          AttentionScalingCoefsUpdaterVolta<
-              T,
-              accum_t,
-              kQueriesPerBlock,
-              kWarpSize>,
+          AttentionScalingCoefsUpdaterVolta<T, accum_t, kWarpSize>,
           T,
           accum_t,
-          kQueriesPerBlock,
           kWarpSize> {
   static_assert(
       std::is_same<typename T::Layout, cutlass::layout::RowMajor>::value);
@@ -297,17 +286,13 @@ struct AttentionScalingCoefsUpdaterVolta
   }
 };
 
-template <typename T, typename accum_t, int kQueriesPerBlock, int kWarpSize>
-struct AttentionScalingCoefsUpdaterSimt : RegisterOps<
-                                              AttentionScalingCoefsUpdaterSimt<
-                                                  T,
-                                                  accum_t,
-                                                  kQueriesPerBlock,
-                                                  kWarpSize>,
-                                              T,
-                                              accum_t,
-                                              kQueriesPerBlock,
-                                              kWarpSize> {
+template <typename T, typename accum_t, int kWarpSize>
+struct AttentionScalingCoefsUpdaterSimt
+    : RegisterOps<
+          AttentionScalingCoefsUpdaterSimt<T, accum_t, kWarpSize>,
+          T,
+          accum_t,
+          kWarpSize> {
   using Policy = typename T::Policy;
   using Iterations = typename T::Iterations;
   using Element = typename T::Element;
@@ -378,16 +363,11 @@ struct AttentionScalingCoefsUpdaterSimt : RegisterOps<
   }
 };
 
-template <typename T, typename accum_t, int kQueriesPerBlock, int kWarpSize>
+template <typename T, typename accum_t, int kWarpSize>
 struct DefaultAttentionScalingCoefsUpdater;
 
 // Simt
-template <
-    typename S,
-    typename P,
-    typename accum_t,
-    int kQueriesPerBlock,
-    int kWarpSize>
+template <typename S, typename P, typename accum_t, int kWarpSize>
 struct DefaultAttentionScalingCoefsUpdater<
     cutlass::gemm::warp::MmaSimtTileIterator<
         S,
@@ -398,7 +378,6 @@ struct DefaultAttentionScalingCoefsUpdater<
         1,
         1>,
     accum_t,
-    kQueriesPerBlock,
     kWarpSize> {
   using Iterator = typename cutlass::gemm::warp::MmaSimtTileIterator<
       S,
@@ -408,20 +387,12 @@ struct DefaultAttentionScalingCoefsUpdater<
       P,
       1,
       1>;
-  using Updater = AttentionScalingCoefsUpdaterSimt<
-      Iterator,
-      accum_t,
-      kQueriesPerBlock,
-      kWarpSize>;
+  using Updater =
+      AttentionScalingCoefsUpdaterSimt<Iterator, accum_t, kWarpSize>;
 };
 
 // TensorOp - Volta
-template <
-    typename S1,
-    typename S2,
-    typename accum_t,
-    int kQueriesPerBlock,
-    int kWarpSize>
+template <typename S1, typename S2, typename accum_t, int kWarpSize>
 struct DefaultAttentionScalingCoefsUpdater<
     cutlass::gemm::warp::MmaVoltaTensorOpAccumulatorTileIterator<
         S1,
@@ -430,7 +401,6 @@ struct DefaultAttentionScalingCoefsUpdater<
         S2,
         cutlass::MatrixShape<1, 1>>,
     accum_t,
-    kQueriesPerBlock,
     kWarpSize> {
   using Iterator =
       typename cutlass::gemm::warp::MmaVoltaTensorOpAccumulatorTileIterator<
@@ -439,11 +409,8 @@ struct DefaultAttentionScalingCoefsUpdater<
           cutlass::layout::RowMajor,
           S2,
           cutlass::MatrixShape<1, 1>>;
-  using Updater = AttentionScalingCoefsUpdaterVolta<
-      Iterator,
-      accum_t,
-      kQueriesPerBlock,
-      kWarpSize>;
+  using Updater =
+      AttentionScalingCoefsUpdaterVolta<Iterator, accum_t, kWarpSize>;
 };
 
 // TensorOp - Sm75+
@@ -452,7 +419,6 @@ template <
     typename S2,
     typename S3,
     typename accum_t,
-    int kQueriesPerBlock,
     int kWarpSize>
 struct DefaultAttentionScalingCoefsUpdater<
     cutlass::gemm::warp::MmaTensorOpAccumulatorTileIterator<
@@ -462,7 +428,6 @@ struct DefaultAttentionScalingCoefsUpdater<
         S2,
         S3>,
     accum_t,
-    kQueriesPerBlock,
     kWarpSize> {
   using Iterator =
       typename cutlass::gemm::warp::MmaTensorOpAccumulatorTileIterator<
@@ -471,9 +436,6 @@ struct DefaultAttentionScalingCoefsUpdater<
           cutlass::layout::RowMajor,
           S2,
           S3>;
-  using Updater = AttentionScalingCoefsUpdaterSm80<
-      Iterator,
-      accum_t,
-      kQueriesPerBlock,
-      kWarpSize>;
+  using Updater =
+      AttentionScalingCoefsUpdaterSm80<Iterator, accum_t, kWarpSize>;
 };

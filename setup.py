@@ -170,7 +170,7 @@ def get_extensions():
             nvcc_flags = nvcc_flags.split(" ")
         cuda_version = get_cuda_version(CUDA_HOME)
         if cuda_version >= 1102:
-            nvcc_flags += ["--threads", "4"]
+            nvcc_flags += ["--threads", "4", "--ptxas-options=-v"]
         extra_compile_args["nvcc"] = nvcc_flags
         if (
             cuda_version >= 1100

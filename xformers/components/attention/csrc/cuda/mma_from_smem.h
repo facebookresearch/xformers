@@ -39,14 +39,22 @@
 #include "cutlass/arch/memory.h"
 #include "cutlass/array.h"
 #include "cutlass/cutlass.h"
+#include "cutlass/epilogue/thread/linear_combination.h"
+#include "cutlass/epilogue/threadblock/default_epilogue_simt.h"
+#include "cutlass/epilogue/threadblock/default_epilogue_tensor_op.h"
+#include "cutlass/epilogue/threadblock/default_epilogue_volta_tensor_op.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/warp/mma_tensor_op_fragment_iterator.h"
 #include "cutlass/matrix_shape.h"
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/numeric_types.h"
+#include "cutlass/transform/threadblock/vector_iterator.h"
 
+#include "attention_scaling_coefs_updater.h"
 #include "cutlass/epilogue/threadblock/epilogue_smem_accumulator.h"
 #include "cutlass/gemm/threadblock/mma_base.h"
+#include "epilogue_thread_apply_logsumexp.h"
+#include "gemm_kernel_utils.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1207,6 +1215,7 @@ struct B2bGemm<
   using WarpShape = WarpShape_;
   using ThreadblockShape = ThreadblockShape_;
   using accum_t = Element_;
+  using lse_scalar_t = float;
 
   using SmemAccumulatorLayout = cutlass::layout::RowMajor;
 
@@ -1246,6 +1255,34 @@ struct B2bGemm<
       SmemIteratorD0, // ScaleBiasIterator - not used
       OutputOpNoOp>;
 
+  // Epilogue 2: with LSE (for backwards pass)
+  static int const kElementsPerAccess = 2; // TODO: Why 2?
+  using IteratorAccumulatorLSE =
+      cutlass::transform::threadblock::VectorIterator<
+          cutlass::transform::threadblock::PredicatedVectorAccessIterator<
+              // Shape
+              cutlass::MatrixShape<ThreadblockShape::kM, ThreadblockShape::kN>,
+              // WarpShape
+              cutlass::MatrixShape<WarpShape::kM, WarpShape::kN>,
+              lse_scalar_t,
+              cutlass::layout::RowMajor,
+              kElementsPerAccess>>;
+  using EpilogueOpApplyLSE = cutlass::epilogue::thread::ApplyLogSumExp<
+      scalar_t, // ElementOutput_
+      lse_scalar_t, // ElementLSE_
+      accum_t, // ElementAccumulator_
+      accum_t, // ElementCompute_
+      128 / cutlass::sizeof_bits<scalar_t>::value
+      // FragmentIteratorAccumulator::Fragment::kElements
+      // InstructionShape::kM * InstructionShape::kN / 32
+      >;
+  using EpilogueWithLSE =
+      cutlass::epilogue::threadblock::EpilogueSmemAccumulator<
+          SmemIteratorD0,
+          FragmentIteratorAccumulator,
+          IteratorAccumulatorLSE,
+          EpilogueOpApplyLSE>;
+
   static void __device__ accumToSmem(
       AccumulatorSharedStorage& shared_storage,
       FragmentC const& accum,
@@ -1259,6 +1296,42 @@ struct B2bGemm<
             SmemIteratorD0::TileIterations::kColumn});
     Epilogue epilogue;
     epilogue(OutputOpNoOp({}), smem_iterator_attn, accum);
+  }
+
+  static void __device__ accumApplyLSEToSmem(
+      AccumulatorSharedStorage& shared_storage,
+      FragmentC& accum,
+      lse_scalar_t const* lse,
+      int32_t lse_extents,
+      int thread_id,
+      int warp_id,
+      int lane_id,
+      cutlass::MatrixCoord const& tile_coords) {
+    constexpr int32_t kAlignLSE = 32;
+    IteratorAccumulatorLSE iterator_lse(
+        lse,
+        {(int32_t)0, (int32_t)ceil_div(lse_extents, kAlignLSE) * kAlignLSE},
+        thread_id,
+        warp_id,
+        cutlass::MatrixCoord{0, 0} // offset
+    );
+
+    SmemIteratorD0 smem_iterator_attn(shared_storage.accum_ref(), lane_id);
+    smem_iterator_attn.add_tile_offset(
+        tile_coords *
+        cutlass::MatrixCoord{
+            SmemIteratorD0::TileIterations::kRow,
+            SmemIteratorD0::TileIterations::kColumn});
+    EpilogueWithLSE epilogue;
+    EpilogueOpApplyLSE minus_lse_exp({});
+    epilogue(
+        minus_lse_exp,
+        smem_iterator_attn,
+        accum,
+        // scale - unused
+        iterator_lse,
+        // bias
+        iterator_lse);
   }
 };
 
@@ -1288,6 +1361,7 @@ struct B2bGemm<
   using WarpShape = WarpShape_;
   using ThreadblockShape = ThreadblockShape_;
   using FragmentC = IteratorC::Fragment;
+  using lse_scalar_t = float;
 
   using SmemAccumulatorLayout = cutlass::layout::RowMajor;
   using SmemIteratorD0 = cutlass::epilogue::warp::TileIteratorVoltaTensorOp<
@@ -1307,23 +1381,23 @@ struct B2bGemm<
           cutlass::MatrixShape<0, 0> // Padding
           >;
 
+  using OutputLayout =
+      cutlass::layout::RowMajorVoltaTensorOpMultiplicandCrosswise<16, 32>;
+  using TensorRef = cutlass::TensorRef<scalar_t, OutputLayout>;
+  using Policy = typename IteratorC::Policy;
+  using EleShapePerPatial = typename IteratorC::EleShapePerPatial;
+  using QuadShapePerPatialMma = typename IteratorC::QuadShapePerPatialMma;
+  using Element = accum_t;
+
+  static int constexpr kElementsPerMma = IteratorC::kElementsPerMma;
+  static int constexpr kElementsPerPartial = IteratorC::kElementsPerPartial;
+  static int constexpr kAccumulatorPatials = IteratorC::kAccumulatorPatials;
+
   static void __device__ accumToSmem(
       AccumulatorSharedStorage& shared_storage,
       FragmentC const& accum,
       int lane_id,
       cutlass::MatrixCoord const& tile_coords) {
-    using OutputLayout =
-        cutlass::layout::RowMajorVoltaTensorOpMultiplicandCrosswise<16, 32>;
-    using TensorRef = cutlass::TensorRef<scalar_t, OutputLayout>;
-    using Policy = typename IteratorC::Policy;
-    using EleShapePerPatial = typename IteratorC::EleShapePerPatial;
-    using QuadShapePerPatialMma = typename IteratorC::QuadShapePerPatialMma;
-    using Element = accum_t;
-
-    auto constexpr kElementsPerMma = IteratorC::kElementsPerMma;
-    auto constexpr kElementsPerPartial = IteratorC::kElementsPerPartial;
-    auto constexpr kAccumulatorPatials = IteratorC::kAccumulatorPatials;
-
     // ctor - from MmaVoltaTensorOpAccumulatorTileIterator
     TensorRef ref_(shared_storage.accum_ref());
     int quad = (lane_id >> 2);
@@ -1348,7 +1422,7 @@ struct B2bGemm<
     ref_.add_coord_offset(
         tile_coords *
         cutlass::MatrixCoord(
-            {SmemIteratorD0::Shape::kRow, SmemIteratorD0::Shape::kColumn}));
+            {IteratorC::Shape::kRow, IteratorC::Shape::kColumn}));
 
     // store - from MmaVoltaTensorOpAccumulatorTileIterator
     CUTLASS_PRAGMA_UNROLL
@@ -1393,6 +1467,49 @@ struct B2bGemm<
       }
     }
   }
+
+  static void __device__ accumApplyLSEToSmem(
+      AccumulatorSharedStorage& shared_storage,
+      typename IteratorC::Fragment& accum,
+      lse_scalar_t const* lse,
+      int lse_extent,
+      int thread_id,
+      int warp_id,
+      int lane_id,
+      cutlass::MatrixCoord const& tile_coords) {
+    // Non-optimized way to apply LSE to registers
+    // NOTE: accum is attn.T
+    // TODO: Optimize for each architecture
+    static constexpr int WarpSize = 32;
+    using RegistersIter = typename DefaultAttentionScalingCoefsUpdater<
+        IteratorC,
+        accum_t,
+        WarpSize>::Updater;
+    auto lane_offset =
+        RegistersIter::get_lane_offset(lane_id, warp_id, tile_coords);
+
+    cutlass::Array<lse_scalar_t, IteratorC::Fragment::kElements> lse_prefetched;
+    lse_prefetched.clear();
+    int rowIdx = 0;
+    int colIdx = 0;
+    RegistersIter::iterateRows(
+        lane_offset,
+        [&](int accum_m) {
+          ++rowIdx;
+          colIdx = 0;
+        },
+        [&](int accum_m, int accum_n, int idx) {
+          if (rowIdx == 1) {
+            lse_prefetched[colIdx] = accum_n < lse_extent
+                ? lse[accum_n]
+                : std::numeric_limits<accum_t>::infinity();
+          }
+          accum[idx] = expf(accum[idx] - lse_prefetched[colIdx]);
+          ++colIdx;
+        },
+        [&](int accum_m) {});
+    accumToSmem(shared_storage, accum, lane_id, tile_coords);
+  }
 };
 
 // Simt Specialization
@@ -1429,14 +1546,7 @@ struct B2bGemm<
   using WarpShape = WarpShape_;
   using ThreadblockShape = ThreadblockShape_;
   using FragmentC = typename IteratorC::Fragment;
-
-  using SmemAccumulatorLayout = cutlass::layout::ColumnMajor;
-  using SmemIteratorD0 = cutlass::epilogue::warp::TileIteratorSimt<
-      WarpShape,
-      typename Operator::ArchMmaOperator,
-      scalar_t,
-      cutlass::layout::RowMajor, // XXX: only supports rowmajor ...
-      OperatorPolicy>;
+  using lse_scalar_t = float;
 
   // Storage in shared-memory for Q.Kt
   using AccumulatorSharedStorage =
@@ -1457,10 +1567,7 @@ struct B2bGemm<
     using Iterations = typename IteratorC::Iterations;
     using Delta = typename IteratorC::Delta;
 
-    using TensorRef =
-        typename cutlass::TensorRef<scalar_t, SmemAccumulatorLayout>;
-
-    TensorRef ref_(shared_storage.accum_ref());
+    auto ref_ = shared_storage.accum_ref();
     // ctor - MmaSimtTileIterator
     // compute offset based on thread ID and lane layout
     typename Policy::LaneLayout lane_layout = Policy::get_lane_layout();
@@ -1474,7 +1581,7 @@ struct B2bGemm<
     ref_.add_coord_offset(
         tile_coords *
         cutlass::MatrixCoord(
-            {SmemIteratorD0::Shape::kRow, SmemIteratorD0::Shape::kColumn}));
+            {IteratorC::Shape::kRow, IteratorC::Shape::kColumn}));
 
     // store - MmaSimtTileIterator
     CUTLASS_PRAGMA_UNROLL
@@ -1499,6 +1606,49 @@ struct B2bGemm<
         }
       }
     }
+  }
+
+  static void __device__ accumApplyLSEToSmem(
+      AccumulatorSharedStorage& shared_storage,
+      typename IteratorC::Fragment& accum,
+      lse_scalar_t const* lse,
+      int lse_extent,
+      int thread_id,
+      int warp_id,
+      int lane_id,
+      cutlass::MatrixCoord const& tile_coords) {
+    // Non-optimized way to apply LSE to registers
+    // NOTE: accum is attn.T
+    // TODO: Optimize for each architecture
+    static constexpr int WarpSize = 32;
+    using RegistersIter = typename DefaultAttentionScalingCoefsUpdater<
+        IteratorC,
+        accum_t,
+        WarpSize>::Updater;
+    auto lane_offset =
+        RegistersIter::get_lane_offset(lane_id, warp_id, tile_coords);
+
+    cutlass::Array<lse_scalar_t, IteratorC::Fragment::kElements> lse_prefetched;
+    lse_prefetched.clear();
+    int rowIdx = 0;
+    int colIdx = 0;
+    RegistersIter::iterateRows(
+        lane_offset,
+        [&](int accum_m) {
+          ++rowIdx;
+          colIdx = 0;
+        },
+        [&](int accum_m, int accum_n, int idx) {
+          if (rowIdx == 1) {
+            lse_prefetched[colIdx] = accum_n < lse_extent
+                ? lse[accum_n]
+                : std::numeric_limits<accum_t>::infinity();
+          }
+          accum[idx] = expf(accum[idx] - lse_prefetched[colIdx]);
+          ++colIdx;
+        },
+        [&](int accum_m) {});
+    accumToSmem(shared_storage, accum, lane_id, tile_coords);
   }
 };
 

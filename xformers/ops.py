@@ -225,12 +225,21 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
         is_sm80 = torch.cuda.get_device_capability(d.device)[0] >= 8
         bits_per_scalar = {torch.float: 32, torch.half: 16, torch.bfloat16: 16}[d.dtype]
         uses_tensorcores = cls.uses_tensorcores(d, bits_per_scalar == 16)
-        if is_sm80 and d.k % 4 != 0:
+        matmul_alignment_mn = 1
+        if is_sm80:
+            matmul_alignment_mn = 4
+        if uses_tensorcores:
+            matmul_alignment_mn = max(matmul_alignment_mn, 64 // bits_per_scalar)
+        if d.k % matmul_alignment_mn != 0:
             return False
-        if uses_tensorcores and d.k % (64 / bits_per_scalar) != 0:
-            return False
+
+        # TODO: Remove this once cutlass handles partial tiles correctly
+        # See https://github.com/NVIDIA/cutlass/issues/569
         warp_shape = 32 if uses_tensorcores else 8
         if d.kv_len > warp_shape and d.kv_len % warp_shape != 0:
+            return False
+        # for backwards pass
+        if d.q_len > warp_shape and d.q_len % warp_shape != 0:
             return False
         return True
 
@@ -240,13 +249,18 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
         p = ctx.p
         rng_seed = ctx.rng_seed
         rng_offset = ctx.rng_offset
-        grad_q, grad_k, grad_v = torch.ops.xformers.efficient_attention_backward(
-            grad.float(),
-            query.float(),
-            key.float(),
-            value.float(),
-            lse.float(),
-            out.float(),
+        dtype = query.dtype
+        (
+            grad_q,
+            grad_k,
+            grad_v,
+        ) = torch.ops.xformers.efficient_attention_backward_generic(
+            grad.to(dtype),
+            query,
+            key,
+            value,
+            lse,
+            out.to(dtype),
             attn_bias,
             p,
             rng_seed,
@@ -502,6 +516,7 @@ class AttentionOpDispatch:
     has_dropout: bool
     attn_bias_type: Any
     kv_len: int
+    q_len: int
 
     @property
     def op(self) -> Type[AttentionOpBase]:
@@ -531,6 +546,7 @@ class AttentionOpDispatch:
             has_dropout=p > 0.0,
             attn_bias_type=type(attn_bias),
             kv_len=value.shape[-2],
+            q_len=query.shape[-2],
         )
 
 

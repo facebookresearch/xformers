@@ -52,7 +52,7 @@ min_run_time = 2
 device = torch.device("cuda")
 
 NUM_THREADS = [1] if device.type == "cuda" else [1, 40]
-SHAPES = list(itertools.product([32, 256], [128, 512, 1024], [16, 32, 128]))
+SHAPES = list(itertools.product([32, 256], [128, 512, 1024], [16, 32, 64, 128]))
 SHAPES = list(set(SHAPES))
 SHAPES.sort()
 
@@ -92,6 +92,7 @@ def benchmark_forward(shape, num_threads: int, attn_bias_type, dtype):
         attn_bias_type=attn_bias_type,
         has_dropout=False,
         kv_len=M,
+        q_len=M,
     )
     try:
         op = dispatch.op if FORCE_OP is None else FORCE_OP
@@ -166,6 +167,7 @@ def benchmark_backward(shape, num_threads: int, attn_bias_type, dtype):
         attn_bias_type=attn_bias_type,
         has_dropout=False,
         kv_len=M,
+        q_len=M,
     )
     try:
         op = dispatch.op if FORCE_OP is None else FORCE_OP
