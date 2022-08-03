@@ -3,17 +3,24 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import contextlib
+import glob
 import logging
 import os
+import pickle
+import pprint
 import tempfile
-from collections import namedtuple
-from typing import Any, Dict, Generator, List
+from collections import defaultdict, namedtuple
+from dataclasses import replace
+from typing import Any, Dict, List
 
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import torch
+import tqdm
+from torch.utils import benchmark
 
 sns.set()
 
@@ -204,3 +211,114 @@ def temp_files_ctx(num: int) -> Generator:
     # temp files could have been removed, so we use rmf.
     for name in files:
         rmf(name)
+
+
+def benchmark_main_helper(
+    benchmark_fn, cases: List[Dict[str, Any]], *, min_run_time: int = 2
+) -> None:
+    """
+    Helper function to run benchmarks.
+    Supports loading previous results for comparison, and saving current results to file.
+    """
+    SKIP_VANILLA_TASKS_IF_ALREADY_DONE = True
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--fn", default=None, type=str, help="Only benchmark this function"
+    )
+    parser.add_argument(
+        "--label", default=None, type=str, help="Store results to a file"
+    )
+    parser.add_argument(
+        "--compare",
+        default=None,
+        type=str,
+        help="Compare to previously stored benchmarks (coma separated)",
+    )
+    args = parser.parse_args()
+
+    if args.fn is not None and args.fn != benchmark_fn.__name__:
+        print(f'Skipping benchmark "{benchmark_fn.__name__}"')
+        return
+
+    results_compare_to = []
+    results = []
+    mem_use = defaultdict(dict)
+
+    store_results_folder = os.path.join(".benchmarks", benchmark_fn.__name__)
+    optimized_label = "optimized" if args.label is None else args.label
+
+    try:
+        env = (
+            torch.cuda.get_device_name(torch.cuda.current_device())
+            .replace(" ", "_")
+            .replace("-", "_")
+        )
+    except RuntimeError:  # No GPU
+        env = "cpu"
+
+    if args.compare is not None or args.label is not None:
+        os.makedirs(store_results_folder, exist_ok=True)
+
+    # Load runs that we want to compare to
+    skip_vanilla_tasks = set()
+    if args.compare is not None:
+        for name in args.compare.split(","):
+            for filename in glob.glob(
+                os.path.join(store_results_folder, f"{name}.*.pkl")
+            ):
+                with open(filename, "rb") as fd:
+                    for r in pickle.load(fd):
+                        spec = r.task_spec
+                        if r.task_spec.description != "vanilla":
+                            # (in case the file was renamed)
+                            r.task_spec = replace(r.task_spec, description=name)
+                        elif spec.env == env:
+                            if SKIP_VANILLA_TASKS_IF_ALREADY_DONE:
+                                skip_vanilla_tasks.add(
+                                    (spec.sub_label, spec.num_threads)
+                                )
+                            else:
+                                continue
+                        results_compare_to.append(r)
+
+    pbar = tqdm.tqdm(cases)
+    for case in pbar:
+        # pbar.set_description(str(case))
+        pbar.write(f"====== {str(case)} ======")
+        try:
+            benchmark_optimized, benchmark_vanilla = benchmark_fn(**case)
+        except NotImplementedError:
+            # pbar.write(f"Skipped (NotImplementedError)")
+            continue
+        benchmark_optimized._task_spec = replace(
+            benchmark_optimized._task_spec, description=optimized_label
+        )
+        if (
+            benchmark_vanilla._task_spec.sub_label,
+            benchmark_vanilla._task_spec.num_threads,
+        ) in skip_vanilla_tasks:
+            benchmark_vanilla = None
+        for benchmark_object in [benchmark_optimized, benchmark_vanilla]:
+            if benchmark_object is None:
+                continue
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.synchronize()
+            benchmark_object._task_spec = replace(benchmark_object._task_spec, env=env)
+            measurement = benchmark_object.blocked_autorange(min_run_time=min_run_time)
+            torch.cuda.synchronize()
+            results.append(measurement)
+            name = measurement.task_spec.description
+            memory = torch.cuda.max_memory_allocated() / 2**20
+            mem_use[name][measurement.task_spec.sub_label] = memory
+            pbar.write(f"{name}: memory used: {memory} MB")
+
+    # Save runs to a file
+    if args.label is not None:
+        with open(
+            os.path.join(store_results_folder, f"{optimized_label}.{env}.pkl"), "wb+"
+        ) as fd:
+            pickle.dump(results, fd)
+
+    pprint.pprint(mem_use)
+    benchmark.Compare(results + results_compare_to).print()

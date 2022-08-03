@@ -52,3 +52,5 @@ examples/data
 # Hydra default output dir
 multirun
 outputs
+
+.benchmarks

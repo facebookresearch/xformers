@@ -4,10 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import math
 from typing import Optional
 
 import torch
-import math
+
 
 def masked_matmul(a, b, mask=None):
     if torch.overrides.has_torch_function((a, b, mask)):
@@ -46,7 +47,7 @@ class MemoryEfficientAttentionOp(torch.autograd.Function):
             value=value,
             compute_logsumexp=True,
             attn_bias=attn_bias,
-            p=p
+            p=p,
         )
         ctx.save_for_backward(query, key, value, lse, attn_bias)
         ctx.p = p
@@ -81,7 +82,7 @@ def memory_efficient_attention(
     attn_bias: Optional[torch.Tensor] = None,
     p: float = 0.0,
     *,
-    op = MemoryEfficientAttentionOp
+    op=MemoryEfficientAttentionOp
 ):
     """
     Implements the memory-efficient attention mechanism following
@@ -90,7 +91,5 @@ def memory_efficient_attention(
     """
     # fast-path that doesn't require computing the logsumexp for backward computation
     if all(x.requires_grad is False for x in [query, key, value]):
-        return op.FORWARD_OPERATOR(
-            query, key, value, False, attn_bias, p
-        )[0]
+        return op.FORWARD_OPERATOR(query, key, value, False, attn_bias, p)[0]
     return op.apply(query, key, value, attn_bias, p)
