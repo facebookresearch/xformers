@@ -44,8 +44,8 @@ struct AllReduce {
   // Registe file fragment for storing each threads results.
   float* outputs;
 
-  __device__ __forceinline__ AllReduce(const uint32_t thread_mask,
-                                       float* inputs_, float* outputs_)
+  __device__ __forceinline__
+  AllReduce(const uint32_t thread_mask, float* inputs_, float* outputs_)
       : kShflMask(thread_mask), inputs(inputs_), outputs(outputs_) {}
   __device__ __forceinline__ void Swap(int i, int j, float* x) {
     float t = x[i];
@@ -55,7 +55,8 @@ struct AllReduce {
 
   __device__ __forceinline__ void ReduceStep(int lane, int i, int j) {
     const int kStep = Log2(lane);
-    if ((threadIdx.x >> kStep) & 1) Swap(i, j, inputs);
+    if ((threadIdx.x >> kStep) & 1)
+      Swap(i, j, inputs);
     inputs[i] += __shfl_xor_sync(kShflMask, inputs[j], lane, kBlockWidth);
   }
 
@@ -83,8 +84,7 @@ struct AllReduce {
   }
 };
 
-}  // namespace sputnik
-
+} // namespace sputnik
 
 namespace {
 
@@ -182,8 +182,7 @@ __device__ void apply_masking(
     // takes a significant portion of time. So we instead modify the seed
     // so that each thread has a different seed. This has fewer statistical
     // guarantees than by doing it properly, but is much faster
-    curand_init(
-        std::get<0>(seeds), offset, std::get<1>(seeds) + delta, &state);
+    curand_init(std::get<0>(seeds), offset, std::get<1>(seeds) + delta, &state);
     // curand_init(std::get<0>(seeds) + (offset << 8) + std::get<1>(seeds), 0,
     // 0, &state);
     float4 rand = curand_uniform4(&state);
@@ -222,8 +221,7 @@ __global__ void attention_kernel(
     at::PackedTensorAccessor<scalar_t, 3> attn_bias_,
     scalar_t p,
     at::PhiloxCudaState philox_args,
-    bool is_causal
-    ) {
+    bool is_causal) {
   int64_t K = query.size(2);
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -327,7 +325,9 @@ __global__ void attention_kernel(
             rhs_fragment[fragment_offset] = __ldg(key_j + threadIdx.x);
 
             sputnik::VectorCompute<vec_t>::Dot(
-                lhs_fragment[k_item_idx], rhs_fragment[fragment_offset], attn_fragment + x_item_idx);
+                lhs_fragment[k_item_idx],
+                rhs_fragment[fragment_offset],
+                attn_fragment + x_item_idx);
           }
           key_j += kBlockWidth;
           inner_residue -= kBlockWidth * kVecSize;
@@ -340,17 +340,21 @@ __global__ void attention_kernel(
 
     // aggregate over different threads in a warp and compute max over wap
     // the reduced values will be shared across different threads, such that
-    // threadIdx.x will have values of index i s.t. that i % kBlockWidth == threadIdx.x
-    sputnik::AllReduce<scalar_t, kBlockItemsX, kBlockWidth> all_reduce(0xffffffff, attn_fragment, attn_fragment);
+    // threadIdx.x will have values of index i s.t. that i % kBlockWidth ==
+    // threadIdx.x
+    sputnik::AllReduce<scalar_t, kBlockItemsX, kBlockWidth> all_reduce(
+        0xffffffff, attn_fragment, attn_fragment);
     all_reduce.Reduce();
 
 #pragma unroll
-    for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth; ++x_item_idx) {
+    for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth;
+         ++x_item_idx) {
       bool in_bounds = x_item_idx * kBlockWidth + threadIdx.x < end_iter;
       if (!in_bounds)
         attn_fragment[x_item_idx] = -std::numeric_limits<scalar_t>::infinity();
       if ((attn_bias != nullptr) && in_bounds)
-        attn_fragment[x_item_idx] += __ldg(attn_bias + kv_idx + x_item_idx * kBlockWidth + threadIdx.x);
+        attn_fragment[x_item_idx] +=
+            __ldg(attn_bias + kv_idx + x_item_idx * kBlockWidth + threadIdx.x);
       m_i = max(attn_fragment[x_item_idx], m_i);
     }
     m_i = warpMax<scalar_t, kBlockWidth>(m_i);
@@ -360,31 +364,38 @@ __global__ void attention_kernel(
     s_prime = s_prime * m_delta;
     m_prime = m_i;
 #pragma unroll
-    for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth; x_item_idx++) {
+    for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth;
+         x_item_idx++) {
       attn_fragment[x_item_idx] = std::exp(attn_fragment[x_item_idx] - m_i);
-      attn_fragment[x_item_idx] = isfinite(attn_fragment[x_item_idx]) ? attn_fragment[x_item_idx] : scalar_t(0);
+      attn_fragment[x_item_idx] = isfinite(attn_fragment[x_item_idx])
+          ? attn_fragment[x_item_idx]
+          : scalar_t(0);
       s_prime += attn_fragment[x_item_idx];
     }
 
     if (kBlockWidth > 1) {
       if (p < 1.0) {
-        // if multiple threads work in parallel for every element of the attention matrix, let's
-        // generate the dropout in parallel and reshuffle it to the right coordinates
-        // so that representations are compatible
+        // if multiple threads work in parallel for every element of the
+        // attention matrix, let's generate the dropout in parallel and
+        // reshuffle it to the right coordinates so that representations are
+        // compatible
         scalar_t mask[kBlockItemsX / kBlockWidth];
 #pragma unroll
-        for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth; x_item_idx++) {
+        for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth;
+             x_item_idx++) {
           mask[x_item_idx] = scalar_t(1);
         }
         int global_offset = batch_idx * M * N + query_idx * N;
         apply_masking<scalar_t, vec_t, kBlockItemsX / kBlockWidth>(
             mask, philox_args, global_offset, p, kv_idx);
 #pragma unroll
-        for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth; x_item_idx++) {
+        for (int x_item_idx = 0; x_item_idx < kBlockItemsX / kBlockWidth;
+             x_item_idx++) {
           int global = x_item_idx * kBlockWidth + threadIdx.x;
           int i = global % (kBlockItemsX / kBlockWidth);
           int j = global / (kBlockItemsX / kBlockWidth);
-          attn_fragment[x_item_idx] *= __shfl_sync(0xffffffff, mask[i], j, kBlockWidth);
+          attn_fragment[x_item_idx] *=
+              __shfl_sync(0xffffffff, mask[i], j, kBlockWidth);
         }
       }
     }
@@ -393,7 +404,8 @@ __global__ void attention_kernel(
 #pragma unroll
     for (int x_item_idx = kBlockItemsX - 1; x_item_idx >= 0; x_item_idx--) {
       scalar_t val = attn_fragment[x_item_idx / kBlockWidth];
-      attn_fragment[x_item_idx] = __shfl_sync(0xffffffff, val, x_item_idx % kBlockWidth, kBlockWidth);
+      attn_fragment[x_item_idx] =
+          __shfl_sync(0xffffffff, val, x_item_idx % kBlockWidth, kBlockWidth);
     }
 
     if (kBlockWidth == 1) {
@@ -480,7 +492,9 @@ __global__ void attention_kernel(
             rhs_fragment[fragment_offset] = __ldg(key_j + threadIdx.x);
 
             sputnik::VectorCompute<vec_t>::FMA(
-              attn_fragment[x_item_idx], rhs_fragment[fragment_offset], lhs_fragment + k_item_idx);
+                attn_fragment[x_item_idx],
+                rhs_fragment[fragment_offset],
+                lhs_fragment + k_item_idx);
           }
           key_j += kBlockWidth;
           inner_residue -= kBlockWidth * kVecSize;
@@ -519,7 +533,6 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
     const c10::optional<at::Tensor>& attn_bias_,
     double p,
     bool is_causal) {
-
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
   TORCH_CHECK(query.dim() == 3);
@@ -586,33 +599,37 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
 
   auto attn_bias_packed = _packed_tensor_accessor_or_dummy<scalar_t>(attn_bias);
 
-#define LAUNCH_KERNEL(VEC_T, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth)  \
-    dim3 grid(ceil_div(M, int64_t(kBlockItemsY)), B);                                \
-    dim3 block(kBlockWidth, kBlockItemsY);                                           \
-    attention_kernel<                                                                \
-        scalar_t,                                                                    \
-        VEC_T,                                                                       \
-        kBlockWidth,                                                                 \
-        kBlockItemsY,                                                                \
-        kBlockItemsX,                                                                \
-        kBlockItemsK><<<grid, block, 0, stream>>>(                                   \
-        res.packed_accessor<scalar_t, 3>(),                                          \
-        logsumexp.packed_accessor<scalar_t, 2>(),                                    \
-        query.packed_accessor<scalar_t, 3>(),                                        \
-        key.packed_accessor<scalar_t, 3>(),                                          \
-        value.packed_accessor<scalar_t, 3>(),                                        \
-        attn_bias_packed,                                                            \
-        p,                                                                           \
-        rng_engine_inputs,                                                           \
-        is_causal)
+#define LAUNCH_KERNEL(                                            \
+    VEC_T, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth) \
+  dim3 grid(ceil_div(M, int64_t(kBlockItemsY)), B);               \
+  dim3 block(kBlockWidth, kBlockItemsY);                          \
+  attention_kernel<                                               \
+      scalar_t,                                                   \
+      VEC_T,                                                      \
+      kBlockWidth,                                                \
+      kBlockItemsY,                                               \
+      kBlockItemsX,                                               \
+      kBlockItemsK><<<grid, block, 0, stream>>>(                  \
+      res.packed_accessor<scalar_t, 3>(),                         \
+      logsumexp.packed_accessor<scalar_t, 2>(),                   \
+      query.packed_accessor<scalar_t, 3>(),                       \
+      key.packed_accessor<scalar_t, 3>(),                         \
+      value.packed_accessor<scalar_t, 3>(),                       \
+      attn_bias_packed,                                           \
+      p,                                                          \
+      rng_engine_inputs,                                          \
+      is_causal)
 
-#define LAUNCH_BLOCK(K, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth)    \
-  if ((K % 4) == 0) {                                                             \
-    LAUNCH_KERNEL(float4, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth); \
-  } else if ((K % 2) == 0) {                                                      \
-    LAUNCH_KERNEL(float2, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth); \
-  } else {                                                                        \
-    LAUNCH_KERNEL(float, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth);  \
+#define LAUNCH_BLOCK(K, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth) \
+  if ((K % 4) == 0) {                                                          \
+    LAUNCH_KERNEL(                                                             \
+        float4, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth);        \
+  } else if ((K % 2) == 0) {                                                   \
+    LAUNCH_KERNEL(                                                             \
+        float2, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth);        \
+  } else {                                                                     \
+    LAUNCH_KERNEL(                                                             \
+        float, kBlockItemsY, kBlockItemsX, kBlockItemsK, kBlockWidth);         \
   }
 
   if (K <= 32) {
