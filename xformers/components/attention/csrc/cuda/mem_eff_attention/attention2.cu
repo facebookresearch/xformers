@@ -531,8 +531,8 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
     const at::Tensor& value,
     bool compute_logsumexp,
     const c10::optional<at::Tensor>& attn_bias_,
-    double p,
-    bool is_causal) {
+    double p) {
+  bool is_causal = false;
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
   TORCH_CHECK(query.dim() == 3);
