@@ -13,7 +13,7 @@ import pprint
 import tempfile
 from collections import defaultdict, namedtuple
 from dataclasses import replace
-from typing import Any, Dict, List
+from typing import Any, Dict, Generator, List
 
 import matplotlib.pyplot as plt
 import numpy as np
