@@ -110,7 +110,7 @@ install_repo: &install_repo
       name: Install Repository
       no_output_timeout: 30m
       command: |
-        git submodule update --init third_party/flash-attention
+        git submodule update --init --recursive
         $CONDA_PYTHON -m pip install -e .
 
         # Test import.
@@ -121,7 +121,7 @@ install_experimental_repo: &install_experimental_repo
       name: Install Repository
       no_output_timeout: 30m
       command: |
-        git submodule update --init third_party/flash-attention
+        git submodule update --init --recursive
         source $BASH_ENV
 
         cd experimental

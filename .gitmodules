@@ -1,3 +1,7 @@
 [submodule "third_party/flash-attention"]
 	path = third_party/flash-attention
 	url = https://github.com/HazyResearch/flash-attention.git
+[submodule "third_party/cutlass"]
+	path = third_party/cutlass
+	url = https://github.com/fmassa/cutlass.git
+	branch = updates_for_mha

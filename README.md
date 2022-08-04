@@ -53,7 +53,7 @@ There are two ways you can install xFormers locally:
 
   ```bash
   git clone git@github.com:facebookresearch/xformers.git
-  git submodule update --init third_party/flash-attention
+  git submodule update --init --recursive
   conda create --name xformer_env python=3.8
   conda activate xformer_env
   cd xformers
