@@ -85,6 +85,11 @@ install_dep: &install_dep
 
         # start installing
         source activate /home/circleci/venv
+
+        # for faster builds
+        conda install ninja
+        echo "Ninja version $(ninja --version)"
+
         conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch -q
         $CONDA_PYTHON -m pip install -r requirements-benchmark.txt --progress-bar off
 
@@ -110,8 +115,10 @@ install_repo: &install_repo
       name: Install Repository
       no_output_timeout: 30m
       command: |
+        source $BASH_ENV
+        source activate /home/circleci/venv
         git submodule update --init --recursive
-        $CONDA_PYTHON -m pip install -e .
+        $CONDA_PYTHON -m pip install -v -e .
 
         # Test import.
         $CONDA_PYTHON -c 'import sys; sys.path = sys.path[1:]; import xformers'
@@ -125,7 +132,7 @@ install_experimental_repo: &install_experimental_repo
         source $BASH_ENV
 
         cd experimental
-        $CONDA_PYTHON -m pip install -e .
+        $CONDA_PYTHON -m pip install -v -e .
 
 run_isort: &run_isort
    - run:
