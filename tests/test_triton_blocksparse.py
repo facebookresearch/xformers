@@ -139,7 +139,7 @@ def test_softmax(BLOCK, WIDTH, DTYPE):
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
-@pytest.mark.parametrize("block", [32, 43, 128])  # 16, 32,
+@pytest.mark.parametrize("block", [32, 43, 64])  # 16, 32,
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
 def test_attention_fwd_bwd(
     block,
