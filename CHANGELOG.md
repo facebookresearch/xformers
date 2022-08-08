@@ -4,13 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-
 ## TBD
+### Fixed
+
+### Added
+
+## [0.0.12] - 2022-08-08
 ### Fixed
 - Removed duplicated biases in the FusedMLP layers [#317]
 - Rotary embeddings respecting input types [#326]
 - Poolformer style instantiating useless projection layers [#349]
 - Fix layer position not being properly tracked, causing extra layernorms for programmatic xformers [#348]
+- Pass use_triton flag to LayerNorm module [#336]
 
 ### Added
 - Four blocksparsity layouts from DeepSpeed [#320]
@@ -20,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic blocksparse for causal attention [#334]
 - Better hierarchical transformer generation [#345]
 - Fused operations with AOTAutograd/NVFuser, integration into MLP [#357]
+- Refactor LRA code to use Pytorch Lightning [#343]
 
 ## [0.0.11] - 2022-05-30
 ### Fixed
