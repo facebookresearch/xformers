@@ -258,7 +258,7 @@ def test_memory_efficient_attention_backward(
     rtol = 1e-8
     if dtype is torch.half:
         atol = 4e-2
-        rtol = 1e-2
+        rtol = 2e-2
     if dtype is torch.bfloat16:
         # I've seen (out=0.29 / ref=0.03)
         atol = 0.3
