@@ -6,16 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## TBD
 ### Fixed
+<<<<<<< HEAD
 
 ### Added
 
 ## [0.0.12] - 2022-08-08
 ### Fixed
+=======
+>>>>>>> op_fusion_functorch_final
 - Removed duplicated biases in the FusedMLP layers [#317]
 - Rotary embeddings respecting input types [#326]
 - Poolformer style instantiating useless projection layers [#349]
 - Fix layer position not being properly tracked, causing extra layernorms for programmatic xformers [#348]
+<<<<<<< HEAD
 - Pass use_triton flag to LayerNorm module [#336]
+=======
+>>>>>>> op_fusion_functorch_final
 
 ### Added
 - Four blocksparsity layouts from DeepSpeed [#320]
@@ -25,7 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic blocksparse for causal attention [#334]
 - Better hierarchical transformer generation [#345]
 - Fused operations with AOTAutograd/NVFuser, integration into MLP [#357]
+<<<<<<< HEAD
 - Refactor LRA code to use Pytorch Lightning [#343]
+=======
+>>>>>>> op_fusion_functorch_final
 
 ## [0.0.11] - 2022-05-30
 ### Fixed
