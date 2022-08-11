@@ -15,7 +15,7 @@ from xformers.components import Activation, build_activation
 
 def _fn(
     x: torch.Tensor,
-    bias: Optional[torch.nn.parameter.Parameter],
+    bias: Optional[torch.Tensor],
     activation: nn.Module,
     prob: float,
 ) -> torch.Tensor:
@@ -35,7 +35,6 @@ class NVFusedBiasActivationDropout(torch.nn.Module):
         self,
         p: float,
         activation: Optional[Activation] = None,
-        bias_shape: Optional[int] = None,
     ) -> None:
         super().__init__()
 
@@ -44,27 +43,23 @@ class NVFusedBiasActivationDropout(torch.nn.Module):
         self.activation = activation
         self.pytorch_activation = build_activation(self.activation)
 
-        self.bias = (
-            nn.Parameter(torch.zeros(bias_shape)) if bias_shape is not None else None
-        )
-
         assert (
             self.p < 1.0
         ), f"We don't want to drop all the values, most probably p={self.p} is not properly set"
 
-    def init_weights(self, *args, **kwargs):
-        with torch.no_grad():
-            if self.bias is not None:
-                self.bias.fill_(0.0)
+    # def init_weights(self, *args, **kwargs):
+    #     with torch.no_grad():
+    #         if self.bias is not None:
+    #             self.bias.fill_(0.0)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, bias: torch.Tensor) -> torch.Tensor:
         # Train/inference
         p = self.p if self.training else 0.0
 
         # Catch a non-cuda setup, fallback to pytorch
         if not x.is_cuda:
-            return _fn(x, self.bias, self.pytorch_activation, p)
+            return _fn(x, bias, self.pytorch_activation, p)
 
         # AOTAutograd, NVFuser backed path
         aot_fn = memory_efficient_fusion(_fn, static_argnums=(2, 3))
-        return aot_fn(x, self.bias, self.pytorch_activation, p)
+        return aot_fn(x, bias, self.pytorch_activation, p)

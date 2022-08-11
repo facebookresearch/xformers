@@ -22,6 +22,35 @@ if xformers._is_functorch_available:
 from . import register_feedforward
 
 
+class LinearCustom(nn.Linear):
+    """ """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        contain_bias: bool = True,
+        use_bias: bool = True,
+        device=None,
+        dtype=None,
+    ):
+        super().__init__(in_features, out_features, contain_bias, device, dtype)
+        self.contain_bias = contain_bias
+        self.use_bias = use_bias
+
+        if self.use_bias:
+            assert (
+                self.contain_bias,
+                "module needs to contain bias in order to use it",
+            )
+
+    def forward(self, input: torch.Tensor):
+        if self.use_bias:
+            return nn.functional.linear(input, self.weight, self.bias)
+        else:
+            return nn.functional.linear(input, self.weight, None)
+
+
 @dataclass
 class MlpConfig(FeedforwardConfig):
     hidden_layer_multiplier: int
@@ -41,83 +70,67 @@ class MLP(Feedforward):
         **kwargs,
     ):
         super().__init__()
-        self.bias = bias
         self.dim_model = dim_model
         self.dropout = dropout
         self.activation = activation
         self.dim_mlp = hidden_layer_multiplier * dim_model
-        # check if fused Bias Activation Dropout is applicable
+
+        self.functorch_mlp = False
+
+        self.LL_1 = LinearCustom(
+            in_features=dim_model,
+            out_features=self.dim_mlp,
+            contain_bias=bias,
+            use_bias=bias,
+        )
+        self.LL_2 = LinearCustom(
+            in_features=self.dim_mlp,
+            out_features=dim_model,
+            contain_bias=bias,
+            use_bias=bias,
+        )
+        # check if functorch is applicable
         if xformers._is_functorch_available:
-
-            # Catch unimported fused layer
-            from xformers.components.nvfuser.bias_act_dropout import (  # noqa
-                NVFusedBiasActivationDropout,
-            )
-
-            self.requires_cuda = True
-            self.mlp = nn.Sequential(
-                nn.Linear(
-                    in_features=dim_model, out_features=self.dim_mlp, bias=False
-                ),  # bias is handled in the next layer
-                NVFusedBiasActivationDropout(
-                    p=dropout,
-                    bias_shape=self.dim_mlp if bias else None,
-                    activation=activation,
-                ),
-                nn.Linear(
-                    in_features=self.dim_mlp, out_features=dim_model, bias=False
-                ),  # bias is handled in the next layer
-                NVFusedBiasActivationDropout(
-                    p=dropout,
-                    bias_shape=dim_model if bias else None,
-                    activation=None,
-                ),
-            )
+            self.init_functorch()
         else:
-            self.mlp = nn.Sequential(
-                nn.Linear(in_features=dim_model, out_features=self.dim_mlp, bias=bias),
-                build_activation(activation),
-                nn.Dropout(dropout),
-                nn.Linear(in_features=self.dim_mlp, out_features=dim_model, bias=bias),
-                nn.Dropout(dropout),
+            self.BAD_1 = nn.Sequential(
+                build_activation(activation), nn.Dropout(dropout)
             )
+            self.BAD_2 = nn.Dropout(dropout)
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.mlp(inputs)
-
-    def toFused(self):
-        if not xformers._is_functorch_available:
-            pass
+    def init_functorch(self):
         # Catch unimported fused layer
         from xformers.components.nvfuser.bias_act_dropout import (  # noqa
             NVFusedBiasActivationDropout,
         )
 
-        mlp_weights = self.mlp.state_dict()
-        rev_weights = OrderedDict(
-            [
-                k.replace(".3.", ".2.") if ".3." in k else (k, v)
-                for k, v in mlp_weights.items()
-            ]
-        )
         self.requires_cuda = True
-        self.mlp = nn.Sequential(
-            nn.Linear(
-                in_features=self.dim_model, out_features=self.dim_mlp, bias=False
-            ),  # bias is handled in the next layer
-            NVFusedBiasActivationDropout(
-                p=self.dropout,
-                bias_shape=self.dim_mlp if self.bias else None,
-                activation=self.activation,
-            ),
-            nn.Linear(
-                in_features=self.dim_model, out_features=self.dim_model, bias=False
-            ),  # bias is handled in the next layer
-            NVFusedBiasActivationDropout(
-                p=self.dropout,
-                bias_shape=self.dim_model if self.bias else None,
-                activation=None,
-            ),
+        self.functorch_mlp = True
+
+        self.LL_1.use_bias = False
+        self.LL_2.use_bias = False
+        self.BAD_1 = NVFusedBiasActivationDropout(
+            p=self.dropout,
+            activation=self.activation,
         )
-        self.mlp.cuda()
-        self.mlp.load_state_dict(rev_weights)
+        self.BAD_2 = NVFusedBiasActivationDropout(
+            p=self.dropout,
+            activation=None,
+        )
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        if xformers._is_functorch_available and not self.functorch_mlp:
+            self.init_functorch()
+
+        res = self.LL_1(inputs)
+        if self.functorch_mlp:
+            res = self.BAD_1(res, self.LL_1.bias)
+        else:
+            res = self.BAD_1(res)
+        res = self.LL_2(res)
+        if self.functorch_mlp:
+            res = self.BAD_2(res, self.LL_2.bias)
+        else:
+            res = self.BAD_2(res)
+        return res
+        # return self.mlp(inputs)
