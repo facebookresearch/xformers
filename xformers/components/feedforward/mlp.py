@@ -38,10 +38,7 @@ class LinearCustom(nn.Linear):
         self.use_bias = use_bias
 
         if self.use_bias:
-            assert (
-                self.contain_bias,
-                "module needs to contain bias in order to use it",
-            )
+            assert self.contain_bias
 
     def forward(self, input: torch.Tensor):
         if self.use_bias:
