@@ -75,7 +75,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
         assert len(arch) >= 3, f"Invalid sm version: {arch}"
 
         num = 10 * int(arch[0]) + int(arch[2])
-        # Need at least 7.0
+        # Need at least 7.5
         if num < 75:
             continue
         nvcc_archs_flags.append(f"-gencode=arch=compute_{num},code=sm_{num}")

@@ -78,38 +78,6 @@ class LowerTriangularMask(AttentionMask):
         return self._tensor
 
 
-def _ref_attention(
-    query,
-    key,
-    value,
-    compute_logsumexp: bool,
-    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
-    p: float = 0.0,
-):
-    if attn_bias is not None and isinstance(attn_bias, AttentionMask):
-        attn_bias = attn_bias.to_tensor()
-
-    query = query * (1.0 / query.shape[-1] ** 0.5)
-    if attn_bias is None:
-        attn = query @ key.transpose(-2, -1)
-    else:
-        # equivalent to (query @ key.transpose(-2, -1) + m).softmax(-1) @ v
-        # but faster, and is what is used in PyTorch now
-        attn = torch.baddbmm(attn_bias, query, key.transpose(-2, -1))
-    dtype = attn.dtype
-    attn = attn.to(torch.float).softmax(-1).to(dtype)
-    if p > 0:
-        attn = torch.nn.functional.dropout(attn, p=p)
-    rng_seed = 0
-    rng_offset = 0
-    return (
-        attn @ value,
-        attn.logsumexp(-1) if compute_logsumexp else None,
-        rng_seed,
-        rng_offset,
-    )
-
-
 class AttentionOpBase(torch.autograd.Function):
     """
     Manually doing what our efficient kernels do with Pytorch.
