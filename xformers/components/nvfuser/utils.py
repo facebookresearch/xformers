@@ -26,7 +26,7 @@ def build_nvfused(
     bias_shape = shape[-1] if bias else None
     d_model = shape[-1]
     init_args: Dict[nn.Module, List[Any]] = {
-        NVFusedBiasActivationDropout: [p, activation, bias_shape],  # type: ignore
+        NVFusedBiasActivationDropout: [p, activation],  # type: ignore
         NVFusedBiasDropoutRes: [p, bias_shape],  # type: ignore
         NVFusedBiasDropoutResLayerNorm: [  # type: ignore
             p,

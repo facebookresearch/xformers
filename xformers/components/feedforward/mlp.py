@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from collections import OrderedDict
 from dataclasses import dataclass
 
 import torch
@@ -70,21 +69,20 @@ class MLP(Feedforward):
         **kwargs,
     ):
         super().__init__()
-        self.dim_model = dim_model
         self.dropout = dropout
         self.activation = activation
-        self.dim_mlp = hidden_layer_multiplier * dim_model
+        dim_mlp = hidden_layer_multiplier * dim_model
 
         self.functorch_mlp = False
 
         self.LL_1 = LinearCustom(
             in_features=dim_model,
-            out_features=self.dim_mlp,
+            out_features=dim_mlp,
             contain_bias=bias,
             use_bias=bias,
         )
         self.LL_2 = LinearCustom(
-            in_features=self.dim_mlp,
+            in_features=dim_mlp,
             out_features=dim_model,
             contain_bias=bias,
             use_bias=bias,
@@ -123,14 +121,7 @@ class MLP(Feedforward):
             self.init_functorch()
 
         res = self.LL_1(inputs)
-        if self.functorch_mlp:
-            res = self.BAD_1(res, self.LL_1.bias)
-        else:
-            res = self.BAD_1(res)
+        res = self.BAD_1(res, self.LL_1.bias) if self.functorch_mlp else self.BAD_1(res)
         res = self.LL_2(res)
-        if self.functorch_mlp:
-            res = self.BAD_2(res, self.LL_2.bias)
-        else:
-            res = self.BAD_2(res)
+        res = self.BAD_2(res, self.LL_2.bias) if self.functorch_mlp else self.BAD_2(res)
         return res
-        # return self.mlp(inputs)

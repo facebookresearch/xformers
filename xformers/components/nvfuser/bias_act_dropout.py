@@ -52,7 +52,9 @@ class NVFusedBiasActivationDropout(torch.nn.Module):
     #         if self.bias is not None:
     #             self.bias.fill_(0.0)
 
-    def forward(self, x: torch.Tensor, bias: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, bias: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         # Train/inference
         p = self.p if self.training else 0.0
 

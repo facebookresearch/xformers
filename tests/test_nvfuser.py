@@ -5,7 +5,6 @@
 
 
 import logging
-from collections import OrderedDict
 from contextlib import nullcontext
 
 import pytest
@@ -144,57 +143,79 @@ def test_nvfused_pattern_parity(
 @pytest.mark.parametrize("activation", ACTIVATIONS)
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("p", [0, 0.1, 0.5])
-def test_nvfused_mlp(activation: Activation, device: torch.device, p: float):
+@pytest.mark.parametrize("bias", [True, False])
+def test_nvfused_mlp(
+    activation: Activation, device: torch.device, p: float, bias: bool
+):
     test_config = {
         "name": "MLP",
         "dim_model": LATENT,
         "dropout": p,
         "activation": activation,
         "hidden_layer_multiplier": 4,
-        "bias": False,
+        "bias": bias,
     }
-    # Enable global flag
-    xformers._is_functorch_available = flag_new
 
     torch.random.manual_seed(0)
     torch.cuda.manual_seed_all(0)
 
-    mlp = ff.build_feedforward(test_config)
-    # Creates non-fused default MLP
-    xformers._is_functorch_available = False
-    mlp_default = ff.build_feedforward(test_config)
-    xformers._is_functorch_available = flag_new
-
     inputs = torch.rand(BATCH, SEQ, LATENT, device=device)
+
+    xformers._is_functorch_available = False
+    mlp = ff.build_feedforward(test_config)
+
     mlp.train()
-
-    # Check fused pattern w/ unfused default (switch happens within NVFusedBiasActivationDropout)
     mlp.cuda()
-    fused_res = mlp(inputs)
 
-    mlp.cpu()
-    unfused_res = mlp(inputs.cpu())
+    unfused_res = mlp(inputs)
+    default_state_dict = mlp.state_dict()
+
+    # Enable global flag
+    xformers._is_functorch_available = flag_new
+    fused_res = mlp(inputs)
+    fused_state_dict = mlp.state_dict()
 
     if p == 0.0:
         assert torch.allclose(unfused_res.cuda(), fused_res, atol=1e-6, rtol=1e-2)
 
-    # Check fused pattern w/ unfused default (switch happens within MLP)
-    mlp.cuda()
-    mlp_default.cuda()
-
-    # Load same weight parameters into both models
-    default_param_dict = OrderedDict(
-        [
-            ("mlp.2.weight", v) if k == "mlp.3.weight" else (k, v)
-            for k, v in mlp_default.state_dict().items()
-        ]
-    )
-    mlp.load_state_dict(default_param_dict)
-    fused_res = mlp(inputs)
-    unfused_res = mlp_default(inputs)
-
-    if p == 0.0:
-        assert torch.allclose(unfused_res, fused_res, atol=1e-6, rtol=1e-2)
+    for k in default_state_dict.keys():
+        assert torch.allclose(default_state_dict[k], fused_state_dict[k])
 
     # Restore original flag configuration
     xformers._is_functorch_available = flag_orig
+
+    # # Creates non-fused default MLP
+    # xformers._is_functorch_available = False
+    # mlp_default = ff.build_feedforward(test_config)
+    # xformers._is_functorch_available = flag_new
+
+    # # Check fused pattern w/ unfused default (switch happens within NVFusedBiasActivationDropout)
+    # mlp.cuda()
+    # fused_res = mlp(inputs)
+
+    # mlp.cpu()
+    # unfused_res = mlp(inputs.cpu())
+
+    # if p == 0.0:
+    #     assert torch.allclose(unfused_res.cuda(), fused_res, atol=1e-6, rtol=1e-2)
+
+    # # Check fused pattern w/ unfused default (switch happens within MLP)
+    # mlp.cuda()
+    # mlp_default.cuda()
+
+    # # Load same weight parameters into both models
+    # default_param_dict = OrderedDict(
+    #     [
+    #         ("mlp.2.weight", v) if k == "mlp.3.weight" else (k, v)
+    #         for k, v in mlp_default.state_dict().items()
+    #     ]
+    # )
+    # mlp.load_state_dict(default_param_dict)
+    # fused_res = mlp(inputs)
+    # unfused_res = mlp_default(inputs)
+
+    # if p == 0.0:
+    #     assert torch.allclose(unfused_res, fused_res, atol=1e-6, rtol=1e-2)
+
+    # # Restore original flag configuration
+    # xformers._is_functorch_available = flag_orig
