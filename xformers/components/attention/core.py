@@ -285,7 +285,6 @@ def scaled_dot_product_attention(
     v: torch.Tensor,
     att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
     dropout: Optional[torch.nn.Module] = None,
-    block_size: int = 128,
 ) -> torch.Tensor:
     autocast_disabled = (
         _is_sparse_available
@@ -293,6 +292,7 @@ def scaled_dot_product_attention(
         or (att_mask is not None and att_mask.is_sparse)
     )
     seq_len = q.shape[-2]
+    block_size = 128
 
     # switch if:
     #   causal is required but mask is not sparse
