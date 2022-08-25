@@ -125,8 +125,9 @@ class _spmm(torch.autograd.Function):
     def forward(
         ctx, b, row_indices, values, row_offsets, column_indices, m, _transp_info
     ):
+        b = b.contiguous()
         out = torch.ops.xformers.spmm_sputnik(
-            b.contiguous(), row_indices, values, row_offsets, column_indices, m
+            b, row_indices, values, row_offsets, column_indices, m
         )
 
         ctx.save_for_backward(
@@ -148,8 +149,9 @@ class _spmm(torch.autograd.Function):
 
         # gradients w.r.t. values
         grad = grad.contiguous()
+        b = b.contiguous()
 
-        grad_sparse = _sddmm_func(grad, b.contiguous(), row_indices, row_offsets, column_indices)
+        grad_sparse = _sddmm_func(grad, b, row_indices, row_offsets, column_indices)
 
         (
             row_indices_t,
