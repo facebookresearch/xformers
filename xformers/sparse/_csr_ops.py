@@ -125,6 +125,7 @@ class _spmm(torch.autograd.Function):
     def forward(
         ctx, b, row_indices, values, row_offsets, column_indices, m, _transp_info
     ):
+        b = b.contiguous()
         out = torch.ops.xformers.spmm_sputnik(
             b, row_indices, values, row_offsets, column_indices, m
         )

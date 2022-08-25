@@ -183,9 +183,10 @@ class SparseCSRTensor(torch.Tensor):
         row_indices = mask.__row_indices
         row_offsets = mask.__row_offsets
         column_indices = mask.__column_indices
+        a = a.contiguous()
         out = _csr_ops._sddmm.apply(
             a,
-            b.transpose(-2, -1),
+            b.transpose(-2, -1).contiguous(),
             row_indices,
             row_offsets,
             column_indices,
