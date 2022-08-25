@@ -2,6 +2,7 @@
 exclude = 
     .git
     ,.circleci/run-clang-format.py
+    ,third_party
 max-line-length = 120
 copyright-check = True
 select = E,F,W,C

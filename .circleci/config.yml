@@ -85,6 +85,11 @@ install_dep: &install_dep
 
         # start installing
         source activate /home/circleci/venv
+
+        # for faster builds
+        conda install ninja
+        echo "Ninja version $(ninja --version)"
+
         conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch -q
         $CONDA_PYTHON -m pip install -r requirements-benchmark.txt --progress-bar off
 
@@ -108,8 +113,12 @@ install_dep_exp: &install_dep_exp
 install_repo: &install_repo
   - run:
       name: Install Repository
+      no_output_timeout: 30m
       command: |
-        $CONDA_PYTHON -m pip install -e .
+        source $BASH_ENV
+        source activate /home/circleci/venv
+        git submodule update --init --recursive
+        $CONDA_PYTHON -m pip install -v -e .
 
         # Test import.
         $CONDA_PYTHON -c 'import sys; sys.path = sys.path[1:]; import xformers'
@@ -117,15 +126,18 @@ install_repo: &install_repo
 install_experimental_repo: &install_experimental_repo
   - run:
       name: Install Repository
+      no_output_timeout: 30m
       command: |
+        git submodule update --init --recursive
         source $BASH_ENV
 
         cd experimental
-        $CONDA_PYTHON -m pip install -e .
+        $CONDA_PYTHON -m pip install -v -e .
 
 run_isort: &run_isort
    - run:
       name: Run Linter (isort)
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON -m isort . --check --profile black
@@ -133,20 +145,23 @@ run_isort: &run_isort
 run_black: &run_black
    - run:
       name: Run Linter (black)
+      when: always
       command: |
         source $BASH_ENV
-        $CONDA_PYTHON -m black --check .
+        $CONDA_PYTHON -m black --check . --exclude "third_party/"
 
 run_mypy: &run_mypy
    - run:
        name: Run type-checking (mypy)
+       when: always
        command: |
         source $BASH_ENV
-        $CONDA_PYTHON -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ --exclude stubs/ .
+        $CONDA_PYTHON -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude "(build|stubs|third_party|docs|setup.py)" .
 
 run_flake8: &run_flake8
   - run:
       name: Run Linter (flake8)
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON -m flake8 --config .flake8 --show-source --statistics
@@ -154,10 +169,12 @@ run_flake8: &run_flake8
 run_clang_format: &run_clang_format
   - run:
       name: Run Linter (clang-format)
+      when: always
       command: |
         # install clang-format here, so that it gets cached
         sudo apt-get update
         sudo apt-get install clang-format
+        clang-format --version
 
         # apply to our files
         ./.circleci/run-clang-format.py -r xformers/components/attention/csrc
@@ -165,29 +182,33 @@ run_clang_format: &run_clang_format
 run_coverage: &run_coverage
   - run:
       name: Run Unit Tests With Coverage
+      when: always
       command: |
         source $BASH_ENV
-        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./ tests
+        CUDA_LAUNCH_BLOCKING=1 $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./ tests
         #Uploading test coverage for Python code
         bash <(curl -s https://codecov.io/bash) -f coverage.xml -cF Python
 
 run_unittests: &run_unittests
   - run:
       name: Run Unit Tests
+      when: always
       command: |
         source $BASH_ENV
-        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 tests
+        CUDA_LAUNCH_BLOCKING=1 $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 tests
 
 run_experimental_unittests: &run_experimental_unittests
   - run:
       name: Run Unit Tests
+      when: always
       command: |
         source $BASH_ENV
-        $CONDA_PYTHON -m pytest experimental/tests
+        CUDA_LAUNCH_BLOCKING=1 $CONDA_PYTHON -m pytest experimental/tests
 
 run_benchmarks: &run_benchmarks
   - run:
       name: Run Benchmarks
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 128 -bs 16 -heads 4
@@ -195,6 +216,7 @@ run_benchmarks: &run_benchmarks
 run_pytorch_benchmark: &run_pytorch_benchmark
   - run:
       name: Run Pytorch benchmark
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON xformers/benchmarks/benchmark_pytorch_transformer.py
@@ -202,6 +224,7 @@ run_pytorch_benchmark: &run_pytorch_benchmark
 run_vit_benchmark: &run_vit_benchmark
   - run:
       name: Run ViT Timm benchmark
+      when: always
       command: |
         source $BASH_ENV
         $CONDA_PYTHON xformers/benchmarks/benchmark_vit_timm.py
@@ -211,6 +234,7 @@ run_vit_benchmark: &run_vit_benchmark
 run_doc_build: &run_doc_build
    - run:
       name: Testing doc build
+      when: always
       command: |
         source $BASH_ENV
         cd docs

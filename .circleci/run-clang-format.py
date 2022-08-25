@@ -82,8 +82,8 @@ def make_diff(file, original, reformatted):
         difflib.unified_diff(
             original,
             reformatted,
-            fromfile="{}\t(original)".format(file),
-            tofile="{}\t(reformatted)".format(file),
+            fromfile="a/{}\t(original)".format(file),
+            tofile="b/{}\t(reformatted)".format(file),
             n=3,
         )
     )

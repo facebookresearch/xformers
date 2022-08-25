@@ -5,172 +5,236 @@
 
 
 import itertools
-import pprint
-from typing import Dict
+import math
+from functools import partial
+from typing import cast
 
 import torch
 from torch.utils import benchmark
+from utils import benchmark_main_helper
 
 import xformers.ops
 
+torch.backends.cuda.matmul.allow_tf32 = False
 
-def ref_attention(q, k, v):
+
+def create_attn_bias(
+    bias_type, batch_size: int, q_len: int, kv_len: int, device, dtype
+):
+    NoneType = type(None)
+    if bias_type is NoneType:
+        return None
+    if bias_type is torch.Tensor:
+        attn_bias = torch.randn((batch_size, 1, kv_len), device=device, dtype=dtype) * 3
+        return attn_bias.expand(batch_size, q_len, kv_len)
+    if bias_type is xformers.ops.LowerTriangularMask:
+        return bias_type([batch_size, q_len, kv_len], dtype=dtype, device=device)
+    assert False, f"Unsupported bias type: {bias_type}"
+
+
+def ref_attention(q, k, v, attn_bias=None, p=0.0):
+    if isinstance(attn_bias, xformers.ops.AttentionMask):
+        attn_bias = attn_bias.to_tensor().to(q.dtype)
     q = q * (1.0 / q.shape[-1] ** 0.5)
-    return (q @ k.transpose(-2, -1)).softmax(-1) @ v
+    if attn_bias is None:
+        attn = q @ k.transpose(-2, -1)
+    else:
+        # equivalent to (q @ k.transpose(-2, -1) + m).softmax(-1) @ v
+        # but faster, and is what is used in PyTorch now
+        attn = torch.baddbmm(attn_bias, q, k.transpose(-2, -1))
+    attn = attn.softmax(-1)
+    if p > 0:
+        attn = torch.nn.functional.dropout(attn, p=p)
+    return attn @ v
 
 
 min_run_time = 2
 device = torch.device("cuda")
 
 NUM_THREADS = [1] if device.type == "cuda" else [1, 40]
-SHAPES = list(
-    itertools.product([1, 8, 32, 256], [127, 128, 512, 513, 1023, 1024], [16, 32])
+SHAPES = list(itertools.product([32, 256], [128, 512, 1024], [16, 32, 64, 128]))
+SHAPES = list(set(SHAPES))
+SHAPES.sort()
+
+
+p = 0.0
+FORCE_OP = None
+# FORCE_OP = xformers.ops.MemoryEfficientAttentionOp
+# FORCE_OP = xformers.ops.MemoryEfficientAttentionGenericForwardOp
+# FORCE_OP = xformers.ops.MemoryEfficientAttentionFlashAttentionOp
+
+
+def product_dict(**kwargs):
+    keys = kwargs.keys()
+    vals = kwargs.values()
+    for instance in itertools.product(*vals):
+        yield dict(zip(keys, instance))
+
+
+CASES = list(
+    product_dict(
+        shape=SHAPES,
+        num_threads=NUM_THREADS,
+        attn_bias_type=[type(None), torch.Tensor, xformers.ops.LowerTriangularMask],
+        dtype=[torch.half, torch.bfloat16, torch.float],
+    )
 )
 
-results = []
-mem_use: Dict[str, Dict[str, float]] = dict(optimized={}, vanilla={})
+
+def benchmark_forward(shape, num_threads: int, attn_bias_type, dtype):
+    B, M, K = shape
+    q = torch.rand(shape, device=device, dtype=dtype)
+
+    dispatch = xformers.ops.AttentionOpDispatch(
+        dtype=dtype,
+        device=device,
+        k=K,
+        attn_bias_type=attn_bias_type,
+        has_dropout=False,
+        kv_len=M,
+        q_len=M,
+    )
+    try:
+        op = dispatch.op if FORCE_OP is None else FORCE_OP
+    except NotImplementedError:
+        return
+    if not op.supports(dispatch):
+        return
+
+    attn_bias = create_attn_bias(
+        attn_bias_type,
+        batch_size=B,
+        q_len=M,
+        kv_len=M,
+        device=device,
+        dtype=dtype,
+    )
+
+    dtype_str = {
+        torch.bfloat16: "b16",
+        torch.half: "f16",
+        torch.float: "f32",
+    }[dtype]
+    sub_label = f"{dtype_str} {op.NAME} B={B}, M={M}, K={K}"
+
+    if True:
+        r = xformers.ops.memory_efficient_attention(q, q, q, attn_bias, op=op).float()
+        rr = ref_attention(
+            q.float(),
+            q.float(),
+            q.float(),
+            attn_bias,
+        )
+        assert (r - rr).abs().max() < 4e-3, (r - rr).abs().max()
+        del r, rr
+
+    yield benchmark.Timer(
+        stmt="fn(q, q, q, attn_bias, p)",
+        globals={
+            "q": q,
+            "attn_bias": attn_bias,
+            "p": p,
+            "fn": partial(xformers.ops.memory_efficient_attention, op=op),
+        },
+        label=f"attention (attn_bias={attn_bias_type})",
+        description="optimized",
+        sub_label=sub_label,
+        num_threads=num_threads,
+    )
+    yield benchmark.Timer(
+        stmt="fn(q, q, q, attn_bias, p)",
+        globals={
+            "q": q,
+            "attn_bias": attn_bias,
+            "p": p,
+            "fn": ref_attention,
+        },
+        label=f"attention (attn_bias={attn_bias_type})",
+        description="vanilla",
+        sub_label=sub_label,
+        num_threads=num_threads,
+    )
 
 
-def benchmark_forward():
-    print(f"Processing {len(SHAPES)} cases")
-    print("Forward")
-    for num_threads in NUM_THREADS:
-        for shape in SHAPES:
-            print(f"===== {shape} =====")
-            B, M, K = shape
-            q = torch.rand(shape, device=device)
-            sub_label = f"B={B}, M={M}, K={K}"
+def benchmark_backward(shape, num_threads: int, attn_bias_type, dtype):
+    B, M, K = shape
+    q = torch.rand(shape, device=device, dtype=dtype, requires_grad=True)
 
-            if True:
-                r = xformers.ops.memory_efficient_attention(q, q, q)
+    dispatch = xformers.ops.AttentionOpDispatch(
+        dtype=dtype,
+        device=device,
+        k=K,
+        attn_bias_type=attn_bias_type,
+        has_dropout=False,
+        kv_len=M,
+        q_len=M,
+    )
+    try:
+        op = dispatch.op if FORCE_OP is None else FORCE_OP
+    except NotImplementedError:
+        return
+    if not op.supports(dispatch):
+        return
 
-                rr = ref_attention(q, q, q)
-                assert (r - rr).abs().max() < 1e-5
+    attn_bias = create_attn_bias(
+        attn_bias_type,
+        batch_size=B,
+        q_len=M,
+        kv_len=M,
+        device=device,
+        dtype=dtype,
+    )
 
-            torch.cuda.reset_peak_memory_stats()
-            torch.cuda.synchronize()
-            results.append(
-                benchmark.Timer(
-                    stmt="fn(q, q, q)",
-                    globals={
-                        "q": q,
-                        "fn": xformers.ops.memory_efficient_attention,
-                    },
-                    label="attention",
-                    description="optimized",
-                    sub_label=sub_label,
-                    num_threads=num_threads,
-                ).blocked_autorange(min_run_time=min_run_time)
-            )
-            torch.cuda.synchronize()
-            memory = torch.cuda.max_memory_allocated() / 2**20
-            mem_use["optimized"][sub_label] = memory
-            memory_str = f"Memory used: {memory} MB"
+    dtype_str = {
+        torch.bfloat16: "b16",
+        torch.half: "f16",
+        torch.float: "f32",
+    }[dtype]
+    sub_label = f"{dtype_str} {op.NAME} B={B}, M={M}, K={K}"
 
-            print("Optimized", memory_str)
+    if True:
+        r = xformers.ops.memory_efficient_attention(q, q, q, attn_bias, op=op)
+        r.backward(torch.ones_like(q))
 
-            torch.cuda.reset_peak_memory_stats()
-            torch.cuda.synchronize()
-            results.append(
-                benchmark.Timer(
-                    stmt="fn(q, q, q)",
-                    globals={
-                        "q": q,
-                        "fn": ref_attention,
-                    },
-                    label="attention",
-                    description="vanilla",
-                    sub_label=sub_label,
-                    num_threads=num_threads,
-                ).blocked_autorange(min_run_time=min_run_time)
-            )
+        grad = cast(torch.Tensor, q.grad)
+        q.grad = None
 
-            torch.cuda.synchronize()
-            memory = torch.cuda.max_memory_allocated() / 2**20
-            mem_use["vanilla"][sub_label] = memory
-            memory_str = f"Memory used: {memory} MB"
-            print("Vanilla", memory_str)
+        rr = ref_attention(q, q, q, attn_bias)
+        rr.backward(torch.ones_like(q))
+        atol = 2e-4 + 2e-6 * K * M * math.sqrt(B) * math.sqrt(M)
+        # type: ignore
+        assert (grad - q.grad).abs().max() < atol, f"{(grad - q.grad).abs().max()}"
+        q.grad = None
+        del r, rr, grad
 
-    compare = benchmark.Compare(results)
-    compare.print()
+    out = xformers.ops.memory_efficient_attention(q, q, q, attn_bias, p, op=op)
+    grad = torch.ones_like(q)
 
-    pprint.pprint(mem_use)
+    yield benchmark.Timer(
+        stmt="out.backward(grad, retain_graph=True)",
+        globals={
+            "out": out,
+            "grad": grad,
+        },
+        label=f"attention backward (attn_bias={attn_bias_type})",
+        description="optimized",
+        sub_label=sub_label,
+        num_threads=num_threads,
+    )
+    del out
 
-
-def benchmark_backward():
-    print(f"Processing {len(SHAPES)} cases")
-    print("Backward")
-    for num_threads in NUM_THREADS:
-        for shape in SHAPES:
-            print(f"===== {shape} =====")
-            B, M, K = shape
-            q = torch.rand(shape, device=device, requires_grad=True)
-            sub_label = f"B={B}, M={M}, K={K}"
-
-            if True:
-                r = xformers.ops.memory_efficient_attention(q, q, q)
-                r.backward(torch.ones_like(q))
-
-                grad = q.grad
-                q.grad = None
-
-                rr = ref_attention(q, q, q)
-                rr.backward(torch.ones_like(q))
-                assert (grad - q.grad).abs().max() < 1e-5
-
-            out = xformers.ops.memory_efficient_attention(q, q, q)
-            grad = torch.ones_like(q)
-
-            torch.cuda.reset_peak_memory_stats()
-            torch.cuda.synchronize()
-            results.append(
-                benchmark.Timer(
-                    stmt="out.backward(grad, retain_graph=True)",
-                    globals={
-                        "out": out,
-                        "grad": grad,
-                    },
-                    label="attention",
-                    description="optimized",
-                    sub_label=sub_label,
-                    num_threads=num_threads,
-                ).blocked_autorange(min_run_time=min_run_time)
-            )
-            torch.cuda.synchronize()
-            memory = torch.cuda.max_memory_allocated() / 2**20
-            mem_use["optimized"][sub_label] = memory
-            memory_str = f"Memory used: {memory} MB"
-
-            print("Optimized", memory_str)
-
-            out = ref_attention(q, q, q)
-            torch.cuda.reset_peak_memory_stats()
-            torch.cuda.synchronize()
-            results.append(
-                benchmark.Timer(
-                    stmt="out.backward(grad, retain_graph=True)",
-                    globals={
-                        "out": out,
-                        "grad": grad,
-                    },
-                    label="attention",
-                    description="vanilla",
-                    sub_label=sub_label,
-                    num_threads=num_threads,
-                ).blocked_autorange(min_run_time=min_run_time)
-            )
-
-            torch.cuda.synchronize()
-            memory = torch.cuda.max_memory_allocated() / 2**20
-            mem_use["vanilla"][sub_label] = memory
-            memory_str = f"Memory used: {memory} MB"
-            print("Vanilla", memory_str)
-
-    compare = benchmark.Compare(results)
-    compare.print()
-
-    pprint.pprint(mem_use)
+    yield benchmark.Timer(
+        stmt="out.backward(grad, retain_graph=True)",
+        globals={
+            "out": ref_attention(q, q, q, attn_bias, p),
+            "grad": grad,
+        },
+        label=f"attention backward (attn_bias={attn_bias_type})",
+        description="vanilla",
+        sub_label=sub_label,
+        num_threads=num_threads,
+    )
 
 
-benchmark_forward()
-benchmark_backward()
+benchmark_main_helper(benchmark_forward, CASES, min_run_time=min_run_time)
+benchmark_main_helper(benchmark_backward, CASES, min_run_time=min_run_time)

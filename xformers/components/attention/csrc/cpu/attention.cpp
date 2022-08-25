@@ -26,6 +26,17 @@ scalar_t max(scalar_t* buf) {
 }
 
 template <typename scalar_t>
+at::TensorAccessor<scalar_t, 3> _tensor_accessor_or_dummy(
+    const at::Tensor& attn_bias,
+    const std::array<int64_t, 3> zeros) {
+  if (attn_bias.defined()) {
+    return attn_bias.accessor<scalar_t, 3>();
+  } else {
+    return at::TensorAccessor<scalar_t, 3>(nullptr, zeros.data(), zeros.data());
+  }
+}
+
+template <typename scalar_t>
 void attention_kernel(
     at::TensorAccessor<scalar_t, 3> output,
     at::TensorAccessor<scalar_t, 2> logsumexp,
@@ -33,9 +44,8 @@ void attention_kernel(
     at::TensorAccessor<scalar_t, 3> key,
     at::TensorAccessor<scalar_t, 3> value,
     at::TensorAccessor<scalar_t, 3> buffer,
-    bool compute_logsumexp
-    // at::TensorAccessor<int64_t, 2> mask
-) {
+    bool compute_logsumexp,
+    at::TensorAccessor<scalar_t, 3> attn_bias) {
   // TODO: optimize the code by adding blocking
   // over multiple dimensions. Doing this allows
   // the compiler to group reads and operations
@@ -63,6 +73,12 @@ void attention_kernel(
             for (int64_t rr = 0; rr < BLOCK; rr++)
               si[rr] += aaar * bar[k + K * rr];
           }
+          if (attn_bias.data() != nullptr) {
+            for (int64_t rr = 0; rr < BLOCK; rr++) {
+              si[rr] += attn_bias[i][j][l + rr];
+            }
+          }
+
           scalar_t m_i = si[0] > m_prime ? si[0] : m_prime;
           for (int64_t rr = 1; rr < BLOCK; rr++) {
             m_i = si[rr] > m_i ? si[rr] : m_i;
@@ -99,16 +115,15 @@ void attention_kernel(
   });
 }
 
-std::tuple<at::Tensor, at::Tensor> attention(
+std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
-    bool compute_logsumexp
-    // const at::Tensor& mask
-) {
+    bool compute_logsumexp,
+    const c10::optional<at::Tensor>& attn_bias_,
+    double p) {
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
-  // TORCH_CHECK(query.dim() == mask.dim());
   TORCH_CHECK(query.dim() == 3);
   TORCH_CHECK(query.size(2) == key.size(2));
   TORCH_CHECK(query.size(0) == key.size(0));
@@ -118,6 +133,16 @@ std::tuple<at::Tensor, at::Tensor> attention(
   TORCH_CHECK(
       query.size(2) ==
       value.size(2)); // TODO: drop this limitation in the future
+
+  at::Tensor attn_bias;
+  if (attn_bias_.has_value()) {
+    attn_bias = *attn_bias_;
+    TORCH_CHECK(query.dim() == attn_bias.dim());
+    TORCH_CHECK(query.size(0) == attn_bias.size(0));
+    TORCH_CHECK(query.size(1) == attn_bias.size(1));
+    TORCH_CHECK(key.size(1) == attn_bias.size(2));
+    TORCH_CHECK(attn_bias.stride(1) == 0);
+  }
 
   TORCH_CHECK(!query.is_cuda(), "query must be a CPU tensor");
   TORCH_CHECK(!key.is_cuda(), "key must be a CPU tensor");
@@ -131,15 +156,17 @@ std::tuple<at::Tensor, at::Tensor> attention(
   TORCH_CHECK(key.is_contiguous());
   TORCH_CHECK(value.is_contiguous());
 
+  TORCH_CHECK(p == 0, "CPU implementation does not support dropout");
+
   int64_t B = query.size(0);
   int64_t M = query.size(1);
-  int64_t N = key.size(1);
   int64_t K = query.size(2);
 
   at::Tensor res = at::empty({B, M, K}, query.options());
   at::Tensor logsumexp = at::empty({B, M}, query.options());
 
   at::Tensor buffer = at::empty({at::get_num_threads(), 1, K}, query.options());
+  const std::array<int64_t, 3> zeros{{0}};
 
   AT_DISPATCH_FLOATING_TYPES(query.scalar_type(), "attention_kernel", [&] {
     attention_kernel<scalar_t>(
@@ -149,10 +176,11 @@ std::tuple<at::Tensor, at::Tensor> attention(
         key.accessor<scalar_t, 3>(),
         value.accessor<scalar_t, 3>(),
         buffer.accessor<scalar_t, 3>(),
-        compute_logsumexp);
+        compute_logsumexp,
+        _tensor_accessor_or_dummy<scalar_t>(attn_bias, zeros));
   });
 
-  return std::make_tuple(res, logsumexp);
+  return std::make_tuple(res, logsumexp, 1, 1);
 }
 
 template <typename scalar_t>
@@ -166,9 +194,8 @@ void attention_backward_kernel(
     at::TensorAccessor<scalar_t, 3> v,
     at::TensorAccessor<scalar_t, 2> logsumexp_normalizer,
     at::TensorAccessor<scalar_t, 3> buffer,
-    at::TensorAccessor<scalar_t, 3> buffer2 //,
-    // at::TensorAccessor<int64_t, 2> mask
-) {
+    at::TensorAccessor<scalar_t, 3> buffer2,
+    at::TensorAccessor<scalar_t, 3> attn_bias) {
   int64_t K = q.size(2);
   int64_t B = q.size(0);
   int64_t M = q.size(1);
@@ -192,7 +219,9 @@ void attention_backward_kernel(
           for (int64_t k = 0; k < K; k++) {
             si += query_i[k] * key_j[k];
           }
-          scalar_t attn_v = std::exp(si * scale - normalizer);
+          scalar_t attn_b =
+              attn_bias.data() == nullptr ? scalar_t(0) : attn_bias[i][j][l];
+          scalar_t attn_v = std::exp(si * scale - normalizer + attn_b);
 
           for (int64_t k = 0; k < K; k++) {
             grad_v[i][l][k] += attn_v * grad_out[i][j][k];
@@ -241,13 +270,15 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
-    const at::Tensor& logsumexp
-    // const at::Tensor& mask
-) {
+    const at::Tensor& logsumexp,
+    const at::Tensor& output,
+    const c10::optional<at::Tensor>& attn_bias_,
+    double p,
+    int64_t rng_seed,
+    int64_t rng_offset) {
   TORCH_CHECK(query.dim() == grad_out.dim());
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
-  // TORCH_CHECK(query.dim() == mask.dim());
   TORCH_CHECK(query.dim() == 3);
 
   TORCH_CHECK(query.size(0) == grad_out.size(0));
@@ -263,6 +294,16 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
       query.size(2) ==
       value.size(2)); // TODO: drop this limitation in the future
 
+  at::Tensor attn_bias;
+  if (attn_bias_.has_value()) {
+    attn_bias = *attn_bias_;
+    TORCH_CHECK(query.dim() == attn_bias.dim());
+    TORCH_CHECK(query.size(0) == attn_bias.size(0));
+    TORCH_CHECK(query.size(1) == attn_bias.size(1));
+    TORCH_CHECK(key.size(1) == attn_bias.size(2));
+    TORCH_CHECK(attn_bias.stride(1) == 0);
+  }
+
   TORCH_CHECK(!query.is_cuda(), "query must be a CPU tensor");
   TORCH_CHECK(!key.is_cuda(), "key must be a CPU tensor");
   TORCH_CHECK(!value.is_cuda(), "value must be a CPU tensor");
@@ -272,6 +313,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   TORCH_CHECK(!key.is_sparse(), "key must be a dense tensor");
   TORCH_CHECK(!value.is_sparse(), "value must be a dense tensor");
   TORCH_CHECK(!grad_out.is_sparse(), "grad_out must be a dense tensor");
+
+  TORCH_CHECK(p == 0, "CPU implementation does not support dropout");
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -287,6 +330,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
   at::Tensor buffer2 =
       at::zeros({at::get_num_threads(), 1, N}, query.options());
 
+  const std::array<int64_t, 3> zeros{{0}};
+
   AT_DISPATCH_FLOATING_TYPES(
       query.scalar_type(), "attention_backward_kernel", [&] {
         attention_backward_kernel<scalar_t>(
@@ -299,9 +344,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
             value.accessor<scalar_t, 3>(),
             logsumexp.accessor<scalar_t, 2>(),
             buffer.accessor<scalar_t, 3>(),
-            buffer2.accessor<scalar_t, 3>()
-            // idxs.accessor<int64_t, 2>()
-        );
+            buffer2.accessor<scalar_t, 3>(),
+            _tensor_accessor_or_dummy<scalar_t>(attn_bias, zeros));
       });
 
   return std::make_tuple(grad_q, grad_k, grad_v);
