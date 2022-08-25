@@ -138,7 +138,9 @@ def get_extensions():
 
     sources = main_file + source_cpu
 
-    source_cuda = glob.glob(os.path.join(extensions_dir, "cuda", "*.cu"))
+    source_cuda = glob.glob(
+        os.path.join(extensions_dir, "cuda", "**", "*.cu"), recursive=True
+    )
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
