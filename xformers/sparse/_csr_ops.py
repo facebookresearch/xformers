@@ -149,7 +149,6 @@ class _spmm(torch.autograd.Function):
 
         # gradients w.r.t. values
         grad = grad.contiguous()
-        b = b.contiguous()
 
         grad_sparse = _sddmm_func(grad, b, row_indices, row_offsets, column_indices)
 
