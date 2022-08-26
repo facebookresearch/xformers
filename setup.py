@@ -64,9 +64,12 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     DEFAULT_ARCHS_LIST = ""
     if cuda_version > 1100:
         DEFAULT_ARCHS_LIST = "7.5;8.0;8.6"
-    elif cuda_version >= 1100:
+    elif cuda_version == 1100:
         DEFAULT_ARCHS_LIST = "7.5;8.0"
     else:
+        return []
+
+    if os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") != "0":
         return []
 
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST", DEFAULT_ARCHS_LIST)
@@ -86,6 +89,12 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
 
     this_dir = os.path.dirname(os.path.abspath(__file__))
     flash_root = os.path.join(this_dir, "third_party", "flash-attention")
+    if not os.path.exists(flash_root):
+        raise RuntimeError(
+            "flashattention submodule not found. Did you forget "
+            "to run `git submodule update --init --recursive` ?"
+        )
+
     return [
         CUDAExtension(
             name="xformers._C_flashattention",
@@ -144,6 +153,11 @@ def get_extensions():
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
+    if not os.path.exists(cutlass_dir):
+        raise RuntimeError(
+            "CUTLASS submodule not found. Did you forget "
+            "to run `git submodule update --init --recursive` ?"
+        )
 
     extension = CppExtension
 
@@ -174,13 +188,10 @@ def get_extensions():
         if cuda_version >= 1102:
             nvcc_flags += ["--threads", "4", "--ptxas-options=-v"]
         extra_compile_args["nvcc"] = nvcc_flags
-        if (
-            cuda_version >= 1100
-            and os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") == "0"
-        ):
-            ext_modules += get_flash_attention_extensions(
-                cuda_version=cuda_version, extra_compile_args=extra_compile_args
-            )
+
+        ext_modules += get_flash_attention_extensions(
+            cuda_version=cuda_version, extra_compile_args=extra_compile_args
+        )
 
     sources = [os.path.join(extensions_dir, s) for s in sources]
 
