@@ -50,9 +50,9 @@ def _plot_distribution(ortho_feature_map):
 
     for qq in q:
         # For every matrix, look at the real and imaginary eigen value
-        e, _ = torch.eig(qq)
-        x.append(e[:, 0])
-        y.append(e[:, 1])
+        e = torch.linalg.eigvals(qq)
+        x.append(e.real)
+        y.append(e.imag)
 
     # Ideally the repartition of the real and imaginary eigenvalues
     # should build a circle in the complex plane
