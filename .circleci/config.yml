@@ -95,6 +95,7 @@ install_dep: &install_dep
 
         # Mark install as complete
         touch /home/circleci/miniconda/.finished
+      no_output_timeout: 30m
 
 install_dep_exp: &install_dep_exp
   - run:
