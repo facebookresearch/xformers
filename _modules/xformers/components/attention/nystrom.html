@@ -412,12 +412,27 @@
                 <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
                     <span class="s2">&quot;Bool mask found, but an additive mask is expected. Converting but this is slow&quot;</span>
                 <span class="p">)</span>
+
                 <span class="n">key_padding_mask</span> <span class="o">=</span> <span class="n">bool_mask_to_additive</span><span class="p">(</span><span class="n">key_padding_mask</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="n">key_padding_mask</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
                 <span class="n">key_padding_mask</span> <span class="o">=</span> <span class="n">reshape_key_padding_mask</span><span class="p">(</span>
                     <span class="n">key_padding_mask</span><span class="p">,</span> <span class="n">batched_dim</span>
                 <span class="p">)</span>
+
+            <span class="n">zeros</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">key_padding_mask</span><span class="p">)</span>
+            <span class="n">ones</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">key_padding_mask</span><span class="p">)</span>
+            <span class="n">is_masked</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">isinf</span><span class="p">(</span><span class="o">-</span><span class="n">key_padding_mask</span><span class="p">)</span>
+
+            <span class="c1"># _mask takes 1 if the token is not padded, otherwise 0.</span>
+            <span class="n">_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">is_masked</span><span class="p">,</span> <span class="n">zeros</span><span class="p">,</span> <span class="n">ones</span><span class="p">)</span>
+            <span class="n">_mask</span> <span class="o">=</span> <span class="n">_mask</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="n">_mask</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">batched_dim</span><span class="p">,</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="mi">1</span><span class="p">)</span>
+
+            <span class="c1"># Mask q and k before pooling</span>
+            <span class="c1"># https://github.com/mlpen/Nystromformer/blob/main/code/attention_nystrom.py#L31</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="n">q</span> <span class="o">*</span> <span class="n">_mask</span>
+            <span class="n">k</span> <span class="o">=</span> <span class="n">k</span> <span class="o">*</span> <span class="n">_mask</span>
 
             <span class="k">assert</span> <span class="n">key_padding_mask</span><span class="o">.</span><span class="n">size</span><span class="p">()</span> <span class="o">==</span> <span class="p">(</span><span class="n">batched_dim</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">),</span> <span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;key_padding_mask has invalid dimensions </span><span class="si">{</span><span class="n">key_padding_mask</span><span class="o">.</span><span class="n">size</span><span class="p">()</span><span class="si">}</span><span class="s2">.&quot;</span>
@@ -454,22 +469,15 @@
                     <span class="n">batched_dim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">,</span> <span class="o">**</span><span class="n">tt</span>
                 <span class="p">)</span>
 
-            <span class="n">mask_1</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">causal_mask_1</span>
-            <span class="n">mask_2</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">causal_mask_2</span>
             <span class="n">mask_3</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">causal_mask_3</span>
             <span class="k">if</span> <span class="n">key_padding_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">mask_1</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">key_padding_mask</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-                    <span class="k">if</span> <span class="n">mask_1</span> <span class="ow">is</span> <span class="kc">None</span>
-                    <span class="k">else</span> <span class="n">mask_1</span> <span class="o">+</span> <span class="n">key_padding_mask</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-                <span class="p">)</span>
                 <span class="n">mask_3</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="n">key_padding_mask</span> <span class="k">if</span> <span class="n">mask_3</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">mask_3</span> <span class="o">+</span> <span class="n">key_padding_mask</span>
                 <span class="p">)</span>
 
-            <span class="n">kernel_1</span> <span class="o">=</span> <span class="n">scaled_query_key_softmax</span><span class="p">(</span><span class="n">q</span><span class="o">=</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k_landmarks</span><span class="p">,</span> <span class="n">att_mask</span><span class="o">=</span><span class="n">mask_1</span><span class="p">)</span>
+            <span class="n">kernel_1</span> <span class="o">=</span> <span class="n">scaled_query_key_softmax</span><span class="p">(</span><span class="n">q</span><span class="o">=</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k_landmarks</span><span class="p">,</span> <span class="n">att_mask</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
             <span class="n">kernel_2</span> <span class="o">=</span> <span class="n">scaled_query_key_softmax</span><span class="p">(</span>
-                <span class="n">q</span><span class="o">=</span><span class="n">q_landmarks</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k_landmarks</span><span class="p">,</span> <span class="n">att_mask</span><span class="o">=</span><span class="n">mask_2</span>
+                <span class="n">q</span><span class="o">=</span><span class="n">q_landmarks</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k_landmarks</span><span class="p">,</span> <span class="n">att_mask</span><span class="o">=</span><span class="kc">None</span>
             <span class="p">)</span>
             <span class="n">kernel_3</span> <span class="o">=</span> <span class="n">scaled_dot_product_attention</span><span class="p">(</span>
                 <span class="n">q</span><span class="o">=</span><span class="n">q_landmarks</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="o">=</span><span class="n">v</span><span class="p">,</span> <span class="n">att_mask</span><span class="o">=</span><span class="n">mask_3</span>
