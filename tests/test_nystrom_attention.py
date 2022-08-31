@@ -137,11 +137,6 @@ def test_nystrom_attention(
         )
         r_nystrom = nystrom_attention(a, a, a, key_padding_mask=key_padding_mask)
         r_sdp = sdp_attention(a, a, a, att_mask=mask)
-        # account for when nan != nan
-        if r_nystrom.isnan().any() or r_sdp.isnan().any():
-            rand = random.uniform(0, 1)
-            r_nystrom = r_nystrom.masked_fill(r_nystrom.isnan(), rand)
-            r_sdp = r_sdp.masked_fill(r_sdp.isnan(), rand)
 
         # Not very close, but more so testing functionality.
         assert torch.allclose(

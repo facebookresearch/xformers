@@ -91,7 +91,8 @@ def _matmul_with_mask(
         return torch.ops.xformers.matmul_with_mask(a, b, mask)
 
     # Non optimized codepath
-    assert not isinstance(mask, SparseCS)
+    if _is_sparse_available:
+        assert not isinstance(mask, SparseCS)
 
     att = a @ b
     if mask.dtype == torch.bool:

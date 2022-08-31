@@ -185,12 +185,27 @@ class NystromAttention(Attention):
                 logging.warning(
                     "Bool mask found, but an additive mask is expected. Converting but this is slow"
                 )
+
                 key_padding_mask = bool_mask_to_additive(key_padding_mask)
 
             if key_padding_mask.ndim == 2:
                 key_padding_mask = reshape_key_padding_mask(
                     key_padding_mask, batched_dim
                 )
+
+            zeros = torch.zeros_like(key_padding_mask)
+            ones = torch.ones_like(key_padding_mask)
+            is_masked = torch.isinf(-key_padding_mask)
+
+            # _mask takes 1 if the token is not padded, otherwise 0.
+            _mask = torch.where(is_masked, zeros, ones)
+            _mask = _mask.transpose(2, 1)
+            assert _mask.shape == (batched_dim, q.shape[1], 1)
+
+            # Mask q and k before pooling
+            # https://github.com/mlpen/Nystromformer/blob/main/code/attention_nystrom.py#L31
+            q = q * _mask
+            k = k * _mask
 
             assert key_padding_mask.size() == (batched_dim, 1, seq_len), (
                 f"key_padding_mask has invalid dimensions {key_padding_mask.size()}."
@@ -227,22 +242,15 @@ class NystromAttention(Attention):
                     batched_dim, self.num_landmarks, seq_len, **tt
                 )
 
-            mask_1: Optional[torch.Tensor] = self.causal_mask_1
-            mask_2: Optional[torch.Tensor] = self.causal_mask_2
             mask_3: Optional[torch.Tensor] = self.causal_mask_3
             if key_padding_mask is not None:
-                mask_1 = (
-                    key_padding_mask.transpose(-2, -1)
-                    if mask_1 is None
-                    else mask_1 + key_padding_mask.transpose(-2, -1)
-                )
                 mask_3 = (
                     key_padding_mask if mask_3 is None else mask_3 + key_padding_mask
                 )
 
-            kernel_1 = scaled_query_key_softmax(q=q, k=k_landmarks, att_mask=mask_1)
+            kernel_1 = scaled_query_key_softmax(q=q, k=k_landmarks, att_mask=None)
             kernel_2 = scaled_query_key_softmax(
-                q=q_landmarks, k=k_landmarks, att_mask=mask_2
+                q=q_landmarks, k=k_landmarks, att_mask=None
             )
             kernel_3 = scaled_dot_product_attention(
                 q=q_landmarks, k=k, v=v, att_mask=mask_3
