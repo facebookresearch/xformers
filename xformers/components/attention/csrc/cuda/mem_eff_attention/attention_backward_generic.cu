@@ -642,7 +642,8 @@ struct AttentionBackwardKernel {
           shared_storage.after_qk.attn_shared_storage,
           thread_id,
           warp_id,
-          lane_id);
+          lane_id,
+          problem_size.k());
 
       typename Mma::FragmentC accum;
 
@@ -834,7 +835,8 @@ struct AttentionBackwardKernel {
           shared_storage.after_qk.after_doivj.doivj_shared_storage,
           thread_id,
           warp_id,
-          lane_id);
+          lane_id,
+          problem_size.k());
 
       typename Mma::FragmentC accum;
 
@@ -924,7 +926,8 @@ struct AttentionBackwardKernel {
           shared_storage.after_qk.attn_shared_storage, // storing tmp.T
           thread_id,
           warp_id,
-          lane_id);
+          lane_id,
+          problem_size.k());
 
       typename Mma::FragmentC accum;
 

@@ -53,8 +53,10 @@
 #include "attention_scaling_coefs_updater.h"
 #include "cutlass/epilogue/threadblock/epilogue_smem_accumulator.h"
 #include "cutlass/gemm/threadblock/mma_base.h"
+#include "cutlass/gemm/warp/mma_tensor_op_tile_access_iterator.h"
 #include "epilogue_thread_apply_logsumexp.h"
 #include "gemm_kernel_utils.h"
+#include "mma_simt_tile_iterator_residual.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -341,10 +343,11 @@ class MmaPipelinedFromSharedMemory
       AccumulatorSharedStorage& accumulator_shared_storage,
       int thread_idx, ///< ID within the threadblock
       int warp_idx, ///< ID of warp
-      int lane_idx ///< ID of each thread within a warp
+      int lane_idx, ///< ID of each thread within a warp
+      int problem_size_0_n
       )
       : Base(shared_storage, thread_idx, warp_idx, lane_idx),
-        warp_tile_iterator_A_(accumulator_shared_storage.accum_ref(), lane_idx),
+        warp_tile_iterator_A_(accumulator_shared_storage.accum_ref(), typename WarpIteratorA::TensorCoord{Base::WarpGemm::kM, problem_size_0_n}, lane_idx ),
         smem_iterator_B_(shared_storage.operand_B_ref(), thread_idx) {
     // Compute warp location within threadblock tile by mapping the warp_id to
     // three coordinates:
@@ -620,11 +623,11 @@ class MmaMultistageFromSharedMemory
       ///< ID of warp
       int warp_idx,
       ///< ID of each thread within a warp
-      int lane_idx)
+      int lane_idx,
+      ///< GEMM0 N is used for accumulator extent
+      int problem_size_0_n)
       : Base(shared_storage, thread_idx, warp_idx, lane_idx),
-        warp_tile_iterator_A1_(
-            accumulator_shared_storage.accum_ref(),
-            lane_idx),
+        warp_tile_iterator_A1_(accumulator_shared_storage.accum_ref(), {Base::WarpGemm::kM, problem_size_0_n}, lane_idx ),
         smem_iterator_B1_(shared_storage.operand_B_ref(), thread_idx) {
     // Compute warp location within threadblock tile by mapping the warp_id to
     // three coordinates:
@@ -951,14 +954,14 @@ struct DefaultWarpIteratorAFromSharedMemory<
   static constexpr auto kWarpSize = 32;
   using OpDelta = typename Policy::Operator::Policy::OpDelta;
 
-  using WarpIterator = cutlass::gemm::warp::MmaTensorOpMultiplicandTileIterator<
-      cutlass::MatrixShape<WarpShape::kM, InstructionShape::kK>,
+  using WarpIterator = cutlass::gemm::warp::MmaTensorOpMultiplicandTileAccessIterator<
+      cutlass::MatrixShape<WarpShape::kM, WarpShape::kK>,
       cutlass::gemm::Operand::kA,
       typename RegularWarpIterator::Element,
       cutlass::layout::RowMajor,
       cutlass::MatrixShape<InstructionShape::kM, InstructionShape::kK>,
       OpDelta::kRow,
-      kWarpSize>;
+      kWarpSize, true>;
 };
 
 // TensorOp - Volta
@@ -995,8 +998,14 @@ struct DefaultWarpIteratorAFromSharedMemory<
   static constexpr auto kWarpSize = 32;
 
   // We just use the same iterator, as we reproduced the same shared-memory
-  // schema
-  using WarpIterator = RegularWarpIterator;
+  // schema. Just modify it to handle non-complete tiles.
+  using WarpIterator = cutlass::gemm::warp::MmaSimtTileIteratorWithResidual<
+    typename RegularWarpIterator::Shape,
+    cutlass::gemm::Operand::kA,
+    typename RegularWarpIterator::Element,
+    typename RegularWarpIterator::Layout,
+    typename RegularWarpIterator::Policy
+  >;
 };
 
 // Converts a "regular" Mma into their counterpart from shared memory
