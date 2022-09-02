@@ -26,8 +26,8 @@ def assert_allclose(
     flatten_diff = ((out - ref).abs() - atol - ref.abs() * rtol).flatten()
     max_pos = flatten_diff.argmax()
     assert torch.allclose(out, ref, rtol=rtol, atol=atol), (
-        f"{msg}: max_diff={flatten_diff.max()}: "
-        f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} "
+        f"{msg}: "
+        f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} (diff={flatten_diff[max_pos]} > 0)"
         f"/ atol={atol}, rtol={rtol}"
     )
 
@@ -67,8 +67,8 @@ def create_attn_bias(
 )
 @pytest.mark.parametrize("k_len", [5, 6, 32, 128])
 @pytest.mark.parametrize("batch_size", [1, 4])
-@pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 64, 128])
-@pytest.mark.parametrize("q_len", [2, 3, 5, 32, 128])
+@pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 34, 64, 256])
+@pytest.mark.parametrize("q_len", [2, 3, 32, 34, 256])
 @pytest.mark.parametrize("device", _devices)
 @pytest.mark.parametrize("dtype", [torch.float, torch.half, torch.bfloat16])
 @pytest.mark.parametrize(
@@ -185,8 +185,8 @@ def test_logsumexp(
 @pytest.mark.parametrize("grad_out_contiguous", [False, True])
 @pytest.mark.parametrize("k_len", [5, 6, 32, 128])
 @pytest.mark.parametrize("batch_size", [1, 4])
-@pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 64, 128])
-@pytest.mark.parametrize("q_len", [2, 3, 5, 32, 128])
+@pytest.mark.parametrize("kv_len", [3, 15, 32, 34, 64, 256])
+@pytest.mark.parametrize("q_len", [2, 3, 5, 32, 34, 256])
 @pytest.mark.parametrize("device", _devices)
 @pytest.mark.parametrize("dtype", [torch.float, torch.half, torch.bfloat16])
 @pytest.mark.parametrize(
@@ -259,6 +259,8 @@ def test_memory_efficient_attention_backward(
     if dtype is torch.half:
         atol = 4e-2
         rtol = 2e-2
+        # Longer sequences mean we iterate more and errors accumulate
+        atol *= (127 + q_len) // 128
     if dtype is torch.bfloat16:
         # I've seen (out=0.29 / ref=0.03)
         atol = 0.3
