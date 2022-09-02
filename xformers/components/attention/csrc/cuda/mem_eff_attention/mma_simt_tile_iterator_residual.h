@@ -243,7 +243,6 @@ public:
         if (is_residual_) {
             is_residual_ = false;
             ref_.add_coord_offset(residual_offset_);
-            PRINT_T0_L0("ITA: End residual (offset %d)", int(residual_offset_.column()));
         }
         iterations_ = 0;
     }

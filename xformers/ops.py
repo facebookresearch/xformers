@@ -190,25 +190,33 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
     def supports(cls, d: "AttentionOpDispatch") -> bool:
         if not super(MemoryEfficientAttentionGenericForwardOp, cls).supports(d):
             return False
-        is_sm80 = torch.cuda.get_device_capability(d.device)[0] >= 8
+        cap = torch.cuda.get_device_capability(d.device)
+        sm = cap[0] * 10 + cap[1]
         bits_per_scalar = {torch.float: 32, torch.half: 16, torch.bfloat16: 16}[d.dtype]
         uses_tensorcores = cls.uses_tensorcores(d, bits_per_scalar == 16)
         matmul_alignment_mn = 1
-        if is_sm80:
+        if sm >= 80:
             matmul_alignment_mn = 4
         if uses_tensorcores:
             matmul_alignment_mn = max(matmul_alignment_mn, 64 // bits_per_scalar)
         if d.k % matmul_alignment_mn != 0:
             return False
 
-        # TODO: Remove this once cutlass handles partial tiles correctly
-        # See https://github.com/NVIDIA/cutlass/issues/569
+        # Partial tiles can cause issues..
         warp_shape = 32 if uses_tensorcores else 8
-        if d.kv_len > warp_shape and d.kv_len % warp_shape != 0:
-            return False
-        # for backwards pass
-        if d.q_len > warp_shape and d.q_len % warp_shape != 0:
-            return False
+        if sm == 70:
+            if d.kv_len > warp_shape and d.kv_len % warp_shape != 0:
+                return False
+            # for backwards pass
+            if d.q_len > warp_shape and d.q_len % warp_shape != 0:
+                return False
+        elif bits_per_scalar < 32:
+            elements_per_32bits = 32 // bits_per_scalar
+            if d.kv_len > warp_shape and d.kv_len % elements_per_32bits != 0:
+                return False
+            # for backwards pass
+            if d.q_len > warp_shape and d.q_len % elements_per_32bits != 0:
+                return False
         return True
 
     @classmethod

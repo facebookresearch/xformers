@@ -240,6 +240,35 @@ class MmaBaseFromSharedMemory {
       : warp_tile_iterator_B_(shared_storage.operand_B_ref(), lane_idx) {}
 };
 
+namespace {
+template <typename WarpIterator>
+struct WarpIteratorFactory {
+  template <typename AccumRef, typename TensorCoord>
+  CUTLASS_DEVICE
+  static WarpIterator create(AccumRef const& accum_ref, TensorCoord const& extent, int lane_id) {
+    return WarpIterator(accum_ref, extent, lane_id);
+  }
+};
+
+template <
+  typename S,
+  Operand O,
+  typename E,
+  typename L,
+  typename I,
+  int OpD,
+  int T
+  >
+struct WarpIteratorFactory<cutlass::gemm::warp::MmaVoltaTensorOpMultiplicandTileIterator<S, O, E, L, I, OpD, T>> {
+  using WarpIterator = cutlass::gemm::warp::MmaVoltaTensorOpMultiplicandTileIterator<S, O, E, L, I, OpD, T>;
+
+  CUTLASS_DEVICE
+  static WarpIterator create(cutlass::TensorRef<cutlass::half_t, L> accum_ref, cutlass::MatrixCoord extent, int lane_id) {
+    return WarpIterator(accum_ref, lane_id);
+  }
+};
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Taken from
 // https://github.com/NVIDIA/cutlass/blob/master/examples/13_two_tensor_op_fusion/threadblock/b2b_mma_pipelined_smem_accumulator.h
@@ -347,7 +376,7 @@ class MmaPipelinedFromSharedMemory
       int problem_size_0_n
       )
       : Base(shared_storage, thread_idx, warp_idx, lane_idx),
-        warp_tile_iterator_A_(accumulator_shared_storage.accum_ref(), typename WarpIteratorA::TensorCoord{Base::WarpGemm::kM, problem_size_0_n}, lane_idx ),
+        warp_tile_iterator_A_(WarpIteratorFactory<WarpIteratorA>::create(accumulator_shared_storage.accum_ref(), typename WarpIteratorA::TensorCoord{Base::WarpGemm::kM, problem_size_0_n}, lane_idx)),
         smem_iterator_B_(shared_storage.operand_B_ref(), thread_idx) {
     // Compute warp location within threadblock tile by mapping the warp_id to
     // three coordinates:
@@ -627,7 +656,7 @@ class MmaMultistageFromSharedMemory
       ///< GEMM0 N is used for accumulator extent
       int problem_size_0_n)
       : Base(shared_storage, thread_idx, warp_idx, lane_idx),
-        warp_tile_iterator_A1_(accumulator_shared_storage.accum_ref(), {Base::WarpGemm::kM, problem_size_0_n}, lane_idx ),
+        warp_tile_iterator_A1_(WarpIteratorFactory<WarpIteratorA1>::create(accumulator_shared_storage.accum_ref(), typename WarpIteratorA1::TensorCoord{Base::WarpGemm::kM, problem_size_0_n}, lane_idx)),
         smem_iterator_B1_(shared_storage.operand_B_ref(), thread_idx) {
     // Compute warp location within threadblock tile by mapping the warp_id to
     // three coordinates:
