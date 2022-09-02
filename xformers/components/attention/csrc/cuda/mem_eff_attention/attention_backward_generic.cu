@@ -417,10 +417,14 @@ struct AttentionBackwardKernel {
     CUTLASS_PRAGMA_UNROLL
     for (int firstCol = 0; firstCol < p.head_dim_value;
          firstCol += kNumThreadsPerLine * AccessType::kElements) {
-      const __restrict__ AccessType* dO = reinterpret_cast<const __restrict__ AccessType*>(
-          p.grad_output_ptr + (query_start + laneRow) * p.head_dim_value + firstCol);
-      const __restrict__ AccessType* out = reinterpret_cast<const __restrict__ AccessType*>(
-          p.output_ptr + (query_start + laneRow) * p.head_dim_value + firstCol);
+      const __restrict__ AccessType* dO =
+          reinterpret_cast<const __restrict__ AccessType*>(
+              p.grad_output_ptr + (query_start + laneRow) * p.head_dim_value +
+              firstCol);
+      const __restrict__ AccessType* out =
+          reinterpret_cast<const __restrict__ AccessType*>(
+              p.output_ptr + (query_start + laneRow) * p.head_dim_value +
+              firstCol);
       int32_t rowEnd = (p.num_queries - query_start);
       int32_t colEnd = p.head_dim_value / AccessType::kElements;
 
@@ -655,8 +659,7 @@ struct AttentionBackwardKernel {
 
       // Output results
       typename MatmulGradV::OutputTileIterator output_read_it(
-          typename MatmulGradV::OutputTileIterator::Params{
-              p.head_dim_value},
+          typename MatmulGradV::OutputTileIterator::Params{p.head_dim_value},
           p.grad_value_ptr + key_start * p.head_dim_value + col,
           {skipBoundsChecks ? MatmulGradV::ThreadblockShape::kM
                             : p.num_keys - key_start,
@@ -809,15 +812,14 @@ struct AttentionBackwardKernel {
       using Mma = typename MatmulGradQ::Mma;
 
       cutlass::gemm::GemmCoord problem_size(
-          skipBoundsChecks ? MatmulGradQ::ThreadblockShape::kM
-                           : std::min(
-                                 (int32_t)Mma::Shape::kM,
-                                 p.num_queries - query_start),
+          skipBoundsChecks
+              ? MatmulGradQ::ThreadblockShape::kM
+              : std::min((int32_t)Mma::Shape::kM, p.num_queries - query_start),
           false ? MatmulGradQ::ThreadblockShape::kN : p.head_dim - col,
-          skipBoundsChecks ? MatmulQK::Mma::Shape::kM
-                           : std::min(
-                                 (int32_t)MatmulQK::Mma::Shape::kM,
-                                 p.num_keys - key_start));
+          skipBoundsChecks
+              ? MatmulQK::Mma::Shape::kM
+              : std::min(
+                    (int32_t)MatmulQK::Mma::Shape::kM, p.num_keys - key_start));
 
       // k_j
       typename Mma::IteratorB iterator_B(
@@ -902,8 +904,7 @@ struct AttentionBackwardKernel {
       cutlass::gemm::GemmCoord problem_size(
           skipBoundsChecks
               ? MatmulGradK::ThreadblockShape::kM
-              : std::min(
-                    (int32_t)Mma::Shape::kM, p.num_keys - key_start),
+              : std::min((int32_t)Mma::Shape::kM, p.num_keys - key_start),
           false ? MatmulGradK::ThreadblockShape::kN : p.head_dim - col,
           skipBoundsChecks ? MatmulQK::Mma::Shape::kN
                            : std::min(
@@ -939,15 +940,12 @@ struct AttentionBackwardKernel {
 
       // Output results
       typename MatmulGradK::OutputTileIterator output_read_it(
-          typename MatmulGradK::OutputTileIterator::Params{
-              p.head_dim},
+          typename MatmulGradK::OutputTileIterator::Params{p.head_dim},
           p.grad_key_ptr + key_start * p.head_dim + col,
           {skipBoundsChecks
                ? MatmulGradK::ThreadblockShape::kM
-               : std::min(
-                     (int32_t)Mma::Shape::kM, p.num_keys - key_start),
-           false ? MatmulGradK::ThreadblockShape::kN
-                 : p.head_dim - col},
+               : std::min((int32_t)Mma::Shape::kM, p.num_keys - key_start),
+           false ? MatmulGradK::ThreadblockShape::kN : p.head_dim - col},
           thread_id);
       typename MatmulGradK::OutputTileIterator output_write_it = output_read_it;
 
@@ -1001,12 +999,8 @@ struct AttentionBackwardKernel {
 };
 
 template <typename AK>
-__global__ void __launch_bounds__(
-    AK::kNumThreads,
-    AK::kMinBlocksPerSm)
-    attention_kernel_backward_batched(
-        typename AK::Params params) {
-
+__global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)
+    attention_kernel_backward_batched(typename AK::Params params) {
 #ifndef __CUDA_ARCH__
   using CurrentArch = cutlass::arch::Sm80;
 #elif (__CUDA_ARCH__ >= 800)
@@ -1102,7 +1096,9 @@ mem_efficient_attention_backward_generic(
 // set at compile time to avoid having to generate host code for all kernels
 // eg -DATTN_ONLY_BUILD_ARCH=Sm80
 #ifdef ATTN_ONLY_BUILD_ARCH
-#define DISPATCH_ARCHTAG(func) using ArchTag = cutlass::arch::ATTN_ONLY_BUILD_ARCH; func();
+#define DISPATCH_ARCHTAG(func)                         \
+  using ArchTag = cutlass::arch::ATTN_ONLY_BUILD_ARCH; \
+  func();
 #else
 #define DISPATCH_ARCHTAG(func)                                            \
   {                                                                       \
@@ -1151,53 +1147,53 @@ mem_efficient_attention_backward_generic(
       // kernel due to wrong alignment?
 
       DISPATCH_BOOL(
-        isAligned, kIsAligned, ([&]() {
-          using AK = AttentionBackwardKernel<scalar_t, kIsAligned, ArchTag>;
-          size_t smem_bytes = sizeof(typename AK::SharedStorage);
-          // Might happen on Sm80/half, where the minimum alignment is 32bits
-          TORCH_CHECK(
-              query.stride(1) % AK::kMinimumAlignment == 0,
-              "query is not correctly aligned");
-          TORCH_CHECK(
-              key.stride(1) % AK::kMinimumAlignment == 0,
-              "key is not correctly aligned");
-          TORCH_CHECK(
-              value.stride(1) % AK::kMinimumAlignment == 0,
-              "value is not correctly aligned");
+          isAligned, kIsAligned, ([&]() {
+            using AK = AttentionBackwardKernel<scalar_t, kIsAligned, ArchTag>;
+            size_t smem_bytes = sizeof(typename AK::SharedStorage);
+            // Might happen on Sm80/half, where the minimum alignment is 32bits
+            TORCH_CHECK(
+                query.stride(1) % AK::kMinimumAlignment == 0,
+                "query is not correctly aligned");
+            TORCH_CHECK(
+                key.stride(1) % AK::kMinimumAlignment == 0,
+                "key is not correctly aligned");
+            TORCH_CHECK(
+                value.stride(1) % AK::kMinimumAlignment == 0,
+                "value is not correctly aligned");
 
+            AK::Params params;
+            params.query_ptr = (scalar_t*)query.data_ptr();
+            params.key_ptr = (scalar_t*)key.data_ptr();
+            params.value_ptr = (scalar_t*)value.data_ptr();
+            params.logsumexp_ptr =
+                (typename AK::lse_scalar_t*)logsumexp.data_ptr();
+            params.output_ptr = (scalar_t*)out.data_ptr();
+            params.grad_output_ptr = (scalar_t*)grad_out.data_ptr();
+            params.grad_query_ptr = (scalar_t*)grad_q.data_ptr();
+            params.grad_key_ptr = (scalar_t*)grad_k.data_ptr();
+            params.grad_value_ptr = (scalar_t*)grad_v.data_ptr();
+            params.head_dim = query.size(2);
+            params.head_dim_value = value.size(2);
+            params.num_queries = query.size(1);
+            params.num_keys = key.size(1);
 
-          AK::Params params;
-          params.query_ptr = (scalar_t*)query.data_ptr();
-          params.key_ptr = (scalar_t*)key.data_ptr();
-          params.value_ptr = (scalar_t*)value.data_ptr();
-          params.logsumexp_ptr = (typename AK::lse_scalar_t*)logsumexp.data_ptr();
-          params.output_ptr = (scalar_t*)out.data_ptr();
-          params.grad_output_ptr = (scalar_t*)grad_out.data_ptr();
-          params.grad_query_ptr = (scalar_t*)grad_q.data_ptr();
-          params.grad_key_ptr = (scalar_t*)grad_k.data_ptr();
-          params.grad_value_ptr = (scalar_t*)grad_v.data_ptr();
-          params.head_dim = query.size(2);
-          params.head_dim_value = value.size(2);
-          params.num_queries = query.size(1);
-          params.num_keys = key.size(1);
+            dim3 grid(AK::getNumBlocksX(N), AK::getNumBlocksY(M), B);
+            dim3 block(AK::kWarpSize, AK::kNumWarpsPerBlock, 1);
+            constexpr auto kernel_fn = attention_kernel_backward_batched<AK>;
 
-          dim3 grid(AK::getNumBlocksX(N), AK::getNumBlocksY(M), B);
-          dim3 block(AK::kWarpSize, AK::kNumWarpsPerBlock, 1);
-          constexpr auto kernel_fn = attention_kernel_backward_batched<AK>;
+            if (smem_bytes > 0xc000) {
+              TORCH_INTERNAL_ASSERT(
+                  computeCapability >= 70,
+                  "This kernel requires too much shared memory on this machine!");
+              cudaFuncSetAttribute(
+                  kernel_fn,
+                  cudaFuncAttributeMaxDynamicSharedMemorySize,
+                  smem_bytes);
+            }
 
-          if (smem_bytes > 0xc000) {
-            TORCH_INTERNAL_ASSERT(
-                computeCapability >= 70,
-                "This kernel requires too much shared memory on this machine!");
-            cudaFuncSetAttribute(
-                kernel_fn,
-                cudaFuncAttributeMaxDynamicSharedMemorySize,
-                smem_bytes);
-          }
-
-          kernel_fn<<<grid, block, smem_bytes>>>(params);
-          AT_CUDA_CHECK(cudaGetLastError());
-        }));
+            kernel_fn<<<grid, block, smem_bytes>>>(params);
+            AT_CUDA_CHECK(cudaGetLastError());
+          }));
     }));
   }));
   return std::make_tuple(grad_q, grad_k, grad_v);

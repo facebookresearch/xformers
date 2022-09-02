@@ -1390,9 +1390,9 @@ struct B2bGemm<
   // Let's copy their values
   static int const kElementsPerPartial = 4;
   using EleShapePerPatial = typename cutlass::platform::conditional<
-                              cutlass::platform::is_same<Element, float>::value,
-                              cutlass::MatrixShape<2, 2>,
-                              cutlass::MatrixShape<1, 4> >::type;
+      cutlass::platform::is_same<Element, float>::value,
+      cutlass::MatrixShape<2, 2>,
+      cutlass::MatrixShape<1, 4>>::type;
   static int const kElementsPerMma = 8;
   static int const kAccumulatorPatials = 2;
   using QuadShapePerPatialMma = cutlass::MatrixShape<4, 4>;
