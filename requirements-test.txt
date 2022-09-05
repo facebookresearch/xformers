@@ -31,4 +31,3 @@ triton == 2.0.0.dev20220701
 
 # Dependencies for fused layers using FuncTorch, optional
 git+https://github.com/pytorch/functorch@0.2.0
-networkx == 2.8.4
