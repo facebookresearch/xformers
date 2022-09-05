@@ -1385,13 +1385,17 @@ struct B2bGemm<
       cutlass::layout::RowMajorVoltaTensorOpMultiplicandCrosswise<16, 32>;
   using TensorRef = cutlass::TensorRef<scalar_t, OutputLayout>;
   using Policy = typename IteratorC::Policy;
-  using EleShapePerPatial = typename IteratorC::EleShapePerPatial;
-  using QuadShapePerPatialMma = typename IteratorC::QuadShapePerPatialMma;
   using Element = accum_t;
-
-  static int constexpr kElementsPerMma = IteratorC::kElementsPerMma;
-  static int constexpr kElementsPerPartial = IteratorC::kElementsPerPartial;
-  static int constexpr kAccumulatorPatials = IteratorC::kAccumulatorPatials;
+  // Those are MmaVoltaTensorOpAccumulatorTileIterator private fields
+  // Let's copy their values
+  static int const kElementsPerPartial = 4;
+  using EleShapePerPatial = typename cutlass::platform::conditional<
+      cutlass::platform::is_same<Element, float>::value,
+      cutlass::MatrixShape<2, 2>,
+      cutlass::MatrixShape<1, 4>>::type;
+  static int const kElementsPerMma = 8;
+  static int const kAccumulatorPatials = 2;
+  using QuadShapePerPatialMma = cutlass::MatrixShape<4, 4>;
 
   static void __device__ accumToSmem(
       AccumulatorSharedStorage& shared_storage,
