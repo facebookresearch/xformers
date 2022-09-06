@@ -54,10 +54,11 @@ struct AttentionKernelInfo {
   using output_t = output_t_;
   using lse_scalar_t = float;
   static constexpr bool kIsAligned = isAligned_;
+  static constexpr int32_t kAlignLSE = 32; // block size of backward
 
   // Blocks
   // NOTE: Looks like 16 works better for K <= 64
-  static constexpr int64_t kQueriesPerBlock = 32;
+  static constexpr int64_t kQueriesPerBlock = 64;
   static constexpr int64_t kNumWarpsPerBlock = 4;
   static constexpr int64_t kWarpSize = 32;
 
@@ -79,7 +80,6 @@ struct AttentionKernelInfo {
     int32_t num_batches;
 
     __device__ void advance_batches(int32_t batch_id) {
-      constexpr int32_t kAlignLSE = 32; // block size of backward
       auto lse_dim = ceil_div((int32_t)num_queries, kAlignLSE) * kAlignLSE;
 
       query_ptr += batch_id * head_dim * num_queries;
@@ -109,6 +109,7 @@ struct AttentionKernel {
   using Params = typename KernelInfo::Params;
   static constexpr bool kIsAligned = KernelInfo::kIsAligned;
   static constexpr int64_t kQueriesPerBlock = KernelInfo::kQueriesPerBlock;
+  static constexpr int64_t kKeysPerBlock = 64;
   static constexpr int64_t kNumWarpsPerBlock = KernelInfo::kNumWarpsPerBlock;
   static constexpr int64_t kWarpSize = KernelInfo::kWarpSize;
 
@@ -136,12 +137,9 @@ struct AttentionKernel {
         kIsAligned ? DefaultConfig::kAlignmentA : GemmType::kMinimumAlignment;
     static constexpr int64_t kAlignmentB =
         kIsAligned ? DefaultConfig::kAlignmentB : GemmType::kMinimumAlignment;
-    using ThreadblockShape = cutlass::gemm::GemmShape<
-        kQueriesPerBlock,
-        kNumWarpsPerBlock * kWarpSize,
-        GemmType::ThreadK>;
-    using WarpShape =
-        cutlass::gemm::GemmShape<kQueriesPerBlock, kWarpSize, GemmType::WarpK>;
+    using ThreadblockShape = cutlass::gemm::
+        GemmShape<kQueriesPerBlock, kKeysPerBlock, GemmType::ThreadK>;
+    using WarpShape = cutlass::gemm::GemmShape<32, 32, GemmType::WarpK>;
     using DefaultMma = typename cutlass::gemm::threadblock::FindDefaultMma<
         scalar_t, // ElementA,
         cutlass::layout::RowMajor, // LayoutA,
@@ -201,12 +199,9 @@ struct AttentionKernel {
         DefaultConfig::kAlignmentA; // from smem
     static constexpr int64_t kAlignmentB =
         kIsAligned ? DefaultConfig::kAlignmentB : GemmType::kMinimumAlignment;
-    using ThreadblockShape = cutlass::gemm::GemmShape<
-        kQueriesPerBlock,
-        kNumWarpsPerBlock * kWarpSize,
-        GemmType::ThreadK>;
-    using WarpShape =
-        cutlass::gemm::GemmShape<kQueriesPerBlock, kWarpSize, GemmType::WarpK>;
+    using ThreadblockShape = cutlass::gemm::
+        GemmShape<kQueriesPerBlock, kKeysPerBlock, GemmType::ThreadK>;
+    using WarpShape = cutlass::gemm::GemmShape<32, 32, GemmType::WarpK>;
     using InstructionShape = typename GemmType::InstructionShape;
 
     using LayoutB = cutlass::layout::RowMajor;
@@ -264,7 +259,7 @@ struct AttentionKernel {
               (int32_t)kQueriesPerBlock, p.num_queries - query_start()), // M
           p.head_dim_value, // N
           std::min(
-              int32_t(kNumWarpsPerBlock * kWarpSize),
+              int32_t(kKeysPerBlock),
               p.num_keys - iter_key_start) // K
       );
 
@@ -321,19 +316,21 @@ struct AttentionKernel {
               beta = alpha / m_prime (renormalize the output when the max
           changes) source is the current output
         */
+        int col = blockN * Mma::Shape::kN;
         OutputTileIterator output_tile_it(
             typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
-            p.output_ptr + query_start() * p.head_dim_value,
+            p.output_ptr + query_start() * p.head_dim_value + col,
             typename OutputTileIterator::TensorCoord{
-                p.num_queries - query_start(), p.head_dim_value},
+                p.num_queries - query_start(), p.head_dim_value - col},
             thread_id());
         OutputTileIterator source_tile_it(
             typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
-            p.output_ptr + query_start() * p.head_dim_value,
+            p.output_ptr + query_start() * p.head_dim_value + col,
             typename OutputTileIterator::TensorCoord{
-                p.num_queries - query_start(), p.head_dim_value},
+                p.num_queries - query_start(), p.head_dim_value - col},
             thread_id());
-
+        using ElementCompute =
+            typename DefaultConfig::EpilogueOutputOp::ElementCompute;
         DISPATCH_BOOL(
             iter_key_start == 0, kIsFirst, ([&]() {
               DISPATCH_BOOL(
@@ -347,7 +344,8 @@ struct AttentionKernel {
                             typename DefaultConfig::EpilogueOutputOp::
                                 ElementCompute,
                             kIsFirst,
-                            kIsLast>;
+                            kIsLast,
+                            cutlass::Array<ElementCompute, kQueriesPerBlock>>;
                     using Epilogue = typename cutlass::epilogue::threadblock::
                         EpilogueWithRowId<
                             typename DefaultEpilogue::Shape,
@@ -411,15 +409,15 @@ struct AttentionKernel {
     auto& si = shared_storage.after_mm0.si;
     auto& mi = shared_storage.after_mm0.mi;
 
-    if (warp_id == 0) {
-      static_assert(kQueriesPerBlock == kWarpSize);
-      s_prime[lane_id] = accum_t(0);
-      m_prime[lane_id] = -std::numeric_limits<accum_t>::infinity();
+    static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
+    if (thread_id() < kQueriesPerBlock) {
+      s_prime[thread_id()] = accum_t(0);
+      m_prime[thread_id()] = -std::numeric_limits<accum_t>::infinity();
     }
 
     // Iterate through keys
     for (int32_t iter_key_start = 0; iter_key_start < p.num_keys;
-         iter_key_start += kNumWarpsPerBlock * kWarpSize) {
+         iter_key_start += kKeysPerBlock) {
       __syncthreads(); // Need to have shared memory initialized, and `m_prime`
                        // updated from end of prev iter
       // 1. Compute dot-product into shared memory for each query
@@ -428,8 +426,7 @@ struct AttentionKernel {
           p, iter_key_start, m_prime, s_prime, shared_storage);
 
       __syncthreads();
-      bool isLast =
-          (iter_key_start + kNumWarpsPerBlock * kWarpSize) >= p.num_keys;
+      bool isLast = (iter_key_start + kKeysPerBlock) >= p.num_keys;
 
       // 4. Partial matmul with the values we have and V
       // `v* <- v* . exp(m* - mi) + v_i . exp(si - mi)`
@@ -446,9 +443,9 @@ struct AttentionKernel {
       __syncthreads(); // we modify `m_prime` after
 
       // 5. `m_prime` <- `mi` (`mi` will be overwritten during MM0)
-      if (warp_id == 0) {
-        static_assert(kQueriesPerBlock == kWarpSize);
-        m_prime[lane_id] = mi[lane_id];
+      static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
+      if (thread_id() < kQueriesPerBlock) {
+        m_prime[thread_id()] = mi[thread_id()];
       }
       __syncthreads();
     }
@@ -456,13 +453,14 @@ struct AttentionKernel {
     // 7. Calculate logsumexp
     // To make the backward easier, we pad logsumexp with `inf`
     // this avoids a few bound checks, and is not more expensive during fwd
-    if (p.logsumexp_ptr && warp_id == 0) {
-      static_assert(kQueriesPerBlock == kWarpSize);
-      if (query_start() + lane_id < p.num_queries) {
-        p.logsumexp_ptr[query_start() + lane_id] =
-            accum_t(m_prime[lane_id]) + std::log(accum_t(s_prime[lane_id]));
-      } else {
-        p.logsumexp_ptr[query_start() + lane_id] =
+    static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
+    if (p.logsumexp_ptr && thread_id() < kQueriesPerBlock) {
+      if (query_start() + thread_id() < p.num_queries) {
+        p.logsumexp_ptr[query_start() + thread_id()] =
+            accum_t(m_prime[thread_id()]) +
+            std::log(accum_t(s_prime[thread_id()]));
+      } else if (thread_id() < KernelInfo::kAlignLSE) {
+        p.logsumexp_ptr[query_start() + thread_id()] =
             std::numeric_limits<accum_t>::infinity();
       }
     }
@@ -478,7 +476,7 @@ struct AttentionKernel {
     Computes the block-matrix product of:
     (a) query[query_start:query_end, :]
     with
-    (b) key[iter_key_start:iter_key_start + kNumWarpsPerBlock * kWarpSize]
+    (b) key[iter_key_start:iter_key_start + kKeysPerBlock]
     and stores that into `shared_storage.si`
     */
     using MmaCore = typename MM0::MmaCore;
@@ -488,9 +486,7 @@ struct AttentionKernel {
 
     cutlass::gemm::GemmCoord problem_size(
         std::min((int32_t)kQueriesPerBlock, p.num_queries - query_start()),
-        std::min(
-            int32_t(kNumWarpsPerBlock * kWarpSize),
-            p.num_keys - iter_key_start),
+        std::min(int32_t(kKeysPerBlock), p.num_keys - iter_key_start),
         p.head_dim);
 
     static_assert(
@@ -539,9 +535,9 @@ struct AttentionKernel {
     mma(gemm_k_iterations, accum, iterator_A, iterator_B, accum);
     __syncthreads();
     auto& mi = shared_storage.after_mm0.mi;
-    if (my_warp_id == 0) {
-      static_assert(kQueriesPerBlock == kWarpSize);
-      mi[my_lane_id] = m_prime[my_lane_id];
+    static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
+    if (thread_id() < kQueriesPerBlock) {
+      mi[thread_id()] = m_prime[thread_id()];
     }
     __syncthreads();
 
@@ -561,6 +557,7 @@ struct AttentionKernel {
         m_prime,
         s_prime,
         lane_id(),
+        thread_id(),
         warp_id(),
         p.num_keys - iter_key_start,
         iteratorC_tile_offset);

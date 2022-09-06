@@ -73,7 +73,7 @@ template <
     typename ElementCompute_, ///< Data type used to compute linear combination
     bool isFirst,
     bool isLast,
-    typename FragmentAlphaBeta_ = Array<ElementCompute_, 32>,
+    typename FragmentAlphaBeta_,
     FloatRoundStyle Round = FloatRoundStyle::round_to_nearest>
 class MemoryEfficientAttentionNormalize {
  public:

@@ -41,6 +41,7 @@ struct RegisterOps {
       cutlass::Array<accum_t, kQueriesPerBlock>& m_prime,
       cutlass::Array<accum_t, kQueriesPerBlock>& s_prime,
       int8_t lane_id,
+      int8_t thread_id,
       int8_t warp_id,
       int16_t max_col,
       typename T::TensorCoord const& tile_offset) {
@@ -66,11 +67,10 @@ struct RegisterOps {
     // Make sure we all share the update values for `mi`
     __syncthreads();
 
-    if (warp_id == 0) {
-      static_assert(kQueriesPerBlock == kWarpSize);
-      auto m_prime_exp = expf(m_prime[lane_id] - mi[lane_id]);
-      m_prime[lane_id] = m_prime_exp;
-      s_prime[lane_id] *= m_prime_exp;
+    if (thread_id < kQueriesPerBlock) {
+      auto m_prime_exp = expf(m_prime[thread_id] - mi[thread_id]);
+      m_prime[thread_id] = m_prime_exp;
+      s_prime[thread_id] *= m_prime_exp;
     }
     __syncthreads();
 
