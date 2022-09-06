@@ -42,6 +42,20 @@ def get_triton_activation_bwd_kernel(activation: Optional[Activation]):
     )
 
 
+def get_triton_activation_index(activation: Optional[Activation]) -> Optional[int]:
+    return (
+        {
+            Activation.ReLU: 1,
+            Activation.LeakyReLU: 2,
+            Activation.GeLU: 3,
+            Activation.SquaredReLU: 4,
+            Activation.SmeLU: 5,
+        }[activation]
+        if activation
+        else 0
+    )
+
+
 @triton.jit
 def tanh(x):
     # Tanh is just a scaled sigmoid
@@ -86,8 +100,8 @@ def squared_relu(x):
 
     .. _Primer: https://arxiv.org/abs/2109.08668
     """
-    x_ = relu(x)
-    return (x_ * x_).to(x.dtype)
+    x_ = tl.where(x >= 0, x, 0.0)
+    return x_ * x_
 
 
 @triton.jit

@@ -61,7 +61,7 @@ This is a drop-in replacement to two PyTorch operands: a `torch.nn.Linear`, and 
 It is possible to skip either the bias or the activation (just use `None` in that case). As of September 2021, this layer is **faster than PyTorch for non-sigmoid activations and fp16**.
 In all other usecases, you will be better served using PyTorch.
 
-The following is an example of the measured performance on a laptop nVidia 3080, using Triton 1.1 and PyTorch 1.10.
+The following is an example of the measured performance on a nvidia A6000, using Triton 1.1 and PyTorch 1.10.
 
 .. image:: ../../plots/fused_linear/FusedLinear_fp16_FW_gelu.png
     :width: 600
@@ -107,7 +107,7 @@ The following is an example of the measured performance on a laptop nVidia 3080,
 Fused layer norm
 -----------------
 
-You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_layernorm.py`. The units are GB/s. These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.
+You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_layernorm.py`. The units are GB/s. These results are for a nvidia A6000, Triton 1.1 and PyTorch 1.10.
 
 .. image:: ../../plots/layer_norm/LayerNorm_FW_torch.float16.png
     :width: 600
@@ -130,7 +130,7 @@ Fused dropout + bias + activation
 ---------------------------------
 
 You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_dropout.py`. The units are GB/s.
-These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.
+These results are for a nvidia A6000, Triton 1.1 and PyTorch 1.10.
 
 
 .. image:: ../../plots/fused_dropout/Dropout_Bias_True_FW_torch.float16_Act_gelu.png

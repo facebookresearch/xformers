@@ -30,13 +30,11 @@ if _triton_available:
 # Testing odd (non-power-of-two for instance) shapes on purpose
 SHAPES = [
     (384, 512),
-    (8, 384, 128),
     (8, 784, 512),
     (4, 16, 384),
     (4, 16, 1024),
     (2, 16, 2048),
     (2, 16, 4096),
-    (1, 16, 12288),
 ]
 
 
@@ -98,6 +96,11 @@ def test_dropout(shape, amp, bias, p):
         x_ref = (x + b if bias else x).to(y.dtype)
         assert not torch.allclose(x_ref, y, rtol=tol)
 
+        # Check that the drop probability is about right
+        y = triton_dropout(x, p=p)
+        drop_p = (y.numel() - y.count_nonzero()) / y.numel()
+        assert abs(drop_p - p) < 0.01
+
         # Check that the drops are different for every row (could catch broken seeds per row)
         y = triton_dropout(x, p=0.5)
 
@@ -114,12 +117,7 @@ def test_dropout(shape, amp, bias, p):
         assert (
             not torch.sum(torch.eq(y_a[0, :] == 0.0, y_b[0, :] == 0.0)).item()
             == y.shape[1]
-        )
-
-        # Check that the drop probability is about right
-        y = triton_dropout(x, p=p)
-        drop_p = (y.numel() - y.count_nonzero()) / y.numel()
-        assert abs(drop_p - p) < 0.01
+        ), f"{y_a}\n{y_b}"
 
         # Check that the same seeds lead to the same dropout
         torch.manual_seed(0)
