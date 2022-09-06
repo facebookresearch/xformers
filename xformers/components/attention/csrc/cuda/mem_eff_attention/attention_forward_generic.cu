@@ -277,7 +277,9 @@ struct AttentionKernel {
 
         // Compute threadblock-scoped matrix multiply-add and store it in accum
         // (in registers)
+        __syncthreads(); // we share shmem between mma and epilogue
         mma(gemm_k_iterations, accum, iterator_B, accum);
+        __syncthreads(); // we share shmem between mma and epilogue
 
         /*
           Epilogue: Store the following into global memory
