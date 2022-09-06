@@ -596,7 +596,7 @@ __global__ void __launch_bounds__(
     // minBlocksPerMultiprocessor is optional and specifies the desired minimum
     // number of resident blocks per multiprocessor
     // TODO: We get slightly better performance by *removing* this on A100
-    16 / AKInfo::kNumWarpsPerBlock)
+    12 / AKInfo::kNumWarpsPerBlock)
     attention_kernel_batched(typename AKInfo::Params p) {
 #ifndef __CUDA_ARCH__
   using CurrentArch = cutlass::arch::Sm80;
