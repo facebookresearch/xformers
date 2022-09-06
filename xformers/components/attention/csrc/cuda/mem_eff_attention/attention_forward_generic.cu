@@ -269,7 +269,8 @@ struct AttentionKernel {
             shared_storage_si,
             thread_id(),
             warp_id(),
-            lane_id());
+            lane_id(),
+            problem_size.k());
 
         int gemm_k_iterations =
             (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;

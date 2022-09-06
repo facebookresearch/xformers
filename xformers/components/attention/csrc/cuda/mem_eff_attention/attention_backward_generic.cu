@@ -493,10 +493,7 @@ struct AttentionBackwardKernel {
 
     extern __shared__ char smem_buffer[];
     SharedStorage& shared_storage = *((SharedStorage*)smem_buffer);
-    // int32_t key_start = blockIdx.x * kBlockSizeJ;
-    // int32_t query_start = blockIdx.y * kBlockSizeI;
     int32_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
-    int32_t warp_id = threadIdx.y;
 
     auto clearSmem = [&]() {
       // Initialize shared-memory. It can contain `nans` otherwise that screw up
@@ -642,7 +639,8 @@ struct AttentionBackwardKernel {
           shared_storage.after_qk.attn_shared_storage,
           thread_id,
           warp_id,
-          lane_id);
+          lane_id,
+          problem_size.k());
 
       typename Mma::FragmentC accum;
 
@@ -834,7 +832,8 @@ struct AttentionBackwardKernel {
           shared_storage.after_qk.after_doivj.doivj_shared_storage,
           thread_id,
           warp_id,
-          lane_id);
+          lane_id,
+          problem_size.k());
 
       typename Mma::FragmentC accum;
 
@@ -924,7 +923,8 @@ struct AttentionBackwardKernel {
           shared_storage.after_qk.attn_shared_storage, // storing tmp.T
           thread_id,
           warp_id,
-          lane_id);
+          lane_id,
+          problem_size.k());
 
       typename Mma::FragmentC accum;
 
