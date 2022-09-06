@@ -47,17 +47,9 @@ class SmeLU(nn.Module):
         )
 
 
-class Passthrough(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x
-
-
 def build_activation(activation: Optional[Activation]):
     if not activation:
-        return Passthrough()
+        return nn.Identity()
 
     return {
         Activation.ReLU: nn.ReLU,

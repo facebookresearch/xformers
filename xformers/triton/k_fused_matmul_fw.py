@@ -9,6 +9,8 @@ import torch
 import triton
 import triton.language as tl
 
+from xformers.triton.k_activations import gelu, leaky_relu, relu, smelu, squared_relu
+
 # CREDITS: Initially inspired by the Triton tutorial on matrix multiplications
 
 
@@ -22,11 +24,11 @@ import triton.language as tl
         triton.Config({"BLOCK_M": 128, "BLOCK_N": 64}, num_stages=4, num_warps=4),
         triton.Config({"BLOCK_M": 64, "BLOCK_N": 128}, num_stages=4, num_warps=4),
         triton.Config({"BLOCK_M": 128, "BLOCK_N": 128}, num_stages=3, num_warps=4),
-        # requires a GPU with enough shared memory
-        # triton.Config({"BLOCK_M": 32, "BLOCK_N": 256}, num_stages=3, num_warps=4),
-        # triton.Config({"BLOCK_M": 256, "BLOCK_N": 32}, num_stages=3, num_warps=4),
-        # triton.Config({"BLOCK_M": 64, "BLOCK_N": 256}, num_stages=3, num_warps=8),
-        # triton.Config({"BLOCK_M": 256, "BLOCK_N": 64}, num_stages=3, num_warps=8),
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 256}, num_stages=3, num_warps=4),
+        triton.Config({"BLOCK_M": 256, "BLOCK_N": 32}, num_stages=3, num_warps=4),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 128}, num_stages=3, num_warps=8),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 256}, num_stages=3, num_warps=8),
+        triton.Config({"BLOCK_M": 256, "BLOCK_N": 64}, num_stages=3, num_warps=8),
     ],
     key=["M", "N", "K"],
 )
@@ -47,6 +49,7 @@ def kernel_fma(
     BIAS: tl.constexpr,
     SAVE_ACT_INPUTS: tl.constexpr,
     ACTIVATION: tl.constexpr,
+    is_fp16: tl.constexpr,  # autotune
 ):
     # fmt: on
 
@@ -121,8 +124,16 @@ def kernel_fma(
         tl.store(act_in_ptrs, acc, mask=mask_rm[:, None] & mask_rn[None, :])
 
     # optional: fused activation (while the data is in shared memory)
-    if ACTIVATION:
-        acc = ACTIVATION(acc)
+    if ACTIVATION == 1:
+        acc = relu(acc)
+    elif ACTIVATION == 2:
+        acc = leaky_relu(acc)
+    elif ACTIVATION == 3:
+        acc = gelu(acc)
+    elif ACTIVATION == 4:
+        acc = squared_relu(acc)
+    elif ACTIVATION == 5:
+        acc = smelu(acc)
 
     # write back result
     out_ptrs = OUT + rm[:, None] * stride_om + rn[None, :]
@@ -134,7 +145,7 @@ def fused_matmul(
     x: torch.Tensor,
     weight: torch.Tensor,
     bias: Optional[torch.Tensor],
-    activation=None,
+    activation=0,
     save_act_inputs: bool = False
 ):
     """
@@ -177,7 +188,8 @@ def fused_matmul(
         BIAS=bias is not None,                      # optional fused bias
         GROUP_M=8,                                  # speed optimization: group the programs
         BLOCK_K=BLOCK_K,
-        SAVE_ACT_INPUTS=save_act_inputs
+        SAVE_ACT_INPUTS=save_act_inputs,
+        is_fp16=x_.dtype == torch.float16
     )
     # fmt: on
 
