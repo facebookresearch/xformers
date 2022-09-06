@@ -39,28 +39,44 @@
 using namespace gemm_kernel_utils;
 
 namespace {
+template <typename scalar_t, typename Arch>
+constexpr int getWarpsPerSm() {
+  bool is_half = !std::is_same<scalar_t, float>::value;
+  if (Arch::kMinComputeCapability >= 80) {
+    return is_half ? 16 : 12;
+  }
+  return 12;
+}
+} // namespace
+
 template <
     // The datatype of Q/K/V
     typename scalar_t_,
-    // Intermediate accumulation type (including softmax)
-    typename accum_t_,
-    // Output type (only float tested so far)
-    typename output_t_,
+    // Architecture we are targeting (eg `cutlass::arch::Sm80`)
+    typename ArchTag,
     // If Q/K/V are correctly aligned in memory and we can run a fast kernel
-    bool isAligned_>
-struct AttentionKernelInfo {
+    bool isAligned_,
+    int64_t kQueriesPerBlock,
+    int64_t kKeysPerBlock,
+    typename output_t_ = float>
+struct AttentionKernel {
   using scalar_t = scalar_t_;
-  using accum_t = accum_t_;
-  using output_t = output_t_;
+  using accum_t = float;
   using lse_scalar_t = float;
+  using output_t = output_t_;
   static constexpr bool kIsAligned = isAligned_;
   static constexpr int32_t kAlignLSE = 32; // block size of backward
 
-  // Blocks
-  // NOTE: Looks like 16 works better for K <= 64
-  static constexpr int64_t kQueriesPerBlock = 64;
-  static constexpr int64_t kNumWarpsPerBlock = 4;
+  static_assert(kQueriesPerBlock % 32 == 0);
+  static_assert(kKeysPerBlock % 32 == 0);
+  static constexpr int64_t kNumWarpsPerBlock =
+      kQueriesPerBlock * kKeysPerBlock / (32 * 32);
   static constexpr int64_t kWarpSize = 32;
+
+  // Launch bounds
+  static constexpr int64_t kNumThreads = kWarpSize * kNumWarpsPerBlock;
+  static constexpr int64_t kMinBlocksPerSm =
+      getWarpsPerSm<scalar_t, ArchTag>() / kNumWarpsPerBlock;
 
   struct Params {
     // Input tensors
@@ -99,19 +115,6 @@ struct AttentionKernelInfo {
       return dim3(kWarpSize, kNumWarpsPerBlock, 1);
     }
   };
-};
-
-template <typename KernelInfo, typename ArchTag>
-struct AttentionKernel {
-  using scalar_t = typename KernelInfo::scalar_t;
-  using accum_t = typename KernelInfo::accum_t;
-  using output_t = typename KernelInfo::output_t;
-  using Params = typename KernelInfo::Params;
-  static constexpr bool kIsAligned = KernelInfo::kIsAligned;
-  static constexpr int64_t kQueriesPerBlock = KernelInfo::kQueriesPerBlock;
-  static constexpr int64_t kKeysPerBlock = 64;
-  static constexpr int64_t kNumWarpsPerBlock = KernelInfo::kNumWarpsPerBlock;
-  static constexpr int64_t kWarpSize = KernelInfo::kWarpSize;
 
   struct MM0 {
     /*
@@ -395,9 +398,6 @@ struct AttentionKernel {
   };
 
   static void __device__ attention_kernel(Params const& p) {
-    int8_t lane_id = threadIdx.x;
-    int8_t warp_id = threadIdx.y;
-
     // In this block, we will only ever:
     // - read query[query_start:query_end, :]
     // - write to output[query_start:query_end, :]
@@ -459,7 +459,7 @@ struct AttentionKernel {
         p.logsumexp_ptr[query_start() + thread_id()] =
             accum_t(m_prime[thread_id()]) +
             std::log(accum_t(s_prime[thread_id()]));
-      } else if (thread_id() < KernelInfo::kAlignLSE) {
+      } else if (thread_id() < kAlignLSE) {
         p.logsumexp_ptr[query_start() + thread_id()] =
             std::numeric_limits<accum_t>::infinity();
       }
@@ -587,203 +587,79 @@ struct AttentionKernel {
   }
 };
 
-template <typename AKInfo>
-__global__ void __launch_bounds__(
-    // maxThreadsPerBlock specifies the maximum number of threads per block with
-    // which the application will ever launch
-    AKInfo::kWarpSize* AKInfo::kNumWarpsPerBlock,
-    // minBlocksPerMultiprocessor is optional and specifies the desired minimum
-    // number of resident blocks per multiprocessor
-    // TODO: We get slightly better performance by *removing* this on A100
-    12 / AKInfo::kNumWarpsPerBlock)
-    attention_kernel_batched(typename AKInfo::Params p) {
-#ifndef __CUDA_ARCH__
-  using CurrentArch = cutlass::arch::Sm80;
-#elif (__CUDA_ARCH__ >= 800)
-  using CurrentArch = cutlass::arch::Sm80;
-#elif (__CUDA_ARCH__ >= 750)
-  using CurrentArch = cutlass::arch::Sm75;
-#elif (__CUDA_ARCH__ >= 700)
-  using CurrentArch = cutlass::arch::Sm70;
-#elif (__CUDA_ARCH__ >= 500)
-  using CurrentArch = cutlass::arch::Sm50;
-#else
-#error "Unsupported architecture in __CUDA_ARCH__"
-#endif
+template <typename AK>
+__global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)
+    attention_kernel_batched(typename AK::Params params);
+
+#define _ATTENTION_KERNEL_FORWARD_BEGIN(...)                                  \
+  template <>                                                                 \
+  __global__ void __launch_bounds__(                                          \
+      __VA_ARGS__::kNumThreads, __VA_ARGS__::kMinBlocksPerSm)                 \
+      attention_kernel_batched<__VA_ARGS__>(typename __VA_ARGS__::Params p) { \
+    using Kernel = __VA_ARGS__;
+#define _ATTENTION_KERNEL_FORWARD_END() }
 
 #ifdef __CUDA_ARCH__
-  static_assert(CurrentArch::kMinComputeCapability * 10 <= __CUDA_ARCH__);
+#define __CUDA_ARCH_OR_ZERO__ __CUDA_ARCH__
+#else
+#define __CUDA_ARCH_OR_ZERO__ 0
 #endif
-  auto batch_id = blockIdx.z;
-  p.advance_batches(batch_id);
-  AttentionKernel<AKInfo, CurrentArch>::attention_kernel(p);
-}
 
-std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
-efficient_attention_forward_generic(
-    const at::Tensor& query,
-    const at::Tensor& key,
-    const at::Tensor& value,
-    bool compute_logsumexp,
-    const c10::optional<at::Tensor>& attn_bias_,
-    double p) {
-  TORCH_CHECK(p == 0.0, "Dropout is not supported at the moment");
-  TORCH_CHECK(
-      !attn_bias_.has_value(), "attn_bias is not supported at the moment");
+#define INSTANTIATE_ATTENTION_KERNEL_FORWARD(                      \
+    ARCH, SCALAR_T, IS_ALIGNED, QUERIES_PER_BLOCK, KEYS_PER_BLOCK) \
+  _ATTENTION_KERNEL_FORWARD_BEGIN(AttentionKernel<                 \
+                                  SCALAR_T,                        \
+                                  cutlass::arch::Sm##ARCH,         \
+                                  IS_ALIGNED,                      \
+                                  QUERIES_PER_BLOCK,               \
+                                  KEYS_PER_BLOCK>)                 \
+  auto batch_id = blockIdx.z;                                      \
+  p.advance_batches(batch_id);                                     \
+  Kernel::attention_kernel(p);                                     \
+  _ATTENTION_KERNEL_FORWARD_END();
 
-  TORCH_CHECK(query.dim() == 3);
-  TORCH_CHECK(key.dim() == 3);
-  TORCH_CHECK(value.dim() == 3);
+#define INSTANTIATE_ATTENTION_KERNEL_FORWARD_DISABLED(              \
+    ARCH, SCALAR_T, IS_ALIGNED, QUERIES_PER_BLOCK, KEYS_PER_BLOCK)  \
+  _ATTENTION_KERNEL_FORWARD_BEGIN(AttentionKernel<                  \
+                                  SCALAR_T,                         \
+                                  cutlass::arch::Sm##ARCH,          \
+                                  IS_ALIGNED,                       \
+                                  QUERIES_PER_BLOCK,                \
+                                  KEYS_PER_BLOCK>)                  \
+  printf(                                                           \
+      "FATAL: this function is for sm%d, but was built for sm%d\n", \
+      int(ARCH),                                                    \
+      int(__CUDA_ARCH_OR_ZERO__));                                  \
+  _ATTENTION_KERNEL_FORWARD_END();
 
-  TORCH_CHECK(query.size(2) == key.size(2));
-  TORCH_CHECK(query.size(0) == key.size(0));
+// All kernels are disabled by default
+#define INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM50(...) \
+  INSTANTIATE_ATTENTION_KERNEL_FORWARD_DISABLED(50, __VA_ARGS__)
+#define INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM70(...) \
+  INSTANTIATE_ATTENTION_KERNEL_FORWARD_DISABLED(70, __VA_ARGS__)
+#define INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM75(...) \
+  INSTANTIATE_ATTENTION_KERNEL_FORWARD_DISABLED(75, __VA_ARGS__)
+#define INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM80(...) \
+  INSTANTIATE_ATTENTION_KERNEL_FORWARD_DISABLED(80, __VA_ARGS__)
 
-  TORCH_CHECK(query.is_cuda(), "query must be a CUDA tensor");
-  TORCH_CHECK(key.is_cuda(), "key must be a CUDA tensor");
-  TORCH_CHECK(value.is_cuda(), "value must be a CUDA tensor");
-
-  TORCH_CHECK(!query.is_sparse(), "query must be a dense tensor");
-  TORCH_CHECK(!key.is_sparse(), "key must be a dense tensor");
-  TORCH_CHECK(!value.is_sparse(), "value must be a dense tensor");
-
-  TORCH_CHECK(query.is_contiguous());
-  TORCH_CHECK(key.is_contiguous());
-  TORCH_CHECK(value.is_contiguous());
-
-  at::cuda::CUDAGuard device_guard(query.device());
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-
-  int64_t B = query.size(0);
-  int64_t M = query.size(1);
-  int64_t N = key.size(1);
-  int64_t K = query.size(2);
-
-  using accum_t = float;
-
-  at::Tensor res;
-  at::Tensor logsumexp;
-
-  cudaDeviceProp* properties =
-      at::cuda::getDeviceProperties(query.device().index());
-  const int computeCapability = properties->major * 10 + properties->minor;
-
-#define DISPATCH_ARCHTAG(func)                                            \
-  {                                                                       \
-    if (computeCapability >= 80) {                                        \
-      using ArchTag = cutlass::arch::Sm80;                                \
-      func();                                                             \
-    } else if (computeCapability >= 75) {                                 \
-      using ArchTag = cutlass::arch::Sm75;                                \
-      func();                                                             \
-    } else if (computeCapability >= 70) {                                 \
-      using ArchTag = cutlass::arch::Sm70;                                \
-      func();                                                             \
-    } else if (computeCapability >= 50) {                                 \
-      using ArchTag = cutlass::arch::Sm50;                                \
-      func();                                                             \
-    } else {                                                              \
-      TORCH_CHECK(                                                        \
-          false,                                                          \
-          "Your device is too old. We require compute capability >= 50"); \
-    }                                                                     \
-  }
-// Dispatch to the right kernel
-#define DISPATCH_TYPES(func)                                          \
-  {                                                                   \
-    if (query.scalar_type() == at::ScalarType::Float) {               \
-      using scalar_t = float;                                         \
-      using output_t = float;                                         \
-      func();                                                         \
-    } else if (query.scalar_type() == at::ScalarType::Half) {         \
-      using scalar_t = cutlass::half_t;                               \
-      using output_t = float;                                         \
-      func();                                                         \
-    } else {                                                          \
-      TORCH_CHECK(false, "Only fp32 & half supported at the moment"); \
-    }                                                                 \
-  }
-
-  DISPATCH_TYPES(([&]() {
-    // Run a more efficient kernel (with `isAligned=True`) if memory is
-    // correctly aligned
-    using AlignedAKI = AttentionKernelInfo<scalar_t, accum_t, output_t, true>;
-    bool isAligned;
-    DISPATCH_ARCHTAG(([&]() {
-      using AlignedAK = AttentionKernel<AlignedAKI, ArchTag>;
-      isAligned =
-          (query.stride(1) % AlignedAK::kAlignmentQ == 0 &&
-           key.stride(1) % AlignedAK::kAlignmentK == 0 &&
-           value.stride(1) % AlignedAK::kAlignmentV == 0);
-      // TODO: Should we warn or log somewhere when we use a less efficient
-      // kernel due to wrong alignment?
-    }));
-    DISPATCH_BOOL(
-        isAligned, kIsAligned, ([&]() {
-          using AKI =
-              AttentionKernelInfo<scalar_t, accum_t, output_t, kIsAligned>;
-          size_t smem_bytes = 0;
-          DISPATCH_ARCHTAG(([&]() {
-            using AK = AttentionKernel<AKI, ArchTag>;
-            smem_bytes = sizeof(typename AK::SharedStorage);
-            // Might happen on Sm80/half, where the minimum alignment is 32bits
-            TORCH_CHECK(
-                query.stride(1) % AK::kAlignmentQ == 0,
-                "query is not correctly aligned");
-            TORCH_CHECK(
-                key.stride(1) % AK::kAlignmentK == 0,
-                "key is not correctly aligned");
-            TORCH_CHECK(
-                value.stride(1) % AK::kAlignmentV == 0,
-                "value is not correctly aligned");
-          }));
-          TORCH_INTERNAL_ASSERT(smem_bytes > 0, "No kernel found!?");
-
-          res = at::zeros(
-              {B, M, K},
-              query.options().dtype(TypeTraits<output_t>::atScalarType()));
-          // NOTE: Should be aligned (by padding) in case M is not a good number
-          // for loading during backward
-          constexpr decltype(M) kAlignLSE = 32; // block size of backward
-          logsumexp = at::empty(
-              {B, compute_logsumexp ? ceil_div(M, kAlignLSE) * kAlignLSE : 0},
-              query.options().dtype(at::ScalarType::Float));
-
-          constexpr auto kernel_fn = attention_kernel_batched<AKI>;
-          if (smem_bytes > 0xc000) {
-            TORCH_INTERNAL_ASSERT(
-                computeCapability >= 70,
-                "This kernel requires too much shared memory on this machine!");
-            AT_CUDA_CHECK(cudaFuncSetAttribute(
-                kernel_fn,
-                cudaFuncAttributeMaxDynamicSharedMemorySize,
-                smem_bytes));
-          }
-
-          using m = TypeTraits<scalar_t>;
-          typename AKI::Params p;
-          p.query_ptr = (scalar_t*)query.data_ptr();
-          p.key_ptr = (scalar_t*)key.data_ptr();
-          p.value_ptr = (scalar_t*)value.data_ptr();
-          p.logsumexp_ptr = compute_logsumexp
-              ? (typename AKI::lse_scalar_t*)logsumexp.data_ptr()
-              : nullptr;
-          p.output_ptr = (output_t*)res.data_ptr();
-          p.head_dim = query.size(2);
-          p.head_dim_value = value.size(2);
-          p.num_queries = query.size(1);
-          p.num_keys = key.size(1);
-          p.num_batches = B;
-          kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
-        }));
-  }));
-
-  AT_CUDA_CHECK(cudaGetLastError());
-  return std::make_tuple(res, logsumexp, int64_t(), int64_t());
-}
-} // namespace
-
-TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_generic"),
-      TORCH_FN(efficient_attention_forward_generic));
-}
+// Enable the right one based on __CUDA_ARCH__
+#ifndef __CUDA_ARCH__
+#elif __CUDA_ARCH__ < 500
+#error "Need cuda arch at least 5.0"
+#elif __CUDA_ARCH__ < 700
+#undef INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM50
+#define INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM50(...) \
+  INSTANTIATE_ATTENTION_KERNEL_FORWARD(50, __VA_ARGS__)
+#elif __CUDA_ARCH__ < 750
+#undef INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM70
+#define INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM70(...) \
+  INSTANTIATE_ATTENTION_KERNEL_FORWARD(70, __VA_ARGS__)
+#elif __CUDA_ARCH__ < 800
+#undef INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM75
+#define INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM75(...) \
+  INSTANTIATE_ATTENTION_KERNEL_FORWARD(75, __VA_ARGS__)
+#elif __CUDA_ARCH__ >= 800
+#undef INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM80
+#define INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM80(...) \
+  INSTANTIATE_ATTENTION_KERNEL_FORWARD(80, __VA_ARGS__)
+#endif
