@@ -52,6 +52,7 @@ struct AttentionKernelInfo {
   using scalar_t = scalar_t_;
   using accum_t = accum_t_;
   using output_t = output_t_;
+  using lse_scalar_t = float;
   static constexpr bool kIsAligned = isAligned_;
 
   // Blocks
@@ -59,11 +60,45 @@ struct AttentionKernelInfo {
   static constexpr int64_t kQueriesPerBlock = 32;
   static constexpr int64_t kNumWarpsPerBlock = 4;
   static constexpr int64_t kWarpSize = 32;
-  static constexpr int64_t kNumBlocksX = 1;
 
-  static int64_t getNumBlocksY(int64_t num_queries) {
-    return ceil_div(num_queries, kQueriesPerBlock);
-  }
+  struct Params {
+    // Input tensors
+    scalar_t* query_ptr; // [num_queries, head_dim]
+    scalar_t* key_ptr; // [num_keys, head_dim]
+    scalar_t* value_ptr; // [num_keys, head_dim_value]
+
+    // Output tensors
+    output_t* output_ptr; // [num_queries, head_dim_value]
+    lse_scalar_t* logsumexp_ptr; // [num_queries] - can be 0
+
+    // Dimensions/strides
+    int32_t head_dim;
+    int32_t head_dim_value;
+    int32_t num_queries;
+    int32_t num_keys;
+    int32_t num_batches;
+
+    __device__ void advance_batches(int32_t batch_id) {
+      constexpr int32_t kAlignLSE = 32; // block size of backward
+      auto lse_dim = ceil_div((int32_t)num_queries, kAlignLSE) * kAlignLSE;
+
+      query_ptr += batch_id * head_dim * num_queries;
+      key_ptr += batch_id * head_dim * num_keys;
+      value_ptr += batch_id * head_dim_value * num_keys;
+      output_ptr += batch_id * head_dim_value * num_queries;
+      if (logsumexp_ptr != nullptr) {
+        logsumexp_ptr += batch_id * lse_dim;
+      }
+    }
+
+    __host__ dim3 getBlocksGrid() const {
+      return dim3(
+          1, ceil_div(num_queries, (int32_t)kQueriesPerBlock), num_batches);
+    }
+    __host__ dim3 getThreadsGrid() const {
+      return dim3(kWarpSize, kNumWarpsPerBlock, 1);
+    }
+  };
 };
 
 template <typename KernelInfo, typename ArchTag>
@@ -71,6 +106,7 @@ struct AttentionKernel {
   using scalar_t = typename KernelInfo::scalar_t;
   using accum_t = typename KernelInfo::accum_t;
   using output_t = typename KernelInfo::output_t;
+  using Params = typename KernelInfo::Params;
   static constexpr bool kIsAligned = KernelInfo::kIsAligned;
   static constexpr int64_t kQueriesPerBlock = KernelInfo::kQueriesPerBlock;
   static constexpr int64_t kNumWarpsPerBlock = KernelInfo::kNumWarpsPerBlock;
@@ -216,27 +252,23 @@ struct AttentionKernel {
     };
 
     static __device__ void compute_dot_product_att_value(
+        Params const& p,
         SharedStorageMM1& shared_storage_mm,
         typename MM0::AccumulatorSharedStorage& shared_storage_si,
         int32_t const& iter_key_start,
-        at::TensorAccessor<scalar_t, 2, at::DefaultPtrTraits, int32_t>& value,
         cutlass::Array<accum_t, kQueriesPerBlock> const& m_prime,
         cutlass::Array<accum_t, kQueriesPerBlock> const& s_prime,
-        bool isLast,
-        at::TensorAccessor<output_t, 2, at::DefaultPtrTraits, int32_t>&
-            output) {
+        bool isLast) {
       cutlass::gemm::GemmCoord problem_size(
           std::min(
-              (int32_t)kQueriesPerBlock, output.size(0) - query_start()), // M
-          value.size(1), // N
+              (int32_t)kQueriesPerBlock, p.num_queries - query_start()), // M
+          p.head_dim_value, // N
           std::min(
               int32_t(kNumWarpsPerBlock * kWarpSize),
-              value.size(0) - iter_key_start) // K
+              p.num_keys - iter_key_start) // K
       );
 
-      typename IteratorB::Params params_B(LayoutB(value.stride(0)));
-      typename IteratorB::TensorRef ref_B(
-          &value[iter_key_start][0], value.stride(0));
+      typename IteratorB::Params params_B(LayoutB(p.head_dim_value));
 
       static_assert(
           WarpCount::kM * WarpCount::kN * WarpCount::kK == kNumWarpsPerBlock);
@@ -256,7 +288,7 @@ struct AttentionKernel {
 
         typename Mma::IteratorB iterator_B(
             params_B,
-            ref_B.data(),
+            p.value_ptr + iter_key_start * p.head_dim_value,
             {problem_size.k(), problem_size.n()},
             thread_id(),
             tb_offset_B);
@@ -290,14 +322,16 @@ struct AttentionKernel {
           changes) source is the current output
         */
         OutputTileIterator output_tile_it(
-            typename OutputTileIterator::Params{output.stride(0)},
-            &output[query_start()][0],
-            {output.size(0) - query_start(), output.size(1)},
+            typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
+            p.output_ptr + query_start() * p.head_dim_value,
+            typename OutputTileIterator::TensorCoord{
+                p.num_queries - query_start(), p.head_dim_value},
             thread_id());
         OutputTileIterator source_tile_it(
-            typename OutputTileIterator::Params{output.stride(0)},
-            &output[query_start()][0],
-            {output.size(0) - query_start(), output.size(1)},
+            typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
+            p.output_ptr + query_start() * p.head_dim_value,
+            typename OutputTileIterator::TensorCoord{
+                p.num_queries - query_start(), p.head_dim_value},
             thread_id());
 
         DISPATCH_BOOL(
@@ -362,23 +396,13 @@ struct AttentionKernel {
     };
   };
 
-  static void __device__ attention_kernel(
-      at::TensorAccessor<output_t, 2, at::DefaultPtrTraits, int32_t> output,
-      at::TensorAccessor<accum_t, 1, at::DefaultPtrTraits, int32_t> logsumexp,
-      at::TensorAccessor<scalar_t, 2, at::DefaultPtrTraits, int32_t> query,
-      at::TensorAccessor<scalar_t, 2, at::DefaultPtrTraits, int32_t> key,
-      at::TensorAccessor<scalar_t, 2, at::DefaultPtrTraits, int32_t> value) {
+  static void __device__ attention_kernel(Params const& p) {
     int8_t lane_id = threadIdx.x;
     int8_t warp_id = threadIdx.y;
 
     // In this block, we will only ever:
     // - read query[query_start:query_end, :]
     // - write to output[query_start:query_end, :]
-
-    int32_t num_keys = key.size(0);
-    int32_t num_values = value.size(0);
-    int32_t num_queries = query.size(0);
-    int32_t K = key.size(1);
 
     extern __shared__ char smem_buffer[];
     SharedStorage& shared_storage = *((SharedStorage*)smem_buffer);
@@ -394,31 +418,31 @@ struct AttentionKernel {
     }
 
     // Iterate through keys
-    for (int32_t iter_key_start = 0; iter_key_start < num_keys;
+    for (int32_t iter_key_start = 0; iter_key_start < p.num_keys;
          iter_key_start += kNumWarpsPerBlock * kWarpSize) {
       __syncthreads(); // Need to have shared memory initialized, and `m_prime`
                        // updated from end of prev iter
       // 1. Compute dot-product into shared memory for each query
       // also calculates `mi`, and updates `m_prime` / `s_prime`
       compute_dot_product_qk(
-          iter_key_start, query, key, m_prime, s_prime, shared_storage);
+          p, iter_key_start, m_prime, s_prime, shared_storage);
 
       __syncthreads();
       bool isLast =
-          (iter_key_start + kNumWarpsPerBlock * kWarpSize) >= num_keys;
+          (iter_key_start + kNumWarpsPerBlock * kWarpSize) >= p.num_keys;
 
       // 4. Partial matmul with the values we have and V
       // `v* <- v* . exp(m* - mi) + v_i . exp(si - mi)`
       MM1::compute_dot_product_att_value(
+          p,
           shared_storage.after_mm0.mm1,
           shared_storage.after_mm0.si,
           iter_key_start,
-          value,
           m_prime,
           s_prime,
-          isLast, // 6. Divide by s_prime all of the values on the last
-                  // iteration
-          output);
+          isLast // 6. Divide by s_prime all of the values on the last
+                 // iteration
+      );
       __syncthreads(); // we modify `m_prime` after
 
       // 5. `m_prime` <- `mi` (`mi` will be overwritten during MM0)
@@ -432,22 +456,21 @@ struct AttentionKernel {
     // 7. Calculate logsumexp
     // To make the backward easier, we pad logsumexp with `inf`
     // this avoids a few bound checks, and is not more expensive during fwd
-    if (logsumexp.size(0) && warp_id == 0) {
+    if (p.logsumexp_ptr && warp_id == 0) {
       static_assert(kQueriesPerBlock == kWarpSize);
-      if (query_start() + lane_id < num_queries) {
-        logsumexp[query_start() + lane_id] =
+      if (query_start() + lane_id < p.num_queries) {
+        p.logsumexp_ptr[query_start() + lane_id] =
             accum_t(m_prime[lane_id]) + std::log(accum_t(s_prime[lane_id]));
       } else {
-        logsumexp[query_start() + lane_id] =
+        p.logsumexp_ptr[query_start() + lane_id] =
             std::numeric_limits<accum_t>::infinity();
       }
     }
   }
 
   static __device__ void compute_dot_product_qk(
+      Params const& p,
       int32_t const& iter_key_start,
-      at::TensorAccessor<scalar_t, 2, at::DefaultPtrTraits, int32_t>& query,
-      at::TensorAccessor<scalar_t, 2, at::DefaultPtrTraits, int32_t>& key,
       cutlass::Array<accum_t, kQueriesPerBlock>& m_prime,
       cutlass::Array<accum_t, kQueriesPerBlock>& s_prime,
       SharedStorage& shared_storage) {
@@ -463,23 +486,12 @@ struct AttentionKernel {
     using IteratorA = typename MM0::IteratorA;
     using IteratorB = typename MM0::IteratorB;
 
-    int32_t num_queries = query.size(0);
-    int32_t K = key.size(1);
-
     cutlass::gemm::GemmCoord problem_size(
-        std::min((int32_t)kQueriesPerBlock, num_queries - query_start()),
+        std::min((int32_t)kQueriesPerBlock, p.num_queries - query_start()),
         std::min(
             int32_t(kNumWarpsPerBlock * kWarpSize),
-            key.size(0) - iter_key_start),
-        K);
-    typename IteratorA::Params params_A(
-        typename MmaCore::LayoutA(query.stride(0)));
-    typename IteratorA::TensorRef ref_A(
-        &query[query_start()][0], query.stride(0));
-
-    typename IteratorB::Params params_B(
-        typename MmaCore::LayoutB(key.stride(0)));
-    typename IteratorB::TensorRef ref_B(&key[iter_key_start][0], key.stride(0));
+            p.num_keys - iter_key_start),
+        p.head_dim);
 
     static_assert(
         MmaCore::WarpCount::kM * MmaCore::WarpCount::kN *
@@ -497,15 +509,15 @@ struct AttentionKernel {
 
     // Construct iterators to A and B operands
     typename Mma::IteratorA iterator_A(
-        params_A,
-        ref_A.data(),
+        typename IteratorA::Params(typename MmaCore::LayoutA(p.head_dim)),
+        p.query_ptr + query_start() * p.head_dim,
         {problem_size.m(), problem_size.k()},
         thread_id(),
         tb_offset_A);
 
     typename Mma::IteratorB iterator_B(
-        params_B,
-        ref_B.data(),
+        typename IteratorB::Params(typename MmaCore::LayoutB(p.head_dim)),
+        p.key_ptr + iter_key_start * p.head_dim,
         {problem_size.k(), problem_size.n()},
         thread_id(),
         tb_offset_B);
@@ -534,7 +546,7 @@ struct AttentionKernel {
     __syncthreads();
 
     // Scale
-    accum_t scale = accum_t(1.0 / std::sqrt(float(K)));
+    accum_t scale = accum_t(1.0 / std::sqrt(float(p.head_dim)));
     accum = cutlass::multiplies<typename Mma::FragmentC>()(scale, accum);
 
     typename Mma::Operator::IteratorC::TensorCoord iteratorC_tile_offset = {
@@ -550,7 +562,7 @@ struct AttentionKernel {
         s_prime,
         lane_id(),
         warp_id(),
-        key.size(0) - iter_key_start,
+        p.num_keys - iter_key_start,
         iteratorC_tile_offset);
 
     // Output results to shared-memory
@@ -587,12 +599,7 @@ __global__ void __launch_bounds__(
     // number of resident blocks per multiprocessor
     // TODO: We get slightly better performance by *removing* this on A100
     12 / AKInfo::kNumWarpsPerBlock)
-    attention_kernel_batched(
-        at::PackedTensorAccessor32<typename AKInfo::output_t, 3> output,
-        at::PackedTensorAccessor32<typename AKInfo::accum_t, 2> logsumexp,
-        at::PackedTensorAccessor32<typename AKInfo::scalar_t, 3> query,
-        at::PackedTensorAccessor32<typename AKInfo::scalar_t, 3> key,
-        at::PackedTensorAccessor32<typename AKInfo::scalar_t, 3> value) {
+    attention_kernel_batched(typename AKInfo::Params p) {
 #ifndef __CUDA_ARCH__
   using CurrentArch = cutlass::arch::Sm80;
 #elif (__CUDA_ARCH__ >= 800)
@@ -610,14 +617,9 @@ __global__ void __launch_bounds__(
 #ifdef __CUDA_ARCH__
   static_assert(CurrentArch::kMinComputeCapability * 10 <= __CUDA_ARCH__);
 #endif
-
   auto batch_id = blockIdx.z;
-  AttentionKernel<AKInfo, CurrentArch>::attention_kernel(
-      output[batch_id],
-      logsumexp[batch_id],
-      query[batch_id],
-      key[batch_id],
-      value[batch_id]);
+  p.advance_batches(batch_id);
+  AttentionKernel<AKInfo, CurrentArch>::attention_kernel(p);
 }
 
 std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
@@ -650,16 +652,6 @@ efficient_attention_forward_generic(
   TORCH_CHECK(query.is_contiguous());
   TORCH_CHECK(key.is_contiguous());
   TORCH_CHECK(value.is_contiguous());
-
-  at::Tensor attn_bias;
-  if (attn_bias_.has_value()) {
-    attn_bias = *attn_bias_;
-    TORCH_CHECK(query.dim() == attn_bias.dim());
-    TORCH_CHECK(query.size(0) == attn_bias.size(0));
-    TORCH_CHECK(query.size(1) == attn_bias.size(1));
-    TORCH_CHECK(key.size(1) == attn_bias.size(2));
-    TORCH_CHECK(attn_bias.stride(1) == 0);
-  }
 
   at::cuda::CUDAGuard device_guard(query.device());
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
@@ -759,9 +751,6 @@ efficient_attention_forward_generic(
               {B, compute_logsumexp ? ceil_div(M, kAlignLSE) * kAlignLSE : 0},
               query.options().dtype(at::ScalarType::Float));
 
-          dim3 grid(AKI::kNumBlocksX, AKI::getNumBlocksY(M), B);
-          dim3 block(AKI::kWarpSize, AKI::kNumWarpsPerBlock, 1);
-
           constexpr auto kernel_fn = attention_kernel_batched<AKI>;
           if (smem_bytes > 0xc000) {
             TORCH_INTERNAL_ASSERT(
@@ -774,12 +763,20 @@ efficient_attention_forward_generic(
           }
 
           using m = TypeTraits<scalar_t>;
-          kernel_fn<<<grid, block, smem_bytes>>>(
-              TypeTraits<output_t>::packed_accessor<3>(res),
-              logsumexp.packed_accessor32<accum_t, 2>(),
-              m::packed_accessor<3>(query),
-              m::packed_accessor<3>(key),
-              m::packed_accessor<3>(value));
+          typename AKI::Params p;
+          p.query_ptr = (scalar_t*)query.data_ptr();
+          p.key_ptr = (scalar_t*)key.data_ptr();
+          p.value_ptr = (scalar_t*)value.data_ptr();
+          p.logsumexp_ptr = compute_logsumexp
+              ? (typename AKI::lse_scalar_t*)logsumexp.data_ptr()
+              : nullptr;
+          p.output_ptr = (output_t*)res.data_ptr();
+          p.head_dim = query.size(2);
+          p.head_dim_value = value.size(2);
+          p.num_queries = query.size(1);
+          p.num_keys = key.size(1);
+          p.num_batches = B;
+          kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
         }));
   }));
 
