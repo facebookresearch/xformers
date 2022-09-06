@@ -96,6 +96,7 @@ def _matmul_with_mask(
 
     att = a @ b
     if mask.dtype == torch.bool:
+        assert not isinstance(mask, SparseCS)
         if mask.ndim == 2:
             mask = mask.unsqueeze(0).expand(att.shape[0], -1, -1)
         # mask is presumed false == ignore
