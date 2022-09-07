@@ -541,10 +541,6 @@ struct AttentionKernel {
     }
     __syncthreads();
 
-    // Scale
-    accum_t scale = accum_t(1.0 / std::sqrt(float(p.head_dim)));
-    accum = cutlass::multiplies<typename Mma::FragmentC>()(scale, accum);
-
     typename Mma::Operator::IteratorC::TensorCoord iteratorC_tile_offset = {
         (tb_tile_offset.m() * Mma::WarpCount::kM) +
             (my_warp_id % Mma::WarpCount::kM),
@@ -564,7 +560,8 @@ struct AttentionKernel {
               thread_id(),
               warp_id(),
               p.num_keys - iter_key_start,
-              iteratorC_tile_offset);
+              iteratorC_tile_offset,
+              1.0f / std::sqrt(float(p.head_dim)));
         }));
 
     // Output results to shared-memory
