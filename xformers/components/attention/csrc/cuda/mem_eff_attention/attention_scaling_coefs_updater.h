@@ -34,7 +34,7 @@ of iterating in the accumulators.
 
 template <typename BASE, typename T, typename accum_t, int kWarpSize>
 struct RegisterOps {
-  template <int kQueriesPerBlock>
+  template <int kQueriesPerBlock, bool kFullColumns>
   __device__ __forceinline__ static void update(
       typename T::Fragment& frag,
       cutlass::Array<accum_t, kQueriesPerBlock>& mi,
@@ -53,7 +53,7 @@ struct RegisterOps {
           lane_offset,
           [&](int accum_m) { max = -std::numeric_limits<accum_t>::infinity(); },
           [&](int accum_m, int accum_n, int idx) {
-            if (accum_n < max_col) {
+            if (kFullColumns || accum_n < max_col) {
               max = std::max(max, frag[idx]);
             }
           },
@@ -79,15 +79,17 @@ struct RegisterOps {
       accum_t mi_row, total_row;
       BASE::iterateRows(
           lane_offset,
-          [&](int accum_m) {
-            mi_row = mi[accum_m];
-            total_row = 0.0;
-          },
+          [&](int accum_m) { mi_row = mi[accum_m]; },
           [&](int accum_m, int accum_n, int idx) {
-            frag[idx] =
-                (accum_n < max_col) ? expf(frag[idx] - mi_row) : accum_t(0.0);
-            total_row += frag[idx];
+            frag[idx] = (kFullColumns || accum_n < max_col)
+                ? expf(frag[idx] - mi_row)
+                : accum_t(0.0);
           },
+          [&](int accum_m) {});
+      BASE::iterateRows(
+          lane_offset,
+          [&](int accum_m) { total_row = 0.0; },
+          [&](int accum_m, int accum_n, int idx) { total_row += frag[idx]; },
           [&](int accum_m) {
             if (BASE::reduceSameRow(
                     lane_id, total_row, [](accum_t a, accum_t b) {

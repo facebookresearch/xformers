@@ -550,17 +550,22 @@ struct AttentionKernel {
             (my_warp_id % Mma::WarpCount::kM),
         (tb_tile_offset.n() * Mma::WarpCount::kN) +
             (my_warp_id / Mma::WarpCount::kM)};
-    // Update `mi` from accum stored in registers
-    MM0::ScalingCoefsUpdater::update<kQueriesPerBlock>(
-        accum,
-        mi,
-        m_prime,
-        s_prime,
-        lane_id(),
-        thread_id(),
-        warp_id(),
-        p.num_keys - iter_key_start,
-        iteratorC_tile_offset);
+
+    DISPATCH_BOOL(
+        p.num_keys - iter_key_start >= kKeysPerBlock, kFullColumns, ([&] {
+          // Update `mi` from accum stored in registers
+          // Also updates `accum` with accum[i] <- exp(accum[i] * scale - mi)
+          MM0::ScalingCoefsUpdater::update<kQueriesPerBlock, kFullColumns>(
+              accum,
+              mi,
+              m_prime,
+              s_prime,
+              lane_id(),
+              thread_id(),
+              warp_id(),
+              p.num_keys - iter_key_start,
+              iteratorC_tile_offset);
+        }));
 
     // Output results to shared-memory
     int warp_idx_mn_0 = my_warp_id %
