@@ -181,12 +181,16 @@ def get_extensions():
         include_dirs += [sputnik_dir, cutlass_dir]
         nvcc_flags = os.getenv("NVCC_FLAGS", "")
         if nvcc_flags == "":
-            nvcc_flags = []
+            nvcc_flags = ["--use_fast_math", "-DNDEBUG"]
         else:
             nvcc_flags = nvcc_flags.split(" ")
         cuda_version = get_cuda_version(CUDA_HOME)
         if cuda_version >= 1102:
-            nvcc_flags += ["--threads", "4", "--ptxas-options=-v"]
+            nvcc_flags += [
+                "--threads",
+                "4",
+                "--ptxas-options=-v",
+            ]
         extra_compile_args["nvcc"] = nvcc_flags
 
         ext_modules += get_flash_attention_extensions(
