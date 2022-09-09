@@ -169,6 +169,10 @@ struct AttentionKernel {
         typename Mma::Operator::IteratorC,
         accum_t,
         kWarpSize>::Updater;
+    static_assert(
+        MmaCore::WarpCount::kM * MmaCore::WarpCount::kN *
+            MmaCore::WarpCount::kK ==
+        kNumWarpsPerBlock);
 
     // Epilogue to store to shared-memory in a format that we can use later for
     // the second matmul
@@ -236,6 +240,8 @@ struct AttentionKernel {
     using Mma = typename DefaultMmaFromSmem::Mma;
     using IteratorB = typename Mma::IteratorB;
     using WarpCount = typename Mma::WarpCount;
+    static_assert(
+        WarpCount::kM * WarpCount::kN * WarpCount::kK == kNumWarpsPerBlock);
 
     using DefaultEpilogue = typename DefaultGemm::Epilogue;
     using OutputTileIterator = typename DefaultEpilogue::OutputTileIterator;
@@ -248,133 +254,6 @@ struct AttentionKernel {
         typename DefaultEpilogue::SharedStorage epilogue;
       };
     };
-
-    static __device__ void compute_dot_product_att_value(
-        Params const& p,
-        SharedStorageMM1& shared_storage_mm,
-        typename MM0::AccumulatorSharedStorage& shared_storage_si,
-        int32_t const& iter_key_start,
-        cutlass::Array<accum_t, kQueriesPerBlock> const& m_prime,
-        cutlass::Array<accum_t, kQueriesPerBlock> const& s_prime,
-        bool isLast) {
-      cutlass::gemm::GemmCoord problem_size(
-          std::min(
-              (int32_t)kQueriesPerBlock, p.num_queries - query_start()), // M
-          p.head_dim_value, // N
-          std::min(
-              int32_t(kKeysPerBlock),
-              p.num_keys - iter_key_start) // K
-      );
-
-      typename IteratorB::Params params_B(LayoutB(p.head_dim_value));
-
-      static_assert(
-          WarpCount::kM * WarpCount::kN * WarpCount::kK == kNumWarpsPerBlock);
-
-      const int64_t nBlockN =
-          ceil_div((int64_t)problem_size.n(), int64_t(ThreadblockShape::kN));
-      for (int blockN = 0; blockN < nBlockN; ++blockN) {
-        /*
-        Run the matmul `attn @ V` for a block of attn and V.
-        `attn` is read from shared memory (in `shared_storage_si`)
-        `V` is read from global memory (with iterator_B)
-        */
-        cutlass::gemm::GemmCoord tb_tile_offset = {0, blockN, 0};
-
-        cutlass::MatrixCoord tb_offset_B{
-            tb_tile_offset.k(), tb_tile_offset.n() * Mma::Shape::kN};
-
-        typename Mma::IteratorB iterator_B(
-            params_B,
-            p.value_ptr + iter_key_start * p.head_dim_value,
-            {problem_size.k(), problem_size.n()},
-            thread_id(),
-            tb_offset_B);
-
-        typename Mma::FragmentC accum;
-        accum.clear();
-
-        Mma mma(
-            shared_storage_mm.mm,
-            shared_storage_si,
-            thread_id(),
-            warp_id(),
-            lane_id(),
-            problem_size.k());
-
-        int gemm_k_iterations =
-            (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
-
-        // Compute threadblock-scoped matrix multiply-add and store it in accum
-        // (in registers)
-        __syncthreads(); // we share shmem between mma and epilogue
-        mma(gemm_k_iterations, accum, iterator_B, accum);
-        __syncthreads(); // we share shmem between mma and epilogue
-
-        /*
-          Epilogue: Store the following into global memory
-          output <- alpha * accumulator + beta * source
-            with:
-              alpha = 1 / s_prime (to normalize when isLast=True, 1 otherwise)
-              beta = alpha / m_prime (renormalize the output when the max
-          changes) source is the current output
-        */
-        int col = blockN * Mma::Shape::kN;
-        OutputTileIterator output_tile_it(
-            typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
-            p.output_ptr + query_start() * p.head_dim_value + col,
-            typename OutputTileIterator::TensorCoord{
-                p.num_queries - query_start(), p.head_dim_value - col},
-            thread_id());
-        OutputTileIterator source_tile_it(
-            typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
-            p.output_ptr + query_start() * p.head_dim_value + col,
-            typename OutputTileIterator::TensorCoord{
-                p.num_queries - query_start(), p.head_dim_value - col},
-            thread_id());
-        using ElementCompute =
-            typename DefaultConfig::EpilogueOutputOp::ElementCompute;
-        DISPATCH_BOOL(
-            iter_key_start == 0, kIsFirst, ([&]() {
-              DISPATCH_BOOL(
-                  isLast, kIsLast, ([&]() {
-                    using EpilogueOutputOp = typename cutlass::epilogue::
-                        thread::MemoryEfficientAttentionNormalize<
-                            output_t,
-                            DefaultConfig::EpilogueOutputOp::kCount,
-                            typename DefaultConfig::EpilogueOutputOp::
-                                ElementAccumulator,
-                            typename DefaultConfig::EpilogueOutputOp::
-                                ElementCompute,
-                            kIsFirst,
-                            kIsLast,
-                            cutlass::Array<ElementCompute, kQueriesPerBlock>>;
-                    using Epilogue = typename cutlass::epilogue::threadblock::
-                        EpilogueWithRowId<
-                            typename DefaultEpilogue::Shape,
-                            typename Mma::Operator,
-                            DefaultEpilogue::kPartitionsK,
-                            typename DefaultEpilogue::OutputTileIterator,
-                            typename DefaultEpilogue::
-                                AccumulatorFragmentIterator,
-                            typename DefaultEpilogue::WarpTileIterator,
-                            typename DefaultEpilogue::SharedLoadIterator,
-                            EpilogueOutputOp,
-                            typename DefaultEpilogue::Padding,
-                            DefaultEpilogue::kFragmentsPerIteration,
-                            true // IterationsUnroll
-                            >;
-                    EpilogueOutputOp rescale(s_prime, m_prime);
-                    Epilogue epilogue(
-                        shared_storage_mm.epilogue,
-                        thread_id(),
-                        warp_id(),
-                        lane_id());
-                    epilogue(rescale, output_tile_it, accum, source_tile_it);
-                  }));
-            }));
-      }
-    }
   };
 
   static constexpr int64_t kAlignmentQ = MM0::kAlignmentA;
@@ -418,28 +297,216 @@ struct AttentionKernel {
     // Iterate through keys
     for (int32_t iter_key_start = 0; iter_key_start < p.num_keys;
          iter_key_start += kKeysPerBlock) {
+      int32_t problem_size_0_m =
+          std::min((int32_t)kQueriesPerBlock, p.num_queries - query_start());
+      int32_t problem_size_0_n =
+          std::min(int32_t(kKeysPerBlock), p.num_keys - iter_key_start);
+      int32_t const& problem_size_0_k = p.head_dim;
+      int32_t const& problem_size_1_m = problem_size_0_m;
+      int32_t const& problem_size_1_n = p.head_dim_value;
+      int32_t const& problem_size_1_k = problem_size_0_n;
+
       __syncthreads(); // Need to have shared memory initialized, and `m_prime`
                        // updated from end of prev iter
-      // 1. Compute dot-product into shared memory for each query
-      // also calculates `mi`, and updates `m_prime` / `s_prime`
-      compute_dot_product_qk(
-          p, iter_key_start, m_prime, s_prime, shared_storage);
+      //
+      // MATMUL: Q.K_t
+      //
+      // Computes the block-matrix product of:
+      // (a) query[query_start:query_end, :]
+      // with
+      // (b) key[iter_key_start:iter_key_start + kKeysPerBlock]
+      // and stores that into `shared_storage.si`
+      //
+
+      // Compute threadblock location
+      cutlass::gemm::GemmCoord tb_tile_offset = {0, 0, 0};
+
+      cutlass::MatrixCoord tb_offset_A{
+          tb_tile_offset.m() * MM0::Mma::Shape::kM, tb_tile_offset.k()};
+
+      cutlass::MatrixCoord tb_offset_B{
+          tb_tile_offset.k(), tb_tile_offset.n() * MM0::Mma::Shape::kN};
+
+      // Construct iterators to A and B operands
+      typename MM0::IteratorA iterator_A(
+          typename MM0::IteratorA::Params(
+              typename MM0::MmaCore::LayoutA(p.head_dim)),
+          p.query_ptr + query_start() * p.head_dim,
+          {problem_size_0_m, problem_size_0_k},
+          thread_id(),
+          tb_offset_A);
+
+      typename MM0::IteratorB iterator_B(
+          typename MM0::IteratorB::Params(
+              typename MM0::MmaCore::LayoutB(p.head_dim)),
+          p.key_ptr + iter_key_start * p.head_dim,
+          {problem_size_0_k, problem_size_0_n},
+          thread_id(),
+          tb_offset_B);
+
+      auto my_warp_id = warp_id();
+      auto my_lane_id = lane_id();
+
+      // Construct thread-scoped matrix multiply
+      typename MM0::Mma mma(
+          shared_storage.mm0, thread_id(), my_warp_id, my_lane_id);
+
+      typename MM0::Mma::FragmentC accum;
+
+      accum.clear();
+
+      auto gemm_k_iterations =
+          (problem_size_0_k + MM0::Mma::Shape::kK - 1) / MM0::Mma::Shape::kK;
+
+      // Compute threadblock-scoped matrix multiply-add
+      mma(gemm_k_iterations, accum, iterator_A, iterator_B, accum);
+      __syncthreads();
+      auto& mi = shared_storage.after_mm0.mi;
+      static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
+      if (thread_id() < kQueriesPerBlock) {
+        mi[thread_id()] = m_prime[thread_id()];
+      }
+      __syncthreads();
+
+      typename MM0::Mma::Operator::IteratorC::TensorCoord
+          iteratorC_tile_offset = {
+              (tb_tile_offset.m() * MM0::Mma::WarpCount::kM) +
+                  (my_warp_id % MM0::Mma::WarpCount::kM),
+              (tb_tile_offset.n() * MM0::Mma::WarpCount::kN) +
+                  (my_warp_id / MM0::Mma::WarpCount::kM)};
+
+      DISPATCH_BOOL(
+          p.num_keys - iter_key_start >= kKeysPerBlock, kFullColumns, ([&] {
+            // Update `mi` from accum stored in registers
+            // Also updates `accum` with accum[i] <- exp(accum[i] * scale - mi)
+            MM0::ScalingCoefsUpdater::update<kQueriesPerBlock, kFullColumns>(
+                accum,
+                mi,
+                m_prime,
+                s_prime,
+                lane_id(),
+                thread_id(),
+                warp_id(),
+                p.num_keys - iter_key_start,
+                iteratorC_tile_offset,
+                1.0f / std::sqrt(float(p.head_dim)));
+          }));
+
+      // Output results to shared-memory
+      int warp_idx_mn_0 = my_warp_id %
+          (MM0::Mma::Base::WarpCount::kM * MM0::Mma::Base::WarpCount::kN);
+      auto output_tile_coords = cutlass::MatrixCoord{
+          warp_idx_mn_0 % MM0::Mma::Base::WarpCount::kM,
+          warp_idx_mn_0 / MM0::Mma::Base::WarpCount::kM};
+
+      MM0::B2bGemm::accumToSmem(
+          shared_storage.after_mm0.si, accum, my_lane_id, output_tile_coords);
 
       __syncthreads();
       bool isLast = (iter_key_start + kKeysPerBlock) >= p.num_keys;
 
-      // 4. Partial matmul with the values we have and V
-      // `v* <- v* . exp(m* - mi) + v_i . exp(si - mi)`
-      MM1::compute_dot_product_att_value(
-          p,
-          shared_storage.after_mm0.mm1,
-          shared_storage.after_mm0.si,
-          iter_key_start,
-          m_prime,
-          s_prime,
-          isLast // 6. Divide by s_prime all of the values on the last
-                 // iteration
-      );
+      //
+      // MATMUL: Attn . V
+      // Run the matmul `attn @ V` for a block of attn and V.
+      // `attn` is read from shared memory (in `shared_storage_si`)
+      // `V` is read from global memory (with iterator_B)
+      //
+
+      const int64_t nBlockN = ceil_div(
+          (int64_t)problem_size_1_n, int64_t(MM1::ThreadblockShape::kN));
+      for (int blockN = 0; blockN < nBlockN; ++blockN) {
+        using OutputTileIterator = typename MM1::OutputTileIterator;
+        typename MM1::Mma::FragmentC accum;
+        accum.clear();
+
+        typename MM1::Mma mma(
+            shared_storage.after_mm0.mm1.mm,
+            shared_storage.after_mm0.si,
+            (int)thread_id(),
+            (int)warp_id(),
+            (int)lane_id(),
+            (int)problem_size_1_k);
+        int gemm_k_iterations =
+            (problem_size_1_k + MM1::Mma::Shape::kK - 1) / MM1::Mma::Shape::kK;
+
+        // Compute threadblock-scoped matrix multiply-add and store it in accum
+        // (in registers)
+        __syncthreads(); // we share shmem between mma and epilogue
+
+        typename MM1::IteratorB::Params params_B(
+            MM1::LayoutB(p.head_dim_value));
+        typename MM1::Mma::IteratorB iterator_V(
+            params_B,
+            p.value_ptr + iter_key_start * p.head_dim_value,
+            {problem_size_1_k, problem_size_1_n},
+            thread_id(),
+            cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
+        mma(gemm_k_iterations, accum, iterator_V, accum);
+        __syncthreads(); // we share shmem between mma and epilogue
+
+        /*
+          Epilogue: Store the following into global memory
+          output <- alpha * accumulator + beta * source
+            with:
+              alpha = 1 / s_prime (to normalize when isLast=True, 1 otherwise)
+              beta = alpha / m_prime (renormalize the output when the max
+          changes) source is the current output
+        */
+        int col = blockN * MM1::Mma::Shape::kN;
+        OutputTileIterator output_tile_it(
+            typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
+            p.output_ptr + query_start() * p.head_dim_value + col,
+            typename OutputTileIterator::TensorCoord{
+                p.num_queries - query_start(), p.head_dim_value - col},
+            thread_id());
+        OutputTileIterator source_tile_it(
+            typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
+            p.output_ptr + query_start() * p.head_dim_value + col,
+            typename OutputTileIterator::TensorCoord{
+                p.num_queries - query_start(), p.head_dim_value - col},
+            thread_id());
+        DISPATCH_BOOL(
+            iter_key_start == 0, kIsFirst, ([&]() {
+              DISPATCH_BOOL(
+                  isLast, kIsLast, ([&]() {
+                    using DefaultEpilogue = typename MM1::DefaultEpilogue;
+                    using DefaultOp =
+                        typename MM1::DefaultConfig::EpilogueOutputOp;
+                    using ElementCompute = typename DefaultOp::ElementCompute;
+                    using EpilogueOutputOp = typename cutlass::epilogue::
+                        thread::MemoryEfficientAttentionNormalize<
+                            output_t,
+                            DefaultOp::kCount,
+                            typename DefaultOp::ElementAccumulator,
+                            ElementCompute,
+                            kIsFirst,
+                            kIsLast,
+                            cutlass::Array<ElementCompute, kQueriesPerBlock>>;
+                    using Epilogue = typename cutlass::epilogue::threadblock::
+                        EpilogueWithRowId<
+                            typename DefaultEpilogue::Shape,
+                            typename MM1::Mma::Operator,
+                            DefaultEpilogue::kPartitionsK,
+                            typename DefaultEpilogue::OutputTileIterator,
+                            typename DefaultEpilogue::
+                                AccumulatorFragmentIterator,
+                            typename DefaultEpilogue::WarpTileIterator,
+                            typename DefaultEpilogue::SharedLoadIterator,
+                            EpilogueOutputOp,
+                            typename DefaultEpilogue::Padding,
+                            DefaultEpilogue::kFragmentsPerIteration,
+                            true // IterationsUnroll
+                            >;
+                    EpilogueOutputOp rescale(s_prime, m_prime);
+                    Epilogue epilogue(
+                        shared_storage.after_mm0.mm1.epilogue,
+                        thread_id(),
+                        warp_id(),
+                        lane_id());
+                    epilogue(rescale, output_tile_it, accum, source_tile_it);
+                  }));
+            }));
+      }
       __syncthreads(); // we modify `m_prime` after
 
       // 5. `m_prime` <- `mi` (`mi` will be overwritten during MM0)
@@ -464,115 +531,6 @@ struct AttentionKernel {
             std::numeric_limits<accum_t>::infinity();
       }
     }
-  }
-
-  static __device__ void compute_dot_product_qk(
-      Params const& p,
-      int32_t const& iter_key_start,
-      cutlass::Array<accum_t, kQueriesPerBlock>& m_prime,
-      cutlass::Array<accum_t, kQueriesPerBlock>& s_prime,
-      SharedStorage& shared_storage) {
-    /*
-    Computes the block-matrix product of:
-    (a) query[query_start:query_end, :]
-    with
-    (b) key[iter_key_start:iter_key_start + kKeysPerBlock]
-    and stores that into `shared_storage.si`
-    */
-    using MmaCore = typename MM0::MmaCore;
-    using Mma = typename MM0::Mma;
-    using IteratorA = typename MM0::IteratorA;
-    using IteratorB = typename MM0::IteratorB;
-
-    cutlass::gemm::GemmCoord problem_size(
-        std::min((int32_t)kQueriesPerBlock, p.num_queries - query_start()),
-        std::min(int32_t(kKeysPerBlock), p.num_keys - iter_key_start),
-        p.head_dim);
-
-    static_assert(
-        MmaCore::WarpCount::kM * MmaCore::WarpCount::kN *
-            MmaCore::WarpCount::kK ==
-        kNumWarpsPerBlock);
-
-    // Compute threadblock location
-    cutlass::gemm::GemmCoord tb_tile_offset = {0, 0, 0};
-
-    cutlass::MatrixCoord tb_offset_A{
-        tb_tile_offset.m() * Mma::Shape::kM, tb_tile_offset.k()};
-
-    cutlass::MatrixCoord tb_offset_B{
-        tb_tile_offset.k(), tb_tile_offset.n() * Mma::Shape::kN};
-
-    // Construct iterators to A and B operands
-    typename Mma::IteratorA iterator_A(
-        typename IteratorA::Params(typename MmaCore::LayoutA(p.head_dim)),
-        p.query_ptr + query_start() * p.head_dim,
-        {problem_size.m(), problem_size.k()},
-        thread_id(),
-        tb_offset_A);
-
-    typename Mma::IteratorB iterator_B(
-        typename IteratorB::Params(typename MmaCore::LayoutB(p.head_dim)),
-        p.key_ptr + iter_key_start * p.head_dim,
-        {problem_size.k(), problem_size.n()},
-        thread_id(),
-        tb_offset_B);
-
-    auto my_warp_id = warp_id();
-    auto my_lane_id = lane_id();
-
-    // Construct thread-scoped matrix multiply
-    Mma mma(shared_storage.mm0, thread_id(), my_warp_id, my_lane_id);
-
-    typename Mma::FragmentC accum;
-
-    accum.clear();
-
-    auto gemm_k_iterations =
-        (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
-
-    // Compute threadblock-scoped matrix multiply-add
-    mma(gemm_k_iterations, accum, iterator_A, iterator_B, accum);
-    __syncthreads();
-    auto& mi = shared_storage.after_mm0.mi;
-    static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
-    if (thread_id() < kQueriesPerBlock) {
-      mi[thread_id()] = m_prime[thread_id()];
-    }
-    __syncthreads();
-
-    typename Mma::Operator::IteratorC::TensorCoord iteratorC_tile_offset = {
-        (tb_tile_offset.m() * Mma::WarpCount::kM) +
-            (my_warp_id % Mma::WarpCount::kM),
-        (tb_tile_offset.n() * Mma::WarpCount::kN) +
-            (my_warp_id / Mma::WarpCount::kM)};
-
-    DISPATCH_BOOL(
-        p.num_keys - iter_key_start >= kKeysPerBlock, kFullColumns, ([&] {
-          // Update `mi` from accum stored in registers
-          // Also updates `accum` with accum[i] <- exp(accum[i] * scale - mi)
-          MM0::ScalingCoefsUpdater::update<kQueriesPerBlock, kFullColumns>(
-              accum,
-              mi,
-              m_prime,
-              s_prime,
-              lane_id(),
-              thread_id(),
-              warp_id(),
-              p.num_keys - iter_key_start,
-              iteratorC_tile_offset,
-              1.0f / std::sqrt(float(p.head_dim)));
-        }));
-
-    // Output results to shared-memory
-    int warp_idx_mn_0 = my_warp_id %
-        (MM0::Mma::Base::WarpCount::kM * MM0::Mma::Base::WarpCount::kN);
-    auto output_tile_coords = cutlass::MatrixCoord{
-        warp_idx_mn_0 % MM0::Mma::Base::WarpCount::kM,
-        warp_idx_mn_0 / MM0::Mma::Base::WarpCount::kM};
-
-    MM0::B2bGemm::accumToSmem(
-        shared_storage.after_mm0.si, accum, my_lane_id, output_tile_coords);
   }
 
   static __device__ __forceinline__ int8_t lane_id() {
