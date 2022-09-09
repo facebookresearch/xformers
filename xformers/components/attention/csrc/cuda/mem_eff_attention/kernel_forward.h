@@ -66,6 +66,8 @@ struct AttentionKernel {
   using output_t = output_t_;
   static constexpr bool kIsAligned = isAligned_;
   static constexpr int32_t kAlignLSE = 32; // block size of backward
+  static constexpr bool kPreloadV = ArchTag::kMinComputeCapability >= 80 &&
+      cutlass::sizeof_bits<scalar_t>::value == 16;
 
   static_assert(kQueriesPerBlock % 32 == 0);
   static_assert(kKeysPerBlock % 32 == 0);
@@ -246,7 +248,13 @@ struct AttentionKernel {
     using DefaultEpilogue = typename DefaultGemm::Epilogue;
     using OutputTileIterator = typename DefaultEpilogue::OutputTileIterator;
 
-    struct SharedStorageMM1 {
+    struct SharedStoragePreloadV {
+      // As we overlap loads of V with the epilogue, we can't reuse the
+      // sharedmemory
+      typename Mma::SharedStorage mm;
+      typename DefaultEpilogue::SharedStorage epilogue;
+    };
+    struct SharedStorageNoPreload {
       union {
         // Storing parts of `V` during the matmul
         typename Mma::SharedStorage mm;
@@ -254,6 +262,11 @@ struct AttentionKernel {
         typename DefaultEpilogue::SharedStorage epilogue;
       };
     };
+
+    using SharedStorageMM1 = typename std::conditional<
+        kPreloadV,
+        SharedStoragePreloadV,
+        SharedStorageNoPreload>::type;
   };
 
   static constexpr int64_t kAlignmentQ = MM0::kAlignmentA;
@@ -305,6 +318,20 @@ struct AttentionKernel {
       int32_t const& problem_size_1_m = problem_size_0_m;
       int32_t const& problem_size_1_n = p.head_dim_value;
       int32_t const& problem_size_1_k = problem_size_0_n;
+
+      auto prologueV = [&](int blockN) {
+        typename MM1::Mma::IteratorB iterator_V(
+            typename MM1::IteratorB::Params{MM1::LayoutB(p.head_dim_value)},
+            p.value_ptr + iter_key_start * p.head_dim_value,
+            {problem_size_1_k, problem_size_1_n},
+            thread_id(),
+            cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
+        MM1::Mma::prologue(
+            shared_storage.after_mm0.mm1.mm,
+            iterator_V,
+            thread_id(),
+            problem_size_1_k);
+      };
 
       __syncthreads(); // Need to have shared memory initialized, and `m_prime`
                        // updated from end of prev iter
@@ -368,6 +395,10 @@ struct AttentionKernel {
       }
       __syncthreads();
 
+      if (kPreloadV) {
+        prologueV(0);
+      }
+
       typename MM0::Mma::Operator::IteratorC::TensorCoord
           iteratorC_tile_offset = {
               (tb_tile_offset.m() * MM0::Mma::WarpCount::kM) +
@@ -419,30 +450,37 @@ struct AttentionKernel {
         typename MM1::Mma::FragmentC accum;
         accum.clear();
 
-        typename MM1::Mma mma(
+        int gemm_k_iterations =
+            (problem_size_1_k + MM1::Mma::Shape::kK - 1) / MM1::Mma::Shape::kK;
+
+        // Compute threadblock-scoped matrix multiply-add and store it in accum
+        // (in registers)
+        if (!kPreloadV) {
+          __syncthreads(); // we share shmem between mma and epilogue
+        }
+
+        typename MM1::Mma::IteratorB iterator_V(
+            typename MM1::IteratorB::Params{MM1::LayoutB(p.head_dim_value)},
+            p.value_ptr + iter_key_start * p.head_dim_value,
+            {problem_size_1_k, problem_size_1_n},
+            thread_id(),
+            cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
+        typename MM1::Mma mma_pv(
             shared_storage.after_mm0.mm1.mm,
             shared_storage.after_mm0.si,
             (int)thread_id(),
             (int)warp_id(),
             (int)lane_id(),
             (int)problem_size_1_k);
-        int gemm_k_iterations =
-            (problem_size_1_k + MM1::Mma::Shape::kK - 1) / MM1::Mma::Shape::kK;
+        mma_pv.set_prologue_done(kPreloadV);
+        mma_pv(gemm_k_iterations, accum, iterator_V, accum);
+        if (!kPreloadV) {
+          __syncthreads(); // we share shmem between mma and epilogue
+        }
 
-        // Compute threadblock-scoped matrix multiply-add and store it in accum
-        // (in registers)
-        __syncthreads(); // we share shmem between mma and epilogue
-
-        typename MM1::IteratorB::Params params_B(
-            MM1::LayoutB(p.head_dim_value));
-        typename MM1::Mma::IteratorB iterator_V(
-            params_B,
-            p.value_ptr + iter_key_start * p.head_dim_value,
-            {problem_size_1_k, problem_size_1_n},
-            thread_id(),
-            cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
-        mma(gemm_k_iterations, accum, iterator_V, accum);
-        __syncthreads(); // we share shmem between mma and epilogue
+        if (kPreloadV && blockN + 1 < nBlockN) {
+          prologueV(blockN + 1);
+        }
 
         /*
           Epilogue: Store the following into global memory
