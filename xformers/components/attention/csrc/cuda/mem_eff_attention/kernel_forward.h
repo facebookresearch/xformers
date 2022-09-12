@@ -58,6 +58,7 @@ template <
     bool isAligned_,
     int64_t kQueriesPerBlock,
     int64_t kKeysPerBlock,
+    bool kSingleValueIteration, // = `value.shape[-1] <= kKeysPerBlock`
     typename output_t_ = float>
 struct AttentionKernel {
   using scalar_t = scalar_t_;
@@ -68,6 +69,7 @@ struct AttentionKernel {
   static constexpr int32_t kAlignLSE = 32; // block size of backward
   static constexpr bool kPreloadV = ArchTag::kMinComputeCapability >= 80 &&
       cutlass::sizeof_bits<scalar_t>::value == 16;
+  static constexpr bool kKeepOutputInRF = kSingleValueIteration;
 
   static_assert(kQueriesPerBlock % 32 == 0);
   static_assert(kKeysPerBlock % 32 == 0);
@@ -248,46 +250,69 @@ struct AttentionKernel {
     using DefaultEpilogue = typename DefaultGemm::Epilogue;
     using OutputTileIterator = typename DefaultEpilogue::OutputTileIterator;
 
-    struct SharedStoragePreloadV {
-      // As we overlap loads of V with the epilogue, we can't reuse the
-      // sharedmemory
-      typename Mma::SharedStorage mm;
-      typename DefaultEpilogue::SharedStorage epilogue;
-    };
-    struct SharedStorageNoPreload {
-      union {
-        // Storing parts of `V` during the matmul
-        typename Mma::SharedStorage mm;
-        // Used by the Epilogue (so we can reuse the same memory space)
-        typename DefaultEpilogue::SharedStorage epilogue;
-      };
-    };
+    using ScalingCoefsUpdater = typename DefaultAttentionScalingCoefsUpdater<
+        typename Mma::Operator::IteratorC,
+        accum_t,
+        kWarpSize>::Updater;
 
-    using SharedStorageMM1 = typename std::conditional<
-        kPreloadV,
-        SharedStoragePreloadV,
-        SharedStorageNoPreload>::type;
+    struct SharedStorageMM1 {
+      typename Mma::SharedStorage mm;
+    };
   };
 
   static constexpr int64_t kAlignmentQ = MM0::kAlignmentA;
   static constexpr int64_t kAlignmentK = MM0::kAlignmentB;
   static constexpr int64_t kAlignmentV = 1;
 
-  struct SharedStorageAfterMM0 {
-    // Everything here might be overwritten during MM0
-    typename MM0::AccumulatorSharedStorage si;
-    cutlass::Array<accum_t, kQueriesPerBlock> mi;
-    typename MM1::SharedStorageMM1 mm1;
-  };
-
-  struct SharedStorage {
+  // Shared storage - depends on kernel params
+  struct ScalingCoefs {
     cutlass::Array<accum_t, kQueriesPerBlock> m_prime;
     cutlass::Array<accum_t, kQueriesPerBlock> s_prime;
+    cutlass::Array<accum_t, kQueriesPerBlock> mi;
+  };
+
+  struct SharedStorageEpilogueAtEnd : ScalingCoefs {
+    struct SharedStorageAfterMM0 {
+      // Everything here might be overwritten during MM0
+      typename MM0::AccumulatorSharedStorage si;
+      typename MM1::SharedStorageMM1 mm1;
+    };
+
+    union {
+      typename MM0::Mma::SharedStorage mm0;
+      SharedStorageAfterMM0 after_mm0;
+      typename MM1::DefaultEpilogue::SharedStorage epilogue;
+    };
+
+    typename MM1::DefaultEpilogue::SharedStorage& __device__
+    epilogue_shared_storage() {
+      return epilogue;
+    }
+  };
+
+  struct SharedStorageEpilogueInLoop : ScalingCoefs {
+    struct SharedStorageAfterMM0 {
+      // Everything here might be overwritten during MM0
+      typename MM0::AccumulatorSharedStorage si;
+      typename MM1::SharedStorageMM1 mm1;
+      typename MM1::DefaultEpilogue::SharedStorage epilogue;
+    };
+
     union {
       typename MM0::Mma::SharedStorage mm0;
       SharedStorageAfterMM0 after_mm0;
     };
+
+    typename MM1::DefaultEpilogue::SharedStorage& __device__
+    epilogue_shared_storage() {
+      return after_mm0.epilogue;
+    }
   };
+
+  using SharedStorage = typename std::conditional<
+      kSingleValueIteration || kKeepOutputInRF,
+      SharedStorageEpilogueAtEnd,
+      SharedStorageEpilogueInLoop>::type;
 
   static void __device__ attention_kernel(Params const& p) {
     // In this block, we will only ever:
@@ -299,13 +324,26 @@ struct AttentionKernel {
     auto& m_prime = shared_storage.m_prime;
     auto& s_prime = shared_storage.s_prime;
     auto& si = shared_storage.after_mm0.si;
-    auto& mi = shared_storage.after_mm0.mi;
+    auto& mi = shared_storage.mi;
 
     static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
     if (thread_id() < kQueriesPerBlock) {
       s_prime[thread_id()] = accum_t(0);
       m_prime[thread_id()] = -std::numeric_limits<accum_t>::infinity();
+      mi[thread_id()] = -std::numeric_limits<accum_t>::infinity();
     }
+    typename MM1::Mma::FragmentC accum_o;
+    accum_o.clear();
+
+    auto createOutputIter = [&](auto col) {
+      using OutputTileIterator = typename MM1::OutputTileIterator;
+      return OutputTileIterator(
+          typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
+          p.output_ptr + query_start() * p.head_dim_value + col,
+          typename OutputTileIterator::TensorCoord{
+              p.num_queries - query_start(), p.head_dim_value - col},
+          thread_id());
+    };
 
     // Iterate through keys
     for (int32_t iter_key_start = 0; iter_key_start < p.num_keys;
@@ -388,12 +426,6 @@ struct AttentionKernel {
       // Compute threadblock-scoped matrix multiply-add
       mma(gemm_k_iterations, accum, iterator_A, iterator_B, accum);
       __syncthreads();
-      auto& mi = shared_storage.after_mm0.mi;
-      static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
-      if (thread_id() < kQueriesPerBlock) {
-        mi[thread_id()] = m_prime[thread_id()];
-      }
-      __syncthreads();
 
       if (kPreloadV) {
         prologueV(0);
@@ -406,22 +438,33 @@ struct AttentionKernel {
               (tb_tile_offset.n() * MM0::Mma::WarpCount::kN) +
                   (my_warp_id / MM0::Mma::WarpCount::kM)};
 
-      DISPATCH_BOOL(
-          p.num_keys - iter_key_start >= kKeysPerBlock, kFullColumns, ([&] {
-            // Update `mi` from accum stored in registers
-            // Also updates `accum` with accum[i] <- exp(accum[i] * scale - mi)
-            MM0::ScalingCoefsUpdater::update<kQueriesPerBlock, kFullColumns>(
-                accum,
-                mi,
-                m_prime,
-                s_prime,
-                lane_id(),
-                thread_id(),
-                warp_id(),
-                p.num_keys - iter_key_start,
-                iteratorC_tile_offset,
-                1.0f / std::sqrt(float(p.head_dim)));
-          }));
+      DISPATCH_BOOL(iter_key_start == 0, kIsFirst, ([&] {
+                      DISPATCH_BOOL(
+                          p.num_keys - iter_key_start >= kKeysPerBlock,
+                          kFullColumns,
+                          ([&] {
+                            // Update `mi` from accum stored in registers
+                            // Also updates `accum` with accum[i] <-
+                            // exp(accum[i] * scale
+                            // - mi)
+                            MM0::ScalingCoefsUpdater::update<
+                                kQueriesPerBlock,
+                                kFullColumns,
+                                kIsFirst,
+                                kKeepOutputInRF>(
+                                accum_o,
+                                accum,
+                                mi,
+                                m_prime,
+                                s_prime,
+                                lane_id(),
+                                thread_id(),
+                                warp_id(),
+                                p.num_keys - iter_key_start,
+                                iteratorC_tile_offset,
+                                1.0f / std::sqrt(float(p.head_dim)));
+                          }));
+                    }));
 
       // Output results to shared-memory
       int warp_idx_mn_0 = my_warp_id %
@@ -434,7 +477,6 @@ struct AttentionKernel {
           shared_storage.after_mm0.si, accum, my_lane_id, output_tile_coords);
 
       __syncthreads();
-      bool isLast = (iter_key_start + kKeysPerBlock) >= p.num_keys;
 
       //
       // MATMUL: Attn . V
@@ -443,13 +485,11 @@ struct AttentionKernel {
       // `V` is read from global memory (with iterator_B)
       //
 
-      const int64_t nBlockN = ceil_div(
-          (int64_t)problem_size_1_n, int64_t(MM1::ThreadblockShape::kN));
+      const int64_t nBlockN = kSingleValueIteration
+          ? 1
+          : ceil_div(
+                (int64_t)problem_size_1_n, int64_t(MM1::ThreadblockShape::kN));
       for (int blockN = 0; blockN < nBlockN; ++blockN) {
-        using OutputTileIterator = typename MM1::OutputTileIterator;
-        typename MM1::Mma::FragmentC accum;
-        accum.clear();
-
         int gemm_k_iterations =
             (problem_size_1_k + MM1::Mma::Shape::kK - 1) / MM1::Mma::Shape::kK;
 
@@ -473,86 +513,109 @@ struct AttentionKernel {
             (int)lane_id(),
             (int)problem_size_1_k);
         mma_pv.set_prologue_done(kPreloadV);
-        mma_pv(gemm_k_iterations, accum, iterator_V, accum);
-        if (!kPreloadV) {
-          __syncthreads(); // we share shmem between mma and epilogue
+        if (!kKeepOutputInRF) {
+          accum_o.clear();
         }
+        mma_pv(gemm_k_iterations, accum_o, iterator_V, accum_o);
+        __syncthreads();
 
-        if (kPreloadV && blockN + 1 < nBlockN) {
+        if (kPreloadV && !kSingleValueIteration && blockN + 1 < nBlockN) {
           prologueV(blockN + 1);
         }
 
-        /*
-          Epilogue: Store the following into global memory
-          output <- alpha * accumulator + beta * source
-            with:
-              alpha = 1 / s_prime (to normalize when isLast=True, 1 otherwise)
-              beta = alpha / m_prime (renormalize the output when the max
-          changes) source is the current output
-        */
-        int col = blockN * MM1::Mma::Shape::kN;
-        OutputTileIterator output_tile_it(
-            typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
-            p.output_ptr + query_start() * p.head_dim_value + col,
-            typename OutputTileIterator::TensorCoord{
-                p.num_queries - query_start(), p.head_dim_value - col},
-            thread_id());
-        OutputTileIterator source_tile_it(
-            typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
-            p.output_ptr + query_start() * p.head_dim_value + col,
-            typename OutputTileIterator::TensorCoord{
-                p.num_queries - query_start(), p.head_dim_value - col},
-            thread_id());
-        DISPATCH_BOOL(
-            iter_key_start == 0, kIsFirst, ([&]() {
-              DISPATCH_BOOL(
-                  isLast, kIsLast, ([&]() {
-                    using DefaultEpilogue = typename MM1::DefaultEpilogue;
-                    using DefaultOp =
-                        typename MM1::DefaultConfig::EpilogueOutputOp;
-                    using ElementCompute = typename DefaultOp::ElementCompute;
-                    using EpilogueOutputOp = typename cutlass::epilogue::
-                        thread::MemoryEfficientAttentionNormalize<
-                            output_t,
-                            DefaultOp::kCount,
-                            typename DefaultOp::ElementAccumulator,
-                            ElementCompute,
-                            kIsFirst,
-                            kIsLast,
-                            cutlass::Array<ElementCompute, kQueriesPerBlock>>;
-                    using Epilogue = typename cutlass::epilogue::threadblock::
-                        EpilogueWithRowId<
-                            typename DefaultEpilogue::Shape,
-                            typename MM1::Mma::Operator,
-                            DefaultEpilogue::kPartitionsK,
-                            typename DefaultEpilogue::OutputTileIterator,
-                            typename DefaultEpilogue::
-                                AccumulatorFragmentIterator,
-                            typename DefaultEpilogue::WarpTileIterator,
-                            typename DefaultEpilogue::SharedLoadIterator,
-                            EpilogueOutputOp,
-                            typename DefaultEpilogue::Padding,
-                            DefaultEpilogue::kFragmentsPerIteration,
-                            true // IterationsUnroll
-                            >;
-                    EpilogueOutputOp rescale(s_prime, m_prime);
-                    Epilogue epilogue(
-                        shared_storage.after_mm0.mm1.epilogue,
-                        thread_id(),
-                        warp_id(),
-                        lane_id());
-                    epilogue(rescale, output_tile_it, accum, source_tile_it);
-                  }));
-            }));
+        if (!kKeepOutputInRF) {
+          DISPATCH_BOOL(
+              iter_key_start == 0, kIsFirst, ([&] {
+                DISPATCH_BOOL(
+                    (iter_key_start + kKeysPerBlock) >= p.num_keys,
+                    kIsLast,
+                    ([&] {
+                      using DefaultEpilogue = typename MM1::DefaultEpilogue;
+                      using DefaultOp =
+                          typename MM1::DefaultConfig::EpilogueOutputOp;
+                      using ElementCompute = typename DefaultOp::ElementCompute;
+                      using EpilogueOutputOp = typename cutlass::epilogue::
+                          thread::MemoryEfficientAttentionNormalize<
+                              output_t,
+                              DefaultOp::kCount,
+                              typename DefaultOp::ElementAccumulator,
+                              ElementCompute,
+                              kIsFirst,
+                              kIsLast,
+                              cutlass::Array<ElementCompute, kQueriesPerBlock>>;
+                      using Epilogue = typename cutlass::epilogue::threadblock::
+                          EpilogueWithRowId<
+                              typename DefaultEpilogue::Shape,
+                              typename MM1::Mma::Operator,
+                              DefaultEpilogue::kPartitionsK,
+                              typename DefaultEpilogue::OutputTileIterator,
+                              typename DefaultEpilogue::
+                                  AccumulatorFragmentIterator,
+                              typename DefaultEpilogue::WarpTileIterator,
+                              typename DefaultEpilogue::SharedLoadIterator,
+                              EpilogueOutputOp,
+                              typename DefaultEpilogue::Padding,
+                              DefaultEpilogue::kFragmentsPerIteration,
+                              true // IterationsUnroll
+                              >;
+                      int col = blockN * MM1::Mma::Shape::kN;
+                      auto source_iter = createOutputIter(col);
+                      auto output_iter = createOutputIter(col);
+                      EpilogueOutputOp rescale(s_prime, m_prime);
+                      Epilogue epilogue(
+                          shared_storage.epilogue_shared_storage(),
+                          thread_id(),
+                          warp_id(),
+                          lane_id());
+                      epilogue(rescale, source_iter, accum_o, output_iter);
+                    }));
+              }));
+          if (!kSingleValueIteration) {
+            __syncthreads();
+          }
+        }
       }
       __syncthreads(); // we modify `m_prime` after
+    }
 
-      // 5. `m_prime` <- `mi` (`mi` will be overwritten during MM0)
-      static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
-      if (thread_id() < kQueriesPerBlock) {
-        m_prime[thread_id()] = mi[thread_id()];
-      }
-      __syncthreads();
+    if (kKeepOutputInRF) {
+      constexpr bool kIsFirst = true;
+      constexpr bool kIsLast = true;
+      using DefaultEpilogue = typename MM1::DefaultEpilogue;
+      using DefaultOp = typename MM1::DefaultConfig::EpilogueOutputOp;
+      using ElementCompute = typename DefaultOp::ElementCompute;
+      using EpilogueOutputOp =
+          typename cutlass::epilogue::thread::MemoryEfficientAttentionNormalize<
+              output_t,
+              DefaultOp::kCount,
+              typename DefaultOp::ElementAccumulator,
+              ElementCompute,
+              kIsFirst,
+              kIsLast,
+              cutlass::Array<ElementCompute, kQueriesPerBlock>>;
+      using Epilogue =
+          typename cutlass::epilogue::threadblock::EpilogueWithRowId<
+              typename DefaultEpilogue::Shape,
+              typename MM1::Mma::Operator,
+              DefaultEpilogue::kPartitionsK,
+              typename DefaultEpilogue::OutputTileIterator,
+              typename DefaultEpilogue::AccumulatorFragmentIterator,
+              typename DefaultEpilogue::WarpTileIterator,
+              typename DefaultEpilogue::SharedLoadIterator,
+              EpilogueOutputOp,
+              typename DefaultEpilogue::Padding,
+              DefaultEpilogue::kFragmentsPerIteration,
+              true // IterationsUnroll
+              >;
+      auto source_iter = createOutputIter(0);
+      auto output_iter = createOutputIter(0);
+      EpilogueOutputOp rescale(s_prime, m_prime);
+      Epilogue epilogue(
+          shared_storage.epilogue_shared_storage(),
+          thread_id(),
+          warp_id(),
+          lane_id());
+      epilogue(rescale, source_iter, accum_o, output_iter);
     }
 
     // 7. Calculate logsumexp
@@ -562,8 +625,7 @@ struct AttentionKernel {
     if (p.logsumexp_ptr && thread_id() < kQueriesPerBlock) {
       if (query_start() + thread_id() < p.num_queries) {
         p.logsumexp_ptr[query_start() + thread_id()] =
-            accum_t(m_prime[thread_id()]) +
-            std::log(accum_t(s_prime[thread_id()]));
+            accum_t(mi[thread_id()]) + std::log(accum_t(s_prime[thread_id()]));
       } else if (thread_id() < kAlignLSE) {
         p.logsumexp_ptr[query_start() + thread_id()] =
             std::numeric_limits<accum_t>::infinity();
@@ -603,27 +665,39 @@ __global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)
 #define __CUDA_ARCH_OR_ZERO__ 0
 #endif
 
-#define INSTANTIATE_ATTENTION_KERNEL_FORWARD(                      \
-    ARCH, SCALAR_T, IS_ALIGNED, QUERIES_PER_BLOCK, KEYS_PER_BLOCK) \
-  _ATTENTION_KERNEL_FORWARD_BEGIN(AttentionKernel<                 \
-                                  SCALAR_T,                        \
-                                  cutlass::arch::Sm##ARCH,         \
-                                  IS_ALIGNED,                      \
-                                  QUERIES_PER_BLOCK,               \
-                                  KEYS_PER_BLOCK>)                 \
-  auto batch_id = blockIdx.z;                                      \
-  p.advance_batches(batch_id);                                     \
-  Kernel::attention_kernel(p);                                     \
+#define INSTANTIATE_ATTENTION_KERNEL_FORWARD(              \
+    ARCH,                                                  \
+    SCALAR_T,                                              \
+    IS_ALIGNED,                                            \
+    QUERIES_PER_BLOCK,                                     \
+    KEYS_PER_BLOCK,                                        \
+    SINGLE_VALUE_ITER)                                     \
+  _ATTENTION_KERNEL_FORWARD_BEGIN(AttentionKernel<         \
+                                  SCALAR_T,                \
+                                  cutlass::arch::Sm##ARCH, \
+                                  IS_ALIGNED,              \
+                                  QUERIES_PER_BLOCK,       \
+                                  KEYS_PER_BLOCK,          \
+                                  SINGLE_VALUE_ITER>)      \
+  auto batch_id = blockIdx.z;                              \
+  p.advance_batches(batch_id);                             \
+  Kernel::attention_kernel(p);                             \
   _ATTENTION_KERNEL_FORWARD_END();
 
 #define INSTANTIATE_ATTENTION_KERNEL_FORWARD_DISABLED(              \
-    ARCH, SCALAR_T, IS_ALIGNED, QUERIES_PER_BLOCK, KEYS_PER_BLOCK)  \
+    ARCH,                                                           \
+    SCALAR_T,                                                       \
+    IS_ALIGNED,                                                     \
+    QUERIES_PER_BLOCK,                                              \
+    KEYS_PER_BLOCK,                                                 \
+    SINGLE_VALUE_ITER)                                              \
   _ATTENTION_KERNEL_FORWARD_BEGIN(AttentionKernel<                  \
                                   SCALAR_T,                         \
                                   cutlass::arch::Sm##ARCH,          \
                                   IS_ALIGNED,                       \
                                   QUERIES_PER_BLOCK,                \
-                                  KEYS_PER_BLOCK>)                  \
+                                  KEYS_PER_BLOCK,                   \
+                                  SINGLE_VALUE_ITER>)               \
   printf(                                                           \
       "FATAL: this function is for sm%d, but was built for sm%d\n", \
       int(ARCH),                                                    \

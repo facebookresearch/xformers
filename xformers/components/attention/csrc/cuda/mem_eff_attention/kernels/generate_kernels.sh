@@ -42,8 +42,9 @@ for aligned in "false" "true"; do
 #include "../kernel_forward.h"
 EOF
         for sm in 50 70 75 80; do
-            echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned, 32, 128);" >> $FNAME
-            echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned, 64, 64);" >> $FNAME
+            echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned, 32, 128, true);" >> $FNAME
+            echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned, 32, 128, false);" >> $FNAME
+            echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned, 64, 64, true);" >> $FNAME
         done;
     done;
 done

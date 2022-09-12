@@ -35,8 +35,13 @@ of iterating in the accumulators.
 
 template <typename BASE, typename T, typename accum_t, int kWarpSize>
 struct RegisterOps {
-  template <int kQueriesPerBlock, bool kFullColumns>
+  template <
+      int kQueriesPerBlock,
+      bool kFullColumns,
+      bool kIsFirst,
+      bool kKeepOutputInRF>
   __device__ __forceinline__ static void update(
+      typename T::Fragment& frag_o, // output so far
       typename T::Fragment& frag,
       cutlass::Array<accum_t, kQueriesPerBlock>& mi,
       cutlass::Array<accum_t, kQueriesPerBlock>& m_prime,
@@ -47,7 +52,15 @@ struct RegisterOps {
       int16_t max_col,
       typename T::TensorCoord const& tile_offset,
       float scaling) {
+    if (!kIsFirst) {
+      if (thread_id < kQueriesPerBlock) {
+        m_prime[thread_id] = mi[thread_id];
+      }
+      __syncthreads();
+    }
+
     auto lane_offset = BASE::get_lane_offset(lane_id, warp_id, tile_offset);
+
     // First update `mi` to the max per-row
     {
       accum_t max;
@@ -75,8 +88,16 @@ struct RegisterOps {
       m_prime[thread_id] = m_prime_exp;
       s_prime[thread_id] *= m_prime_exp;
     }
-    __syncthreads();
-
+    __syncthreads(); // Update output fragments
+    if (kKeepOutputInRF && !kIsFirst) {
+      accum_t mp;
+      BASE::iterateRows(
+          lane_offset,
+          [&](int accum_m) { mp = m_prime[accum_m]; },
+          [&](int accum_m, int accum_n, int idx) { frag_o[idx] *= mp; },
+          [&](int accum_m) {});
+      __syncthreads();
+    }
     // Update accum_m, accum_n, ...
     {
       accum_t mi_row, total_row;
