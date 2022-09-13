@@ -173,9 +173,47 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.float, torch.half}
     SUPPORTED_MAX_K = math.inf
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None)}
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
     NAME = "fwd_gen"
+
+    @classmethod
+    def forward_no_grad(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
+        p: float,
+    ) -> torch.Tensor:
+        return cls.FORWARD_OPERATOR(
+            query=query,
+            key=key,
+            value=value,
+            compute_logsumexp=False,
+            attn_bias=None,
+            p=p,
+            causal=isinstance(attn_bias, LowerTriangularMask),
+        )[0]
+
+    @classmethod
+    def forward(cls, ctx, query, key, value, attn_bias, p):
+        causal = isinstance(attn_bias, LowerTriangularMask)
+        out, lse, rng_seed, rng_offset = cls.FORWARD_OPERATOR(
+            query=query,
+            key=key,
+            value=value,
+            compute_logsumexp=True,
+            attn_bias=None,
+            p=p,
+            causal=causal,
+        )
+        ctx.save_for_backward(query, key, value, lse, out)
+        ctx.p = p
+        ctx.rng_seed = rng_seed
+        ctx.rng_offset = rng_offset
+        ctx.causal = causal
+        return out
 
     @classmethod
     def uses_tensorcores(cls, d: "AttentionOpDispatch", is_half: bool) -> bool:
@@ -221,7 +259,7 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
 
     @classmethod
     def backward(cls, ctx, grad):
-        query, key, value, lse, attn_bias, out = ctx.saved_tensors
+        query, key, value, lse, out = ctx.saved_tensors
         p = ctx.p
         rng_seed = ctx.rng_seed
         rng_offset = ctx.rng_offset
@@ -237,10 +275,11 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
             value,
             lse,
             out.to(dtype),
-            attn_bias,
+            None,
             p,
             rng_seed,
             rng_offset,
+            causal=ctx.causal,
         )
         return grad_q, grad_k, grad_v, None, None
 
