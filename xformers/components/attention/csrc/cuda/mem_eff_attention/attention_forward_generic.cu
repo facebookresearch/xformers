@@ -81,22 +81,40 @@ efficient_attention_forward_generic(
     }                                                                 \
   }
 
-  bool is64x64 = value.size(2) <= 64;
-  DISPATCH_BOOL(
-      is64x64, kIs64x64, ([&]() {
+#define DISPATCH_BLOCKSIZE(VALUE_HEAD_DIM, BLOCK_6464, SINGLE_VALUE_ITER, FN) \
+  {                                                                           \
+    if (VALUE_HEAD_DIM <= 64) {                                               \
+      constexpr bool BLOCK_6464 = true;                                       \
+      constexpr bool SINGLE_VALUE_ITER = true;                                \
+      FN();                                                                   \
+    } else {                                                                  \
+      constexpr bool BLOCK_6464 = false;                                      \
+      if (VALUE_HEAD_DIM <= 128) {                                            \
+        constexpr bool SINGLE_VALUE_ITER = true;                              \
+        FN();                                                                 \
+      } else {                                                                \
+        constexpr bool SINGLE_VALUE_ITER = false;                             \
+        FN();                                                                 \
+      }                                                                       \
+    }                                                                         \
+  }
+
+  DISPATCH_BLOCKSIZE(
+      value.size(2), kIs64x64, kSingleValueIteration, ([&]() {
+        static constexpr int64_t kQueriesPerBlock = kIs64x64 ? 64 : 32;
+        static constexpr int64_t kKeysPerBlock = kIs64x64 ? 64 : 128;
         DISPATCH_TYPES(([&]() {
           DISPATCH_ARCHTAG(([&]() {
-            static constexpr int64_t kQueriesPerBlock = kIs64x64 ? 64 : 32;
-            static constexpr int64_t kKeysPerBlock = kIs64x64 ? 64 : 128;
-            // Run a more efficient kernel (with `isAligned=True`) if memory is
-            // correctly aligned
+            // Run a more efficient kernel (with `isAligned=True`) if
+            // memory is correctly aligned
             bool isAligned;
             using AlignedAK = AttentionKernel<
                 scalar_t,
                 ArchTag,
                 true,
                 kQueriesPerBlock,
-                kKeysPerBlock>;
+                kKeysPerBlock,
+                kSingleValueIteration>;
             isAligned =
                 (query.stride(1) % AlignedAK::kAlignmentQ == 0 &&
                  key.stride(1) % AlignedAK::kAlignmentK == 0 &&
@@ -110,9 +128,10 @@ efficient_attention_forward_generic(
                       ArchTag,
                       kIsAligned,
                       kQueriesPerBlock,
-                      kKeysPerBlock>;
-                  // Might happen on Sm80/half, where the minimum alignment is
-                  // 32bits
+                      kKeysPerBlock,
+                      kSingleValueIteration>;
+                  // Might happen on Sm80/half, where the minimum
+                  // alignment is 32bits
                   TORCH_CHECK(
                       query.stride(1) % Kernel::kAlignmentQ == 0,
                       "query is not correctly aligned");
@@ -128,8 +147,8 @@ efficient_attention_forward_generic(
                       query.options().dtype(
                           TypeTraits<
                               typename Kernel::output_t>::atScalarType()));
-                  // NOTE: Should be aligned (by padding) in case M is not a
-                  // good number for loading during backward
+                  // NOTE: Should be aligned (by padding) in case M is not
+                  // a good number for loading during backward
                   constexpr decltype(M) kAlignLSE =
                       32; // block size of backward
                   logsumexp = at::empty(
