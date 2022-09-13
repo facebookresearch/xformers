@@ -8,7 +8,8 @@ efficient_attention_forward_generic(
     const at::Tensor& value,
     bool compute_logsumexp,
     const c10::optional<at::Tensor>& attn_bias_,
-    double p) {
+    double p,
+    bool causal) {
   TORCH_CHECK(p == 0.0, "Dropout is not supported at the moment");
   TORCH_CHECK(
       !attn_bias_.has_value(), "attn_bias is not supported at the moment");
@@ -182,6 +183,7 @@ efficient_attention_forward_generic(
                   p.num_queries = query.size(1);
                   p.num_keys = key.size(1);
                   p.num_batches = B;
+                  p.causal = causal;
                   kernel_fn<<<
                       p.getBlocksGrid(),
                       p.getThreadsGrid(),

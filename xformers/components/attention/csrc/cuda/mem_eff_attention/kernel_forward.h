@@ -99,6 +99,8 @@ struct AttentionKernel {
     int32_t num_keys;
     int32_t num_batches;
 
+    bool causal;
+
     __device__ void advance_batches(int32_t batch_id) {
       auto lse_dim = ceil_div((int32_t)num_queries, kAlignLSE) * kAlignLSE;
 
@@ -314,7 +316,7 @@ struct AttentionKernel {
       SharedStorageEpilogueAtEnd,
       SharedStorageEpilogueInLoop>::type;
 
-  static void __device__ attention_kernel(Params const& p) {
+  static void __device__ attention_kernel(Params& p) {
     // In this block, we will only ever:
     // - read query[query_start:query_end, :]
     // - write to output[query_start:query_end, :]
@@ -344,6 +346,12 @@ struct AttentionKernel {
               p.num_queries - query_start(), p.head_dim_value - col},
           thread_id());
     };
+
+    // End early if causal
+    if (p.causal) {
+      p.num_keys =
+          std::min(int32_t(query_start() + kQueriesPerBlock), p.num_keys);
+    }
 
     // Iterate through keys
     for (int32_t iter_key_start = 0; iter_key_start < p.num_keys;
@@ -438,6 +446,23 @@ struct AttentionKernel {
               (tb_tile_offset.n() * MM0::Mma::WarpCount::kN) +
                   (my_warp_id / MM0::Mma::WarpCount::kM)};
 
+      // Mask out last if causal
+      if (p.causal && p.num_keys - iter_key_start <= kKeysPerBlock) {
+        auto lane_offset = MM0::ScalingCoefsUpdater::get_lane_offset(
+            lane_id(), warp_id(), iteratorC_tile_offset);
+        int32_t last_col;
+        MM0::ScalingCoefsUpdater::iterateRows(
+            lane_offset,
+            [&](int accum_m) {
+              last_col = accum_m + query_start() - iter_key_start;
+            },
+            [&](int accum_m, int accum_n, int idx) {
+              if (accum_n > last_col) {
+                accum[idx] = -std::numeric_limits<accum_t>::infinity();
+              }
+            },
+            [&](int accum_m) {});
+      }
       DISPATCH_BOOL(iter_key_start == 0, kIsFirst, ([&] {
                       DISPATCH_BOOL(
                           p.num_keys - iter_key_start >= kKeysPerBlock,

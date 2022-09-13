@@ -12,7 +12,8 @@ mem_efficient_attention_backward_generic(
     const c10::optional<at::Tensor>& attn_bias_,
     double p,
     int64_t rng_seed,
-    int64_t rng_offset) {
+    int64_t rng_offset,
+    bool causal) {
   TORCH_CHECK(query.dim() == grad_out_.dim());
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == 3);
@@ -151,6 +152,7 @@ mem_efficient_attention_backward_generic(
             params.num_queries = query.size(1);
             params.num_keys = key.size(1);
             params.num_batches = B;
+            params.causal = causal;
 
             constexpr auto kernel_fn = attention_kernel_backward_batched<AK>;
 

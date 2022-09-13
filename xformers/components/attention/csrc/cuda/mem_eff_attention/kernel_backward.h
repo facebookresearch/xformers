@@ -80,6 +80,7 @@ struct AttentionBackwardKernel {
     int32_t num_queries;
     int32_t num_keys;
     int32_t num_batches;
+    bool causal;
 
     __device__ void advance_batches(int32_t batch_id) {
       constexpr int32_t kAlignLSE = 32; // block size of backward
@@ -172,6 +173,10 @@ struct AttentionBackwardKernel {
         scalar_t,
         WarpShape,
         ThreadblockShape>;
+    using ScalingCoefsUpdater = typename DefaultAttentionScalingCoefsUpdater<
+        typename Mma::Operator::IteratorC,
+        accum_t,
+        kWarpSize>::Updater;
     using AccumulatorSharedStorage = typename B2bGemm::AccumulatorSharedStorage;
   };
 
@@ -509,25 +514,33 @@ struct AttentionBackwardKernel {
       }
     };
 
+    auto getNumKeys = [&](int32_t query_start) {
+      if (p.causal) {
+        return std::min(int32_t(query_start + kBlockSizeI), p.num_keys);
+      }
+      return p.num_keys;
+    };
+
     int32_t query_end = p.num_queries / kBlockSizeI * kBlockSizeI;
-    int32_t key_end = p.num_keys / kBlockSizeJ * kBlockSizeJ;
     int32_t query_start = 0;
     for (; query_start < query_end; query_start += kBlockSizeI) {
       clearSmem();
       computeDi(shared_storage.di, p, query_start);
+
       int32_t key_start = 0;
+      int32_t key_end = getNumKeys(query_start) / kBlockSizeJ * kBlockSizeJ;
       for (; key_start < key_end; key_start += kBlockSizeJ) {
         processBlockIJ<true>(shared_storage, p, query_start, key_start);
       }
       // last (partial) key
-      if (key_start != p.num_keys) {
+      if (key_start != getNumKeys(query_start)) {
         processBlockIJ<false>(shared_storage, p, query_start, key_start);
       }
     }
     // Last (partial) query block
     if (query_start != p.num_queries) {
       computeDi(shared_storage.di, p, query_start);
-      for (int32_t key_start = 0; key_start < p.num_keys;
+      for (int32_t key_start = 0; key_start < getNumKeys(query_start);
            key_start += kBlockSizeJ) {
         processBlockIJ<false>(shared_storage, p, query_start, key_start);
       }
@@ -598,6 +611,23 @@ struct AttentionBackwardKernel {
       auto output_tile_coords = cutlass::MatrixCoord{
           warp_idx_mn_0 % Mma::Base::WarpCount::kM,
           warp_idx_mn_0 / Mma::Base::WarpCount::kM};
+      // Apply mask
+      if (p.causal) {
+        auto lane_offset = MatmulQK::ScalingCoefsUpdater::get_lane_offset(
+            lane_id, warp_id, output_tile_coords);
+        int32_t last_col;
+        MatmulQK::ScalingCoefsUpdater::iterateRows(
+            lane_offset,
+            [&](int accum_m) {},
+            [&](int accum_m, int accum_n, int idx) {
+              // (don't forget we are transposed!)
+              if (accum_m > accum_n + query_start - key_start) {
+                accum[idx] = -std::numeric_limits<accum_t>::infinity();
+              }
+            },
+            [&](int accum_m) {});
+      }
+
       __syncthreads();
       MatmulQK::B2bGemm::accumApplyLSEToSmem(
           shared_storage.after_qk.attn_shared_storage,

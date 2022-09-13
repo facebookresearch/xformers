@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
+from typing import Any, Dict, Tuple
 
 import pytest
 import torch
@@ -144,10 +145,10 @@ def test_key_query_all_ones(device, q_len, kv_len, batch_size, k_len):
 @pytest.mark.parametrize("device", _devices)
 @pytest.mark.parametrize("dtype", [torch.float, torch.half])
 @pytest.mark.parametrize(
-    "op",
+    "op_kw",
     [
-        xformers.ops.MemoryEfficientAttentionOp,
-        xformers.ops.MemoryEfficientAttentionGenericForwardOp,
+        (xformers.ops.MemoryEfficientAttentionOp, {}),
+        (xformers.ops.MemoryEfficientAttentionGenericForwardOp, {"causal": False}),
     ],
 )
 def test_logsumexp(
@@ -157,8 +158,9 @@ def test_logsumexp(
     batch_size,
     k_len,
     dtype,
-    op: xformers.ops.MemoryEfficientAttentionOp,
+    op_kw: Tuple[xformers.ops.MemoryEfficientAttentionOp, Dict[str, Any]],
 ):
+    op, kw = op_kw
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
@@ -171,7 +173,7 @@ def test_logsumexp(
     ):
         pytest.skip("unsupported configuration")
 
-    _, lse, _, _ = op.FORWARD_OPERATOR(query, key, value, True, None, 0.0)
+    _, lse, _, _ = op.FORWARD_OPERATOR(query, key, value, True, None, 0.0, **kw)
     ref_lse = (
         (query.float() / k_len**0.5) @ key.float().transpose(-2, -1)
     ).logsumexp(-1)
