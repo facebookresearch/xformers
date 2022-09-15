@@ -648,10 +648,11 @@ struct AttentionKernel {
     // this avoids a few bound checks, and is not more expensive during fwd
     static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
     if (p.logsumexp_ptr && thread_id() < kQueriesPerBlock) {
+      auto lse_dim = ceil_div((int32_t)p.num_queries, kAlignLSE) * kAlignLSE;
       if (query_start() + thread_id() < p.num_queries) {
         p.logsumexp_ptr[query_start() + thread_id()] =
             accum_t(mi[thread_id()]) + std::log(accum_t(s_prime[thread_id()]));
-      } else if (thread_id() < kAlignLSE) {
+      } else if (thread_id() < lse_dim) {
         p.logsumexp_ptr[query_start() + thread_id()] =
             std::numeric_limits<accum_t>::infinity();
       }
