@@ -66,7 +66,7 @@ namespace threadblock {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// PredicatedTileAccessIterator
+/// PredicatedTileAccessIteratorResidualLast
 ///
 template <
     typename Shape,
@@ -76,11 +76,12 @@ template <
     typename ThreadMap,
     typename AccessType,
     bool Gather = false>
-class PredicatedTileAccessIterator;
+class PredicatedTileAccessIteratorResidualLast;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for pitch-linear data.
+/// Specialization of PredicatedTileAccessIteratorResidualLast for pitch-linear
+/// data.
 ///
 template <
     typename Shape_,
@@ -89,7 +90,7 @@ template <
     typename ThreadMap_,
     typename AccessType_,
     bool Gather>
-class PredicatedTileAccessIterator<
+class PredicatedTileAccessIteratorResidualLast<
     Shape_,
     Element_,
     layout::PitchLinear,
@@ -171,15 +172,13 @@ class PredicatedTileAccessIterator<
   //
 
   UnderlyingPredicates the_predicates;
+  Mask residual_tile_mask;
 
   /// Parameters object with precomputed internal state
   Params const& params_;
 
   /// Internal pointer to first access of tile
   BytePointer pointer_;
-
-  /// Used for out-of-order visitation
-  bool is_residue_tile_;
 
   /// Below is used when Gather is turned on.  We need to record strided_offset
   /// and contiguous_offset seperated to compute the offset by using
@@ -207,7 +206,7 @@ class PredicatedTileAccessIterator<
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       /// Precomputed parameters object
       Params const& params,
       /// Pointer to start of tensor
@@ -224,9 +223,10 @@ class PredicatedTileAccessIterator<
         pointer_(reinterpret_cast<BytePointer>(
             const_cast<NonConstPointer>(pointer))),
         the_predicates(extent),
-        is_residue_tile_(true),
         indices_(indices) {
     the_predicates.set_predicates(thread_id, threadblock_offset);
+    the_predicates.get_mask(residual_tile_mask);
+    the_predicates.compute_predicates_(extent, true);
 
     // update internal pointers
     Layout layout(params_.stride_);
@@ -240,9 +240,10 @@ class PredicatedTileAccessIterator<
     }
   }
 
-  /// Construct a PredicatedTileAccessIterator with zero threadblock offset
+  /// Construct a PredicatedTileAccessIteratorResidualLast with zero threadblock
+  /// offset
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       /// Precomputed parameters object
       Params const& params,
       /// Pointer to start of tensor
@@ -251,7 +252,7 @@ class PredicatedTileAccessIterator<
       TensorCoord extent,
       ///< ID of each participating thread
       int thread_id)
-      : PredicatedTileAccessIterator(
+      : PredicatedTileAccessIteratorResidualLast(
             params,
             pointer,
             extent,
@@ -264,6 +265,13 @@ class PredicatedTileAccessIterator<
     the_predicates.set_iteration_index(index);
   }
 
+  CUTLASS_HOST_DEVICE
+  void set_residual_tile(bool is_residual_tile) {
+    if (is_residual_tile) {
+      the_predicates.set_mask(residual_tile_mask);
+    }
+  }
+
   /// Adds a pointer offset in units of Element
   CUTLASS_HOST_DEVICE
   void add_pointer_offset(LongIndex pointer_offset) {
@@ -274,57 +282,18 @@ class PredicatedTileAccessIterator<
   /// tiles
   CUTLASS_DEVICE
   void add_tile_offset(TensorCoord const& tile_offset) {
-    if (is_residue_tile_) {
-      the_predicates.thread_offset_ += the_predicates.residue_offset_;
-
-      the_predicates.compute_predicates_(the_predicates.extent_, true);
-
-      Layout layout(params_.stride_);
-
-      if (!Gather) {
-        add_pointer_offset(layout(the_predicates.residue_offset_));
-
-        if (kAdvanceRank) {
-          pointer_ +=
-              params_.inc_advance_ * LongIndex(tile_offset.strided() - 1);
-          pointer_ += Shape::kContiguous * tile_offset.contiguous();
-        } else {
-          pointer_ +=
-              params_.inc_advance_ * LongIndex(tile_offset.contiguous() - 1);
-          pointer_ += Shape::kStrided * tile_offset.strided();
-        }
+    if (!Gather) {
+      if (kAdvanceRank) {
+        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided());
+        pointer_ += Shape::kContiguous * tile_offset.contiguous();
       } else {
-        gather_offset_strided = the_predicates.thread_offset_.strided();
-        add_pointer_offset(
-            layout(make_Coord(the_predicates.residue_offset_.contiguous(), 0)));
-
-        if (kAdvanceRank) {
-          gather_offset_strided +=
-              Shape::kStrided * (tile_offset.strided() - 1);
-          add_pointer_offset(Shape::kContiguous * tile_offset.contiguous());
-        } else {
-          add_pointer_offset(
-              Shape::kContiguous * (tile_offset.contiguous() - 1));
-          gather_offset_strided += Shape::kStrided * tile_offset.strided();
-        }
+        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous());
+        pointer_ += Shape::kStrided * tile_offset.strided();
       }
     } else {
-      if (!Gather) {
-        if (kAdvanceRank) {
-          pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided());
-          pointer_ += Shape::kContiguous * tile_offset.contiguous();
-        } else {
-          pointer_ +=
-              params_.inc_advance_ * LongIndex(tile_offset.contiguous());
-          pointer_ += Shape::kStrided * tile_offset.strided();
-        }
-      } else {
-        add_pointer_offset(Shape::kContiguous * tile_offset.contiguous());
-        gather_offset_strided += Shape::kStrided * tile_offset.strided();
-      }
+      add_pointer_offset(Shape::kContiguous * tile_offset.contiguous());
+      gather_offset_strided += Shape::kStrided * tile_offset.strided();
     }
-
-    is_residue_tile_ = false;
   }
 
   /// Returns a pointer
@@ -362,7 +331,7 @@ class PredicatedTileAccessIterator<
 
   /// Increment and return an instance to self.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator& operator++() {
+  PredicatedTileAccessIteratorResidualLast& operator++() {
     the_predicates.operator++();
 
     ++the_predicates.iteration_vector_;
@@ -410,8 +379,8 @@ class PredicatedTileAccessIterator<
 
   /// Increment and return an instance to self.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator operator++(int) {
-    PredicatedTileAccessIterator self(*this);
+  PredicatedTileAccessIteratorResidualLast operator++(int) {
+    PredicatedTileAccessIteratorResidualLast self(*this);
     operator++();
     return self;
   }
@@ -449,7 +418,8 @@ class PredicatedTileAccessIterator<
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for column-major data.
+/// Specialization of PredicatedTileAccessIteratorResidualLast for column-major
+/// data.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
 ///            ReadableContiguousTileIteratorConcept |
@@ -463,7 +433,7 @@ template <
     typename ThreadMap_,
     typename AccessType_,
     bool Gather>
-class PredicatedTileAccessIterator<
+class PredicatedTileAccessIteratorResidualLast<
     Shape_,
     Element_,
     layout::ColumnMajor,
@@ -494,7 +464,7 @@ class PredicatedTileAccessIterator<
   using Pointer = Element*;
   using NonConstPointer = typename platform::remove_const<Element>::type*;
 
-  using UnderlyingIterator = PredicatedTileAccessIterator<
+  using UnderlyingIterator = PredicatedTileAccessIteratorResidualLast<
       layout::PitchLinearShape<Shape::kRow, Shape::kColumn>,
       Element,
       layout::PitchLinear,
@@ -511,7 +481,7 @@ class PredicatedTileAccessIterator<
   /// Parameters object is precomputed state and is host-constructible
   class Params {
    private:
-    friend PredicatedTileAccessIterator;
+    friend PredicatedTileAccessIteratorResidualLast;
 
     /// Parameters object
     typename UnderlyingIterator::Params params_;
@@ -544,7 +514,7 @@ class PredicatedTileAccessIterator<
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       ///< Precomputed parameters object
       Params const& params,
       ///< Pointer to start of tensor
@@ -569,15 +539,16 @@ class PredicatedTileAccessIterator<
                 threadblock_offset.column()),
             indices) {}
 
-  /// Construct a PredicatedTileAccessIterator with zero threadblock offset
+  /// Construct a PredicatedTileAccessIteratorResidualLast with zero threadblock
+  /// offset
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       Params const& params, ///< Precomputed parameters object
       Pointer pointer, ///< Pointer to start of tensor
       TensorCoord extent, ///< Extent of tensor
       int thread_id ///< ID of each participating thread
       )
-      : PredicatedTileAccessIterator(
+      : PredicatedTileAccessIteratorResidualLast(
             params,
             pointer,
             extent,
@@ -588,6 +559,11 @@ class PredicatedTileAccessIterator<
   CUTLASS_HOST_DEVICE
   void set_iteration_index(int index) {
     iterator_.set_iteration_index(index);
+  }
+
+  CUTLASS_HOST_DEVICE
+  void set_residual_tile(bool enable) {
+    iterator_.set_residual_tile(enable);
   }
 
   /// Adds a pointer offset in units of Element
@@ -616,7 +592,7 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator& operator++() {
+  PredicatedTileAccessIteratorResidualLast& operator++() {
     ++iterator_;
     return *this;
   }
@@ -628,8 +604,8 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator operator++(int) {
-    PredicatedTileAccessIterator self(*this);
+  PredicatedTileAccessIteratorResidualLast operator++(int) {
+    PredicatedTileAccessIteratorResidualLast self(*this);
     operator++();
     return self;
   }
@@ -667,7 +643,8 @@ class PredicatedTileAccessIterator<
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for row-major data.
+/// Specialization of PredicatedTileAccessIteratorResidualLast for row-major
+/// data.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
 ///            ReadableContiguousTileIteratorConcept |
@@ -681,7 +658,7 @@ template <
     typename ThreadMap_,
     typename AccessType_,
     bool Gather>
-class PredicatedTileAccessIterator<
+class PredicatedTileAccessIteratorResidualLast<
     Shape_,
     Element_,
     layout::RowMajor,
@@ -712,7 +689,7 @@ class PredicatedTileAccessIterator<
   using Pointer = Element*;
   using NonConstPointer = typename platform::remove_const<Element>::type*;
 
-  using UnderlyingIterator = PredicatedTileAccessIterator<
+  using UnderlyingIterator = PredicatedTileAccessIteratorResidualLast<
       layout::PitchLinearShape<Shape::kColumn, Shape::kRow>,
       Element,
       layout::PitchLinear,
@@ -729,7 +706,7 @@ class PredicatedTileAccessIterator<
   /// Parameters object is precomputed state and is host-constructible
   class Params {
    private:
-    friend PredicatedTileAccessIterator;
+    friend PredicatedTileAccessIteratorResidualLast;
 
     /// Parameters object
     typename UnderlyingIterator::Params params_;
@@ -762,7 +739,7 @@ class PredicatedTileAccessIterator<
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       ///< Precomputed parameters object
       Params const& params,
       ///< Pointer to start of tensor
@@ -785,15 +762,16 @@ class PredicatedTileAccessIterator<
                 threadblock_offset.row()),
             indices) {}
 
-  /// Construct a PredicatedTileAccessIterator with zero threadblock offset
+  /// Construct a PredicatedTileAccessIteratorResidualLast with zero threadblock
+  /// offset
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       Params const& params, ///< Precomputed parameters object
       Pointer pointer, ///< Pointer to start of tensor
       TensorCoord extent, ///< Extent of tensor
       int thread_id ///< ID of each participating thread
       )
-      : PredicatedTileAccessIterator(
+      : PredicatedTileAccessIteratorResidualLast(
             params,
             pointer,
             extent,
@@ -804,6 +782,11 @@ class PredicatedTileAccessIterator<
   CUTLASS_HOST_DEVICE
   void set_iteration_index(int index) {
     iterator_.set_iteration_index(index);
+  }
+
+  CUTLASS_HOST_DEVICE
+  void set_residual_tile(bool enable) {
+    iterator_.set_residual_tile(enable);
   }
 
   /// Adds a pointer offset in units of Element
@@ -832,7 +815,7 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator& operator++() {
+  PredicatedTileAccessIteratorResidualLast& operator++() {
     ++iterator_;
     return *this;
   }
@@ -844,8 +827,8 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator operator++(int) {
-    PredicatedTileAccessIterator self(*this);
+  PredicatedTileAccessIteratorResidualLast operator++(int) {
+    PredicatedTileAccessIteratorResidualLast self(*this);
     operator++();
     return self;
   }
@@ -883,7 +866,8 @@ class PredicatedTileAccessIterator<
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for affine rank 2 data.
+/// Specialization of PredicatedTileAccessIteratorResidualLast for affine rank 2
+/// data.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
 ///            ReadableContiguousTileIteratorConcept |
@@ -896,7 +880,7 @@ template <
     int AdvanceRank,
     typename ThreadMap_,
     typename AccessType_>
-class PredicatedTileAccessIterator<
+class PredicatedTileAccessIteratorResidualLast<
     Shape_,
     Element_,
     layout::AffineRankN<2>,
@@ -948,7 +932,7 @@ class PredicatedTileAccessIterator<
   /// Parameters object is precomputed state and is host-constructible
   class Params {
    public:
-    friend PredicatedTileAccessIterator;
+    friend PredicatedTileAccessIteratorResidualLast;
 
    private:
     /// stride of pitch-linear layout (units of Element)
@@ -1024,9 +1008,7 @@ class PredicatedTileAccessIterator<
   BytePointer pointer_;
 
   UnderlyingPredicates the_predicates;
-
-  /// Used for out-of-order visitation
-  bool is_residue_tile_;
+  Mask residual_tile_mask;
 
  private:
   /// Computes predicates based on internally tracked per-thread offset.
@@ -1043,7 +1025,7 @@ class PredicatedTileAccessIterator<
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       ///< Precomputed parameters object
       Params const& params,
       ///< Pointer to start of tensor
@@ -1061,8 +1043,7 @@ class PredicatedTileAccessIterator<
       : params_(params),
         pointer_(reinterpret_cast<BytePointer>(
             const_cast<NonConstPointer>(pointer))),
-        the_predicates(extent),
-        is_residue_tile_(true) {
+        the_predicates(extent) {
     the_predicates.set_predicates(thread_id, threadblock_offset);
 
     // update internal pointers
@@ -1070,15 +1051,16 @@ class PredicatedTileAccessIterator<
     add_pointer_offset(layout(the_predicates.thread_offset_));
   }
 
-  /// Construct a PredicatedTileAccessIterator with zero threadblock offset
+  /// Construct a PredicatedTileAccessIteratorResidualLast with zero threadblock
+  /// offset
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       Params const& params, ///< Precomputed parameters object
       Pointer pointer, ///< Pointer to start of tensor
       TensorCoord extent, ///< Extent of tensor
       int thread_id ///< ID of each participating thread
       )
-      : PredicatedTileAccessIterator(
+      : PredicatedTileAccessIteratorResidualLast(
             params,
             pointer,
             extent,
@@ -1091,6 +1073,13 @@ class PredicatedTileAccessIterator<
     the_predicates.set_iteration_index(index);
   }
 
+  CUTLASS_HOST_DEVICE
+  void set_residual_tile(bool is_residual_tile) {
+    if (is_residual_tile) {
+      the_predicates.set_mask(residual_tile_mask);
+    }
+  }
+
   /// Adds a pointer offset in units of Element
   CUTLASS_HOST_DEVICE
   void add_pointer_offset(LongIndex pointer_offset) {
@@ -1101,31 +1090,13 @@ class PredicatedTileAccessIterator<
   /// tiles
   CUTLASS_HOST_DEVICE
   void add_tile_offset(TensorCoord const& tile_offset) {
-    if (is_residue_tile_) {
-      the_predicates.thread_offset_ += the_predicates.residue_offset_;
-
-      Layout layout(params_.stride_);
-      add_pointer_offset(layout(the_predicates.residue_offset_));
-
-      the_predicates.compute_predicates_(the_predicates.extent_, true);
-
-      if (kAdvanceRank) {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset[1] - 1);
-        pointer_ += Shape::kContiguous * tile_offset[0];
-      } else {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset[0] - 1);
-        pointer_ += Shape::kStrided * tile_offset[1];
-      }
+    if (kAdvanceRank) {
+      pointer_ += params_.inc_advance_ * LongIndex(tile_offset[1]);
+      pointer_ += Shape::kContiguous * tile_offset[0];
     } else {
-      if (kAdvanceRank) {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset[1]);
-        pointer_ += Shape::kContiguous * tile_offset[0];
-      } else {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset[0]);
-        pointer_ += Shape::kStrided * tile_offset[1];
-      }
+      pointer_ += params_.inc_advance_ * LongIndex(tile_offset[0]);
+      pointer_ += Shape::kStrided * tile_offset[1];
     }
-    is_residue_tile_ = false;
   }
 
   /// Returns a pointer
@@ -1142,7 +1113,7 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator& operator++() {
+  PredicatedTileAccessIteratorResidualLast& operator++() {
     the_predicates.operator++();
     ++the_predicates.iteration_vector_;
     if (the_predicates.iteration_vector_ < kAccessesPerVector) {
@@ -1190,8 +1161,8 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator operator++(int) {
-    PredicatedTileAccessIterator self(*this);
+  PredicatedTileAccessIteratorResidualLast operator++(int) {
+    PredicatedTileAccessIteratorResidualLast self(*this);
     operator++();
     return self;
   }
@@ -1229,7 +1200,7 @@ class PredicatedTileAccessIterator<
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for affine rank 2
+/// Specialization of PredicatedTileAccessIteratorResidualLast for affine rank 2
 /// column-major data.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
@@ -1243,7 +1214,7 @@ template <
     int AdvanceRank,
     typename ThreadMap_,
     typename AccessType_>
-class PredicatedTileAccessIterator<
+class PredicatedTileAccessIteratorResidualLast<
     Shape_,
     Element_,
     layout::AffineRank2ColumnMajor,
@@ -1275,7 +1246,7 @@ class PredicatedTileAccessIterator<
   using NonConstPointer = typename platform::remove_const<Element>::type*;
 
   // Map to the underlying AffineRankN<2> layout
-  using UnderlyingIterator = PredicatedTileAccessIterator<
+  using UnderlyingIterator = PredicatedTileAccessIteratorResidualLast<
       layout::PitchLinearShape<Shape::kRow, Shape::kColumn>,
       Element,
       layout::AffineRankN<2>,
@@ -1291,7 +1262,7 @@ class PredicatedTileAccessIterator<
   /// Parameters object is precomputed state and is host-constructible
   class Params {
    private:
-    friend PredicatedTileAccessIterator;
+    friend PredicatedTileAccessIteratorResidualLast;
 
     /// Parameters object
     typename UnderlyingIterator::Params params_;
@@ -1319,7 +1290,7 @@ class PredicatedTileAccessIterator<
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       ///< Precomputed parameters object
       Params const& params,
       ///< Pointer to start of tensor
@@ -1343,15 +1314,16 @@ class PredicatedTileAccessIterator<
                 threadblock_offset.row(),
                 threadblock_offset.column())) {}
 
-  /// Construct a PredicatedTileAccessIterator with zero threadblock offset
+  /// Construct a PredicatedTileAccessIteratorResidualLast with zero threadblock
+  /// offset
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       Params const& params, ///< Precomputed parameters object
       Pointer pointer, ///< Pointer to start of tensor
       TensorCoord extent, ///< Extent of tensor
       int thread_id ///< ID of each participating thread
       )
-      : PredicatedTileAccessIterator(
+      : PredicatedTileAccessIteratorResidualLast(
             params,
             pointer,
             extent,
@@ -1362,6 +1334,11 @@ class PredicatedTileAccessIterator<
   CUTLASS_HOST_DEVICE
   void set_iteration_index(int index) {
     iterator_.set_iteration_index(index);
+  }
+
+  CUTLASS_HOST_DEVICE
+  void set_residual_tile(bool enable) {
+    iterator_.set_residual_tile(enable);
   }
 
   /// Adds a pointer offset in units of Element
@@ -1391,7 +1368,7 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator& operator++() {
+  PredicatedTileAccessIteratorResidualLast& operator++() {
     ++iterator_;
     return *this;
   }
@@ -1403,8 +1380,8 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator operator++(int) {
-    PredicatedTileAccessIterator self(*this);
+  PredicatedTileAccessIteratorResidualLast operator++(int) {
+    PredicatedTileAccessIteratorResidualLast self(*this);
     operator++();
     return self;
   }
@@ -1442,8 +1419,8 @@ class PredicatedTileAccessIterator<
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for affine rank-2 row-major
-/// data.
+/// Specialization of PredicatedTileAccessIteratorResidualLast for affine rank-2
+/// row-major data.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
 ///            ReadableContiguousTileIteratorConcept |
@@ -1456,7 +1433,7 @@ template <
     int AdvanceRank,
     typename ThreadMap_,
     typename AccessType_>
-class PredicatedTileAccessIterator<
+class PredicatedTileAccessIteratorResidualLast<
     Shape_,
     Element_,
     layout::AffineRank2RowMajor,
@@ -1488,7 +1465,7 @@ class PredicatedTileAccessIterator<
   using NonConstPointer = typename platform::remove_const<Element>::type*;
 
   // Map to the underlying AffineRankN<2> layout
-  using UnderlyingIterator = PredicatedTileAccessIterator<
+  using UnderlyingIterator = PredicatedTileAccessIteratorResidualLast<
       layout::PitchLinearShape<Shape::kColumn, Shape::kRow>,
       Element,
       layout::AffineRankN<2>,
@@ -1504,7 +1481,7 @@ class PredicatedTileAccessIterator<
   /// Parameters object is precomputed state and is host-constructible
   class Params {
    private:
-    friend PredicatedTileAccessIterator;
+    friend PredicatedTileAccessIteratorResidualLast;
 
     /// Parameters object
     typename UnderlyingIterator::Params params_;
@@ -1532,7 +1509,7 @@ class PredicatedTileAccessIterator<
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       ///< Precomputed parameters object
       Params const& params,
       ///< Pointer to start of tensor
@@ -1556,15 +1533,16 @@ class PredicatedTileAccessIterator<
                 threadblock_offset.column(),
                 threadblock_offset.row())) {}
 
-  /// Construct a PredicatedTileAccessIterator with zero threadblock offset
+  /// Construct a PredicatedTileAccessIteratorResidualLast with zero threadblock
+  /// offset
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       Params const& params, ///< Precomputed parameters object
       Pointer pointer, ///< Pointer to start of tensor
       TensorCoord extent, ///< Extent of tensor
       int thread_id ///< ID of each participating thread
       )
-      : PredicatedTileAccessIterator(
+      : PredicatedTileAccessIteratorResidualLast(
             params,
             pointer,
             extent,
@@ -1575,6 +1553,11 @@ class PredicatedTileAccessIterator<
   CUTLASS_HOST_DEVICE
   void set_iteration_index(int index) {
     iterator_.set_iteration_index(index);
+  }
+
+  CUTLASS_HOST_DEVICE
+  void set_residual_tile(bool enable) {
+    iterator_.set_residual_tile(enable);
   }
 
   /// Adds a pointer offset in units of Element
@@ -1604,7 +1587,7 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator& operator++() {
+  PredicatedTileAccessIteratorResidualLast& operator++() {
     ++iterator_;
     return *this;
   }
@@ -1616,8 +1599,8 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator operator++(int) {
-    PredicatedTileAccessIterator self(*this);
+  PredicatedTileAccessIteratorResidualLast operator++(int) {
+    PredicatedTileAccessIteratorResidualLast self(*this);
     operator++();
     return self;
   }
@@ -1655,8 +1638,8 @@ class PredicatedTileAccessIterator<
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for column-major interleaved
-/// data. It is mapped to the congruous layout.
+/// Specialization of PredicatedTileAccessIteratorResidualLast for column-major
+/// interleaved data. It is mapped to the congruous layout.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
 ///            ReadableContiguousTileIteratorConcept |
@@ -1671,7 +1654,7 @@ template <
     typename ThreadMap_,
     typename AccessType_,
     int InterleavedK>
-class PredicatedTileAccessIterator<
+class PredicatedTileAccessIteratorResidualLast<
     Shape_,
     Element_,
     layout::ColumnMajorInterleaved<InterleavedK>,
@@ -1703,7 +1686,7 @@ class PredicatedTileAccessIterator<
   using Pointer = Element*;
   using NonConstPointer = typename platform::remove_const<Element>::type*;
 
-  using UnderlyingIterator = PredicatedTileAccessIterator<
+  using UnderlyingIterator = PredicatedTileAccessIteratorResidualLast<
       layout::PitchLinearShape<
           Shape::kRow * kInterleavedK,
           Shape::kColumn / kInterleavedK>,
@@ -1721,7 +1704,7 @@ class PredicatedTileAccessIterator<
   /// Parameters object is precomputed state and is host-constructible
   class Params {
    private:
-    friend PredicatedTileAccessIterator;
+    friend PredicatedTileAccessIteratorResidualLast;
 
     /// Parameters object
     typename UnderlyingIterator::Params params_;
@@ -1752,7 +1735,7 @@ class PredicatedTileAccessIterator<
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       /// Precomputed parameters object
       Params const& params,
       /// Pointer to start of tensor
@@ -1778,15 +1761,16 @@ class PredicatedTileAccessIterator<
                 threadblock_offset.row() * kInterleavedK,
                 threadblock_offset.column() / kInterleavedK)) {}
 
-  /// Construct a PredicatedTileAccessIterator with zero threadblock offset
+  /// Construct a PredicatedTileAccessIteratorResidualLast with zero threadblock
+  /// offset
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       Params const& params, ///< Precomputed parameters object
       Pointer pointer, ///< Pointer to start of tensor
       TensorCoord extent, ///< Extent of tensor
       int thread_id ///< ID of each participating thread
       )
-      : PredicatedTileAccessIterator(
+      : PredicatedTileAccessIteratorResidualLast(
             params,
             pointer,
             extent,
@@ -1797,6 +1781,11 @@ class PredicatedTileAccessIterator<
   CUTLASS_HOST_DEVICE
   void set_iteration_index(int index) {
     iterator_.set_iteration_index(index);
+  }
+
+  CUTLASS_HOST_DEVICE
+  void set_residual_tile(bool enable) {
+    iterator_.set_residual_tile(enable);
   }
 
   /// Adds a pointer offset in units of Element
@@ -1825,7 +1814,7 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator& operator++() {
+  PredicatedTileAccessIteratorResidualLast& operator++() {
     ++iterator_;
     return *this;
   }
@@ -1837,8 +1826,8 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator operator++(int) {
-    PredicatedTileAccessIterator self(*this);
+  PredicatedTileAccessIteratorResidualLast operator++(int) {
+    PredicatedTileAccessIteratorResidualLast self(*this);
     operator++();
     return self;
   }
@@ -1876,8 +1865,8 @@ class PredicatedTileAccessIterator<
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for row-major interleaved
-/// data.
+/// Specialization of PredicatedTileAccessIteratorResidualLast for row-major
+/// interleaved data.
 //  It is mapped to the congruous layout.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
@@ -1892,7 +1881,7 @@ template <
     typename ThreadMap_,
     typename AccessType_,
     int InterleavedK>
-class PredicatedTileAccessIterator<
+class PredicatedTileAccessIteratorResidualLast<
     Shape_,
     Element_,
     layout::RowMajorInterleaved<InterleavedK>,
@@ -1924,7 +1913,7 @@ class PredicatedTileAccessIterator<
   using Pointer = Element*;
   using NonConstPointer = typename platform::remove_const<Element>::type*;
 
-  using UnderlyingIterator = PredicatedTileAccessIterator<
+  using UnderlyingIterator = PredicatedTileAccessIteratorResidualLast<
       layout::PitchLinearShape<
           Shape::kColumn * kInterleavedK,
           Shape::kRow / kInterleavedK>,
@@ -1942,7 +1931,7 @@ class PredicatedTileAccessIterator<
   /// Parameters object is precomputed state and is host-constructible
   class Params {
    private:
-    friend PredicatedTileAccessIterator;
+    friend PredicatedTileAccessIteratorResidualLast;
 
     /// Parameters object
     typename UnderlyingIterator::Params params_;
@@ -1973,7 +1962,7 @@ class PredicatedTileAccessIterator<
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       /// Precomputed parameters object
       Params const& params,
       /// Pointer to start of tensor
@@ -1999,15 +1988,16 @@ class PredicatedTileAccessIterator<
                 threadblock_offset.column() * kInterleavedK,
                 threadblock_offset.row() / kInterleavedK)) {}
 
-  /// Construct a PredicatedTileAccessIterator with zero threadblock offset
+  /// Construct a PredicatedTileAccessIteratorResidualLast with zero threadblock
+  /// offset
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator(
+  PredicatedTileAccessIteratorResidualLast(
       Params const& params, ///< Precomputed parameters object
       Pointer pointer, ///< Pointer to start of tensor
       TensorCoord extent, ///< Extent of tensor
       int thread_id ///< ID of each participating thread
       )
-      : PredicatedTileAccessIterator(
+      : PredicatedTileAccessIteratorResidualLast(
             params,
             pointer,
             extent,
@@ -2018,6 +2008,11 @@ class PredicatedTileAccessIterator<
   CUTLASS_HOST_DEVICE
   void set_iteration_index(int index) {
     iterator_.set_iteration_index(index);
+  }
+
+  CUTLASS_HOST_DEVICE
+  void set_residual_tile(bool enable) {
+    iterator_.set_residual_tile(enable);
   }
 
   /// Adds a pointer offset in units of Element
@@ -2046,7 +2041,7 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator& operator++() {
+  PredicatedTileAccessIteratorResidualLast& operator++() {
     ++iterator_;
     return *this;
   }
@@ -2058,8 +2053,8 @@ class PredicatedTileAccessIterator<
   /// Subsequent calls are lightweight and must only update the internal
   /// pointer.
   CUTLASS_HOST_DEVICE
-  PredicatedTileAccessIterator operator++(int) {
-    PredicatedTileAccessIterator self(*this);
+  PredicatedTileAccessIteratorResidualLast operator++(int) {
+    PredicatedTileAccessIteratorResidualLast self(*this);
     operator++();
     return self;
   }
