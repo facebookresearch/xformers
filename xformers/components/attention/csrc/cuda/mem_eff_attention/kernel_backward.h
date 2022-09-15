@@ -503,17 +503,6 @@ struct AttentionBackwardKernel {
     SharedStorage& shared_storage = *((SharedStorage*)smem_buffer);
     int32_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
 
-    auto clearSmem = [&]() {
-      // Initialize shared-memory. It can contain `nans` otherwise that screw up
-      // everything (only seens on Sm75+ tho)
-      uint32_t* smem = (uint32_t*)smem_buffer;
-      for (int i = 0; i < sizeof(SharedStorage) / sizeof(uint32_t) -
-               kWarpSize * kNumWarpsPerBlock;
-           i += kWarpSize * kNumWarpsPerBlock) {
-        smem[i + thread_id] = 0;
-      }
-    };
-
     auto getNumKeys = [&](int32_t query_start) {
       if (p.causal) {
         return std::min(int32_t(query_start + kBlockSizeI), p.num_keys);
@@ -524,7 +513,6 @@ struct AttentionBackwardKernel {
     int32_t query_end = p.num_queries / kBlockSizeI * kBlockSizeI;
     int32_t query_start = 0;
     for (; query_start < query_end; query_start += kBlockSizeI) {
-      clearSmem();
       computeDi(shared_storage.di, p, query_start);
 
       int32_t key_start = 0;
@@ -536,6 +524,7 @@ struct AttentionBackwardKernel {
       if (key_start != getNumKeys(query_start)) {
         processBlockIJ<false>(shared_storage, p, query_start, key_start);
       }
+      __syncthreads();
     }
     // Last (partial) query block
     if (query_start != p.num_queries) {
@@ -600,6 +589,7 @@ struct AttentionBackwardKernel {
           (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
 
       // Compute threadblock-scoped matrix multiply-add
+      __syncthreads();
       mma(gemm_k_iterations, accum, iterator_A, iterator_B, accum);
       accum = cutlass::multiplies<typename Mma::FragmentC>()(scale, accum);
 
@@ -734,6 +724,7 @@ struct AttentionBackwardKernel {
             epilogue(rescale, output_write_it, accum, output_read_it);
           }));
     }
+    __syncthreads();
     /////////////////////////////////////////////////////////////////////////////////////////////////
     // MatmulDOIVJ
     /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -794,7 +785,7 @@ struct AttentionBackwardKernel {
             lane_id, warp_id, output_tile_coords);
         auto attn_T = shared_storage.after_qk.attn_shared_storage.accum_ref();
         accum_t current_di;
-        typename Mma::FragmentC fragment_attn, fragment_di, fragment_pos;
+        typename Mma::FragmentC fragment_attn, fragment_di;
         RegistersIter::iterateRows(
             lane_offset,
             [&](int accum_m) { current_di = shared_storage.di[accum_m]; },
@@ -808,7 +799,6 @@ struct AttentionBackwardKernel {
                 fragment_attn[idx] = 0;
               }
               fragment_di[idx] = current_di;
-              fragment_pos[idx] = 100 * accum_m + accum_n;
             },
             [&](int accum_m) {
 

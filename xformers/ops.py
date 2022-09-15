@@ -87,15 +87,38 @@ class AttentionOpBase(torch.autograd.Function):
     FORWARD_OPERATOR: Any
     FORWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
         torch.float: 2e-4,
-        torch.half: 2e-3,
+        torch.half: 4e-3,
         torch.bfloat16: 2e-3,
     }
+    FORWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {}
     SUPPORTED_DEVICES: Set[str]
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None)}
     SUPPORTS_DROPOUT: bool
     NAME: str
+
+    _TEST_BATCH_SIZES: List[int] = [1, 300]
+    _TEST_K: List[int] = [32, 128]
+
+    @classmethod
+    def generate_test_shapes_B_Mq_Mkv_K(cls):
+        shapes = []
+        for B in cls._TEST_BATCH_SIZES:
+            for Mq in [32, 256]:
+                for Mkv in [32, 64, 256]:
+                    for K in cls._TEST_K:
+                        shapes.append((B, Mq, Mkv, K))
+            Mq = 256
+            Mkv = 128
+            K = 32
+            # Weird values of parameters
+            for M in [2, 3, 15, 31, 32, 34]:
+                shapes.append((B, M, Mkv, K))
+                shapes.append((B, Mq, M, K))
+            for _K in [1, 2, 3, 31, 64, 512]:
+                shapes.append((B, Mq, Mkv, _K))
+        return shapes
 
     @classmethod
     def forward_no_grad(
@@ -155,6 +178,20 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), torch.Tensor}
     SUPPORTS_DROPOUT = True
     NAME = "small_k"
+
+    # as this kernel is a bit slow, this should make tests run faster
+    _TEST_BATCH_SIZES = [1, 3]
+    _TEST_K = [2, 3, 8, 16, 32]
+
+    @classmethod
+    def supports(cls, d: "AttentionOpDispatch") -> bool:
+        if not super(MemoryEfficientAttentionOp, cls).supports(d):
+            return False
+        buffer_size = 8
+        for pack in [1, 2, 4]:
+            if (d.k % pack) == 0 and (d.k // pack) <= buffer_size:
+                return True
+        return False
 
     @staticmethod
     def backward(ctx, grad):
@@ -295,6 +332,10 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     FORWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
         torch.half: 5e-2,
         torch.bfloat16: 5e-2,
+    }
+    FORWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
+        torch.half: 1e-2,
+        torch.bfloat16: 1e-2,
     }
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
