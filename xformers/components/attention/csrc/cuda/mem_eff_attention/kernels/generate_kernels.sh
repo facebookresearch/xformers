@@ -20,6 +20,8 @@ for aligned in "false" "true"; do
 #include "../kernel_backward.h"
 EOF
         for sm in 50 70 75 80; do
+            echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned, 64);" >> $FNAME
+            echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned, 128);" >> $FNAME
             echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned);" >> $FNAME
         done;
     done;
