@@ -117,8 +117,13 @@ struct AttentionBackwardKernel {
   };
 
   // Blocks & grid
+  static constexpr bool kSupports64x128 =
+      ArchTag::kMinComputeCapability >= 80 ||
+      (ArchTag::kMinComputeCapability >= 70 &&
+       cutlass::sizeof_bits<scalar_t>::value <= 16);
   static constexpr int64_t kWarpSize = 32;
-  static constexpr int64_t kBlockSizeI = kMaxK > 64 ? 128 : 64;
+  static constexpr int64_t kBlockSizeI =
+      kSupports64x128 && kMaxK > 64 ? 128 : 64;
   static constexpr int64_t kBlockSizeJ = 64;
   static constexpr int64_t kNumWarpsPerBlock =
       (kBlockSizeI * kBlockSizeJ) / (32 * 32);
