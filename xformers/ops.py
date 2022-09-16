@@ -180,6 +180,10 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
     SUPPORTED_DTYPES = {torch.float}
     SUPPORTED_MAX_K: float = 32
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), torch.Tensor}
+    FORWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
+        **AttentionOpBase.FORWARD_ERROR_ATOL,
+        torch.float: 3e-4,
+    }
     SUPPORTS_DROPOUT = True
     NAME = "small_k"
 
