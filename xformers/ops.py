@@ -180,6 +180,10 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
     SUPPORTED_DTYPES = {torch.float}
     SUPPORTED_MAX_K: float = 32
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), torch.Tensor}
+    FORWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
+        **AttentionOpBase.FORWARD_ERROR_ATOL,
+        torch.float: 3e-4,
+    }
     SUPPORTS_DROPOUT = True
     NAME = "small_k"
 
@@ -280,22 +284,6 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
             matmul_alignment_mn = max(matmul_alignment_mn, 64 // bits_per_scalar)
         if d.k % matmul_alignment_mn != 0:
             return False
-
-        # Partial tiles can cause issues..
-        warp_shape = 32 if uses_tensorcores else 8
-        if sm == 70:
-            if d.kv_len > warp_shape and d.kv_len % warp_shape != 0:
-                return False
-            # for backwards pass
-            if d.q_len > warp_shape and d.q_len % warp_shape != 0:
-                return False
-        elif bits_per_scalar < 32:
-            elements_per_32bits = 32 // bits_per_scalar
-            if d.kv_len > warp_shape and d.kv_len % elements_per_32bits != 0:
-                return False
-            # for backwards pass
-            if d.q_len > warp_shape and d.q_len % elements_per_32bits != 0:
-                return False
         return True
 
     @classmethod

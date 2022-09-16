@@ -23,7 +23,9 @@ def _generate_op_device_dtype_B_Mq_Mkv_K():
         xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
     ]:
         for shape in op.generate_test_shapes_B_Mq_Mkv_K():
-            for device in op.SUPPORTED_DEVICES:
+            for device in _devices:
+                if device not in op.SUPPORTED_DEVICES:
+                    continue
                 for dtype in op.SUPPORTED_DTYPES:
                     yield (op, device, dtype, *shape)
 
