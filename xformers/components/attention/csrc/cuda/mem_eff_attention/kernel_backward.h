@@ -596,7 +596,7 @@ struct AttentionBackwardKernel {
     //
     // grad_v[j_start:j_end] += attn_T @ do_i
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < p.head_dim_value;
+    for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim_value);
          col += MatmulGradV::ThreadblockShape::kN) {
       using Mma = typename MatmulGradV::Mma;
 
@@ -851,7 +851,7 @@ struct AttentionBackwardKernel {
     //
     // grad_k[i_start:i_end] += tmp.transpose(-2, -1) @ q_i
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < p.head_dim;
+    for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim);
          col += MatmulGradK::ThreadblockShape::kN) {
       using Mma = typename MatmulGradK::Mma;
 
