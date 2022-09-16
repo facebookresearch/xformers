@@ -5,15 +5,17 @@
 
 import argparse
 import contextlib
+import copy
 import glob
 import logging
+import math
 import os
 import pickle
 import pprint
 import tempfile
 from collections import defaultdict, namedtuple
 from dataclasses import replace
-from typing import Any, Dict, Generator, List
+from typing import Any, Dict, Generator, List, Set, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -213,6 +215,36 @@ def temp_files_ctx(num: int) -> Generator:
         rmf(name)
 
 
+META_ALGORITHM = "algorithm"
+
+
+def _compare_benchmarks(results: List[Tuple[Dict[str, Any], Any]]) -> benchmark.Compare:
+    """
+    Returns a `benchmark.Compare` object, except that if we have runs
+    with different algorithms, we also add the algorithm name
+    in the column titles
+    """
+    all_algorithms: Set[str] = set()
+    for (metadata, _) in results:
+        algo = metadata.get(META_ALGORITHM, None)
+        if algo is not None:
+            all_algorithms.add(algo)
+    display_algo = len(all_algorithms) > 1
+
+    display_results = []
+    for (metadata, r) in results:
+        algo = metadata.get(META_ALGORITHM, None)
+        if algo is None or not display_algo:
+            display_results.append(r)
+        else:
+            r = copy.copy(r)
+            r.task_spec = replace(
+                r.task_spec, description=f"{r.task_spec.description}[{algo}]"
+            )
+            display_results.append(r)
+    return benchmark.Compare(display_results)
+
+
 def benchmark_main_helper(
     benchmark_fn, cases: List[Dict[str, Any]], *, min_run_time: int = 2
 ) -> None:
@@ -270,7 +302,12 @@ def benchmark_main_helper(
                 os.path.join(store_results_folder, f"{name}.*.pkl")
             ):
                 with open(filename, "rb") as fd:
-                    for r in pickle.load(fd):
+                    for row in pickle.load(fd):
+                        if isinstance(row, tuple):
+                            metadata, r = row
+                        else:
+                            # Backward compatibility
+                            metadata, r = {}, row
                         spec = r.task_spec
                         if r.task_spec.description != "vanilla":
                             # (in case the file was renamed)
@@ -282,7 +319,7 @@ def benchmark_main_helper(
                                 )
                             else:
                                 continue
-                        results_compare_to.append(r)
+                        results_compare_to.append((metadata, r))
 
     pbar = tqdm.tqdm(cases, leave=False)
     for case in pbar:
@@ -298,7 +335,9 @@ def benchmark_main_helper(
         for benchmark_object, is_optimized in zip(benchmarks_generator, [True, False]):
             if benchmark_object is None:
                 continue
+            metadata = {}
             if is_optimized:
+                metadata[META_ALGORITHM] = benchmark_object._task_spec.description
                 benchmark_object._task_spec = replace(
                     benchmark_object._task_spec, description=optimized_label
                 )
@@ -308,29 +347,40 @@ def benchmark_main_helper(
             ) in skip_vanilla_tasks:
                 continue
 
-            torch.cuda.synchronize()
-            torch.cuda.reset_peak_memory_stats()
-            benchmark_object._task_spec = replace(benchmark_object._task_spec, env=env)
-            measurement = benchmark_object.blocked_autorange(min_run_time=min_run_time)
-            del benchmark_object
-            torch.cuda.synchronize()
-            results.append(measurement)
-            name = measurement.task_spec.description
-            memory = torch.cuda.max_memory_allocated() / 2**20
+            memory = math.inf
+            try:
+                torch.cuda.synchronize()
+                torch.cuda.reset_peak_memory_stats()
+                benchmark_object._task_spec = replace(
+                    benchmark_object._task_spec, env=env
+                )
+                measurement = benchmark_object.blocked_autorange(
+                    min_run_time=min_run_time
+                )
+                torch.cuda.synchronize()
+                results.append((metadata, measurement))
+                name = measurement.task_spec.description
+                memory = torch.cuda.max_memory_allocated() / 2**20
+            except RuntimeError as e:
+                if "CUDA out of memory" not in str(e):
+                    raise
+            finally:
+                del benchmark_object
             mem_use[name][measurement.task_spec.sub_label] = memory
             pbar.write(f"{name}: memory used: {memory} MB")
+
         # Display results for benchmarks we just calculated
         if name is not None:
 
             def matches_current(r):
                 return (
-                    r.task_spec.sub_label == results[-1].task_spec.sub_label
-                    and r.task_spec.label == results[-1].task_spec.label
+                    r[1].task_spec.sub_label == results[-1][1].task_spec.sub_label
+                    and r[1].task_spec.label == results[-1][1].task_spec.label
                 )
 
             pbar.write(
                 str(
-                    benchmark.Compare(
+                    _compare_benchmarks(
                         list(filter(matches_current, results))
                         + list(filter(matches_current, results_compare_to))
                     )
@@ -338,7 +388,7 @@ def benchmark_main_helper(
             )
 
     pprint.pprint(mem_use)
-    benchmark.Compare(results + results_compare_to).print()
+    _compare_benchmarks(results + results_compare_to).print()
 
     # Save runs to a file
     if args.label is not None:
