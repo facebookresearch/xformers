@@ -90,7 +90,11 @@ class AttentionOpBase(torch.autograd.Function):
         torch.half: 4e-3,
         torch.bfloat16: 2e-3,
     }
-    FORWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {}
+    FORWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
+        torch.float: 2e-5,
+        torch.half: 2e-5,
+        torch.bfloat16: 2e-5,
+    }
     SUPPORTED_DEVICES: Set[str]
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
