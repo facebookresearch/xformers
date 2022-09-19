@@ -33,6 +33,7 @@
 #include "cutlass/platform/platform.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
 #include "cutlass/transform/threadblock/vector_iterator.h"
+#include "epilogue_pipelined.h"
 #include "iterators/epilogue_predicated_tile_iterator.h"
 
 #include "find_default_mma.h"
@@ -836,19 +837,20 @@ struct AttentionBackwardKernel {
                     typename DefaultOutputOp::ElementAccumulator,
                     typename DefaultOutputOp::ElementCompute,
                     ScaleType>;
-            using Epilogue = typename cutlass::epilogue::threadblock::Epilogue<
-                typename DefaultEpilogue::Shape,
-                typename Mma::Operator,
-                DefaultEpilogue::kPartitionsK,
-                typename MatmulGradQ::OutputTileIterator,
-                typename DefaultEpilogue::AccumulatorFragmentIterator,
-                typename DefaultEpilogue::WarpTileIterator,
-                typename DefaultEpilogue::SharedLoadIterator,
-                EpilogueOutputOp,
-                typename DefaultEpilogue::Padding,
-                DefaultEpilogue::kFragmentsPerIteration,
-                true // IterationsUnroll
-                >;
+            using Epilogue =
+                typename cutlass::epilogue::threadblock::EpiloguePipelined<
+                    typename DefaultEpilogue::Shape,
+                    typename Mma::Operator,
+                    DefaultEpilogue::kPartitionsK,
+                    typename MatmulGradQ::OutputTileIterator,
+                    typename DefaultEpilogue::AccumulatorFragmentIterator,
+                    typename DefaultEpilogue::WarpTileIterator,
+                    typename DefaultEpilogue::SharedLoadIterator,
+                    EpilogueOutputOp,
+                    typename DefaultEpilogue::Padding,
+                    DefaultEpilogue::kFragmentsPerIteration,
+                    true // IterationsUnroll
+                    >;
             EpilogueOutputOp rescale({1, 1});
             Epilogue epilogue(
                 shared_storage.after_qk.after_doivj.mm_gradQ.epilogue,
@@ -983,19 +985,20 @@ struct AttentionBackwardKernel {
                   typename DefaultOutputOp::ElementAccumulator,
                   typename DefaultOutputOp::ElementCompute,
                   ScaleType>;
-          using Epilogue = typename cutlass::epilogue::threadblock::Epilogue<
-              typename DefaultEpilogue::Shape,
-              typename Mma::Operator,
-              DefaultEpilogue::kPartitionsK,
-              typename MatmulT::OutputTileIterator,
-              typename DefaultEpilogue::AccumulatorFragmentIterator,
-              typename DefaultEpilogue::WarpTileIterator,
-              typename DefaultEpilogue::SharedLoadIterator,
-              EpilogueOutputOp,
-              typename DefaultEpilogue::Padding,
-              DefaultEpilogue::kFragmentsPerIteration,
-              true // IterationsUnroll
-              >;
+          using Epilogue =
+              typename cutlass::epilogue::threadblock::EpiloguePipelined<
+                  typename DefaultEpilogue::Shape,
+                  typename Mma::Operator,
+                  DefaultEpilogue::kPartitionsK,
+                  typename MatmulT::OutputTileIterator,
+                  typename DefaultEpilogue::AccumulatorFragmentIterator,
+                  typename DefaultEpilogue::WarpTileIterator,
+                  typename DefaultEpilogue::SharedLoadIterator,
+                  EpilogueOutputOp,
+                  typename DefaultEpilogue::Padding,
+                  DefaultEpilogue::kFragmentsPerIteration,
+                  true // IterationsUnroll
+                  >;
           EpilogueOutputOp rescale({1, 1});
           Epilogue epilogue(
               epilogue_smem, get_thread_id(), get_warp_id(), get_lane_id());
