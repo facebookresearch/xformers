@@ -876,6 +876,16 @@ struct AttentionBackwardKernel {
                            : std::min(
                                  (int32_t)MatmulQK::Mma::Shape::kN,
                                  p.num_queries - query_start));
+      auto createEpilogueIter = [&]() {
+        return typename MatmulGradK::OutputTileIterator(
+            typename MatmulGradK::OutputTileIterator::Params{p.head_dim},
+            p.grad_key_ptr + key_start * p.head_dim + col,
+            {skipBoundsChecks
+                 ? MatmulGradK::ThreadblockShape::kM
+                 : std::min((int32_t)Mma::Shape::kM, p.num_keys - key_start),
+             false ? MatmulGradK::ThreadblockShape::kN : p.head_dim - col},
+            thread_id);
+      };
 
       // q_i
       typename Mma::IteratorB iterator_B(
@@ -895,6 +905,7 @@ struct AttentionBackwardKernel {
 
       if (!kOutputInRF) {
         output_frags.gradK.clear();
+        createEpilogueIter().prefetch_all();
       }
 
       auto gemm_k_iterations =
@@ -910,18 +921,10 @@ struct AttentionBackwardKernel {
 
       // Output results
       if (!kOutputInRF) {
-        typename MatmulGradK::OutputTileIterator output_it(
-            typename MatmulGradK::OutputTileIterator::Params{p.head_dim},
-            p.grad_key_ptr + key_start * p.head_dim + col,
-            {skipBoundsChecks
-                 ? MatmulGradK::ThreadblockShape::kM
-                 : std::min((int32_t)Mma::Shape::kM, p.num_keys - key_start),
-             false ? MatmulGradK::ThreadblockShape::kN : p.head_dim - col},
-            thread_id);
         accumulateInGmem<MatmulGradK>(
             shared_storage.after_qk.after_doivj.mm_gradK.epilogue,
             output_frags.gradK,
-            output_it,
+            createEpilogueIter(),
             query_start == 0);
       }
     }
