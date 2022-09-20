@@ -330,6 +330,11 @@ def benchmark_main_helper(
         except NotImplementedError:
             # pbar.write(f"Skipped (NotImplementedError)")
             continue
+        except RuntimeError as e:
+            if "CUDA out of memory" not in str(e):
+                raise
+            pbar.write("Skipped (OOM)")
+            continue
 
         name = None
         for benchmark_object, is_optimized in zip(benchmarks_generator, [True, False]):
