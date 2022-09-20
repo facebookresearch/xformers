@@ -133,12 +133,12 @@ struct AttentionBackwardKernel {
   // If this is true, we store and accumulate dK/dV in RF
   // rather than going back to gmem everytime
   static constexpr bool kIsHalf = cutlass::sizeof_bits<scalar_t>::value <= 16;
-  static constexpr bool kOutputInRF = kIsHalf && kMaxK <= kBlockSizeI;
+  static constexpr bool kOutputInRF = kMaxK <= kBlockSizeI;
   static constexpr bool kPreloadMmas =
       kIsHalf && ArchTag::kMinComputeCapability >= 80 && kOutputInRF;
-  static constexpr bool kPreloadForGradK = kPreloadMmas;
-  static constexpr bool kPreloadForGradQ = kPreloadMmas;
-  static constexpr bool kPreloadForGradV = kPreloadMmas;
+  static constexpr bool kPrologueGK = kPreloadMmas;
+  static constexpr bool kPrologueGQ = kPreloadMmas;
+  static constexpr bool kPrologueGV = kPreloadMmas;
 
   // Launch bounds
   static constexpr int64_t kNumThreads = kWarpSize * kNumWarpsPerBlock;
@@ -411,7 +411,7 @@ struct AttentionBackwardKernel {
       };
       union {
         typename std::conditional<
-            kPreloadForGradQ,
+            kPrologueGQ,
             MatmulStorage<MatmulGradQ>,
             MatmulUnion<MatmulGradQ>>::type mm_gradQ;
         typename MatmulGradK::Mma::SharedStorage mm_gradK;
@@ -635,7 +635,7 @@ struct AttentionBackwardKernel {
       }
 
       __syncthreads();
-      if (kPreloadForGradV) {
+      if (kPrologueGV) {
         prologueGradV(0);
       }
       MatmulQK::B2bGemm::accumApplyLSEToSmem(
@@ -688,7 +688,7 @@ struct AttentionBackwardKernel {
         createEpilogueIter().prefetch_all();
         output_frags.gradV.clear();
       }
-      mma.set_prologue_done(kPreloadForGradV);
+      mma.set_prologue_done(kPrologueGV);
 
       auto gemm_k_iterations =
           (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
@@ -701,7 +701,7 @@ struct AttentionBackwardKernel {
           iterator_B,
           output_frags.gradV);
       __syncthreads();
-      if (kPreloadForGradV &&
+      if (kPrologueGV &&
           col + MatmulGradV::ThreadblockShape::kN < p.head_dim_value) {
         prologueGradV(col + MatmulGradV::ThreadblockShape::kN);
       }
@@ -793,7 +793,7 @@ struct AttentionBackwardKernel {
             });
         accum = (accum - fragment_di) * fragment_attn * scale;
         __syncthreads();
-        if (kPreloadForGradQ) {
+        if (kPrologueGQ) {
           prologueGradQ(0);
         }
         // attn <- attn_T.T
@@ -862,14 +862,14 @@ struct AttentionBackwardKernel {
       createEpilogueIter().prefetch_all();
       // Compute threadblock-scoped matrix multiply-add
       __syncthreads();
-      mma.set_prologue_done(kPreloadForGradQ);
+      mma.set_prologue_done(kPrologueGQ);
       mma(gemm_k_iterations, accum, iterator_B, accum);
       __syncthreads();
       bool isLastColumn = col + MatmulGradQ::ThreadblockShape::kN >= p.head_dim;
-      if (kPreloadForGradQ && !isLastColumn) {
+      if (kPrologueGQ && !isLastColumn) {
         prologueGradQ(col + MatmulGradQ::ThreadblockShape::kN);
       }
-      if (kPreloadForGradK && isLastColumn) {
+      if (kPrologueGK && isLastColumn) {
         prologueGradK(0);
       }
 
@@ -963,14 +963,13 @@ struct AttentionBackwardKernel {
 
       // Compute threadblock-scoped matrix multiply-add
       __syncthreads();
-      mma.set_prologue_done(kPreloadForGradK);
+      mma.set_prologue_done(kPrologueGK);
       mma(gemm_k_iterations,
           output_frags.gradK,
           iterator_B,
           output_frags.gradK);
       __syncthreads();
-      if (kPreloadForGradK &&
-          col + MatmulGradK::ThreadblockShape::kN < p.head_dim) {
+      if (kPrologueGK && col + MatmulGradK::ThreadblockShape::kN < p.head_dim) {
         prologueGradK(col + MatmulGradK::ThreadblockShape::kN);
       }
 
