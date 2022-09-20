@@ -337,43 +337,50 @@ def benchmark_main_helper(
             continue
 
         name = None
-        for benchmark_object, is_optimized in zip(benchmarks_generator, [True, False]):
-            if benchmark_object is None:
-                continue
-            metadata = {}
-            if is_optimized:
-                metadata[META_ALGORITHM] = benchmark_object._task_spec.description
-                benchmark_object._task_spec = replace(
-                    benchmark_object._task_spec, description=optimized_label
-                )
-            elif (
-                benchmark_object._task_spec.sub_label,
-                benchmark_object._task_spec.num_threads,
-            ) in skip_vanilla_tasks:
-                continue
+        try:
+            for benchmark_object, is_optimized in zip(
+                benchmarks_generator, [True, False]
+            ):
+                if benchmark_object is None:
+                    continue
+                metadata = {}
+                if is_optimized:
+                    metadata[META_ALGORITHM] = benchmark_object._task_spec.description
+                    benchmark_object._task_spec = replace(
+                        benchmark_object._task_spec, description=optimized_label
+                    )
+                elif (
+                    benchmark_object._task_spec.sub_label,
+                    benchmark_object._task_spec.num_threads,
+                ) in skip_vanilla_tasks:
+                    continue
 
-            memory = math.inf
-            try:
-                torch.cuda.synchronize()
-                torch.cuda.reset_peak_memory_stats()
-                benchmark_object._task_spec = replace(
-                    benchmark_object._task_spec, env=env
-                )
-                measurement = benchmark_object.blocked_autorange(
-                    min_run_time=min_run_time
-                )
-                torch.cuda.synchronize()
-                results.append((metadata, measurement))
-                name = measurement.task_spec.description
-                memory = torch.cuda.max_memory_allocated() / 2**20
-            except RuntimeError as e:
-                if "CUDA out of memory" not in str(e):
-                    raise
-            finally:
-                del benchmark_object
-            mem_use[name][measurement.task_spec.sub_label] = memory
-            pbar.write(f"{name}: memory used: {memory} MB")
-
+                memory = math.inf
+                try:
+                    torch.cuda.synchronize()
+                    torch.cuda.reset_peak_memory_stats()
+                    benchmark_object._task_spec = replace(
+                        benchmark_object._task_spec, env=env
+                    )
+                    measurement = benchmark_object.blocked_autorange(
+                        min_run_time=min_run_time
+                    )
+                    torch.cuda.synchronize()
+                    results.append((metadata, measurement))
+                    name = measurement.task_spec.description
+                    memory = torch.cuda.max_memory_allocated() / 2**20
+                except RuntimeError as e:
+                    if "CUDA out of memory" not in str(e):
+                        raise
+                    pbar.write("Skipped (OOM)")
+                finally:
+                    del benchmark_object
+                mem_use[name][measurement.task_spec.sub_label] = memory
+                pbar.write(f"{name}: memory used: {memory} MB")
+        except RuntimeError as e:
+            if "CUDA out of memory" not in str(e):
+                raise
+            pbar.write("Skipped (OOM)")
         # Display results for benchmarks we just calculated
         if name is not None:
 
