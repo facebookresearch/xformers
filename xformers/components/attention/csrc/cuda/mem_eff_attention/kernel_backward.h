@@ -133,7 +133,7 @@ struct AttentionBackwardKernel {
   // If this is true, we store and accumulate dK/dV in RF
   // rather than going back to gmem everytime
   static constexpr bool kIsHalf = cutlass::sizeof_bits<scalar_t>::value <= 16;
-  static constexpr bool kOutputInRF = kMaxK <= kBlockSizeI;
+  static constexpr bool kOutputInRF = kIsHalf && kMaxK <= kBlockSizeI;
   static constexpr bool kPreloadMmas =
       kIsHalf && ArchTag::kMinComputeCapability >= 80 && kOutputInRF;
   static constexpr bool kPrologueGK = kPreloadMmas;
