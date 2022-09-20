@@ -187,7 +187,9 @@ def test_logsumexp(
     assert_allclose(lse[:, : ref_lse.shape[1]], ref_lse, atol=2e-4)
 
 
-@pytest.mark.parametrize("attn_bias_type", [None, xformers.ops.LowerTriangularMask])
+@pytest.mark.parametrize(
+    "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
+)
 @pytest.mark.parametrize("grad_out_contiguous", [False, True])
 @pytest.mark.parametrize(
     "op,device,dtype,batch_size,q_len,kv_len,k_len", _op_device_dtype_B_Mq_Mkv_K
