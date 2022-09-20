@@ -75,9 +75,9 @@ if _is_sparse_available:
 if _is_triton_available:
     try:
         from xformers.triton.softmax import softmax as triton_softmax  # noqa
-    except ImportError as e:
+    except (ImportError, AttributeError) as e:
         logging.warning(
-            f"Triton is not available, some optimizations will not be enabled.\nError {e}"
+            f"A matching Triton is not available, some optimizations will not be enabled.\nError caught was: {e}"
         )
         _is_triton_available = False
 
@@ -87,6 +87,6 @@ if _is_functorch_available:
         from xformers.components.nvfuser import NVFusedBiasActivationDropout  # noqa
     except ImportError as e:
         logging.warning(
-            f"Functorch is not available, some optimizations will not be enabled.\nError {e}"
+            f"Functorch is not available, some optimizations will not be enabled.\nError caught was: {e}"
         )
         _is_functorch_available = False
