@@ -69,7 +69,7 @@ class Build:
             assert Path(cuda_home).is_dir
             os.environ["CUDA_HOME"] = cuda_home
 
-        os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0"
+        os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0 8.6"
         os.environ["BUILD_VERSION"] = "dev"
         tag = subprocess.check_output(["git", "describe", "--tags"], text=True)
         os.environ["GIT_TAG"] = tag
@@ -163,4 +163,4 @@ if __name__ == "__main__":
 # - Make a local conda package cache available inside docker
 # - use ninja
 # - do we need builds for both _GLIBCXX_USE_CXX11_ABI values?
-# - how to prevent badly-build cpu only builds of pytorch from being discovered?
+# - how to prevent some cpu only builds of pytorch from being discovered?
