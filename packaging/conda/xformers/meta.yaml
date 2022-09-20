@@ -1,0 +1,36 @@
+package:
+  name: xformers
+  version: "{{ environ.get('BUILD_VERSION') }}"
+
+source:
+ path: "{{ environ.get('SOURCE_ROOT_DIR') }}"
+
+requirements:
+  host:
+    # - numpy >=1.11
+    - pytorch=={{ environ.get('PYTORCH_VERSION') }}
+    - cudatoolkit{{ environ['CONDA_CUDATOOLKIT_CONSTRAINT'] }}
+    # - ninja
+
+  run:
+    # - numpy >=1.11
+    - pytorch=={{ environ.get('PYTORCH_VERSION') }}
+    - cudatoolkit{{ environ['CONDA_CUDATOOLKIT_CONSTRAINT'] }}
+
+build:
+  string: py{{py}}_cu{{ environ['CU_VERSION'] }}_pyt{{ environ['PYTORCH_VERSION']}}
+  script: python setup.py install --single-version-externally-managed --record=record.txt
+  script_env:
+    - CUDA_HOME
+    - FORCE_CUDA
+    - MAX_JOBS
+    - TORCH_CUDA_ARCH_LIST
+
+about:
+  home: https://github.com/facebookresearch/xformers
+  license: BSD
+  license_file: LICENSE
+  summary: 'Hackable and optimized Transformers building blocks, supporting a composable construction.'
+
+extra:
+  checkout: "{{ environ['GIT_TAG'] }}"

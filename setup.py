@@ -155,8 +155,9 @@ def get_extensions():
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
     if not os.path.exists(cutlass_dir):
         raise RuntimeError(
-            "CUTLASS submodule not found. Did you forget "
-            "to run `git submodule update --init --recursive` ?"
+            f"CUTLASS submodule not found at {cutlass_dir}. "
+            "Did you forget to run "
+            "`git submodule update --init --recursive` ?"
         )
 
     extension = CppExtension
