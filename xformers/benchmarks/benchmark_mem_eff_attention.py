@@ -71,7 +71,13 @@ SHAPES += [
     (1024 * 8, 82, 64),
     (150 * 16, 256, 64),
     (64 * 12, 256, 64),
+    # Stable diffusion (https://github.com/huggingface/diffusers/pull/532)
+    (16, 4096, 40),  # 512x512
+    (16, 16384, 40),  # 1024x1024
+    # ParlAI model
+    (256 * 16, 4096, 64),
 ]
+
 SHAPES = list(set(SHAPES))
 SHAPES.sort()
 
