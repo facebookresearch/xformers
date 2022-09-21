@@ -3,9 +3,9 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 import argparse
-from dataclasses import dataclass
 import os
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 THIS_PATH = Path(__file__).resolve()
@@ -76,12 +76,13 @@ class Build:
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
         os.environ["CU_VERSION"] = self.cuda_version
         os.environ["SOURCE_ROOT_DIR"] = SOURCE_ROOT_DIR
-        os.environ["CONDA_CUDATOOLKIT_CONSTRAINT"] = version_constraint(self.cuda_version)
+        os.environ["CONDA_CUDATOOLKIT_CONSTRAINT"] = version_constraint(
+            self.cuda_version
+        )
         os.environ["FORCE_CUDA"] = "1"
 
         if self.conda_always_copy:
             os.environ["CONDA_ALWAYS_COPY"] = "true"
-
 
     def _get_build_args(self):
         args = [
@@ -108,7 +109,10 @@ class Build:
     def build_in_docker(self):
         filesystem = subprocess.check_output("stat -f -c %T .", shell=True)
         if filesystem in (b"nfs", b"tmpfs"):
-            raise ValueError("Cannot run docker here. " + "Please work on a local filesystem, e.g. /raid.")
+            raise ValueError(
+                "Cannot run docker here. "
+                + "Please work on a local filesystem, e.g. /raid."
+            )
         image = conda_docker_image_for_cuda(self.cuda_version)
         args = ["sudo", "docker", "run", "-it", "--rm", "-w", "/m"]
         args += ["-v", f"{SOURCE_ROOT_DIR}:/m", image]
