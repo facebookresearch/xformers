@@ -143,11 +143,12 @@ efficient_attention_forward_generic(
                       value.stride(1) % Kernel::kAlignmentV == 0,
                       "value is not correctly aligned");
 
-                  res = at::zeros(
+                  res = at::empty(
                       {B, M, K},
                       query.options().dtype(
                           TypeTraits<
                               typename Kernel::output_t>::atScalarType()));
+
                   // NOTE: Should be aligned (by padding) in case M is not
                   // a good number for loading during backward
                   constexpr decltype(M) kAlignLSE =
@@ -177,6 +178,18 @@ efficient_attention_forward_generic(
                   p.logsumexp_ptr = compute_logsumexp
                       ? (typename Kernel::lse_scalar_t*)logsumexp.data_ptr()
                       : nullptr;
+                  at::Tensor output_accum;
+                  if (Kernel::kNeedsOutputAccumulatorBuffer) {
+                    output_accum = at::empty(
+                        {B, M, K},
+                        query.options().dtype(
+                            TypeTraits<typename Kernel::output_accum_t>::
+                                atScalarType()));
+                    p.output_accum_ptr = (typename Kernel::output_accum_t*)
+                                             output_accum.data_ptr();
+                  } else {
+                    p.output_accum_ptr = nullptr;
+                  }
                   p.output_ptr = (typename Kernel::output_t*)res.data_ptr();
                   p.head_dim = query.size(2);
                   p.head_dim_value = value.size(2);

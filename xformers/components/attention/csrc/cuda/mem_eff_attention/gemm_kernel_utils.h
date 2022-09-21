@@ -113,4 +113,27 @@ struct DefaultGemmType<cutlass::arch::Sm70, cutlass::half_t, void> {
   using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
   using Operator = cutlass::arch::OpMultiplyAdd;
 };
+
+// Enables to do
+// `auto x = kCondition ? fa(arg) : fb(arg)`
+// when `fa` and `fb` have different types
+template <bool kVal, typename TA, typename TB>
+struct call_conditional;
+
+template <typename TA, typename TB>
+struct call_conditional<true, TA, TB> {
+  template <typename... Args>
+  static CUTLASS_DEVICE auto apply(TA ta, TB tb, Args&&... args) {
+    return ta(std::forward<Args>(args)...);
+  }
+};
+
+template <typename TA, typename TB>
+struct call_conditional<false, TA, TB> {
+  template <typename... Args>
+  static CUTLASS_DEVICE auto apply(TA ta, TB tb, Args&&... args) {
+    return tb(std::forward<Args>(args)...);
+  }
+};
+
 } // namespace gemm_kernel_utils

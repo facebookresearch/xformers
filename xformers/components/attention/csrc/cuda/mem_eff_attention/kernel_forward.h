@@ -29,6 +29,7 @@
 #include "cutlass/platform/platform.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
 #include "debug_utils.h"
+#include "epilogue_pipelined.h"
 #include "epilogue_rescale_output.h"
 #include "find_default_mma.h"
 #include "gemm_kernel_utils.h"
@@ -58,18 +59,24 @@ template <
     bool isAligned_,
     int64_t kQueriesPerBlock,
     int64_t kKeysPerBlock,
-    bool kSingleValueIteration, // = `value.shape[-1] <= kKeysPerBlock`
-    typename output_t_ = float>
+    bool kSingleValueIteration // = `value.shape[-1] <= kKeysPerBlock`
+    >
 struct AttentionKernel {
   using scalar_t = scalar_t_;
   using accum_t = float;
   using lse_scalar_t = float;
-  using output_t = output_t_;
+  using output_t = scalar_t;
+  // Accumulator between 2 iterations
+  // Using `accum_t` improves perf on f16 at the cost of
+  // numerical errors
+  using output_accum_t = accum_t;
   static constexpr bool kIsAligned = isAligned_;
   static constexpr int32_t kAlignLSE = 32; // block size of backward
   static constexpr bool kPreloadV = ArchTag::kMinComputeCapability >= 80 &&
       cutlass::sizeof_bits<scalar_t>::value == 16;
   static constexpr bool kKeepOutputInRF = kSingleValueIteration;
+  static constexpr bool kNeedsOutputAccumulatorBuffer =
+      !kKeepOutputInRF && !std::is_same<output_accum_t, output_t>::value;
 
   static_assert(kQueriesPerBlock % 32 == 0);
   static_assert(kKeysPerBlock % 32 == 0);
@@ -90,6 +97,7 @@ struct AttentionKernel {
 
     // Output tensors
     output_t* output_ptr; // [num_queries, head_dim_value]
+    output_accum_t* output_accum_ptr; // [num_queries, head_dim_value]
     lse_scalar_t* logsumexp_ptr; // [num_queries] - can be 0
 
     // Dimensions/strides
@@ -108,6 +116,12 @@ struct AttentionKernel {
       key_ptr += batch_id * head_dim * num_keys;
       value_ptr += batch_id * head_dim_value * num_keys;
       output_ptr += batch_id * head_dim_value * num_queries;
+      if (output_accum_ptr == nullptr) {
+        // Accumulate directly in the destination buffer (eg for f32)
+        output_accum_ptr = (accum_t*)output_ptr;
+      } else {
+        output_accum_ptr += batch_id * head_dim_value * num_queries;
+      }
       if (logsumexp_ptr != nullptr) {
         logsumexp_ptr += batch_id * lse_dim;
       }
@@ -205,7 +219,7 @@ struct AttentionKernel {
             ArchTag,
             scalar_t,
             scalar_t,
-            output_t, // ElementC
+            output_accum_t, // ElementC
             accum_t // ElementAccumulator
             >;
     static constexpr int64_t kAlignmentA =
@@ -225,7 +239,7 @@ struct AttentionKernel {
         scalar_t, // ElementB,
         LayoutB, // LayoutB,
         kAlignmentB,
-        output_t,
+        output_accum_t,
         cutlass::layout::RowMajor, // LayoutC,
         accum_t,
         OpClass,
@@ -250,12 +264,14 @@ struct AttentionKernel {
         WarpCount::kM * WarpCount::kN * WarpCount::kK == kNumWarpsPerBlock);
 
     using DefaultEpilogue = typename DefaultGemm::Epilogue;
-    using OutputTileIterator = typename DefaultEpilogue::OutputTileIterator;
-
-    using ScalingCoefsUpdater = typename DefaultAttentionScalingCoefsUpdater<
-        typename Mma::Operator::IteratorC,
-        accum_t,
-        kWarpSize>::Updater;
+    using OutputTileIterator =
+        typename cutlass::epilogue::threadblock::PredicatedTileIterator<
+            typename DefaultEpilogue::OutputTileIterator::ThreadMap,
+            output_t>;
+    using OutputTileIteratorAccum =
+        typename cutlass::epilogue::threadblock::PredicatedTileIterator<
+            typename DefaultEpilogue::OutputTileIterator::ThreadMap,
+            output_accum_t>;
 
     struct SharedStorageMM1 {
       typename Mma::SharedStorage mm;
@@ -343,6 +359,16 @@ struct AttentionKernel {
           typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
           p.output_ptr + query_start() * p.head_dim_value + col,
           typename OutputTileIterator::TensorCoord{
+              p.num_queries - query_start(), p.head_dim_value - col},
+          thread_id());
+    };
+
+    auto createOutputAccumIter = [&](auto col) {
+      using OutputTileIteratorAccum = typename MM1::OutputTileIteratorAccum;
+      return OutputTileIteratorAccum(
+          typename OutputTileIteratorAccum::Params{(int32_t)p.head_dim_value},
+          p.output_accum_ptr + query_start() * p.head_dim_value + col,
+          typename OutputTileIteratorAccum::TensorCoord{
               p.num_queries - query_start(), p.head_dim_value - col},
           thread_id());
     };
@@ -561,7 +587,11 @@ struct AttentionKernel {
                       using ElementCompute = typename DefaultOp::ElementCompute;
                       using EpilogueOutputOp = typename cutlass::epilogue::
                           thread::MemoryEfficientAttentionNormalize<
-                              output_t,
+                              typename std::conditional<
+                                  kIsLast,
+                                  output_t,
+                                  output_accum_t>::type,
+                              output_accum_t,
                               DefaultOp::kCount,
                               typename DefaultOp::ElementAccumulator,
                               ElementCompute,
@@ -569,11 +599,14 @@ struct AttentionKernel {
                               kIsLast,
                               cutlass::Array<ElementCompute, kQueriesPerBlock>>;
                       using Epilogue = typename cutlass::epilogue::threadblock::
-                          EpilogueWithRowId<
+                          EpiloguePipelined<
                               typename DefaultEpilogue::Shape,
                               typename MM1::Mma::Operator,
                               DefaultEpilogue::kPartitionsK,
-                              typename DefaultEpilogue::OutputTileIterator,
+                              typename std::conditional<
+                                  kIsLast,
+                                  typename MM1::OutputTileIterator,
+                                  typename MM1::OutputTileIteratorAccum>::type,
                               typename DefaultEpilogue::
                                   AccumulatorFragmentIterator,
                               typename DefaultEpilogue::WarpTileIterator,
@@ -581,18 +614,25 @@ struct AttentionKernel {
                               EpilogueOutputOp,
                               typename DefaultEpilogue::Padding,
                               DefaultEpilogue::kFragmentsPerIteration,
-                              true // IterationsUnroll
+                              true, // IterationsUnroll
+                              typename MM1::OutputTileIteratorAccum // Read
+                                                                    // iterator
                               >;
+
                       int col = blockN * MM1::Mma::Shape::kN;
-                      auto source_iter = createOutputIter(col);
-                      auto output_iter = createOutputIter(col);
+                      auto source_iter = createOutputAccumIter(col);
+                      auto dest_iter = call_conditional<
+                          kIsLast,
+                          decltype(createOutputIter),
+                          decltype(createOutputAccumIter)>::
+                          apply(createOutputIter, createOutputAccumIter, col);
                       EpilogueOutputOp rescale(s_prime, m_prime);
                       Epilogue epilogue(
                           shared_storage.epilogue_shared_storage(),
                           thread_id(),
                           warp_id(),
                           lane_id());
-                      epilogue(rescale, source_iter, accum_o, output_iter);
+                      epilogue(rescale, dest_iter, accum_o, source_iter);
                     }));
               }));
           if (!kSingleValueIteration) {
@@ -611,36 +651,37 @@ struct AttentionKernel {
       using ElementCompute = typename DefaultOp::ElementCompute;
       using EpilogueOutputOp =
           typename cutlass::epilogue::thread::MemoryEfficientAttentionNormalize<
-              output_t,
+              output_t, // output
+              output_accum_t, // source
               DefaultOp::kCount,
-              typename DefaultOp::ElementAccumulator,
-              ElementCompute,
+              typename DefaultOp::ElementAccumulator, // accum
+              output_accum_t, // compute
               kIsFirst,
               kIsLast,
               cutlass::Array<ElementCompute, kQueriesPerBlock>>;
       using Epilogue =
-          typename cutlass::epilogue::threadblock::EpilogueWithRowId<
+          typename cutlass::epilogue::threadblock::EpiloguePipelined<
               typename DefaultEpilogue::Shape,
               typename MM1::Mma::Operator,
               DefaultEpilogue::kPartitionsK,
-              typename DefaultEpilogue::OutputTileIterator,
+              typename MM1::OutputTileIterator, // destination
               typename DefaultEpilogue::AccumulatorFragmentIterator,
               typename DefaultEpilogue::WarpTileIterator,
               typename DefaultEpilogue::SharedLoadIterator,
               EpilogueOutputOp,
               typename DefaultEpilogue::Padding,
               DefaultEpilogue::kFragmentsPerIteration,
-              true // IterationsUnroll
+              true, // IterationsUnroll
+              typename MM1::OutputTileIteratorAccum // source tile
               >;
-      auto source_iter = createOutputIter(0);
-      auto output_iter = createOutputIter(0);
+      auto dest_iter = createOutputIter(0);
       EpilogueOutputOp rescale(s_prime, m_prime);
       Epilogue epilogue(
           shared_storage.epilogue_shared_storage(),
           thread_id(),
           warp_id(),
           lane_id());
-      epilogue(rescale, source_iter, accum_o, output_iter);
+      epilogue(rescale, dest_iter, accum_o);
     }
 
     // 7. Calculate logsumexp
