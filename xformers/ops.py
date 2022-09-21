@@ -88,12 +88,12 @@ class AttentionOpBase(torch.autograd.Function):
     FORWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
         torch.float: 3e-4,
         torch.half: 4e-3,
-        torch.bfloat16: 2e-3,
+        torch.bfloat16: 2e-2,
     }
     FORWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
         torch.float: 2e-5,
-        torch.half: 2e-4,
-        torch.bfloat16: 2e-5,
+        torch.half: 4e-4,
+        torch.bfloat16: 5e-3,
     }
     SUPPORTED_DEVICES: Set[str]
     SUPPORTED_DTYPES: Set[torch.dtype]
@@ -212,7 +212,7 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
 class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
     FORWARD_OPERATOR = _get_xformers_operator("efficient_attention_forward_generic")
     SUPPORTED_DEVICES = {"cuda"}
-    SUPPORTED_DTYPES = {torch.float, torch.half}
+    SUPPORTED_DTYPES = {torch.float, torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = math.inf
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
@@ -323,14 +323,6 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     """
 
     FORWARD_OPERATOR = None
-    FORWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
-        torch.half: 5e-2,
-        torch.bfloat16: 5e-2,
-    }
-    FORWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
-        torch.half: 1e-2,
-        torch.bfloat16: 1e-2,
-    }
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 128
