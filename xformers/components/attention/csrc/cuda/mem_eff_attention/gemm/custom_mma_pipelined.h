@@ -43,8 +43,8 @@
 #include "cutlass/matrix_shape.h"
 #include "cutlass/numeric_types.h"
 
+#include "custom_mma_base.h"
 #include "cutlass/gemm/gemm.h"
-#include "cutlass/gemm/threadblock/mma_base.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -92,10 +92,10 @@ template <
         IteratorB_::Fragment::kElements>,
     /// Used for partial specialization
     typename Enable = bool>
-class MmaPipelined : public MmaBase<Shape_, Policy_, 2> {
+class CustomMmaPipelined : public CustomMmaBase<Shape_, Policy_, 2> {
  public:
   ///< Base class
-  using Base = MmaBase<Shape_, Policy_, 2>;
+  using Base = CustomMmaBase<Shape_, Policy_, 2>;
 
   using Shape =
       Shape_; ///< Size of the Gemm problem - concept: gemm::GemmShape<>
@@ -157,7 +157,7 @@ class MmaPipelined : public MmaBase<Shape_, Policy_, 2> {
  public:
   /// Construct from tensor references
   CUTLASS_DEVICE
-  MmaPipelined(
+  CustomMmaPipelined(
       typename Base::SharedStorage&
           shared_storage, ///< Shared storage needed for internal use by
                           ///< threadblock-scoped GEMM

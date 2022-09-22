@@ -40,6 +40,7 @@
 #include "cutlass/array.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/threadblock/mma_base.h"
 #include "cutlass/matrix_shape.h"
 #include "cutlass/numeric_types.h"
 
@@ -62,7 +63,7 @@ template <
     int Stages,
     /// Used for partial specialization
     typename Enable = bool>
-class MmaBase {
+class CustomMmaBase {
  public:
   ///< Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
@@ -178,7 +179,7 @@ class MmaBase {
  public:
   /// Construct from tensor references
   CUTLASS_DEVICE
-  MmaBase(
+  CustomMmaBase(
       ///< Shared storage needed for internal use by threadblock-scoped GEMM
       SharedStorage& shared_storage,
       ///< ID within the threadblock

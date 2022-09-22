@@ -37,6 +37,7 @@
 #include "iterators/epilogue_predicated_tile_iterator.h"
 
 #include "find_default_mma.h"
+#include "gemm/custom_mma.h"
 #include "mma_from_smem.h"
 
 #include <inttypes.h>
@@ -62,7 +63,7 @@ template <
     // run optimized kernel because memory accesses will be aligned
     bool kIsAligned_,
     // upperbound on `max(value.shape[-1], query.shape[-1])`
-    int64_t kMaxK = std::numeric_limits<int64_t>::max()>
+    int kMaxK = std::numeric_limits<int>::max()>
 struct AttentionBackwardKernel {
   using scalar_t = scalar_t_;
   using output_t = scalar_t;
@@ -196,7 +197,8 @@ struct AttentionBackwardKernel {
             ? cutlass::gemm::SharedMemoryClearOption::kZfill
             : cutlass::gemm::SharedMemoryClearOption::kNone>;
     using MmaCore = typename DefaultMma::MmaCore;
-    using Mma = typename DefaultMma::ThreadblockMma;
+    using Mma =
+        typename MakeCustomMma<typename DefaultMma::ThreadblockMma, kMaxK>::Mma;
 
     // Epilogue to store to shared-memory in a format that we can use later for
     // the second matmul
@@ -291,7 +293,8 @@ struct AttentionBackwardKernel {
             ? cutlass::gemm::SharedMemoryClearOption::kZfill
             : cutlass::gemm::SharedMemoryClearOption::kNone>;
     using MmaCore = typename DefaultMma::MmaCore;
-    using Mma = typename DefaultMma::ThreadblockMma;
+    using Mma =
+        typename MakeCustomMma<typename DefaultMma::ThreadblockMma, kMaxK>::Mma;
 
     // Epilogue to store to shared-memory in a format that we can use later for
     // the second matmul
