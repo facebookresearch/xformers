@@ -36,6 +36,7 @@
 #pragma once
 
 #include "cutlass/aligned_buffer.h"
+#include "cutlass/arch/cache_operation.h"
 #include "cutlass/arch/memory.h"
 #include "cutlass/array.h"
 #include "cutlass/cutlass.h"
@@ -563,7 +564,7 @@ class CustomMmaMultistage : public CustomMmaBase<Shape_, Policy_, Stages> {
         // In case of a non-circular buffer ("kSmemContainsEntireMat")
         // make sure we don't load out of bounds data.
         if (!kSmemContainsEntireMat ||
-            gemm_k_iterations > (-kNumStagesConcurrentLoad + 1) ||
+            gemm_k_iterations > (-kNumStagesConcurrentLoad) ||
             warp_mma_k < Base::kWarpGemmIterations - 1) {
           this->warp_tile_iterator_A_.load(
               warp_loaded_frag_A[(warp_mma_k + 1) % 2]);
