@@ -841,8 +841,8 @@ class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
         iterator_B1.add_tile_offset({1, 0});
         this->smem_iterator_B1_.add_tile_offset({1, 0});
       }
-      iterator_B1.set_residual_tile(gemm_k_iterations_1 == 1);
-      iterator_B1.clear_mask(gemm_k_iterations_1 == 0);
+      iterator_B1.set_residual_tile(gemm_k_iterations_1 <= 1);
+      iterator_B1.clear_mask(gemm_k_iterations_1 <= 0);
     }
 
     // DEPBAR+SYNC
