@@ -190,16 +190,17 @@ class CustomMmaMultistage : public CustomMmaBase<Shape_, Policy_, Stages> {
   CUTLASS_DEVICE
   CustomMmaMultistage(
       ///< Shared storage needed for internal use by threadblock-scoped GEMM
-      typename Base::SharedStorage& shared_storage,
+      typename Base::SharedStorageA& shared_storageA,
+      typename Base::SharedStorageB& shared_storageB,
       ///< ID within the threadblock
       int thread_idx,
       ///< ID of warp
       int warp_idx,
       ///< ID of each thread within a warp
       int lane_idx)
-      : Base(shared_storage, thread_idx, warp_idx, lane_idx),
-        smem_iterator_A_(shared_storage.operand_A_ref(), thread_idx),
-        smem_iterator_B_(shared_storage.operand_B_ref(), thread_idx),
+      : Base(shared_storageA, shared_storageB, thread_idx, warp_idx, lane_idx),
+        smem_iterator_A_(shared_storageA.ref(), thread_idx),
+        smem_iterator_B_(shared_storageB.ref(), thread_idx),
         prologue_done_(false) {
     // Compute warp location within threadblock tile by mapping the warp_id to
     // three coordinates:
@@ -219,13 +220,29 @@ class CustomMmaMultistage : public CustomMmaBase<Shape_, Policy_, Stages> {
     this->warp_tile_iterator_B_.add_tile_offset(
         {Base::kWarpGemmIterations * warp_idx_k, warp_idx_n});
   }
+  CUTLASS_DEVICE
+  CustomMmaMultistage(
+      ///< Shared storage needed for internal use by threadblock-scoped GEMM
+      typename Base::SharedStorage& st,
+      ///< ID within the threadblock
+      int thread_idx,
+      ///< ID of warp
+      int warp_idx,
+      ///< ID of each thread within a warp
+      int lane_idx)
+      : CustomMmaMultistage(
+            st.operand_A,
+            st.operand_B,
+            thread_idx,
+            warp_idx,
+            lane_idx) {}
 
   CUTLASS_DEVICE
   bool set_prologue_done(bool value) {
     prologue_done_ = value;
   }
 
-  template <bool kLoadA, bool kLoadB>
+  template <bool kLoadA = true, bool kLoadB = true>
   CUTLASS_DEVICE static void prologue(
       typename Base::SharedStorage& shared_storage,
       ///< iterator over A operand in global memory
@@ -234,8 +251,27 @@ class CustomMmaMultistage : public CustomMmaBase<Shape_, Policy_, Stages> {
       IteratorB iterator_B,
       int thread_idx,
       int problem_size_k) {
-    SmemIteratorA smem_iterator_A(shared_storage.operand_A_ref(), thread_idx);
-    SmemIteratorB smem_iterator_B(shared_storage.operand_B_ref(), thread_idx);
+    prologue<kLoadA, kLoadB>(
+        shared_storage.operand_A,
+        shared_storage.operand_B,
+        iterator_A,
+        iterator_B,
+        thread_idx,
+        problem_size_k);
+  }
+
+  template <bool kLoadA = true, bool kLoadB = true>
+  CUTLASS_DEVICE static void prologue(
+      typename Base::SharedStorageA& shared_storageA,
+      typename Base::SharedStorageB& shared_storageB,
+      ///< iterator over A operand in global memory
+      IteratorA iterator_A,
+      ///< iterator over B operand in global memory
+      IteratorB iterator_B,
+      int thread_idx,
+      int problem_size_k) {
+    SmemIteratorA smem_iterator_A(shared_storageA.ref(), thread_idx);
+    SmemIteratorB smem_iterator_B(shared_storageB.ref(), thread_idx);
     int32_t iter = (problem_size_k + Base::Shape::kK - 1) / Base::Shape::kK;
     _prologue<kLoadA, kLoadB>(
         iterator_A, iterator_B, iter, smem_iterator_A, smem_iterator_B);
