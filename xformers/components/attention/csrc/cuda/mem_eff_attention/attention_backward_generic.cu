@@ -53,11 +53,6 @@ mem_efficient_attention_backward_generic(
   TORCH_CHECK(key.is_contiguous());
   TORCH_CHECK(value.is_contiguous());
 
-  // TODO: support other dtypes in the future
-  // TORCH_CHECK(
-  //     query.scalar_type() == at::ScalarType::Half,
-  //     "Only f16 type is supported for now");
-
   at::cuda::CUDAGuard device_guard(query.device());
 
   // handle potentially non-contiguous grad_out through a copy
@@ -68,9 +63,9 @@ mem_efficient_attention_backward_generic(
   int64_t N = key.size(1);
   int64_t K = query.size(2);
 
-  at::Tensor grad_q = at::zeros_like(query);
-  at::Tensor grad_k = at::zeros_like(key);
-  at::Tensor grad_v = at::zeros_like(value);
+  at::Tensor grad_q = at::empty_like(query);
+  at::Tensor grad_k = at::empty_like(key);
+  at::Tensor grad_v = at::empty_like(value);
 
   cudaDeviceProp* properties =
       at::cuda::getDeviceProperties(query.device().index());
