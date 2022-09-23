@@ -171,6 +171,14 @@ class AttentionOpBase(torch.autograd.Function):
             return False
         if d.has_dropout and not cls.SUPPORTS_DROPOUT:
             return False
+        # bfloat16 is only supported on A100+
+        # ... although the kernels can still run and give the
+        # correct result
+        if d.dtype is torch.bfloat16 and (
+            not device_type.startswith("cuda")
+            or torch.cuda.get_device_capability(d.device)[0] < 8
+        ):
+            return False
         return True
 
 
@@ -341,8 +349,6 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         device_capability = torch.cuda.get_device_capability(d.device)
         is_sm80 = device_capability[0] >= 8
         if d.k not in [16, 32, 64, 128] or (d.k == 128 and not is_sm80):
-            return False
-        if d.dtype is torch.bfloat16 and not is_sm80:
             return False
         return device_capability >= (7, 5)
 
