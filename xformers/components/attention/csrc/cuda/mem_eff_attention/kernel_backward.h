@@ -488,14 +488,15 @@ struct AttentionBackwardKernel {
     int32_t key_end = p.num_keys / kBlockSizeJ * kBlockSizeJ;
     for (; key_start < key_end; key_start += kBlockSizeJ) {
       output_frags.clear();
-      int32_t query_end = p.num_queries / kBlockSizeI * kBlockSizeI;
-      int32_t query_start = 0;
+      int32_t query_start = getQueryStart(key_start);
+      int32_t query_end = query_start +
+          (p.num_queries - query_start) / kBlockSizeI * kBlockSizeI;
       for (; query_start < query_end; query_start += kBlockSizeI) {
         processBlockIJ<true>(
             shared_storage, output_frags, p, query_start, key_start);
       }
       // last (partial) query
-      if (query_start != p.num_queries) {
+      if (query_start < p.num_queries) {
         processBlockIJ<false>(
             shared_storage, output_frags, p, query_start, key_start);
       }
@@ -507,7 +508,8 @@ struct AttentionBackwardKernel {
     // Last (partial) key
     if (key_start != p.num_keys) {
       output_frags.clear();
-      for (int32_t query_start = 0; query_start < p.num_queries;
+      for (int32_t query_start = getQueryStart(key_start);
+           query_start < p.num_queries;
            query_start += kBlockSizeI) {
         processBlockIJ<false>(
             shared_storage, output_frags, p, query_start, key_start);
@@ -694,7 +696,6 @@ struct AttentionBackwardKernel {
             {num_keys_in_block, p.head_dim_value - col},
             thread_id);
       };
-      // q_i.transpose(-2, -1)
       typename Mma::IteratorB iterator_B(
           {int32_t(p.head_dim_value)},
           p.grad_output_ptr + query_start * p.head_dim_value + col,
@@ -737,7 +738,7 @@ struct AttentionBackwardKernel {
             shared_storage.after_qk.mm_gradV.epilogue,
             output_frags.gradV,
             createEpilogueIter(),
-            query_start == 0);
+            query_start == 0 || (p.causal && query_start == key_start));
       }
     }
     __syncthreads();
@@ -1005,7 +1006,7 @@ struct AttentionBackwardKernel {
             shared_storage.after_qk.after_doivj.mm_gradK_epilogue,
             output_frags.gradK,
             createEpilogueIter(),
-            query_start == 0);
+            query_start == 0 || (p.causal && query_start == key_start));
       }
     }
   }
