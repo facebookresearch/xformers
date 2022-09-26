@@ -418,9 +418,7 @@ struct AttentionBackwardKernel {
             attn_shared_storage; // (from p1)
         typename MatmulGradK::Mma::SharedStorage mm_gradK; // (preload)
         typename MatmulGradQ::Mma::SharedStorage mm_gradQ; // (preload)
-        union {
-          typename MatmulGradQ::DefaultEpilogue::SharedStorage gradQ_epilogue;
-        };
+        typename MatmulGradQ::DefaultEpilogue::SharedStorage gradQ_epilogue;
 
         typename MatmulDOIVJ::AccumulatorSharedStorage doivj_shared_storage;
       } p2;
@@ -448,13 +446,27 @@ struct AttentionBackwardKernel {
       } p4;
     };
     static void print_size() {
-#define FIELD_SIZEOF(f) int((sizeof(((SharedStorage*)0)->f)))
+      // Field size
+#define FSZ(f) int((sizeof(((SharedStorage*)0)->f)))
+
       printf("Total smem: %d bytes\n", int(sizeof(SharedStorage)));
-      printf("  persistent: %db\n", FIELD_SIZEOF(persistent));
-      printf("  p1: %db\n", FIELD_SIZEOF(p1));
-      printf("  p2: %db\n", FIELD_SIZEOF(p2));
-      printf("  p3: %db\n", FIELD_SIZEOF(p3));
-      printf("  p4: %db\n", FIELD_SIZEOF(p4));
+      printf("  persistent: %db\n", FSZ(persistent));
+      printf("    mm_qk_k: %db\n", FSZ(persistent.mm_qk_k));
+      printf("  p1: %db\n", FSZ(p1));
+      printf("    attn_shared_storage: %db\n", FSZ(p1.attn_shared_storage));
+      printf("    mm_gradV: %db\n", FSZ(p1.mm_gradV));
+      printf("    gradV_epilogue: %db\n", FSZ(p1.gradV_epilogue));
+      printf("    mm_doivj: %db\n", FSZ(p1.mm_doivj));
+      printf("  p2: %db\n", FSZ(p2));
+      printf("    mm_gradK: %db\n", FSZ(p2.mm_gradK));
+      printf("    mm_gradQ: %db\n", FSZ(p2.mm_gradQ));
+      printf("    gradQ_epilogue: %db\n", FSZ(p2.gradQ_epilogue));
+      printf("    doivj_shared_storage: %db\n", FSZ(p2.doivj_shared_storage));
+      printf("  p3: %db\n", FSZ(p3));
+      printf("  p4: %db\n", FSZ(p4));
+      printf("    mm_qk_q: %db\n", FSZ(p4.mm_qk_q));
+      printf("    gradK_epilogue_final: %db\n", FSZ(p4.gradK_epilogue_final));
+      printf("    gradV_epilogue_final: %db\n", FSZ(p4.gradV_epilogue_final));
     }
 // ===========================================
 #define FIELD(INSIDE_STRUCT, FIELDNAME) \
@@ -800,6 +812,7 @@ struct AttentionBackwardKernel {
 
       // Compute threadblock-scoped matrix multiply-add
       mma.set_prologue_done(kPrologueQK);
+      mma.set_zero_outside_bounds(!skipBoundsChecks);
       mma(gemm_k_iterations, accum, iterator_A, iterator_B, accum);
       accum = cutlass::multiplies<typename Mma::FragmentC>()(scale, accum);
 
@@ -933,6 +946,7 @@ struct AttentionBackwardKernel {
 
       Mma mma(shared_storage.mm_doivj(), thread_id, warp_id, lane_id);
       mma.set_prologue_done(kPrologueDOV);
+      mma.set_zero_outside_bounds(!skipBoundsChecks);
 
       typename Mma::FragmentC accum;
 
@@ -943,8 +957,6 @@ struct AttentionBackwardKernel {
 
       // Compute threadblock-scoped matrix multiply-add
       mma(gemm_k_iterations, accum, iterator_A, iterator_B, accum);
-      // SMEM: Enter phase 2
-      cutlass::arch::cp_async_wait<0>();
       __syncthreads();
       if (kPrologueGQ) {
         prologueGradQ(0);
@@ -1063,11 +1075,6 @@ struct AttentionBackwardKernel {
       bool isLastColumn = col + MatmulGradQ::ThreadblockShape::kN >= p.head_dim;
       if (kPrologueGQ && !isLastColumn) {
         prologueGradQ(col + MatmulGradQ::ThreadblockShape::kN);
-      }
-      if (isLastColumn) {
-        // SMEM: Enter phase 3
-        cutlass::arch::cp_async_wait<0>();
-        __syncthreads();
       }
 
       // Output results
