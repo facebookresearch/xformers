@@ -185,6 +185,10 @@ class CustomMmaMultistage : public CustomMmaBase<Shape_, Policy_, Stages> {
 
   bool prologue_done_;
 
+  // Set to `True` to ensure the accumulator will be zero outside the GEMM
+  // footprint
+  bool zero_outside_bounds_;
+
  public:
   /// Construct from tensor references
   CUTLASS_DEVICE
@@ -201,7 +205,8 @@ class CustomMmaMultistage : public CustomMmaBase<Shape_, Policy_, Stages> {
       : Base(shared_storageA, shared_storageB, thread_idx, warp_idx, lane_idx),
         smem_iterator_A_(shared_storageA.ref(), thread_idx),
         smem_iterator_B_(shared_storageB.ref(), thread_idx),
-        prologue_done_(false) {
+        prologue_done_(false),
+        zero_outside_bounds_(false) {
     // Compute warp location within threadblock tile by mapping the warp_id to
     // three coordinates:
     //   _m: the warp's position within the threadblock along the M dimension
@@ -240,6 +245,11 @@ class CustomMmaMultistage : public CustomMmaBase<Shape_, Policy_, Stages> {
   CUTLASS_DEVICE
   bool set_prologue_done(bool value) {
     prologue_done_ = value;
+  }
+
+  CUTLASS_DEVICE
+  bool set_zero_outside_bounds(bool value) {
+    zero_outside_bounds_ = value;
   }
 
   template <bool kLoadA = true, bool kLoadB = true>
@@ -303,7 +313,8 @@ class CustomMmaMultistage : public CustomMmaBase<Shape_, Policy_, Stages> {
         for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_A.get();
 
-          if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
+          if (zero_outside_bounds_ ||
+              SharedMemoryClear == SharedMemoryClearOption::kZfill) {
             cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
                 dst_ptr + v, gmem_ptr, iterator_A.valid());
           } else {
@@ -338,7 +349,8 @@ class CustomMmaMultistage : public CustomMmaBase<Shape_, Policy_, Stages> {
         for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_B.get();
 
-          if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
+          if (zero_outside_bounds_ ||
+              SharedMemoryClear == SharedMemoryClearOption::kZfill) {
             cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
                 dst_ptr + v, gmem_ptr, iterator_B.valid());
           } else {

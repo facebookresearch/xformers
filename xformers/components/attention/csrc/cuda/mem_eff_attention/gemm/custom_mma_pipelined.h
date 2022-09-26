@@ -209,6 +209,12 @@ class CustomMmaPipelined : public CustomMmaBase<Shape_, Policy_, 2> {
     // NOT IMPLEMENTED FOR PIPELINED
   }
 
+  CUTLASS_DEVICE
+  bool set_zero_outside_bounds(bool value) {
+    // NOT NEEDED FOR PIPELINED
+    // shared memory will always be zero-filled
+  }
+
   template <bool kLoadA = true, bool kLoadB = true>
   CUTLASS_DEVICE static void prologue(
       typename Base::SharedStorage& shared_storage,
