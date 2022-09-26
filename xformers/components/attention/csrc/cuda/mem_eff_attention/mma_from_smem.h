@@ -1421,15 +1421,14 @@ struct B2bGemm<
       AccumulatorSharedStorage& shared_storage,
       FragmentC& accum,
       lse_scalar_t const* lse,
-      int32_t lse_extents,
+      int32_t lse_extent,
       int thread_id,
       int warp_id,
       int lane_id,
       cutlass::MatrixCoord const& tile_coords) {
-    constexpr int32_t kAlignLSE = 32;
     IteratorAccumulatorLSE iterator_lse(
         lse,
-        {(int32_t)0, (int32_t)ceil_div(lse_extents, kAlignLSE) * kAlignLSE},
+        {(int32_t)0, lse_extent},
         thread_id,
         warp_id,
         cutlass::MatrixCoord{0, 0} // offset

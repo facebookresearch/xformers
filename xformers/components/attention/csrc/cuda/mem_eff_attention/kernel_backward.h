@@ -70,6 +70,8 @@ struct AttentionBackwardKernel {
   using lse_scalar_t = float;
   using accum_t = float;
   static constexpr bool kIsAligned = kIsAligned_;
+  static constexpr int32_t kAlignLSE =
+      128; // Padding applied to LSE in the forward
 
   struct Params {
     // Input tensors
@@ -95,7 +97,6 @@ struct AttentionBackwardKernel {
     bool causal;
 
     __device__ void advance_batches(int32_t batch_id) {
-      constexpr int32_t kAlignLSE = 32; // block size of backward
       auto lse_dim = ceil_div((int32_t)num_queries, kAlignLSE) * kAlignLSE;
 
       query_ptr += batch_id * head_dim * num_queries;
@@ -851,7 +852,7 @@ struct AttentionBackwardKernel {
           shared_storage.attn_shared_storage(),
           accum,
           p.logsumexp_ptr + query_start,
-          problem_size.n(),
+          kAlignLSE,
           thread_id,
           warp_id,
           lane_id,

@@ -72,7 +72,7 @@ struct AttentionKernel {
   // numerical errors
   using output_accum_t = accum_t;
   static constexpr bool kIsAligned = isAligned_;
-  static constexpr int32_t kAlignLSE = 32; // block size of backward
+  static constexpr int32_t kAlignLSE = 128; // block size of backward
   static constexpr bool kPreloadV = ArchTag::kMinComputeCapability >= 80 &&
       cutlass::sizeof_bits<scalar_t>::value == 16;
   static constexpr bool kKeepOutputInRF = kSingleValueIteration;
@@ -689,13 +689,19 @@ struct AttentionKernel {
     // To make the backward easier, we pad logsumexp with `inf`
     // this avoids a few bound checks, and is not more expensive during fwd
     static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
-    if (p.logsumexp_ptr && thread_id() < kQueriesPerBlock) {
-      auto lse_dim = ceil_div((int32_t)p.num_queries, kAlignLSE) * kAlignLSE;
-      if (query_start() + thread_id() < p.num_queries) {
-        p.logsumexp_ptr[query_start() + thread_id()] =
+    if (p.logsumexp_ptr) {
+      static_assert(kNumThreads >= kAlignLSE);
+      auto qs = query_start();
+      auto lse_dim = kQueriesPerBlock;
+      if (qs + kQueriesPerBlock >= p.num_queries) {
+        // Pad end of tensor
+        lse_dim = ceil_div((int32_t)p.num_queries, kAlignLSE) * kAlignLSE;
+      }
+      if (qs + thread_id() < p.num_queries) {
+        p.logsumexp_ptr[qs + thread_id()] =
             accum_t(mi[thread_id()]) + std::log(accum_t(s_prime[thread_id()]));
-      } else if (query_start() + thread_id() < lse_dim) {
-        p.logsumexp_ptr[query_start() + thread_id()] =
+      } else if (qs + thread_id() < lse_dim) {
+        p.logsumexp_ptr[qs + thread_id()] =
             std::numeric_limits<accum_t>::infinity();
       }
     }

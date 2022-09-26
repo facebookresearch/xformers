@@ -120,8 +120,7 @@ efficient_attention_forward_generic(
 
                           // NOTE: Should be aligned (by padding) in case M is
                           // not a good number for loading during backward
-                          constexpr decltype(M) kAlignLSE =
-                              32; // block size of backward
+                          constexpr decltype(M) kAlignLSE = Kernel::kAlignLSE;
                           logsumexp = at::empty(
                               {B,
                                compute_logsumexp
