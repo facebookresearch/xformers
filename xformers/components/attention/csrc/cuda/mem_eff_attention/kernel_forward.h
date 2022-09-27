@@ -652,7 +652,7 @@ struct AttentionKernel {
       if (query_start() + thread_id() < p.num_queries) {
         p.logsumexp_ptr[query_start() + thread_id()] =
             accum_t(mi[thread_id()]) + std::log(accum_t(s_prime[thread_id()]));
-      } else if (thread_id() < lse_dim) {
+      } else if (query_start() + thread_id() < lse_dim) {
         p.logsumexp_ptr[query_start() + thread_id()] =
             std::numeric_limits<accum_t>::infinity();
       }
