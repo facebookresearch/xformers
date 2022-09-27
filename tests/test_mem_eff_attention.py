@@ -162,11 +162,7 @@ def test_logsumexp(
 ):
     if op.FORWARD_OPERATOR is None:
         return
-    kw = (
-        {"causal": False}
-        if op is xformers.ops.MemoryEfficientAttentionCutlassOp
-        else {}
-    )
+
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
@@ -179,7 +175,12 @@ def test_logsumexp(
     ):
         pytest.skip("unsupported configuration")
 
-    _, lse, _, _ = op.FORWARD_OPERATOR(query, key, value, True, None, 0.0, **kw)
+    if isinstance(op, xformers.ops.MemoryEfficientAttentionCutlassOp):
+        _, lse = op.FORWARD_OPERATOR(
+            query, key, value, compute_logsumexp=True, causal=False
+        )
+    else:
+        _, lse, _, _ = op.FORWARD_OPERATOR(query, key, value, True, None, 0.0)
     ref_lse = (
         (query.float() / k_len**0.5) @ key.float().transpose(-2, -1)
     ).logsumexp(-1)
