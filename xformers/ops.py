@@ -133,30 +133,11 @@ class AttentionOpBase(torch.autograd.Function):
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
     ) -> torch.Tensor:
-        return cls.FORWARD_OPERATOR(
-            query=query,
-            key=key,
-            value=value,
-            compute_logsumexp=False,
-            attn_bias=attn_bias,
-            p=p,
-        )[0]
+        raise NotImplementedError()
 
     @classmethod
     def forward(cls, ctx, query, key, value, attn_bias, p):
-        out, lse, rng_seed, rng_offset = cls.FORWARD_OPERATOR(
-            query=query,
-            key=key,
-            value=value,
-            compute_logsumexp=True,
-            attn_bias=attn_bias,
-            p=p,
-        )
-        ctx.save_for_backward(query, key, value, lse, attn_bias, out)
-        ctx.p = p
-        ctx.rng_seed = rng_seed
-        ctx.rng_offset = rng_offset
-        return out
+        raise NotImplementedError()
 
     @classmethod
     def supports(cls, d: "AttentionOpDispatch") -> bool:
@@ -205,8 +186,48 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
                 return True
         return False
 
+    @classmethod
+    def forward_no_grad(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
+        p: float,
+    ) -> torch.Tensor:
+        assert query.shape[2] == 1
+        return cls.FORWARD_OPERATOR(
+            query=query.squeeze(2),
+            key=key.squeeze(2),
+            value=value.squeeze(2),
+            compute_logsumexp=False,
+            attn_bias=attn_bias,
+            p=p,
+        )[0].unsqueeze(2)
+
+    @classmethod
+    def forward(cls, ctx, query, key, value, attn_bias, p):
+        assert query.shape[2] == 1
+        query = query.squeeze(2)
+        key = key.squeeze(2)
+        value = value.squeeze(2)
+        out, lse, rng_seed, rng_offset = cls.FORWARD_OPERATOR(
+            query=query,
+            key=key,
+            value=value,
+            compute_logsumexp=True,
+            attn_bias=attn_bias,
+            p=p,
+        )
+        ctx.save_for_backward(query, key, value, lse, attn_bias, out)
+        ctx.p = p
+        ctx.rng_seed = rng_seed
+        ctx.rng_offset = rng_offset
+        return out.unsqueeze(2)
+
     @staticmethod
     def backward(ctx, grad):
+        grad = grad.squeeze(2)
         query, key, value, lse, attn_bias, out = ctx.saved_tensors
         p = ctx.p
         rng_seed = ctx.rng_seed
@@ -214,6 +235,9 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
         grad_q, grad_k, grad_v = torch.ops.xformers.efficient_attention_backward(
             grad, query, key, value, lse, out, attn_bias, p, rng_seed, rng_offset
         )
+        grad_q = grad_q.unsqueeze(2)
+        grad_k = grad_k.unsqueeze(2)
+        grad_v = grad_v.unsqueeze(2)
         return grad_q, grad_k, grad_v, None, None
 
 
@@ -245,6 +269,10 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             query=query,
             key=key,
             value=value,
+            cu_seqlens_q=None,
+            cu_seqlens_k=None,
+            max_seqlen_k=-1,
+            max_seqlen_q=-1,
             compute_logsumexp=False,
             causal=isinstance(attn_bias, LowerTriangularMask),
         )[0]
@@ -256,6 +284,10 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             query=query,
             key=key,
             value=value,
+            cu_seqlens_q=None,
+            cu_seqlens_k=None,
+            max_seqlen_k=-1,
+            max_seqlen_q=-1,
             compute_logsumexp=True,
             causal=causal,
         )
@@ -293,20 +325,26 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
     @classmethod
     def backward(cls, ctx, grad):
         query, key, value, lse, out = ctx.saved_tensors
+        if query.shape[2] != 1:
+            raise NotImplementedError("num_heads != 1 not yet implemented")
+
         dtype = query.dtype
         (
             grad_q,
             grad_k,
             grad_v,
         ) = torch.ops.xformers.efficient_attention_backward_cutlass(
-            grad.to(dtype),
-            query,
-            key,
-            value,
-            lse,
-            out.to(dtype),
+            grad.to(dtype).squeeze(2),
+            query.squeeze(2),
+            key.squeeze(2),
+            value.squeeze(2),
+            lse.squeeze(1),
+            out.to(dtype).squeeze(2),
             causal=ctx.causal,
         )
+        grad_q = grad_q.unsqueeze(2)
+        grad_k = grad_k.unsqueeze(2)
+        grad_v = grad_v.unsqueeze(2)
         return grad_q, grad_k, grad_v, None, None
 
 
@@ -360,8 +398,10 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         batch = query.shape[0]
         seqlen_q = query.shape[1]
         seqlen_k = key.shape[1]
-        head_dim_q = query.shape[2]
-        head_dim_v = query.shape[2]
+        num_heads = query.shape[2]
+        head_dim_q = query.shape[3]
+        head_dim_v = query.shape[3]
+        assert num_heads == 1
 
         cu_seqlens_k = torch.arange(
             0,
@@ -599,7 +639,23 @@ def memory_efficient_attention(
     Implements the memory-efficient attention mechanism following
     `"Self-Attention Does Not Need O(n^2) Memory" <http://arxiv.org/abs/2112.05682>`_.
 
+    Supported formats for inputs/outputs:
+        [batch, seqlen, num_heads, K]
+        [batch, seqlen, K] (Legacy format)
     """
+
+    output_shape = query.shape
+    if query.ndim not in [3, 4]:
+        raise ValueError(
+            f"Invalid shape for query: {query.shape}. "
+            "Expected shape [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
+        )
+    # Convert from legacy format
+    if query.ndim == 3:
+        query = query.unsqueeze(2)
+        key = key.unsqueeze(2)
+        value = value.unsqueeze(2)
+
     if op is None:
         op = AttentionOpDispatch.from_arguments(
             query=query, key=key, value=value, attn_bias=attn_bias, p=p
@@ -609,5 +665,5 @@ def memory_efficient_attention(
     if all(x.requires_grad is False for x in [query, key, value]):
         return op.forward_no_grad(
             query=query, key=key, value=value, attn_bias=attn_bias, p=p
-        )
-    return op.apply(query, key, value, attn_bias, p)
+        ).reshape(output_shape)
+    return op.apply(query, key, value, attn_bias, p).reshape(output_shape)
