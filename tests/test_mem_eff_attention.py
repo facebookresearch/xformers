@@ -19,7 +19,7 @@ _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 def _generate_op_device_dtype_B_Mq_Mkv_K():
     for op in [
         xformers.ops.MemoryEfficientAttentionOp,
-        xformers.ops.MemoryEfficientAttentionGenericForwardOp,
+        xformers.ops.MemoryEfficientAttentionCutlassOp,
         xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
     ]:
         for shape in op.generate_test_shapes_B_Mq_Mkv_K():
@@ -164,7 +164,7 @@ def test_logsumexp(
         return
     kw = (
         {"causal": False}
-        if op is xformers.ops.MemoryEfficientAttentionGenericForwardOp
+        if op is xformers.ops.MemoryEfficientAttentionCutlassOp
         else {}
     )
     scale = 3

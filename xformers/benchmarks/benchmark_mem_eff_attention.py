@@ -85,7 +85,7 @@ SHAPES.sort()
 p = 0.0
 FORCE_OP = None
 # FORCE_OP = xformers.ops.MemoryEfficientAttentionOp
-# FORCE_OP = xformers.ops.MemoryEfficientAttentionGenericForwardOp
+# FORCE_OP = xformers.ops.MemoryEfficientAttentionCutlassOp
 # FORCE_OP = xformers.ops.MemoryEfficientAttentionFlashAttentionOp
 
 

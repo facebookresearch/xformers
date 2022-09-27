@@ -79,8 +79,8 @@ struct AttentionKernel {
   static constexpr bool kNeedsOutputAccumulatorBuffer =
       !kKeepOutputInRF && !std::is_same<output_accum_t, output_t>::value;
 
-  static_assert(kQueriesPerBlock % 32 == 0);
-  static_assert(kKeysPerBlock % 32 == 0);
+  static_assert(kQueriesPerBlock % 32 == 0, "");
+  static_assert(kKeysPerBlock % 32 == 0, "");
   static constexpr int64_t kNumWarpsPerBlock =
       kQueriesPerBlock * kKeysPerBlock / (32 * 32);
   static constexpr int64_t kWarpSize = 32;
@@ -192,8 +192,9 @@ struct AttentionKernel {
         kWarpSize>::Updater;
     static_assert(
         MmaCore::WarpCount::kM * MmaCore::WarpCount::kN *
-            MmaCore::WarpCount::kK ==
-        kNumWarpsPerBlock);
+                MmaCore::WarpCount::kK ==
+            kNumWarpsPerBlock,
+        "");
 
     // Epilogue to store to shared-memory in a format that we can use later for
     // the second matmul
@@ -262,7 +263,8 @@ struct AttentionKernel {
     using IteratorB = typename Mma::IteratorB;
     using WarpCount = typename Mma::WarpCount;
     static_assert(
-        WarpCount::kM * WarpCount::kN * WarpCount::kK == kNumWarpsPerBlock);
+        WarpCount::kM * WarpCount::kN * WarpCount::kK == kNumWarpsPerBlock,
+        "");
 
     using DefaultEpilogue = typename DefaultGemm::Epilogue;
     using OutputTileIterator =
@@ -333,6 +335,14 @@ struct AttentionKernel {
       SharedStorageEpilogueAtEnd,
       SharedStorageEpilogueInLoop>::type;
 
+  static void __host__ check_supported(Params const& p) {
+    TORCH_CHECK(
+        p.head_dim % kAlignmentQ == 0, "query is not correctly aligned");
+    TORCH_CHECK(p.head_dim % kAlignmentK == 0, "key is not correctly aligned");
+    TORCH_CHECK(
+        p.head_dim_value % kAlignmentV == 0, "value is not correctly aligned");
+  }
+
   static void __device__ attention_kernel(Params& p) {
     // In this block, we will only ever:
     // - read query[query_start:query_end, :]
@@ -345,7 +355,7 @@ struct AttentionKernel {
     auto& si = shared_storage.after_mm0.si;
     auto& mi = shared_storage.mi;
 
-    static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
+    static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize, "");
     if (thread_id() < kQueriesPerBlock) {
       s_prime[thread_id()] = accum_t(0);
       m_prime[thread_id()] = -std::numeric_limits<accum_t>::infinity();
@@ -688,7 +698,7 @@ struct AttentionKernel {
     // 7. Calculate logsumexp
     // To make the backward easier, we pad logsumexp with `inf`
     // this avoids a few bound checks, and is not more expensive during fwd
-    static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize);
+    static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize, "");
     if (p.logsumexp_ptr && thread_id() < kQueriesPerBlock) {
       auto lse_dim = ceil_div((int32_t)p.num_queries, kAlignLSE) * kAlignLSE;
       if (query_start() + thread_id() < p.num_queries) {

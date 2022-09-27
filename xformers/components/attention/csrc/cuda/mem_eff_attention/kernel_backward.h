@@ -57,7 +57,7 @@ constexpr int getWarpsPerSm() {
 
 template <
     // which arch we target (eg `cutlass::arch::Sm80`)
-    typename ArchTag,
+    typename ArchTag_,
     // input/output type
     typename scalar_t_,
     // run optimized kernel because memory accesses will be aligned
@@ -69,6 +69,7 @@ struct AttentionBackwardKernel {
   using output_t = scalar_t;
   using lse_scalar_t = float;
   using accum_t = float;
+  using ArchTag = ArchTag_;
   static constexpr bool kIsAligned = kIsAligned_;
 
   struct Params {
@@ -599,6 +600,15 @@ struct AttentionBackwardKernel {
       gradK.clear();
     }
   };
+
+  static void __host__ check_supported(Params const& p) {
+    TORCH_CHECK(
+        p.head_dim % kMinimumAlignment == 0,
+        "query/key is not correctly aligned");
+    TORCH_CHECK(
+        p.head_dim_value % kMinimumAlignment == 0,
+        "value is not correctly aligned");
+  }
 
   static __device__ void kernel(Params& p_) {
     // Hint to nvcc to store points & tensor shapes in registers
@@ -1318,7 +1328,7 @@ struct AttentionBackwardKernel {
     // Depending on warp configuration, we might have multiple
     // threads of the same warp working on the same row
     using AccessType = cutlass::Array<scalar_t, kElementsPerAccess>;
-    static_assert(kNumThreads >= kBlockSizeI);
+    static_assert(kNumThreads >= kBlockSizeI, "");
     static constexpr int kNumThreadsPerLine = kNumThreads / kBlockSizeI;
     int16_t thread_id = get_thread_id();
 
@@ -1393,7 +1403,8 @@ struct AttentionBackwardKernel {
     // Reduce between workers
     static_assert(
         kNumThreadsPerLine == 1 || kNumThreadsPerLine == 2 ||
-        kNumThreadsPerLine == 4);
+            kNumThreadsPerLine == 4,
+        "");
     CUTLASS_PRAGMA_UNROLL
     for (int i = 1; i < kNumThreadsPerLine; i *= 2) {
       delta_value = delta_value + __shfl_xor_sync(0xffffffff, delta_value, i);
