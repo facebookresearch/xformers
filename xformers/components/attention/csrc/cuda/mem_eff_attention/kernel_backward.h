@@ -128,6 +128,11 @@ struct AttentionBackwardKernel {
   static constexpr int64_t kNumWarpsPerBlock =
       (kBlockSizeI * kBlockSizeJ) / (32 * 32);
 
+  // If this is true, we store and accumulate dK/dV in RF
+  // rather than going back to gmem everytime
+  static constexpr bool kIsHalf = cutlass::sizeof_bits<scalar_t>::value <= 16;
+  static constexpr bool kOutputInRF = kIsHalf && kMaxK <= kBlockSizeI;
+
   // Launch bounds
   static constexpr int64_t kNumThreads = kWarpSize * kNumWarpsPerBlock;
   static constexpr int64_t kMinBlocksPerSm =
@@ -416,6 +421,16 @@ struct AttentionBackwardKernel {
     };
   };
 
+  struct OutputFragments {
+    typename MatmulGradV::Mma::FragmentC gradV;
+    typename MatmulGradK::Mma::FragmentC gradK;
+
+    __device__ __forceinline__ void clear() {
+      gradV.clear();
+      gradK.clear();
+    }
+  };
+
   static __device__ void kernel(Params& p_) {
     // Hint to nvcc to store points & tensor shapes in registers
     // as we use them a lot
@@ -432,25 +447,37 @@ struct AttentionBackwardKernel {
       return 0;
     };
 
+    OutputFragments output_frags;
     int32_t key_start = 0;
     int32_t key_end = p.num_keys / kBlockSizeJ * kBlockSizeJ;
     for (; key_start < key_end; key_start += kBlockSizeJ) {
+      output_frags.clear();
       int32_t query_end = p.num_queries / kBlockSizeI * kBlockSizeI;
       int32_t query_start = 0;
       for (; query_start < query_end; query_start += kBlockSizeI) {
-        processBlockIJ<true>(shared_storage, p, query_start, key_start);
+        processBlockIJ<true>(
+            shared_storage, output_frags, p, query_start, key_start);
       }
       // last (partial) query
       if (query_start != p.num_queries) {
-        processBlockIJ<false>(shared_storage, p, query_start, key_start);
+        processBlockIJ<false>(
+            shared_storage, output_frags, p, query_start, key_start);
+      }
+      if (kOutputInRF) {
+        writeFragsToGmem<true>(shared_storage, output_frags, p, key_start);
       }
       __syncthreads();
     }
     // Last (partial) key
     if (key_start != p.num_keys) {
+      output_frags.clear();
       for (int32_t query_start = 0; query_start < p.num_queries;
            query_start += kBlockSizeI) {
-        processBlockIJ<false>(shared_storage, p, query_start, key_start);
+        processBlockIJ<false>(
+            shared_storage, output_frags, p, query_start, key_start);
+      }
+      if (kOutputInRF) {
+        writeFragsToGmem<false>(shared_storage, output_frags, p, key_start);
       }
     }
   }
@@ -472,6 +499,7 @@ struct AttentionBackwardKernel {
   template <bool skipBoundsChecks>
   static __device__ __forceinline__ void processBlockIJ(
       SharedStorage& shared_storage,
+      OutputFragments& output_frags,
       Params const& p,
       int32_t query_start,
       int32_t key_start) {
@@ -569,7 +597,7 @@ struct AttentionBackwardKernel {
     //
     // grad_v[j_start:j_end] += attn_T @ do_i
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < p.head_dim_value;
+    for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim_value);
          col += MatmulGradV::ThreadblockShape::kN) {
       using Mma = typename MatmulGradV::Mma;
 
@@ -598,9 +626,9 @@ struct AttentionBackwardKernel {
           lane_id,
           problem_size.k());
 
-      typename Mma::FragmentC accum;
-
-      accum.clear();
+      if (!kOutputInRF) {
+        output_frags.gradV.clear();
+      }
 
       auto gemm_k_iterations =
           (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
@@ -608,54 +636,26 @@ struct AttentionBackwardKernel {
       // Compute threadblock-scoped matrix multiply-add
       __syncthreads();
 
-      mma(gemm_k_iterations, accum, iterator_B, accum);
+      mma(gemm_k_iterations,
+          output_frags.gradV,
+          iterator_B,
+          output_frags.gradV);
       __syncthreads();
 
-      // Output results
-      typename MatmulGradV::OutputTileIterator output_read_it(
-          typename MatmulGradV::OutputTileIterator::Params{p.head_dim_value},
-          p.grad_value_ptr + key_start * p.head_dim_value + col,
-          {skipBoundsChecks ? MatmulGradV::ThreadblockShape::kM
-                            : p.num_keys - key_start,
-           p.head_dim_value - col},
-          thread_id);
-      typename MatmulGradV::OutputTileIterator output_write_it = output_read_it;
-
-      DISPATCH_BOOL(
-          query_start == 0, kIsFirst, ([&]() {
-            using DefaultEpilogue = typename MatmulGradV::DefaultEpilogue;
-            using DefaultOutputOp = typename MatmulGradV::DefaultOutputOp;
-            static constexpr auto ScaleType = kIsFirst
-                ? cutlass::epilogue::thread::ScaleType::Nothing
-                : cutlass::epilogue::thread::ScaleType::NoBetaScaling;
-            using EpilogueOutputOp =
-                typename cutlass::epilogue::thread::LinearCombination<
-                    typename DefaultOutputOp::ElementOutput,
-                    DefaultOutputOp::kCount,
-                    typename DefaultOutputOp::ElementAccumulator,
-                    typename DefaultOutputOp::ElementCompute,
-                    ScaleType>;
-            using Epilogue = typename cutlass::epilogue::threadblock::Epilogue<
-                typename DefaultEpilogue::Shape,
-                typename Mma::Operator,
-                DefaultEpilogue::kPartitionsK,
-                typename DefaultEpilogue::OutputTileIterator,
-                typename DefaultEpilogue::AccumulatorFragmentIterator,
-                typename DefaultEpilogue::WarpTileIterator,
-                typename DefaultEpilogue::SharedLoadIterator,
-                EpilogueOutputOp,
-                typename DefaultEpilogue::Padding,
-                DefaultEpilogue::kFragmentsPerIteration,
-                true // IterationsUnroll
-                >;
-            EpilogueOutputOp rescale({1, 1});
-            Epilogue epilogue(
-                shared_storage.after_qk.mm_gradV.epilogue,
-                thread_id,
-                warp_id,
-                lane_id);
-            epilogue(rescale, output_write_it, accum, output_read_it);
-          }));
+      if (!kOutputInRF) {
+        typename MatmulGradV::OutputTileIterator output_it(
+            typename MatmulGradV::OutputTileIterator::Params{p.head_dim_value},
+            p.grad_value_ptr + key_start * p.head_dim_value + col,
+            {skipBoundsChecks ? MatmulGradV::ThreadblockShape::kM
+                              : p.num_keys - key_start,
+             p.head_dim_value - col},
+            thread_id);
+        accumulateInGmem<MatmulGradV>(
+            shared_storage.after_qk.mm_gradV.epilogue,
+            output_frags.gradV,
+            output_it,
+            query_start == 0);
+      }
     }
     __syncthreads();
     /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -852,7 +852,7 @@ struct AttentionBackwardKernel {
     //
     // grad_k[i_start:i_end] += tmp.transpose(-2, -1) @ q_i
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < p.head_dim;
+    for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim);
          col += MatmulGradK::ThreadblockShape::kN) {
       using Mma = typename MatmulGradK::Mma;
 
@@ -882,65 +882,114 @@ struct AttentionBackwardKernel {
           lane_id,
           problem_size.k());
 
-      typename Mma::FragmentC accum;
-
-      accum.clear();
+      if (!kOutputInRF) {
+        output_frags.gradK.clear();
+      }
 
       auto gemm_k_iterations =
           (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
 
       // Compute threadblock-scoped matrix multiply-add
       __syncthreads();
-      mma(gemm_k_iterations, accum, iterator_B, accum);
+      mma(gemm_k_iterations,
+          output_frags.gradK,
+          iterator_B,
+          output_frags.gradK);
       __syncthreads();
 
       // Output results
-      typename MatmulGradK::OutputTileIterator output_read_it(
-          typename MatmulGradK::OutputTileIterator::Params{p.head_dim},
-          p.grad_key_ptr + key_start * p.head_dim + col,
-          {skipBoundsChecks
-               ? MatmulGradK::ThreadblockShape::kM
-               : std::min((int32_t)Mma::Shape::kM, p.num_keys - key_start),
-           false ? MatmulGradK::ThreadblockShape::kN : p.head_dim - col},
-          thread_id);
-      typename MatmulGradK::OutputTileIterator output_write_it = output_read_it;
-
-      DISPATCH_BOOL(
-          query_start == 0, kIsFirst, ([&]() {
-            using DefaultEpilogue = typename MatmulGradK::DefaultEpilogue;
-            using DefaultOutputOp = typename MatmulGradK::DefaultOutputOp;
-            static constexpr auto ScaleType = kIsFirst
-                ? cutlass::epilogue::thread::ScaleType::Nothing
-                : cutlass::epilogue::thread::ScaleType::NoBetaScaling;
-            using EpilogueOutputOp =
-                typename cutlass::epilogue::thread::LinearCombination<
-                    typename DefaultOutputOp::ElementOutput,
-                    DefaultOutputOp::kCount,
-                    typename DefaultOutputOp::ElementAccumulator,
-                    typename DefaultOutputOp::ElementCompute,
-                    ScaleType>;
-            using Epilogue = typename cutlass::epilogue::threadblock::Epilogue<
-                typename DefaultEpilogue::Shape,
-                typename Mma::Operator,
-                DefaultEpilogue::kPartitionsK,
-                typename DefaultEpilogue::OutputTileIterator,
-                typename DefaultEpilogue::AccumulatorFragmentIterator,
-                typename DefaultEpilogue::WarpTileIterator,
-                typename DefaultEpilogue::SharedLoadIterator,
-                EpilogueOutputOp,
-                typename DefaultEpilogue::Padding,
-                DefaultEpilogue::kFragmentsPerIteration,
-                true // IterationsUnroll
-                >;
-            EpilogueOutputOp rescale({1, 1});
-            Epilogue epilogue(
-                shared_storage.after_qk.after_doivj.mm_gradK.epilogue,
-                thread_id,
-                warp_id,
-                lane_id);
-            epilogue(rescale, output_write_it, accum, output_read_it);
-          }));
+      if (!kOutputInRF) {
+        typename MatmulGradK::OutputTileIterator output_it(
+            typename MatmulGradK::OutputTileIterator::Params{p.head_dim},
+            p.grad_key_ptr + key_start * p.head_dim + col,
+            {skipBoundsChecks
+                 ? MatmulGradK::ThreadblockShape::kM
+                 : std::min((int32_t)Mma::Shape::kM, p.num_keys - key_start),
+             false ? MatmulGradK::ThreadblockShape::kN : p.head_dim - col},
+            thread_id);
+        accumulateInGmem<MatmulGradK>(
+            shared_storage.after_qk.after_doivj.mm_gradK.epilogue,
+            output_frags.gradK,
+            output_it,
+            query_start == 0);
+      }
     }
+  }
+
+  template <bool skipBoundsChecks>
+  static __device__ __forceinline__ void writeFragsToGmem(
+      SharedStorage& shared_storage,
+      OutputFragments& output_frags,
+      Params const& p,
+      int32_t key_start) {
+    typename MatmulGradV::OutputTileIterator outputV_it(
+        typename MatmulGradV::OutputTileIterator::Params{p.head_dim_value},
+        p.grad_value_ptr + key_start * p.head_dim_value,
+        {skipBoundsChecks ? MatmulGradV::ThreadblockShape::kM
+                          : p.num_keys - key_start,
+         p.head_dim_value},
+        get_thread_id());
+    accumulateInGmem<MatmulGradV>(
+        shared_storage.after_qk.mm_gradV.epilogue,
+        output_frags.gradV,
+        outputV_it,
+        true);
+
+    typename MatmulGradK::OutputTileIterator outputK_it(
+        typename MatmulGradK::OutputTileIterator::Params{p.head_dim},
+        p.grad_key_ptr + key_start * p.head_dim,
+        {skipBoundsChecks ? MatmulGradK::ThreadblockShape::kM
+                          : std::min(
+                                (int32_t)MatmulGradK::Mma::Shape::kM,
+                                p.num_keys - key_start),
+         false ? MatmulGradK::ThreadblockShape::kN : p.head_dim},
+        get_thread_id());
+    accumulateInGmem<MatmulGradK>(
+        shared_storage.after_qk.after_doivj.mm_gradK.epilogue,
+        output_frags.gradK,
+        outputK_it,
+        true);
+  }
+
+  template <typename MatmulT>
+  static __device__ __forceinline__ void accumulateInGmem(
+      typename MatmulT::DefaultEpilogue::SharedStorage& epilogue_smem,
+      typename MatmulT::Mma::FragmentC const& accum,
+      typename MatmulT::OutputTileIterator output_it,
+      bool first) {
+    using DefaultEpilogue = typename MatmulT::DefaultEpilogue;
+    using DefaultOutputOp = typename MatmulT::DefaultOutputOp;
+    using Mma = typename MatmulT::Mma;
+    DISPATCH_BOOL(
+        first, kIsFirst, ([&]() {
+          static constexpr auto ScaleType = kIsFirst
+              ? cutlass::epilogue::thread::ScaleType::Nothing
+              : cutlass::epilogue::thread::ScaleType::NoBetaScaling;
+          using EpilogueOutputOp =
+              typename cutlass::epilogue::thread::LinearCombination<
+                  typename DefaultOutputOp::ElementOutput,
+                  DefaultOutputOp::kCount,
+                  typename DefaultOutputOp::ElementAccumulator,
+                  typename DefaultOutputOp::ElementCompute,
+                  ScaleType>;
+          using Epilogue = typename cutlass::epilogue::threadblock::Epilogue<
+              typename DefaultEpilogue::Shape,
+              typename Mma::Operator,
+              DefaultEpilogue::kPartitionsK,
+              typename DefaultEpilogue::OutputTileIterator,
+              typename DefaultEpilogue::AccumulatorFragmentIterator,
+              typename DefaultEpilogue::WarpTileIterator,
+              typename DefaultEpilogue::SharedLoadIterator,
+              EpilogueOutputOp,
+              typename DefaultEpilogue::Padding,
+              DefaultEpilogue::kFragmentsPerIteration,
+              true // IterationsUnroll
+              >;
+          EpilogueOutputOp rescale({1, 1});
+          Epilogue epilogue(
+              epilogue_smem, get_thread_id(), get_warp_id(), get_lane_id());
+          epilogue(rescale, output_it, accum, output_it);
+        }));
   }
 
   static __device__ __forceinline__ int8_t get_lane_id() {
