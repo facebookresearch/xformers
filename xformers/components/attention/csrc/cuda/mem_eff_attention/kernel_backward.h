@@ -52,7 +52,15 @@ constexpr int getWarpsPerSm() {
 }
 } // namespace
 
-template <typename scalar_t_, bool kIsAligned_, typename ArchTag>
+template <
+    // which arch we target (eg `cutlass::arch::Sm80`)
+    typename ArchTag,
+    // input/output type
+    typename scalar_t_,
+    // run optimized kernel because memory accesses will be aligned
+    bool kIsAligned_,
+    // upperbound on `max(value.shape[-1], query.shape[-1])`
+    int64_t kMaxK = std::numeric_limits<int64_t>::max()>
 struct AttentionBackwardKernel {
   using scalar_t = scalar_t_;
   using output_t = scalar_t;
@@ -109,10 +117,16 @@ struct AttentionBackwardKernel {
   };
 
   // Blocks & grid
+  static constexpr bool kSupports64x128 =
+      ArchTag::kMinComputeCapability >= 80 ||
+      (ArchTag::kMinComputeCapability >= 70 &&
+       cutlass::sizeof_bits<scalar_t>::value <= 16);
   static constexpr int64_t kWarpSize = 32;
-  static constexpr int64_t kNumWarpsPerBlock = 4;
-  static constexpr int64_t kBlockSizeI = 64;
+  static constexpr int64_t kBlockSizeI =
+      kSupports64x128 && kMaxK > 64 ? 128 : 64;
   static constexpr int64_t kBlockSizeJ = 64;
+  static constexpr int64_t kNumWarpsPerBlock =
+      (kBlockSizeI * kBlockSizeJ) / (32 * 32);
 
   // Launch bounds
   static constexpr int64_t kNumThreads = kWarpSize * kNumWarpsPerBlock;
@@ -944,26 +958,22 @@ template <typename AK>
 __global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)
     attention_kernel_backward_batched(typename AK::Params params);
 
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD(ARCH, SCALAR_T, IS_ALIGNED)      \
-  template <>                                                                  \
-  __global__ void __launch_bounds__(                                           \
-      AttentionBackwardKernel<SCALAR_T, IS_ALIGNED, cutlass::arch::Sm##ARCH>:: \
-          kNumThreads,                                                         \
-      AttentionBackwardKernel<SCALAR_T, IS_ALIGNED, cutlass::arch::Sm##ARCH>:: \
-          kMinBlocksPerSm)                                                     \
-      attention_kernel_backward_batched<AttentionBackwardKernel<               \
-          SCALAR_T,                                                            \
-          IS_ALIGNED,                                                          \
-          cutlass::arch::Sm##ARCH>>(                                           \
-          AttentionBackwardKernel<                                             \
-              SCALAR_T,                                                        \
-              IS_ALIGNED,                                                      \
-              cutlass::arch::Sm##ARCH>::Params params) {                       \
-    auto batch_id = blockIdx.z;                                                \
-    params.advance_batches(batch_id);                                          \
-    AttentionBackwardKernel<SCALAR_T, IS_ALIGNED, cutlass::arch::Sm##ARCH>::   \
-        kernel(params);                                                        \
-  }
+#define _ATTENTION_KERNEL_BACKWARD_BEGIN(...)                 \
+  template <>                                                 \
+  __global__ void __launch_bounds__(                          \
+      __VA_ARGS__::kNumThreads, __VA_ARGS__::kMinBlocksPerSm) \
+      attention_kernel_backward_batched<__VA_ARGS__>(         \
+          typename __VA_ARGS__::Params p) {                   \
+    using Kernel = __VA_ARGS__;
+#define _ATTENTION_KERNEL_BACKWARD_END() }
+
+#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD(ARCH, ...)             \
+  _ATTENTION_KERNEL_BACKWARD_BEGIN(                                  \
+      AttentionBackwardKernel<cutlass::arch::Sm##ARCH, __VA_ARGS__>) \
+  auto batch_id = blockIdx.z;                                        \
+  p.advance_batches(batch_id);                                       \
+  Kernel::kernel(p);                                                 \
+  _ATTENTION_KERNEL_BACKWARD_END();
 
 #ifdef __CUDA_ARCH__
 #define __CUDA_ARCH_OR_ZERO__ __CUDA_ARCH__
@@ -971,27 +981,14 @@ __global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)
 #define __CUDA_ARCH_OR_ZERO__ 0
 #endif
 
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_DISABLED(                        \
-    ARCH, SCALAR_T, IS_ALIGNED)                                                \
-  template <>                                                                  \
-  __global__ void __launch_bounds__(                                           \
-      AttentionBackwardKernel<SCALAR_T, IS_ALIGNED, cutlass::arch::Sm##ARCH>:: \
-          kNumThreads,                                                         \
-      AttentionBackwardKernel<SCALAR_T, IS_ALIGNED, cutlass::arch::Sm##ARCH>:: \
-          kMinBlocksPerSm)                                                     \
-      attention_kernel_backward_batched<AttentionBackwardKernel<               \
-          SCALAR_T,                                                            \
-          IS_ALIGNED,                                                          \
-          cutlass::arch::Sm##ARCH>>(                                           \
-          AttentionBackwardKernel<                                             \
-              SCALAR_T,                                                        \
-              IS_ALIGNED,                                                      \
-              cutlass::arch::Sm##ARCH>::Params params) {                       \
-    printf(                                                                    \
-        "FATAL: this function is for sm%d, but was built for sm%d\n",          \
-        int(ARCH),                                                             \
-        int(__CUDA_ARCH_OR_ZERO__));                                           \
-  }
+#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_DISABLED(ARCH, ...)                \
+  _ATTENTION_KERNEL_BACKWARD_BEGIN(                                              \
+      AttentionBackwardKernel<cutlass::arch::Sm##ARCH, __VA_ARGS__>)             \
+  printf(                                                                        \
+      "FATAL: this function is for sm%d, but was built with __CUDA_ARCH__=%d\n", \
+      int(ARCH),                                                                 \
+      int(__CUDA_ARCH_OR_ZERO__));                                               \
+  _ATTENTION_KERNEL_BACKWARD_END();
 
 // All kernels are disabled by default
 #define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM50(...) \
