@@ -175,7 +175,7 @@ def test_logsumexp(
     ):
         pytest.skip("unsupported configuration")
 
-    if isinstance(op, xformers.ops.MemoryEfficientAttentionCutlassOp):
+    if op is xformers.ops.MemoryEfficientAttentionCutlassOp:
         _, lse = op.FORWARD_OPERATOR(
             query, key, value, compute_logsumexp=True, causal=False
         )
