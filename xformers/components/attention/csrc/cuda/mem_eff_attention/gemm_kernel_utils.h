@@ -193,4 +193,26 @@ struct call_conditional<false, TA, TB> {
   }
 };
 
+////////////////////////////////////////////////////////////////////////////////
+// Mark a variable as warp-uniform - enables some compiler optimizations
+// The cheapest way to do it is just to broadcast it from lane 0
+////////////////////////////////////////////////////////////////////////////////
+
+CUTLASS_DEVICE int32_t warp_uniform(int32_t value) {
+  return (int32_t)__shfl_sync(0xfffff, (unsigned)value, 0);
+}
+
+template <typename T>
+CUTLASS_DEVICE T* warp_uniform(T* ptr) {
+  struct {
+    union {
+      T* ptr;
+      uint32_t asInt[2];
+    };
+  } p;
+  p.ptr = ptr;
+  p.asInt[0] = warp_uniform(p.asInt[0]);
+  p.asInt[1] = warp_uniform(p.asInt[1]);
+  return p.ptr;
+}
 } // namespace gemm_kernel_utils
