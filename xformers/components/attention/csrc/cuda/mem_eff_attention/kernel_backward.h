@@ -68,6 +68,7 @@ struct AttentionBackwardKernel {
     lse_scalar_t* logsumexp_ptr; // [num_queries]
     scalar_t* output_ptr; // [num_queries, head_dim_value]
     scalar_t* grad_output_ptr; // [num_queries, head_dim_value]
+    accum_t* delta_ptr; // [num_queries]
 
     // Output tensors
     scalar_t* grad_query_ptr; // [num_queries, head_dim]
@@ -92,6 +93,7 @@ struct AttentionBackwardKernel {
       logsumexp_ptr += batch_id * lse_dim;
       output_ptr += batch_id * head_dim_value * num_queries;
       grad_output_ptr += batch_id * head_dim_value * num_queries;
+      delta_ptr += batch_id * num_queries;
 
       grad_query_ptr += batch_id * head_dim * num_queries;
       grad_key_ptr += batch_id * head_dim * num_keys;
@@ -400,100 +402,6 @@ struct AttentionBackwardKernel {
     };
   };
 
-  // OLD VERSION - a3f257389709
-  template <int kElementsPerAccess>
-  static __device__ void _computeDi(
-      cutlass::Array<accum_t, kBlockSizeI>& di,
-      Params const& p,
-      int32_t query_start) {
-    __syncthreads();
-    using AccessType = cutlass::Array<scalar_t, kElementsPerAccess>;
-    static constexpr int kNumThreadsPerLine = 4;
-    static constexpr int kParallelRowsPerWarp = kWarpSize / kNumThreadsPerLine;
-
-    int32_t laneCol = (get_lane_id() % kNumThreadsPerLine);
-    int32_t laneRow = (get_lane_id() / kNumThreadsPerLine) +
-        get_warp_id() * kBlockSizeI / kNumWarpsPerBlock;
-
-    int32_t dO_s0 = p.head_dim_value / AccessType::kElements;
-    int32_t out_s0 = p.head_dim_value / AccessType::kElements;
-    cutlass::
-        Array<accum_t, kBlockSizeI / kParallelRowsPerWarp / kNumWarpsPerBlock>
-            di_frag;
-    di_frag.clear();
-    assert(p.head_dim_value % AccessType::kElements == 0);
-    CUTLASS_PRAGMA_UNROLL
-    for (int firstCol = 0; firstCol < p.head_dim_value;
-         firstCol += kNumThreadsPerLine * AccessType::kElements) {
-      const __restrict__ AccessType* dO =
-          reinterpret_cast<const __restrict__ AccessType*>(
-              p.grad_output_ptr + (query_start + laneRow) * p.head_dim_value +
-              firstCol);
-      const __restrict__ AccessType* out =
-          reinterpret_cast<const __restrict__ AccessType*>(
-              p.output_ptr + (query_start + laneRow) * p.head_dim_value +
-              firstCol);
-      int32_t rowEnd = (p.num_queries - query_start);
-      int32_t colEnd = p.head_dim_value / AccessType::kElements;
-
-      AccessType frag_dO;
-      AccessType frag_out;
-      AccessType result;
-      frag_dO.clear();
-      frag_out.clear();
-      dO += laneCol;
-      out += laneCol;
-
-      bool withinBounds =
-          firstCol + laneCol * AccessType::kElements < p.head_dim_value;
-
-      CUTLASS_PRAGMA_UNROLL
-      for (int frag_idx = 0; frag_idx < di_frag.size(); ++frag_idx) {
-        int32_t fetching_index = laneRow + frag_idx * kParallelRowsPerWarp;
-        if (fetching_index >= rowEnd) {
-          break;
-        }
-        if (withinBounds) {
-          frag_dO = *dO;
-          frag_out = *out;
-          dO += dO_s0 * kParallelRowsPerWarp;
-          out += out_s0 * kParallelRowsPerWarp;
-          cutlass::multiplies<AccessType> multiply;
-          result = multiply(frag_dO, frag_out);
-          CUTLASS_PRAGMA_UNROLL
-          for (int i = 0; i < AccessType::kElements; ++i) {
-            di_frag[frag_idx] = di_frag[frag_idx] + accum_t(result[i]);
-          }
-        }
-      }
-    }
-    // Store everything in smem
-    CUTLASS_PRAGMA_UNROLL
-    for (int frag_idx = 0; frag_idx < di_frag.size(); ++frag_idx) {
-      int32_t fetching_index = laneRow + frag_idx * kParallelRowsPerWarp;
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 1; i < kNumThreadsPerLine; i *= 2) {
-        di_frag[frag_idx] = di_frag[frag_idx] +
-            __shfl_xor_sync(0xffffffff, di_frag[frag_idx], i);
-      }
-      di[fetching_index] = di_frag[frag_idx];
-    }
-    __syncthreads();
-  }
-
-  static __device__ void computeDi(
-      cutlass::Array<accum_t, kBlockSizeI>& di,
-      Params const& p,
-      int32_t query_start) {
-    constexpr int kOptimalElements =
-        128 / cutlass::sizeof_bits<scalar_t>::value;
-    if (p.head_dim_value % kOptimalElements == 0) {
-      _computeDi<kOptimalElements>(di, p, query_start);
-    } else {
-      _computeDi<1>(di, p, query_start);
-    }
-  }
-
   static __device__ void kernel(Params& p_) {
     // Hint to nvcc to store points & tensor shapes in registers
     // as we use them a lot
@@ -503,40 +411,50 @@ struct AttentionBackwardKernel {
     SharedStorage& shared_storage = *((SharedStorage*)smem_buffer);
     int32_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
 
-    auto getNumKeys = [&](int32_t query_start) {
+    auto getQueryStart = [&](int32_t key_start) {
       if (p.causal) {
-        return std::min(int32_t(query_start + kBlockSizeI), p.num_keys);
+        return key_start;
       }
-      return p.num_keys;
+      return 0;
     };
 
-    int32_t query_end = p.num_queries / kBlockSizeI * kBlockSizeI;
-    int32_t query_start = 0;
-    for (; query_start < query_end; query_start += kBlockSizeI) {
-      computeDi(shared_storage.di, p, query_start);
-
-      int32_t key_start = 0;
-      int32_t key_end = getNumKeys(query_start) / kBlockSizeJ * kBlockSizeJ;
-      for (; key_start < key_end; key_start += kBlockSizeJ) {
+    int32_t key_start = 0;
+    int32_t key_end = p.num_keys / kBlockSizeJ * kBlockSizeJ;
+    for (; key_start < key_end; key_start += kBlockSizeJ) {
+      int32_t query_end = p.num_queries / kBlockSizeI * kBlockSizeI;
+      int32_t query_start = 0;
+      for (; query_start < query_end; query_start += kBlockSizeI) {
         processBlockIJ<true>(shared_storage, p, query_start, key_start);
       }
-      // last (partial) key
-      if (key_start != getNumKeys(query_start)) {
+      // last (partial) query
+      if (query_start != p.num_queries) {
         processBlockIJ<false>(shared_storage, p, query_start, key_start);
       }
       __syncthreads();
     }
-    // Last (partial) query block
-    if (query_start != p.num_queries) {
-      computeDi(shared_storage.di, p, query_start);
-      for (int32_t key_start = 0; key_start < getNumKeys(query_start);
-           key_start += kBlockSizeJ) {
+    // Last (partial) key
+    if (key_start != p.num_keys) {
+      for (int32_t query_start = 0; query_start < p.num_queries;
+           query_start += kBlockSizeI) {
         processBlockIJ<false>(shared_storage, p, query_start, key_start);
       }
     }
   }
 
-  // Compute threadblock location
+  static __device__ __forceinline__ void loadDi(
+      cutlass::Array<accum_t, kBlockSizeI>& di,
+      Params const& p,
+      int32_t query_start) {
+    int32_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
+    if (thread_id < kBlockSizeI) {
+      accum_t di_rf = accum_t(0);
+      if (query_start + thread_id < p.num_queries) {
+        di_rf = p.delta_ptr[query_start + thread_id];
+      }
+      di[thread_id] = di_rf;
+    }
+  }
+
   template <bool skipBoundsChecks>
   static __device__ __forceinline__ void processBlockIJ(
       SharedStorage& shared_storage,
@@ -548,6 +466,7 @@ struct AttentionBackwardKernel {
     int32_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
     int32_t warp_id = threadIdx.y;
     int32_t lane_id = threadIdx.x;
+    loadDi(shared_storage.di, p, query_start);
 
     /////////////////////////////////////////////////////////////////////////////////////////////////
     // MatmulQK

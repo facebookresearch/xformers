@@ -136,6 +136,10 @@ mem_efficient_attention_backward_generic(
                 value.stride(1) % AK::kMinimumAlignment == 0,
                 "value is not correctly aligned");
 
+            // TODO: Fuse this into a kernel?
+            // This is a bottleneck for smaller sequences (M <= 128)
+            auto delta = (grad_out.to(at::kFloat) * out.to(at::kFloat)).sum(-1);
+
             AK::Params params;
             params.query_ptr = (scalar_t*)query.data_ptr();
             params.key_ptr = (scalar_t*)key.data_ptr();
@@ -147,6 +151,7 @@ mem_efficient_attention_backward_generic(
             params.grad_query_ptr = (scalar_t*)grad_q.data_ptr();
             params.grad_key_ptr = (scalar_t*)grad_k.data_ptr();
             params.grad_value_ptr = (scalar_t*)grad_v.data_ptr();
+            params.delta_ptr = (float*)delta.data_ptr();
             params.head_dim = query.size(2);
             params.head_dim_value = value.size(2);
             params.num_queries = query.size(1);
