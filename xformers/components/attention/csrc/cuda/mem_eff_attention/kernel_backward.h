@@ -33,6 +33,7 @@
 #include "cutlass/platform/platform.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
 #include "cutlass/transform/threadblock/vector_iterator.h"
+#include "iterators/epilogue_predicated_tile_iterator.h"
 
 #include "find_default_mma.h"
 #include "mma_from_smem.h"
@@ -245,7 +246,9 @@ struct AttentionBackwardKernel {
     // Epilogue
     using DefaultOutputOp = typename DefaultConfig::EpilogueOutputOp;
     using DefaultEpilogue = typename DefaultGemm::Epilogue;
-    using OutputTileIterator = typename DefaultEpilogue::OutputTileIterator;
+    using OutputTileIterator =
+        typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
+            typename DefaultEpilogue::OutputTileIterator>::Iterator;
 
     struct SharedStorage {
       union {
@@ -338,7 +341,9 @@ struct AttentionBackwardKernel {
     // Epilogue
     using DefaultOutputOp = typename DefaultConfig::EpilogueOutputOp;
     using DefaultEpilogue = typename DefaultGemm::Epilogue;
-    using OutputTileIterator = typename DefaultEpilogue::OutputTileIterator;
+    using OutputTileIterator =
+        typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
+            typename DefaultEpilogue::OutputTileIterator>::Iterator;
 
     struct SharedStorage {
       union {
@@ -388,7 +393,9 @@ struct AttentionBackwardKernel {
     // Epilogue
     using DefaultOutputOp = typename DefaultConfig::EpilogueOutputOp;
     using DefaultEpilogue = typename DefaultGemm::Epilogue;
-    using OutputTileIterator = typename DefaultEpilogue::OutputTileIterator;
+    using OutputTileIterator =
+        typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
+            typename DefaultEpilogue::OutputTileIterator>::Iterator;
 
     struct SharedStorage {
       union {
@@ -566,7 +573,6 @@ struct AttentionBackwardKernel {
       if (p.causal) {
         auto lane_offset = MatmulQK::ScalingCoefsUpdater::get_lane_offset(
             lane_id, warp_id, output_tile_coords);
-        int32_t last_col;
         MatmulQK::ScalingCoefsUpdater::iterateRows(
             lane_offset,
             [&](int accum_m) {},
@@ -609,6 +615,15 @@ struct AttentionBackwardKernel {
                            : std::min(
                                  (int32_t)MatmulQK::Mma::Shape::kN,
                                  p.num_queries - query_start));
+      auto createEpilogueIter = [&]() {
+        return typename MatmulGradV::OutputTileIterator(
+            typename MatmulGradV::OutputTileIterator::Params{p.head_dim_value},
+            p.grad_value_ptr + key_start * p.head_dim_value + col,
+            {skipBoundsChecks ? MatmulGradV::ThreadblockShape::kM
+                              : p.num_keys - key_start,
+             p.head_dim_value - col},
+            thread_id);
+      };
 
       // q_i.transpose(-2, -1)
       typename Mma::IteratorB iterator_B(
@@ -627,6 +642,7 @@ struct AttentionBackwardKernel {
           problem_size.k());
 
       if (!kOutputInRF) {
+        createEpilogueIter().prefetch_all();
         output_frags.gradV.clear();
       }
 
@@ -643,17 +659,10 @@ struct AttentionBackwardKernel {
       __syncthreads();
 
       if (!kOutputInRF) {
-        typename MatmulGradV::OutputTileIterator output_it(
-            typename MatmulGradV::OutputTileIterator::Params{p.head_dim_value},
-            p.grad_value_ptr + key_start * p.head_dim_value + col,
-            {skipBoundsChecks ? MatmulGradV::ThreadblockShape::kM
-                              : p.num_keys - key_start,
-             p.head_dim_value - col},
-            thread_id);
         accumulateInGmem<MatmulGradV>(
             shared_storage.after_qk.mm_gradV.epilogue,
             output_frags.gradV,
-            output_it,
+            createEpilogueIter(),
             query_start == 0);
       }
     }
@@ -774,6 +783,13 @@ struct AttentionBackwardKernel {
               ? MatmulQK::Mma::Shape::kM
               : std::min(
                     (int32_t)MatmulQK::Mma::Shape::kM, p.num_keys - key_start));
+      auto createEpilogueIter = [&]() {
+        return typename MatmulGradQ::OutputTileIterator(
+            typename MatmulGradQ::OutputTileIterator::Params{p.head_dim},
+            p.grad_query_ptr + query_start * p.head_dim + col,
+            {problem_size.m(), problem_size.n()},
+            thread_id);
+      };
 
       // k_j
       typename Mma::IteratorB iterator_B(
@@ -798,19 +814,15 @@ struct AttentionBackwardKernel {
       auto gemm_k_iterations =
           (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
 
+      // Start prefetching output tile now to make the epilogue faster
+      createEpilogueIter().prefetch_all();
       // Compute threadblock-scoped matrix multiply-add
       __syncthreads();
       mma(gemm_k_iterations, accum, iterator_B, accum);
       __syncthreads();
 
       // Output results
-      typename MatmulGradQ::OutputTileIterator output_read_it(
-          typename MatmulGradQ::OutputTileIterator::Params{p.head_dim},
-          p.grad_query_ptr + query_start * p.head_dim + col,
-          {problem_size.m(), problem_size.n()},
-          thread_id);
-      typename MatmulGradQ::OutputTileIterator output_write_it = output_read_it;
-
+      typename MatmulGradQ::OutputTileIterator output_it = createEpilogueIter();
       DISPATCH_BOOL(
           key_start == 0, kIsFirst, ([&]() {
             using DefaultEpilogue = typename MatmulGradQ::DefaultEpilogue;
@@ -829,7 +841,7 @@ struct AttentionBackwardKernel {
                 typename DefaultEpilogue::Shape,
                 typename Mma::Operator,
                 DefaultEpilogue::kPartitionsK,
-                typename DefaultEpilogue::OutputTileIterator,
+                typename MatmulGradQ::OutputTileIterator,
                 typename DefaultEpilogue::AccumulatorFragmentIterator,
                 typename DefaultEpilogue::WarpTileIterator,
                 typename DefaultEpilogue::SharedLoadIterator,
@@ -844,7 +856,7 @@ struct AttentionBackwardKernel {
                 thread_id,
                 warp_id,
                 lane_id);
-            epilogue(rescale, output_write_it, accum, output_read_it);
+            epilogue(rescale, output_it, accum, output_it);
           }));
     }
     /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -865,6 +877,16 @@ struct AttentionBackwardKernel {
                            : std::min(
                                  (int32_t)MatmulQK::Mma::Shape::kN,
                                  p.num_queries - query_start));
+      auto createEpilogueIter = [&]() {
+        return typename MatmulGradK::OutputTileIterator(
+            typename MatmulGradK::OutputTileIterator::Params{p.head_dim},
+            p.grad_key_ptr + key_start * p.head_dim + col,
+            {skipBoundsChecks
+                 ? MatmulGradK::ThreadblockShape::kM
+                 : std::min((int32_t)Mma::Shape::kM, p.num_keys - key_start),
+             false ? MatmulGradK::ThreadblockShape::kN : p.head_dim - col},
+            thread_id);
+      };
 
       // q_i
       typename Mma::IteratorB iterator_B(
@@ -884,6 +906,7 @@ struct AttentionBackwardKernel {
 
       if (!kOutputInRF) {
         output_frags.gradK.clear();
+        createEpilogueIter().prefetch_all();
       }
 
       auto gemm_k_iterations =
@@ -899,18 +922,10 @@ struct AttentionBackwardKernel {
 
       // Output results
       if (!kOutputInRF) {
-        typename MatmulGradK::OutputTileIterator output_it(
-            typename MatmulGradK::OutputTileIterator::Params{p.head_dim},
-            p.grad_key_ptr + key_start * p.head_dim + col,
-            {skipBoundsChecks
-                 ? MatmulGradK::ThreadblockShape::kM
-                 : std::min((int32_t)Mma::Shape::kM, p.num_keys - key_start),
-             false ? MatmulGradK::ThreadblockShape::kN : p.head_dim - col},
-            thread_id);
         accumulateInGmem<MatmulGradK>(
             shared_storage.after_qk.after_doivj.mm_gradK.epilogue,
             output_frags.gradK,
-            output_it,
+            createEpilogueIter(),
             query_start == 0);
       }
     }
@@ -976,7 +991,7 @@ struct AttentionBackwardKernel {
               typename DefaultEpilogue::Shape,
               typename Mma::Operator,
               DefaultEpilogue::kPartitionsK,
-              typename DefaultEpilogue::OutputTileIterator,
+              typename MatmulT::OutputTileIterator,
               typename DefaultEpilogue::AccumulatorFragmentIterator,
               typename DefaultEpilogue::WarpTileIterator,
               typename DefaultEpilogue::SharedLoadIterator,
