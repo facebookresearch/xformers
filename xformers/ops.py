@@ -107,33 +107,6 @@ class AttentionOpBase(torch.autograd.Function):
     _TEST_K: List[int] = [32, 128]
 
     @classmethod
-    def generate_test_shapes_B_Mq_Mkv_K_Kv(cls):
-        shapes = []
-        for B in cls._TEST_BATCH_SIZES:
-            for Mq in [32, 256]:
-                for Mkv in [32, 64, 256]:
-                    for K in cls._TEST_K:
-                        shapes.append((B, Mq, Mkv, K, K))
-            Mq = 256
-            Mkv = 128
-            K = 32
-            # Weird values of parameters
-            for M in [2, 3, 15, 31, 32, 34, 68, 72, 90, 132, 136]:
-                shapes.append((B, M, Mkv, K, K))
-                shapes.append((B, Mq, M, K, K))
-            for _K in [1, 2, 3, 31, 34, 36, 38, 40, 64, 256 + 2, 256 + 8, 512]:
-                shapes.append((B, Mq, Mkv, _K, _K))
-            # Different value for K / Kv
-            for _K in [32, 36, 64, 256 + 8]:
-                shapes.append((B, Mq, Mkv, K, _K))
-                shapes.append((B, Mq, Mkv, _K, K))
-            # Exotic sizes
-            for K in cls._TEST_K:
-                shapes.append((B, 16, 4096, K, K))
-                shapes.append((B, 4096, 16, K, K))
-        return shapes
-
-    @classmethod
     def forward_no_grad(
         cls,
         query: torch.Tensor,

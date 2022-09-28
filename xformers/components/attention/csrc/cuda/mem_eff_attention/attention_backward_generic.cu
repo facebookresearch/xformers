@@ -107,6 +107,8 @@ mem_efficient_attention_backward_cutlass(
     auto delta = Kernel::kKernelComputesDelta
         ? at::empty({B, M}, query.options().dtype(at::ScalarType::Float))
         : (grad_out.to(at::kFloat) * out.to(at::kFloat)).sum(-1);
+    TORCH_INTERNAL_ASSERT(delta.size(0) == B);
+    TORCH_INTERNAL_ASSERT(delta.size(1) == M);
 
     typename Kernel::Params params;
     params.query_ptr = (scalar_t*)query.data_ptr();
