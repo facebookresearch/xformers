@@ -40,6 +40,7 @@ def assert_allclose(
     atol: float = 1e-8,
     rtol: float = 1e-5,
 ) -> None:
+    assert out.shape == ref.shape
     flatten_diff = ((out - ref).abs() - atol - ref.abs() * rtol).flatten()
     max_pos = flatten_diff.argmax()
     assert torch.allclose(out, ref, rtol=rtol, atol=atol), (
@@ -177,8 +178,16 @@ def test_logsumexp(
 
     if op is xformers.ops.MemoryEfficientAttentionCutlassOp:
         _, lse = op.FORWARD_OPERATOR(
-            query, key, value, compute_logsumexp=True, causal=False
+            query.unsqueeze(2),
+            key.unsqueeze(2),
+            value.unsqueeze(2),
+            max_seqlen_q=None,
+            cu_seqlens_q=None,
+            cu_seqlens_k=None,
+            compute_logsumexp=True,
+            causal=False,
         )
+        lse = lse[:, 0, :]
     else:
         _, lse, _, _ = op.FORWARD_OPERATOR(query, key, value, True, None, 0.0)
     ref_lse = (

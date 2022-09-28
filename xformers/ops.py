@@ -271,7 +271,6 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             value=value,
             cu_seqlens_q=None,
             cu_seqlens_k=None,
-            max_seqlen_k=-1,
             max_seqlen_q=-1,
             compute_logsumexp=False,
             causal=isinstance(attn_bias, LowerTriangularMask),
@@ -286,7 +285,6 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             value=value,
             cu_seqlens_q=None,
             cu_seqlens_k=None,
-            max_seqlen_k=-1,
             max_seqlen_q=-1,
             compute_logsumexp=True,
             causal=causal,
@@ -644,12 +642,12 @@ def memory_efficient_attention(
         [batch, seqlen, K] (Legacy format)
     """
 
-    output_shape = query.shape
     if query.ndim not in [3, 4]:
         raise ValueError(
             f"Invalid shape for query: {query.shape}. "
             "Expected shape [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
         )
+    output_shape = tuple(query.shape[:-1]) + (value.shape[-1],)
     # Convert from legacy format
     if query.ndim == 3:
         query = query.unsqueeze(2)

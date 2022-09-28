@@ -64,23 +64,21 @@
 namespace {
 /*
   There are 2 modes for using this function.
-  (Mode BMK) `num_heads=1` with the heads coalesced into the batch dimension
-  (Mode MKH) `batch=1` with all tokens across batches concatenated
+  (Mode BMHK) With all the heads having the same seqlen
+  (Mode 1MHK) `batch=1` with all tokens across batches concatenated
 */
 std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     const at::Tensor& query, // [b, seqlen, num_heads, K]
     const at::Tensor& key, // [b, seqlen, num_heads, K]
     const at::Tensor& value, // [b, seqlen, num_heads, Kv]
-    // (Mode MKH only) [b+1]: cu_seqlens_q[b] contains the
+    // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
     // position of the first query token for batch $b
     const c10::optional<at::Tensor>& cu_seqlens_q,
-    // (Mode MKH only) [b+1]: cu_seqlens_k[b] contains the
+    // (Mode 1MHK only) [b+1]: cu_seqlens_k[b] contains the
     // position of the first key token for batch $b
     const c10::optional<at::Tensor>& cu_seqlens_k,
-    // (Mode MKH only) Maximum sequence length across batches
+    // (Mode 1MHK only) Maximum sequence length across batches
     const c10::optional<int64_t> max_seqlen_q_,
-    // (Mode MKH only) Maximum sequence length across batches
-    const c10::optional<int64_t> max_seqlen_k_,
     bool compute_logsumexp,
     bool causal) {
   TORCH_CHECK(query.dim() == 4);
@@ -95,11 +93,12 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
   if (cu_seqlens_q.has_value()) {
     TORCH_CHECK(cu_seqlens_q->scalar_type() == at::ScalarType::Int);
     TORCH_CHECK(cu_seqlens_k->scalar_type() == at::ScalarType::Int);
+    TORCH_CHECK(cu_seqlens_q->dim() == 1 && cu_seqlens_k->dim() == 1);
     CHECK_NOSPARSE_CONTIGUOUS_CUDA((*cu_seqlens_q));
     CHECK_NOSPARSE_CONTIGUOUS_CUDA((*cu_seqlens_k));
-    TORCH_CHECK(max_seqlen_q_.has_value() && max_seqlen_k_.has_value());
+    TORCH_CHECK(max_seqlen_q_.has_value());
     max_seqlen_q = *max_seqlen_q_;
-    max_seqlen_k = *max_seqlen_k_;
+    max_seqlen_k = 0; // Will be set inside the kernel
   } else {
     max_seqlen_q = query.size(1);
     max_seqlen_k = key.size(1);
@@ -170,7 +169,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     p.head_dim_value = value.size(3);
     p.num_queries = max_seqlen_q;
     p.num_keys = max_seqlen_k;
-    p.num_batches = B;
+    p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
     p.causal = causal;
 
     constexpr auto kernel_fn = attention_kernel_batched<Kernel>;
