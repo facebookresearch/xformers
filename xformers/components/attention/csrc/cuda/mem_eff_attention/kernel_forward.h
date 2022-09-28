@@ -92,14 +92,17 @@ struct AttentionKernel {
 
   struct Params {
     // Input tensors
-    scalar_t* query_ptr; // [num_queries, head_dim]
-    scalar_t* key_ptr; // [num_keys, head_dim]
-    scalar_t* value_ptr; // [num_keys, head_dim_value]
+    scalar_t* query_ptr; // [num_queries, num_heads, head_dim]
+    scalar_t* key_ptr; // [num_keys, num_heads, head_dim]
+    scalar_t* value_ptr; // [num_keys, num_heads, head_dim_value]
+    int32_t* cu_seqlens_q_ptr = nullptr;
+    int32_t* cu_seqlens_k_ptr = nullptr;
 
     // Output tensors
-    output_t* output_ptr; // [num_queries, head_dim_value]
-    output_accum_t* output_accum_ptr; // [num_queries, head_dim_value]
-    lse_scalar_t* logsumexp_ptr; // [num_queries] - can be 0
+    output_t* output_ptr; // [num_queries, num_heads, head_dim_value]
+    output_accum_t*
+        output_accum_ptr; // [num_queries, num_heads, head_dim_value]
+    lse_scalar_t* logsumexp_ptr; // [num_heads, num_queries] - can be null
 
     // Dimensions/strides
     int32_t head_dim;
@@ -107,37 +110,66 @@ struct AttentionKernel {
     int32_t num_queries;
     int32_t num_keys;
     int32_t num_batches;
+    int32_t num_heads = 1;
 
     bool causal;
 
+    CUTLASS_DEVICE int32_t qk_stride() const {
+      return head_dim * num_heads;
+    }
+    CUTLASS_DEVICE int32_t v_stride() const {
+      return head_dim_value * num_heads;
+    }
     // Moves pointers to what we should process
     // Returns "false" if there is no work to do
-    CUTLASS_DEVICE void advance_to_block() {
+    CUTLASS_DEVICE bool advance_to_block() {
       auto batch_id = blockIdx.z;
-      auto query_start = blockIdx.y * kQueriesPerBlock;
+      auto head_id = blockIdx.y;
+      auto query_start = blockIdx.x * kQueriesPerBlock;
 
       auto lse_dim = ceil_div((int32_t)num_queries, kAlignLSE) * kAlignLSE;
 
-      // query[batch_id, query_start, 0]
-      query_ptr += batch_id * head_dim * num_queries + query_start * head_dim;
-      // key[batch_id, 0, 0]
-      key_ptr += batch_id * head_dim * num_keys;
-      // value[batch_id, 0, 0]
-      value_ptr += batch_id * head_dim_value * num_keys;
-      // output[batch_id, query_start, 0]
-      output_ptr += batch_id * head_dim_value * num_queries +
-          query_start * head_dim_value;
+      int32_t q_start, k_start;
+      // Advance to current batch - in case of different sequence lengths
+      if (cu_seqlens_q_ptr != nullptr) {
+        assert(cu_seqlens_k_ptr != nullptr);
+        cu_seqlens_q_ptr += batch_id;
+        cu_seqlens_k_ptr += batch_id;
+        q_start = cu_seqlens_q_ptr[0];
+        k_start = cu_seqlens_k_ptr[0];
+        int32_t q_next_start = cu_seqlens_q_ptr[1];
+        int32_t k_next_start = cu_seqlens_k_ptr[1];
+        num_queries = q_next_start - q_start;
+        num_keys = k_next_start - k_start;
 
-      if (output_accum_ptr == nullptr) {
+        if (query_start >= num_queries) {
+          return false;
+        }
+      } else {
+        q_start = batch_id * num_queries;
+        k_start = batch_id * num_keys;
+      }
+
+      // Advance to the current batch / head / query_start
+      query_ptr += (q_start + query_start) * qk_stride() + head_id * head_dim;
+      key_ptr += k_start * qk_stride() + head_id * head_dim;
+      value_ptr += k_start * v_stride() + head_id * head_dim_value;
+      output_ptr +=
+          (q_start + query_start) * v_stride() + head_id * head_dim_value;
+
+      if (output_accum_ptr != nullptr) {
+        output_accum_ptr +=
+            (q_start + query_start) * v_stride() + head_id * head_dim_value;
+      } else {
         // Accumulate directly in the destination buffer (eg for f32)
         output_accum_ptr = (accum_t*)output_ptr;
-      } else {
-        output_accum_ptr += batch_id * head_dim_value * num_queries +
-            query_start * head_dim_value;
       }
       if (logsumexp_ptr != nullptr) {
-        logsumexp_ptr += batch_id * lse_dim + query_start;
+        // lse[batch_id, head_id, query_start]
+        logsumexp_ptr +=
+            batch_id * lse_dim * num_heads + head_id * lse_dim + query_start;
       }
+
       num_queries -= query_start;
       if (causal) {
         num_keys = std::min(int32_t(query_start + kQueriesPerBlock), num_keys);
@@ -156,11 +188,14 @@ struct AttentionKernel {
       num_keys = warp_uniform(num_keys);
       head_dim = warp_uniform(head_dim);
       head_dim_value = warp_uniform(head_dim_value);
+      return true;
     }
 
     __host__ dim3 getBlocksGrid() const {
       return dim3(
-          1, ceil_div(num_queries, (int32_t)kQueriesPerBlock), num_batches);
+          ceil_div(num_queries, (int32_t)kQueriesPerBlock),
+          num_heads,
+          num_batches);
     }
     __host__ dim3 getThreadsGrid() const {
       return dim3(kWarpSize, kNumWarpsPerBlock, 1);
@@ -400,21 +435,23 @@ struct AttentionKernel {
     auto createOutputIter = [&](auto col) {
       using OutputTileIterator = typename MM1::OutputTileIterator;
       return OutputTileIterator(
-          typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
-          p.output_ptr + col,
+          typename OutputTileIterator::Params{(int32_t)p.v_stride()},
+          p.output_ptr,
           typename OutputTileIterator::TensorCoord{
-              p.num_queries, p.head_dim_value - col},
-          thread_id());
+              p.num_queries, p.head_dim_value},
+          thread_id(),
+          {0, col});
     };
 
     auto createOutputAccumIter = [&](auto col) {
       using OutputTileIteratorAccum = typename MM1::OutputTileIteratorAccum;
       return OutputTileIteratorAccum(
-          typename OutputTileIteratorAccum::Params{(int32_t)p.head_dim_value},
-          p.output_accum_ptr + col,
+          typename OutputTileIteratorAccum::Params{(int32_t)p.v_stride()},
+          p.output_accum_ptr,
           typename OutputTileIteratorAccum::TensorCoord{
-              p.num_queries, p.head_dim_value - col},
-          thread_id());
+              p.num_queries, p.head_dim_value},
+          thread_id(),
+          {0, col});
     };
 
     // Iterate through keys
@@ -431,8 +468,8 @@ struct AttentionKernel {
 
       auto prologueV = [&](int blockN) {
         typename MM1::Mma::IteratorB iterator_V(
-            typename MM1::IteratorB::Params{MM1::LayoutB(p.head_dim_value)},
-            p.value_ptr + iter_key_start * p.head_dim_value,
+            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_stride())},
+            p.value_ptr + iter_key_start * p.v_stride(),
             {problem_size_1_k, problem_size_1_n},
             thread_id(),
             cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
@@ -467,7 +504,7 @@ struct AttentionKernel {
       // Construct iterators to A and B operands
       typename MM0::IteratorA iterator_A(
           typename MM0::IteratorA::Params(
-              typename MM0::MmaCore::LayoutA(p.head_dim)),
+              typename MM0::MmaCore::LayoutA(p.qk_stride())),
           p.query_ptr,
           {problem_size_0_m, problem_size_0_k},
           thread_id(),
@@ -475,8 +512,8 @@ struct AttentionKernel {
 
       typename MM0::IteratorB iterator_B(
           typename MM0::IteratorB::Params(
-              typename MM0::MmaCore::LayoutB(p.head_dim)),
-          p.key_ptr + iter_key_start * p.head_dim,
+              typename MM0::MmaCore::LayoutB(p.qk_stride())),
+          p.key_ptr + iter_key_start * p.qk_stride(),
           {problem_size_0_k, problem_size_0_n},
           thread_id(),
           tb_offset_B);
@@ -512,7 +549,7 @@ struct AttentionKernel {
 
       // Mask out last if causal
       if (p.causal && p.num_keys - iter_key_start <= kKeysPerBlock) {
-        auto query_start = blockIdx.y * kQueriesPerBlock;
+        auto query_start = blockIdx.x * kQueriesPerBlock;
         auto lane_offset = MM0::ScalingCoefsUpdater::get_lane_offset(
             lane_id(), warp_id(), iteratorC_tile_offset);
         int32_t last_col;
@@ -590,8 +627,8 @@ struct AttentionKernel {
         }
 
         typename MM1::Mma::IteratorB iterator_V(
-            typename MM1::IteratorB::Params{MM1::LayoutB(p.head_dim_value)},
-            p.value_ptr + iter_key_start * p.head_dim_value,
+            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_stride())},
+            p.value_ptr + iter_key_start * p.v_stride(),
             {problem_size_1_k, problem_size_1_n},
             thread_id(),
             cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
@@ -781,7 +818,9 @@ __global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)
                                   QUERIES_PER_BLOCK,       \
                                   KEYS_PER_BLOCK,          \
                                   SINGLE_VALUE_ITER>)      \
-  p.advance_to_block();                                    \
+  if (!p.advance_to_block()) {                             \
+    return;                                                \
+  }                                                        \
   Kernel::attention_kernel(p);                             \
   _ATTENTION_KERNEL_FORWARD_END();
 

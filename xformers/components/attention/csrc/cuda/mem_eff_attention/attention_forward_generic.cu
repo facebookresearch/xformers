@@ -24,7 +24,7 @@
         at::cuda::getDeviceProperties(QUERY.device().index());                \
     const int computeCapability = properties->major * 10 + properties->minor; \
     DISPATCH_BLOCKSIZE(                                                       \
-        VALUE.size(2), ([&]() {                                               \
+        VALUE.size(-1), ([&]() {                                              \
           static constexpr int64_t kQueriesPerBlock = kIs64x64 ? 64 : 32;     \
           static constexpr int64_t kKeysPerBlock = kIs64x64 ? 64 : 128;       \
           DISPATCH_TYPES(                                                     \
@@ -41,9 +41,9 @@
                       /* Run a more efficient kernel (with `isAligned=True`)  \
                       if memory is correctly aligned*/                        \
                       bool isAligned =                                        \
-                          (QUERY.stride(1) % AlignedAK::kAlignmentQ == 0 &&   \
-                           KEY.stride(1) % AlignedAK::kAlignmentK == 0 &&     \
-                           VALUE.stride(1) % AlignedAK::kAlignmentV == 0);    \
+                          (QUERY.stride(-1) % AlignedAK::kAlignmentQ == 0 &&  \
+                           KEY.stride(-1) % AlignedAK::kAlignmentK == 0 &&    \
+                           VALUE.stride(-1) % AlignedAK::kAlignmentV == 0);   \
                       /* TODO: Should we warn or log somewhere when we use a  \
                       less efficient kernel due to wrong alignment? */        \
                       DISPATCH_BOOL(isAligned, kIsAligned, ([&]() {           \
@@ -62,18 +62,60 @@
   }
 
 namespace {
+/*
+  There are 2 modes for using this function.
+  (Mode BMHK) With all the heads having the same seqlen
+  (Mode 1MHK) `batch=1` with all tokens across batches concatenated
+*/
 std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
-    const at::Tensor& query,
-    const at::Tensor& key,
-    const at::Tensor& value,
+    const at::Tensor& query, // [b, seqlen, num_heads, K]
+    const at::Tensor& key, // [b, seqlen, num_heads, K]
+    const at::Tensor& value, // [b, seqlen, num_heads, Kv]
+    // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
+    // position of the first query token for batch $b
+    const c10::optional<at::Tensor>& cu_seqlens_q,
+    // (Mode 1MHK only) [b+1]: cu_seqlens_k[b] contains the
+    // position of the first key token for batch $b
+    const c10::optional<at::Tensor>& cu_seqlens_k,
+    // (Mode 1MHK only) Maximum sequence length across batches
+    const c10::optional<int64_t> max_seqlen_q_,
     bool compute_logsumexp,
     bool causal) {
-  TORCH_CHECK(query.dim() == 3);
-  TORCH_CHECK(key.dim() == 3);
-  TORCH_CHECK(value.dim() == 3);
+  TORCH_CHECK(query.dim() == 4);
+  TORCH_CHECK(key.dim() == 4);
+  TORCH_CHECK(value.dim() == 4);
 
-  TORCH_CHECK(query.size(2) == key.size(2));
+  // Batch sizes
   TORCH_CHECK(query.size(0) == key.size(0));
+  TORCH_CHECK(query.size(0) == value.size(0));
+
+  // Sequence length
+  TORCH_CHECK(key.size(1) == value.size(1));
+
+  // Num heads
+  TORCH_CHECK(query.size(2) == key.size(2));
+  TORCH_CHECK(query.size(2) == value.size(2));
+
+  // Embedding per head
+  TORCH_CHECK(query.size(3) == key.size(3));
+
+  int64_t max_seqlen_q, max_seqlen_k;
+  TORCH_CHECK(cu_seqlens_q.has_value() == cu_seqlens_k.has_value());
+  if (cu_seqlens_q.has_value()) {
+    TORCH_CHECK(cu_seqlens_q->scalar_type() == at::ScalarType::Int);
+    TORCH_CHECK(cu_seqlens_k->scalar_type() == at::ScalarType::Int);
+    TORCH_CHECK(cu_seqlens_q->dim() == 1 && cu_seqlens_k->dim() == 1);
+    CHECK_NOSPARSE_CONTIGUOUS_CUDA((*cu_seqlens_q));
+    CHECK_NOSPARSE_CONTIGUOUS_CUDA((*cu_seqlens_k));
+    TORCH_CHECK(cu_seqlens_q->size(0) == cu_seqlens_k->size(0));
+    TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
+    TORCH_CHECK(max_seqlen_q_.has_value());
+    max_seqlen_q = *max_seqlen_q_;
+    max_seqlen_k = 0; // Will be set inside the kernel
+  } else {
+    max_seqlen_q = query.size(1);
+    max_seqlen_k = key.size(1);
+  }
 
   CHECK_NOSPARSE_CONTIGUOUS_CUDA(query);
   CHECK_NOSPARSE_CONTIGUOUS_CUDA(key);
@@ -85,7 +127,8 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
   int64_t B = query.size(0);
   int64_t M = query.size(1);
   int64_t N = key.size(1);
-  int64_t K = query.size(2);
+  int64_t num_heads = query.size(-2);
+  int64_t K = query.size(-1);
 
   at::Tensor res;
   at::Tensor logsumexp;
@@ -96,7 +139,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     (void)_k;
 
     res = at::empty(
-        {B, M, K},
+        {B, M, num_heads, K},
         query.options().dtype(
             TypeTraits<typename Kernel::output_t>::atScalarType()));
 
@@ -104,7 +147,9 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     // not a good number for loading during backward
     constexpr decltype(M) kAlignLSE = Kernel::kAlignLSE;
     logsumexp = at::empty(
-        {B, compute_logsumexp ? ceil_div(M, kAlignLSE) * kAlignLSE : 0},
+        {B,
+         num_heads,
+         compute_logsumexp ? ceil_div(max_seqlen_q, kAlignLSE) * kAlignLSE : 0},
         query.options().dtype(at::ScalarType::Float));
 
     typename Kernel::Params p;
@@ -117,7 +162,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     at::Tensor output_accum;
     if (Kernel::kNeedsOutputAccumulatorBuffer) {
       output_accum = at::empty(
-          {B, M, K},
+          {B, M, num_heads, K},
           query.options().dtype(
               TypeTraits<typename Kernel::output_accum_t>::atScalarType()));
       p.output_accum_ptr =
@@ -126,11 +171,18 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
       p.output_accum_ptr = nullptr;
     }
     p.output_ptr = (typename Kernel::output_t*)res.data_ptr();
-    p.head_dim = query.size(2);
-    p.head_dim_value = value.size(2);
-    p.num_queries = query.size(1);
-    p.num_keys = key.size(1);
-    p.num_batches = B;
+
+    if (cu_seqlens_q.has_value()) {
+      p.cu_seqlens_q_ptr = (int32_t*)cu_seqlens_q->data_ptr();
+      p.cu_seqlens_k_ptr = (int32_t*)cu_seqlens_k->data_ptr();
+    }
+
+    p.num_heads = num_heads;
+    p.head_dim = query.size(3);
+    p.head_dim_value = value.size(3);
+    p.num_queries = max_seqlen_q;
+    p.num_keys = max_seqlen_k;
+    p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
     p.causal = causal;
 
     constexpr auto kernel_fn = attention_kernel_batched<Kernel>;
