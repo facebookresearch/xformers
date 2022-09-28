@@ -60,7 +60,7 @@ mem_efficient_attention_backward_cutlass(
 
   TORCH_CHECK(query.size(0) == grad_out_.size(0));
   TORCH_CHECK(query.size(1) == grad_out_.size(1));
-  TORCH_CHECK(query.size(2) == grad_out_.size(2));
+  TORCH_CHECK(value.size(2) == grad_out_.size(2));
 
   TORCH_CHECK(query.size(2) == key.size(2));
   TORCH_CHECK(query.size(0) == key.size(0));
@@ -107,6 +107,8 @@ mem_efficient_attention_backward_cutlass(
     auto delta = Kernel::kKernelComputesDelta
         ? at::empty({B, M}, query.options().dtype(at::ScalarType::Float))
         : (grad_out.to(at::kFloat) * out.to(at::kFloat)).sum(-1);
+    TORCH_INTERNAL_ASSERT(delta.size(0) == B);
+    TORCH_INTERNAL_ASSERT(delta.size(1) == M);
 
     typename Kernel::Params params;
     params.query_ptr = (scalar_t*)query.data_ptr();
