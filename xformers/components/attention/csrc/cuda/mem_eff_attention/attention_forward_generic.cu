@@ -85,8 +85,19 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
   TORCH_CHECK(key.dim() == 4);
   TORCH_CHECK(value.dim() == 4);
 
-  TORCH_CHECK(query.size(-1) == key.size(-1));
+  // Batch sizes
   TORCH_CHECK(query.size(0) == key.size(0));
+  TORCH_CHECK(query.size(0) == value.size(0));
+
+  // Sequence length
+  TORCH_CHECK(key.size(1) == value.size(1));
+
+  // Num heads
+  TORCH_CHECK(query.size(2) == key.size(2));
+  TORCH_CHECK(query.size(2) == value.size(2));
+
+  // Embedding per head
+  TORCH_CHECK(query.size(3) == key.size(3));
 
   int64_t max_seqlen_q, max_seqlen_k;
   TORCH_CHECK(cu_seqlens_q.has_value() == cu_seqlens_k.has_value());
@@ -96,6 +107,8 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     TORCH_CHECK(cu_seqlens_q->dim() == 1 && cu_seqlens_k->dim() == 1);
     CHECK_NOSPARSE_CONTIGUOUS_CUDA((*cu_seqlens_q));
     CHECK_NOSPARSE_CONTIGUOUS_CUDA((*cu_seqlens_k));
+    TORCH_CHECK(cu_seqlens_q->size(0) == cu_seqlens_k->size(0));
+    TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
     TORCH_CHECK(max_seqlen_q_.has_value());
     max_seqlen_q = *max_seqlen_q_;
     max_seqlen_k = 0; // Will be set inside the kernel
