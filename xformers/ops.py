@@ -92,7 +92,7 @@ class AttentionOpBase(torch.autograd.Function):
     }
     FORWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
         torch.float: 2e-5,
-        torch.half: 2e-5,
+        torch.half: 2e-4,
         torch.bfloat16: 2e-5,
     }
     SUPPORTED_DEVICES: Set[str]
@@ -217,6 +217,12 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
     NAME = "fwd_gen"
+
+    _TEST_K: List[int] = [
+        32,  # 64x64 kernel
+        128,  # 64x128 kernel
+        256,  # 64x128 with accumulation in gmem
+    ]
 
     @classmethod
     def forward_no_grad(
