@@ -143,6 +143,8 @@ class CustomMmaPipelined : public CustomMmaBase<Shape_, Policy_, 2> {
       (Base::kStages == 2),
       "MmaPipelined requires kStages set to value 2");
 
+  static bool const kSmemContainsEntireMat = false;
+
  private:
   using WarpFragmentA = typename Operator::FragmentA;
   using WarpFragmentB = typename Operator::FragmentB;
@@ -158,16 +160,15 @@ class CustomMmaPipelined : public CustomMmaBase<Shape_, Policy_, 2> {
   /// Construct from tensor references
   CUTLASS_DEVICE
   CustomMmaPipelined(
-      typename Base::SharedStorage&
-          shared_storage, ///< Shared storage needed for internal use by
-                          ///< threadblock-scoped GEMM
+      typename Base::SharedStorageA& shared_storageA,
+      typename Base::SharedStorageB& shared_storageB,
       int thread_idx, ///< ID within the threadblock
       int warp_idx, ///< ID of warp
       int lane_idx ///< ID of each thread within a warp
       )
-      : Base(shared_storage, thread_idx, warp_idx, lane_idx),
-        smem_iterator_A_(shared_storage.operand_A_ref(), thread_idx),
-        smem_iterator_B_(shared_storage.operand_B_ref(), thread_idx) {
+      : Base(shared_storageA, shared_storageB, thread_idx, warp_idx, lane_idx),
+        smem_iterator_A_(shared_storageA.ref(), thread_idx),
+        smem_iterator_B_(shared_storageB.ref(), thread_idx) {
     // Compute warp location within threadblock tile by mapping the warp_id to
     // three coordinates:
     //   _m: the warp's position within the threadblock along the M dimension
@@ -185,6 +186,64 @@ class CustomMmaPipelined : public CustomMmaBase<Shape_, Policy_, 2> {
         {warp_idx_m, Base::kWarpGemmIterations * warp_idx_k});
     this->warp_tile_iterator_B_.add_tile_offset(
         {Base::kWarpGemmIterations * warp_idx_k, warp_idx_n});
+  }
+  CUTLASS_DEVICE
+  CustomMmaPipelined(
+      ///< Shared storage needed for internal use by threadblock-scoped GEMM
+      typename Base::SharedStorage& st,
+      ///< ID within the threadblock
+      int thread_idx,
+      ///< ID of warp
+      int warp_idx,
+      ///< ID of each thread within a warp
+      int lane_idx)
+      : CustomMmaPipelined(
+            st.operand_A,
+            st.operand_B,
+            thread_idx,
+            warp_idx,
+            lane_idx) {}
+
+  CUTLASS_DEVICE
+  bool set_prologue_done(bool value) {
+    // NOT IMPLEMENTED FOR PIPELINED
+  }
+
+  CUTLASS_DEVICE
+  bool set_zero_outside_bounds(bool value) {
+    // NOT NEEDED FOR PIPELINED
+    // shared memory will always be zero-filled
+  }
+
+  template <bool kLoadA = true, bool kLoadB = true>
+  CUTLASS_DEVICE static void prologue(
+      typename Base::SharedStorage& shared_storage,
+      ///< iterator over A operand in global memory
+      IteratorA iterator_A,
+      ///< iterator over B operand in global memory
+      IteratorB iterator_B,
+      int thread_idx,
+      int problem_size_k) {
+    prologue<kLoadA, kLoadB>(
+        shared_storage.operand_A,
+        shared_storage.operand_B,
+        iterator_A,
+        iterator_B,
+        thread_idx,
+        problem_size_k);
+  }
+
+  template <bool kLoadA = true, bool kLoadB = true>
+  CUTLASS_DEVICE static void prologue(
+      typename Base::SharedStorageA& shared_storageA,
+      typename Base::SharedStorageB& shared_storageB,
+      ///< iterator over A operand in global memory
+      IteratorA iterator_A,
+      ///< iterator over B operand in global memory
+      IteratorB iterator_B,
+      int thread_idx,
+      int problem_size_k) {
+    // NOT IMPLEMENTED FOR PIPELINED
   }
 
   /// Perform a threadblock-scoped matrix multiply-accumulate

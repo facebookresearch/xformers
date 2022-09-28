@@ -95,74 +95,55 @@ class CustomMmaBase {
   /// Number of stages
   static int const kStages = Stages;
 
-  /// Tensor reference to the A operand
-  using TensorRefA =
-      TensorRef<typename Operator::ElementA, typename Operator::LayoutA>;
-
-  /// Tensor reference to the B operand
-  using TensorRefB =
-      TensorRef<typename Operator::ElementB, typename Operator::LayoutB>;
-
   //
   // Nested structs
   //
 
   /// Shared storage object needed by threadblock-scoped GEMM
-  class SharedStorage {
-   public:
-    //
-    // Type definitions
-    //
+  template <typename Element, typename OperandShape, typename OperandLayout>
+  struct OperandSharedStorage {
+    AlignedBuffer<Element, OperandShape::kCount> buffer;
+    using TensorRef = TensorRef<Element, OperandLayout>;
 
-    /// Shape of the A matrix operand in shared memory
-    using ShapeA = MatrixShape<
-        Shape::kM + Policy::SmemPaddingA::kRow,
-        Shape::kK * kStages + Policy::SmemPaddingA::kColumn>;
+    CUTLASS_DEVICE
+    static OperandLayout Layout() {
+      return OperandLayout::packed({OperandShape::kRow, OperandShape::kColumn});
+    }
 
-    /// Shape of the B matrix operand in shared memory
-    using ShapeB = MatrixShape<
-        Shape::kK * kStages + Policy::SmemPaddingB::kRow,
-        Shape::kN + Policy::SmemPaddingB::kColumn>;
+    /// Returns a TensorRef to the operand
+    CUTLASS_HOST_DEVICE
+    TensorRef ref() {
+      return TensorRef{buffer.data(), Layout()};
+    }
+  };
 
-   public:
-    //
-    // Data members
-    //
+  /// Shape of the A matrix operand in shared memory
+  using ShapeA = MatrixShape<
+      Shape::kM + Policy::SmemPaddingA::kRow,
+      Shape::kK * kStages + Policy::SmemPaddingA::kColumn>;
 
+  /// Shape of the B matrix operand in shared memory
+  using ShapeB = MatrixShape<
+      Shape::kK * kStages + Policy::SmemPaddingB::kRow,
+      Shape::kN + Policy::SmemPaddingB::kColumn>;
+
+  using SharedStorageA = OperandSharedStorage<
+      typename Operator::ElementA,
+      ShapeA,
+      typename Operator::LayoutA>;
+  using SharedStorageB = OperandSharedStorage<
+      typename Operator::ElementB,
+      ShapeB,
+      typename Operator::LayoutB>;
+  using TensorRefA = typename SharedStorageA::TensorRef;
+  using TensorRefB = typename SharedStorageB::TensorRef;
+
+  struct SharedStorage {
     /// Buffer for A operand
-    AlignedBuffer<typename Operator::ElementA, ShapeA::kCount> operand_A;
+    SharedStorageA operand_A;
 
     /// Buffer for B operand
-    AlignedBuffer<typename Operator::ElementB, ShapeB::kCount> operand_B;
-
-   public:
-    //
-    // Methods
-    //
-
-    /// Returns a layout object for the A matrix
-    CUTLASS_DEVICE
-    static typename Operator::LayoutA LayoutA() {
-      return Operator::LayoutA::packed({ShapeA::kRow, ShapeA::kColumn});
-    }
-
-    /// Returns a layout object for the B matrix
-    CUTLASS_HOST_DEVICE
-    static typename Operator::LayoutB LayoutB() {
-      return Operator::LayoutB::packed({ShapeB::kRow, ShapeB::kColumn});
-    }
-
-    /// Returns a TensorRef to the A operand
-    CUTLASS_HOST_DEVICE
-    TensorRefA operand_A_ref() {
-      return TensorRefA{operand_A.data(), LayoutA()};
-    }
-
-    /// Returns a TensorRef to the B operand
-    CUTLASS_HOST_DEVICE
-    TensorRefB operand_B_ref() {
-      return TensorRefB{operand_B.data(), LayoutB()};
-    }
+    SharedStorageB operand_B;
   };
 
  protected:
@@ -181,15 +162,16 @@ class CustomMmaBase {
   CUTLASS_DEVICE
   CustomMmaBase(
       ///< Shared storage needed for internal use by threadblock-scoped GEMM
-      SharedStorage& shared_storage,
+      SharedStorageA& shared_storageA,
+      SharedStorageB& shared_storageB,
       ///< ID within the threadblock
       int thread_idx,
       ///< ID of warp
       int warp_idx,
       ///< ID of each thread within a warp
       int lane_idx)
-      : warp_tile_iterator_A_(shared_storage.operand_A_ref(), lane_idx),
-        warp_tile_iterator_B_(shared_storage.operand_B_ref(), lane_idx) {}
+      : warp_tile_iterator_A_(shared_storageA.ref(), lane_idx),
+        warp_tile_iterator_B_(shared_storageB.ref(), lane_idx) {}
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
