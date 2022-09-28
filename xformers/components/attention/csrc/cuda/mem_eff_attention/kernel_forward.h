@@ -401,6 +401,9 @@ struct AttentionKernel {
       SharedStorageEpilogueInLoop>::type;
 
   static void __host__ check_supported(Params const& p) {
+    CHECK_ALIGNED_PTR(p.query_ptr, kAlignmentQ);
+    CHECK_ALIGNED_PTR(p.key_ptr, kAlignmentK);
+    CHECK_ALIGNED_PTR(p.value_ptr, kAlignmentV);
     TORCH_CHECK(
         p.head_dim % kAlignmentQ == 0, "query is not correctly aligned");
     TORCH_CHECK(p.head_dim % kAlignmentK == 0, "key is not correctly aligned");
@@ -466,10 +469,10 @@ struct AttentionKernel {
       auto prologueV = [&](int blockN) {
         typename MM1::Mma::IteratorB iterator_V(
             typename MM1::IteratorB::Params{MM1::LayoutB(p.v_stride())},
-            p.value_ptr,
-            {p.num_keys, problem_size_1_n},
+            p.value_ptr + iter_key_start * p.v_stride(),
+            {problem_size_1_k, problem_size_1_n},
             thread_id(),
-            cutlass::MatrixCoord{iter_key_start, blockN * MM1::Mma::Shape::kN});
+            cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
         MM1::Mma::prologue(
             shared_storage.after_mm0.mm1.mm,
             iterator_V,
@@ -496,8 +499,7 @@ struct AttentionKernel {
           tb_tile_offset.m() * MM0::Mma::Shape::kM, tb_tile_offset.k()};
 
       cutlass::MatrixCoord tb_offset_B{
-          tb_tile_offset.k(),
-          iter_key_start + tb_tile_offset.n() * MM0::Mma::Shape::kN};
+          tb_tile_offset.k(), tb_tile_offset.n() * MM0::Mma::Shape::kN};
 
       // Construct iterators to A and B operands
       typename MM0::IteratorA iterator_A(
@@ -511,8 +513,8 @@ struct AttentionKernel {
       typename MM0::IteratorB iterator_B(
           typename MM0::IteratorB::Params(
               typename MM0::MmaCore::LayoutB(p.qk_stride())),
-          p.key_ptr,
-          {problem_size_0_k, p.num_keys},
+          p.key_ptr + iter_key_start * p.qk_stride(),
+          {problem_size_0_k, problem_size_0_n},
           thread_id(),
           tb_offset_B);
 
@@ -626,10 +628,10 @@ struct AttentionKernel {
 
         typename MM1::Mma::IteratorB iterator_V(
             typename MM1::IteratorB::Params{MM1::LayoutB(p.v_stride())},
-            p.value_ptr,
-            {p.num_keys, problem_size_1_n},
+            p.value_ptr + iter_key_start * p.v_stride(),
+            {problem_size_1_k, problem_size_1_n},
             thread_id(),
-            cutlass::MatrixCoord{iter_key_start, blockN * MM1::Mma::Shape::kN});
+            cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
         typename MM1::Mma mma_pv(
             shared_storage.after_mm0.mm1.mm,
             shared_storage.after_mm0.si,
