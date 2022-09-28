@@ -187,6 +187,7 @@ def test_forward(
     )
 
 
+@cuda_only
 @pytest.mark.parametrize("attn_bias_type", [None, xformers.ops.LowerTriangularMask])
 @pytest.mark.parametrize(
     "dtype", list(xformers.ops.MemoryEfficientAttentionCutlassOp.SUPPORTED_DTYPES)
