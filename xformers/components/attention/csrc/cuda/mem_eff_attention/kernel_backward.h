@@ -1095,7 +1095,8 @@ struct AttentionBackwardKernel {
     int16_t laneFirstCol =
         kElementsPerAccess * (get_lane_id() % kNumThreadsPerLine);
     int16_t laneRow = thread_id / kNumThreadsPerLine;
-    bool pred = (query_start + laneRow) < p.num_queries;
+    bool rowPred = (query_start + laneRow) < p.num_queries;
+    bool pred = rowPred;
 
     const __restrict__ AccessType* grad_output_ptr =
         reinterpret_cast<const __restrict__ AccessType*>(
@@ -1115,11 +1116,11 @@ struct AttentionBackwardKernel {
     AccessType frag_grad_output[kPipelineStages];
     AccessType frag_output[kPipelineStages];
 
-    auto loadAndIncrement = [&](int ld_pos, bool pred) {
+    auto loadAndIncrement = [&](int ld_pos, bool is_valid) {
       frag_grad_output[ld_pos].clear();
       frag_output[ld_pos].clear();
-      GlobalLoad(frag_grad_output[ld_pos], grad_output_ptr, pred);
-      GlobalLoad(frag_output[ld_pos], output_ptr, pred);
+      GlobalLoad(frag_grad_output[ld_pos], grad_output_ptr, is_valid);
+      GlobalLoad(frag_output[ld_pos], output_ptr, is_valid);
       grad_output_ptr += kNumThreadsPerLine;
       output_ptr += kNumThreadsPerLine;
     };
@@ -1172,7 +1173,9 @@ struct AttentionBackwardKernel {
     }
 
     // Store in gmem
-    p.delta_ptr[query_start + laneRow] = delta_value;
+    if (rowPred) {
+      p.delta_ptr[query_start + laneRow] = delta_value;
+    }
   }
 
   static __device__ __forceinline__ int8_t get_lane_id() {
