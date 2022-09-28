@@ -228,6 +228,16 @@ class PredicatedTileAccessIteratorResidualLast<
     the_predicates.get_mask(residual_tile_mask);
     the_predicates.compute_predicates_(extent, true);
 
+    // Working around a weird compiler bug happening on P100 for the backward.
+    // I've seen together: the_predicates.predicates_[0] = 14 (instead of 15)
+    // residual_tile_mask[0] = 15 (correct)
+    //
+    // Adding prints when the value is calculated (in `compute_predicates_`)
+    // sometimes removes the bug. The consequence is that we skip the first
+    // element of a tensor, leading to wrong results. The line below should
+    // always be a no-op in theory
+    the_predicates.predicates_[0] |= residual_tile_mask[0];
+
     // update internal pointers
     Layout layout(params_.stride_);
 
