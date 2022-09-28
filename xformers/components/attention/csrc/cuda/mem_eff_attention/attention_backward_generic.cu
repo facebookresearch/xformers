@@ -63,9 +63,17 @@ mem_efficient_attention_backward_generic(
   int64_t N = key.size(1);
   int64_t K = query.size(2);
 
+  // It does not make sense to use that in practice,
+  // but let's still make sure we are correct
+  // As we iterate through keys first, we skip
+  // keys with no query associated, so they are not
+  // initialized
+  bool grad_kv_needs_init = causal && N > M;
   at::Tensor grad_q = at::empty_like(query);
-  at::Tensor grad_k = at::empty_like(key);
-  at::Tensor grad_v = at::empty_like(value);
+  at::Tensor grad_k =
+      grad_kv_needs_init ? at::zeros_like(key) : at::empty_like(key);
+  at::Tensor grad_v =
+      grad_kv_needs_init ? at::zeros_like(value) : at::empty_like(value);
 
   cudaDeviceProp* properties =
       at::cuda::getDeviceProperties(query.device().index());
