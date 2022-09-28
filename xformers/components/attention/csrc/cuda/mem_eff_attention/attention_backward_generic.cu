@@ -71,19 +71,19 @@ mem_efficient_attention_backward_generic(
       at::cuda::getDeviceProperties(query.device().index());
   const int computeCapability = properties->major * 10 + properties->minor;
 
-#define DISPATCH_MAXK(func)                                          \
-  {                                                                  \
-    const auto maxK = std::max(query.size(2), value.size(2));        \
-    if (maxK <= 64) {                                                \
-      constexpr int64_t kMaxK = 64;                                  \
-      func();                                                        \
-    } else if (maxK <= 128) {                                        \
-      constexpr int64_t kMaxK = 128;                                 \
-      func();                                                        \
-    } else {                                                         \
-      constexpr int64_t kMaxK = std::numeric_limits<int64_t>::max(); \
-      func();                                                        \
-    }                                                                \
+#define DISPATCH_MAXK(func)                                   \
+  {                                                           \
+    const auto maxK = std::max(query.size(2), value.size(2)); \
+    if (maxK <= 64) {                                         \
+      constexpr int kMaxK = 64;                               \
+      func();                                                 \
+    } else if (maxK <= 128) {                                 \
+      constexpr int kMaxK = 128;                              \
+      func();                                                 \
+    } else {                                                  \
+      constexpr int kMaxK = std::numeric_limits<int>::max();  \
+      func();                                                 \
+    }                                                         \
   }
 
   DISPATCH_MAXK(([&] {

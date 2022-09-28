@@ -907,21 +907,19 @@ class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
       CUTLASS_PRAGMA_UNROLL
       for (int warp_mma_k = 0; warp_mma_k < Base::kWarpGemmIterations1;
            ++warp_mma_k) {
-        // Load warp-level tile from accumulator fragment
-        // skip warp tile loading for the last kgroup
+        // Load warp-level tile from accumulator fragment (A)
+        // or shared memory (operand B)
+        this->warp_tile_iterator_B_.set_kgroup_index(
+            (warp_mma_k + 1) % Base::kWarpGemmIterations1);
+        // skip warp tile loading for the last kgroup (we are out of the buf)
         if (gemm_k_iterations_1 > (-Base::kStages + 2) ||
             warp_mma_k < Base::kWarpGemmIterations1 - 1) {
           warp_tile_iterator_A1_.load(
               warp_loaded_frag_A1[(warp_mma_k + 1) % 2]);
+          this->warp_tile_iterator_B_.load(
+              warp_loaded_frag_B1[(warp_mma_k + 1) % 2]);
         }
         ++warp_tile_iterator_A1_;
-
-        // Load warp-level tiles from shared memory, wrapping to k offset if
-        // this is the last group as the case may be.
-        this->warp_tile_iterator_B_.set_kgroup_index(
-            (warp_mma_k + 1) % Base::kWarpGemmIterations1);
-        this->warp_tile_iterator_B_.load(
-            warp_loaded_frag_B1[(warp_mma_k + 1) % 2]);
         ++this->warp_tile_iterator_B_;
 
         if (warp_mma_k > 0)
