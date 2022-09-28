@@ -110,22 +110,52 @@ struct AttentionKernel {
 
     bool causal;
 
-    __device__ void advance_batches(int32_t batch_id) {
+    // Moves pointers to what we should process
+    // Returns "false" if there is no work to do
+    CUTLASS_DEVICE void advance_to_block() {
+      auto batch_id = blockIdx.z;
+      auto query_start = blockIdx.y * kQueriesPerBlock;
+
       auto lse_dim = ceil_div((int32_t)num_queries, kAlignLSE) * kAlignLSE;
 
-      query_ptr += batch_id * head_dim * num_queries;
+      // query[batch_id, query_start, 0]
+      query_ptr += batch_id * head_dim * num_queries + query_start * head_dim;
+      // key[batch_id, 0, 0]
       key_ptr += batch_id * head_dim * num_keys;
+      // value[batch_id, 0, 0]
       value_ptr += batch_id * head_dim_value * num_keys;
-      output_ptr += batch_id * head_dim_value * num_queries;
+      // output[batch_id, query_start, 0]
+      output_ptr += batch_id * head_dim_value * num_queries +
+          query_start * head_dim_value;
+
       if (output_accum_ptr == nullptr) {
         // Accumulate directly in the destination buffer (eg for f32)
         output_accum_ptr = (accum_t*)output_ptr;
       } else {
-        output_accum_ptr += batch_id * head_dim_value * num_queries;
+        output_accum_ptr += batch_id * head_dim_value * num_queries +
+            query_start * head_dim_value;
       }
       if (logsumexp_ptr != nullptr) {
-        logsumexp_ptr += batch_id * lse_dim;
+        logsumexp_ptr += batch_id * lse_dim + query_start;
       }
+      num_queries -= query_start;
+      if (causal) {
+        num_keys = std::min(int32_t(query_start + kQueriesPerBlock), num_keys);
+      }
+      num_batches = 0; // no longer used after
+
+      // Make sure the compiler knows these variables are the same on all
+      // the threads of the warp.
+      query_ptr = warp_uniform(query_ptr);
+      key_ptr = warp_uniform(key_ptr);
+      value_ptr = warp_uniform(value_ptr);
+      output_ptr = warp_uniform(output_ptr);
+      output_accum_ptr = warp_uniform(output_accum_ptr);
+      logsumexp_ptr = warp_uniform(logsumexp_ptr);
+      num_queries = warp_uniform(num_queries);
+      num_keys = warp_uniform(num_keys);
+      head_dim = warp_uniform(head_dim);
+      head_dim_value = warp_uniform(head_dim_value);
     }
 
     __host__ dim3 getBlocksGrid() const {
@@ -371,9 +401,9 @@ struct AttentionKernel {
       using OutputTileIterator = typename MM1::OutputTileIterator;
       return OutputTileIterator(
           typename OutputTileIterator::Params{(int32_t)p.head_dim_value},
-          p.output_ptr + query_start() * p.head_dim_value + col,
+          p.output_ptr + col,
           typename OutputTileIterator::TensorCoord{
-              p.num_queries - query_start(), p.head_dim_value - col},
+              p.num_queries, p.head_dim_value - col},
           thread_id());
     };
 
@@ -381,23 +411,17 @@ struct AttentionKernel {
       using OutputTileIteratorAccum = typename MM1::OutputTileIteratorAccum;
       return OutputTileIteratorAccum(
           typename OutputTileIteratorAccum::Params{(int32_t)p.head_dim_value},
-          p.output_accum_ptr + query_start() * p.head_dim_value + col,
+          p.output_accum_ptr + col,
           typename OutputTileIteratorAccum::TensorCoord{
-              p.num_queries - query_start(), p.head_dim_value - col},
+              p.num_queries, p.head_dim_value - col},
           thread_id());
     };
-
-    // End early if causal
-    if (p.causal) {
-      p.num_keys =
-          std::min(int32_t(query_start() + kQueriesPerBlock), p.num_keys);
-    }
 
     // Iterate through keys
     for (int32_t iter_key_start = 0; iter_key_start < p.num_keys;
          iter_key_start += kKeysPerBlock) {
       int32_t problem_size_0_m =
-          std::min((int32_t)kQueriesPerBlock, p.num_queries - query_start());
+          std::min((int32_t)kQueriesPerBlock, p.num_queries);
       int32_t problem_size_0_n =
           std::min(int32_t(kKeysPerBlock), p.num_keys - iter_key_start);
       int32_t const& problem_size_0_k = p.head_dim;
@@ -444,7 +468,7 @@ struct AttentionKernel {
       typename MM0::IteratorA iterator_A(
           typename MM0::IteratorA::Params(
               typename MM0::MmaCore::LayoutA(p.head_dim)),
-          p.query_ptr + query_start() * p.head_dim,
+          p.query_ptr,
           {problem_size_0_m, problem_size_0_k},
           thread_id(),
           tb_offset_A);
@@ -488,13 +512,14 @@ struct AttentionKernel {
 
       // Mask out last if causal
       if (p.causal && p.num_keys - iter_key_start <= kKeysPerBlock) {
+        auto query_start = blockIdx.y * kQueriesPerBlock;
         auto lane_offset = MM0::ScalingCoefsUpdater::get_lane_offset(
             lane_id(), warp_id(), iteratorC_tile_offset);
         int32_t last_col;
         MM0::ScalingCoefsUpdater::iterateRows(
             lane_offset,
             [&](int accum_m) {
-              last_col = accum_m + query_start() - iter_key_start;
+              last_col = query_start + accum_m - iter_key_start;
             },
             [&](int accum_m, int accum_n, int idx) {
               if (accum_n > last_col) {
@@ -704,12 +729,11 @@ struct AttentionKernel {
     static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize, "");
     if (p.logsumexp_ptr && thread_id() < kQueriesPerBlock) {
       auto lse_dim = ceil_div((int32_t)p.num_queries, kAlignLSE) * kAlignLSE;
-      if (query_start() + thread_id() < p.num_queries) {
-        p.logsumexp_ptr[query_start() + thread_id()] =
+      if (thread_id() < p.num_queries) {
+        p.logsumexp_ptr[thread_id()] =
             accum_t(mi[thread_id()]) + std::log(accum_t(s_prime[thread_id()]));
-      } else if (query_start() + thread_id() < lse_dim) {
-        p.logsumexp_ptr[query_start() + thread_id()] =
-            std::numeric_limits<accum_t>::infinity();
+      } else if (thread_id() < lse_dim) {
+        p.logsumexp_ptr[thread_id()] = std::numeric_limits<accum_t>::infinity();
       }
     }
   }
@@ -722,9 +746,6 @@ struct AttentionKernel {
   }
   static __device__ __forceinline__ int16_t thread_id() {
     return threadIdx.x + threadIdx.y * blockDim.x;
-  }
-  static __device__ __forceinline__ int32_t query_start() {
-    return blockIdx.y * kQueriesPerBlock;
   }
 };
 
@@ -760,8 +781,7 @@ __global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)
                                   QUERIES_PER_BLOCK,       \
                                   KEYS_PER_BLOCK,          \
                                   SINGLE_VALUE_ITER>)      \
-  auto batch_id = blockIdx.z;                              \
-  p.advance_batches(batch_id);                             \
+  p.advance_to_block();                                    \
   Kernel::attention_kernel(p);                             \
   _ATTENTION_KERNEL_FORWARD_END();
 
