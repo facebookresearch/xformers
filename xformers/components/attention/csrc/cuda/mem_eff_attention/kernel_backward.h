@@ -140,6 +140,11 @@ struct AttentionBackwardKernel {
   static constexpr bool kPrologueGQ = kPreloadMmas;
   static constexpr bool kPrologueGV = kPreloadMmas;
 
+  // Compute delta for the f16 kernels
+  // TODO: Figure out why it's slower on the f32 kernels
+  // (something due to RF pressure?)
+  static constexpr bool kKernelComputesDelta = kIsHalf;
+
   // Launch bounds
   static constexpr int64_t kNumThreads = kWarpSize * kNumWarpsPerBlock;
   static constexpr int64_t kMinBlocksPerSm =
@@ -456,6 +461,24 @@ struct AttentionBackwardKernel {
       }
       return 0;
     };
+
+    // Computes (dO*out).sum(-1) and writes it to `p.delta_ptr`
+    if (kKernelComputesDelta) {
+      constexpr int kOptimalElements =
+          128 / cutlass::sizeof_bits<scalar_t>::value;
+      if (p.head_dim_value % kOptimalElements == 0) {
+        for (int query_start = 0; query_start < p.num_queries;
+             query_start += kBlockSizeI) {
+          computeDelta<kOptimalElements>(p, query_start);
+        }
+      } else {
+        for (int query_start = 0; query_start < p.num_queries;
+             query_start += kBlockSizeI) {
+          computeDelta<1>(p, query_start);
+        }
+      }
+      __syncthreads();
+    }
 
     OutputFragments output_frags;
     int32_t key_start = 0;
@@ -1057,6 +1080,102 @@ struct AttentionBackwardKernel {
               epilogue_smem, get_thread_id(), get_warp_id(), get_lane_id());
           epilogue(rescale, output_it, accum, output_it);
         }));
+  }
+
+  template <int kElementsPerAccess>
+  static __device__ void computeDelta(Params const& p, int32_t query_start) {
+    // Each thread computes one value for Delta
+    // Depending on warp configuration, we might have multiple
+    // threads of the same warp working on the same row
+    using AccessType = cutlass::Array<scalar_t, kElementsPerAccess>;
+    static_assert(kNumThreads >= kBlockSizeI);
+    static constexpr int kNumThreadsPerLine = kNumThreads / kBlockSizeI;
+    int16_t thread_id = get_thread_id();
+
+    int16_t laneFirstCol =
+        kElementsPerAccess * (get_lane_id() % kNumThreadsPerLine);
+    int16_t laneRow = thread_id / kNumThreadsPerLine;
+    bool rowPred = (query_start + laneRow) < p.num_queries;
+    bool pred = rowPred;
+
+    const __restrict__ AccessType* grad_output_ptr =
+        reinterpret_cast<const __restrict__ AccessType*>(
+            p.grad_output_ptr + (query_start + laneRow) * p.head_dim_value +
+            laneFirstCol);
+    const __restrict__ AccessType* output_ptr =
+        reinterpret_cast<const __restrict__ AccessType*>(
+            p.output_ptr + (query_start + laneRow) * p.head_dim_value +
+            laneFirstCol);
+
+    static constexpr int64_t kMaxIters =
+        kMaxK / (kElementsPerAccess * kNumThreadsPerLine);
+    constexpr int kPipelineStages = 2;
+    accum_t delta_value = accum_t(0);
+    using GlobalLoad =
+        cutlass::arch::global_load<AccessType, sizeof(AccessType)>;
+    AccessType frag_grad_output[kPipelineStages];
+    AccessType frag_output[kPipelineStages];
+
+    auto loadAndIncrement = [&](int ld_pos, bool is_valid) {
+      frag_grad_output[ld_pos].clear();
+      frag_output[ld_pos].clear();
+      GlobalLoad(frag_grad_output[ld_pos], grad_output_ptr, is_valid);
+      GlobalLoad(frag_output[ld_pos], output_ptr, is_valid);
+      grad_output_ptr += kNumThreadsPerLine;
+      output_ptr += kNumThreadsPerLine;
+    };
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int iter = 0; iter < kPipelineStages - 1; ++iter) {
+      int ld_pos = iter % kPipelineStages;
+      pred = pred &&
+          (laneFirstCol + iter * kElementsPerAccess * kNumThreadsPerLine) <
+              p.head_dim_value;
+      loadAndIncrement(ld_pos, pred);
+    }
+    auto columnIteration = [&](int iter) {
+      // Load for next iter
+      int ld_pos = (iter + kPipelineStages - 1) % kPipelineStages;
+      pred = pred &&
+          (laneFirstCol +
+           (iter + kPipelineStages - 1) * kElementsPerAccess *
+               kNumThreadsPerLine) < p.head_dim_value;
+      loadAndIncrement(ld_pos, pred);
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < AccessType::kElements; ++i) {
+        delta_value += accum_t(frag_output[iter % kPipelineStages][i]) *
+            accum_t(frag_grad_output[iter % kPipelineStages][i]);
+      }
+    };
+
+    // If we have a small lower-bound for K, we can unroll the loop
+    if (kMaxK <= 256) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int iter = 0; iter < kMaxIters; ++iter) {
+        columnIteration(iter);
+      }
+    } else {
+      int num_iters =
+          ceil_div(p.head_dim_value, kElementsPerAccess * kNumThreadsPerLine) *
+          (kElementsPerAccess * kNumThreadsPerLine);
+      for (int iter = 0; iter < num_iters; ++iter) {
+        columnIteration(iter);
+      }
+    }
+
+    // Reduce between workers
+    static_assert(
+        kNumThreadsPerLine == 1 || kNumThreadsPerLine == 2 ||
+        kNumThreadsPerLine == 4);
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 1; i < kNumThreadsPerLine; i *= 2) {
+      delta_value = delta_value + __shfl_xor_sync(0xffffffff, delta_value, i);
+    }
+
+    // Store in gmem
+    if (rowPred) {
+      p.delta_ptr[query_start + laneRow] = delta_value;
+    }
   }
 
   static __device__ __forceinline__ int8_t get_lane_id() {

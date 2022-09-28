@@ -152,8 +152,10 @@ mem_efficient_attention_backward_generic(
 
               // TODO: Fuse this into a kernel?
               // This is a bottleneck for smaller sequences (M <= 128)
-              auto delta =
-                  (grad_out.to(at::kFloat) * out.to(at::kFloat)).sum(-1);
+              auto delta = AK::kKernelComputesDelta
+                  ? at::empty(
+                        {B, M}, query.options().dtype(at::ScalarType::Float))
+                  : (grad_out.to(at::kFloat) * out.to(at::kFloat)).sum(-1);
 
               AK::Params params;
               params.query_ptr = (scalar_t*)query.data_ptr();
