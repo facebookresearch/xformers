@@ -100,28 +100,37 @@ class AttentionOpBase(torch.autograd.Function):
     SUPPORTED_MAX_K: float
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None)}
     SUPPORTS_DROPOUT: bool
+    SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
     NAME: str
 
     _TEST_BATCH_SIZES: List[int] = [1, 300]
     _TEST_K: List[int] = [32, 128]
 
     @classmethod
-    def generate_test_shapes_B_Mq_Mkv_K(cls):
+    def generate_test_shapes_B_Mq_Mkv_K_Kv(cls):
         shapes = []
         for B in cls._TEST_BATCH_SIZES:
             for Mq in [32, 256]:
                 for Mkv in [32, 64, 256]:
                     for K in cls._TEST_K:
-                        shapes.append((B, Mq, Mkv, K))
+                        shapes.append((B, Mq, Mkv, K, K))
             Mq = 256
             Mkv = 128
             K = 32
             # Weird values of parameters
-            for M in [2, 3, 15, 31, 32, 34]:
-                shapes.append((B, M, Mkv, K))
-                shapes.append((B, Mq, M, K))
-            for _K in [1, 2, 3, 31, 64, 512]:
-                shapes.append((B, Mq, Mkv, _K))
+            for M in [2, 3, 15, 31, 32, 34, 68, 72, 90, 132, 136]:
+                shapes.append((B, M, Mkv, K, K))
+                shapes.append((B, Mq, M, K, K))
+            for _K in [1, 2, 3, 31, 34, 36, 38, 40, 64, 256 + 2, 256 + 8, 512]:
+                shapes.append((B, Mq, Mkv, _K, _K))
+            # Different value for K / Kv
+            for _K in [32, 36, 64, 256 + 8]:
+                shapes.append((B, Mq, Mkv, K, _K))
+                shapes.append((B, Mq, Mkv, _K, K))
+            # Exotic sizes
+            for K in cls._TEST_K:
+                shapes.append((B, 16, 4096, K, K))
+                shapes.append((B, 4096, 16, K, K))
         return shapes
 
     @classmethod
@@ -146,7 +155,9 @@ class AttentionOpBase(torch.autograd.Function):
             return False
         if d.dtype not in cls.SUPPORTED_DTYPES:
             return False
-        if d.k > cls.SUPPORTED_MAX_K:
+        if not cls.SUPPORTS_DIFFERENT_VALUE_EMBED and d.k != d.kv:
+            return False
+        if max(d.k, d.kv) > cls.SUPPORTED_MAX_K:
             return False
         if d.attn_bias_type not in cls.SUPPORTED_ATTN_BIAS_TYPES:
             return False
@@ -248,6 +259,7 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
     SUPPORTED_MAX_K = math.inf
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
+    SUPPORTS_DIFFERENT_VALUE_EMBED = True
     NAME = "cutlass"
 
     _TEST_K: List[int] = [
@@ -315,8 +327,8 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
         if sm >= 80:
             matmul_alignment_mn = 4
         if uses_tensorcores:
-            matmul_alignment_mn = max(matmul_alignment_mn, 64 // bits_per_scalar)
-        if d.k % matmul_alignment_mn != 0:
+            matmul_alignment_mn = max(matmul_alignment_mn, 128 // bits_per_scalar)
+        if (d.k % matmul_alignment_mn != 0) or (d.kv % matmul_alignment_mn != 0):
             return False
         return True
 
@@ -359,6 +371,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     SUPPORTED_MAX_K = 128
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
+    SUPPORTS_DIFFERENT_VALUE_EMBED = False
     NAME = "flshatt"
 
     @classmethod
@@ -398,7 +411,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         seqlen_k = key.shape[1]
         num_heads = query.shape[2]
         head_dim_q = query.shape[3]
-        head_dim_v = query.shape[3]
+        head_dim_v = value.shape[3]
         assert num_heads == 1
 
         cu_seqlens_k = torch.arange(
@@ -591,6 +604,11 @@ class AttentionOpDispatch:
     attn_bias_type: Any
     kv_len: int
     q_len: int
+    kv: int = -1
+
+    def __post_init__(self):
+        if self.kv == -1:
+            self.kv = self.k
 
     @property
     def op(self) -> Type[AttentionOpBase]:
@@ -617,6 +635,7 @@ class AttentionOpDispatch:
             dtype=query.dtype,
             device=query.device,
             k=query.shape[-1],
+            kv=value.shape[-1],
             has_dropout=p > 0.0,
             attn_bias_type=type(attn_bias),
             kv_len=value.shape[-2],

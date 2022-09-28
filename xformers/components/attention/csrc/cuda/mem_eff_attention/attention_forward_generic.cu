@@ -116,6 +116,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
   int64_t N = key.size(1);
   int64_t num_heads = query.size(-2);
   int64_t K = query.size(-1);
+  int64_t Kv = value.size(-1);
 
   at::Tensor res;
   at::Tensor logsumexp;
@@ -126,7 +127,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     (void)_k;
 
     res = at::empty(
-        {B, M, num_heads, K},
+        {B, M, num_heads, Kv},
         query.options().dtype(
             TypeTraits<typename Kernel::output_t>::atScalarType()));
 
