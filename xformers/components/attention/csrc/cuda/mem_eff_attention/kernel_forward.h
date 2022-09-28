@@ -336,6 +336,9 @@ struct AttentionKernel {
       SharedStorageEpilogueInLoop>::type;
 
   static void __host__ check_supported(Params const& p) {
+    CHECK_ALIGNED_PTR(p.query_ptr, kAlignmentQ);
+    CHECK_ALIGNED_PTR(p.key_ptr, kAlignmentK);
+    CHECK_ALIGNED_PTR(p.value_ptr, kAlignmentV);
     TORCH_CHECK(
         p.head_dim % kAlignmentQ == 0, "query is not correctly aligned");
     TORCH_CHECK(p.head_dim % kAlignmentK == 0, "key is not correctly aligned");
