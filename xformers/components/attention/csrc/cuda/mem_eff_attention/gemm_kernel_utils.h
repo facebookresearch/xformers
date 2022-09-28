@@ -51,6 +51,14 @@
           "Your device is too old. We require compute capability >= 50"); \
     }                                                                     \
   }
+
+#define CHECK_NOSPARSE_CONTIGUOUS_CUDA(TENSOR)                         \
+  TORCH_CHECK(TENSOR.is_cuda(), #TENSOR " must be a CUDA tensor");     \
+  TORCH_CHECK(!TENSOR.is_sparse(), #TENSOR " must be a dense tensor"); \
+  TORCH_CHECK(TENSOR.is_contiguous());
+
+#define CHECK_ALIGNED_PTR(PTR, ALIGNMENT) \
+  TORCH_CHECK(uint64_t(PTR) % ALIGNMENT == 0, #PTR " is not correctly aligned")
 namespace gemm_kernel_utils {
 template <typename scalar_t>
 struct TypeTraits;

@@ -217,14 +217,14 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
         return grad_q, grad_k, grad_v, None, None
 
 
-class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
-    FORWARD_OPERATOR = _get_xformers_operator("efficient_attention_forward_generic")
+class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
+    FORWARD_OPERATOR = _get_xformers_operator("efficient_attention_forward_cutlass")
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.float, torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = math.inf
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
-    NAME = "fwd_gen"
+    NAME = "cutlass"
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
@@ -246,27 +246,21 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
             key=key,
             value=value,
             compute_logsumexp=False,
-            attn_bias=None,
-            p=p,
             causal=isinstance(attn_bias, LowerTriangularMask),
         )[0]
 
     @classmethod
     def forward(cls, ctx, query, key, value, attn_bias, p):
         causal = isinstance(attn_bias, LowerTriangularMask)
-        out, lse, rng_seed, rng_offset = cls.FORWARD_OPERATOR(
+        out, lse = cls.FORWARD_OPERATOR(
             query=query,
             key=key,
             value=value,
             compute_logsumexp=True,
-            attn_bias=None,
-            p=p,
             causal=causal,
         )
         ctx.save_for_backward(query, key, value, lse, out)
         ctx.p = p
-        ctx.rng_seed = rng_seed
-        ctx.rng_offset = rng_offset
         ctx.causal = causal
         return out
 
@@ -281,7 +275,7 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
 
     @classmethod
     def supports(cls, d: "AttentionOpDispatch") -> bool:
-        if not super(MemoryEfficientAttentionGenericForwardOp, cls).supports(d):
+        if not super(MemoryEfficientAttentionCutlassOp, cls).supports(d):
             return False
         cap = torch.cuda.get_device_capability(d.device)
         sm = cap[0] * 10 + cap[1]
@@ -299,25 +293,18 @@ class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
     @classmethod
     def backward(cls, ctx, grad):
         query, key, value, lse, out = ctx.saved_tensors
-        p = ctx.p
-        rng_seed = ctx.rng_seed
-        rng_offset = ctx.rng_offset
         dtype = query.dtype
         (
             grad_q,
             grad_k,
             grad_v,
-        ) = torch.ops.xformers.efficient_attention_backward_generic(
+        ) = torch.ops.xformers.efficient_attention_backward_cutlass(
             grad.to(dtype),
             query,
             key,
             value,
             lse,
             out.to(dtype),
-            None,
-            p,
-            rng_seed,
-            rng_offset,
             causal=ctx.causal,
         )
         return grad_q, grad_k, grad_v, None, None
@@ -571,7 +558,7 @@ class AttentionOpDispatch:
     def op(self) -> Type[AttentionOpBase]:
         priority_list_ops: List[Type[AttentionOpBase]] = [
             MemoryEfficientAttentionFlashAttentionOp,
-            MemoryEfficientAttentionGenericForwardOp,
+            MemoryEfficientAttentionCutlassOp,
             MemoryEfficientAttentionOp,
         ]
         for op in priority_list_ops:
