@@ -57,6 +57,8 @@
   TORCH_CHECK(!TENSOR.is_sparse(), #TENSOR " must be a dense tensor"); \
   TORCH_CHECK(TENSOR.is_contiguous());
 
+#define CHECK_ALIGNED_PTR(PTR, ALIGNMENT) \
+  TORCH_CHECK(uint64_t(PTR) % ALIGNMENT == 0, #PTR " is not correctly aligned")
 namespace gemm_kernel_utils {
 template <typename scalar_t>
 struct TypeTraits;
