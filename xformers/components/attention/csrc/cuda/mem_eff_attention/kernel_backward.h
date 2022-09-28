@@ -1340,6 +1340,7 @@ struct AttentionBackwardKernel {
     int16_t laneFirstCol =
         kElementsPerAccess * (get_lane_id() % kNumThreadsPerLine);
     int16_t laneRow = thread_id / kNumThreadsPerLine;
+    bool pred = (query_start + laneRow) < p.num_queries;
 
     const __restrict__ AccessType* grad_output_ptr =
         reinterpret_cast<const __restrict__ AccessType*>(
@@ -1371,17 +1372,18 @@ struct AttentionBackwardKernel {
     CUTLASS_PRAGMA_UNROLL
     for (int iter = 0; iter < kPipelineStages - 1; ++iter) {
       int ld_pos = iter % kPipelineStages;
-      bool pred =
+      pred = pred &&
           (laneFirstCol + iter * kElementsPerAccess * kNumThreadsPerLine) <
-          p.head_dim_value;
+              p.head_dim_value;
       loadAndIncrement(ld_pos, pred);
     }
     auto columnIteration = [&](int iter) {
       // Load for next iter
       int ld_pos = (iter + kPipelineStages - 1) % kPipelineStages;
-      bool pred = (laneFirstCol +
-                   (iter + kPipelineStages - 1) * kElementsPerAccess *
-                       kNumThreadsPerLine) < p.head_dim_value;
+      pred = pred &&
+          (laneFirstCol +
+           (iter + kPipelineStages - 1) * kElementsPerAccess *
+               kNumThreadsPerLine) < p.head_dim_value;
       loadAndIncrement(ld_pos, pred);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < AccessType::kElements; ++i) {
