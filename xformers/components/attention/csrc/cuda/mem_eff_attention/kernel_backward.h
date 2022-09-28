@@ -602,6 +602,11 @@ struct AttentionBackwardKernel {
   };
 
   static void __host__ check_supported(Params const& p) {
+    CHECK_ALIGNED_PTR(p.query_ptr, kMinimumAlignment);
+    CHECK_ALIGNED_PTR(p.key_ptr, kMinimumAlignment);
+    CHECK_ALIGNED_PTR(p.value_ptr, kMinimumAlignment);
+    CHECK_ALIGNED_PTR(p.output_ptr, kMinimumAlignment);
+    CHECK_ALIGNED_PTR(p.grad_output_ptr, kMinimumAlignment);
     TORCH_CHECK(
         p.head_dim % kMinimumAlignment == 0,
         "query/key is not correctly aligned");
