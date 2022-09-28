@@ -8,6 +8,7 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 
+#include "cutlass/bfloat16.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/layout/vector.h"

@@ -8,10 +8,11 @@ kernel="BACKWARD"
 kernel_lower=`echo "\$kernel" | awk '{print tolower($0)}'`
 for aligned in "false" "true"; do
     for maxk in 64 128 ""; do
-        for dtype_name in "f32" "f16"; do
+        for dtype_name in "f32" "f16" "bf16"; do
             case "$dtype_name" in
                 "f32") dtype="float" ;;
                 "f16") dtype="cutlass::half_t" ;;
+                "bf16") dtype="cutlass::bfloat16_t" ;;
             esac
             [[ $aligned = "true" ]] && s="_aligned" || s=""
             [[ $maxk = "" ]] && s="${s}" || s="${s}_k$maxk"
@@ -34,10 +35,11 @@ kernel="FORWARD"
 kernel_lower=`echo "\$kernel" | awk '{print tolower($0)}'`
 for aligned in "false" "true"; do
     [[ $aligned = "true" ]] && aligned_suffix="_aligned" || aligned_suffix=""
-    for dtype_name in "f32" "f16"; do
+    for dtype_name in "f32" "f16" "bf16"; do
         case "$dtype_name" in
             "f32") dtype="float" ;;
             "f16") dtype="cutlass::half_t" ;;
+            "bf16") dtype="cutlass::bfloat16_t" ;;
         esac
         FNAME="${kernel_lower}_${dtype_name}${aligned_suffix}.cu"
         echo $FNAME

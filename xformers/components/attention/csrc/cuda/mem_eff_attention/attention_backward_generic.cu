@@ -71,40 +71,6 @@ mem_efficient_attention_backward_generic(
       at::cuda::getDeviceProperties(query.device().index());
   const int computeCapability = properties->major * 10 + properties->minor;
 
-#define DISPATCH_ARCHTAG(func)                                            \
-  {                                                                       \
-    if (computeCapability >= 80) {                                        \
-      using ArchTag = cutlass::arch::Sm80;                                \
-      func();                                                             \
-    } else if (computeCapability >= 75) {                                 \
-      using ArchTag = cutlass::arch::Sm75;                                \
-      func();                                                             \
-    } else if (computeCapability >= 70) {                                 \
-      using ArchTag = cutlass::arch::Sm70;                                \
-      func();                                                             \
-    } else if (computeCapability >= 50) {                                 \
-      using ArchTag = cutlass::arch::Sm50;                                \
-      func();                                                             \
-    } else {                                                              \
-      TORCH_CHECK(                                                        \
-          false,                                                          \
-          "Your device is too old. We require compute capability >= 50"); \
-    }                                                                     \
-  }
-
-#define DISPATCH_TYPES(func)                                          \
-  {                                                                   \
-    if (query.scalar_type() == at::ScalarType::Float) {               \
-      using scalar_t = float;                                         \
-      func();                                                         \
-    } else if (query.scalar_type() == at::ScalarType::Half) {         \
-      using scalar_t = cutlass::half_t;                               \
-      func();                                                         \
-    } else {                                                          \
-      TORCH_CHECK(false, "Only fp32 & half supported at the moment"); \
-    }                                                                 \
-  }
-
 #define DISPATCH_MAXK(func)                                          \
   {                                                                  \
     const auto maxK = std::max(query.size(2), value.size(2));        \
@@ -121,90 +87,99 @@ mem_efficient_attention_backward_generic(
   }
 
   DISPATCH_MAXK(([&] {
-    DISPATCH_TYPES(([&]() {
-      bool isAligned;
-      DISPATCH_ARCHTAG(([&]() {
-        using AlignedAK =
-            AttentionBackwardKernel<ArchTag, scalar_t, true, kMaxK>;
-        isAligned =
-            (query.stride(1) % AlignedAK::kOptimalAlignement == 0 &&
-             key.stride(1) % AlignedAK::kOptimalAlignement == 0 &&
-             value.stride(1) % AlignedAK::kOptimalAlignement == 0);
-        // TODO: Should we warn or log somewhere when we use a less efficient
-        // kernel due to wrong alignment?
+    DISPATCH_TYPES(
+        query, ([&]() {
+          bool isAligned;
+          DISPATCH_ARCHTAG(
+              computeCapability, ([&]() {
+                using AlignedAK =
+                    AttentionBackwardKernel<ArchTag, scalar_t, true, kMaxK>;
+                isAligned =
+                    (query.stride(1) % AlignedAK::kOptimalAlignement == 0 &&
+                     key.stride(1) % AlignedAK::kOptimalAlignement == 0 &&
+                     value.stride(1) % AlignedAK::kOptimalAlignement == 0);
+                // TODO: Should we warn or log somewhere when we use a less
+                // efficient kernel due to wrong alignment?
 
-        DISPATCH_BOOL(
-            isAligned, kIsAligned, ([&]() {
-              using AK =
-                  AttentionBackwardKernel<ArchTag, scalar_t, kIsAligned, kMaxK>;
-              size_t smem_bytes = sizeof(typename AK::SharedStorage);
-              // Might happen on Sm80/half, where the minimum alignment is
-              // 32bits
-              TORCH_CHECK(
-                  query.stride(1) % AK::kMinimumAlignment == 0,
-                  "query is not correctly aligned");
-              TORCH_CHECK(
-                  key.stride(1) % AK::kMinimumAlignment == 0,
-                  "key is not correctly aligned");
-              TORCH_CHECK(
-                  value.stride(1) % AK::kMinimumAlignment == 0,
-                  "value is not correctly aligned");
+                DISPATCH_BOOL(
+                    isAligned, kIsAligned, ([&]() {
+                      using AK = AttentionBackwardKernel<
+                          ArchTag,
+                          scalar_t,
+                          kIsAligned,
+                          kMaxK>;
+                      size_t smem_bytes = sizeof(typename AK::SharedStorage);
+                      // Might happen on Sm80/half, where the minimum alignment
+                      // is 32bits
+                      TORCH_CHECK(
+                          query.stride(1) % AK::kMinimumAlignment == 0,
+                          "query is not correctly aligned");
+                      TORCH_CHECK(
+                          key.stride(1) % AK::kMinimumAlignment == 0,
+                          "key is not correctly aligned");
+                      TORCH_CHECK(
+                          value.stride(1) % AK::kMinimumAlignment == 0,
+                          "value is not correctly aligned");
 
-              // TODO: Fuse this into a kernel?
-              // This is a bottleneck for smaller sequences (M <= 128)
-              auto delta = AK::kKernelComputesDelta
-                  ? at::empty(
-                        {B, M}, query.options().dtype(at::ScalarType::Float))
-                  : (grad_out.to(at::kFloat) * out.to(at::kFloat)).sum(-1);
+                      // TODO: Fuse this into a kernel?
+                      // This is a bottleneck for smaller sequences (M <= 128)
+                      auto delta = AK::kKernelComputesDelta
+                          ? at::empty(
+                                {B, M},
+                                query.options().dtype(at::ScalarType::Float))
+                          : (grad_out.to(at::kFloat) * out.to(at::kFloat))
+                                .sum(-1);
 
-              AK::Params params;
-              params.query_ptr = (scalar_t*)query.data_ptr();
-              params.key_ptr = (scalar_t*)key.data_ptr();
-              params.value_ptr = (scalar_t*)value.data_ptr();
-              params.logsumexp_ptr =
-                  (typename AK::lse_scalar_t*)logsumexp.data_ptr();
-              params.output_ptr = (scalar_t*)out.data_ptr();
-              params.grad_output_ptr = (scalar_t*)grad_out.data_ptr();
-              params.grad_query_ptr = (scalar_t*)grad_q.data_ptr();
-              params.grad_key_ptr = (scalar_t*)grad_k.data_ptr();
-              params.grad_value_ptr = (scalar_t*)grad_v.data_ptr();
-              params.delta_ptr = (float*)delta.data_ptr();
-              params.head_dim = query.size(2);
-              params.head_dim_value = value.size(2);
-              params.num_queries = query.size(1);
-              params.num_keys = key.size(1);
-              params.num_batches = B;
-              params.causal = causal;
+                      AK::Params params;
+                      params.query_ptr = (scalar_t*)query.data_ptr();
+                      params.key_ptr = (scalar_t*)key.data_ptr();
+                      params.value_ptr = (scalar_t*)value.data_ptr();
+                      params.logsumexp_ptr =
+                          (typename AK::lse_scalar_t*)logsumexp.data_ptr();
+                      params.output_ptr = (scalar_t*)out.data_ptr();
+                      params.grad_output_ptr = (scalar_t*)grad_out.data_ptr();
+                      params.grad_query_ptr = (scalar_t*)grad_q.data_ptr();
+                      params.grad_key_ptr = (scalar_t*)grad_k.data_ptr();
+                      params.grad_value_ptr = (scalar_t*)grad_v.data_ptr();
+                      params.delta_ptr = (float*)delta.data_ptr();
+                      params.head_dim = query.size(2);
+                      params.head_dim_value = value.size(2);
+                      params.num_queries = query.size(1);
+                      params.num_keys = key.size(1);
+                      params.num_batches = B;
+                      params.causal = causal;
 
-              constexpr auto kernel_fn = attention_kernel_backward_batched<AK>;
+                      constexpr auto kernel_fn =
+                          attention_kernel_backward_batched<AK>;
 
-              if (smem_bytes > 0xc000) {
-                TORCH_INTERNAL_ASSERT(
-                    computeCapability >= 70,
-                    "This kernel requires too much shared memory on this machine!");
-                cudaFuncSetAttribute(
-                    kernel_fn,
-                    cudaFuncAttributeMaxDynamicSharedMemorySize,
-                    smem_bytes);
-              }
+                      if (smem_bytes > 0xc000) {
+                        TORCH_INTERNAL_ASSERT(
+                            computeCapability >= 70,
+                            "This kernel requires too much shared memory on this machine!");
+                        cudaFuncSetAttribute(
+                            kernel_fn,
+                            cudaFuncAttributeMaxDynamicSharedMemorySize,
+                            smem_bytes);
+                      }
 
-              auto checkBinaryArchMatches = [&]() {
-                cudaFuncAttributes attr;
-                AT_CUDA_CHECK(cudaFuncGetAttributes(&attr, kernel_fn));
-                return attr.binaryVersion >= ArchTag::kMinComputeCapability;
-              };
-              TORCH_INTERNAL_ASSERT(
-                  checkBinaryArchMatches(),
-                  "Something went wrong in the build process");
+                      auto checkBinaryArchMatches = [&]() {
+                        cudaFuncAttributes attr;
+                        AT_CUDA_CHECK(cudaFuncGetAttributes(&attr, kernel_fn));
+                        return attr.binaryVersion >=
+                            ArchTag::kMinComputeCapability;
+                      };
+                      TORCH_INTERNAL_ASSERT(
+                          checkBinaryArchMatches(),
+                          "Something went wrong in the build process");
 
-              kernel_fn<<<
-                  params.getBlocksGrid(),
-                  params.getThreadsGrid(),
-                  smem_bytes>>>(params);
-              AT_CUDA_CHECK(cudaGetLastError());
-            }));
-      }));
-    }));
+                      kernel_fn<<<
+                          params.getBlocksGrid(),
+                          params.getThreadsGrid(),
+                          smem_bytes>>>(params);
+                      AT_CUDA_CHECK(cudaGetLastError());
+                    }));
+              }));
+        }));
   }));
   return std::make_tuple(grad_q, grad_k, grad_v);
 } // namespace

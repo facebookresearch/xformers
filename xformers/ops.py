@@ -88,12 +88,12 @@ class AttentionOpBase(torch.autograd.Function):
     FORWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
         torch.float: 3e-4,
         torch.half: 4e-3,
-        torch.bfloat16: 2e-3,
+        torch.bfloat16: 2e-2,
     }
     FORWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
         torch.float: 2e-5,
-        torch.half: 2e-4,
-        torch.bfloat16: 2e-5,
+        torch.half: 4e-4,
+        torch.bfloat16: 5e-3,
     }
     SUPPORTED_DEVICES: Set[str]
     SUPPORTED_DTYPES: Set[torch.dtype]
@@ -171,6 +171,14 @@ class AttentionOpBase(torch.autograd.Function):
             return False
         if d.has_dropout and not cls.SUPPORTS_DROPOUT:
             return False
+        # bfloat16 is only supported on A100+
+        # ... although the kernels can still run and give the
+        # correct result
+        if d.dtype is torch.bfloat16 and (
+            not device_type.startswith("cuda")
+            or torch.cuda.get_device_capability(d.device)[0] < 8
+        ):
+            return False
         return True
 
 
@@ -212,7 +220,7 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
 class MemoryEfficientAttentionGenericForwardOp(AttentionOpBase):
     FORWARD_OPERATOR = _get_xformers_operator("efficient_attention_forward_generic")
     SUPPORTED_DEVICES = {"cuda"}
-    SUPPORTED_DTYPES = {torch.float, torch.half}
+    SUPPORTED_DTYPES = {torch.float, torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = math.inf
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
@@ -323,14 +331,6 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     """
 
     FORWARD_OPERATOR = None
-    FORWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
-        torch.half: 5e-2,
-        torch.bfloat16: 5e-2,
-    }
-    FORWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
-        torch.half: 1e-2,
-        torch.bfloat16: 1e-2,
-    }
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 128
@@ -349,8 +349,6 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         device_capability = torch.cuda.get_device_capability(d.device)
         is_sm80 = device_capability[0] >= 8
         if d.k not in [16, 32, 64, 128] or (d.k == 128 and not is_sm80):
-            return False
-        if d.dtype is torch.bfloat16 and not is_sm80:
             return False
         return device_capability >= (7, 5)
 

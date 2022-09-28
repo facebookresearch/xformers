@@ -5,6 +5,21 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Some helper functions
 ////////////////////////////////////////////////////////////////////////////////
+#define DISPATCH_TYPES(tensor, func)                                        \
+  {                                                                         \
+    if (query.scalar_type() == at::ScalarType::Float) {                     \
+      using scalar_t = float;                                               \
+      func();                                                               \
+    } else if (query.scalar_type() == at::ScalarType::Half) {               \
+      using scalar_t = cutlass::half_t;                                     \
+      func();                                                               \
+    } else if (query.scalar_type() == at::ScalarType::BFloat16) {           \
+      using scalar_t = cutlass::bfloat16_t;                                 \
+      func();                                                               \
+    } else {                                                                \
+      TORCH_CHECK(false, "Only fp32, half & bf16 supported at the moment"); \
+    }                                                                       \
+  }
 
 #define DISPATCH_BOOL(BOOL_V, BOOL_NAME, F) \
   {                                         \
@@ -16,7 +31,26 @@
       F();                                  \
     }                                       \
   }
-
+#define DISPATCH_ARCHTAG(CC, func)                                        \
+  {                                                                       \
+    if (CC >= 80) {                                                       \
+      using ArchTag = cutlass::arch::Sm80;                                \
+      func();                                                             \
+    } else if (CC >= 75) {                                                \
+      using ArchTag = cutlass::arch::Sm75;                                \
+      func();                                                             \
+    } else if (CC >= 70) {                                                \
+      using ArchTag = cutlass::arch::Sm70;                                \
+      func();                                                             \
+    } else if (CC >= 50) {                                                \
+      using ArchTag = cutlass::arch::Sm50;                                \
+      func();                                                             \
+    } else {                                                              \
+      TORCH_CHECK(                                                        \
+          false,                                                          \
+          "Your device is too old. We require compute capability >= 50"); \
+    }                                                                     \
+  }
 namespace gemm_kernel_utils {
 template <typename scalar_t>
 struct TypeTraits;
@@ -24,7 +58,6 @@ struct TypeTraits;
 template <>
 struct TypeTraits<cutlass::half_t> {
   using scalar_t = cutlass::half_t;
-  using torch_dtype = half;
 
   static constexpr __host__ at::ScalarType atScalarType() {
     return at::ScalarType::Half;
@@ -40,9 +73,25 @@ struct TypeTraits<cutlass::half_t> {
 };
 
 template <>
+struct TypeTraits<cutlass::bfloat16_t> {
+  using scalar_t = cutlass::bfloat16_t;
+
+  static constexpr __host__ at::ScalarType atScalarType() {
+    return at::ScalarType::BFloat16;
+  }
+  template <int nDim>
+  static __host__ at::PackedTensorAccessor32<scalar_t, nDim> packed_accessor(
+      at::Tensor const& tensor) {
+    return at::PackedTensorAccessor32<scalar_t, nDim>(
+        (scalar_t*)(tensor.data_ptr()),
+        tensor.sizes().data(),
+        tensor.strides().data());
+  }
+};
+
+template <>
 struct TypeTraits<float> {
   using scalar_t = float;
-  using torch_dtype = float;
 
   static constexpr __host__ at::ScalarType atScalarType() {
     return at::ScalarType::Float;
@@ -89,12 +138,14 @@ struct DefaultGemmType<
   using Operator = cutlass::arch::OpMultiplyAddFastF32;
 };
 
-// Specialization for tensorcores with f16 - Sm75+
-template <typename ArchTag>
+// Specialization for tensorcores with f16/bf16 - Sm75+
+template <typename ArchTag, typename scalar_t>
 struct DefaultGemmType<
     ArchTag,
-    cutlass::half_t,
-    typename std::enable_if<ArchTag::kMinComputeCapability >= 75>::type> {
+    scalar_t,
+    typename std::enable_if<
+        ArchTag::kMinComputeCapability >= 75 &&
+        cutlass::sizeof_bits<scalar_t>::value == 16>::type> {
   static constexpr int ThreadK = 32;
   static constexpr int WarpK = 32;
   static constexpr int kMinimumAlignment = 4;
