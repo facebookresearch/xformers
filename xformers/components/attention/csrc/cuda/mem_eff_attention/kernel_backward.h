@@ -147,7 +147,12 @@ struct AttentionBackwardKernel {
   // Compute delta for the f16 kernels
   // TODO: Figure out why it's slower on the f32 kernels
   // (something due to RF pressure?)
-  static constexpr bool kKernelComputesDelta = kIsHalf;
+  // TODO: Remove condition on `kOutputInRF` - this is needed to work
+  // around a compiler bug on V100, not exactly sure why but I spent
+  // too much time on this already. Reproducible with
+  // (B, Mq, Mkv, K) = (1, 1, 1, 136) for instance
+  static constexpr bool kKernelComputesDelta =
+      kIsHalf && (kOutputInRF || ArchTag::kMinComputeCapability != 70);
 
   // Launch bounds
   static constexpr int64_t kNumThreads = kWarpSize * kNumWarpsPerBlock;
