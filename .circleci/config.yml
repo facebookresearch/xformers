@@ -390,7 +390,7 @@ jobs:
       - run_gpu_ci:
           arch: "7.0"
 
-  gpu_tests_cu114_sm60:
+  gpu_tests_cu114_sm61:
     <<: *gpu_cu114
     machine:
       image: ubuntu-2004-cuda-11.4:202110-01
@@ -490,7 +490,17 @@ workflows:
             ignore:
               - gh-pages
 
-      - gpu_tests:
+      - gpu_tests_cu114_sm61:
+        filters:
+          branches:
+            ignore:
+              - gh-pages
+      - gpu_tests_cu114_sm70:
+        filters:
+          branches:
+            ignore:
+              - gh-pages
+      - gpu_tests_cu114_sm75:
         filters:
           branches:
             ignore:
