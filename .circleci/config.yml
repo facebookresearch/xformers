@@ -22,6 +22,7 @@ gpu_cu114: &gpu_cu114
   machine:
     image: ubuntu-2004-cuda-11.4:202110-01
     resource_class: gpu.nvidia.medium
+  working_directory: ~/xformers
 
 
 binary_common: &binary_common
@@ -280,6 +281,48 @@ commands:
               $CONDA_PYTHON -m torch.utils.collect_env
               wget -O ~/venv/check_version.py https://raw.githubusercontent.com/min-xu-ai/check_verion/main/check_version.py
 
+    run_gpu_ci: &run_gpu_ci
+      parameters:
+        arch:
+          type: string
+      steps:
+        - checkout
+
+        - run: nvidia-smi
+        - run:
+            name: Setup env variables
+            command: |
+              echo 'export TORCH_CUDA_ARCH_LIST="<<parameters.arch>>"' >>  $BASH_ENV
+              echo 'export FORCE_CUDA=1' >>  $BASH_ENV
+              echo 'export XFORMERS_ENABLE_DEBUG_ASSERTIONS=1' >>  $BASH_ENV
+
+        # Cache the venv directory that contains dependencies
+        - restore_cache:
+            keys:
+              - cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+
+        - <<: *setup_conda
+        - <<: *install_dep
+
+        - check_torch:
+            major: 1
+            minor: 11
+
+        - save_cache:
+            paths:
+              - ~/miniconda
+              - ~/venv
+
+            key: cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+
+        - <<: *install_repo
+        - <<: *run_unittests
+        - <<: *run_benchmarks
+        - <<: *run_pytorch_benchmark
+        - <<: *run_vit_benchmark
+
+        - store_test_results:
+            path: test-results
 
 # -------------------------------------------------------------------------------------
 # Jobs to run
@@ -327,48 +370,35 @@ jobs:
       - store_test_results:
           path: test-results
 
-
-  gpu_tests:
+  gpu_tests_cu114_sm75:
     <<: *gpu_cu114
-
-    working_directory: ~/xformers
+    machine:
+      image: ubuntu-2004-cuda-11.4:202110-01
+      resource_class: gpu.nvidia.medium  # T4
 
     steps:
-      - checkout
+      - run_gpu_ci:
+          arch: "7.5"
 
-      - run: nvidia-smi
+  gpu_tests_cu114_sm70:
+    <<: *gpu_cu114
+    machine:
+      image: ubuntu-2004-cuda-11.4:202110-01
+      resource_class: gpu.nvidia.large  # V100
 
-      # Cache the venv directory that contains dependencies
-      - restore_cache:
-          keys:
-            - cache-key-gpu-114-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+    steps:
+      - run_gpu_ci:
+          arch: "7.0"
 
-      - <<: *setup_conda
-      - <<: *install_dep
+  gpu_tests_cu114_sm60:
+    <<: *gpu_cu114
+    machine:
+      image: ubuntu-2004-cuda-11.4:202110-01
+      resource_class: gpu.nvidia.small  # P4
 
-      - check_torch:
-          major: 1
-          minor: 11
-
-      - save_cache:
-          paths:
-            - ~/miniconda
-            - ~/venv
-
-          key: cache-key-gpu-114-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
-
-      - <<: *install_repo
-
-      - <<: *run_coverage
-
-      - <<: *run_benchmarks
-
-      - <<: *run_pytorch_benchmark
-
-      - <<: *run_vit_benchmark
-
-      - store_test_results:
-          path: test-results
+    steps:
+      - run_gpu_ci:
+          arch: "6.1"
 
   gpu_experimental_tests:
     <<: *gpu_cu114
@@ -402,6 +432,7 @@ jobs:
 
       - <<: *install_experimental_repo
       - <<: *run_experimental_unittests
+      - <<: *run_coverage
 
   binary_linux_wheel:
     <<: *binary_common

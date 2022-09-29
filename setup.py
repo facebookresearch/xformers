@@ -181,7 +181,9 @@ def get_extensions():
         include_dirs += [sputnik_dir, cutlass_dir]
         nvcc_flags = os.getenv("NVCC_FLAGS", "")
         if nvcc_flags == "":
-            nvcc_flags = ["--use_fast_math", "-DNDEBUG"]
+            nvcc_flags = ["--use_fast_math"]
+            if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
+                nvcc_flags.append("-DNDEBUG")
         else:
             nvcc_flags = nvcc_flags.split(" ")
         cuda_version = get_cuda_version(CUDA_HOME)
