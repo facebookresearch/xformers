@@ -41,9 +41,9 @@
                       /* Run a more efficient kernel (with `isAligned=True`)  \
                       if memory is correctly aligned*/                        \
                       bool isAligned =                                        \
-                          (QUERY.stride(1) % AlignedAK::kAlignmentQ == 0 &&  \
-                           KEY.stride(1) % AlignedAK::kAlignmentK == 0 &&    \
-                           VALUE.stride(1) % AlignedAK::kAlignmentV == 0);   \
+                          (QUERY.stride(2) % AlignedAK::kAlignmentQ == 0 &&  \
+                           KEY.stride(2) % AlignedAK::kAlignmentK == 0 &&    \
+                           VALUE.stride(2) % AlignedAK::kAlignmentV == 0);   \
                       /* TODO: Should we warn or log somewhere when we use a  \
                       less efficient kernel due to wrong alignment? */        \
                       DISPATCH_BOOL(isAligned, kIsAligned, ([&]() {           \
