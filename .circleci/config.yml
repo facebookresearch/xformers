@@ -366,6 +366,7 @@ jobs:
     steps:
       - run_gpu_ci:
           arch: "7.5"
+      - <<: *run_coverage
 
   gpu_tests_cu114_sm70:
     <<: *gpu_cu114
@@ -419,7 +420,6 @@ jobs:
 
       - <<: *install_experimental_repo
       - <<: *run_experimental_unittests
-      - <<: *run_coverage
 
   binary_linux_wheel:
     <<: *binary_common

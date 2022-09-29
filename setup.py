@@ -74,7 +74,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
 
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST", DEFAULT_ARCHS_LIST)
     nvcc_archs_flags = []
-    for arch in archs_list.split(";"):
+    for arch in archs_list.replace(" ", ";").split(";"):
         assert len(arch) >= 3, f"Invalid sm version: {arch}"
 
         num = 10 * int(arch[0]) + int(arch[2])
@@ -155,8 +155,9 @@ def get_extensions():
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
     if not os.path.exists(cutlass_dir):
         raise RuntimeError(
-            "CUTLASS submodule not found. Did you forget "
-            "to run `git submodule update --init --recursive` ?"
+            f"CUTLASS submodule not found at {cutlass_dir}. "
+            "Did you forget to run "
+            "`git submodule update --init --recursive` ?"
         )
 
     extension = CppExtension
