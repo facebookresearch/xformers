@@ -97,6 +97,17 @@ install_dep: &install_dep
         # Mark install as complete
         touch /home/circleci/miniconda/.finished
 
+install_dep_exp: &install_dep_exp
+  - run:
+      name: Install Dependencies for experimental tests
+      command: |
+        source $BASH_ENV
+        # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
+        if [ -f /home/circleci/venv/check_version.py ]; then $CONDA_PYTHON  /home/circleci/venv/check_version.py torch gt 1.11 && exit 0; fi
+        # start installing
+        source activate /home/circleci/venv
+        conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch -q
+        $CONDA_PYTHON -m pip install -r experimental/requirements.txt --progress-bar off
 
 install_repo: &install_repo
   - run:
@@ -303,7 +314,7 @@ commands:
             key: cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
 
         - <<: *install_repo
-        - <<: *run_unittests
+        - <<: *run_coverage
         - <<: *run_benchmarks
         - <<: *run_pytorch_benchmark
         - <<: *run_vit_benchmark
@@ -404,7 +415,7 @@ jobs:
             - cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *setup_conda
-      - <<: *install_dep
+      - <<: *install_dep_exp
 
       - check_torch:
           major: 1
