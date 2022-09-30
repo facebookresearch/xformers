@@ -143,7 +143,7 @@ class AttentionOpBase(torch.autograd.Function):
         query = cls.bmhk2bmk_contiguous(query)
         key = cls.bmhk2bmk_contiguous(key)
         value = cls.bmhk2bmk_contiguous(value)
-        output = cls._forward_bmk(query, key, value, attn_bias=attn_bias, p=p)
+        output = cls._forward_bmk(ctx, query, key, value, attn_bias=attn_bias, p=p)
         return cls.bmk2bmhk(output, num_heads)
 
     @classmethod
