@@ -50,6 +50,8 @@ struct RegisterOps {
       int16_t max_col,
       typename T::TensorCoord const& tile_offset,
       float scaling) {
+    // Convert to `accum_t` (rather than double)
+    constexpr float kLog2e = M_LOG2E;
     if (!kIsFirst) {
       if (thread_id < kQueriesPerBlock) {
         m_prime[thread_id] = mi[thread_id];
@@ -76,13 +78,13 @@ struct RegisterOps {
             atomicMaxFloat(&mi[accum_m], max * scaling);
           });
     }
-    frag = cutlass::multiplies<typename T::Fragment>()(scaling * M_LOG2E, frag);
+    frag = cutlass::multiplies<typename T::Fragment>()(scaling * kLog2e, frag);
 
     // Make sure we all share the update values for `mi`
     __syncthreads();
 
     if (thread_id < kQueriesPerBlock) {
-      auto m_prime_exp = exp2f(M_LOG2E * (m_prime[thread_id] - mi[thread_id]));
+      auto m_prime_exp = exp2f(kLog2e * (m_prime[thread_id] - mi[thread_id]));
       m_prime[thread_id] = m_prime_exp;
       s_prime[thread_id] *= m_prime_exp;
     }
@@ -101,7 +103,7 @@ struct RegisterOps {
       accum_t mi_row, total_row;
       BASE::iterateRows(
           lane_offset,
-          [&](int accum_m) { mi_row = M_LOG2E * mi[accum_m]; },
+          [&](int accum_m) { mi_row = kLog2e * mi[accum_m]; },
           [&](int accum_m, int accum_n, int idx) {
             frag[idx] = (kFullColumns || accum_n < max_col)
                 ? exp2f(frag[idx] - mi_row)
