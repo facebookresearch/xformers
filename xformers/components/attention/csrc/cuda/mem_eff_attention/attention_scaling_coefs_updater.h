@@ -256,7 +256,17 @@ struct AttentionScalingCoefsUpdaterVolta
 
   template <typename DT, typename F>
   CUTLASS_DEVICE static bool reduceSameRow(int lane_id, DT& myValue, F fn) {
-    return true; // TODO: Figure out which threads operate on the same rows
+    static_assert(
+        cutlass::platform::is_same<Element, float>::value,
+        "update to support non-float accum");
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-884-f16
+    // T0 & T2 share same line within a quad
+    auto otherV = __shfl_xor_sync(0xffffffff, myValue, 1 << 1);
+    myValue = fn(myValue, otherV);
+    // quad 0 and quad 2 are on the same lines
+    otherV = __shfl_xor_sync(0xffffffff, myValue, 1 << 3);
+    myValue = fn(myValue, otherV);
+    return (lane_id & ((1 << 1) | (1 << 3))) == 0;
   };
 
   template <typename FA, typename FB, typename FC>
