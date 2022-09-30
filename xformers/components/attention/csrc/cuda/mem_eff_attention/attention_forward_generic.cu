@@ -186,18 +186,24 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
     p.causal = causal;
 
-    p.q_strideH = query.stride(2);
-    p.k_strideH = key.stride(2);
-    p.v_strideH = value.stride(2);
+    for (int i = 0; i < 2; ++i) {
+      p.q_strideMH[i] = query.stride(i + 1);
+      p.k_strideMH[i] = key.stride(i + 1);
+      p.v_strideMH[i] = value.stride(i + 1);
+    }
 
-    // Double check strides of QKV, as we only support a few non-contiguous cases
-    TORCH_CHECK(query.stride(1) == p.q_strideM(), "Invalid strides for `query` (dimension M)");
-    TORCH_CHECK(key.stride(1) == p.k_strideM(), "Invalid strides for `key` (dimension M)");
-    TORCH_CHECK(value.stride(1) == p.v_strideM(), "Invalid strides for `value` (dimension M)");
+    // Double check strides of QKV, as we only support a few non-contiguous
+    // cases
     if (p.cu_seqlens_q_ptr == nullptr) {
-      TORCH_CHECK(query.stride(0) == p.q_strideM() * p.num_queries, "Invalid strides for `query` (batch dimension)");
-      TORCH_CHECK(key.stride(0) == p.k_strideM() * p.num_keys, "Invalid strides for `key` (batch dimension)");
-      TORCH_CHECK(value.stride(0) == p.v_strideM() * p.num_keys, "Invalid strides for `value` (batch dimension)");
+      TORCH_CHECK(
+          query.stride(0) == p.q_strideM() * p.num_queries,
+          "Invalid strides for `query` (batch dimension)");
+      TORCH_CHECK(
+          key.stride(0) == p.k_strideM() * p.num_keys,
+          "Invalid strides for `key` (batch dimension)");
+      TORCH_CHECK(
+          value.stride(0) == p.v_strideM() * p.num_keys,
+          "Invalid strides for `value` (batch dimension)");
     }
 
     constexpr auto kernel_fn = attention_kernel_batched<Kernel>;

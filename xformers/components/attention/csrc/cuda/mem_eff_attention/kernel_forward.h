@@ -112,20 +112,20 @@ struct AttentionKernel {
     int32_t num_batches;
     int32_t num_heads = 1;
 
-    int16_t q_strideH;
-    int16_t k_strideH;
-    int16_t v_strideH;
+    int16_t q_strideMH[3];
+    int16_t k_strideMH[3];
+    int16_t v_strideMH[3];
 
     bool causal;
 
     CUTLASS_HOST_DEVICE int32_t q_strideM() const {
-      return q_strideH * num_heads;
+      return q_strideMH[0];
     }
     CUTLASS_HOST_DEVICE int32_t k_strideM() const {
-      return k_strideH * num_heads;
+      return k_strideMH[0];
     }
     CUTLASS_HOST_DEVICE int32_t v_strideM() const {
-      return v_strideH * num_heads;
+      return v_strideMH[0];
     }
     CUTLASS_HOST_DEVICE int32_t o_strideM() const {
       return head_dim_value * num_heads;
@@ -161,15 +161,16 @@ struct AttentionKernel {
       }
 
       // Advance to the current batch / head / query_start
-      query_ptr += (q_start + query_start) * q_strideM() + head_id * head_dim;
-      key_ptr += k_start * k_strideM() + head_id * head_dim;
-      value_ptr += k_start * v_strideM() + head_id * head_dim_value;
+      query_ptr +=
+          (q_start + query_start) * q_strideM() + head_id * q_strideMH[1];
+      key_ptr += k_start * k_strideM() + head_id * k_strideMH[1];
+      value_ptr += k_start * v_strideM() + head_id * v_strideMH[1];
       output_ptr +=
           (q_start + query_start) * o_strideM() + head_id * head_dim_value;
 
       if (output_accum_ptr != nullptr) {
         output_accum_ptr +=
-            (q_start + query_start) * v_strideM() + head_id * head_dim_value;
+            (q_start + query_start) * o_strideM() + head_id * head_dim_value;
       } else {
         // Accumulate directly in the destination buffer (eg for f32)
         output_accum_ptr = (accum_t*)output_ptr;
