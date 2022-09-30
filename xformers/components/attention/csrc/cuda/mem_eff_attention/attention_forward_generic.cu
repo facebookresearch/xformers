@@ -117,9 +117,9 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     max_seqlen_k = key.size(1);
   }
 
-  CHECK_NOSPARSE_CONTIGUOUS_CUDA(query);
-  CHECK_NOSPARSE_CONTIGUOUS_CUDA(key);
-  CHECK_NOSPARSE_CONTIGUOUS_CUDA(value);
+  CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(query);
+  CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
+  CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
   at::cuda::CUDAGuard device_guard(query.device());
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
@@ -178,6 +178,12 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
       p.cu_seqlens_k_ptr = (int32_t*)cu_seqlens_k->data_ptr();
     }
 
+#define ASSIGN_CHECK_OVERFLOW(A, B)                                            \
+  {                                                                            \
+    A = B;                                                                     \
+    TORCH_CHECK(B < std::numeric_limits<decltype(A)>::max(), #B " overflows"); \
+  }
+
     p.num_heads = num_heads;
     p.head_dim = query.size(3);
     p.head_dim_value = value.size(3);
@@ -185,6 +191,16 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     p.num_keys = max_seqlen_k;
     p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
     p.causal = causal;
+
+    ASSIGN_CHECK_OVERFLOW(p.q_strideB, query.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.k_strideB, key.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.v_strideB, value.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.q_strideM, query.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.k_strideM, key.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.v_strideM, value.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.q_strideH, query.stride(2));
+    ASSIGN_CHECK_OVERFLOW(p.k_strideH, key.stride(2));
+    ASSIGN_CHECK_OVERFLOW(p.v_strideH, value.stride(2));
 
     constexpr auto kernel_fn = attention_kernel_batched<Kernel>;
     size_t smem_bytes = sizeof(typename Kernel::SharedStorage);

@@ -107,7 +107,57 @@ class AttentionOpBase(torch.autograd.Function):
     _TEST_K: List[int] = [32, 128]
 
     @classmethod
+    def bmhk2bmk_contiguous(cls, tensor) -> torch.Tensor:
+        return (
+            tensor.permute((0, 2, 1, 3))
+            .contiguous()
+            .view([tensor.shape[0] * tensor.shape[2], tensor.shape[1], tensor.shape[3]])
+            .contiguous()
+        )
+
+    @classmethod
+    def bmk2bmhk(cls, tensor, num_heads: int) -> torch.Tensor:
+        return tensor.reshape(
+            [-1, num_heads, tensor.shape[1], tensor.shape[2]]
+        ).permute((0, 2, 1, 3))
+
+    @classmethod
     def forward_no_grad(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
+        p: float,
+    ) -> torch.Tensor:
+        num_heads = query.shape[2]
+        query = cls.bmhk2bmk_contiguous(query)
+        key = cls.bmhk2bmk_contiguous(key)
+        value = cls.bmhk2bmk_contiguous(value)
+        output = cls._forward_no_grad_bmk(query, key, value, attn_bias=attn_bias, p=p)
+        return cls.bmk2bmhk(output, num_heads)
+
+    @classmethod
+    def forward(cls, ctx, query, key, value, attn_bias, p):
+        num_heads = query.shape[2]
+        query = cls.bmhk2bmk_contiguous(query)
+        key = cls.bmhk2bmk_contiguous(key)
+        value = cls.bmhk2bmk_contiguous(value)
+        output = cls._forward_bmk(ctx, query, key, value, attn_bias=attn_bias, p=p)
+        return cls.bmk2bmhk(output, num_heads)
+
+    @classmethod
+    def backward(cls, ctx, grad):
+        num_heads = grad.shape[2]
+        grad = cls.bmhk2bmk_contiguous(grad)
+        gq, gk, gv, _, _ = cls._backward_bmk(ctx, grad)
+        gq = cls.bmk2bmhk(gq, num_heads)
+        gk = cls.bmk2bmhk(gk, num_heads)
+        gv = cls.bmk2bmhk(gv, num_heads)
+        return gq, gk, gv, None, None
+
+    @classmethod
+    def _forward_no_grad_bmk(
         cls,
         query: torch.Tensor,
         key: torch.Tensor,
@@ -118,7 +168,11 @@ class AttentionOpBase(torch.autograd.Function):
         raise NotImplementedError()
 
     @classmethod
-    def forward(cls, ctx, query, key, value, attn_bias, p):
+    def _forward_bmk(cls, ctx, query, key, value, attn_bias, p):
+        raise NotImplementedError()
+
+    @staticmethod
+    def _backward_bmk(ctx, grad):
         raise NotImplementedError()
 
     @classmethod
@@ -171,7 +225,7 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
         return False
 
     @classmethod
-    def forward_no_grad(
+    def _forward_no_grad_bmk(
         cls,
         query: torch.Tensor,
         key: torch.Tensor,
@@ -179,22 +233,17 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
     ) -> torch.Tensor:
-        assert query.shape[2] == 1
         return cls.FORWARD_OPERATOR(
-            query=query.squeeze(2),
-            key=key.squeeze(2),
-            value=value.squeeze(2),
+            query=query,
+            key=key,
+            value=value,
             compute_logsumexp=False,
             attn_bias=attn_bias,
             p=p,
-        )[0].unsqueeze(2)
+        )[0]
 
     @classmethod
-    def forward(cls, ctx, query, key, value, attn_bias, p):
-        assert query.shape[2] == 1
-        query = query.squeeze(2)
-        key = key.squeeze(2)
-        value = value.squeeze(2)
+    def _forward_bmk(cls, ctx, query, key, value, attn_bias, p):
         out, lse, rng_seed, rng_offset = cls.FORWARD_OPERATOR(
             query=query,
             key=key,
@@ -207,11 +256,10 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
         ctx.p = p
         ctx.rng_seed = rng_seed
         ctx.rng_offset = rng_offset
-        return out.unsqueeze(2)
+        return out
 
     @staticmethod
-    def backward(ctx, grad):
-        grad = grad.squeeze(2)
+    def _backward_bmk(ctx, grad):
         query, key, value, lse, attn_bias, out = ctx.saved_tensors
         p = ctx.p
         rng_seed = ctx.rng_seed
@@ -219,9 +267,6 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
         grad_q, grad_k, grad_v = torch.ops.xformers.efficient_attention_backward(
             grad, query, key, value, lse, out, attn_bias, p, rng_seed, rng_offset
         )
-        grad_q = grad_q.unsqueeze(2)
-        grad_k = grad_k.unsqueeze(2)
-        grad_v = grad_v.unsqueeze(2)
         return grad_q, grad_k, grad_v, None, None
 
 
@@ -385,7 +430,6 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         num_heads = query.shape[2]
         head_dim_q = query.shape[3]
         head_dim_v = value.shape[3]
-        assert num_heads == 1
 
         cu_seqlens_k = torch.arange(
             0,
@@ -410,9 +454,9 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         query_api_input_shape = query.shape
         key_api_input_shape = key.shape
         value_api_input_shape = value.shape
-        query = query.reshape([batch * seqlen_q, 1, head_dim_q])
-        key = key.reshape([batch * seqlen_k, 1, head_dim_q])
-        value = value.reshape([batch * seqlen_k, 1, head_dim_v])
+        query = query.reshape([batch * seqlen_q, num_heads, head_dim_q])
+        key = key.reshape([batch * seqlen_k, num_heads, head_dim_q])
+        value = value.reshape([batch * seqlen_k, num_heads, head_dim_v])
 
         # Save rng_state because the backward pass will regenerate the dropout mask
         rng_state = torch.cuda.get_rng_state() if p > 0 else None
@@ -450,7 +494,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
             ctx.query_api_input_shape = query_api_input_shape
             ctx.key_api_input_shape = key_api_input_shape
             ctx.value_api_input_shape = value_api_input_shape
-        return out.reshape([batch, seqlen_q, head_dim_v])
+        return out
 
     @classmethod
     def backward(cls, ctx, grad):
@@ -632,6 +676,7 @@ def memory_efficient_attention(
     Supported formats for inputs/outputs:
         [batch, seqlen, num_heads, K]
         [batch, seqlen, K] (Legacy format)
+    Inputs can be non-contiguous - we only require the last dimension's stride to be 0
     """
 
     if query.ndim not in [3, 4]:

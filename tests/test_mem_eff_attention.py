@@ -17,30 +17,41 @@ cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires C
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
-def generate_test_shapes_B_Mq_Mkv_K_Kv(op):
+def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
     shapes = []
     for B in op._TEST_BATCH_SIZES:
         for Mq in [32, 256]:
             for Mkv in [32, 64, 256]:
                 for K in op._TEST_K:
-                    shapes.append((B, Mq, Mkv, K, K))
+                    shapes.append((B, Mq, Mkv, 1, K, K))
         Mq = 256
         Mkv = 128
         K = 32
+        H = 1
         # Weird values of parameters
         for M in [2, 3, 15, 31, 32, 34, 68, 72, 90, 132, 136]:
-            shapes.append((B, M, Mkv, K, K))
-            shapes.append((B, Mq, M, K, K))
+            shapes.append((B, M, Mkv, H, K, K))
+            shapes.append((B, Mq, M, H, K, K))
         for _K in [1, 2, 3, 31, 34, 36, 38, 40, 64, 256 + 2, 256 + 8, 512]:
-            shapes.append((B, Mq, Mkv, _K, _K))
+            if _K <= op.SUPPORTED_MAX_K:
+                shapes.append((B, Mq, Mkv, H, _K, _K))
         # Different value for K / Kv
-        for _K in [32, 36, 64, 256 + 8]:
-            shapes.append((B, Mq, Mkv, K, _K))
-            shapes.append((B, Mq, Mkv, _K, K))
+        if op.SUPPORTS_DIFFERENT_VALUE_EMBED:
+            for _K in [32, 36, 64, 256 + 8]:
+                shapes.append((B, Mq, Mkv, H, K, _K))
+                shapes.append((B, Mq, Mkv, H, _K, K))
         # Exotic sizes
         for K in op._TEST_K:
-            shapes.append((B, 16, 1024, K, K))
-            shapes.append((B, 1024, 16, K, K))
+            shapes.append((B, 16, 1024, H, K, K))
+            shapes.append((B, 1024, 16, H, K, K))
+        # Some number of heads
+        for H in [3, 5, 12]:
+            shapes.append((max(1, B // H), Mq, Mkv, H, K, K))
+    # Some strides don't fit on an uint16
+    shapes.append((1, 128, 128, 300, 128, 128))
+    # TODO: Some strides don't fit on an uint32
+    # Crashes on Flash, Errors on Cutlass
+    # shapes.append((1, 1, 64000, 300, 128, 128))
     # Add some random shapes
     if op is xformers.ops.MemoryEfficientAttentionCutlassOp:
         K_CHOICES = [8 * i for i in range(1, 256 // 8)]
@@ -49,21 +60,23 @@ def generate_test_shapes_B_Mq_Mkv_K_Kv(op):
             B = r.randint(1, 400)
             Mq = r.randint(1, 500)
             Mkv = r.randint(1, 500)
+            H = r.randint(2, 11)
+            B = max(B // H, 1)
             K = r.choice(K_CHOICES)
             Kv = r.choice(K_CHOICES)
             if not op.SUPPORTS_DIFFERENT_VALUE_EMBED:
                 Kv = K
-            shapes.append((B, Mq, Mkv, K, Kv))
+            shapes.append((B, Mq, Mkv, H, K, Kv))
     return shapes
 
 
-def _generate_op_device_dtype_B_Mq_Mkv_K_Kv():
+def _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(**kwargs):
     for op in [
         xformers.ops.MemoryEfficientAttentionOp,
         xformers.ops.MemoryEfficientAttentionCutlassOp,
         xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
     ]:
-        for shape in generate_test_shapes_B_Mq_Mkv_K_Kv(op):
+        for shape in generate_test_shapes_B_Mq_Mkv_H_K_Kv(op, **kwargs):
             for device in _devices:
                 if device not in op.SUPPORTED_DEVICES:
                     continue
@@ -71,7 +84,21 @@ def _generate_op_device_dtype_B_Mq_Mkv_K_Kv():
                     yield (op, device, dtype, *shape)
 
 
-_op_device_dtype_B_Mq_Mkv_K_Kv = list(_generate_op_device_dtype_B_Mq_Mkv_K_Kv())
+_op_device_dtype_B_Mq_Mkv_H_K_Kv = list(_generate_op_device_dtype_B_Mq_Mkv_H_K_Kv())
+_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids = [
+    f"{op.NAME}-{device}-{str(dtype)}-{batch_size},{q_len},{kv_len},{h},{k},{kv}"
+    for (
+        op,
+        device,
+        dtype,
+        batch_size,
+        q_len,
+        kv_len,
+        h,
+        k,
+        kv,
+    ) in _op_device_dtype_B_Mq_Mkv_H_K_Kv
+]
 
 
 def assert_allclose(
@@ -101,6 +128,8 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     if attn_bias is not None:
         if isinstance(attn_bias, xformers.ops.AttentionMask):
             attn_bias = attn_bias.to_tensor()
+        if attn_bias.shape[0] != attn.shape[0]:
+            attn_bias = bmk2bmhk(attn_bias, k.shape[2])
         attn = attn + attn_bias.float()
     attn = attn.softmax(-1)
     if drop_mask is not None:
@@ -134,49 +163,96 @@ def create_attn_bias(
     assert False, f"Unsupported bias type: {bias_type}"
 
 
-@pytest.mark.parametrize(
-    "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
-)
-@pytest.mark.parametrize(
-    "op,device,dtype,batch_size,q_len,kv_len,k,kv", _op_device_dtype_B_Mq_Mkv_K_Kv
-)
-def test_forward(
+def create_tensors(
+    op,
     device,
+    dtype,
+    B,
     q_len,
     kv_len,
-    batch_size,
+    h,
     k,
     kv,
-    attn_bias_type,
-    dtype,
-    op: xformers.ops.MemoryEfficientAttentionOp,
+    *,
+    attn_bias_type=None,
+    fmt: str = "BMK",
 ):
+    torch.manual_seed(B * q_len + kv_len * k + kv)
     scale = 3
-    query = torch.randn((batch_size, q_len, k), device=device, dtype=dtype) * scale
-    key = torch.randn((batch_size, kv_len, k), device=device, dtype=dtype) * scale
-    value = torch.randn((batch_size, kv_len, kv), device=device, dtype=dtype) * scale
+    if fmt == "BMK":
+        query = torch.randn((B * h, q_len, k), device=device, dtype=dtype) * scale
+        key = torch.randn((B * h, kv_len, k), device=device, dtype=dtype) * scale
+        value = torch.randn((B * h, kv_len, kv), device=device, dtype=dtype) * scale
+    else:
+        assert fmt == "BMHK"
+        query = torch.randn((B, q_len, h, k), device=device, dtype=dtype) * scale
+        key = torch.randn((B, kv_len, h, k), device=device, dtype=dtype) * scale
+        value = torch.randn((B, kv_len, h, kv), device=device, dtype=dtype) * scale
+
     attn_bias = None
     if attn_bias_type is not None:
         attn_bias = create_attn_bias(
             attn_bias_type,
-            batch_size=batch_size,
+            batch_size=B * h,
             q_len=q_len,
             kv_len=kv_len,
             dtype=dtype,
             device=device,
         )
 
-    if not op.supports(
-        xformers.ops.AttentionOpDispatch.from_arguments(
-            query=query, key=key, value=value, attn_bias=attn_bias
-        )
-    ):
-        pytest.skip("unsupported configuration")
+    dispatch = xformers.ops.AttentionOpDispatch.from_arguments(
+        query=query, key=key, value=value, attn_bias=attn_bias
+    )
+    if not op.supports(dispatch):
+        pytest.skip(f"{op.NAME}: unsupported ({dispatch})")
+    return query, key, value, attn_bias
+
+
+def bmhk2bmk(tensor) -> torch.Tensor:
+    return (
+        tensor.permute((0, 2, 1, 3))
+        .contiguous()
+        .view([tensor.shape[0] * tensor.shape[2], tensor.shape[1], tensor.shape[3]])
+    )
+
+
+def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
+    return tensor.reshape([-1, num_heads, tensor.shape[1], tensor.shape[2]]).permute(
+        (0, 2, 1, 3)
+    )
+
+
+@pytest.mark.parametrize(
+    "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
+)
+@pytest.mark.parametrize(
+    "op_device_dtype_B_Mq_Mkv_H_K_Kv",
+    _op_device_dtype_B_Mq_Mkv_H_K_Kv,
+    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
+)
+def test_forward_bmk(
+    op_device_dtype_B_Mq_Mkv_H_K_Kv,
+    attn_bias_type,
+):
+    (
+        op,
+        device,
+        dtype,
+        batch_size,
+        q_len,
+        kv_len,
+        h,
+        k,
+        kv,
+    ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
+    query, key, value, attn_bias = create_tensors(
+        *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=attn_bias_type, fmt="BMK"
+    )
 
     out = xformers.ops.memory_efficient_attention(
         query, key, value, attn_bias, op=op
     ).float()
-    assert out.shape == (batch_size, q_len, kv), out.shape
+    assert out.shape == (batch_size * h, q_len, kv), out.shape
     ref = ref_attention(query, key, value, attn_bias)
 
     assert_allclose(
@@ -187,30 +263,88 @@ def test_forward(
     )
 
 
+@pytest.mark.parametrize("packed", [False, True])
+@pytest.mark.parametrize(
+    "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
+)
+@pytest.mark.parametrize(
+    "op_device_dtype_B_Mq_Mkv_H_K_Kv",
+    _op_device_dtype_B_Mq_Mkv_H_K_Kv,
+    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
+)
+def test_forward_bmhk(
+    op_device_dtype_B_Mq_Mkv_H_K_Kv,
+    attn_bias_type,
+    packed,
+):
+    (
+        op,
+        device,
+        dtype,
+        batch_size,
+        q_len,
+        kv_len,
+        h,
+        k,
+        kv,
+    ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
+    if packed and not (k == kv and q_len == kv_len):
+        pytest.skip(
+            f"packed incompatible with `k ({k}) != kv ({kv})` or `q_len ({q_len}) != kv_len ({kv_len})`"
+        )
+    query, key, value, attn_bias = create_tensors(
+        *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=attn_bias_type, fmt="BMHK"
+    )
+
+    if packed:
+        c = torch.stack([query, key, value], 2)
+        # bm3hk -> 3bmhk
+        c = c.permute(2, 0, 1, 3, 4)
+        query, key, value = c[0], c[1], c[2]
+        assert not query.is_contiguous()
+
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias, op=op
+    ).float()
+    assert out.shape == (batch_size, q_len, h, kv), out.shape
+    ref = ref_attention_bmhk(query, key, value, attn_bias)
+
+    assert_allclose(
+        out,
+        ref,
+        atol=op.FORWARD_ERROR_ATOL[dtype],
+        rtol=op.FORWARD_ERROR_RTOL.get(dtype, 1e-5),
+    )
+
+
+shapes_cu_seqlen = generate_test_shapes_B_Mq_Mkv_H_K_Kv(
+    xformers.ops.MemoryEfficientAttentionCutlassOp
+)
+
+
 @cuda_only
 @pytest.mark.parametrize("attn_bias_type", [None, xformers.ops.LowerTriangularMask])
 @pytest.mark.parametrize(
     "dtype", list(xformers.ops.MemoryEfficientAttentionCutlassOp.SUPPORTED_DTYPES)
 )
 @pytest.mark.parametrize(
-    "batch_size,max_q_len,max_kv_len,k,kv",
-    generate_test_shapes_B_Mq_Mkv_K_Kv(xformers.ops.MemoryEfficientAttentionCutlassOp),
+    "B_Mq_Mkv_H_K_Kv",
+    shapes_cu_seqlen,
+    ids=[
+        f"{B},{max_q_len},{max_kv_len},{h},{k},{kv}"
+        for (B, max_q_len, max_kv_len, h, k, kv) in shapes_cu_seqlen
+    ],
 )
 def test_cu_seqlen_forward(
-    max_q_len,
-    max_kv_len,
-    batch_size,
-    k,
-    kv,
+    B_Mq_Mkv_H_K_Kv,
     attn_bias_type,
     dtype,
 ):
     device = "cuda"
+    batch_size, max_q_len, max_kv_len, num_heads, k, kv = B_Mq_Mkv_H_K_Kv
     op = xformers.ops.MemoryEfficientAttentionCutlassOp
     r = random.Random(max_q_len + k * kv)
     torch.manual_seed(r.randint(0, 128))
-    num_heads = 7
-    batch_size = max(batch_size // num_heads, 1)
 
     all_q = []
     all_k = []
@@ -219,6 +353,8 @@ def test_cu_seqlen_forward(
     cu_seqlen_q = [0]
     cu_seqlen_k = [0]
     scale = 3
+    # Reduce batch size to speedup tests
+    batch_size = min(batch_size, 20)
 
     for batch_id in range(batch_size):
         q_len = r.randint(1, max_q_len)
@@ -249,7 +385,7 @@ def test_cu_seqlen_forward(
         if attn_bias_type is not None:
             attn_bias = create_attn_bias(
                 attn_bias_type,
-                batch_size=1,
+                batch_size=num_heads,
                 q_len=q_len,
                 kv_len=kv_len,
                 dtype=dtype,
@@ -295,32 +431,27 @@ def test_key_query_all_ones(device, q_len, kv_len, batch_size, k_len):
 
 
 @pytest.mark.parametrize(
-    "op,device,dtype,batch_size,q_len,kv_len,k,kv", _op_device_dtype_B_Mq_Mkv_K_Kv
+    "op_device_dtype_B_Mq_Mkv_H_K_Kv",
+    _op_device_dtype_B_Mq_Mkv_H_K_Kv,
+    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
 )
-def test_logsumexp(
-    device,
-    q_len,
-    kv_len,
-    batch_size,
-    k,
-    kv,
-    dtype,
-    op: xformers.ops.MemoryEfficientAttentionOp,
-):
+def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
+    (
+        op,
+        device,
+        dtype,
+        batch_size,
+        q_len,
+        kv_len,
+        h,
+        k,
+        kv,
+    ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
     if op.FORWARD_OPERATOR is None:
         return
-
-    scale = 3
-    query = torch.randn((batch_size, q_len, k), device=device, dtype=dtype) * scale
-    key = torch.randn((batch_size, kv_len, k), device=device, dtype=dtype) * scale
-    value = torch.randn((batch_size, kv_len, kv), device=device, dtype=dtype) * scale
-
-    if not op.supports(
-        xformers.ops.AttentionOpDispatch.from_arguments(
-            query=query, key=key, value=value
-        )
-    ):
-        pytest.skip("unsupported configuration")
+    query, key, value, attn_bias = create_tensors(
+        *op_device_dtype_B_Mq_Mkv_H_K_Kv, fmt="BMK"
+    )
 
     if op is xformers.ops.MemoryEfficientAttentionCutlassOp:
         _, lse = op.FORWARD_OPERATOR(
@@ -346,43 +477,29 @@ def test_logsumexp(
 )
 @pytest.mark.parametrize("grad_out_contiguous", [False, True])
 @pytest.mark.parametrize(
-    "op,device,dtype,batch_size,q_len,kv_len,k,kv", _op_device_dtype_B_Mq_Mkv_K_Kv
+    "op_device_dtype_B_Mq_Mkv_H_K_Kv",
+    _op_device_dtype_B_Mq_Mkv_H_K_Kv,
+    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
 )
 def test_backward(
-    device,
-    q_len,
-    kv_len,
-    batch_size,
-    k,
-    kv,
+    op_device_dtype_B_Mq_Mkv_H_K_Kv,
     grad_out_contiguous,
     attn_bias_type,
-    dtype,
-    op: xformers.ops.MemoryEfficientAttentionOp,
 ):
-    torch.manual_seed(batch_size * q_len + kv_len * k + kv)
-    scale = 3
-    query = torch.randn((batch_size, q_len, k), device=device, dtype=dtype) * scale
-    key = torch.randn((batch_size, kv_len, k), device=device, dtype=dtype) * scale
-    value = torch.randn((batch_size, kv_len, kv), device=device, dtype=dtype) * scale
-
-    attn_bias = None
-    if attn_bias_type is not None:
-        attn_bias = create_attn_bias(
-            attn_bias_type,
-            batch_size=batch_size,
-            q_len=q_len,
-            kv_len=kv_len,
-            dtype=dtype,
-            device=device,
-        )
-
-    if not op.supports(
-        xformers.ops.AttentionOpDispatch.from_arguments(
-            query=query, key=key, value=value, attn_bias=attn_bias
-        )
-    ):
-        pytest.skip("unsupported configuration")
+    (
+        op,
+        device,
+        dtype,
+        batch_size,
+        q_len,
+        kv_len,
+        h,
+        k,
+        kv,
+    ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
+    query, key, value, attn_bias = create_tensors(
+        *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=attn_bias_type, fmt="BMK"
+    )
 
     query.requires_grad_(True)
     key.requires_grad_(True)
@@ -395,6 +512,7 @@ def test_backward(
         grad_out = torch.tensor([1.0], device=device)[None, None, :].expand_as(out)
 
     out.backward(grad_out)
+    del out
 
     grad_q = query.grad
     grad_k = key.grad
@@ -406,6 +524,8 @@ def test_backward(
 
     ref = ref_attention(query, key, value, attn_bias)
     ref.backward(grad_out)
+    del grad_out
+    del ref
 
     atol = 2e-4 + 2e-6 * k * kv_len * math.sqrt(q_len)
     rtol = 1e-4
@@ -428,10 +548,17 @@ def test_backward(
     assert isinstance(key.grad, torch.Tensor)
     assert isinstance(value.grad, torch.Tensor)
 
+    grad_qr = query.grad
+    grad_kr = key.grad
+    grad_vr = value.grad
+    del query
+    del key
+    del value
+
     for name, calc_grad, ref_grad in [
-        ("query", grad_q, query.grad),
-        ("key", grad_k, key.grad),
-        ("value", grad_v, value.grad),
+        ("query", grad_q, grad_qr),
+        ("key", grad_k, grad_kr),
+        ("value", grad_v, grad_vr),
     ]:
         assert_allclose(calc_grad, ref_grad, name, atol=atol, rtol=rtol)
 

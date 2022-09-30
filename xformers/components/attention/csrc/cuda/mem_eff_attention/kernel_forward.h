@@ -109,15 +109,25 @@ struct AttentionKernel {
     int32_t head_dim_value;
     int32_t num_queries;
     int32_t num_keys;
-    int32_t num_batches;
     int32_t num_heads = 1;
 
     bool causal;
 
-    CUTLASS_DEVICE int32_t qk_stride() const {
-      return head_dim * num_heads;
-    }
-    CUTLASS_DEVICE int32_t v_stride() const {
+    int32_t q_strideM;
+    int32_t k_strideM;
+    int32_t v_strideM;
+
+    // Everything below is only used in `advance_to_block`
+    // and shouldn't use registers
+    int32_t q_strideH;
+    int32_t k_strideH;
+    int32_t v_strideH;
+    int64_t q_strideB;
+    int64_t k_strideB;
+    int64_t v_strideB;
+    int32_t num_batches;
+
+    CUTLASS_HOST_DEVICE int32_t o_strideM() const {
       return head_dim_value * num_heads;
     }
     // Moves pointers to what we should process
@@ -129,7 +139,7 @@ struct AttentionKernel {
 
       auto lse_dim = ceil_div((int32_t)num_queries, kAlignLSE) * kAlignLSE;
 
-      int32_t q_start, k_start;
+      int64_t q_start, k_start;
       // Advance to current batch - in case of different sequence lengths
       if (cu_seqlens_q_ptr != nullptr) {
         assert(cu_seqlens_k_ptr != nullptr);
@@ -137,8 +147,8 @@ struct AttentionKernel {
         cu_seqlens_k_ptr += batch_id;
         q_start = cu_seqlens_q_ptr[0];
         k_start = cu_seqlens_k_ptr[0];
-        int32_t q_next_start = cu_seqlens_q_ptr[1];
-        int32_t k_next_start = cu_seqlens_k_ptr[1];
+        int64_t q_next_start = cu_seqlens_q_ptr[1];
+        int64_t k_next_start = cu_seqlens_k_ptr[1];
         num_queries = q_next_start - q_start;
         num_keys = k_next_start - k_start;
 
@@ -146,20 +156,27 @@ struct AttentionKernel {
           return false;
         }
       } else {
-        q_start = batch_id * num_queries;
-        k_start = batch_id * num_keys;
+        query_ptr += batch_id * q_strideB;
+        key_ptr += batch_id * k_strideB;
+        value_ptr += batch_id * v_strideB;
+        output_ptr += int64_t(batch_id * num_queries) * o_strideM();
+        if (output_accum_ptr != nullptr) {
+          output_accum_ptr += int64_t(batch_id * num_queries) * o_strideM();
+        }
+        q_start = 0;
+        k_start = 0;
       }
 
       // Advance to the current batch / head / query_start
-      query_ptr += (q_start + query_start) * qk_stride() + head_id * head_dim;
-      key_ptr += k_start * qk_stride() + head_id * head_dim;
-      value_ptr += k_start * v_stride() + head_id * head_dim_value;
-      output_ptr +=
-          (q_start + query_start) * v_stride() + head_id * head_dim_value;
+      query_ptr += (q_start + query_start) * q_strideM + head_id * q_strideH;
+      key_ptr += k_start * k_strideM + head_id * k_strideH;
+      value_ptr += k_start * v_strideM + head_id * v_strideH;
+      output_ptr += int64_t(q_start + query_start) * o_strideM() +
+          head_id * head_dim_value;
 
       if (output_accum_ptr != nullptr) {
-        output_accum_ptr +=
-            (q_start + query_start) * v_stride() + head_id * head_dim_value;
+        output_accum_ptr += int64_t(q_start + query_start) * o_strideM() +
+            head_id * head_dim_value;
       } else {
         // Accumulate directly in the destination buffer (eg for f32)
         output_accum_ptr = (accum_t*)output_ptr;
@@ -435,7 +452,7 @@ struct AttentionKernel {
     auto createOutputIter = [&](auto col) {
       using OutputTileIterator = typename MM1::OutputTileIterator;
       return OutputTileIterator(
-          typename OutputTileIterator::Params{(int32_t)p.v_stride()},
+          typename OutputTileIterator::Params{(int32_t)p.o_strideM()},
           p.output_ptr,
           typename OutputTileIterator::TensorCoord{
               p.num_queries, p.head_dim_value},
@@ -446,7 +463,7 @@ struct AttentionKernel {
     auto createOutputAccumIter = [&](auto col) {
       using OutputTileIteratorAccum = typename MM1::OutputTileIteratorAccum;
       return OutputTileIteratorAccum(
-          typename OutputTileIteratorAccum::Params{(int32_t)p.v_stride()},
+          typename OutputTileIteratorAccum::Params{(int32_t)p.o_strideM()},
           p.output_accum_ptr,
           typename OutputTileIteratorAccum::TensorCoord{
               p.num_queries, p.head_dim_value},
@@ -468,8 +485,8 @@ struct AttentionKernel {
 
       auto prologueV = [&](int blockN) {
         typename MM1::Mma::IteratorB iterator_V(
-            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_stride())},
-            p.value_ptr + iter_key_start * p.v_stride(),
+            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_strideM)},
+            p.value_ptr + iter_key_start * p.v_strideM,
             {problem_size_1_k, problem_size_1_n},
             thread_id(),
             cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
@@ -504,7 +521,7 @@ struct AttentionKernel {
       // Construct iterators to A and B operands
       typename MM0::IteratorA iterator_A(
           typename MM0::IteratorA::Params(
-              typename MM0::MmaCore::LayoutA(p.qk_stride())),
+              typename MM0::MmaCore::LayoutA(p.q_strideM)),
           p.query_ptr,
           {problem_size_0_m, problem_size_0_k},
           thread_id(),
@@ -512,8 +529,8 @@ struct AttentionKernel {
 
       typename MM0::IteratorB iterator_B(
           typename MM0::IteratorB::Params(
-              typename MM0::MmaCore::LayoutB(p.qk_stride())),
-          p.key_ptr + iter_key_start * p.qk_stride(),
+              typename MM0::MmaCore::LayoutB(p.k_strideM)),
+          p.key_ptr + iter_key_start * p.k_strideM,
           {problem_size_0_k, problem_size_0_n},
           thread_id(),
           tb_offset_B);
@@ -627,8 +644,8 @@ struct AttentionKernel {
         }
 
         typename MM1::Mma::IteratorB iterator_V(
-            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_stride())},
-            p.value_ptr + iter_key_start * p.v_stride(),
+            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_strideM)},
+            p.value_ptr + iter_key_start * p.v_strideM,
             {problem_size_1_k, problem_size_1_n},
             thread_id(),
             cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
