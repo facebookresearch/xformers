@@ -46,7 +46,7 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
             shapes.append((B, 1024, 16, H, K, K))
         # Some number of heads
         for H in [3, 5, 12]:
-            shapes.append((B, Mq, Mkv, H, K, K))
+            shapes.append((max(1, B // H), Mq, Mkv, H, K, K))
     # Some strides don't fit on an uint16
     shapes.append((1, 128, 128, 300, 128, 128))
     # TODO: Some strides don't fit on an uint32
@@ -167,7 +167,7 @@ def create_tensors(
     op,
     device,
     dtype,
-    batch_size,
+    B,
     q_len,
     kv_len,
     h,
@@ -177,36 +177,23 @@ def create_tensors(
     attn_bias_type=None,
     fmt: str = "BMK",
 ):
-    torch.manual_seed(batch_size * q_len + kv_len * k + kv)
+    torch.manual_seed(B * q_len + kv_len * k + kv)
     scale = 3
     if fmt == "BMK":
-        query = (
-            torch.randn((batch_size * h, q_len, k), device=device, dtype=dtype) * scale
-        )
-        key = (
-            torch.randn((batch_size * h, kv_len, k), device=device, dtype=dtype) * scale
-        )
-        value = (
-            torch.randn((batch_size * h, kv_len, kv), device=device, dtype=dtype)
-            * scale
-        )
+        query = torch.randn((B * h, q_len, k), device=device, dtype=dtype) * scale
+        key = torch.randn((B * h, kv_len, k), device=device, dtype=dtype) * scale
+        value = torch.randn((B * h, kv_len, kv), device=device, dtype=dtype) * scale
     else:
         assert fmt == "BMHK"
-        query = (
-            torch.randn((batch_size, q_len, h, k), device=device, dtype=dtype) * scale
-        )
-        key = (
-            torch.randn((batch_size, kv_len, h, k), device=device, dtype=dtype) * scale
-        )
-        value = (
-            torch.randn((batch_size, kv_len, h, kv), device=device, dtype=dtype) * scale
-        )
+        query = torch.randn((B, q_len, h, k), device=device, dtype=dtype) * scale
+        key = torch.randn((B, kv_len, h, k), device=device, dtype=dtype) * scale
+        value = torch.randn((B, kv_len, h, kv), device=device, dtype=dtype) * scale
 
     attn_bias = None
     if attn_bias_type is not None:
         attn_bias = create_attn_bias(
             attn_bias_type,
-            batch_size=batch_size * h,
+            batch_size=B * h,
             q_len=q_len,
             kv_len=kv_len,
             dtype=dtype,
