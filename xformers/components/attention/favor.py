@@ -21,6 +21,8 @@ from xformers.components.attention.feature_maps import (
     SMReg,
 )
 
+logger = logging.getLogger("xformers")
+
 
 @dataclass
 class FavorAttentionConfig(AttentionConfig):
@@ -84,7 +86,7 @@ class FavorAttention(Attention):
             self.dim_features = 2 * (
                 self.dim_features // 2
             )  # needs to be even for some variants
-            logging.info(
+            logger.info(
                 f"FAVOR: Automatically setting the random mapping dimension to {self.dim_features} from {dim_head}"
             )
         else:

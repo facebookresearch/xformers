@@ -3,17 +3,20 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+
 import torch
 
 from xformers.ops import masked_matmul
+
+logger = logging.getLogger("xformers")
+
 
 try:
     from triton.ops.blocksparse import matmul as blocksparse_matmul
     from triton.ops.blocksparse import softmax as blocksparse_softmax
 except ImportError as e:
-    import logging
-
-    logging.warning(
+    logger.warning(
         "Triton is not available, some optimizations will not be enabled.\n"
         + f"This is just a warning: {e}"
     )

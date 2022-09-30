@@ -16,6 +16,8 @@ from xformers.components.attention import Attention
 from xformers.components.input_projection import InputProjection, InputProjectionConfig
 from xformers.components.positional_embedding import RotaryEmbedding
 
+logger = logging.getLogger("xformers")
+
 
 @dataclass
 class MultiHeadDispatchConfig:
@@ -90,7 +92,7 @@ class MultiHeadDispatch(nn.Module):
         super().__init__()
 
         if isinstance(bias, bool):
-            logging.warning(
+            logger.warning(
                 "Single bias value provided for the MHA projections."
                 + f" Assuming the same parameter ({bias}) is to be used everywhere"
             )

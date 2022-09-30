@@ -12,6 +12,9 @@ try:
 except ImportError:
     pass
 
+
+logger = logging.getLogger("xformers")
+
 _is_sparse_available: bool = True
 
 # Set to true to utilize functorch
@@ -66,7 +69,7 @@ if _is_sparse_available:
         _register_extensions()
     except (ImportError, OSError) as e:
         print(e)
-        logging.warning(
+        logger.warning(
             f"WARNING: {e}\nNeed to compile C++ extensions to get sparse attention suport."
             + " Please run python setup.py build develop"
         )
@@ -94,7 +97,7 @@ def _is_triton_available():
 
         return True
     except (ImportError, AttributeError) as e:
-        logging.warning(
+        logger.warning(
             f"A matching Triton is not available, some optimizations will not be enabled.\nError caught was: {e}"
         )
         return False
@@ -104,7 +107,7 @@ if _is_functorch_available:
     try:
         from xformers.components.nvfuser import NVFusedBiasActivationDropout  # noqa
     except ImportError as e:
-        logging.warning(
+        logger.warning(
             f"Functorch is not available, some optimizations will not be enabled.\nError caught was: {e}"
         )
         _is_functorch_available = False

@@ -20,6 +20,9 @@ from xformers.triton.k_layer_norm import (
     layer_norm_fw,
 )
 
+logger = logging.getLogger("xformers")
+
+
 _triton_layernorm_fp16_enabled = False  # NOTE: PyTorch keeps layernorm as fp32
 _triton_registered_warnings = False
 
@@ -52,7 +55,7 @@ class _LayerNorm(torch.autograd.Function):
         if not x_arg.is_contiguous() or not y.is_contiguous():
             global _triton_registered_warnings
             if not _triton_registered_warnings:
-                logging.warning(
+                logger.warning(
                     "Non-contiguous input tensor found. Making it contiguous,"
                     + " but could have perf or trainer implications"
                 )
@@ -222,11 +225,11 @@ def layer_norm(
         # Catch cases where the current GPU does not have enough registers to hold a full tensor line
         # fallback to PyTorch's implementation, which streams the tensor in and out
         _triton_registered_warnings = True
-        logging.warning(
+        logger.warning(
             "Triton layernorm kernel register spillover or invalid image caught. "
             "Deactivating this kernel, please file an issue in the xFormers repository"
         )
-        logging.warning(e)
+        logger.warning(e)
 
     return torch.nn.functional.layer_norm(
         x, [x.shape[-1]], weight=weight, bias=bias, eps=eps

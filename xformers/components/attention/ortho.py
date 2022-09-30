@@ -20,6 +20,8 @@ from xformers.components.attention.core import (
     scaled_query_key_softmax,
 )
 
+logger = logging.getLogger("xformers")
+
 
 class LandmarkSelection(str, Enum):
     Orthogonal = "orthogonal"
@@ -105,7 +107,7 @@ class OrthoFormerAttention(Attention):
                     landmarks = self._cluster_landmarks(q, spherical=True)
 
             if att_mask is not None:
-                logging.warning(
+                logger.warning(
                     "Orthoformer: attention mask passed alongside with using landmarks to reduce dimensions. \
                     The two are typically not compatible"
                 )
