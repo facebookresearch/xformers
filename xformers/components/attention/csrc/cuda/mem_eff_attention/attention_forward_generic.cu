@@ -117,9 +117,9 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     max_seqlen_k = key.size(1);
   }
 
-  CHECK_NOSPARSE_CONTIGUOUS_CUDA(query);
-  CHECK_NOSPARSE_CONTIGUOUS_CUDA(key);
-  CHECK_NOSPARSE_CONTIGUOUS_CUDA(value);
+  CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(query);
+  CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
+  CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
   at::cuda::CUDAGuard device_guard(query.device());
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
@@ -185,6 +185,20 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     p.num_keys = max_seqlen_k;
     p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
     p.causal = causal;
+
+    p.q_strideH = query.stride(2);
+    p.k_strideH = key.stride(2);
+    p.v_strideH = value.stride(2);
+
+    // Double check strides of QKV, as we only support a few non-contiguous cases
+    TORCH_CHECK(query.stride(1) == p.q_strideM(), "Invalid strides for `query` (dimension M)");
+    TORCH_CHECK(key.stride(1) == p.k_strideM(), "Invalid strides for `key` (dimension M)");
+    TORCH_CHECK(value.stride(1) == p.v_strideM(), "Invalid strides for `value` (dimension M)");
+    if (p.cu_seqlens_q_ptr == nullptr) {
+      TORCH_CHECK(query.stride(0) == p.q_strideM() * p.num_queries, "Invalid strides for `query` (batch dimension)");
+      TORCH_CHECK(key.stride(0) == p.k_strideM() * p.num_keys, "Invalid strides for `key` (batch dimension)");
+      TORCH_CHECK(value.stride(0) == p.v_strideM() * p.num_keys, "Invalid strides for `value` (batch dimension)");
+    }
 
     constexpr auto kernel_fn = attention_kernel_batched<Kernel>;
     size_t smem_bytes = sizeof(typename Kernel::SharedStorage);
