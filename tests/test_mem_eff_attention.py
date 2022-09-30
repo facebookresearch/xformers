@@ -512,6 +512,7 @@ def test_backward(
         grad_out = torch.tensor([1.0], device=device)[None, None, :].expand_as(out)
 
     out.backward(grad_out)
+    del out
 
     grad_q = query.grad
     grad_k = key.grad
@@ -523,6 +524,8 @@ def test_backward(
 
     ref = ref_attention(query, key, value, attn_bias)
     ref.backward(grad_out)
+    del grad_out
+    del ref
 
     atol = 2e-4 + 2e-6 * k * kv_len * math.sqrt(q_len)
     rtol = 1e-4
@@ -545,10 +548,17 @@ def test_backward(
     assert isinstance(key.grad, torch.Tensor)
     assert isinstance(value.grad, torch.Tensor)
 
+    grad_qr = query.grad
+    grad_kr = key.grad
+    grad_vr = value.grad
+    del query
+    del key
+    del value
+
     for name, calc_grad, ref_grad in [
-        ("query", grad_q, query.grad),
-        ("key", grad_k, key.grad),
-        ("value", grad_v, value.grad),
+        ("query", grad_q, grad_qr),
+        ("key", grad_k, grad_kr),
+        ("value", grad_v, grad_vr),
     ]:
         assert_allclose(calc_grad, ref_grad, name, atol=atol, rtol=rtol)
 
