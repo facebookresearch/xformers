@@ -8,9 +8,7 @@
 
 namespace {
 
-static __device__ __forceinline__ float atomicMaxFloat(
-    float* addr,
-    float value) {
+static CUTLASS_DEVICE float atomicMaxFloat(float* addr, float value) {
   // source: https://stackoverflow.com/a/51549250
   return (value >= 0)
       ? __int_as_float(atomicMax((int*)addr, __float_as_int(value)))
@@ -40,7 +38,7 @@ struct RegisterOps {
       bool kFullColumns,
       bool kIsFirst,
       bool kKeepOutputInRF>
-  __device__ __forceinline__ static void update(
+  CUTLASS_DEVICE static void update(
       typename T::Fragment& frag_o, // output so far
       typename T::Fragment& frag,
       cutlass::Array<accum_t, kQueriesPerBlock>& mi,
@@ -144,7 +142,7 @@ struct AttentionScalingCoefsUpdaterSm80
   static int const kRowsPerTile = 8;
   static int const kAccumulatorRows = InstructionShape::kM / kRowsPerTile;
 
-  static cutlass::MatrixCoord __device__ get_lane_offset(
+  static cutlass::MatrixCoord CUTLASS_DEVICE get_lane_offset(
       int8_t lane_id,
       int8_t warp_id,
       typename T::TensorCoord const& tile_offset) {
@@ -157,7 +155,7 @@ struct AttentionScalingCoefsUpdaterSm80
   }
 
   template <typename FA, typename FB, typename FC>
-  __device__ static void iterateRows(
+  CUTLASS_DEVICE static void iterateRows(
       cutlass::MatrixCoord& lane_offset,
       FA beginRow,
       FB op,
@@ -190,7 +188,7 @@ struct AttentionScalingCoefsUpdaterSm80
   }
 
   template <typename DT, typename F>
-  __device__ static bool reduceSameRow(int lane_id, DT& myValue, F fn) {
+  CUTLASS_DEVICE static bool reduceSameRow(int lane_id, DT& myValue, F fn) {
     // In each warp, 4 threads will work on the same row
     // - the ones with the same `quad`
     auto otherV = __shfl_xor_sync(0xffffffff, myValue, 1);
@@ -231,7 +229,7 @@ struct AttentionScalingCoefsUpdaterVolta
   static int const kAccumulatorPatials = 2;
   using QuadShapePerPatialMma = cutlass::MatrixShape<4, 4>;
 
-  static cutlass::MatrixCoord __device__ get_lane_offset(
+  static cutlass::MatrixCoord CUTLASS_DEVICE get_lane_offset(
       int8_t lane_id,
       int8_t warp_id,
       typename T::TensorCoord const& tile_offset) {
@@ -257,12 +255,12 @@ struct AttentionScalingCoefsUpdaterVolta
   }
 
   template <typename DT, typename F>
-  __device__ static bool reduceSameRow(int lane_id, DT& myValue, F fn) {
+  CUTLASS_DEVICE static bool reduceSameRow(int lane_id, DT& myValue, F fn) {
     return true; // TODO: Figure out which threads operate on the same rows
   };
 
   template <typename FA, typename FB, typename FC>
-  __device__ static void iterateRows(
+  CUTLASS_DEVICE static void iterateRows(
       cutlass::MatrixCoord& lane_offset,
       FA beginRow,
       FB op,
@@ -330,7 +328,7 @@ struct AttentionScalingCoefsUpdaterSimt
       std::is_same<typename T::Iterations, typename T::Iterations>::value);
 
   template <typename DT, typename F>
-  __device__ static bool reduceSameRow(int lane_id, DT& myValue, F fn) {
+  CUTLASS_DEVICE static bool reduceSameRow(int lane_id, DT& myValue, F fn) {
     CUTLASS_PRAGMA_UNROLL
     for (int bit = 1; bit < Policy::WarpShape::kColumn; bit *= 2) {
       auto otherV = __shfl_xor_sync(0xffffffff, myValue, bit);
@@ -340,7 +338,7 @@ struct AttentionScalingCoefsUpdaterSimt
   }
 
   template <typename FA, typename FB, typename FC>
-  __device__ static void iterateRows(
+  CUTLASS_DEVICE static void iterateRows(
       cutlass::MatrixCoord& lane_offset,
       FA beginRow,
       FB op,
@@ -372,7 +370,7 @@ struct AttentionScalingCoefsUpdaterSimt
     }
   }
 
-  static cutlass::MatrixCoord __device__ get_lane_offset(
+  static cutlass::MatrixCoord CUTLASS_DEVICE get_lane_offset(
       int8_t lane_id,
       int8_t warp_id,
       typename T::TensorCoord const& tile_offset) {

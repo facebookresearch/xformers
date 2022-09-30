@@ -1402,7 +1402,7 @@ struct B2bGemm<
           IteratorAccumulatorLSE,
           EpilogueOpApplyLSE>;
 
-  static void __device__ accumToSmem(
+  static void CUTLASS_DEVICE accumToSmem(
       AccumulatorSharedStorage& shared_storage,
       FragmentC const& accum,
       int lane_id,
@@ -1417,7 +1417,7 @@ struct B2bGemm<
     epilogue(OutputOpNoOp({}), smem_iterator_attn, accum);
   }
 
-  static void __device__ accumApplyLSEToSmem(
+  static void CUTLASS_DEVICE accumApplyLSEToSmem(
       AccumulatorSharedStorage& shared_storage,
       FragmentC& accum,
       lse_scalar_t const* lse,
@@ -1516,7 +1516,7 @@ struct B2bGemm<
   static int const kAccumulatorPatials = 2;
   using QuadShapePerPatialMma = cutlass::MatrixShape<4, 4>;
 
-  static void __device__ accumToSmem(
+  static void CUTLASS_DEVICE accumToSmem(
       AccumulatorSharedStorage& shared_storage,
       FragmentC const& accum,
       int lane_id,
@@ -1591,7 +1591,7 @@ struct B2bGemm<
     }
   }
 
-  static void __device__ accumApplyLSEToSmem(
+  static void CUTLASS_DEVICE accumApplyLSEToSmem(
       AccumulatorSharedStorage& shared_storage,
       typename IteratorC::Fragment& accum,
       lse_scalar_t const* lse,
@@ -1680,7 +1680,7 @@ struct B2bGemm<
           cutlass::MatrixShape<0, 0> // Padding
           >;
 
-  static void __device__ accumToSmem(
+  static void CUTLASS_DEVICE accumToSmem(
       AccumulatorSharedStorage& shared_storage,
       FragmentC const& accum,
       int lane_id,
@@ -1731,7 +1731,7 @@ struct B2bGemm<
     }
   }
 
-  static void __device__ accumApplyLSEToSmem(
+  static void CUTLASS_DEVICE accumApplyLSEToSmem(
       AccumulatorSharedStorage& shared_storage,
       typename IteratorC::Fragment& accum,
       lse_scalar_t const* lse,

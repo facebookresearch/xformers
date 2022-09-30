@@ -370,7 +370,7 @@ struct AttentionKernel {
       typename MM1::DefaultEpilogue::SharedStorage epilogue;
     };
 
-    typename MM1::DefaultEpilogue::SharedStorage& __device__
+    CUTLASS_DEVICE typename MM1::DefaultEpilogue::SharedStorage&
     epilogue_shared_storage() {
       return epilogue;
     }
@@ -389,7 +389,7 @@ struct AttentionKernel {
       SharedStorageAfterMM0 after_mm0;
     };
 
-    typename MM1::DefaultEpilogue::SharedStorage& __device__
+    CUTLASS_DEVICE typename MM1::DefaultEpilogue::SharedStorage&
     epilogue_shared_storage() {
       return after_mm0.epilogue;
     }
@@ -411,7 +411,7 @@ struct AttentionKernel {
         p.head_dim_value % kAlignmentV == 0, "value is not correctly aligned");
   }
 
-  static void __device__ attention_kernel(Params& p) {
+  static void CUTLASS_DEVICE attention_kernel(Params& p) {
     // In this block, we will only ever:
     // - read query[query_start:query_end, :]
     // - write to output[query_start:query_end, :]
@@ -775,13 +775,13 @@ struct AttentionKernel {
     }
   }
 
-  static __device__ __forceinline__ int8_t lane_id() {
+  static CUTLASS_DEVICE int8_t lane_id() {
     return threadIdx.x;
   }
-  static __device__ __forceinline__ int8_t warp_id() {
+  static CUTLASS_DEVICE int8_t warp_id() {
     return threadIdx.y;
   }
-  static __device__ __forceinline__ int16_t thread_id() {
+  static CUTLASS_DEVICE int16_t thread_id() {
     return threadIdx.x + threadIdx.y * blockDim.x;
   }
 };
