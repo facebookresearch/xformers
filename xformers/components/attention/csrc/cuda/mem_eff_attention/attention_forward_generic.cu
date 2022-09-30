@@ -192,27 +192,15 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
     p.causal = causal;
 
+    ASSIGN_CHECK_OVERFLOW(p.q_strideB, query.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.k_strideB, key.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.v_strideB, value.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.q_strideM, query.stride(1));
     ASSIGN_CHECK_OVERFLOW(p.k_strideM, key.stride(1));
     ASSIGN_CHECK_OVERFLOW(p.v_strideM, value.stride(1));
     ASSIGN_CHECK_OVERFLOW(p.q_strideH, query.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.k_strideH, key.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.v_strideH, value.stride(2));
-
-    // Double check strides of QKV, as we only support a few non-contiguous
-    // cases
-    if (p.cu_seqlens_q_ptr == nullptr) {
-      // (also checks overflows)
-      TORCH_CHECK(
-          query.stride(0) == p.q_strideM * p.num_queries,
-          "Invalid strides for `query` (batch dimension)");
-      TORCH_CHECK(
-          key.stride(0) == p.k_strideM * p.num_keys,
-          "Invalid strides for `key` (batch dimension)");
-      TORCH_CHECK(
-          value.stride(0) == p.v_strideM * p.num_keys,
-          "Invalid strides for `value` (batch dimension)");
-    }
 
     constexpr auto kernel_fn = attention_kernel_batched<Kernel>;
     size_t smem_bytes = sizeof(typename Kernel::SharedStorage);

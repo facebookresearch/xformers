@@ -676,7 +676,7 @@ def memory_efficient_attention(
     Supported formats for inputs/outputs:
         [batch, seqlen, num_heads, K]
         [batch, seqlen, K] (Legacy format)
-    Inputs can be non-contiguous
+    Inputs can be non-contiguous - we only require the last dimension's stride to be 0
     """
 
     if query.ndim not in [3, 4]:

@@ -261,16 +261,14 @@ struct AttentionScalingCoefsUpdaterVolta
     static_assert(
         cutlass::platform::is_same<Element, float>::value,
         "update to support non-float accum");
-    // see
     // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-884-f16
     // T0 & T2 share same line within a quad
-    int mask = ((1 << 1) | (1 << 3));
-    auto otherV = __shfl_xor_sync(mask, myValue, 1 << 1);
+    auto otherV = __shfl_xor_sync(0xffffffff, myValue, 1 << 1);
     myValue = fn(myValue, otherV);
     // quad 0 and quad 2 are on the same lines
-    otherV = __shfl_xor_sync(mask, myValue, 1 << 3);
+    otherV = __shfl_xor_sync(0xffffffff, myValue, 1 << 3);
     myValue = fn(myValue, otherV);
-    return (lane_id & mask) == 0;
+    return (lane_id & ((1 << 1) | (1 << 3))) == 0;
   };
 
   template <typename FA, typename FB, typename FC>

@@ -222,7 +222,6 @@ def create_tensors(
 
 
 def bmhk2bmk(tensor) -> torch.Tensor:
-    # Note: Non-contiguous output
     return (
         tensor.permute((0, 2, 1, 3))
         .contiguous()
