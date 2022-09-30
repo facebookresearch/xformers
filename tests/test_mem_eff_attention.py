@@ -44,6 +44,14 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
         for K in op._TEST_K:
             shapes.append((B, 16, 1024, H, K, K))
             shapes.append((B, 1024, 16, H, K, K))
+        # Some number of heads
+        for H in [3, 5, 12]:
+            shapes.append((B, Mq, Mkv, H, K, K))
+    # Some strides don't fit on an uint16
+    shapes.append((1, 128, 128, 300, 128, 128))
+    # TODO: Some strides don't fit on an uint32
+    # Crashes on Flash, Errors on Cutlass
+    # shapes.append((1, 1, 64000, 300, 128, 128))
     # Add some random shapes
     if op is xformers.ops.MemoryEfficientAttentionCutlassOp:
         K_CHOICES = [8 * i for i in range(1, 256 // 8)]

@@ -109,24 +109,21 @@ struct AttentionKernel {
     int32_t head_dim_value;
     int32_t num_queries;
     int32_t num_keys;
-    int32_t num_batches;
     int32_t num_heads = 1;
-
-    int16_t q_strideMH[3];
-    int16_t k_strideMH[3];
-    int16_t v_strideMH[3];
 
     bool causal;
 
-    CUTLASS_HOST_DEVICE int32_t q_strideM() const {
-      return q_strideMH[0];
-    }
-    CUTLASS_HOST_DEVICE int32_t k_strideM() const {
-      return k_strideMH[0];
-    }
-    CUTLASS_HOST_DEVICE int32_t v_strideM() const {
-      return v_strideMH[0];
-    }
+    int32_t q_strideM;
+    int32_t k_strideM;
+    int32_t v_strideM;
+
+    // Everything below is only used in `advance_to_block`
+    // and shouldn't use registers
+    int32_t q_strideH;
+    int32_t k_strideH;
+    int32_t v_strideH;
+    int32_t num_batches;
+
     CUTLASS_HOST_DEVICE int32_t o_strideM() const {
       return head_dim_value * num_heads;
     }
@@ -161,10 +158,9 @@ struct AttentionKernel {
       }
 
       // Advance to the current batch / head / query_start
-      query_ptr +=
-          (q_start + query_start) * q_strideM() + head_id * q_strideMH[1];
-      key_ptr += k_start * k_strideM() + head_id * k_strideMH[1];
-      value_ptr += k_start * v_strideM() + head_id * v_strideMH[1];
+      query_ptr += (q_start + query_start) * q_strideM + head_id * q_strideH;
+      key_ptr += k_start * k_strideM + head_id * k_strideH;
+      value_ptr += k_start * v_strideM + head_id * v_strideH;
       output_ptr +=
           (q_start + query_start) * o_strideM() + head_id * head_dim_value;
 
@@ -479,8 +475,8 @@ struct AttentionKernel {
 
       auto prologueV = [&](int blockN) {
         typename MM1::Mma::IteratorB iterator_V(
-            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_strideM())},
-            p.value_ptr + iter_key_start * p.v_strideM(),
+            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_strideM)},
+            p.value_ptr + iter_key_start * p.v_strideM,
             {problem_size_1_k, problem_size_1_n},
             thread_id(),
             cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
@@ -515,7 +511,7 @@ struct AttentionKernel {
       // Construct iterators to A and B operands
       typename MM0::IteratorA iterator_A(
           typename MM0::IteratorA::Params(
-              typename MM0::MmaCore::LayoutA(p.q_strideM())),
+              typename MM0::MmaCore::LayoutA(p.q_strideM)),
           p.query_ptr,
           {problem_size_0_m, problem_size_0_k},
           thread_id(),
@@ -523,8 +519,8 @@ struct AttentionKernel {
 
       typename MM0::IteratorB iterator_B(
           typename MM0::IteratorB::Params(
-              typename MM0::MmaCore::LayoutB(p.k_strideM())),
-          p.key_ptr + iter_key_start * p.k_strideM(),
+              typename MM0::MmaCore::LayoutB(p.k_strideM)),
+          p.key_ptr + iter_key_start * p.k_strideM,
           {problem_size_0_k, problem_size_0_n},
           thread_id(),
           tb_offset_B);
@@ -638,8 +634,8 @@ struct AttentionKernel {
         }
 
         typename MM1::Mma::IteratorB iterator_V(
-            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_strideM())},
-            p.value_ptr + iter_key_start * p.v_strideM(),
+            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_strideM)},
+            p.value_ptr + iter_key_start * p.v_strideM,
             {problem_size_1_k, problem_size_1_n},
             thread_id(),
             cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});

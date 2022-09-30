@@ -494,7 +494,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
             ctx.query_api_input_shape = query_api_input_shape
             ctx.key_api_input_shape = key_api_input_shape
             ctx.value_api_input_shape = value_api_input_shape
-        return out.reshape([batch, seqlen_q, head_dim_v])
+        return out
 
     @classmethod
     def backward(cls, ctx, grad):

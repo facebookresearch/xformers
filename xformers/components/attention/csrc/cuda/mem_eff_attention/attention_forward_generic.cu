@@ -178,6 +178,12 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
       p.cu_seqlens_k_ptr = (int32_t*)cu_seqlens_k->data_ptr();
     }
 
+#define ASSIGN_CHECK_OVERFLOW(A, B)                                            \
+  {                                                                            \
+    A = B;                                                                     \
+    TORCH_CHECK(B < std::numeric_limits<decltype(A)>::max(), #B " overflows"); \
+  }
+
     p.num_heads = num_heads;
     p.head_dim = query.size(3);
     p.head_dim_value = value.size(3);
@@ -186,23 +192,25 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
     p.causal = causal;
 
-    for (int i = 0; i < 2; ++i) {
-      p.q_strideMH[i] = query.stride(i + 1);
-      p.k_strideMH[i] = key.stride(i + 1);
-      p.v_strideMH[i] = value.stride(i + 1);
-    }
+    ASSIGN_CHECK_OVERFLOW(p.q_strideM, query.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.k_strideM, key.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.v_strideM, value.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.q_strideH, query.stride(2));
+    ASSIGN_CHECK_OVERFLOW(p.k_strideH, key.stride(2));
+    ASSIGN_CHECK_OVERFLOW(p.v_strideH, value.stride(2));
 
     // Double check strides of QKV, as we only support a few non-contiguous
     // cases
     if (p.cu_seqlens_q_ptr == nullptr) {
+      // (also checks overflows)
       TORCH_CHECK(
-          query.stride(0) == p.q_strideM() * p.num_queries,
+          query.stride(0) == p.q_strideM * p.num_queries,
           "Invalid strides for `query` (batch dimension)");
       TORCH_CHECK(
-          key.stride(0) == p.k_strideM() * p.num_keys,
+          key.stride(0) == p.k_strideM * p.num_keys,
           "Invalid strides for `key` (batch dimension)");
       TORCH_CHECK(
-          value.stride(0) == p.v_strideM() * p.num_keys,
+          value.stride(0) == p.v_strideM * p.num_keys,
           "Invalid strides for `value` (batch dimension)");
     }
 
