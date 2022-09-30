@@ -14,7 +14,8 @@ except ImportError as e:
     import logging
 
     logging.warning(
-        f"Triton is not available, some optimizations will not be enabled.\nError {e}"
+        "Triton is not available, some optimizations will not be enabled.\n"
+        + f"This is just a warning: {e}"
     )
     blocksparse_matmul = None
     blocksparse_softmax = None
