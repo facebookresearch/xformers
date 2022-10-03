@@ -226,17 +226,23 @@ class PredicatedTileAccessIteratorResidualLast<
         indices_(indices) {
     the_predicates.set_predicates(thread_id, threadblock_offset);
     the_predicates.get_mask(residual_tile_mask);
-    the_predicates.compute_predicates_(extent, true);
 
     // Working around a weird compiler bug happening on P100 for the backward.
     // I've seen together: the_predicates.predicates_[0] = 14 (instead of 15)
     // residual_tile_mask[0] = 15 (correct)
     //
     // Adding prints when the value is calculated (in `compute_predicates_`)
-    // sometimes removes the bug. The consequence is that we skip the first
-    // element of a tensor, leading to wrong results. The line below should
-    // always be a no-op in theory
-    the_predicates.predicates_[0] |= residual_tile_mask[0];
+    // sometimes removes the bug. The consequence is that we skip some
+    // element of a tensor, leading to wrong results
+    // Setting `compute_predicates_`'s second argument (`is_steady_state`) to
+    // true also seems to get rid of the bug - at the cost of twice as many
+    // comparisons.
+#if !defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 700)
+    constexpr bool kWorkAroundCompilerBug = false;
+#else
+    constexpr bool kWorkAroundCompilerBug = true;
+#endif
+    the_predicates.compute_predicates_(extent, true && !kWorkAroundCompilerBug);
 
     // update internal pointers
     Layout layout(params_.stride_);
