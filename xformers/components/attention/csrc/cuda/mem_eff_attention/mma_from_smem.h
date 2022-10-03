@@ -1587,7 +1587,8 @@ struct B2bGemm<
                 int c = (accum_n + lane_offset.column());
                 assert(r < 32);
                 assert(c < 32);
-                *reinterpret_cast<AccessType*>(ref_.data() + ref_.offset({r, c})) = to_store;
+                *reinterpret_cast<AccessType*>(
+                    ref_.data() + ref_.offset({r, c})) = to_store;
               }
             }
           }
