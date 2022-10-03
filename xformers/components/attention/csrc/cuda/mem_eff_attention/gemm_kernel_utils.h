@@ -65,6 +65,13 @@
 
 #define CHECK_ALIGNED_PTR(PTR, ALIGNMENT) \
   TORCH_CHECK(uint64_t(PTR) % ALIGNMENT == 0, #PTR " is not correctly aligned")
+
+#define ASSIGN_CHECK_OVERFLOW(A, B)                                            \
+  {                                                                            \
+    A = B;                                                                     \
+    TORCH_CHECK(B < std::numeric_limits<decltype(A)>::max(), #B " overflows"); \
+  }
+
 namespace gemm_kernel_utils {
 template <typename scalar_t>
 struct TypeTraits;
