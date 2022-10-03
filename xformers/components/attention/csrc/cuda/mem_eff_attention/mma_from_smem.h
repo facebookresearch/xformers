@@ -1547,6 +1547,8 @@ struct B2bGemm<
         cutlass::MatrixCoord(
             {IteratorC::Shape::kRow, IteratorC::Shape::kColumn}));
 
+    using AccessType = cutlass::Array<scalar_t, EleShapePerPatial::kColumn>;
+
     // store - from MmaVoltaTensorOpAccumulatorTileIterator
     CUTLASS_PRAGMA_UNROLL
     for (int tile_n = 0; tile_n < Policy::TileIterations::kColumn; ++tile_n) {
@@ -1568,21 +1570,25 @@ struct B2bGemm<
             for (int p = 0; p < kAccumulatorPatials; ++p) {
               CUTLASS_PRAGMA_UNROLL
               for (int m = 0; m < EleShapePerPatial::kRow; ++m) {
+                int accum_m = tile_m * Policy::InterleavedTile::kRow +
+                    mma_m * QuadShapePerPatialMma::kRow + m * 2;
+                int accum_n = tile_n * Policy::InterleavedTile::kColumn +
+                    mma_n * QuadShapePerPatialMma::kColumn +
+                    p * Policy::InterleavedTile::kColumn / 2;
+                int r = (accum_m + lane_offset.row());
+                AccessType to_store;
                 CUTLASS_PRAGMA_UNROLL
                 for (int n = 0; n < EleShapePerPatial::kColumn; ++n) {
-                  int accum_m = tile_m * Policy::InterleavedTile::kRow +
-                      mma_m * QuadShapePerPatialMma::kRow + m * 2;
-                  int accum_n = tile_n * Policy::InterleavedTile::kColumn +
-                      mma_n * QuadShapePerPatialMma::kColumn +
-                      p * Policy::InterleavedTile::kColumn / 2 + n;
                   int idx = mma_accum_start + p * kElementsPerPartial +
                       m * EleShapePerPatial::kColumn + n;
-                  int r = (accum_m + lane_offset.row());
-                  int c = (accum_n + lane_offset.column());
-                  assert(r < 32);
-                  assert(c < 32);
-                  ref_.at({r, c}) = scalar_t(accum[idx]);
+                  int c = (accum_n + n + lane_offset.column());
+                  to_store[n] = scalar_t(accum[idx]);
                 }
+                int c = (accum_n + lane_offset.column());
+                assert(r < 32);
+                assert(c < 32);
+                *reinterpret_cast<AccessType*>(
+                    ref_.data() + ref_.offset({r, c})) = to_store;
               }
             }
           }
