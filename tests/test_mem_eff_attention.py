@@ -119,6 +119,9 @@ def assert_allclose(
 
 
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
+    if q.ndim == 4:
+        assert p == 0.0
+        return ref_attention_bmhk(q, k, v, attn_bias=attn_bias)
     q = q.float()
     k = k.float()
     v = v.float()
@@ -222,47 +225,7 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
     )
 
 
-@pytest.mark.parametrize(
-    "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
-)
-@pytest.mark.parametrize(
-    "op_device_dtype_B_Mq_Mkv_H_K_Kv",
-    _op_device_dtype_B_Mq_Mkv_H_K_Kv,
-    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
-)
-def test_forward_bmk(
-    op_device_dtype_B_Mq_Mkv_H_K_Kv,
-    attn_bias_type,
-):
-    (
-        op,
-        device,
-        dtype,
-        batch_size,
-        q_len,
-        kv_len,
-        h,
-        k,
-        kv,
-    ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
-    query, key, value, attn_bias = create_tensors(
-        *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=attn_bias_type, fmt="BMK"
-    )
-
-    out = xformers.ops.memory_efficient_attention(
-        query, key, value, attn_bias, op=op
-    ).float()
-    assert out.shape == (batch_size * h, q_len, kv), out.shape
-    ref = ref_attention(query, key, value, attn_bias)
-
-    assert_allclose(
-        out,
-        ref,
-        atol=op.FORWARD_ERROR_ATOL[dtype],
-        rtol=op.FORWARD_ERROR_RTOL.get(dtype, 1e-5),
-    )
-
-
+@pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("packed", [False, True])
 @pytest.mark.parametrize(
     "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
@@ -272,10 +235,11 @@ def test_forward_bmk(
     _op_device_dtype_B_Mq_Mkv_H_K_Kv,
     ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
 )
-def test_forward_bmhk(
+def test_forward(
     op_device_dtype_B_Mq_Mkv_H_K_Kv,
     attn_bias_type,
     packed,
+    fmt,
 ):
     (
         op,
@@ -298,16 +262,21 @@ def test_forward_bmhk(
 
     if packed:
         c = torch.stack([query, key, value], 2)
-        # bm3hk -> 3bmhk
-        c = c.permute(2, 0, 1, 3, 4)
-        query, key, value = c[0], c[1], c[2]
+        if fmt == "BMK":
+            # bm3hk -> 3bhmk -> 3Bmk
+            c = c.permute(2, 0, 3, 1, 4).view([3, -1, q_len, k])
+            query, key, value = c[0], c[1], c[2]
+        else:
+            # bm3hk -> 3bmhk
+            c = c.permute(2, 0, 1, 3, 4)
+            query, key, value = c[0], c[1], c[2]
         assert not query.is_contiguous()
 
     out = xformers.ops.memory_efficient_attention(
         query, key, value, attn_bias, op=op
     ).float()
-    assert out.shape == (batch_size, q_len, h, kv), out.shape
-    ref = ref_attention_bmhk(query, key, value, attn_bias)
+    ref = ref_attention(query, key, value, attn_bias)
+    assert out.shape == ref.shape, out.shape
 
     assert_allclose(
         out,
@@ -472,6 +441,7 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
     assert_allclose(lse[:, : ref_lse.shape[1]], ref_lse, atol=2e-4)
 
 
+@pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize(
     "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
 )
@@ -485,6 +455,7 @@ def test_backward(
     op_device_dtype_B_Mq_Mkv_H_K_Kv,
     grad_out_contiguous,
     attn_bias_type,
+    fmt,
 ):
     (
         op,
@@ -498,8 +469,19 @@ def test_backward(
         kv,
     ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
     query, key, value, attn_bias = create_tensors(
-        *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=attn_bias_type, fmt="BMK"
+        *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=attn_bias_type, fmt=fmt
     )
+
+    if (
+        fmt == "BMHK"
+        and query.shape[3] == value.shape[3]
+        and query.shape[1] == value.shape[1]
+    ):
+        c = torch.stack([query, key, value], 2)
+        # bm3hk -> 3bmhk
+        c = c.permute(2, 0, 1, 3, 4)
+        query, key, value = c[0], c[1], c[2]
+        assert not query.is_contiguous()
 
     query.requires_grad_(True)
     key.requires_grad_(True)

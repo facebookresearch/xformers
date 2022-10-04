@@ -178,12 +178,6 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
       p.cu_seqlens_k_ptr = (int32_t*)cu_seqlens_k->data_ptr();
     }
 
-#define ASSIGN_CHECK_OVERFLOW(A, B)                                            \
-  {                                                                            \
-    A = B;                                                                     \
-    TORCH_CHECK(B < std::numeric_limits<decltype(A)>::max(), #B " overflows"); \
-  }
-
     p.num_heads = num_heads;
     p.head_dim = query.size(3);
     p.head_dim_value = value.size(3);

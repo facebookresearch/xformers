@@ -353,8 +353,6 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
     @classmethod
     def backward(cls, ctx, grad):
         query, key, value, lse, out = ctx.saved_tensors
-        if query.shape[2] != 1:
-            raise NotImplementedError("num_heads != 1 not yet implemented")
 
         dtype = query.dtype
         (
@@ -362,17 +360,14 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             grad_k,
             grad_v,
         ) = torch.ops.xformers.efficient_attention_backward_cutlass(
-            grad.to(dtype).squeeze(2),
-            query.squeeze(2),
-            key.squeeze(2),
-            value.squeeze(2),
-            lse.squeeze(1),
-            out.to(dtype).squeeze(2),
+            grad.to(dtype),
+            query,
+            key,
+            value,
+            lse,
+            out.to(dtype),
             causal=ctx.causal,
         )
-        grad_q = grad_q.unsqueeze(2)
-        grad_k = grad_k.unsqueeze(2)
-        grad_v = grad_v.unsqueeze(2)
         return grad_q, grad_k, grad_v, None, None
 
 
