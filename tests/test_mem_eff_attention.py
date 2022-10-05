@@ -267,9 +267,8 @@ def test_forward(
             c = c.permute(2, 0, 3, 1, 4).view([3, -1, q_len, k])
             query, key, value = c[0], c[1], c[2]
         else:
-            # bm3hk -> 3bmhk
-            c = c.permute(2, 0, 1, 3, 4)
-            query, key, value = c[0], c[1], c[2]
+            # bm3hk -> 3 x bmhk
+            query, key, value = xformers.ops.Chunk3.apply(c, 2)
         assert not query.is_contiguous()
 
     out = xformers.ops.memory_efficient_attention(
@@ -471,16 +470,17 @@ def test_backward(
     query, key, value, attn_bias = create_tensors(
         *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=attn_bias_type, fmt=fmt
     )
+    qkv = None
 
     if (
         fmt == "BMHK"
         and query.shape[3] == value.shape[3]
         and query.shape[1] == value.shape[1]
     ):
-        c = torch.stack([query, key, value], 2)
-        # bm3hk -> 3bmhk
-        c = c.permute(2, 0, 1, 3, 4)
-        query, key, value = c[0], c[1], c[2]
+        qkv = torch.stack([query, key, value], 2)
+        qkv.requires_grad_(True)
+        # bm3hk -> 3 x bmhk
+        query, key, value = xformers.ops.Chunk3.apply(qkv, 2)
         assert not query.is_contiguous()
 
     query.requires_grad_(True)
@@ -496,13 +496,15 @@ def test_backward(
     out.backward(grad_out)
     del out
 
-    grad_q = query.grad
-    grad_k = key.grad
-    grad_v = value.grad
-
-    query.grad = None
-    key.grad = None
-    value.grad = None
+    grads = []
+    if qkv is None:
+        grads = [query.grad, key.grad, value.grad]
+        query.grad = None
+        key.grad = None
+        value.grad = None
+    else:
+        grads = [qkv.grad]
+        qkv.grad = None
 
     ref = ref_attention(query, key, value, attn_bias)
     ref.backward(grad_out)
@@ -525,23 +527,24 @@ def test_backward(
         # Longer sequences mean we iterate more and errors accumulate
         atol *= 1.4 ** (max(q_len, kv_len) // 64)
 
-    # (for mypy)
-    assert isinstance(query.grad, torch.Tensor)
-    assert isinstance(key.grad, torch.Tensor)
-    assert isinstance(value.grad, torch.Tensor)
-
-    grad_qr = query.grad
-    grad_kr = key.grad
-    grad_vr = value.grad
+    grads_ref = []
+    grads_name = []
+    if qkv is None:
+        assert isinstance(query.grad, torch.Tensor)
+        assert isinstance(key.grad, torch.Tensor)
+        assert isinstance(value.grad, torch.Tensor)
+        grads_ref = [query.grad, key.grad, value.grad]
+        grads_name = ["query", "key", "value"]
+    else:
+        assert isinstance(qkv.grad, torch.Tensor)
+        grads_ref = [qkv.grad]
+        grads_name = ["qkv"]
     del query
     del key
     del value
+    del qkv
 
-    for name, calc_grad, ref_grad in [
-        ("query", grad_q, grad_qr),
-        ("key", grad_k, grad_kr),
-        ("value", grad_v, grad_vr),
-    ]:
+    for name, calc_grad, ref_grad in zip(grads_name, grads, grads_ref):
         assert_allclose(calc_grad, ref_grad, name, atol=atol, rtol=rtol)
 
 
