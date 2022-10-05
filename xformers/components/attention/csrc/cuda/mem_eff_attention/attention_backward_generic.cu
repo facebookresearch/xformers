@@ -91,7 +91,7 @@ mem_efficient_attention_backward_cutlass(
   int64_t B = query.size(0);
   int64_t M = query.size(1);
   int64_t N = key.size(1);
-  int64_t num_heads = query.size(2);
+  int64_t nH = query.size(2);
   int64_t K = query.size(3);
 
   // It does not make sense to use that in practice,
@@ -100,11 +100,25 @@ mem_efficient_attention_backward_cutlass(
   // keys with no query associated, so they are not
   // initialized
   bool grad_kv_needs_init = causal && N > M;
-  at::Tensor grad_q = at::empty_like(query);
-  at::Tensor grad_k =
-      grad_kv_needs_init ? at::zeros_like(key) : at::empty_like(key);
-  at::Tensor grad_v =
-      grad_kv_needs_init ? at::zeros_like(value) : at::empty_like(value);
+  at::Tensor grad_q, grad_k, grad_v;
+  if (!grad_kv_needs_init && query.size(1) == key.size(1) &&
+      query.size(3) == value.size(3) &&
+      query.storage().is_alias_of(key.storage()) &&
+      query.storage().is_alias_of(value.storage())) {
+    // Create one big contiguous chunk
+    // This is because q, k and v usually come from a single
+    // output of a linear layer that is chunked.
+    // Creating the gradients with the right layout saves us
+    // a `torch.cat` call in the backward pass
+    at::Tensor chunk = at::empty({B, M, 3, nH, K}, query.options());
+    grad_q = chunk.select(2, 0);
+    grad_k = chunk.select(2, 1);
+    grad_v = chunk.select(2, 2);
+  } else {
+    grad_q = at::empty_like(query);
+    grad_k = grad_kv_needs_init ? at::zeros_like(key) : at::empty_like(key);
+    grad_v = grad_kv_needs_init ? at::zeros_like(value) : at::empty_like(value);
+  }
 
   auto launchKernel = [&](auto _k, int computeCapability) {
     using Kernel = decltype(_k);
@@ -116,14 +130,13 @@ mem_efficient_attention_backward_cutlass(
     // TODO: Fuse this into a kernel?
     // This is a bottleneck for smaller sequences (M <= 128)
     auto delta = Kernel::kKernelComputesDelta
-        ? at::empty(
-              {B, num_heads, M}, query.options().dtype(at::ScalarType::Float))
+        ? at::empty({B, nH, M}, query.options().dtype(at::ScalarType::Float))
         : (grad_out.to(at::kFloat) * out.to(at::kFloat))
               .sum(-1)
               .transpose(-2, -1)
               .contiguous();
     TORCH_INTERNAL_ASSERT(delta.size(0) == B);
-    TORCH_INTERNAL_ASSERT(delta.size(1) == num_heads);
+    TORCH_INTERNAL_ASSERT(delta.size(1) == nH);
     TORCH_INTERNAL_ASSERT(delta.size(2) == M);
 
     typename Kernel::Params p;
@@ -142,7 +155,7 @@ mem_efficient_attention_backward_cutlass(
     p.num_queries = query.size(1);
     p.num_keys = key.size(1);
     p.num_batches = B;
-    p.num_heads = num_heads;
+    p.num_heads = nH;
     p.causal = causal;
 
     ASSIGN_CHECK_OVERFLOW(p.gO_strideB, grad_out.stride(0));
@@ -158,6 +171,10 @@ mem_efficient_attention_backward_cutlass(
     ASSIGN_CHECK_OVERFLOW(p.gQ_strideH, grad_q.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.gK_strideH, grad_k.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.gV_strideH, grad_v.stride(2));
+    p.gQKV_strideM_multiplier = grad_q.is_contiguous() ? 1 : 3;
+    TORCH_INTERNAL_ASSERT(p.gQ_strideM() == grad_q.stride(1));
+    TORCH_INTERNAL_ASSERT(p.gK_strideM() == grad_k.stride(1));
+    TORCH_INTERNAL_ASSERT(p.gV_strideM() == grad_v.stride(1));
 
     ASSIGN_CHECK_OVERFLOW(p.q_strideB, query.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.k_strideB, key.stride(0));
