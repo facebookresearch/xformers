@@ -102,7 +102,9 @@ mem_efficient_attention_backward_cutlass(
   bool grad_kv_needs_init = causal && N > M;
   at::Tensor grad_q, grad_k, grad_v;
   if (!grad_kv_needs_init && query.size(1) == key.size(1) &&
-      query.size(3) == value.size(3)) {
+      query.size(3) == value.size(3) &&
+      query.storage().is_alias_of(key.storage()) &&
+      query.storage().is_alias_of(value.storage())) {
     // Create one big contiguous chunk
     // This is because q, k and v usually come from a single
     // output of a linear layer that is chunked.
