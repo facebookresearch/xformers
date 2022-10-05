@@ -104,6 +104,10 @@ mem_efficient_attention_backward_cutlass(
   if (!grad_kv_needs_init && query.size(1) == key.size(1) &&
       query.size(3) == value.size(3)) {
     // Create one big contiguous chunk
+    // This is because q, k and v usually come from a single
+    // output of a linear layer that is chunked.
+    // Creating the gradients with the right layout saves us
+    // a `torch.cat` call in the backward pass
     at::Tensor chunk = at::empty({B, M, 3, nH, K}, query.options());
     grad_q = chunk.select(2, 0);
     grad_k = chunk.select(2, 1);
@@ -124,8 +128,7 @@ mem_efficient_attention_backward_cutlass(
     // TODO: Fuse this into a kernel?
     // This is a bottleneck for smaller sequences (M <= 128)
     auto delta = Kernel::kKernelComputesDelta
-        ? at::empty(
-              {B, nH, M}, query.options().dtype(at::ScalarType::Float))
+        ? at::empty({B, nH, M}, query.options().dtype(at::ScalarType::Float))
         : (grad_out.to(at::kFloat) * out.to(at::kFloat))
               .sum(-1)
               .transpose(-2, -1)

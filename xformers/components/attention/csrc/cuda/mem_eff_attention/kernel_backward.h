@@ -161,6 +161,7 @@ struct AttentionBackwardKernel {
       num_heads = warp_uniform(num_heads);
 
       gO_strideM = warp_uniform(gO_strideM);
+      gQKV_strideM_multiplier = warp_uniform(gQKV_strideM_multiplier);
       q_strideM = warp_uniform(q_strideM);
       k_strideM = warp_uniform(k_strideM);
       v_strideM = warp_uniform(v_strideM);
