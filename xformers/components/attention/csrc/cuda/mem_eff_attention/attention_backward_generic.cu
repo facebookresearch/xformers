@@ -90,9 +90,11 @@ mem_efficient_attention_backward_cutlass(
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
+  int64_t Mkv = key.size(1);
   int64_t N = key.size(1);
-  int64_t num_heads = query.size(2);
+  int64_t nH = query.size(2);
   int64_t K = query.size(3);
+  int64_t Kv = value.size(3);
 
   // It does not make sense to use that in practice,
   // but let's still make sure we are correct
@@ -100,11 +102,20 @@ mem_efficient_attention_backward_cutlass(
   // keys with no query associated, so they are not
   // initialized
   bool grad_kv_needs_init = causal && N > M;
-  at::Tensor grad_q = at::empty_like(query);
-  at::Tensor grad_k =
-      grad_kv_needs_init ? at::zeros_like(key) : at::empty_like(key);
-  at::Tensor grad_v =
-      grad_kv_needs_init ? at::zeros_like(value) : at::empty_like(value);
+  at::Tensor grad_q, grad_k, grad_v;
+  at::Tensor grad_q_accum, grad_k_accum, grad_v_accum;
+  if (!grad_kv_needs_init && query.size(1) == key.size(1) &&
+      query.size(3) == value.size(3)) {
+    // Create one big contiguous chunk
+    at::Tensor chunk = at::empty({B, M, 3, nH, K}, query.options());
+    grad_q = chunk.select(2, 0);
+    grad_k = chunk.select(2, 1);
+    grad_v = chunk.select(2, 2);
+  } else {
+    grad_q = at::empty_like(query);
+    grad_k = grad_kv_needs_init ? at::zeros_like(key) : at::empty_like(key);
+    grad_v = grad_kv_needs_init ? at::zeros_like(value) : at::empty_like(value);
+  }
 
   auto launchKernel = [&](auto _k, int computeCapability) {
     using Kernel = decltype(_k);
@@ -116,14 +127,13 @@ mem_efficient_attention_backward_cutlass(
     // TODO: Fuse this into a kernel?
     // This is a bottleneck for smaller sequences (M <= 128)
     auto delta = Kernel::kKernelComputesDelta
-        ? at::empty(
-              {B, num_heads, M}, query.options().dtype(at::ScalarType::Float))
+        ? at::empty({B, nH, M}, query.options().dtype(at::ScalarType::Float))
         : (grad_out.to(at::kFloat) * out.to(at::kFloat))
               .sum(-1)
               .transpose(-2, -1)
               .contiguous();
     TORCH_INTERNAL_ASSERT(delta.size(0) == B);
-    TORCH_INTERNAL_ASSERT(delta.size(1) == num_heads);
+    TORCH_INTERNAL_ASSERT(delta.size(1) == nH);
     TORCH_INTERNAL_ASSERT(delta.size(2) == M);
 
     typename Kernel::Params p;
@@ -142,8 +152,26 @@ mem_efficient_attention_backward_cutlass(
     p.num_queries = query.size(1);
     p.num_keys = key.size(1);
     p.num_batches = B;
-    p.num_heads = num_heads;
+    p.num_heads = nH;
     p.causal = causal;
+    if (Kernel::kNeedsAccumGradQ) {
+      grad_q_accum = at::empty(
+          {B, M, nH, K}, query.options().dtype(at::ScalarType::Float));
+      p.grad_query_accum_ptr =
+          (typename Kernel::output_accum_t*)grad_q_accum.data_ptr();
+    }
+    if (Kernel::kNeedsAccumGradK) {
+      grad_k_accum = at::empty(
+          {B, Mkv, nH, K}, query.options().dtype(at::ScalarType::Float));
+      p.grad_key_accum_ptr =
+          (typename Kernel::output_accum_t*)grad_k_accum.data_ptr();
+    }
+    if (Kernel::kNeedsAccumGradV) {
+      grad_v_accum = at::empty(
+          {B, Mkv, nH, Kv}, query.options().dtype(at::ScalarType::Float));
+      p.grad_value_accum_ptr =
+          (typename Kernel::output_accum_t*)grad_v_accum.data_ptr();
+    }
 
     ASSIGN_CHECK_OVERFLOW(p.gO_strideB, grad_out.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.gO_strideM, grad_out.stride(1));
@@ -155,6 +183,9 @@ mem_efficient_attention_backward_cutlass(
     ASSIGN_CHECK_OVERFLOW(p.gQ_strideB, grad_q.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.gK_strideB, grad_k.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.gV_strideB, grad_v.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.gQ_strideM_, grad_q.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.gK_strideM_, grad_k.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.gV_strideM_, grad_v.stride(1));
     ASSIGN_CHECK_OVERFLOW(p.gQ_strideH, grad_q.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.gK_strideH, grad_k.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.gV_strideH, grad_v.stride(2));
