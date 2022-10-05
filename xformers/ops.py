@@ -663,8 +663,9 @@ class Chunk3(torch.autograd.Function):
     (and that is something that our attention operators support)
     """
 
-    @classmethod
-    def forward(cls, ctx, qkv: torch.Tensor, dim: int):
+    @staticmethod
+    # type: ignore
+    def forward(ctx, qkv: torch.Tensor, dim: int):
         q, k, v = qkv.select(dim, 0), qkv.select(dim, 1), qkv.select(dim, 2)
         ctx.dim = dim
         ctx.qkv_shape = qkv.shape
@@ -680,7 +681,8 @@ class Chunk3(torch.autograd.Function):
         return q, k, v
 
     @classmethod
-    def backward(cls, ctx, gq, gk, gv):
+    # type: ignore
+    def backward(cls, ctx, gq: torch.Tensor, gk: torch.Tensor, gv: torch.Tensor):
         # Fast path
         if (
             ctx.storage_offsets
