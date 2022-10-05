@@ -6,7 +6,7 @@
 
 import math
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Optional, Set, Type, Union
+from typing import Any, List, Mapping, Optional, Sequence, Set, Type, Union
 
 import torch
 
@@ -655,7 +655,46 @@ class AttentionOpDispatch:
         )
 
 
-class Chunk3(torch.autograd.Function):
+def get_stack_strides(
+    tensors: Sequence[torch.Tensor], dim: int
+) -> Optional[Sequence[int]]:
+    """
+    If the tensors are already stacked, returns the strides of the stacked
+    tensors. Otherwise returns None.
+    """
+    if len(tensors) <= 1 or dim > tensors[0].ndim:
+        return None
+
+    final_stride = []
+    for i in range(tensors[0].ndim + 1):
+        if i == dim:
+            final_stride.append(0)
+            continue
+        if i > dim:
+            i -= 1
+        final_stride.append(tensors[0].stride(i))
+
+    # Set the stride of the concat dimension
+    if dim == tensors[0].ndim:
+        final_stride[dim] = 1
+    else:
+        final_stride[dim] = final_stride[dim + 1] * tensors[0].shape[dim]
+
+    for i, x in enumerate(tensors):
+        # Sanity checks
+        if x.shape != tensors[0].shape:
+            return None
+        # Actual storage check
+        if x.storage().data_ptr() != tensors[0].storage().data_ptr():
+            return None
+        if x.stride() != tensors[0].stride():
+            return None
+        if x.storage_offset() != tensors[0].storage_offset() + i * final_stride[dim]:
+            return None
+    return tuple(final_stride)
+
+
+class _Unbind(torch.autograd.Function):
     """
     Splits a packed `qkv` tensor into query, key and values.
     The magic happens in the backward. We want to `torch.stack` the tensors
@@ -665,34 +704,23 @@ class Chunk3(torch.autograd.Function):
 
     @staticmethod
     # type: ignore
-    def forward(ctx, qkv: torch.Tensor, dim: int):
-        q, k, v = qkv.select(dim, 0), qkv.select(dim, 1), qkv.select(dim, 2)
+    def forward(ctx, x: torch.Tensor, dim: int):
         ctx.dim = dim
-        ctx.qkv_shape = qkv.shape
-        ctx.qkv_strides = qkv.stride()
-        ctx.q_stride = q.stride()
-        ctx.k_stride = k.stride()
-        ctx.v_stride = v.stride()
-        ctx.storage_offsets = (
-            q.storage_offset(),
-            k.storage_offset(),
-            v.storage_offset(),
-        )
-        return q, k, v
+        ctx.input_shape = x.shape
+        return x.unbind(dim)
 
     @classmethod
     # type: ignore
-    def backward(cls, ctx, gq: torch.Tensor, gk: torch.Tensor, gv: torch.Tensor):
+    def backward(cls, ctx, *tensors: torch.Tensor):
         # Fast path
-        if (
-            ctx.storage_offsets
-            == (gq.storage_offset(), gk.storage_offset(), gv.storage_offset())
-            and gq.stride() == ctx.q_stride
-            and gk.stride() == ctx.k_stride
-            and gv.stride() == ctx.v_stride
-        ):
-            return gq.as_strided(ctx.qkv_shape, ctx.qkv_strides), None
-        return torch.stack([gq, gk, gv], dim=ctx.dim), None
+        strides = get_stack_strides(tensors, ctx.dim)
+        if strides is not None:
+            return tensors[0].as_strided(ctx.input_shape, strides), None
+        return torch.stack(tensors, dim=ctx.dim), None
+
+
+def unbind(x: torch.Tensor, dim: int) -> Sequence[torch.Tensor]:
+    return _Unbind.apply(x, dim)
 
 
 def memory_efficient_attention(

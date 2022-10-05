@@ -136,7 +136,7 @@ def create_tensors(shape, dtype, requires_grad=False):
     qkv = torch.rand(
         [B, M, 3, H, K], device=device, dtype=dtype, requires_grad=requires_grad
     )
-    q, k, v = xformers.ops.Chunk3.apply(qkv, 2)
+    q, k, v = xformers.ops.unbind(qkv, 2)
     return qkv, q, k, v
 
 

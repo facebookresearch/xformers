@@ -268,7 +268,7 @@ def test_forward(
             query, key, value = c[0], c[1], c[2]
         else:
             # bm3hk -> 3 x bmhk
-            query, key, value = xformers.ops.Chunk3.apply(c, 2)
+            query, key, value = xformers.ops.unbind(c, 2)
         assert not query.is_contiguous()
 
     out = xformers.ops.memory_efficient_attention(
@@ -480,7 +480,7 @@ def test_backward(
         qkv = torch.stack([query, key, value], 2)
         qkv.requires_grad_(True)
         # bm3hk -> 3 x bmhk
-        query, key, value = xformers.ops.Chunk3.apply(qkv, 2)
+        query, key, value = xformers.ops.unbind(qkv, 2)
         assert not query.is_contiguous()
 
     query.requires_grad_(True)
@@ -724,3 +724,43 @@ def test_memory_efficient_attention_full_block_masked(
     assert_allclose(grad_q, query.grad, "grad_q", atol=atol)
     assert_allclose(grad_k, key.grad, "grad_k", atol=atol)
     assert_allclose(grad_v, value.grad, "grad_v", atol=atol)
+
+
+@pytest.mark.parametrize("dim", [0, 1, 2, 3, 4])
+def test_unbind(dim):
+    x = torch.ones([10, 20, 4, 10, 3], requires_grad=True)
+    x2 = torch.ones([10, 20, 4, 10, 3], requires_grad=True)
+
+    # FW
+    tensors = xformers.ops.unbind(x, dim)
+    tensors2 = torch.unbind(x2, dim)
+    assert len(tensors) == len(tensors2)
+    for t1, t2 in zip(tensors, tensors2):
+        assert torch.allclose(t1, t2)
+
+    # BW
+    grads = torch.unbind(torch.randn(x.shape), dim)
+    loss1 = sum(g * t for (g, t) in zip(grads, tensors))
+    loss2 = sum(g * t for (g, t) in zip(grads, tensors2))
+    assert torch.allclose(loss1, loss2)
+    g = torch.ones_like(loss1)
+    loss1.backward(g)
+    loss2.backward(g)
+    assert torch.allclose(x.grad, x2.grad)
+
+
+@pytest.mark.parametrize("dim", [0, 1, 2, 3, 4])
+def test_unbind_get_stack_strides(dim: int):
+    def not_stacked(t, d):
+        return xformers.ops.get_stack_strides(t, d) is None
+
+    x = torch.ones([10, 20, 4, 10, 3], requires_grad=True)
+    tensors = xformers.ops.unbind(x, dim)
+    ndim = x.ndim
+
+    assert not_stacked(tensors, (dim + 1) % ndim)
+    assert xformers.ops.get_stack_strides(tensors, dim) == x.stride()
+    assert xformers.ops.get_stack_strides(tensors[1:], dim) == x.stride()
+    assert not_stacked(tensors[::2], dim)
+    assert not_stacked([tensors[0], tensors[1].clone()], dim)
+    assert not_stacked(tensors, (dim + ndim - 1) % ndim)
