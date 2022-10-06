@@ -4,14 +4,15 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import os
 import tempfile
 
 import torch
 
-import os
 is_windows = False
-if (os.environ.get('OS','') == 'Windows_NT'): #pytorch on windows uses gloo not ncll
+if (os.environ.get('OS', '') == 'Windows_NT'):  # pytorch on windows uses gloo not ncll
     is_windows = True
+
 
 def init_torch_distributed_local():
     if torch.distributed.is_initialized():
