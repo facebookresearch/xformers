@@ -10,7 +10,7 @@ import tempfile
 import torch
 
 is_windows = False
-if (os.environ.get('OS', '') == 'Windows_NT'):  # pytorch on windows uses gloo not ncll
+if os.environ.get("OS", "") == "Windows_NT":  # pytorch on windows uses gloo not ncll
     is_windows = True
 
 
