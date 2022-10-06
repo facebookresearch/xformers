@@ -1417,12 +1417,14 @@ struct AttentionBackwardKernel {
     bool rowPred = (query_start + laneRow) < p.num_queries;
     bool pred = rowPred;
 
-    const __restrict__ AccessType* grad_output_ptr =
-        reinterpret_cast<const __restrict__ AccessType*>(
+    // on windows, previous syntax __restrict__ AccessType*
+    // resulted in error: "restrict" is not allowed
+    const AccessType* __restrict__ grad_output_ptr =
+        reinterpret_cast<const AccessType* __restrict__>(
             p.grad_output_ptr + (query_start + laneRow) * p.gO_strideM +
             laneFirstCol);
-    const __restrict__ AccessType* output_ptr =
-        reinterpret_cast<const __restrict__ AccessType*>(
+    const AccessType* __restrict__ output_ptr =
+        reinterpret_cast<const AccessType* __restrict__>(
             p.output_ptr + (query_start + laneRow) * p.o_strideM() +
             laneFirstCol);
 
