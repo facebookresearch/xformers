@@ -6,7 +6,7 @@
 
 import math
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Optional, Sequence, Set, Type, Union
+from typing import Any, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
 import torch
 
@@ -657,7 +657,7 @@ class AttentionOpDispatch:
 
 def get_stack_strides(
     tensors: Sequence[torch.Tensor], dim: int
-) -> Optional[Sequence[int]]:
+) -> Optional[Tuple[int, ...]]:
     """
     If the tensors are already stacked, returns the strides of the stacked
     tensors. Otherwise returns None.
@@ -668,17 +668,13 @@ def get_stack_strides(
     final_stride = []
     for i in range(tensors[0].ndim + 1):
         if i == dim:
-            final_stride.append(0)
+            final_stride.append(
+                tensors[1].storage_offset() - tensors[0].storage_offset()
+            )
             continue
         if i > dim:
             i -= 1
         final_stride.append(tensors[0].stride(i))
-
-    # Set the stride of the concat dimension
-    if dim == tensors[0].ndim:
-        final_stride[dim] = 1
-    else:
-        final_stride[dim] = final_stride[dim + 1] * tensors[0].shape[dim]
 
     for i, x in enumerate(tensors):
         # Sanity checks
@@ -694,6 +690,15 @@ def get_stack_strides(
     return tuple(final_stride)
 
 
+def efficient_stack(tensors: Sequence[torch.Tensor], dim: int) -> torch.Tensor:
+    strides = get_stack_strides(tensors, dim)
+    if strides is not None:
+        input_shape = list(tensors[0].shape)
+        input_shape.insert(dim, len(tensors))
+        return tensors[0].as_strided(input_shape, strides)
+    return torch.stack(tensors, dim=dim)
+
+
 class _Unbind(torch.autograd.Function):
     """
     Splits a packed `qkv` tensor into query, key and values.
@@ -706,20 +711,15 @@ class _Unbind(torch.autograd.Function):
     # type: ignore
     def forward(ctx, x: torch.Tensor, dim: int):
         ctx.dim = dim
-        ctx.input_shape = x.shape
         return x.unbind(dim)
 
     @classmethod
     # type: ignore
     def backward(cls, ctx, *tensors: torch.Tensor):
-        # Fast path
-        strides = get_stack_strides(tensors, ctx.dim)
-        if strides is not None:
-            return tensors[0].as_strided(ctx.input_shape, strides), None
-        return torch.stack(tensors, dim=ctx.dim), None
+        return efficient_stack(tensors, ctx.dim), None
 
 
-def unbind(x: torch.Tensor, dim: int) -> Sequence[torch.Tensor]:
+def unbind(x: torch.Tensor, dim: int) -> Tuple[torch.Tensor, ...]:
     return _Unbind.apply(x, dim)
 
 

@@ -726,10 +726,16 @@ def test_memory_efficient_attention_full_block_masked(
     assert_allclose(grad_v, value.grad, "grad_v", atol=atol)
 
 
+@pytest.mark.parametrize("contiguous", [True, False])
 @pytest.mark.parametrize("dim", [0, 1, 2, 3, 4])
-def test_unbind(dim):
-    x = torch.ones([10, 20, 4, 10, 3], requires_grad=True)
-    x2 = torch.ones([10, 20, 4, 10, 3], requires_grad=True)
+def test_unbind(dim: int, contiguous: bool):
+    x = contiguous_x = torch.ones([10, 20, 4, 10, 3], requires_grad=True)
+    x2 = contiguous_x2 = torch.ones([10, 20, 4, 10, 3], requires_grad=True)
+
+    if not contiguous:
+        x = x.transpose(-2, -3)
+        x2 = x2.transpose(-2, -3)
+    assert contiguous == x.is_contiguous()
 
     # FW
     tensors = xformers.ops.unbind(x, dim)
@@ -740,27 +746,63 @@ def test_unbind(dim):
 
     # BW
     grads = torch.unbind(torch.randn(x.shape), dim)
-    loss1 = sum(g * t for (g, t) in zip(grads, tensors))
-    loss2 = sum(g * t for (g, t) in zip(grads, tensors2))
+    zero = torch.zeros_like(tensors[0])
+    loss1 = sum(((g * t) for (g, t) in zip(grads, tensors)), zero)
+    loss2 = sum(((g * t) for (g, t) in zip(grads, tensors2)), zero)
     assert torch.allclose(loss1, loss2)
-    g = torch.ones_like(loss1)
+    g = torch.randn_like(loss1)
     loss1.backward(g)
     loss2.backward(g)
-    assert torch.allclose(x.grad, x2.grad)
+    assert torch.allclose(contiguous_x.grad, contiguous_x2.grad)
 
 
+@pytest.mark.parametrize("contiguous", [True, False])
 @pytest.mark.parametrize("dim", [0, 1, 2, 3, 4])
-def test_unbind_get_stack_strides(dim: int):
+def test_unbind_get_stack_strides(dim: int, contiguous: bool):
     def not_stacked(t, d):
         return xformers.ops.get_stack_strides(t, d) is None
 
-    x = torch.ones([10, 20, 4, 10, 3], requires_grad=True)
-    tensors = xformers.ops.unbind(x, dim)
+    x = torch.randn([10, 20, 4, 4, 3])
     ndim = x.ndim
 
-    assert not_stacked(tensors, (dim + 1) % ndim)
-    assert xformers.ops.get_stack_strides(tensors, dim) == x.stride()
-    assert xformers.ops.get_stack_strides(tensors[1:], dim) == x.stride()
-    assert not_stacked(tensors[::2], dim)
-    assert not_stacked([tensors[0], tensors[1].clone()], dim)
-    assert not_stacked(tensors, (dim + ndim - 1) % ndim)
+    # Non-contiguous tensors
+    if not contiguous:
+        x = x.transpose(dim, (dim + 1) % ndim)
+    assert contiguous == x.is_contiguous()
+
+    tensors = xformers.ops.unbind(x, dim)
+    tensors2 = torch.unbind(x.clone(), dim)
+
+    for cat_dim in range(ndim):
+        permute = list(range(ndim))
+        permute.pop(dim)
+        permute.insert(cat_dim, dim)
+        x_permuted = x.permute(permute)
+        assert not_stacked([tensors2[0], tensors[1]], cat_dim), "different storage"
+        assert not_stacked(
+            [tensors[0], tensors[1].clone()], cat_dim
+        ), "different storage"
+
+        def test_slice(s):
+            slices = [slice(None) for _ in range(ndim)]
+            slices[cat_dim] = s
+            reference = x_permuted[tuple(slices)]
+            stacked = xformers.ops.efficient_stack(tensors[s], cat_dim)
+            assert (
+                xformers.ops.get_stack_strides(tensors[s], cat_dim)
+                == reference.stride()
+            )
+            assert torch.allclose(stacked, torch.stack(tensors2[s], cat_dim))
+            assert stacked.storage().data_ptr() == tensors[0].storage().data_ptr()
+
+        # tensors
+        test_slice(slice(None))
+
+        # tensors[1:]
+        test_slice(slice(1, None))
+
+        # tensors[:2]
+        test_slice(slice(None, 2))
+
+        # tensors[::2]
+        test_slice(slice(None, None, 2))
