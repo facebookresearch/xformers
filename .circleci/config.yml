@@ -368,6 +368,20 @@ jobs:
       - store_test_results:
           path: test-results
 
+  build_conda:
+    <<: *cpu_py38
+
+    working_directory: ~/xformers
+
+    steps:
+      - checkout
+
+      - <<: *setup_conda
+      - run:
+          name: Setup env variables
+          command: |
+            python packaging/conda/build_conda.py  --cuda 11.3 --python 3.9 --pytorch 1.12.1
+
   gpu_tests_cu114_sm75:
     <<: *gpu_cu114
     machine:
