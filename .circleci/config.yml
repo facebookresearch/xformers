@@ -369,7 +369,13 @@ jobs:
           path: test-results
 
   build_conda:
-    <<: *cpu_py38
+    docker:
+      - image: pytorch/conda-builder:cuda113
+    resource_class: large
+
+    environment:
+      CUDA_VERSION: "11.3"
+      CUDA_HOME: /usr/local/cuda-11.3
 
     working_directory: ~/xformers
 
@@ -378,9 +384,10 @@ jobs:
 
       - <<: *setup_conda
       - run:
-          name: Setup env variables
+          name: conda build
           command: |
             conda install conda-build
+            git submodule update --init --recursive
             python packaging/conda/build_conda.py  --cuda 11.3 --python 3.9 --pytorch 1.12.1
 
   gpu_tests_cu114_sm75:
