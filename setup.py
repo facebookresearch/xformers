@@ -197,6 +197,7 @@ def get_extensions():
             ]
         if sys.platform == "win32":
             nvcc_flags += [
+                "-std=c++17",
                 "--disable-warnings"
             ]
         extra_compile_args["nvcc"] = nvcc_flags
