@@ -205,7 +205,7 @@ def get_extensions():
                 "-Xcompiler",
                 "/Zc:lambda",
                 "-Xcompiler",
-                "/Zc:preprocessor"
+                "/Zc:preprocessor",
             ]
         extra_compile_args["nvcc"] = nvcc_flags
 
