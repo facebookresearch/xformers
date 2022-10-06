@@ -380,6 +380,7 @@ jobs:
       - run:
           name: Setup env variables
           command: |
+            conda install conda-build
             python packaging/conda/build_conda.py  --cuda 11.3 --python 3.9 --pytorch 1.12.1
 
   gpu_tests_cu114_sm75:
