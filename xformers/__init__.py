@@ -7,8 +7,10 @@ import logging
 
 import torch
 
-# Please update the doc version in docs/source/conf.py as well.
-__version__ = "0.0.14.dev"
+try:
+    from .version import __version__  # noqa: F401
+except ImportError:
+    pass
 
 _is_sparse_available: bool = True
 

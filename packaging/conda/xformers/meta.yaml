@@ -23,8 +23,10 @@ build:
   string: py{{py}}_cu{{ environ['CU_VERSION'] }}_pyt{{ environ['PYTORCH_VERSION']}}
   script: python setup.py install --single-version-externally-managed --record=record.txt
   script_env:
+    - BUILD_VERSION
     - CUDA_HOME
     - FORCE_CUDA
+    - GIT_TAG
     - MAX_JOBS
     - TORCH_CUDA_ARCH_LIST
 

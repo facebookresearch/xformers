@@ -19,6 +19,7 @@
 #
 import os
 import sys
+from pathlib import Path
 from typing import Any, List
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
@@ -34,8 +35,9 @@ project = "xFormers"
 copyright = "Copyright © 2021 Meta Platforms, Inc"
 author = "Facebook AI Research"
 
+root_dir = Path(__file__).resolve().parent.parent.parent
 # The full version, including alpha/beta/rc tags
-release = "0.0.14.dev"
+release = (root_dir / "version.txt").read_text().strip()
 
 # -- General configuration ---------------------------------------------------
 
