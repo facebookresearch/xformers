@@ -125,8 +125,8 @@ CASES = list(
     product_dict(
         shape=SHAPES,
         num_threads=NUM_THREADS,
-        attn_bias_type=[type(None)],
-        dtype=[torch.half],
+        attn_bias_type=[type(None), torch.Tensor, xformers.ops.LowerTriangularMask],
+        dtype=[torch.half, torch.bfloat16, torch.float],
     )
 )
 
