@@ -13,7 +13,8 @@ import torch
 from xformers import _is_triton_available
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 
-if _is_triton_available:
+_is_blocksparse_available = _is_triton_available()
+if _is_blocksparse_available:
     from triton.ops.blocksparse import matmul as blocksparse_matmul  # type: ignore
     from triton.ops.blocksparse import softmax as blocksparse_softmax  # type: ignore
 
@@ -24,10 +25,10 @@ if _is_triton_available:
         logging.warning(
             "Blocksparse is not available: the current GPU does not expose Tensor cores"
         )
-        _is_triton_available = False
+        _is_blocksparse_available = False
 
 
-if _is_triton_available:
+if _is_blocksparse_available:
 
     @dataclass
     class BlockSparseAttentionConfig(AttentionConfig):

@@ -10,7 +10,7 @@ import torch
 
 from xformers import _is_triton_available
 
-if _is_triton_available:
+if _is_triton_available():
     from xformers.benchmarks.benchmark_pytorch_transformer import evaluate, train
     from xformers.factory.model_factory import xFormer, xFormerConfig
 

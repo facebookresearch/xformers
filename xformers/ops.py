@@ -107,6 +107,12 @@ class AttentionOpBase(torch.autograd.Function):
     _TEST_K: List[int] = [32, 128]
 
     @classmethod
+    def info(cls):
+        if cls.FORWARD_OPERATOR.__name__ == "no_such_operator":
+            return "not built"
+        return "available"
+
+    @classmethod
     def bmhk2bmk_contiguous(cls, tensor) -> torch.Tensor:
         return (
             tensor.permute((0, 2, 1, 3))
@@ -386,6 +392,12 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     SUPPORTS_DROPOUT = False
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
     NAME = "flshatt"
+
+    @classmethod
+    def info(cls):
+        if not has_flashattention:
+            return "not built"
+        return "available - requires GPU with compute capability 7.5+"
 
     @classmethod
     def supports(cls, d: "AttentionOpDispatch") -> bool:
