@@ -267,9 +267,8 @@ def test_forward(
             c = c.permute(2, 0, 3, 1, 4).view([3, -1, q_len, k])
             query, key, value = c[0], c[1], c[2]
         else:
-            # bm3hk -> 3bmhk
-            c = c.permute(2, 0, 1, 3, 4)
-            query, key, value = c[0], c[1], c[2]
+            # bm3hk -> 3 x bmhk
+            query, key, value = xformers.ops.unbind(c, 2)
         assert not query.is_contiguous()
 
     out = xformers.ops.memory_efficient_attention(
@@ -471,16 +470,17 @@ def test_backward(
     query, key, value, attn_bias = create_tensors(
         *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=attn_bias_type, fmt=fmt
     )
+    qkv = None
 
     if (
         fmt == "BMHK"
         and query.shape[3] == value.shape[3]
         and query.shape[1] == value.shape[1]
     ):
-        c = torch.stack([query, key, value], 2)
-        # bm3hk -> 3bmhk
-        c = c.permute(2, 0, 1, 3, 4)
-        query, key, value = c[0], c[1], c[2]
+        qkv = torch.stack([query, key, value], 2)
+        qkv.requires_grad_(True)
+        # bm3hk -> 3 x bmhk
+        query, key, value = xformers.ops.unbind(qkv, 2)
         assert not query.is_contiguous()
 
     query.requires_grad_(True)
@@ -496,13 +496,15 @@ def test_backward(
     out.backward(grad_out)
     del out
 
-    grad_q = query.grad
-    grad_k = key.grad
-    grad_v = value.grad
-
-    query.grad = None
-    key.grad = None
-    value.grad = None
+    grads = []
+    if qkv is None:
+        grads = [query.grad, key.grad, value.grad]
+        query.grad = None
+        key.grad = None
+        value.grad = None
+    else:
+        grads = [qkv.grad]
+        qkv.grad = None
 
     ref = ref_attention(query, key, value, attn_bias)
     ref.backward(grad_out)
@@ -525,23 +527,24 @@ def test_backward(
         # Longer sequences mean we iterate more and errors accumulate
         atol *= 1.4 ** (max(q_len, kv_len) // 64)
 
-    # (for mypy)
-    assert isinstance(query.grad, torch.Tensor)
-    assert isinstance(key.grad, torch.Tensor)
-    assert isinstance(value.grad, torch.Tensor)
-
-    grad_qr = query.grad
-    grad_kr = key.grad
-    grad_vr = value.grad
+    grads_ref = []
+    grads_name = []
+    if qkv is None:
+        assert isinstance(query.grad, torch.Tensor)
+        assert isinstance(key.grad, torch.Tensor)
+        assert isinstance(value.grad, torch.Tensor)
+        grads_ref = [query.grad, key.grad, value.grad]
+        grads_name = ["query", "key", "value"]
+    else:
+        assert isinstance(qkv.grad, torch.Tensor)
+        grads_ref = [qkv.grad]
+        grads_name = ["qkv"]
     del query
     del key
     del value
+    del qkv
 
-    for name, calc_grad, ref_grad in [
-        ("query", grad_q, grad_qr),
-        ("key", grad_k, grad_kr),
-        ("value", grad_v, grad_vr),
-    ]:
+    for name, calc_grad, ref_grad in zip(grads_name, grads, grads_ref):
         assert_allclose(calc_grad, ref_grad, name, atol=atol, rtol=rtol)
 
 
@@ -721,3 +724,90 @@ def test_memory_efficient_attention_full_block_masked(
     assert_allclose(grad_q, query.grad, "grad_q", atol=atol)
     assert_allclose(grad_k, key.grad, "grad_k", atol=atol)
     assert_allclose(grad_v, value.grad, "grad_v", atol=atol)
+
+
+@pytest.mark.parametrize("contiguous", [True, False])
+@pytest.mark.parametrize("dim", [0, 1, 2, 3, 4])
+def test_unbind(dim: int, contiguous: bool):
+    x = torch.randn([10, 20, 4, 10, 3])
+    x2 = x.clone()
+
+    if not contiguous:
+        perm = list(range(x.ndim))
+        random.Random(dim).shuffle(perm)
+        # Let's hope we didn't pick identity
+        x = x.permute(perm)
+        x2 = x2.permute(perm)
+    assert contiguous == x.is_contiguous()
+    x.requires_grad_(True)
+    x2.requires_grad_(True)
+
+    # FW
+    tensors = xformers.ops.unbind(x, dim)
+    tensors2 = torch.unbind(x2, dim)
+    assert len(tensors) == len(tensors2)
+    for t1, t2 in zip(tensors, tensors2):
+        assert torch.allclose(t1, t2)
+
+    # BW
+    grads = torch.unbind(torch.randn(x.shape), dim)
+    zero = torch.zeros_like(tensors[0])
+    loss1 = sum(((g * t) for (g, t) in zip(grads, tensors)), zero)
+    loss2 = sum(((g * t) for (g, t) in zip(grads, tensors2)), zero)
+    assert torch.allclose(loss1, loss2)
+    g = torch.randn_like(loss1)
+    loss1.backward(g)
+    loss2.backward(g)
+    assert torch.allclose(x.grad, x2.grad)
+
+
+@pytest.mark.parametrize("contiguous", [True, False])
+@pytest.mark.parametrize("dim", [0, 1, 2, 3, 4])
+def test_unbind_get_stack_strides(dim: int, contiguous: bool):
+    def not_stacked(t, d):
+        return xformers.ops.get_stack_strides(t, d) is None
+
+    x = torch.randn([10, 20, 4, 4, 3])
+    ndim = x.ndim
+
+    # Non-contiguous tensors
+    if not contiguous:
+        x = x.transpose(dim, (dim + 1) % ndim)
+    assert contiguous == x.is_contiguous()
+
+    tensors = xformers.ops.unbind(x, dim)
+    tensors2 = torch.unbind(x.clone(), dim)
+
+    for cat_dim in range(ndim):
+        permute = list(range(ndim))
+        permute.pop(dim)
+        permute.insert(cat_dim, dim)
+        x_permuted = x.permute(permute)
+        assert not_stacked([tensors2[0], tensors[1]], cat_dim), "different storage"
+        assert not_stacked(
+            [tensors[0], tensors[1].clone()], cat_dim
+        ), "different storage"
+
+        def test_slice(s):
+            slices = [slice(None) for _ in range(ndim)]
+            slices[cat_dim] = s
+            reference = x_permuted[tuple(slices)]
+            stacked = xformers.ops.efficient_stack(tensors[s], cat_dim)
+            assert (
+                xformers.ops.get_stack_strides(tensors[s], cat_dim)
+                == reference.stride()
+            )
+            assert torch.allclose(stacked, torch.stack(tensors2[s], cat_dim))
+            assert stacked.storage().data_ptr() == tensors[0].storage().data_ptr()
+
+        # tensors
+        test_slice(slice(None))
+
+        # tensors[1:]
+        test_slice(slice(1, None))
+
+        # tensors[:2]
+        test_slice(slice(None, 2))
+
+        # tensors[::2]
+        test_slice(slice(None, None, 2))
