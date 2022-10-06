@@ -70,8 +70,10 @@ class Build:
             os.environ["CUDA_HOME"] = cuda_home
 
         os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0 8.6"
-        code_version = (SOURCE_ROOT_DIR/"version.txt").read_text().strip()
-        git_hash = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+        code_version = (SOURCE_ROOT_DIR / "version.txt").read_text().strip()
+        git_hash = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], text=True
+        ).strip()
         os.environ["BUILD_VERSION"] = f"{code_version}+git.{git_hash}"
         tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
         os.environ["GIT_TAG"] = tag

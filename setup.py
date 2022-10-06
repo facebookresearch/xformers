@@ -42,10 +42,10 @@ else:
 def write_version_file():
     version_path = os.path.join(this_dir, "xformers", "version.py")
     with open(version_path, "w") as f:
-        f.write(f"__version__ = '{version}'\n")
+        f.write(f'__version__ = "{version}"\n')
         tag = os.getenv("GIT_TAG")
         if tag is not None:
-            f.write(f"git_tag = '{tag}'\n")
+            f.write(f'git_tag = "{tag}"\n')
 
 
 def get_cuda_version(cuda_dir) -> int:
