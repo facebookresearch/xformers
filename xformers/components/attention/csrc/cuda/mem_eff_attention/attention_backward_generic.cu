@@ -139,13 +139,20 @@ mem_efficient_attention_backward_cutlass(
           kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
     }
 
-    auto checkBinaryArchMatches = [&]() {
-      cudaFuncAttributes attr;
-      AT_CUDA_CHECK(cudaFuncGetAttributes(&attr, kernel_fn));
-      return attr.binaryVersion >= Kernel::ArchTag::kMinComputeCapability;
-    };
+    // previous syntax, in comment below, resulted in the error below on windows
+    // error C3495: 'kernel_fn': a simple capture must be a variable 
+    // with automatic storage duration declared in the reaching scope of the lambda
+    // auto checkBinaryArchMatches = [&]() {
+    //   cudaFuncAttributes attr;
+    //   AT_CUDA_CHECK(cudaFuncGetAttributes(&attr, kernel_fn));
+    //   return attr.binaryVersion >= Kernel::ArchTag::kMinComputeCapability;
+    // };
+    // TORCH_INTERNAL_ASSERT(
+    //     checkBinaryArchMatches(), "Something went wrong in the build process");
+    cudaFuncAttributes attr;
+    AT_CUDA_CHECK(cudaFuncGetAttributes(&attr, kernel_fn));
     TORCH_INTERNAL_ASSERT(
-        checkBinaryArchMatches(), "Something went wrong in the build process");
+        attr.binaryVersion >= Kernel::ArchTag::kMinComputeCapability, "Something went wrong in the build process");
 
     kernel_fn<<<params.getBlocksGrid(), params.getThreadsGrid(), smem_bytes>>>(
         params);
