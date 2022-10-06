@@ -690,7 +690,9 @@ def get_stack_strides(
     return tuple(final_stride)
 
 
-def efficient_stack(tensors: Sequence[torch.Tensor], dim: int) -> torch.Tensor:
+def efficient_stack(
+    tensors: Union[Tuple[torch.Tensor, ...], List[torch.Tensor]], dim: int
+) -> torch.Tensor:
     strides = get_stack_strides(tensors, dim)
     if strides is not None:
         input_shape = list(tensors[0].shape)
