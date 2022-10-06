@@ -518,7 +518,29 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         if rng_state is not None:
             cur_rng_state = torch.cuda.get_rng_state()
             torch.cuda.set_rng_state(rng_state)
-        dq, dk, dv = torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
+        # Create dq,dk,dv
+        # If Q/K/V come from a single QKV tensor, let's put the gradient in the
+        # right strides, so we can avoid a `cat`
+        if (
+            q.shape[0] == k.shape[0]
+            and q.shape[2] == v.shape[2]
+            and q.storage().data_ptr() == k.storage().data_ptr()
+            and q.storage().data_ptr() == v.storage().data_ptr()
+        ):
+            # Create one big contiguous chunk
+            # This is because q, k and v usually come from a single
+            # output of a linear layer that is chunked.
+            # Creating the gradients with the right layout saves us
+            # a `torch.cat` call in the backward pass
+            chunk = torch.empty(
+                (q.shape[0], 3, q.shape[1], q.shape[2]), dtype=q.dtype, device=q.device
+            )
+            dq = chunk.select(1, 0)
+            dk = chunk.select(1, 1)
+            dv = chunk.select(1, 2)
+        else:
+            dq, dk, dv = torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
+
         assert grad.dtype in cls.SUPPORTED_DTYPES
         cls._flash_attn_backward(
             grad.reshape(ctx.kernel_output_shape),
