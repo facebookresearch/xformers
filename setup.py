@@ -168,7 +168,7 @@ def get_extensions():
     extra_compile_args = {"cxx": ["-O3"]}
     if sys.platform == "win32":
         define_macros += [("xformers_EXPORTS", None)]
-        extra_compile_args["cxx"].extend(["/MP", "/w", "/Zc:lambda"])
+        extra_compile_args["cxx"].extend(["/MP", "/w", "/Zc:lambda", "/Zc:preprocessor"])
     elif "OpenMP not found" not in torch.__config__.parallel_info():
         extra_compile_args["cxx"].append("-fopenmp")
 
@@ -200,6 +200,8 @@ def get_extensions():
                 "-std=c++17",
                 "-Xcompiler",
                 "/Zc:lambda",
+                "-Xcompiler",
+                "/Zc:preprocessor",
                 "--disable-warnings"
             ]
         extra_compile_args["nvcc"] = nvcc_flags
