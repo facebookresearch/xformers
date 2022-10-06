@@ -4,13 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import os
+import sys
 import tempfile
 
 import torch
 
 is_windows = False
-if os.environ.get("OS", "") == "Windows_NT":  # pytorch on windows uses gloo not ncll
+if sys.platform == "win32":  # pytorch on windows uses gloo not ncll
     is_windows = True
 
 
