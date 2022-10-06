@@ -95,6 +95,10 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
             "to run `git submodule update --init --recursive` ?"
         )
 
+    nvcc_platform_dependant_args = []
+    if sys.platform == "win32":
+        nvcc_platform_dependant_args.append("-std=c++17")
+
     return [
         CUDAExtension(
             name="xformers._C_flashattention",
@@ -121,6 +125,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                     "--ptxas-options=-v",
                     "-lineinfo",
                 ]
+                + nvcc_platform_dependant_args
                 + nvcc_archs_flags,
             },
             include_dirs=[
@@ -167,7 +172,7 @@ def get_extensions():
     extra_compile_args = {"cxx": ["-O3"]}
     if sys.platform == "win32":
         define_macros += [("xformers_EXPORTS", None)]
-        extra_compile_args["cxx"].append("/MP")
+        extra_compile_args["cxx"].extend(["/MP", "/Zc:lambda", "/Zc:preprocessor"])
     elif "OpenMP not found" not in torch.__config__.parallel_info():
         extra_compile_args["cxx"].append("-fopenmp")
 
@@ -193,6 +198,14 @@ def get_extensions():
                 "--threads",
                 "4",
                 "--ptxas-options=-v",
+            ]
+        if sys.platform == "win32":
+            nvcc_flags += [
+                "-std=c++17",
+                "-Xcompiler",
+                "/Zc:lambda",
+                "-Xcompiler",
+                "/Zc:preprocessor",
             ]
         extra_compile_args["nvcc"] = nvcc_flags
 
