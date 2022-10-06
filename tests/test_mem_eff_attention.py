@@ -729,13 +729,18 @@ def test_memory_efficient_attention_full_block_masked(
 @pytest.mark.parametrize("contiguous", [True, False])
 @pytest.mark.parametrize("dim", [0, 1, 2, 3, 4])
 def test_unbind(dim: int, contiguous: bool):
-    x = contiguous_x = torch.ones([10, 20, 4, 10, 3], requires_grad=True)
-    x2 = contiguous_x2 = torch.ones([10, 20, 4, 10, 3], requires_grad=True)
+    x = torch.randn([10, 20, 4, 10, 3])
+    x2 = x.clone()
 
     if not contiguous:
-        x = x.transpose(-2, -3)
-        x2 = x2.transpose(-2, -3)
+        perm = list(range(x.ndim))
+        random.Random(dim).shuffle(perm)
+        # Let's hope we didn't pick identity
+        x = x.permute(perm)
+        x2 = x2.permute(perm)
     assert contiguous == x.is_contiguous()
+    x.requires_grad_(True)
+    x2.requires_grad_(True)
 
     # FW
     tensors = xformers.ops.unbind(x, dim)
@@ -753,7 +758,7 @@ def test_unbind(dim: int, contiguous: bool):
     g = torch.randn_like(loss1)
     loss1.backward(g)
     loss2.backward(g)
-    assert torch.allclose(contiguous_x.grad, contiguous_x2.grad)
+    assert torch.allclose(x.grad, x2.grad)
 
 
 @pytest.mark.parametrize("contiguous", [True, False])
