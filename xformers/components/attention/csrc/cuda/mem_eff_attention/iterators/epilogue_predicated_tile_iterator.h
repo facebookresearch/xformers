@@ -309,11 +309,11 @@ class PredicatedTileIteratorPrefetch {
           for (int column = 0; column < ThreadMap::Iterations::kColumn;
                ++column) {
             // on windows using unsigned long here gives the error
-            // error: asm operand type size(4) does not match type/size implied by constraint 'l'
-            uint64_t addr =
-                (uint64_t)((void*)&memory_pointer
-                                    [column * ThreadMap::Delta::kColumn /
-                                     kElementsPerAccess]);
+            // error: asm operand type size(4) does not match
+            // type/size implied by constraint 'l'
+            uint64_t addr = (uint64_t)(
+                (void*)&memory_pointer
+                    [column * ThreadMap::Delta::kColumn / kElementsPerAccess]);
             asm volatile("prefetch.global.L1 [ %1 ];" : "=l"(addr) : "l"(addr));
           }
 

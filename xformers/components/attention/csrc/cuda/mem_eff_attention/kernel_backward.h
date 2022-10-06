@@ -1349,7 +1349,7 @@ struct AttentionBackwardKernel {
     bool pred = rowPred;
 
     // on windows, previous syntax __restrict__ AccessType*
-    // resulted in error: "restrict" is not allowed 
+    // resulted in error: "restrict" is not allowed
     const AccessType* __restrict__ grad_output_ptr =
         reinterpret_cast<const AccessType* __restrict__>(
             p.grad_output_ptr + (query_start + laneRow) * p.head_dim_value +
