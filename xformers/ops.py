@@ -6,7 +6,7 @@
 
 import math
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Optional, Set, Type, Union
+from typing import Any, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
 import torch
 
@@ -105,6 +105,12 @@ class AttentionOpBase(torch.autograd.Function):
 
     _TEST_BATCH_SIZES: List[int] = [1, 300]
     _TEST_K: List[int] = [32, 128]
+
+    @classmethod
+    def info(cls):
+        if cls.FORWARD_OPERATOR.__name__ == "no_such_operator":
+            return "not built"
+        return "available"
 
     @classmethod
     def bmhk2bmk_contiguous(cls, tensor) -> torch.Tensor:
@@ -353,8 +359,6 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
     @classmethod
     def backward(cls, ctx, grad):
         query, key, value, lse, out = ctx.saved_tensors
-        if query.shape[2] != 1:
-            raise NotImplementedError("num_heads != 1 not yet implemented")
 
         dtype = query.dtype
         (
@@ -362,17 +366,14 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             grad_k,
             grad_v,
         ) = torch.ops.xformers.efficient_attention_backward_cutlass(
-            grad.to(dtype).squeeze(2),
-            query.squeeze(2),
-            key.squeeze(2),
-            value.squeeze(2),
-            lse.squeeze(1),
-            out.to(dtype).squeeze(2),
+            grad.to(dtype),
+            query,
+            key,
+            value,
+            lse,
+            out.to(dtype),
             causal=ctx.causal,
         )
-        grad_q = grad_q.unsqueeze(2)
-        grad_k = grad_k.unsqueeze(2)
-        grad_v = grad_v.unsqueeze(2)
         return grad_q, grad_k, grad_v, None, None
 
 
@@ -391,6 +392,12 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     SUPPORTS_DROPOUT = False
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
     NAME = "flshatt"
+
+    @classmethod
+    def info(cls):
+        if not has_flashattention:
+            return "not built"
+        return "available - requires GPU with compute capability 7.5+"
 
     @classmethod
     def supports(cls, d: "AttentionOpDispatch") -> bool:
@@ -658,6 +665,76 @@ class AttentionOpDispatch:
             kv_len=value.shape[-2],
             q_len=query.shape[-2],
         )
+
+
+def get_stack_strides(
+    tensors: Sequence[torch.Tensor], dim: int
+) -> Optional[Tuple[int, ...]]:
+    """
+    If the tensors are already stacked, returns the strides of the stacked
+    tensors. Otherwise returns None.
+    """
+    if len(tensors) <= 1 or dim > tensors[0].ndim:
+        return None
+
+    final_stride = []
+    for i in range(tensors[0].ndim + 1):
+        if i == dim:
+            final_stride.append(
+                tensors[1].storage_offset() - tensors[0].storage_offset()
+            )
+            continue
+        if i > dim:
+            i -= 1
+        final_stride.append(tensors[0].stride(i))
+
+    for i, x in enumerate(tensors):
+        # Sanity checks
+        if x.shape != tensors[0].shape:
+            return None
+        # Actual storage check
+        if x.storage().data_ptr() != tensors[0].storage().data_ptr():
+            return None
+        if x.stride() != tensors[0].stride():
+            return None
+        if x.storage_offset() != tensors[0].storage_offset() + i * final_stride[dim]:
+            return None
+    return tuple(final_stride)
+
+
+def efficient_stack(
+    tensors: Union[Tuple[torch.Tensor, ...], List[torch.Tensor]], dim: int
+) -> torch.Tensor:
+    strides = get_stack_strides(tensors, dim)
+    if strides is not None:
+        input_shape = list(tensors[0].shape)
+        input_shape.insert(dim, len(tensors))
+        return tensors[0].as_strided(input_shape, strides)
+    return torch.stack(tensors, dim=dim)
+
+
+class _Unbind(torch.autograd.Function):
+    """
+    Splits a packed `qkv` tensor into query, key and values.
+    The magic happens in the backward. We want to `torch.stack` the tensors
+    together, but we don't need to if the gradients have already the same storage
+    (and that is something that our attention operators support)
+    """
+
+    @staticmethod
+    # type: ignore
+    def forward(ctx, x: torch.Tensor, dim: int):
+        ctx.dim = dim
+        return x.unbind(dim)
+
+    @classmethod
+    # type: ignore
+    def backward(cls, ctx, *tensors: torch.Tensor):
+        return efficient_stack(tensors, ctx.dim), None
+
+
+def unbind(x: torch.Tensor, dim: int) -> Tuple[torch.Tensor, ...]:
+    return _Unbind.apply(x, dim)
 
 
 def memory_efficient_attention(

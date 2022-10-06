@@ -12,7 +12,7 @@ import torch.nn as nn
 
 from xformers import _is_triton_available
 
-if _is_triton_available:
+if _is_triton_available():
     from xformers.triton.layer_norm import FusedLayerNorm
 
 from collections import namedtuple
@@ -104,7 +104,7 @@ class PreNorm(nn.Module, RequiresWrappedInputs):
 
         super().__init__()
         if (
-            _is_triton_available
+            _is_triton_available()
             and use_triton
             and normalization == NormalizationType.LayerNorm
         ):
@@ -146,7 +146,7 @@ class PostNorm(nn.Module, RequiresWrappedInputs):
     ):
         super().__init__()
         if (
-            _is_triton_available
+            _is_triton_available()
             and use_triton
             and normalization == NormalizationType.LayerNorm
         ):

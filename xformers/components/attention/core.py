@@ -18,12 +18,12 @@ from xformers.components.attention.attention_mask import AttentionMask
 if _is_sparse_available:
     from ._sputnik_sparse import SparseCS
 
-if _is_triton_available:
+if _is_triton_available():
     from xformers.triton.softmax import softmax as triton_softmax
     from xformers.triton.utils import gpu_capabilities_older_than_70
 
 _is_blocksparse_available = (
-    _is_triton_available and not gpu_capabilities_older_than_70()
+    _is_triton_available() and not gpu_capabilities_older_than_70()
 )
 
 if _is_blocksparse_available:
@@ -114,7 +114,7 @@ def _softmax(a: torch.Tensor, causal: bool = False) -> torch.Tensor:
     if a.is_sparse:
         return torch.sparse.softmax(a, dim=a.ndim - 1)
 
-    if _is_triton_available:
+    if _is_triton_available():
         return triton_softmax(a, mask=None, causal=causal)
     else:
         return torch.softmax(a, dim=a.ndim - 1)

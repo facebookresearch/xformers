@@ -12,11 +12,11 @@ from xformers.components.attention._sputnik_sparse import SparseCS
 from xformers.components.attention.attention_mask import AttentionMask
 from xformers.components.attention.core import scaled_dot_product_attention
 
-if _is_triton_available:
+if _is_triton_available():
     from xformers.triton.utils import gpu_capabilities_older_than_70
 
 _is_blocksparse_available = (
-    _is_triton_available and not gpu_capabilities_older_than_70()
+    _is_triton_available() and not gpu_capabilities_older_than_70()
 )
 
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]

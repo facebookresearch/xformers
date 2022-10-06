@@ -109,7 +109,6 @@ struct AttentionKernel {
     int32_t head_dim_value;
     int32_t num_queries;
     int32_t num_keys;
-    int32_t num_heads = 1;
 
     bool causal;
 
@@ -126,6 +125,7 @@ struct AttentionKernel {
     int64_t k_strideB;
     int64_t v_strideB;
     int32_t num_batches;
+    int32_t num_heads;
 
     CUTLASS_HOST_DEVICE int32_t o_strideM() const {
       return head_dim_value * num_heads;
@@ -422,10 +422,10 @@ struct AttentionKernel {
     CHECK_ALIGNED_PTR(p.key_ptr, kAlignmentK);
     CHECK_ALIGNED_PTR(p.value_ptr, kAlignmentV);
     TORCH_CHECK(
-        p.head_dim % kAlignmentQ == 0, "query is not correctly aligned");
-    TORCH_CHECK(p.head_dim % kAlignmentK == 0, "key is not correctly aligned");
+        p.q_strideH % kAlignmentQ == 0, "query is not correctly aligned");
+    TORCH_CHECK(p.k_strideH % kAlignmentK == 0, "key is not correctly aligned");
     TORCH_CHECK(
-        p.head_dim_value % kAlignmentV == 0, "value is not correctly aligned");
+        p.v_strideH % kAlignmentV == 0, "value is not correctly aligned");
   }
 
   static void CUTLASS_DEVICE attention_kernel(Params& p) {

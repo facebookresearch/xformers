@@ -51,7 +51,7 @@ class ViT(nn.Module):
 
 
 MLPs = ["MLP"]
-if _is_triton_available:
+if _is_triton_available():
     MLPs.append("FusedMLP")
 
 

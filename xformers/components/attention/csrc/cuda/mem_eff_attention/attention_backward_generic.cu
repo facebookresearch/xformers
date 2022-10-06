@@ -2,7 +2,7 @@
 
 #define DISPATCH_MAXK(func)                                   \
   {                                                           \
-    const auto maxK = std::max(query.size(2), value.size(2)); \
+    const auto maxK = std::max(query.size(3), value.size(3)); \
     if (maxK <= 64) {                                         \
       constexpr int kMaxK = 64;                               \
       func();                                                 \
@@ -28,9 +28,9 @@
                   using AlignedAK =                                            \
                       AttentionBackwardKernel<ArchTag, scalar_t, true, kMaxK>; \
                   bool isAligned =                                             \
-                      (QUERY.stride(1) % AlignedAK::kOptimalAlignement == 0 && \
-                       KEY.stride(1) % AlignedAK::kOptimalAlignement == 0 &&   \
-                       VALUE.stride(1) % AlignedAK::kOptimalAlignement == 0);  \
+                      (QUERY.stride(2) % AlignedAK::kOptimalAlignement == 0 && \
+                       KEY.stride(2) % AlignedAK::kOptimalAlignement == 0 &&   \
+                       VALUE.stride(2) % AlignedAK::kOptimalAlignement == 0);  \
                   DISPATCH_BOOL(isAligned, kIsAligned, ([&]() {                \
                                   using Kernel = AttentionBackwardKernel<      \
                                       ArchTag,                                 \
@@ -54,34 +54,45 @@ mem_efficient_attention_backward_cutlass(
     const at::Tensor& logsumexp,
     const at::Tensor& out,
     bool causal) {
+  // ndim
   TORCH_CHECK(query.dim() == grad_out_.dim());
   TORCH_CHECK(query.dim() == key.dim());
-  TORCH_CHECK(query.dim() == 3);
+  TORCH_CHECK(query.dim() == value.dim());
+  TORCH_CHECK(query.dim() == 4);
 
+  // batch size
   TORCH_CHECK(query.size(0) == grad_out_.size(0));
-  TORCH_CHECK(query.size(1) == grad_out_.size(1));
-  TORCH_CHECK(value.size(2) == grad_out_.size(2));
-
-  TORCH_CHECK(query.size(2) == key.size(2));
   TORCH_CHECK(query.size(0) == key.size(0));
-
   TORCH_CHECK(query.size(0) == value.size(0));
+
+  // seqlen
   TORCH_CHECK(key.size(1) == value.size(1));
+  TORCH_CHECK(query.size(1) == grad_out_.size(1));
+
+  // Num heads
+  TORCH_CHECK(query.size(2) == key.size(2));
+  TORCH_CHECK(query.size(2) == value.size(2));
+  TORCH_CHECK(query.size(2) == grad_out_.size(2));
+
+  // Embedding per head
+  TORCH_CHECK(query.size(3) == key.size(3));
+  TORCH_CHECK(value.size(3) == grad_out_.size(3));
 
   // handle potentially non-contiguous grad_out through a copy
   auto grad_out = grad_out_.contiguous();
-
-  CHECK_NOSPARSE_CONTIGUOUS_CUDA(query);
-  CHECK_NOSPARSE_CONTIGUOUS_CUDA(key);
-  CHECK_NOSPARSE_CONTIGUOUS_CUDA(value);
   CHECK_NOSPARSE_CONTIGUOUS_CUDA(grad_out);
+
+  CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(query);
+  CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
+  CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
   at::cuda::CUDAGuard device_guard(query.device());
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
   int64_t N = key.size(1);
-  int64_t K = query.size(2);
+  int64_t nH = query.size(2);
+  int64_t K = query.size(3);
 
   // It does not make sense to use that in practice,
   // but let's still make sure we are correct
@@ -89,11 +100,25 @@ mem_efficient_attention_backward_cutlass(
   // keys with no query associated, so they are not
   // initialized
   bool grad_kv_needs_init = causal && N > M;
-  at::Tensor grad_q = at::empty_like(query);
-  at::Tensor grad_k =
-      grad_kv_needs_init ? at::zeros_like(key) : at::empty_like(key);
-  at::Tensor grad_v =
-      grad_kv_needs_init ? at::zeros_like(value) : at::empty_like(value);
+  at::Tensor grad_q, grad_k, grad_v;
+  if (!grad_kv_needs_init && query.size(1) == key.size(1) &&
+      query.size(3) == value.size(3) &&
+      query.storage().is_alias_of(key.storage()) &&
+      query.storage().is_alias_of(value.storage())) {
+    // Create one big contiguous chunk
+    // This is because q, k and v usually come from a single
+    // output of a linear layer that is chunked.
+    // Creating the gradients with the right layout saves us
+    // a `torch.cat` call in the backward pass
+    at::Tensor chunk = at::empty({B, M, 3, nH, K}, query.options());
+    grad_q = chunk.select(2, 0);
+    grad_k = chunk.select(2, 1);
+    grad_v = chunk.select(2, 2);
+  } else {
+    grad_q = at::empty_like(query);
+    grad_k = grad_kv_needs_init ? at::zeros_like(key) : at::empty_like(key);
+    grad_v = grad_kv_needs_init ? at::zeros_like(value) : at::empty_like(value);
+  }
 
   auto launchKernel = [&](auto _k, int computeCapability) {
     using Kernel = decltype(_k);
@@ -105,29 +130,63 @@ mem_efficient_attention_backward_cutlass(
     // TODO: Fuse this into a kernel?
     // This is a bottleneck for smaller sequences (M <= 128)
     auto delta = Kernel::kKernelComputesDelta
-        ? at::empty({B, M}, query.options().dtype(at::ScalarType::Float))
-        : (grad_out.to(at::kFloat) * out.to(at::kFloat)).sum(-1);
+        ? at::empty({B, nH, M}, query.options().dtype(at::ScalarType::Float))
+        : (grad_out.to(at::kFloat) * out.to(at::kFloat))
+              .sum(-1)
+              .transpose(-2, -1)
+              .contiguous();
     TORCH_INTERNAL_ASSERT(delta.size(0) == B);
-    TORCH_INTERNAL_ASSERT(delta.size(1) == M);
+    TORCH_INTERNAL_ASSERT(delta.size(1) == nH);
+    TORCH_INTERNAL_ASSERT(delta.size(2) == M);
 
-    typename Kernel::Params params;
-    params.query_ptr = (scalar_t*)query.data_ptr();
-    params.key_ptr = (scalar_t*)key.data_ptr();
-    params.value_ptr = (scalar_t*)value.data_ptr();
-    params.logsumexp_ptr = (typename Kernel::lse_scalar_t*)logsumexp.data_ptr();
-    params.output_ptr = (scalar_t*)out.data_ptr();
-    params.grad_output_ptr = (scalar_t*)grad_out.data_ptr();
-    params.grad_query_ptr = (scalar_t*)grad_q.data_ptr();
-    params.grad_key_ptr = (scalar_t*)grad_k.data_ptr();
-    params.grad_value_ptr = (scalar_t*)grad_v.data_ptr();
-    params.delta_ptr = (float*)delta.data_ptr();
-    params.head_dim = query.size(2);
-    params.head_dim_value = value.size(2);
-    params.num_queries = query.size(1);
-    params.num_keys = key.size(1);
-    params.num_batches = B;
-    params.causal = causal;
-    Kernel::check_supported(params);
+    typename Kernel::Params p;
+    p.query_ptr = (scalar_t*)query.data_ptr();
+    p.key_ptr = (scalar_t*)key.data_ptr();
+    p.value_ptr = (scalar_t*)value.data_ptr();
+    p.logsumexp_ptr = (typename Kernel::lse_scalar_t*)logsumexp.data_ptr();
+    p.output_ptr = (scalar_t*)out.data_ptr();
+    p.grad_output_ptr = (scalar_t*)grad_out.data_ptr();
+    p.grad_query_ptr = (scalar_t*)grad_q.data_ptr();
+    p.grad_key_ptr = (scalar_t*)grad_k.data_ptr();
+    p.grad_value_ptr = (scalar_t*)grad_v.data_ptr();
+    p.delta_ptr = (float*)delta.data_ptr();
+    p.head_dim = query.size(3);
+    p.head_dim_value = value.size(3);
+    p.num_queries = query.size(1);
+    p.num_keys = key.size(1);
+    p.num_batches = B;
+    p.num_heads = nH;
+    p.causal = causal;
+
+    ASSIGN_CHECK_OVERFLOW(p.gO_strideB, grad_out.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.gO_strideM, grad_out.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.gO_strideH, grad_out.stride(2));
+
+    ASSIGN_CHECK_OVERFLOW(p.o_strideB, out.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.o_strideH, out.stride(2));
+
+    ASSIGN_CHECK_OVERFLOW(p.gQ_strideB, grad_q.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.gK_strideB, grad_k.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.gV_strideB, grad_v.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.gQ_strideH, grad_q.stride(2));
+    ASSIGN_CHECK_OVERFLOW(p.gK_strideH, grad_k.stride(2));
+    ASSIGN_CHECK_OVERFLOW(p.gV_strideH, grad_v.stride(2));
+    p.gQKV_strideM_multiplier = grad_q.is_contiguous() ? 1 : 3;
+    TORCH_INTERNAL_ASSERT(p.gQ_strideM() == grad_q.stride(1));
+    TORCH_INTERNAL_ASSERT(p.gK_strideM() == grad_k.stride(1));
+    TORCH_INTERNAL_ASSERT(p.gV_strideM() == grad_v.stride(1));
+
+    ASSIGN_CHECK_OVERFLOW(p.q_strideB, query.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.k_strideB, key.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.v_strideB, value.stride(0));
+    ASSIGN_CHECK_OVERFLOW(p.q_strideM, query.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.k_strideM, key.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.v_strideM, value.stride(1));
+    ASSIGN_CHECK_OVERFLOW(p.q_strideH, query.stride(2));
+    ASSIGN_CHECK_OVERFLOW(p.k_strideH, key.stride(2));
+    ASSIGN_CHECK_OVERFLOW(p.v_strideH, value.stride(2));
+
+    Kernel::check_supported(p);
 
     constexpr auto kernel_fn = attention_kernel_backward_batched<Kernel>;
 
@@ -159,8 +218,7 @@ mem_efficient_attention_backward_cutlass(
         checkBinaryArchMatches(), "Something went wrong in the build process");
 #endif
 
-    kernel_fn<<<params.getBlocksGrid(), params.getThreadsGrid(), smem_bytes>>>(
-        params);
+    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
   };
 
   DISPATCH_KERNEL(

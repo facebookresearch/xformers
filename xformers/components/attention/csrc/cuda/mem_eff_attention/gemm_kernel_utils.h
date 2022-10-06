@@ -65,6 +65,13 @@
 
 #define CHECK_ALIGNED_PTR(PTR, ALIGNMENT) \
   TORCH_CHECK(uint64_t(PTR) % ALIGNMENT == 0, #PTR " is not correctly aligned")
+
+#define ASSIGN_CHECK_OVERFLOW(A, B)                                            \
+  {                                                                            \
+    A = B;                                                                     \
+    TORCH_CHECK(B < std::numeric_limits<decltype(A)>::max(), #B " overflows"); \
+  }
+
 namespace gemm_kernel_utils {
 template <typename scalar_t>
 struct TypeTraits;
@@ -118,7 +125,7 @@ struct TypeTraits<float> {
 };
 
 template <typename integer>
-constexpr __host__ __device__ inline integer ceil_div(integer n, integer m) {
+constexpr CUTLASS_HOST_DEVICE integer ceil_div(integer n, integer m) {
   return (n + m - 1) / m;
 }
 

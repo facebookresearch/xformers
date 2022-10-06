@@ -11,7 +11,6 @@ import torch
 __version__ = "0.0.14.dev"
 
 _is_sparse_available: bool = True
-_is_triton_available: bool = torch.cuda.is_available()
 
 # Set to true to utilize functorch
 _is_functorch_available: bool = False
@@ -72,14 +71,31 @@ if _is_sparse_available:
         _is_sparse_available = False
 
 
-if _is_triton_available:
+def compute_once(func):
+    value = None
+
+    def func_wrapper():
+        nonlocal value
+        if value is None:
+            value = func()
+        return value
+
+    return func_wrapper
+
+
+@compute_once
+def _is_triton_available():
+    if not torch.cuda.is_available():
+        return False
     try:
         from xformers.triton.softmax import softmax as triton_softmax  # noqa
+
+        return True
     except (ImportError, AttributeError) as e:
         logging.warning(
             f"A matching Triton is not available, some optimizations will not be enabled.\nError caught was: {e}"
         )
-        _is_triton_available = False
+        return False
 
 
 if _is_functorch_available:
