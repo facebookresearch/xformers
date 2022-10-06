@@ -6,11 +6,13 @@ source:
  path: "{{ environ.get('SOURCE_ROOT_DIR') }}"
 
 requirements:
+  build:
+    - ninja
   host:
     # - numpy >=1.11
+    - python
     - pytorch=={{ environ.get('PYTORCH_VERSION') }}
     - cudatoolkit{{ environ['CONDA_CUDATOOLKIT_CONSTRAINT'] }}
-    # - ninja
 
   run:
     # - numpy >=1.11
