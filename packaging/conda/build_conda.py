@@ -125,7 +125,9 @@ class Build:
     def do_build(self):
         self._set_env_for_build()
         if self.upload_dev:
-            subprocess.check_call(["conda", "config", "--set", "anaconda_upload", "yes"])
+            subprocess.check_call(
+                ["conda", "config", "--set", "anaconda_upload", "yes"]
+            )
         args = self._get_build_args()
         print(args)
         subprocess.check_call(args)
