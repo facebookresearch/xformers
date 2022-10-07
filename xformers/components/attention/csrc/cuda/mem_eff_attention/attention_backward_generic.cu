@@ -189,9 +189,10 @@ mem_efficient_attention_backward_cutlass(
     ASSIGN_CHECK_OVERFLOW(p.k_strideH, key.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.v_strideH, value.stride(2));
 
-    size_t gmem_elements = p.gmem_f32_elements();
+    int64_t gmem_elements = p.gmem_f32_elements();
     if (gmem_elements) {
-      gmem_storage = at::empty({gmem_storage}, query.options().dtype(at::ScalarType::Float));
+      gmem_storage = at::empty(
+          {gmem_elements}, query.options().dtype(at::ScalarType::Float));
       p.gmem_storage = gmem_storage.data_ptr<float>();
     }
     Kernel::check_supported(p);

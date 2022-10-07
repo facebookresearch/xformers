@@ -129,6 +129,11 @@ constexpr CUTLASS_HOST_DEVICE integer ceil_div(integer n, integer m) {
   return (n + m - 1) / m;
 }
 
+template <typename integer>
+constexpr CUTLASS_HOST_DEVICE integer align_up(integer n, integer m) {
+  return ((n + m - 1) / m) * m;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Determine the type of GEMM we do (TensorCores or not, Shapes ...)
 // TODO: Maybe we could rely on Cutlass's DefaultGemm templates
