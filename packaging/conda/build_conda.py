@@ -74,7 +74,10 @@ class Build:
         git_hash = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
         ).strip()
-        os.environ["BUILD_VERSION"] = f"{code_version}+git.{git_hash}"
+        num_commits = subprocess.check_output(
+            ["git", "rev-list", "--count", "HEAD"], text=True
+        ).strip()
+        os.environ["BUILD_VERSION"] = f"{code_version}{num_commits}+git.{git_hash}"
         tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
         os.environ["GIT_TAG"] = tag
         os.environ["PYTORCH_VERSION"] = self.pytorch_version

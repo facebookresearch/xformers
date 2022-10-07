@@ -6,6 +6,7 @@
 
 import math
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
 import torch
@@ -427,16 +428,17 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         )
 
     @classmethod
-    def forward(cls, ctx, query, key, value, attn_bias, p):
-        causal = isinstance(attn_bias, LowerTriangularMask)
-        return_softmax = False
-
+    def prepare_inputs(
+        cls, ctx, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+    ):
         batch = query.shape[0]
         seqlen_q = query.shape[1]
         seqlen_k = key.shape[1]
         num_heads = query.shape[2]
         head_dim_q = query.shape[3]
         head_dim_v = value.shape[3]
+        ctx.max_seqlen_q = seqlen_q
+        ctx.max_seqlen_k = seqlen_k
 
         cu_seqlens_k = torch.arange(
             0,
@@ -458,12 +460,22 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
 
         # Initially we have `query.shape = [batch, seqlen, head_dim_q]`
         # We want format `[batch * seqlen, num_heads, head_dim_q]`
-        query_api_input_shape = query.shape
-        key_api_input_shape = key.shape
-        value_api_input_shape = value.shape
+        ctx.query_api_input_shape = query.shape
+        ctx.key_api_input_shape = key.shape
+        ctx.value_api_input_shape = value.shape
         query = query.reshape([batch * seqlen_q, num_heads, head_dim_q])
         key = key.reshape([batch * seqlen_k, num_heads, head_dim_q])
         value = value.reshape([batch * seqlen_k, num_heads, head_dim_v])
+        return query, key, value, cu_seqlens_k, cu_seqlens_q
+
+    @classmethod
+    def forward(cls, ctx, query, key, value, attn_bias, p):
+        causal = isinstance(attn_bias, LowerTriangularMask)
+        return_softmax = False
+        ctx_flash = ctx if ctx is not None else SimpleNamespace()
+        query, key, value, cu_seqlens_k, cu_seqlens_q = cls.prepare_inputs(
+            ctx_flash, query, key, value
+        )
 
         # Save rng_state because the backward pass will regenerate the dropout mask
         rng_state = torch.cuda.get_rng_state() if p > 0 else None
@@ -474,8 +486,8 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
             value,
             cu_seqlens_q,
             cu_seqlens_k,
-            seqlen_q,
-            seqlen_k,
+            ctx_flash.max_seqlen_q,
+            ctx_flash.max_seqlen_k,
             p,
             softmax_scale,
             causal=causal,
@@ -493,18 +505,17 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
                 rng_state,
             )
             ctx.dropout_p = p
-            ctx.max_seqlen_q = seqlen_q
-            ctx.max_seqlen_k = seqlen_k
             ctx.softmax_scale = softmax_scale
             ctx.causal = causal
             ctx.kernel_output_shape = out.shape
-            ctx.query_api_input_shape = query_api_input_shape
-            ctx.key_api_input_shape = key_api_input_shape
-            ctx.value_api_input_shape = value_api_input_shape
         return out
 
     @classmethod
     def backward(cls, ctx, grad):
+        return cls._backward(ctx, grad, ctx.saved_tensors)
+
+    @classmethod
+    def _backward(cls, ctx, grad, saved_tensors):
         (
             q,
             k,
@@ -514,11 +525,33 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
             cu_seqlens_q,
             cu_seqlens_k,
             rng_state,
-        ) = ctx.saved_tensors
+        ) = saved_tensors
         if rng_state is not None:
             cur_rng_state = torch.cuda.get_rng_state()
             torch.cuda.set_rng_state(rng_state)
-        dq, dk, dv = torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
+        # Create dq,dk,dv
+        # If Q/K/V come from a single QKV tensor, let's put the gradient in the
+        # right strides, so we can avoid a `cat`
+        if (
+            q.shape[0] == k.shape[0]
+            and q.shape[2] == v.shape[2]
+            and q.storage().data_ptr() == k.storage().data_ptr()
+            and q.storage().data_ptr() == v.storage().data_ptr()
+        ):
+            # Create one big contiguous chunk
+            # This is because q, k and v usually come from a single
+            # output of a linear layer that is chunked.
+            # Creating the gradients with the right layout saves us
+            # a `torch.cat` call in the backward pass
+            chunk = torch.empty(
+                (q.shape[0], 3, q.shape[1], q.shape[2]), dtype=q.dtype, device=q.device
+            )
+            dq = chunk.select(1, 0)
+            dk = chunk.select(1, 1)
+            dv = chunk.select(1, 2)
+        else:
+            dq, dk, dv = torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
+
         assert grad.dtype in cls.SUPPORTED_DTYPES
         cls._flash_attn_backward(
             grad.reshape(ctx.kernel_output_shape),
@@ -619,6 +652,38 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         return dq, dk, dv, softmax_d
 
 
+class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlassOp):
+    FW_OP = MemoryEfficientAttentionCutlassOp
+    BW_OP = MemoryEfficientAttentionFlashAttentionOp
+    NAME = "fctls_bflsh"
+
+    @classmethod
+    def supports(cls, d: "AttentionOpDispatch") -> bool:
+        return cls.FW_OP.supports(d) and cls.BW_OP.supports(d)
+
+    @classmethod
+    def backward(cls, ctx, grad):
+        query, key, value, lse, out = ctx.saved_tensors
+        ctx_flash = SimpleNamespace()
+
+        ctx_flash.causal = ctx.causal
+        ctx_flash.dropout_p = 0.0
+        query, key, value, cu_seqlens_k, cu_seqlens_q = cls.BW_OP.prepare_inputs(
+            ctx_flash, query, key, value
+        )
+        ctx_flash.kernel_output_shape = (query.shape[0], query.shape[1], value.shape[2])
+        ctx_flash.softmax_scale = query.shape[-1] ** (-0.5)
+        rng_state = None
+
+        out = out.reshape(ctx_flash.kernel_output_shape)
+        grad = grad.reshape(ctx_flash.kernel_output_shape)
+        return cls.BW_OP._backward(
+            ctx_flash,
+            grad,
+            [query, key, value, out, lse, cu_seqlens_q, cu_seqlens_k, rng_state],
+        )
+
+
 @dataclass
 class AttentionOpDispatch:
     dtype: torch.dtype
@@ -629,10 +694,22 @@ class AttentionOpDispatch:
     kv_len: int
     q_len: int
     kv: int = -1
+    batch_size: int = -1
+    num_heads: int = 1
 
     def __post_init__(self):
         if self.kv == -1:
             self.kv = self.k
+
+    def _is_cutlass_fwd_faster_than_flash(self) -> bool:
+        # Very small batch sizes - if batch size specified
+        if self.batch_size > 0:
+            threads_flash = self.batch_size * self.num_heads
+            threads_cutlass = threads_flash * (self.q_len // 64)
+            if threads_flash < 60 and (threads_cutlass // 2) >= threads_flash:
+                return True
+        # Large values of K
+        return max(self.k, self.kv) == 128
 
     @property
     def op(self) -> Type[AttentionOpBase]:
@@ -641,6 +718,8 @@ class AttentionOpDispatch:
             MemoryEfficientAttentionCutlassOp,
             MemoryEfficientAttentionOp,
         ]
+        if self._is_cutlass_fwd_faster_than_flash():
+            priority_list_ops.insert(0, MemoryEfficientAttentionCutlassFwdFlashBwOp)
         for op in priority_list_ops:
             if op.supports(self):
                 return op
@@ -655,6 +734,9 @@ class AttentionOpDispatch:
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
         p: float = 0.0,
     ) -> "AttentionOpDispatch":
+        B, H = query.shape[0], 1
+        if query.ndim == 4:
+            H = query.shape[2]
         return AttentionOpDispatch(
             dtype=query.dtype,
             device=query.device,
@@ -662,8 +744,10 @@ class AttentionOpDispatch:
             kv=value.shape[-1],
             has_dropout=p > 0.0,
             attn_bias_type=type(attn_bias),
-            kv_len=value.shape[-2],
-            q_len=query.shape[-2],
+            kv_len=value.shape[1],
+            q_len=query.shape[1],
+            batch_size=B,
+            num_heads=H,
         )
 
 
