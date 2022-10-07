@@ -381,7 +381,7 @@ jobs:
 
     environment:
       CUDA_HOME: "/usr/local/cuda-<< parameters.cu_version >>"
-      MAX_JOBS: 4
+      MAX_JOBS: 3
 
     working_directory: ~/xformers
 
@@ -517,6 +517,7 @@ workflows:
               - gh-pages
 
       - build_conda:
+          name: conda_build_cu113
           dockerimage: pytorch/conda-builder:cuda113
           cu_version: "11.3"
           filters:
@@ -524,6 +525,7 @@ workflows:
               ignore:
                 - gh-pages
       - build_conda:
+          name: conda_build_cu116
           dockerimage: pytorch/conda-builder:cuda116
           cu_version: "11.6"
           filters:
