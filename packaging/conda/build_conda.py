@@ -50,6 +50,13 @@ class Build:
     """
     Represents one configuration of a build, i.e.
     a set of versions of dependent libraries.
+
+    Members:
+        conda_always_copy: avoids hard linking which can behave weirdly.
+        conda_debug: get added information about package search
+        conda_dirty: see intermediate files after build
+        build_inside_tree: output in build/ not ../build
+        upload_dev: upload, to label dev of xformers
     """
 
     python_version: str
@@ -57,7 +64,10 @@ class Build:
     cuda_version: str
 
     conda_always_copy: bool = True
-    conda_debug: bool = True
+    conda_debug: bool = False
+    conda_dirty: bool = False
+    build_inside_tree: bool = False
+    upload_dev: bool = False
 
     def _set_env_for_build(self):
         if "CUDA_HOME" not in os.environ:
@@ -71,6 +81,7 @@ class Build:
 
         os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0 8.6"
         code_version = (SOURCE_ROOT_DIR / "version.txt").read_text().strip()
+        assert code_version.endswith("dev")
         git_hash = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
         ).strip()
@@ -103,18 +114,26 @@ class Build:
         ]
         if self.conda_debug:
             args += ["--debug"]
-        args += ["--dirty"]
-        args += ["--croot", "../build"]
+        if self.conda_dirty:
+            args += ["--dirty"]
+        if not self.build_inside_tree:
+            args += ["--croot", "../build"]
+        if self.upload_dev:
+            args += ["--user", "xformers", "--label", "dev"]
         return args + ["packaging/conda/xformers"]
 
     def do_build(self):
         self._set_env_for_build()
+        if self.upload_dev:
+            subprocess.check_call(
+                ["conda", "config", "--set", "anaconda_upload", "yes"]
+            )
         args = self._get_build_args()
         print(args)
         subprocess.check_call(args)
 
     def build_in_docker(self):
-        filesystem = subprocess.check_output("stat -f -c %T .", shell=True)
+        filesystem = subprocess.check_output("stat -f -c %T .", shell=True).strip()
         if filesystem in (b"nfs", b"tmpfs"):
             raise ValueError(
                 "Cannot run docker here. "
@@ -151,11 +170,24 @@ if __name__ == "__main__":
     parser.add_argument(
         "--docker", action="store_true", help="Call this script inside docker."
     )
-
+    parser.add_argument(
+        "--build-inside-tree",
+        action="store_true",
+        help="Build in build/ instead of ../build/",
+    )
+    parser.add_argument(
+        "--upload-dev",
+        action="store_true",
+        help="upload, to label dev of xformers",
+    )
     args = parser.parse_args()
 
     pkg = Build(
-        python_version=args.python, pytorch_version=args.pytorch, cuda_version=args.cuda
+        python_version=args.python,
+        pytorch_version=args.pytorch,
+        cuda_version=args.cuda,
+        build_inside_tree=args.build_inside_tree,
+        upload_dev=args.upload_dev,
     )
 
     if args.docker:
@@ -172,6 +204,5 @@ if __name__ == "__main__":
 
 # TODO:
 # - Make a local conda package cache available inside docker
-# - use ninja
 # - do we need builds for both _GLIBCXX_USE_CXX11_ABI values?
 # - how to prevent some cpu only builds of pytorch from being discovered?
