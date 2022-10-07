@@ -419,7 +419,10 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
         k,
         kv,
     ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
-    if op.FORWARD_OPERATOR is None:
+    if (
+        op.FORWARD_OPERATOR is None
+        or op is xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp
+    ):
         return
     query, key, value, attn_bias = create_tensors(
         *op_device_dtype_B_Mq_Mkv_H_K_Kv, fmt="BMK"
