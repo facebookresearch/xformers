@@ -53,7 +53,10 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
     # Crashes on Flash, Errors on Cutlass
     # shapes.append((1, 1, 64000, 300, 128, 128))
     # Add some random shapes
-    if op is xformers.ops.MemoryEfficientAttentionCutlassOp:
+    if op in [
+        xformers.ops.MemoryEfficientAttentionCutlassOp,
+        xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp,
+    ]:
         K_CHOICES = [8 * i for i in range(1, 256 // 8)]
         r = random.Random(0)
         for _ in range(20):
@@ -75,6 +78,7 @@ def _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(**kwargs):
         xformers.ops.MemoryEfficientAttentionOp,
         xformers.ops.MemoryEfficientAttentionCutlassOp,
         xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
+        xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp,
     ]:
         for shape in generate_test_shapes_B_Mq_Mkv_H_K_Kv(op, **kwargs):
             for device in _devices:
