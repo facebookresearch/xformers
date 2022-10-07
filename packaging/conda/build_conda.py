@@ -56,7 +56,7 @@ class Build:
         conda_debug: get added information about package search
         conda_dirty: see intermediate files after build
         build_inside_tree: output in build/ not ../build
-
+        upload_dev: upload, to label dev of xformers
     """
 
     python_version: str
@@ -67,6 +67,7 @@ class Build:
     conda_debug: bool = False
     conda_dirty: bool = False
     build_inside_tree: bool = False
+    upload_dev: bool = False
 
     def _set_env_for_build(self):
         if "CUDA_HOME" not in os.environ:
@@ -80,10 +81,14 @@ class Build:
 
         os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0 8.6"
         code_version = (SOURCE_ROOT_DIR / "version.txt").read_text().strip()
+        assert code_version.endswith("dev")
         git_hash = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
         ).strip()
-        os.environ["BUILD_VERSION"] = f"{code_version}+git.{git_hash}"
+        num_commits = subprocess.check_output(
+            ["git", "rev-list", "--count", "HEAD"], text=True
+        ).strip()
+        os.environ["BUILD_VERSION"] = f"{code_version}{num_commits}+git.{git_hash}"
         tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
         os.environ["GIT_TAG"] = tag
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
@@ -113,16 +118,20 @@ class Build:
             args += ["--dirty"]
         if not self.build_inside_tree:
             args += ["--croot", "../build"]
+        if self.upload_dev:
+            args += ["--user", "xformers", "--label", "dev"]
         return args + ["packaging/conda/xformers"]
 
     def do_build(self):
         self._set_env_for_build()
+        if self.upload_dev:
+            subprocess.check_call(["conda", "config", "set", "anaconda_upload", "yes"])
         args = self._get_build_args()
         print(args)
         subprocess.check_call(args)
 
     def build_in_docker(self):
-        filesystem = subprocess.check_output("stat -f -c %T .", shell=True)
+        filesystem = subprocess.check_output("stat -f -c %T .", shell=True).strip()
         if filesystem in (b"nfs", b"tmpfs"):
             raise ValueError(
                 "Cannot run docker here. "
@@ -164,7 +173,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Build in build/ instead of ../build/",
     )
-
+    parser.add_argument(
+        "--upload-dev",
+        action="store_true",
+        help="upload, to label dev of xformers",
+    )
     args = parser.parse_args()
 
     pkg = Build(
@@ -172,6 +185,7 @@ if __name__ == "__main__":
         pytorch_version=args.pytorch,
         cuda_version=args.cuda,
         build_inside_tree=args.build_inside_tree,
+        upload_dev=args.upload_dev,
     )
 
     if args.docker:

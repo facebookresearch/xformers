@@ -4,9 +4,14 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import sys
 import tempfile
 
 import torch
+
+is_windows = False
+if sys.platform == "win32":  # pytorch on windows uses gloo not ncll
+    is_windows = True
 
 
 def init_torch_distributed_local():
@@ -16,7 +21,7 @@ def init_torch_distributed_local():
     init_url = "file://" + tempfile.mkstemp()[1]
     backend = (
         torch.distributed.Backend.NCCL
-        if torch.cuda.is_available()
+        if torch.cuda.is_available() and not is_windows
         else torch.distributed.Backend.GLOO
     )
     torch.distributed.init_process_group(

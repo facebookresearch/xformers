@@ -371,12 +371,11 @@ jobs:
   build_conda:
     docker:
       - image: pytorch/conda-builder:cuda113
-    resource_class: large
+    resource_class: xlarge
 
     environment:
-      CUDA_VERSION: "11.3"
       CUDA_HOME: /usr/local/cuda-11.3
-      MAX_JOBS: 1
+      MAX_JOBS: 4
 
     working_directory: ~/xformers
 
