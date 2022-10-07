@@ -369,12 +369,18 @@ jobs:
           path: test-results
 
   build_conda:
+    parameters:
+      dockerimage:
+        type: string
+      cu_version:
+        type: string
+
     docker:
-      - image: pytorch/conda-builder:cuda113
+      - image: << parameters.dockerimage >>
     resource_class: xlarge
 
     environment:
-      CUDA_HOME: /usr/local/cuda-11.3
+      CUDA_HOME: "/usr/local/cuda-<< parameters.cu_version >>"
       MAX_JOBS: 4
 
     working_directory: ~/xformers
@@ -387,7 +393,8 @@ jobs:
           no_output_timeout: 20m
           command: |
             git submodule update --init --recursive
-            python packaging/conda/build_conda.py  --cuda 11.3 --python 3.9 --pytorch 1.12.1 --upload-dev
+            python packaging/conda/build_conda.py  --cuda << parameters.cu_version >> --python 3.9 --pytorch 1.12.1 --upload-dev
+            python packaging/conda/build_conda.py  --cuda << parameters.cu_version >> --python 3.10 --pytorch 1.12.1 --upload-dev
 
   gpu_tests_cu114_sm75:
     <<: *gpu_cu114
@@ -510,6 +517,16 @@ workflows:
               - gh-pages
 
       - build_conda:
+        dockerimage: pytorch/conda-builder:cuda113
+        cu_version: 11.3
+        filters:
+          branches:
+            ignore:
+              - gh-pages
+
+      - build_conda:
+        dockerimage: pytorch/conda-builder:cuda116
+        cu_version: 11.6
         filters:
           branches:
             ignore:
