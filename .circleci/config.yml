@@ -517,21 +517,19 @@ workflows:
               - gh-pages
 
       - build_conda:
-        dockerimage: pytorch/conda-builder:cuda113
-        cu_version: 11.3
-        filters:
-          branches:
-            ignore:
-              - gh-pages
-
+          dockerimage: pytorch/conda-builder:cuda113
+          cu_version: "11.3"
+          filters:
+            branches:
+              ignore:
+                - gh-pages
       - build_conda:
-        dockerimage: pytorch/conda-builder:cuda116
-        cu_version: 11.6
-        filters:
-          branches:
-            ignore:
-              - gh-pages
-
+          dockerimage: pytorch/conda-builder:cuda116
+          cu_version: "11.6"
+          filters:
+            branches:
+              ignore:
+                - gh-pages
       - binary_linux_wheel:
           python_version: "3.7"
           name: binary_linux_wheel_py37_cu102
