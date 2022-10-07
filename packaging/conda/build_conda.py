@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 THIS_PATH = Path(__file__).resolve()
-SOURCE_ROOT_DIR = str(THIS_PATH.parents[2])
+SOURCE_ROOT_DIR = THIS_PATH.parents[2]
 
 PYTHON_VERSIONS = ["3.9", "3.10"]
 PYTORCH_TO_CUDA_VERSIONS = {
@@ -70,12 +70,19 @@ class Build:
             os.environ["CUDA_HOME"] = cuda_home
 
         os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0 8.6"
-        os.environ["BUILD_VERSION"] = "dev"
-        tag = subprocess.check_output(["git", "describe", "--tags"], text=True)
+        code_version = (SOURCE_ROOT_DIR / "version.txt").read_text().strip()
+        git_hash = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], text=True
+        ).strip()
+        num_commits = subprocess.check_output(
+            ["git", "rev-list", "--count", "HEAD"], text=True
+        ).strip()
+        os.environ["BUILD_VERSION"] = f"{code_version}{num_commits}+git.{git_hash}"
+        tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
         os.environ["GIT_TAG"] = tag
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
         os.environ["CU_VERSION"] = self.cuda_version
-        os.environ["SOURCE_ROOT_DIR"] = SOURCE_ROOT_DIR
+        os.environ["SOURCE_ROOT_DIR"] = str(SOURCE_ROOT_DIR)
         os.environ["CONDA_CUDATOOLKIT_CONSTRAINT"] = version_constraint(
             self.cuda_version
         )
@@ -115,7 +122,7 @@ class Build:
             )
         image = conda_docker_image_for_cuda(self.cuda_version)
         args = ["sudo", "docker", "run", "-it", "--rm", "-w", "/m"]
-        args += ["-v", f"{SOURCE_ROOT_DIR}:/m", image]
+        args += ["-v", f"{str(SOURCE_ROOT_DIR)}:/m", image]
         args += ["python3", str(THIS_PATH.relative_to(SOURCE_ROOT_DIR))]
         self_args = [
             "--cuda",

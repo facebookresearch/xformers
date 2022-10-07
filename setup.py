@@ -8,7 +8,6 @@
 import distutils.command.clean
 import glob
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -32,18 +31,22 @@ def fetch_requirements():
     return reqs
 
 
-# https://packaging.python.org/guides/single-sourcing-package-version/
-def find_version(version_file_path):
-    with open(version_file_path) as version_file:
-        version_match = re.search(
-            r"^__version__ = ['\"]([^'\"]*)['\"]", version_file.read(), re.M
-        )
-        # The following is used to build release packages.
-        # Users should never use it.
-        suffix = os.getenv("XFORMERS_VERSION_SUFFIX", "")
-        if version_match:
-            return version_match.group(1) + suffix
-        raise RuntimeError("Unable to find version string.")
+if os.getenv("BUILD_VERSION"):
+    version = os.getenv("BUILD_VERSION")
+else:
+    version_txt = os.path.join(this_dir, "version.txt")
+    with open(version_txt) as f:
+        version = f.readline().strip()
+
+
+def write_version_file():
+    version_path = os.path.join(this_dir, "xformers", "version.py")
+    with open(version_path, "w") as f:
+        f.write("# noqa: C801\n")
+        f.write(f'__version__ = "{version}"\n')
+        tag = os.getenv("GIT_TAG")
+        if tag is not None:
+            f.write(f'git_tag = "{tag}"\n')
 
 
 def get_cuda_version(cuda_dir) -> int:
@@ -245,10 +248,11 @@ class clean(distutils.command.clean.clean):  # type: ignore
 
 
 if __name__ == "__main__":
+    write_version_file()
     setuptools.setup(
         name="xformers",
         description="XFormers: A collection of composable Transformer building blocks.",
-        version=find_version(os.path.join(this_dir, "xformers", "__init__.py")),
+        version=version,
         setup_requires=[],
         install_requires=fetch_requirements(),
         packages=setuptools.find_packages(exclude=("tests", "tests.*")),
