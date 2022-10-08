@@ -16,6 +16,7 @@ requirements:
 
   run:
     # - numpy >=1.11
+    - python
     - pytorch=={{ environ.get('PYTORCH_VERSION') }}
     - cudatoolkit{{ environ['CONDA_CUDATOOLKIT_CONSTRAINT'] }}
 

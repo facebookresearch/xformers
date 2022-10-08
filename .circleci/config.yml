@@ -516,44 +516,16 @@ workflows:
             ignore:
               - gh-pages
 
-      - gpu_tests_cu114_sm61:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
-      - gpu_tests_cu114_sm70:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
-      - gpu_tests_cu114_sm75:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
-
-      - gpu_experimental_tests:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
 
       - build_conda:
           name: conda_build_cu113
           dockerimage: pytorch/conda-builder:cuda113
           cu_version: "11.3"
-          filters:
-            branches:
-              only:
-                - main
+
       - build_conda:
           name: conda_build_cu116
           dockerimage: pytorch/conda-builder:cuda116
           cu_version: "11.6"
-          filters:
-            branches:
-              only:
-                - main
       - binary_linux_wheel:
           python_version: "3.7"
           name: binary_linux_wheel_py37_cu102
