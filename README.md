@@ -25,23 +25,27 @@ For recent changes, you can have a look at the [changelog](CHANGELOG.md)
 
 ### Installation
 
-To install xFormers, it is recommended to use a dedicated virtual environment, as often with python, through `python-virtualenv` or `conda` for instance. A preset conda environment is provided for convenience, you can use it as follows:
+To install xFormers, it is recommended to use a dedicated virtual environment, as often with python, through `python-virtualenv` or `conda` for instance.
+PyTorch must be installed. Using conda for example:
 
 ```bash
-  conda env create --file=environment_conda.yaml
+  conda create --name xformers python=3.10
   conda activate xformers
+  conda install -c pytorch -c conda-forge cudatoolkit=11.6 pytorch=1.12.1
 ```
 
-*Please note that Pytorch 1.12 or newer is required. You can fetch it using `pip` or `conda` [here](https://pytorch.org/get-started/locally/)*
+*Please note that Pytorch 1.12 or newer is required.
 
 There are two ways you can install xFormers locally:
 
-<details><summary> Directly from the pip package </summary><p>
+<details><summary> Conda dev packages </summary><p>
 
-  You can fetch the latest release from PyPi. This will not contain the wheels for the sparse attention kernels, for which you will need to build from source.
+There are regular builds of xformers as it is developed on the `main` branch.
+To use these, you must be on Linux and have a conda environment with Python 3.9 or 3.10, CUDA 11.3 or 11.6, and PyTorch 1.12.1.
+You can install the latest with
 
   ```bash
-  pip install xformers
+  conda install xformers -c xformers/label/dev
   ```
 
 </p></details>
