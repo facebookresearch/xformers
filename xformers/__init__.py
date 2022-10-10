@@ -70,7 +70,7 @@ if _is_sparse_available:
     except (ImportError, OSError) as e:
         print(e)
         logger.warning(
-            f"WARNING: {e}\nNeed to compile C++ extensions to get sparse attention suport."
+            f"WARNING: {e}\nNeed to compile C++ extensions to get sparse attention support."
             + " Please run python setup.py build develop"
         )
         _is_sparse_available = False
