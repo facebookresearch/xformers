@@ -23,7 +23,29 @@ try:
     from xformers.triton.flash_attention import _flash_attention as triton_flash
     has_triton_flashattention = True
 except ImportError:
-    has_triton_flashattention = True
+    has_triton_flashattention = False
+
+
+def masked_matmul(a, b, mask=None):
+    if torch.overrides.has_torch_function((a, b, mask)):
+        return torch.overrides.handle_torch_function(
+            masked_matmul, (a, b, mask), a, b, mask
+        )
+
+    att = a @ b
+
+    if mask is None:
+        return att
+
+    if mask.dtype == torch.bool:
+        if mask.ndim == 2:
+            mask = mask.unsqueeze(0).expand(att.shape[0], -1, -1)
+        # mask is presumed false == ignore
+        att[~mask] = float("-inf")
+    else:
+        # mask is presumed additive
+        att += mask
+    return att
 
 
 class AttentionMask:
@@ -735,6 +757,18 @@ class TritonFlashAttentionOp(AttentionOpBase):
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
     NAME = "tritonflashatt"
+
+    @classmethod
+    def info(cls):
+        if not has_triton_flashattention:
+            return "not built"
+        return "available"
+
+    @classmethod
+    def supports(cls, d: "AttentionOpDispatch") -> bool:
+        if not has_triton_flashattention:
+            return False
+        return super(TritonFlashAttentionOp, cls).supports(d)
 
     @classmethod
     def forward_no_grad(
