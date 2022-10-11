@@ -15,10 +15,15 @@ from .common import get_xformers_operator
 
 try:
     from .. import _C_flashattention  # type: ignore[attr-defined]
-
     has_flashattention = True
 except ImportError:
     has_flashattention = False
+
+try:
+    from xformers.triton.flash_attention import _flash_attention as triton_flash
+    has_triton_flashattention = True
+except ImportError:
+    has_triton_flashattention = True
 
 
 class AttentionMask:
@@ -722,6 +727,51 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         return dq, dk, dv, softmax_d
 
 
+class TritonFlashAttentionOp(AttentionOpBase):
+    FORWARD_OPERATOR = None
+    SUPPORTED_DEVICES = {"cuda"}
+    SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
+    SUPPORTED_MAX_K: float = math.inf
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
+    SUPPORTS_DROPOUT = False
+    NAME = "tritonflashatt"
+
+    @classmethod
+    def forward_no_grad(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
+        p: float,
+    ) -> torch.Tensor:
+        softmax_scale = query.shape[-1] ** (-0.5)
+        return triton_flash.forward_no_grad(
+            ctx=None,
+            q=query,
+            k=key,
+            v=value,
+            sm_scale=softmax_scale,
+            causal=isinstance(attn_bias, LowerTriangularMask),
+        )
+
+    @classmethod
+    def forward(cls, ctx, query, key, value, attn_bias, p):
+        softmax_scale = query.shape[-1] ** (-0.5)
+        return triton_flash.forward(
+            ctx=ctx,
+            q=query,
+            k=key,
+            v=value,
+            sm_scale=softmax_scale,
+            causal=isinstance(attn_bias, LowerTriangularMask),
+        )
+
+    @staticmethod
+    def backward(ctx, grad):
+        return triton_flash.backward(ctx, grad)
+
+
 class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlassOp):
     """An operator that uses :attr:`xformers.ops.MemoryEfficientAttentionCutlassOp` for the forward pass \
         and :attr:`xformers.ops.MemoryEfficientAttentionFlashAttentionOp` for the backward.
@@ -765,6 +815,7 @@ class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlas
         )
 
 
+# TODO: add triton here.
 @dataclass
 class AttentionOpDispatch:
     """Dispatcher to automatically select
@@ -812,6 +863,7 @@ class AttentionOpDispatch:
             MemoryEfficientAttentionFlashAttentionOp,
             MemoryEfficientAttentionCutlassOp,
             MemoryEfficientAttentionOp,
+            TritonFlashAttentionOp,
         ]
         if self.requires_grad and self._is_cutlass_fwd_faster_than_flash():
             priority_list_ops.insert(0, MemoryEfficientAttentionCutlassFwdFlashBwOp)
