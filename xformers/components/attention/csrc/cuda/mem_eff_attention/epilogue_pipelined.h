@@ -589,12 +589,16 @@ class EpiloguePipelined : public EpilogueBase<
     }
   }
 
-  constexpr int getRowOffset(int i) {
+  // This should be constexpr, but it's only supported on c++14
+  static int CUTLASS_HOST_DEVICE getRowOffset(int i) {
     using ThreadMap = typename OutputTileIterator::ThreadMap;
 
+    CUTLASS_PRAGMA_UNROLL
     for (int cluster = 0; cluster < ThreadMap::Iterations::kCluster;
          ++cluster) {
+      CUTLASS_PRAGMA_UNROLL
       for (int group = 0; group < ThreadMap::Iterations::kGroup; ++group) {
+        CUTLASS_PRAGMA_UNROLL
         for (int row = 0; row < ThreadMap::Iterations::kRow; ++row) {
           int row_offset = row * ThreadMap::Delta::kRow +
               group * ThreadMap::Delta::kGroup +
@@ -603,6 +607,7 @@ class EpiloguePipelined : public EpilogueBase<
               (row +
                ThreadMap::Iterations::kRow *
                    (group + ThreadMap::Iterations::kGroup * cluster));
+          CUTLASS_PRAGMA_UNROLL
           for (int column = 0; column < ThreadMap::Iterations::kColumn;
                ++column) {
             int frag_idx = ThreadMap::kElementsPerAccess *

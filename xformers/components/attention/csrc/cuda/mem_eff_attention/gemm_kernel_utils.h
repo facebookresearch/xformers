@@ -63,8 +63,31 @@
   TORCH_CHECK(                                                         \
       TENSOR.stride(-1) == 1, #TENSOR ": last dimension must be contiguous");
 
+#ifdef HAS_PYTORCH
 #define CHECK_ALIGNED_PTR(PTR, ALIGNMENT) \
   TORCH_CHECK(uint64_t(PTR) % ALIGNMENT == 0, #PTR " is not correctly aligned")
+#define XFORMERS_CHECK TORCH_CHECK
+#elif defined(__CUDACC_RTC__)
+#define CHECK_ALIGNED_PTR(PTR, ALIGNMENT)  \
+  if (!(uint64_t(PTR) % ALIGNMENT == 0)) { \
+    return false;                          \
+  }
+#define XFORMERS_CHECK(COND, ERR) \
+  if (!(COND)) {                  \
+    return false;                 \
+  }
+#else
+#define CHECK_ALIGNED_PTR(PTR, ALIGNMENT)            \
+  if (!(uint64_t(PTR) % ALIGNMENT == 0)) {           \
+    std::cerr << #PTR " is not correctly aligned\n"; \
+    return false;                                    \
+  }
+#define XFORMERS_CHECK(COND, ERR)   \
+  if (!(COND)) {                    \
+    std::cerr << #COND " failed\n"; \
+    return false;                   \
+  }
+#endif
 
 #define ASSIGN_CHECK_OVERFLOW(A, B)                                            \
   {                                                                            \
@@ -73,6 +96,8 @@
   }
 
 namespace gemm_kernel_utils {
+
+#ifdef HAS_PYTORCH
 template <typename scalar_t>
 struct TypeTraits;
 
@@ -123,6 +148,7 @@ struct TypeTraits<float> {
     return tensor.packed_accessor32<scalar_t, nDim>();
   }
 };
+#endif
 
 template <typename integer>
 constexpr CUTLASS_HOST_DEVICE integer ceil_div(integer n, integer m) {
@@ -150,7 +176,8 @@ template <typename ArchTag>
 struct DefaultGemmType<
     ArchTag,
     float,
-    typename std::enable_if<ArchTag::kMinComputeCapability >= 80>::type> {
+    typename cutlass::platform::enable_if<
+        ArchTag::kMinComputeCapability >= 80>::type> {
   static constexpr int ThreadK = 32;
   static constexpr int WarpK = 32;
   static constexpr int kMinimumAlignment = 4;
@@ -164,7 +191,7 @@ template <typename ArchTag, typename scalar_t>
 struct DefaultGemmType<
     ArchTag,
     scalar_t,
-    typename std::enable_if<
+    typename cutlass::platform::enable_if<
         ArchTag::kMinComputeCapability >= 75 &&
         cutlass::sizeof_bits<scalar_t>::value == 16>::type> {
   static constexpr int ThreadK = 32;
@@ -194,17 +221,19 @@ struct call_conditional;
 
 template <typename TA, typename TB>
 struct call_conditional<true, TA, TB> {
-  template <typename... Args>
-  static CUTLASS_DEVICE auto apply(TA ta, TB tb, Args&&... args) {
-    return ta(std::forward<Args>(args)...);
+  template <typename Arg>
+  static CUTLASS_HOST_DEVICE auto apply(TA ta, TB tb, Arg arg)
+      -> decltype(ta(arg)) {
+    return ta(arg);
   }
 };
 
 template <typename TA, typename TB>
 struct call_conditional<false, TA, TB> {
-  template <typename... Args>
-  static CUTLASS_DEVICE auto apply(TA ta, TB tb, Args&&... args) {
-    return tb(std::forward<Args>(args)...);
+  template <typename Arg>
+  static CUTLASS_HOST_DEVICE auto apply(TA ta, TB tb, Arg arg)
+      -> decltype(tb(arg)) {
+    return tb(arg);
   }
 };
 
@@ -214,7 +243,7 @@ struct call_conditional<false, TA, TB> {
 ////////////////////////////////////////////////////////////////////////////////
 
 CUTLASS_DEVICE int32_t warp_uniform(int32_t value) {
-  return (int32_t)__shfl_sync(0xfffff, (unsigned)value, 0);
+  return (int32_t)__shfl_sync(0xffffffff, (unsigned)value, 0);
 }
 
 template <typename T>

@@ -1420,11 +1420,11 @@ struct AttentionBackwardKernel {
     // on windows, previous syntax __restrict__ AccessType*
     // resulted in error: "restrict" is not allowed
     const AccessType* __restrict__ grad_output_ptr =
-        reinterpret_cast<const AccessType* __restrict__>(
+        reinterpret_cast<const AccessType*>(
             p.grad_output_ptr + (query_start + laneRow) * p.gO_strideM +
             laneFirstCol);
     const AccessType* __restrict__ output_ptr =
-        reinterpret_cast<const AccessType* __restrict__>(
+        reinterpret_cast<const AccessType*>(
             p.output_ptr + (query_start + laneRow) * p.o_strideM() +
             laneFirstCol);
 

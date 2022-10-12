@@ -1,12 +1,12 @@
+#ifdef HAS_PYTORCH
 #include <ATen/ATen.h>
-#include <torch/library.h>
-#include <cmath>
-#include <vector>
-
-#include <cuda_fp16.h>
-
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
+#include <torch/library.h>
+#endif
+
+#include <cmath>
+#include <vector>
 
 #include "cutlass/bfloat16.h"
 #include "cutlass/gemm/gemm.h"
@@ -43,11 +43,11 @@ using namespace gemm_kernel_utils;
 namespace {
 template <typename scalar_t, typename Arch>
 constexpr int getWarpsPerSm() {
-  bool is_half = !std::is_same<scalar_t, float>::value;
-  if (Arch::kMinComputeCapability >= 80) {
-    return is_half ? 16 : 12;
-  }
-  return 12;
+  return (
+      Arch::kMinComputeCapability >= 80 &&
+              !cutlass::platform::is_same<scalar_t, float>::value
+          ? 16
+          : 12);
 }
 } // namespace
 
@@ -58,8 +58,8 @@ template <
     typename ArchTag,
     // If Q/K/V are correctly aligned in memory and we can run a fast kernel
     bool isAligned_,
-    int64_t kQueriesPerBlock,
-    int64_t kKeysPerBlock,
+    int kQueriesPerBlock,
+    int kKeysPerBlock,
     bool kSingleValueIteration // = `value.shape[-1] <= kKeysPerBlock`
     >
 struct AttentionKernel {
@@ -76,18 +76,18 @@ struct AttentionKernel {
   static constexpr bool kPreloadV = ArchTag::kMinComputeCapability >= 80 &&
       cutlass::sizeof_bits<scalar_t>::value == 16;
   static constexpr bool kKeepOutputInRF = kSingleValueIteration;
-  static constexpr bool kNeedsOutputAccumulatorBuffer =
-      !kKeepOutputInRF && !std::is_same<output_accum_t, output_t>::value;
+  static constexpr bool kNeedsOutputAccumulatorBuffer = !kKeepOutputInRF &&
+      !cutlass::platform::is_same<output_accum_t, output_t>::value;
 
   static_assert(kQueriesPerBlock % 32 == 0, "");
   static_assert(kKeysPerBlock % 32 == 0, "");
-  static constexpr int64_t kNumWarpsPerBlock =
+  static constexpr int kNumWarpsPerBlock =
       kQueriesPerBlock * kKeysPerBlock / (32 * 32);
-  static constexpr int64_t kWarpSize = 32;
+  static constexpr int kWarpSize = 32;
 
   // Launch bounds
-  static constexpr int64_t kNumThreads = kWarpSize * kNumWarpsPerBlock;
-  static constexpr int64_t kMinBlocksPerSm =
+  static constexpr int kNumThreads = kWarpSize * kNumWarpsPerBlock;
+  static constexpr int kMinBlocksPerSm =
       getWarpsPerSm<scalar_t, ArchTag>() / kNumWarpsPerBlock;
 
   struct Params {
@@ -189,7 +189,8 @@ struct AttentionKernel {
 
       num_queries -= query_start;
       if (causal) {
-        num_keys = std::min(int32_t(query_start + kQueriesPerBlock), num_keys);
+        num_keys = cutlass::fast_min(
+            int32_t(query_start + kQueriesPerBlock), num_keys);
       }
       num_batches = 0; // no longer used after
 
@@ -239,9 +240,9 @@ struct AttentionKernel {
             scalar_t, // ElementC
             accum_t // ElementAccumulator
             >;
-    static constexpr int64_t kAlignmentA =
+    static constexpr int kAlignmentA =
         kIsAligned ? DefaultConfig::kAlignmentA : GemmType::kMinimumAlignment;
-    static constexpr int64_t kAlignmentB =
+    static constexpr int kAlignmentB =
         kIsAligned ? DefaultConfig::kAlignmentB : GemmType::kMinimumAlignment;
     using ThreadblockShape = cutlass::gemm::
         GemmShape<kQueriesPerBlock, kKeysPerBlock, GemmType::ThreadK>;
@@ -306,9 +307,8 @@ struct AttentionKernel {
             output_accum_t, // ElementC
             accum_t // ElementAccumulator
             >;
-    static constexpr int64_t kAlignmentA =
-        DefaultConfig::kAlignmentA; // from smem
-    static constexpr int64_t kAlignmentB =
+    static constexpr int kAlignmentA = DefaultConfig::kAlignmentA; // from smem
+    static constexpr int kAlignmentB =
         kIsAligned ? DefaultConfig::kAlignmentB : GemmType::kMinimumAlignment;
     using ThreadblockShape = cutlass::gemm::
         GemmShape<kQueriesPerBlock, kKeysPerBlock, GemmType::ThreadK>;
@@ -412,20 +412,28 @@ struct AttentionKernel {
     }
   };
 
-  using SharedStorage = typename std::conditional<
+  using SharedStorage = typename cutlass::platform::conditional<
       kSingleValueIteration || kKeepOutputInRF,
       SharedStorageEpilogueAtEnd,
       SharedStorageEpilogueInLoop>::type;
 
-  static void __host__ check_supported(Params const& p) {
+  static bool __host__ check_supported(Params const& p) {
     CHECK_ALIGNED_PTR(p.query_ptr, kAlignmentQ);
     CHECK_ALIGNED_PTR(p.key_ptr, kAlignmentK);
     CHECK_ALIGNED_PTR(p.value_ptr, kAlignmentV);
-    TORCH_CHECK(
+    XFORMERS_CHECK(
+        p.q_strideM % kAlignmentQ == 0, "query is not correctly aligned");
+    XFORMERS_CHECK(
+        p.k_strideM % kAlignmentK == 0, "key is not correctly aligned");
+    XFORMERS_CHECK(
+        p.v_strideM % kAlignmentV == 0, "value is not correctly aligned");
+    XFORMERS_CHECK(
         p.q_strideH % kAlignmentQ == 0, "query is not correctly aligned");
-    TORCH_CHECK(p.k_strideH % kAlignmentK == 0, "key is not correctly aligned");
-    TORCH_CHECK(
+    XFORMERS_CHECK(
+        p.k_strideH % kAlignmentK == 0, "key is not correctly aligned");
+    XFORMERS_CHECK(
         p.v_strideH % kAlignmentV == 0, "value is not correctly aligned");
+    return true;
   }
 
   static void CUTLASS_DEVICE attention_kernel(Params& p) {
@@ -443,13 +451,14 @@ struct AttentionKernel {
     static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize, "");
     if (thread_id() < kQueriesPerBlock) {
       s_prime[thread_id()] = accum_t(0);
-      m_prime[thread_id()] = -std::numeric_limits<accum_t>::infinity();
-      mi[thread_id()] = -std::numeric_limits<accum_t>::infinity();
+      m_prime[thread_id()] =
+          -cutlass::platform::numeric_limits<accum_t>::infinity();
+      mi[thread_id()] = -cutlass::platform::numeric_limits<accum_t>::infinity();
     }
     typename MM1::Mma::FragmentC accum_o;
     accum_o.clear();
 
-    auto createOutputIter = [&](auto col) {
+    auto createOutputIter = [&](int col) -> typename MM1::OutputTileIterator {
       using OutputTileIterator = typename MM1::OutputTileIterator;
       return OutputTileIterator(
           typename OutputTileIterator::Params{(int32_t)p.o_strideM()},
@@ -460,26 +469,26 @@ struct AttentionKernel {
           {0, col});
     };
 
-    auto createOutputAccumIter = [&](auto col) {
-      using OutputTileIteratorAccum = typename MM1::OutputTileIteratorAccum;
-      return OutputTileIteratorAccum(
-          typename OutputTileIteratorAccum::Params{(int32_t)p.o_strideM()},
-          p.output_accum_ptr,
-          typename OutputTileIteratorAccum::TensorCoord{
-              p.num_queries, p.head_dim_value},
-          thread_id(),
-          {0, col});
-    };
+    auto createOutputAccumIter = [&](int col) ->
+        typename MM1::OutputTileIteratorAccum {
+          using OutputTileIteratorAccum = typename MM1::OutputTileIteratorAccum;
+          return OutputTileIteratorAccum(
+              typename OutputTileIteratorAccum::Params{(int32_t)p.o_strideM()},
+              p.output_accum_ptr,
+              typename OutputTileIteratorAccum::TensorCoord{
+                  p.num_queries, p.head_dim_value},
+              thread_id(),
+              {0, col});
+        };
 
     // Iterate through keys
     for (int32_t iter_key_start = 0; iter_key_start < p.num_keys;
          iter_key_start += kKeysPerBlock) {
       int32_t problem_size_0_m =
-          std::min((int32_t)kQueriesPerBlock, p.num_queries);
-      int32_t problem_size_0_n =
-          std::min(int32_t(kKeysPerBlock), p.num_keys - iter_key_start);
+          cutlass::fast_min((int32_t)kQueriesPerBlock, p.num_queries);
+      int32_t problem_size_0_n = cutlass::fast_min(
+          int32_t(kKeysPerBlock), p.num_keys - iter_key_start);
       int32_t const& problem_size_0_k = p.head_dim;
-      int32_t const& problem_size_1_m = problem_size_0_m;
       int32_t const& problem_size_1_n = p.head_dim_value;
       int32_t const& problem_size_1_k = problem_size_0_n;
 
@@ -577,7 +586,8 @@ struct AttentionKernel {
             },
             [&](int accum_m, int accum_n, int idx) {
               if (accum_n > last_col) {
-                accum[idx] = -std::numeric_limits<accum_t>::infinity();
+                accum[idx] =
+                    -cutlass::platform::numeric_limits<accum_t>::infinity();
               }
             },
             [&](int accum_m) {});
@@ -606,7 +616,7 @@ struct AttentionKernel {
                                 warp_id(),
                                 p.num_keys - iter_key_start,
                                 iteratorC_tile_offset,
-                                1.0f / std::sqrt(float(p.head_dim)));
+                                1.0f / cutlass::fast_sqrt(float(p.head_dim)));
                           }));
                     }));
 
@@ -680,7 +690,7 @@ struct AttentionKernel {
                       using ElementCompute = typename DefaultOp::ElementCompute;
                       using EpilogueOutputOp = typename cutlass::epilogue::
                           thread::MemoryEfficientAttentionNormalize<
-                              typename std::conditional<
+                              typename cutlass::platform::conditional<
                                   kIsLast,
                                   output_t,
                                   output_accum_t>::type,
@@ -696,7 +706,7 @@ struct AttentionKernel {
                               typename DefaultEpilogue::Shape,
                               typename MM1::Mma::Operator,
                               DefaultEpilogue::kPartitionsK,
-                              typename std::conditional<
+                              typename cutlass::platform::conditional<
                                   kIsLast,
                                   typename MM1::OutputTileIterator,
                                   typename MM1::OutputTileIteratorAccum>::type,
@@ -784,10 +794,11 @@ struct AttentionKernel {
     if (p.logsumexp_ptr && thread_id() < kQueriesPerBlock) {
       auto lse_dim = ceil_div((int32_t)p.num_queries, kAlignLSE) * kAlignLSE;
       if (thread_id() < p.num_queries) {
-        p.logsumexp_ptr[thread_id()] =
-            accum_t(mi[thread_id()]) + std::log(accum_t(s_prime[thread_id()]));
+        p.logsumexp_ptr[thread_id()] = accum_t(mi[thread_id()]) +
+            cutlass::fast_log(accum_t(s_prime[thread_id()]));
       } else if (thread_id() < lse_dim) {
-        p.logsumexp_ptr[thread_id()] = std::numeric_limits<accum_t>::infinity();
+        p.logsumexp_ptr[thread_id()] =
+            cutlass::platform::numeric_limits<accum_t>::infinity();
       }
     }
   }
@@ -802,6 +813,15 @@ struct AttentionKernel {
     return threadIdx.x + threadIdx.y * blockDim.x;
   }
 };
+
+template <typename AK>
+__global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)
+    attention_kernel_batched_impl(typename AK::Params p) {
+  if (!p.advance_to_block()) {
+    return;
+  }
+  AK::attention_kernel(p);
+}
 
 template <typename AK>
 __global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)

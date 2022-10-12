@@ -8,10 +8,12 @@
 import distutils.command.clean
 import glob
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import List
 
 import setuptools
 import torch
@@ -98,7 +100,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
             "to run `git submodule update --init --recursive` ?"
         )
 
-    nvcc_platform_dependant_args = []
+    nvcc_platform_dependant_args: List[str] = []
     if sys.platform == "win32":
         nvcc_platform_dependant_args.append("-std=c++17")
 
@@ -188,13 +190,10 @@ def get_extensions():
         extension = CUDAExtension
         sources += source_cuda
         include_dirs += [sputnik_dir, cutlass_dir]
-        nvcc_flags = os.getenv("NVCC_FLAGS", "")
-        if nvcc_flags == "":
-            nvcc_flags = ["--use_fast_math"]
-            if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
-                nvcc_flags.append("-DNDEBUG")
-        else:
-            nvcc_flags = nvcc_flags.split(" ")
+        nvcc_flags = ["-DHAS_PYTORCH", "--use_fast_math", "--generate-line-info"]
+        if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
+            nvcc_flags.append("-DNDEBUG")
+        nvcc_flags += shlex.split(os.getenv("NVCC_FLAGS", ""))
         cuda_version = get_cuda_version(CUDA_HOME)
         if cuda_version >= 1102:
             nvcc_flags += [
