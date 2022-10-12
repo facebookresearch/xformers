@@ -3,18 +3,21 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import torch
 import triton
 import triton.language as tl
 
 # CREDITS: Inspired by the Triton tutorial on fused attention.
 
 
+@triton.heuristics(values={"is_bf16": lambda args: args["Q"].dtype == torch.bfloat16})
 @triton.jit
 def _fwd_kernel(
     Q,
     K,
     V,
     sm_scale,
+    is_causal,
     TMP,
     L,
     M,  # NOTE: TMP is a scratchpad buffer to workaround a compiler bug
@@ -41,6 +44,7 @@ def _fwd_kernel(
     BLOCK_M: tl.constexpr,
     BLOCK_DMODEL: tl.constexpr,
     BLOCK_N: tl.constexpr,
+    is_bf16: tl.constexpr,
 ):
 
     start_m = tl.program_id(0)
@@ -98,7 +102,10 @@ def _fwd_kernel(
         acc = acc * acc_scale[:, None]
         # update acc
         v = tl.load(v_ptrs + start_n * stride_vk)
-        p = p.to(tl.float16)
+        if is_bf16:
+            p = p.to(tl.bfloat16)
+        else:
+            p = p.to(tl.float16)
         acc += tl.dot(p, v)
         # update m_i and l_i
         l_i = l_i_new
@@ -144,6 +151,7 @@ def _bwd_preprocess(
     tl.store(Delta + off_m, delta)
 
 
+@triton.heuristics(values={"is_bf16": lambda args: args["Out"].dtype == torch.bfloat16})
 @triton.jit
 def _bwd_kernel(
     Q,
@@ -177,6 +185,7 @@ def _bwd_kernel(
     BLOCK_M: tl.constexpr,
     BLOCK_DMODEL: tl.constexpr,
     BLOCK_N: tl.constexpr,
+    is_bf16: tl.constexpr,
 ):
     off_hz = tl.program_id(0)
     off_z = off_hz // H
@@ -224,7 +233,10 @@ def _bwd_kernel(
             p = tl.exp(qk * sm_scale - m[:, None])
             # compute dv
             do = tl.load(do_ptrs)
-            dv += tl.dot(p.to(tl.float16), do, trans_a=True)
+            if is_bf16:
+                dv += tl.dot(p.to(tl.bfloat16), do, trans_a=True)
+            else:
+                dv += tl.dot(p.to(tl.float16), do, trans_a=True)
             # compute dp = dot(v, do)
             Di = tl.load(D_ptrs + offs_m_curr)
             dp = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32) - Di[:, None]
@@ -232,10 +244,16 @@ def _bwd_kernel(
             # compute ds = p * (dp - delta[:, None])
             ds = p * dp * sm_scale
             # compute dk = dot(ds.T, q)
-            dk += tl.dot(ds.to(tl.float16), q, trans_a=True)
+            if is_bf16:
+                dk += tl.dot(ds.to(tl.bfloat16), q, trans_a=True)
+            else:
+                dk += tl.dot(ds.to(tl.float16), q, trans_a=True)
             # # compute dq
             dq = tl.load(dq_ptrs, eviction_policy="evict_last")
-            dq += tl.dot(ds.to(tl.float16), k)
+            if is_bf16:
+                dq += tl.dot(ds.to(tl.bfloat16), k)
+            else:
+                dq += tl.dot(ds.to(tl.float16), k)
             tl.store(dq_ptrs, dq, eviction_policy="evict_last")
             # # increment pointers
             dq_ptrs += BLOCK_M * stride_qm

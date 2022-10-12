@@ -37,6 +37,7 @@ class _flash_attention(torch.autograd.Function):
             k,
             v,
             sm_scale,
+            causal,
             tmp,
             L,
             m,
@@ -119,7 +120,8 @@ class _flash_attention(torch.autograd.Function):
             D_HEAD=ctx.BLOCK_DMODEL,
         )
 
-        num_warps = 4 if ctx.BLOCK_DMODEL <= 64 else 8
+        # NOTE: kernel currently buggy for other values of `num_warps`
+        num_warps = 8
         _bwd_kernel[(ctx.grid[1],)](
             q,
             k,
@@ -155,4 +157,4 @@ class _flash_attention(torch.autograd.Function):
             num_warps=num_warps,
             num_stages=1,
         )
-        return dq, dk, dv, None
+        return dq, dk, dv, None, None
