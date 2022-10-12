@@ -185,6 +185,7 @@ def _bwd_kernel(
     BLOCK_M: tl.constexpr,
     BLOCK_DMODEL: tl.constexpr,
     BLOCK_N: tl.constexpr,
+    is_causal: tl.constexpr,
     is_bf16: tl.constexpr,
 ):
     off_hz = tl.program_id(0)

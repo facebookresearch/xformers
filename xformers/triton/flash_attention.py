@@ -69,6 +69,7 @@ class _flash_attention(torch.autograd.Function):
         )
         if not no_grad:
             ctx.save_for_backward(q, k, v, o, L, m)
+            ctx.is_causal = causal
             ctx.BLOCK = BLOCK
             ctx.grid = grid
             ctx.sm_scale = sm_scale
@@ -154,6 +155,7 @@ class _flash_attention(torch.autograd.Function):
             BLOCK_M=ctx.BLOCK,
             BLOCK_N=ctx.BLOCK,
             BLOCK_DMODEL=ctx.BLOCK_DMODEL,
+            is_causal=ctx.is_causal,
             num_warps=num_warps,
             num_stages=1,
         )
