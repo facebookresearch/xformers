@@ -200,7 +200,7 @@ def _bwd_kernel(
     DK += off_z * stride_qz + off_h * stride_qh
     DV += off_z * stride_qz + off_h * stride_qh
     for start_n in range(0, num_block):
-        lo = start_n * BLOCK_M
+        lo = start_n * BLOCK_M if is_causal else 0
         # initialize row/col offsets
         offs_qm = lo + tl.arange(0, BLOCK_M)
         offs_n = start_n * BLOCK_M + tl.arange(0, BLOCK_M)
@@ -229,7 +229,10 @@ def _bwd_kernel(
             # recompute p = softmax(qk, dim=-1).T
             # NOTE: `do` is pre-divided by `l`; no normalization here
             qk = tl.dot(q, k, trans_b=True)
-            qk = tl.where(offs_m_curr[:, None] >= (offs_n[None, :]), qk, float("-inf"))
+            if is_causal:
+                qk = tl.where(
+                    offs_m_curr[:, None] >= (offs_n[None, :]), qk, float("-inf")
+                )
             m = tl.load(m_ptrs + offs_m_curr)
             p = tl.exp(qk * sm_scale - m[:, None])
             # compute dv
