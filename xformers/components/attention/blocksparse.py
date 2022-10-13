@@ -13,7 +13,6 @@ import torch
 from xformers import _is_triton_available
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 
-
 logger = logging.getLogger("xformers")
 
 
