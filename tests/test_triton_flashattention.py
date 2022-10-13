@@ -3,17 +3,27 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Mapping
+
 import pytest
 import torch
 
 _triton_available = torch.cuda.is_available()
 if _triton_available:
     try:
-        import triton
-
         from xformers.triton.flash_attention import _flash_attention
+        from xformers.triton.utils import assert_allclose
     except (ImportError, ModuleNotFoundError):
         _triton_available = False
+
+ERROR_ATOL: Mapping[torch.dtype, float] = {
+    torch.half: 4e-3,
+    torch.bfloat16: 2e-2,
+}
+ERROR_RTOL: Mapping[torch.dtype, float] = {
+    torch.half: 4e-4,
+    torch.bfloat16: 5e-3,
+}
 
 if _triton_available:
 
@@ -61,7 +71,11 @@ if _triton_available:
         tri_dk, k.grad = k.grad.clone(), None
         tri_dq, q.grad = q.grad.clone(), None
         # compare
-        triton.testing.assert_almost_equal(ref_out, tri_out)
-        triton.testing.assert_almost_equal(ref_dv, tri_dv)
-        triton.testing.assert_almost_equal(ref_dk, tri_dk)
-        triton.testing.assert_almost_equal(ref_dq, tri_dq)
+
+        assert_allclose(
+            ref_out, tri_out, rtol=ERROR_RTOL[dtype], atol=ERROR_ATOL[dtype]
+        )
+        # when bf16 is used, max diff is .016, .0006% of elements are not within .015 of ref
+        assert_allclose(ref_dv, tri_dv, rtol=ERROR_RTOL[dtype], atol=ERROR_ATOL[dtype])
+        assert_allclose(ref_dk, tri_dk, rtol=ERROR_RTOL[dtype], atol=ERROR_ATOL[dtype])
+        assert_allclose(ref_dq, tri_dq, rtol=ERROR_RTOL[dtype], atol=ERROR_ATOL[dtype])
