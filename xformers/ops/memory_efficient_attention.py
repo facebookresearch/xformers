@@ -753,7 +753,7 @@ class TritonFlashAttentionOp(AttentionOpBase):
     FORWARD_OPERATOR = None
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
-    SUPPORTED_MAX_K: float = math.inf
+    SUPPORTED_MAX_K: float = 128
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
     NAME = "tritonflashatt"
@@ -767,6 +767,8 @@ class TritonFlashAttentionOp(AttentionOpBase):
     @classmethod
     def supports(cls, d: "AttentionOpDispatch") -> bool:
         if not has_triton_flashattention:
+            return False
+        if d.k not in [16, 32, 64, 128]:
             return False
         return super(TritonFlashAttentionOp, cls).supports(d)
 
