@@ -41,6 +41,7 @@ def _fwd_kernel(
     Z,
     H,
     N_CTX,
+    num_block,
     BLOCK_M: tl.constexpr,
     BLOCK_DMODEL: tl.constexpr,
     BLOCK_N: tl.constexpr,
@@ -74,14 +75,21 @@ def _fwd_kernel(
     # load q: it will stay in SRAM throughout
     q = tl.load(q_ptrs)
     # loop over k, v and update accumulator
-    for start_n in range(0, (start_m + 1) * BLOCK_M, BLOCK_N):
+    if is_causal:
+        end = start_m + 1
+    else:
+        end = num_block
+    for start_n in range(0, end * BLOCK_M, BLOCK_N):
         start_n = tl.multiple_of(start_n, BLOCK_N)
         # -- compute qk ----
         k = tl.load(k_ptrs + start_n * stride_kn)
         qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
         qk += tl.dot(q, k, trans_b=True)
         qk *= sm_scale
-        qk += tl.where(offs_m[:, None] >= (start_n + offs_n[None, :]), 0, float("-inf"))
+        if is_causal:
+            qk += tl.where(
+                offs_m[:, None] >= (start_n + offs_n[None, :]), 0, float("-inf")
+            )
         # -- compute m_ij, p, l_ij
         m_ij = tl.max(qk, 1)
         p = tl.exp(qk - m_ij[:, None])

@@ -61,6 +61,7 @@ class _flash_attention(torch.autograd.Function):
             q.shape[0],
             q.shape[1],
             q.shape[2],
+            grid[0],
             BLOCK_M=BLOCK,
             BLOCK_N=BLOCK,
             BLOCK_DMODEL=Lk,
