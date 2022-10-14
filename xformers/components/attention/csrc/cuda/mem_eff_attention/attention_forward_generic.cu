@@ -81,6 +81,11 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     const c10::optional<int64_t> max_seqlen_q_,
     bool compute_logsumexp,
     bool causal) {
+#ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
+  TORCH_CHECK(
+      false,
+      "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD");
+#else
   TORCH_CHECK(query.dim() == 4);
   TORCH_CHECK(key.dim() == 4);
   TORCH_CHECK(value.dim() == 4);
@@ -215,6 +220,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
 
   AT_CUDA_CHECK(cudaGetLastError());
   return std::make_tuple(res, logsumexp);
+#endif
 }
 } // namespace
 

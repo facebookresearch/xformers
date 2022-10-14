@@ -54,6 +54,11 @@ mem_efficient_attention_backward_cutlass(
     const at::Tensor& logsumexp,
     const at::Tensor& out,
     bool causal) {
+#ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD
+  TORCH_CHECK(
+      false,
+      "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD");
+#else
   // ndim
   TORCH_CHECK(query.dim() == grad_out_.dim());
   TORCH_CHECK(query.dim() == key.dim());
@@ -225,6 +230,7 @@ mem_efficient_attention_backward_cutlass(
       query, key, value, ([&] { launchKernel(Kernel{}, computeCapability); }));
   AT_CUDA_CHECK(cudaGetLastError());
   return std::make_tuple(grad_q, grad_k, grad_v);
+#endif
 } // namespace
 
 } // namespace
