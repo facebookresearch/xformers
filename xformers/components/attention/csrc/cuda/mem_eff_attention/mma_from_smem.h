@@ -57,7 +57,6 @@
 #include "epilogue_thread_apply_logsumexp.h"
 #include "gemm_kernel_utils.h"
 #include "iterators/make_residual_last.h"
-#include "mma_simt_tile_iterator_residual.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1032,14 +1031,6 @@ class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
   }
 };
 
-namespace {
-template <typename A, typename B>
-struct AssertIsSame {
-  static_assert(std::is_same<A, B>::value);
-  using CHECK = bool;
-};
-} // namespace
-
 template <
     typename WarpShape,
     typename InstructionShape,
@@ -1265,8 +1256,9 @@ struct DefaultMmaFromSharedMemory<
 
   static int constexpr kMaxK = AccumulatorSharedStorage_::Shape::kN;
   // Reduce the number of stages if we don't need that many
-  static int constexpr kStages =
-      std::min(Stages, (kMaxK + int(Shape_::kK) - 1) / int(Shape_::kK));
+  static int constexpr kStagesMax =
+      (kMaxK + int(Shape_::kK) - 1) / int(Shape_::kK);
+  static int constexpr kStages = cutlass::const_min(Stages, kStagesMax);
 
   using IteratorB =
       typename cutlass::transform::threadblock::MakeIteratorResidualLast<
@@ -1631,7 +1623,7 @@ struct B2bGemm<
           if (rowIdx == 1) {
             lse_prefetched[colIdx] = accum_n < lse_extent
                 ? lse[accum_n]
-                : std::numeric_limits<accum_t>::infinity();
+                : platform::numeric_limits<accum_t>::infinity();
           }
           accum[idx] = expf(accum[idx] - lse_prefetched[colIdx]);
           ++colIdx;
@@ -1771,7 +1763,7 @@ struct B2bGemm<
           if (rowIdx == 1) {
             lse_prefetched[colIdx] = accum_n < lse_extent
                 ? lse[accum_n]
-                : std::numeric_limits<accum_t>::infinity();
+                : platform::numeric_limits<accum_t>::infinity();
           }
           accum[idx] = expf(accum[idx] - lse_prefetched[colIdx]);
           ++colIdx;

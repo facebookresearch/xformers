@@ -15,6 +15,16 @@
     }                                          \
   }
 
+// Print on the first thread of the first block
+#if 0
+#define PRINT_WARP_ID 0
+#define PRINT_LANE_ID 0
+#define PRINT_T0_L0(msg, ...)                                         \
+  if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&        \
+      threadIdx.x == PRINT_LANE_ID && threadIdx.y == PRINT_WARP_ID && \
+      threadIdx.z == 0) {                                             \
+    printf(msg "\n", __VA_ARGS__);                                    \
+  }
 struct __string_view {
   char const* data;
   std::size_t size;
@@ -41,17 +51,6 @@ constexpr __string_view __get_type_name() {
   }
   return {};
 }
-
-// Print on the first thread of the first block
-#if 0
-#define PRINT_WARP_ID 0
-#define PRINT_LANE_ID 0
-#define PRINT_T0_L0(msg, ...)                                         \
-  if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&        \
-      threadIdx.x == PRINT_LANE_ID && threadIdx.y == PRINT_WARP_ID && \
-      threadIdx.z == 0) {                                             \
-    printf(msg "\n", __VA_ARGS__);                                    \
-  }
 #else
 #define PRINT_T0_L0
 #endif

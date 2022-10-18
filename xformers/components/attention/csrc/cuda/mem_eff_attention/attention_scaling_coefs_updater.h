@@ -5,6 +5,7 @@
 #include "cutlass/gemm/warp/mma_tensor_op_tile_iterator_sm70.h"
 #include "cutlass/gemm/warp/mma_tensor_op_tile_iterator_sm80.h"
 #include "cutlass/matrix_shape.h"
+#include "gemm_kernel_utils.h"
 
 namespace {
 
@@ -66,10 +67,12 @@ struct RegisterOps {
       accum_t max;
       BASE::iterateRows(
           lane_offset,
-          [&](int accum_m) { max = -std::numeric_limits<accum_t>::infinity(); },
+          [&](int accum_m) {
+            max = -cutlass::platform::numeric_limits<accum_t>::infinity();
+          },
           [&](int accum_m, int accum_n, int idx) {
             if (kFullColumns || accum_n < max_col) {
-              max = std::max(max, frag[idx]);
+              max = cutlass::fast_max(max, frag[idx]);
             }
           },
           [&](int accum_m) {
@@ -134,7 +137,9 @@ struct AttentionScalingCoefsUpdaterSm80
           accum_t,
           kWarpSize> {
   static_assert(
-      std::is_same<typename T::Layout, cutlass::layout::RowMajor>::value);
+      cutlass::platform::
+          is_same<typename T::Layout, cutlass::layout::RowMajor>::value,
+      "only RowMajor is supported");
 
   using Policy = typename T::Policy;
   using InstructionShape = typename T::InstructionShape;
@@ -199,13 +204,9 @@ struct AttentionScalingCoefsUpdaterSm80
     myValue = fn(myValue, otherV);
     int lane_in_quad = (lane_id & 3);
     return lane_in_quad == 0;
-  };
+  }
 };
 
-// cutlass::gemm::warp::MmaVoltaTensorOpAccumulatorTileIterator<cutlass::MatrixShape<32,
-// 32>, float, cutlass::layout::RowMajor, cutlass::gemm::GemmShape<16, 16, 4>,
-// cutlass::MatrixShape<1, 1>> See
-// cutlass/gemm/warp/mma_tensor_op_tile_iterator_sm70.h
 template <typename T, typename accum_t, int kWarpSize>
 struct AttentionScalingCoefsUpdaterVolta
     : RegisterOps<
@@ -214,7 +215,9 @@ struct AttentionScalingCoefsUpdaterVolta
           accum_t,
           kWarpSize> {
   static_assert(
-      std::is_same<typename T::Layout, cutlass::layout::RowMajor>::value);
+      cutlass::platform::
+          is_same<typename T::Layout, cutlass::layout::RowMajor>::value,
+      "only RowMajor is supported");
 
   using Policy = typename T::Policy;
   using InstructionShape = typename T::InstructionShape;
@@ -269,7 +272,7 @@ struct AttentionScalingCoefsUpdaterVolta
     otherV = __shfl_xor_sync(0xffffffff, myValue, 1 << 3);
     myValue = fn(myValue, otherV);
     return (lane_id & ((1 << 1) | (1 << 3))) == 0;
-  };
+  }
 
   template <typename FA, typename FB, typename FC>
   CUTLASS_DEVICE static void iterateRows(
@@ -335,9 +338,9 @@ struct AttentionScalingCoefsUpdaterSimt
   using Delta = typename T::Delta;
   using Shape = typename T::Shape;
   static_assert(
-      std::is_same<typename T::Layout, cutlass::layout::RowMajor>::value);
-  static_assert(
-      std::is_same<typename T::Iterations, typename T::Iterations>::value);
+      cutlass::platform::
+          is_same<typename T::Layout, cutlass::layout::RowMajor>::value,
+      "only RowMajor is supported");
 
   template <typename DT, typename F>
   CUTLASS_DEVICE static bool reduceSameRow(int lane_id, DT& myValue, F fn) {
@@ -386,9 +389,11 @@ struct AttentionScalingCoefsUpdaterSimt
       int8_t lane_id,
       int8_t warp_id,
       typename T::TensorCoord const& tile_offset) {
-    static_assert(std::is_same<
-                  typename Policy::LaneLayout,
-                  cutlass::layout::RowMajorInterleaved<1>>::value);
+    static_assert(
+        cutlass::platform::is_same<
+            typename Policy::LaneLayout,
+            cutlass::layout::RowMajorInterleaved<1>>::value,
+        "");
     typename Policy::LaneLayout lane_layout = Policy::get_lane_layout();
 
     cutlass::MatrixCoord lane_offset = lane_layout.inverse(lane_id) *
