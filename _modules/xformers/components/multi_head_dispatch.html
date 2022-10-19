@@ -241,6 +241,8 @@
 <span class="kn">from</span> <span class="nn">xformers.components.input_projection</span> <span class="kn">import</span> <span class="n">InputProjection</span><span class="p">,</span> <span class="n">InputProjectionConfig</span>
 <span class="kn">from</span> <span class="nn">xformers.components.positional_embedding</span> <span class="kn">import</span> <span class="n">RotaryEmbedding</span>
 
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;xformers&quot;</span><span class="p">)</span>
+
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">MultiHeadDispatchConfig</span><span class="p">:</span>
@@ -315,7 +317,7 @@
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bias</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
-            <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
                 <span class="s2">&quot;Single bias value provided for the MHA projections.&quot;</span>
                 <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot; Assuming the same parameter (</span><span class="si">{</span><span class="n">bias</span><span class="si">}</span><span class="s2">) is to be used everywhere&quot;</span>
             <span class="p">)</span>

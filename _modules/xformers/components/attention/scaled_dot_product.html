@@ -245,6 +245,8 @@
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xformers.components.attention.core</span> <span class="kn">import</span> <span class="n">scaled_dot_product_attention</span>
 
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;xformers&quot;</span><span class="p">)</span>
+
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">ScaledDotProductConfig</span><span class="p">(</span><span class="n">AttentionConfig</span><span class="p">):</span>
@@ -345,7 +347,7 @@
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">att_mask</span><span class="p">,</span> <span class="n">AttentionMask</span><span class="p">):</span>
                 <span class="n">att_mask</span> <span class="o">=</span> <span class="n">att_mask</span><span class="o">.</span><span class="n">make_crop</span><span class="p">(</span><span class="n">seq_len</span><span class="o">=</span><span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">])</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
                     <span class="s2">&quot;Mismatching sparse attention mask and sequence length.&quot;</span>
                     <span class="o">+</span> <span class="s2">&quot; Please pad the inputs or adjust the attention mask&quot;</span>
                 <span class="p">)</span>

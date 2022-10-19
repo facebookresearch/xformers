@@ -255,6 +255,8 @@
     <span class="n">xFormerEncoderConfig</span><span class="p">,</span>
 <span class="p">)</span>
 
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;xformers&quot;</span><span class="p">)</span>
+
 
 <span class="k">def</span> <span class="nf">_get_ln_factory</span><span class="p">(</span>
     <span class="n">d_model</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
@@ -338,7 +340,7 @@
             <span class="n">mha_dim</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">multi_head_config</span><span class="p">[</span><span class="s2">&quot;dim_model&quot;</span><span class="p">]</span>
 
             <span class="k">if</span> <span class="n">pos_encoding_dim</span> <span class="o">!=</span> <span class="n">mha_dim</span><span class="p">:</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;The embedding dim and model dim do not match (</span><span class="si">{</span><span class="n">pos_encoding_dim</span><span class="si">}</span><span class="s2"> vs </span><span class="si">{</span><span class="n">mha_dim</span><span class="si">}</span><span class="s2">), adding a projector layer.&quot;</span>  <span class="c1"># noqa</span>
                 <span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">embedding_projector</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">pos_encoding_dim</span><span class="p">,</span> <span class="n">mha_dim</span><span class="p">)</span>
@@ -482,7 +484,7 @@
 
             <span class="k">if</span> <span class="n">pos_encoding_dim</span> <span class="o">!=</span> <span class="n">mha_dim</span><span class="p">:</span>
 
-                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;The embedding dim and model dim do not match (</span><span class="si">{</span><span class="n">pos_encoding_dim</span><span class="si">}</span><span class="s2"> vs </span><span class="si">{</span><span class="n">mha_dim</span><span class="si">}</span><span class="s2">), adding a projector layer.&quot;</span>  <span class="c1"># noqa</span>
                 <span class="p">)</span>
 

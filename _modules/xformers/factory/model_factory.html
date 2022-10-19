@@ -245,6 +245,8 @@
 <span class="kn">from</span> <span class="nn">xformers.factory.block_factory</span> <span class="kn">import</span> <span class="n">xFormerDecoderBlock</span><span class="p">,</span> <span class="n">xFormerEncoderBlock</span>
 <span class="kn">from</span> <span class="nn">xformers.factory.weight_init</span> <span class="kn">import</span> <span class="n">get_weight_init_fn</span><span class="p">,</span> <span class="n">xFormerWeightInit</span>
 
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;xformers&quot;</span><span class="p">)</span>
+
 
 <div class="viewcode-block" id="xFormerConfig"><a class="viewcode-back" href="../../../factory/model.html#xformers.factory.model_factory.xFormerConfig">[docs]</a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="k">class</span> <span class="nc">xFormerConfig</span><span class="p">:</span>
@@ -408,7 +410,7 @@
             <span class="ow">and</span> <span class="n">decoders</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pose_encoding</span>
             <span class="ow">and</span> <span class="ow">not</span> <span class="n">config</span><span class="o">.</span><span class="n">reversible</span>
         <span class="p">):</span>
-            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Tying encoder and decoder embeddings, as requested&quot;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Tying encoder and decoder embeddings, as requested&quot;</span><span class="p">)</span>
             <span class="n">encoders</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pose_encoding</span> <span class="o">=</span> <span class="n">decoders</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pose_encoding</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">encoders</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span> <span class="o">=</span> <span class="p">(</span>

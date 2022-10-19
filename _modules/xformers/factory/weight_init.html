@@ -245,6 +245,9 @@
     <span class="n">_no_grad_uniform_</span><span class="p">,</span>
 <span class="p">)</span>
 
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;xformers&quot;</span><span class="p">)</span>
+
+
 <span class="n">_assert_if_not_initialized</span> <span class="o">=</span> <span class="kc">False</span>
 
 
@@ -350,7 +353,7 @@
             <span class="k">return</span>
 
         <span class="c1"># This is unexpected, warn about a possible unhandled weight</span>
-        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;Not initializing weights in </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">, this could be a mistake.</span><span class="se">\n</span><span class="s2">Module </span><span class="si">{</span><span class="n">module</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
 
