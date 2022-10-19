@@ -22,6 +22,8 @@ from xformers.components.attention.utils import (
     reshape_key_padding_mask,
 )
 
+logger = logging.getLogger("xformers")
+
 
 @dataclass
 class NystromSelfAttentionConfig(AttentionConfig):
@@ -182,7 +184,7 @@ class NystromAttention(Attention):
 
         if key_padding_mask is not None:
             if key_padding_mask.dtype == torch.bool:
-                logging.warning(
+                logger.warning(
                     "Bool mask found, but an additive mask is expected. Converting but this is slow"
                 )
 

@@ -18,6 +18,9 @@ from xformers.components.feedforward import (
     register_feedforward,
 )
 
+logger = logging.getLogger("xformers")
+
+
 _is_fairscale_available = True
 
 try:
@@ -27,7 +30,7 @@ try:
     from xformers.components.feedforward import MLP
 
 except ImportError:
-    logging.warning(
+    logger.warning(
         "Either FairScale or torch distributed is not available, MixtureOfExperts will not be exposed."
         " Please install them if you would like to use MoE"
     )
@@ -105,8 +108,8 @@ if _is_fairscale_available:
                 assert number_of_experts >= number_of_local_experts
             else:
                 if dist.get_world_size() == 1:
-                    logging.warning("Local experts no specified but world size of 1")
-                    logging.warning("Assuming that all experts are local")
+                    logger.warning("Local experts no specified but world size of 1")
+                    logger.warning("Assuming that all experts are local")
                     number_of_local_experts = number_of_experts
                 else:
                     number_of_local_experts = 1

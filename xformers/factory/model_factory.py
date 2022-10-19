@@ -20,6 +20,8 @@ from xformers.factory.block_configs import (
 from xformers.factory.block_factory import xFormerDecoderBlock, xFormerEncoderBlock
 from xformers.factory.weight_init import get_weight_init_fn, xFormerWeightInit
 
+logger = logging.getLogger("xformers")
+
 
 @dataclass(init=False)
 class xFormerConfig:
@@ -183,7 +185,7 @@ class xFormer(torch.nn.Module):
             and decoders[0].pose_encoding
             and not config.reversible
         ):
-            logging.info("Tying encoder and decoder embeddings, as requested")
+            logger.info("Tying encoder and decoder embeddings, as requested")
             encoders[0].pose_encoding = decoders[0].pose_encoding
 
         self.encoders: torch.nn.Module = (

@@ -30,6 +30,9 @@ if _is_blocksparse_available:
     from xformers.components.attention.blocksparse import BlockSparseAttention
 
 
+logger = logging.getLogger("xformers")
+
+
 def _create_random_sparsity(matrix, sparsity, divisible_by=4):
     assert matrix.ndim == 3
     keep = torch.rand_like(matrix[0], dtype=torch.float32) > sparsity
@@ -311,7 +314,7 @@ def scaled_dot_product_attention(
     )
 
     if switch_to_blocksparse:
-        logging.info("Switching causal attention to Triton blocksparse...")
+        logger.info("Switching causal attention to Triton blocksparse...")
         return blocksparse_attention(q, k, v, dropout, block_size)
 
     with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():

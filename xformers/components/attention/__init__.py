@@ -19,6 +19,9 @@ from ._sputnik_sparse import SparseCS
 from .attention_mask import AttentionMask
 from .base import Attention, AttentionConfig  # noqa
 
+logger = logging.getLogger("xformers")
+
+
 # CREDITS: Classy Vision registry mechanism
 
 ATTENTION_REGISTRY: Dict[str, Any] = {}
@@ -45,7 +48,7 @@ def build_attention(config: Union[Dict[str, Any], AttentionConfig]):
             )
         except KeyError as e:
             name = config["name"]
-            logging.warning(f"{name} not available among {ATTENTION_REGISTRY.keys()}")
+            logger.warning(f"{name} not available among {ATTENTION_REGISTRY.keys()}")
             raise e
     else:
         config_instance = config

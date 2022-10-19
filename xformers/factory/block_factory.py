@@ -30,6 +30,8 @@ from xformers.factory.block_configs import (
     xFormerEncoderConfig,
 )
 
+logger = logging.getLogger("xformers")
+
 
 def _get_ln_factory(
     d_model: int,
@@ -113,7 +115,7 @@ class xFormerEncoderBlock(torch.nn.Module):
             mha_dim = config.multi_head_config["dim_model"]
 
             if pos_encoding_dim != mha_dim:
-                logging.warning(
+                logger.warning(
                     f"The embedding dim and model dim do not match ({pos_encoding_dim} vs {mha_dim}), adding a projector layer."  # noqa
                 )
                 self.embedding_projector = nn.Linear(pos_encoding_dim, mha_dim)
@@ -257,7 +259,7 @@ class xFormerDecoderBlock(torch.nn.Module):
 
             if pos_encoding_dim != mha_dim:
 
-                logging.warning(
+                logger.warning(
                     f"The embedding dim and model dim do not match ({pos_encoding_dim} vs {mha_dim}), adding a projector layer."  # noqa
                 )
 
