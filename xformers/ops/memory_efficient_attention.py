@@ -12,7 +12,7 @@ from typing import Any, List, Mapping, Optional, Set, Type, Union
 import torch
 
 try:
-    from . import _C_flashattention  # type: ignore[attr-defined]
+    from .. import _C_flashattention  # type: ignore[attr-defined]
 
     has_flashattention = True
 except ImportError:
