@@ -369,7 +369,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     SUPPORTED_MAX_K = 128
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
-    SUPPORTS_DIFFERENT_VALUE_EMBED = True
+    SUPPORTS_DIFFERENT_VALUE_EMBED = False
     NAME = "flshatt"
 
     @classmethod
