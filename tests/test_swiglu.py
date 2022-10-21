@@ -127,13 +127,13 @@ def test_forward_backward(
 
     module = xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
     if dtype != torch.float:
-        x_f32, module_f32 = map(lambda x: x.to(device).to(torch.float), [x, module])
+        x_f32, module_f32 = x.to(device).to(torch.float), module.to(device)
         x_f32.requires_grad_()
         ref_f32 = module_f32(x_f32)
     else:
         x_f32, module_f32, ref_f32 = None, None, None
 
-    x, module = map(lambda x: x.to(device).to(inp_model_dtype), [x, module])
+    x, module = x.to(device).to(inp_model_dtype), module.to(device).to(inp_model_dtype)
     x.requires_grad_()
 
     # Forward
