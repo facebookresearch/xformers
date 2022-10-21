@@ -126,12 +126,14 @@ def test_forward_backward(
     op = xsw._SwiGLUDecomposedOp
 
     module = xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
+    x_f32: Optional[torch.Tensor]
+    ref_f32: Optional[torch.Tensor]
+    module_f32: Optional[torch.nn.Module]
     if dtype != torch.float:
         x_f32, module_f32 = x.to(device).to(torch.float), module.to(device)
         x_f32.requires_grad_()
         ref_f32 = module_f32(x_f32)
     else:
-        # type: ignore
         x_f32, module_f32, ref_f32 = None, None, None
 
     x, module = x.to(device).to(inp_model_dtype), module.to(device).to(inp_model_dtype)
