@@ -131,6 +131,7 @@ def test_forward_backward(
         x_f32.requires_grad_()
         ref_f32 = module_f32(x_f32)
     else:
+        # type: ignore
         x_f32, module_f32, ref_f32 = None, None, None
 
     x, module = x.to(device).to(inp_model_dtype), module.to(device).to(inp_model_dtype)
