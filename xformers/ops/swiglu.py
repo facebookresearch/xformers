@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torch import nn
 
 
-class SwiGLUFFN_Reference(nn.Module):
+class _SwiGLUModule(nn.Module):
     """
     Reference implementation of a SwiGLU module
     """
@@ -52,13 +52,7 @@ class SwiGLUFFN_Reference(nn.Module):
         ]
 
 
-def _silu_backward(dy, x):
-    # https://github.com/pytorch/pytorch/blob/563b065f5a4b4055fa6b025c2514b566d5fd9439/aten/src/ATen/native/Activation.cpp#L483
-    sigm = 1 / (1 + torch.exp(-x.float()))
-    return (dy.float() * sigm * (1 + x.float() * (1 - sigm))).to(x.dtype)
-
-
-class SwiGLU_Decomposed(torch.autograd.Function):
+class _SwiGLUDecomposedOp(torch.autograd.Function):
     """
     This is just an example implementation with all
     operations explicited. This implementation is worse
@@ -73,6 +67,11 @@ class SwiGLU_Decomposed(torch.autograd.Function):
 
     NAME = "decomposed"
     FORCE_BW_F32 = False
+
+    def _silu_backward(dy, x):
+        # https://github.com/pytorch/pytorch/blob/563b065f5a4b4055fa6b025c2514b566d5fd9439/aten/src/ATen/native/Activation.cpp#L483
+        sigm = 1 / (1 + torch.exp(-x.float()))
+        return (dy.float() * sigm * (1 + x.float() * (1 - sigm))).to(x.dtype)
 
     # 952us
     @classmethod
@@ -99,7 +98,7 @@ class SwiGLU_Decomposed(torch.autograd.Function):
         db3 = dx5.sum(0)  # 25us
         dx3 = dx4 * x2  # 88us
         dx2 = dx4 * x3  # 88us
-        dx1 = _silu_backward(dx3, x1)  # 90us
+        dx1 = cls._silu_backward(dx3, x1)  # 90us
         dx = dx2 @ w2  # 260us (nn)
         dw2 = dx2.transpose(-2, -1) @ x  # 245us (nt)
         db2 = dx2.sum(0)  # 50us
@@ -107,3 +106,22 @@ class SwiGLU_Decomposed(torch.autograd.Function):
         dw1 = dx1.transpose(-2, -1) @ x  # 245us (nt)
         db1 = dx1.sum(0)  # 50us
         return (dx, dw1, db1, dw2, db2, dw3, db3)
+
+
+def functional_swiglu(
+    x: torch.Tensor,
+    w1: torch.Tensor,
+    b1: torch.Tensor,
+    w2: torch.Tensor,
+    b2: torch.Tensor,
+    w3: torch.Tensor,
+    b3: torch.Tensor,
+    *,
+    op=None
+) -> torch.Tensor:
+    if op is not None:
+        return op.apply(x, w1, b1, w2, b2, w3, b3)
+    x1 = F.linear(x, w1, b1)
+    x2 = F.linear(x, w2, b2)
+    hidden = F.silu(x1) * x2
+    return F.linear(hidden, w3, b3)

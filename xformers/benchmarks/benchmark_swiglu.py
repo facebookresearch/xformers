@@ -25,7 +25,7 @@ SHAPES = [
 ]
 
 
-OP = xsw.SwiGLU_Decomposed
+OP = xsw._SwiGLUDecomposedOp
 
 
 def product_dict(**kwargs):
@@ -48,7 +48,7 @@ def benchmark_swiglu(shape, dtype):
 
     x = torch.randn(shape[:2], device=device, dtype=inp_dtype)
     module = (
-        xsw.SwiGLUFFN_Reference(in_features=shape[1], hidden_features=shape[2])
+        xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
         .to(device)
         .to(model_dtype)
     )
@@ -66,7 +66,7 @@ def benchmark_swiglu(shape, dtype):
         globals={
             "x": x,
             "args": module._ordered_params_for_op(),
-            "fn": partial(OP.apply),
+            "fn": partial(xsw.functional_swiglu, op=OP),
         },
         label="swiglu_fw",
         description=OP.NAME,
@@ -90,7 +90,7 @@ def benchmark_swiglu_bw(shape, dtype):
     x = torch.randn(shape[:2], device=device, dtype=inp_dtype)
     x.requires_grad_()
     module = (
-        xsw.SwiGLUFFN_Reference(in_features=shape[1], hidden_features=shape[2])
+        xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
         .to(device)
         .to(model_dtype)
     )
@@ -103,7 +103,7 @@ def benchmark_swiglu_bw(shape, dtype):
     sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]}"
 
     assert not autocast
-    out = OP.apply(x, *module._ordered_params_for_op())
+    out = xsw.functional_swiglu(x, *module._ordered_params_for_op(), op=OP)
     grad = torch.zeros_like(out)
     yield benchmark.Timer(
         stmt="out.backward(grad, retain_graph=True)",

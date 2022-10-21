@@ -123,9 +123,9 @@ def test_forward_backward(
 
     inp_model_dtype = torch.float if autocast else dtype
     x = torch.randn(shape[:2], device=device, dtype=inp_model_dtype)
-    op = xsw.SwiGLU_Decomposed
+    op = xsw._SwiGLUDecomposedOp
 
-    module = xsw.SwiGLUFFN_Reference(in_features=shape[1], hidden_features=shape[2])
+    module = xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
     if dtype != torch.float:
         x_f32, module_f32 = map(lambda x: x.to(device).to(torch.float), [x, module])
         x_f32.requires_grad_()
@@ -142,7 +142,7 @@ def test_forward_backward(
             ref = module(x)
     else:
         ref = module(x)
-    out = op.apply(x, *module._ordered_params_for_op())
+    out = xsw.functional_swiglu(x, *module._ordered_params_for_op(), op=op)
     if ref_f32 is None:
         ref_f32 = ref
 
