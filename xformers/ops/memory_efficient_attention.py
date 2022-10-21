@@ -369,7 +369,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     SUPPORTED_MAX_K = 128
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
-    SUPPORTS_DIFFERENT_VALUE_EMBED = False
+    SUPPORTS_DIFFERENT_VALUE_EMBED = True
     NAME = "flshatt"
 
     @classmethod
@@ -633,6 +633,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
 class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlassOp):
     FW_OP = MemoryEfficientAttentionCutlassOp
     BW_OP = MemoryEfficientAttentionFlashAttentionOp
+    SUPPORTED_DTYPES = BW_OP.SUPPORTED_DTYPES.intersection(FW_OP.SUPPORTED_DTYPES)
     NAME = "fctls_bflsh"
 
     @classmethod
