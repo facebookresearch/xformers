@@ -116,6 +116,7 @@ class _SwiGLUFusedOp(torch.autograd.Function):
     @classmethod
     def forward(cls, ctx, x, w1, b1, w2, b2, w3, b3):
         x1, x2, x4 = torch.ops.xformers.dual_gemm_silu_identity_mul(x, w1, b1, w2, b2)
+
         x5 = F.linear(x4, w3, b3)
         ctx.save_for_backward(x, w1, w2, w3, x1, x2, x4)
         return x5
