@@ -83,13 +83,15 @@ def generate_test_shapes():
     # Add some random shapes
     r = random.Random(0)
     for _ in range(20):
-        shapes.append((r.randint(1, 5000), r.randint(1, 5000), r.randint(1, 512) * 8))
+        shapes.append(
+            (r.randint(1, 1000) * 8, r.randint(1, 1000) * 8, r.randint(1, 512) * 8)
+        )
     return shapes
 
 
 _test_shapes = list(generate_test_shapes())
 _test_shapes_ids = [str(s) for s in _test_shapes]
-_dtypes = [torch.float, torch.float16]
+_dtypes = [torch.float16]
 
 
 @pytest.mark.parametrize("autocast", [False])  # TODO: Enable autocast testing
@@ -106,7 +108,9 @@ def test_forward_backward(
     dtype,
     autocast: bool,
 ):
-    FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-3}
+    torch.manual_seed(shape[0] * shape[1] * shape[2])
+    FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-2}
+    FORWARD_RTOL = {torch.float: 1e-5, torch.half: 4e-3}
     BACKWARD_ATOL = {
         torch.float: 3e-4,
         torch.half: 0.5,
@@ -124,6 +128,7 @@ def test_forward_backward(
     inp_model_dtype = torch.float if autocast else dtype
     x = torch.randn(shape[:2], device=device, dtype=inp_model_dtype)
     op = xsw._SwiGLUDecomposedOp
+    op = xsw._SwiGLUFusedOp
 
     module = xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
     x_f32: Optional[torch.Tensor]
@@ -150,11 +155,7 @@ def test_forward_backward(
         ref_f32 = ref
 
     assert_allclose(
-        out,
-        ref,
-        ref_f32,
-        "fw",
-        atol=FORWARD_ATOL[dtype],
+        out, ref, ref_f32, "fw", atol=FORWARD_ATOL[dtype], rtol=FORWARD_RTOL[dtype]
     )
 
     # Backward

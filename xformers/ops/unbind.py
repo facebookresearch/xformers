@@ -43,15 +43,26 @@ def get_stack_strides(
     return tuple(final_stride)
 
 
-def efficient_stack(
-    tensors: Union[Tuple[torch.Tensor, ...], List[torch.Tensor]], dim: int
-) -> torch.Tensor:
+def efficient_stack_or_none(
+    tensors: Union[Tuple[torch.Tensor, ...], List[torch.Tensor]],
+    dim: int,
+) -> Optional[torch.Tensor]:
     strides = get_stack_strides(tensors, dim)
     if strides is not None:
         input_shape = list(tensors[0].shape)
         input_shape.insert(dim, len(tensors))
         return tensors[0].as_strided(input_shape, strides)
-    return torch.stack(tensors, dim=dim)
+    return None
+
+
+def efficient_stack(
+    tensors: Union[Tuple[torch.Tensor, ...], List[torch.Tensor]],
+    dim: int,
+) -> torch.Tensor:
+    out = efficient_stack_or_none(tensors, dim)
+    if out is None:
+        out = torch.stack(tensors, dim=dim)
+    return out
 
 
 class _Unbind(torch.autograd.Function):

@@ -12,6 +12,7 @@ from torch.utils import benchmark
 from utils import benchmark_main_helper
 
 import xformers.ops.swiglu as xsw
+from xformers.ops import unbind as xunbind
 
 min_run_time = 0.5
 device = torch.device("cuda")
@@ -22,10 +23,13 @@ SHAPES = [
     (9456, 1536, 4096),
     (4440, 1536, 4096),
     (4728, 1536, 4096),
+    # Some smaller shapes as well
+    (4728, 1536, 1024),
 ]
 
 
-OP = xsw._SwiGLUDecomposedOp
+# OP = xsw._SwiGLUDecomposedOp
+OP = xsw._SwiGLUFusedOp
 
 
 def product_dict(**kwargs):
@@ -38,7 +42,7 @@ def product_dict(**kwargs):
 CASES = list(
     product_dict(
         shape=SHAPES,
-        dtype=[torch.half, torch.float],
+        dtype=[torch.half],
     )
 )
 
@@ -61,11 +65,16 @@ def benchmark_swiglu(shape, dtype):
     sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]}"
 
     assert not autocast
+
+    params = module._ordered_params_for_op()
+    # w1w2 = torch.cat([params[0], params[2]], dim=0).view([2, *params[0].shape])
+    # params[0], params[2] = w1w2.unbind(dim=0)
+
     yield benchmark.Timer(
         stmt="fn(x, *args)",
         globals={
             "x": x,
-            "args": module._ordered_params_for_op(),
+            "args": params,
             "fn": partial(xsw.functional_swiglu, op=OP),
         },
         label="swiglu_fw",
@@ -103,7 +112,11 @@ def benchmark_swiglu_bw(shape, dtype):
     sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]}"
 
     assert not autocast
-    out = xsw.functional_swiglu(x, *module._ordered_params_for_op(), op=OP)
+    params = module._ordered_params_for_op()
+    w1w2 = torch.cat([params[0], params[2]], dim=0).view([2, *params[0].shape]).detach()
+    w1w2.requires_grad_()
+    params[0], params[2] = xunbind(w1w2, dim=0)
+    out = xsw.functional_swiglu(x, *params, op=OP)
     grad = torch.zeros_like(out)
     yield benchmark.Timer(
         stmt="out.backward(grad, retain_graph=True)",

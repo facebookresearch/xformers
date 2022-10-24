@@ -145,24 +145,21 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
 
 def get_extensions():
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    extensions_dir = os.path.join(
-        this_dir, "xformers", "components", "attention", "csrc"
-    )
+    extensions_dir = os.path.join(this_dir, "xformers", "components")
 
     main_file = glob.glob(os.path.join(extensions_dir, "*.cpp"))
 
-    source_cpu = glob.glob(os.path.join(extensions_dir, "cpu", "*.cpp")) + glob.glob(
-        os.path.join(extensions_dir, "autograd", "*.cpp")
-    )
+    source_cpu = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
 
     sources = main_file + source_cpu
 
     source_cuda = glob.glob(
-        os.path.join(extensions_dir, "cuda", "**", "*.cu"), recursive=True
+        os.path.join(extensions_dir, "**", "cuda", "**", "*.cu"), recursive=True
     )
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
+    cutlass_examples_dir = os.path.join(this_dir, "third_party", "cutlass", "examples")
     if not os.path.exists(cutlass_dir):
         raise RuntimeError(
             f"CUTLASS submodule not found at {cutlass_dir}. "
@@ -189,8 +186,15 @@ def get_extensions():
     ) == "1":
         extension = CUDAExtension
         sources += source_cuda
-        include_dirs += [sputnik_dir, cutlass_dir]
-        nvcc_flags = ["-DHAS_PYTORCH", "--use_fast_math", "--generate-line-info"]
+        include_dirs += [sputnik_dir, cutlass_dir, cutlass_examples_dir]
+        nvcc_flags = [
+            "-DHAS_PYTORCH",
+            "--use_fast_math",
+            "--generate-line-info",
+            "-U__CUDA_NO_HALF_OPERATORS__",
+            "-U__CUDA_NO_HALF_CONVERSIONS__",
+            "--extended-lambda",
+        ]
         if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
             nvcc_flags.append("-DNDEBUG")
         nvcc_flags += shlex.split(os.getenv("NVCC_FLAGS", ""))
