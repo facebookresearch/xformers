@@ -163,16 +163,14 @@ class SwiGLUFusedOp(torch.autograd.Function):
             assert dx1dx2 is not None
             assert dx1dx2.is_contiguous()
             assert w1w2.is_contiguous()
-            dx1dx2 = dx1dx2.view([dx1.shape[0], dx1.shape[1] * 2])
             w1w2 = w1w2.view([w1.shape[0] * 2, w1.shape[1]])
-            dx = dx1dx2 @ w1w2
-            # Create [dw1,dw2] already stacked together
-            dw1dw2 = torch.empty_like(w1w2).view([w1.shape[0], 2, w1.shape[1]])
-            dw1, dw2 = torch.unbind(dw1dw2, dim=1)
-            torch.matmul(dx2.transpose(-2, -1), x, out=dw2)
-            db2 = dx2.sum(0)  # 50us
-            torch.matmul(dx1.transpose(-2, -1), x, out=dw1)
-            db1 = dx1.sum(0)  # 50us
+            dx = dx1dx2.view([dx1.shape[0], 2 * dx1.shape[1]]) @ w1w2
+
+            # backward of linear1 + linear2 - packed
+            dw1dw2 = dx1dx2.view([dx1.shape[0], 2 * dx1.shape[1]]).transpose(-2, -1) @ x
+            db1db2 = dx1dx2.sum(0).view([2, dx1.shape[1]])
+            dw1, dw2 = dw1dw2.view([2, *w1.shape]).unbind(0)
+            db1, db2 = torch.unbind(db1db2, dim=0)
         else:
             dx = dx2 @ w2  # 260us (nn)
             torch.addmm(dx, dx1, w1, beta=1, alpha=1, out=dx)  # dx += dx1 @ w1
