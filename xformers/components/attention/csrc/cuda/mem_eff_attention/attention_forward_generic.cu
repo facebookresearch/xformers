@@ -211,7 +211,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
           kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes));
     }
     Kernel::check_supported(p);
-    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
+    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
   };
   // Dispatch to the right kernel
   DISPATCH_KERNEL(query, key, value, ([&]() {
