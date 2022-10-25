@@ -1,6 +1,7 @@
 #include <ATen/Tensor.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/ScalarOps.h>
+#include <ATen/autocast_mode.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
 
@@ -141,10 +142,35 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul(
     return dual_gemm_silu_identity_mul_<cutlass::bfloat16_t>(FWD_PARAMS);
   }
 }
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_autocast(
+    const at::Tensor& x,
+    const at::Tensor& w0,
+    const at::Tensor& b0,
+    const at::Tensor& w1,
+    const at::Tensor& b1
+) {
+  c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
+  auto exec_type = at::autocast::get_autocast_gpu_dtype();
+  return dual_gemm_silu_identity_mul(
+    at::autocast::cached_cast(exec_type, x),
+    at::autocast::cached_cast(exec_type, w0),
+    at::autocast::cached_cast(exec_type, b0),
+    at::autocast::cached_cast(exec_type, w1),
+    at::autocast::cached_cast(exec_type, b1)
+  );
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::dual_gemm_silu_identity_mul"),
       TORCH_FN(dual_gemm_silu_identity_mul));
+}
+
+TORCH_LIBRARY_IMPL(xformers, Autocast, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::dual_gemm_silu_identity_mul"),
+      TORCH_FN(dual_gemm_silu_identity_mul_autocast));
 }

@@ -5,6 +5,7 @@
 
 
 import itertools
+from contextlib import nullcontext
 from functools import partial
 
 import torch
@@ -42,13 +43,22 @@ def product_dict(**kwargs):
 CASES = list(
     product_dict(
         shape=SHAPES,
-        dtype=[torch.half],
+        dtype=[torch.bfloat16, torch.half, "autocast_half"],
     )
 )
 
+DTYPE2STR = {
+    torch.bfloat16: "b16   ",
+    torch.half: "f16   ",
+    "autocast_half": "f16.ac",
+}
+
 
 def benchmark_swiglu(shape, dtype):
-    inp_dtype, model_dtype, autocast = dtype, dtype, False
+    if dtype == "autocast_half":
+        inp_dtype, model_dtype, autocast = torch.float, torch.float, True
+    else:
+        inp_dtype, model_dtype, autocast = dtype, dtype, False
 
     x = torch.randn(shape[:2], device=device, dtype=inp_dtype)
     module = (
@@ -57,21 +67,14 @@ def benchmark_swiglu(shape, dtype):
         .to(model_dtype)
     )
 
-    dtype_str = {
-        torch.bfloat16: "b16",
-        torch.half: "f16",
-        torch.float: "f32",
-    }.get(dtype, dtype)
+    dtype_str = DTYPE2STR.get(dtype, dtype)
     sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]}"
 
-    assert not autocast
-
     params = module._ordered_params_for_op()
-    # w1w2 = torch.cat([params[0], params[2]], dim=0).view([2, *params[0].shape])
-    # params[0], params[2] = w1w2.unbind(dim=0)
 
+    PREFIX = 'with torch.autocast("cuda", dtype=torch.half):\n    ' if autocast else ""
     yield benchmark.Timer(
-        stmt="fn(x, *args)",
+        stmt=f"{PREFIX}fn(x, *args)",
         globals={
             "x": x,
             "args": params,
@@ -82,7 +85,7 @@ def benchmark_swiglu(shape, dtype):
         sub_label=sub_label,
     )
     yield benchmark.Timer(
-        stmt="fn(x)",
+        stmt=f"{PREFIX}fn(x)",
         globals={
             "x": x,
             "fn": module,
@@ -94,7 +97,12 @@ def benchmark_swiglu(shape, dtype):
 
 
 def benchmark_swiglu_bw(shape, dtype):
-    inp_dtype, model_dtype, autocast = dtype, dtype, False
+    if dtype == "autocast_half":
+        inp_dtype, model_dtype = torch.float, torch.float
+        cm = partial(torch.cuda.amp.autocast, enabled=True, dtype=torch.float16)
+    else:
+        inp_dtype, model_dtype = dtype, dtype
+        cm = nullcontext
 
     x = torch.randn(shape[:2], device=device, dtype=inp_dtype)
     x.requires_grad_()
@@ -104,20 +112,17 @@ def benchmark_swiglu_bw(shape, dtype):
         .to(model_dtype)
     )
 
-    dtype_str = {
-        torch.bfloat16: "b16",
-        torch.half: "f16",
-        torch.float: "f32",
-    }.get(dtype, dtype)
+    dtype_str = DTYPE2STR.get(dtype, dtype)
     sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]}"
 
-    assert not autocast
     params = module._ordered_params_for_op()
     w1w2 = torch.cat([params[0], params[2]], dim=0).view([2, *params[0].shape]).detach()
     w1w2.requires_grad_()
     params[0], params[2] = xunbind(w1w2, dim=0)
-    out = xsw.functional_swiglu(x, *params, op=OP)
+    with cm():
+        out = xsw.functional_swiglu(x, *params, op=OP)
     grad = torch.zeros_like(out)
+
     yield benchmark.Timer(
         stmt="out.backward(grad, retain_graph=True)",
         globals={
@@ -130,10 +135,13 @@ def benchmark_swiglu_bw(shape, dtype):
     )
     del out
 
+    with cm():
+        out = module(x)
+
     yield benchmark.Timer(
         stmt="out.backward(grad, retain_graph=True)",
         globals={
-            "out": module(x),
+            "out": out,
             "grad": grad,
         },
         label="swiglu_bw",

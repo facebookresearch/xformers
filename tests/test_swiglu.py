@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import random
+from contextlib import nullcontext
 from typing import Optional
 
 import pytest
@@ -13,7 +14,7 @@ import xformers.ops.swiglu as xsw
 
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-_devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+_devices = ["cuda"] if torch.cuda.is_available() else []
 
 
 def assert_allclose(
@@ -91,10 +92,10 @@ def generate_test_shapes():
 
 _test_shapes = list(generate_test_shapes())
 _test_shapes_ids = [str(s) for s in _test_shapes]
-_dtypes = [torch.float16]
+_dtypes = [torch.bfloat16, torch.float16]
 
 
-@pytest.mark.parametrize("autocast", [False])  # TODO: Enable autocast testing
+@pytest.mark.parametrize("autocast", [True, False])
 @pytest.mark.parametrize("pack_weights", [True, False])
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
 @pytest.mark.parametrize("device", _devices)
@@ -111,21 +112,25 @@ def test_forward_backward(
     pack_weights: bool,
 ):
     torch.manual_seed(shape[0] * shape[1] * shape[2])
-    FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-2}
-    FORWARD_RTOL = {torch.float: 1e-5, torch.half: 4e-3}
+    FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-2, torch.bfloat16: 1e-2}
+    FORWARD_RTOL = {torch.float: 1e-5, torch.half: 4e-3, torch.bfloat16: 4e-3}
     BACKWARD_ATOL = {
         torch.float: 3e-4,
         torch.half: 0.5,
+        torch.bfloat16: 4.0,  # !!
     }
     BACKWARD_RTOL = {
         torch.float: 2e-3,
         torch.half: 1e-2,
+        torch.bfloat16: 4e-2,
     }
 
     if device == "cpu" and dtype is not torch.float:
         pytest.skip("Half not supported on CPU")
     if autocast and (device == "cpu" or dtype is not torch.half):
         pytest.skip("Autocast only supported for CUDA+Half")
+    if autocast and pack_weights is False:
+        pytest.skip("TODO: Autocast only supported with pack_weights=True")
 
     inp_model_dtype = torch.float if autocast else dtype
     x = torch.randn(shape[:2], device=device, dtype=inp_model_dtype)
@@ -149,12 +154,11 @@ def test_forward_backward(
     x.requires_grad_()
 
     # Forward
-    if autocast:
-        with torch.autocast("cuda", dtype=dtype):
-            ref = module(x)
-    else:
+    cm = torch.autocast("cuda", dtype=dtype) if autocast else nullcontext()
+    with cm:
         ref = module(x)
-    out = xsw.functional_swiglu(x, *module._ordered_params_for_op(), op=op)
+        out = xsw.functional_swiglu(x, *module._ordered_params_for_op(), op=op)
+
     if ref_f32 is None:
         ref_f32 = ref
 

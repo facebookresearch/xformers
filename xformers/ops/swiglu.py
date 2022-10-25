@@ -139,6 +139,7 @@ class SwiGLUFusedOp(torch.autograd.Function):
     NAME = "fused"
 
     @classmethod
+    @torch.cuda.amp.custom_fwd
     def forward(cls, ctx, x, w1, b1, w2, b2, w3, b3):
         x1, x2, x4 = torch.ops.xformers.dual_gemm_silu_identity_mul(x, w1, b1, w2, b2)
 
@@ -147,6 +148,7 @@ class SwiGLUFusedOp(torch.autograd.Function):
         return x5
 
     @classmethod
+    @torch.cuda.amp.custom_bwd
     def backward(cls, ctx, dx5):
         x, w1, w2, w3, x1, x2 = ctx.saved_tensors
         w1w2 = efficient_stack_or_none([w1, w2], dim=0)
