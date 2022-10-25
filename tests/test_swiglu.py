@@ -95,6 +95,7 @@ _dtypes = [torch.float16]
 
 
 @pytest.mark.parametrize("autocast", [False])  # TODO: Enable autocast testing
+@pytest.mark.parametrize("pack_weights", [True, False])
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
 @pytest.mark.parametrize("device", _devices)
 @pytest.mark.parametrize(
@@ -107,6 +108,7 @@ def test_forward_backward(
     device,
     dtype,
     autocast: bool,
+    pack_weights: bool,
 ):
     torch.manual_seed(shape[0] * shape[1] * shape[2])
     FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-2}
@@ -130,7 +132,9 @@ def test_forward_backward(
     op = xsw._SwiGLUDecomposedOp
     op = xsw._SwiGLUFusedOp
 
-    module = xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
+    module = xsw._SwiGLUModule(
+        in_features=shape[1], hidden_features=shape[2], pack_weights=pack_weights
+    )
     x_f32: Optional[torch.Tensor]
     ref_f32: Optional[torch.Tensor]
     module_f32: Optional[torch.nn.Module]

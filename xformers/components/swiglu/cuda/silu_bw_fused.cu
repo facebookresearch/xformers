@@ -18,10 +18,11 @@ def silu_bw_fused(x1, x2, dx4):
     x3 = F.silu(x1)
     dx3 = dx4 * x2
     dx2 = dx4 * x3
+    x4 = x2 * x3  # checkpointing
     # silu bw
     sigm = 1 / (1 + torch.exp(-x1.float()))
     dx1 = (dx3.float() * sigm * (1 + x1.float() * (1 - sigm))).to(x1.dtype)
-    return dx1dx2
+    return dx1, dx2, x4
 */
 
 template <typename T>
@@ -39,7 +40,7 @@ struct KernelTraits<at::BFloat16> {
   using AccumulationElement = float;
 };
 
-std::tuple<at::Tensor, at::Tensor> silu_bw_fused(
+std::tuple<at::Tensor, at::Tensor, at::Tensor> silu_bw_fused(
     const at::Tensor& x1,
     const at::Tensor& x2,
     const at::Tensor& dx4
@@ -55,9 +56,11 @@ std::tuple<at::Tensor, at::Tensor> silu_bw_fused(
   at::Tensor dx1dx2 = at::empty({B, 2, H}, x2.options());
   at::Tensor dx1 = dx1dx2.select(1, 0);
   at::Tensor dx2 = dx1dx2.select(1, 1);
+  at::Tensor x4 = at::empty({B, H}, x2.options());
   auto iter = at::TensorIteratorConfig()
       .add_output(dx1)
       .add_output(dx2)
+      .add_output(x4)
       .add_input(x1)
       .add_input(x2)
       .add_input(dx4)
@@ -70,19 +73,21 @@ std::tuple<at::Tensor, at::Tensor> silu_bw_fused(
       using acc_t = typename KernelTraits<scalar_t>::AccumulationElement;
       at::native::gpu_kernel_multiple_outputs(
           iter, [=] GPU_LAMBDA (scalar_t x1_, scalar_t x2_, scalar_t dx4_)
-               -> thrust::tuple<scalar_t, scalar_t> {
+               -> thrust::tuple<scalar_t, scalar_t, scalar_t> {
         acc_t sigm = acc_t(1) / (acc_t(1) + std::exp(-acc_t(x1_)));
         acc_t x3_ = sigm * x1_;
         acc_t dx3_ = acc_t(dx4_) * acc_t(x2_);
         acc_t dx2_ = acc_t(dx4_) * acc_t(x3_);
         acc_t dx1_ = (dx3_ * sigm * (acc_t(1) + acc_t(x1_) * (acc_t(1) - sigm)));
-        return thrust::tuple<scalar_t, scalar_t>{
+        acc_t x4_ = x3_ * x2_;
+        return thrust::tuple<scalar_t, scalar_t, scalar_t>{
           dx1_,
-          dx2_
+          dx2_,
+          x4_
         };
       });
   });
-  return std::make_tuple(dx1, dx2);
+  return std::make_tuple(dx1, dx2, x4);
 }
 } // namespace
 

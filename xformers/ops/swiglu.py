@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .unbind import efficient_stack_or_none
+from .unbind import efficient_stack_or_none, unbind
 
 
 class _SwiGLUModule(nn.Module):
@@ -23,6 +23,7 @@ class _SwiGLUModule(nn.Module):
         hidden_features: Optional[int] = None,
         out_features: Optional[int] = None,
         align_as: int = 8,
+        pack_weights: bool = False,
     ) -> None:
         super().__init__()
         out_features = out_features or in_features
@@ -32,23 +33,46 @@ class _SwiGLUModule(nn.Module):
             (swiglu_hidden_features + align_as - 1) // align_as * align_as
         )
 
-        self.w1 = nn.Linear(in_features, swiglu_hidden_features)
-        self.w2 = nn.Linear(in_features, swiglu_hidden_features)
+        if pack_weights:
+            self.w12 = nn.Linear(in_features, 2 * swiglu_hidden_features)
+        else:
+            self.w12 = None
+            self.w1 = nn.Linear(in_features, swiglu_hidden_features)
+            self.w2 = nn.Linear(in_features, swiglu_hidden_features)
         self.w3 = nn.Linear(swiglu_hidden_features, out_features)
 
+        self.swiglu_hidden_features = swiglu_hidden_features
+        self.out_features = out_features
+        self.in_features = in_features
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x1 = self.w1(x)
-        x2 = self.w2(x)
+        if self.w12 is not None:
+            x12 = self.w12(x).view([x.shape[0], 2, self.swiglu_hidden_features])
+            x1, x2 = unbind(x12, dim=1)
+        else:
+            x1 = self.w1(x)
+            x2 = self.w2(x)
         hidden = F.silu(x1) * x2
         return self.w3(hidden)
 
     def _ordered_params_for_op(self):
         """Used for testing - returns ordered arguments for operators"""
+        if self.w12 is not None:
+            w1, w2 = unbind(
+                self.w12.weight.view(
+                    [2, self.swiglu_hidden_features, self.in_features]
+                ),
+                dim=0,
+            )
+            b1, b2 = unbind(self.w12.bias.view([2, self.swiglu_hidden_features]), dim=0)
+        else:
+            w1, w2 = self.w1.weight, self.w2.weight
+            b1, b2 = self.w1.bias, self.w2.bias
         return [
-            self.w1.weight,
-            self.w1.bias,
-            self.w2.weight,
-            self.w2.bias,
+            w1,
+            b1,
+            w2,
+            b2,
             self.w3.weight,
             self.w3.bias,
         ]
@@ -118,21 +142,21 @@ class _SwiGLUFusedOp(torch.autograd.Function):
         x1, x2, x4 = torch.ops.xformers.dual_gemm_silu_identity_mul(x, w1, b1, w2, b2)
 
         x5 = F.linear(x4, w3, b3)
-        ctx.save_for_backward(x, w1, w2, w3, x1, x2, x4)
+        ctx.save_for_backward(x, w1, w2, w3, x1, x2)
         return x5
 
     @classmethod
     def backward(cls, ctx, dx5):
-        x, w1, w2, w3, x1, x2, x4 = ctx.saved_tensors
+        x, w1, w2, w3, x1, x2 = ctx.saved_tensors
         w1w2 = efficient_stack_or_none([w1, w2], dim=0)
 
         dx4 = dx5 @ w3  # 255us (nn)
-        dw3 = dx5.transpose(-2, -1) @ x4  # 247us (nt)
-        del x4
+        dx1, dx2, x4 = torch.ops.xformers.silu_bw_fused(x1, x2, dx4)
+        del x1, x2, dx4
+
         db3 = dx5.sum(0)  # 25us
-        del dx5
-        dx1, dx2 = torch.ops.xformers.silu_bw_fused(x1, x2, dx4)
-        del x2, dx4
+        dw3 = dx5.transpose(-2, -1) @ x4  # 247us (nt)
+        del x4, dx5
         if w1w2 is not None:
             dx1dx2 = efficient_stack_or_none([dx1, dx2], dim=1)
             assert dx1dx2 is not None
@@ -150,7 +174,7 @@ class _SwiGLUFusedOp(torch.autograd.Function):
             db1 = dx1.sum(0)  # 50us
         else:
             dx = dx2 @ w2  # 260us (nn)
-            dx += dx1 @ w1  # 260us (nn)
+            torch.addmm(dx, dx1, w1, beta=1, alpha=1, out=dx)  # dx += dx1 @ w1
             dw2 = dx2.transpose(-2, -1) @ x  # 245us (nt)
             db2 = dx2.sum(0)  # 50us
             dw1 = dx1.transpose(-2, -1) @ x  # 245us (nt)

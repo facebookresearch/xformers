@@ -8,26 +8,6 @@
 #include "43_dual_gemm/thread/left_silu_and_mul.h"
 
 namespace {
-
-template <typename scalar_t>
-struct KernelTraits;
-
-template<>
-struct KernelTraits<cutlass::half_t> {
-  using ElementAccumulator = float;
-  using ElementCompute = float;
-  using ThreadblockShape = cutlass::gemm::GemmShape<128, 64, 32>;
-  using WarpShape = cutlass::gemm::GemmShape<64, 32, 32>;
-};
-
-template<>
-struct KernelTraits<cutlass::bfloat16_t> {
-  using ElementAccumulator = float;
-  using ElementCompute = float;
-  using ThreadblockShape = cutlass::gemm::GemmShape<128, 64, 32>;
-  using WarpShape = cutlass::gemm::GemmShape<64, 32, 32>;
-};
-
 template <typename scalar_t>
 std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
     const at::Tensor& x,
@@ -36,7 +16,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
     const at::Tensor& w1,
     const at::Tensor& b1
 ) {
-  using T = KernelTraits<scalar_t>;
+  TORCH_CHECK(x.stride(-1) == 1);
+  TORCH_CHECK(w0.stride(-1) == 1);
+  TORCH_CHECK(w1.stride(-1) == 1);
+
   at::cuda::CUDAGuard device_guard(x.device());
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
@@ -55,8 +38,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
   constexpr bool kSplitKSerial = false;
 
   using ElementOutput = scalar_t;
-  using ElementAccumulator = typename T::ElementAccumulator;
-  using ElementCompute = typename T::ElementCompute;
+  using ElementAccumulator = float;
+  using ElementCompute = float;
   using EpilogueOutputOp01 = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
     128 / cutlass::sizeof_bits<ElementOutput>::value,
@@ -76,8 +59,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
   const ElementCompute alpha1 = ElementCompute(1);
   const ElementCompute beta1 = ElementCompute(1);
 
-  using ThreadblockShape = typename T::ThreadblockShape;
-  using WarpShape = typename T::WarpShape;
+  using ThreadblockShape = cutlass::gemm::GemmShape<128, 64, 32>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 32, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
 
   // Optionally, we might not need intermediate GEMM outputs
