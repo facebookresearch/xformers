@@ -130,7 +130,7 @@ def test_forward_backward(
     inp_model_dtype = torch.float if autocast else dtype
     x = torch.randn(shape[:2], device=device, dtype=inp_model_dtype)
     op = xsw._SwiGLUDecomposedOp
-    op = xsw._SwiGLUFusedOp
+    op = xsw.SwiGLUFusedOp
 
     module = xsw._SwiGLUModule(
         in_features=shape[1], hidden_features=shape[2], pack_weights=pack_weights

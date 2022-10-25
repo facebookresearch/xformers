@@ -29,7 +29,7 @@ SHAPES = [
 
 
 # OP = xsw._SwiGLUDecomposedOp
-OP = xsw._SwiGLUFusedOp
+OP = xsw.SwiGLUFusedOp
 
 
 def product_dict(**kwargs):

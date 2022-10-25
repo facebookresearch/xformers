@@ -135,7 +135,7 @@ class _SwiGLUDecomposedOp(torch.autograd.Function):
         return (dx, dw1, db1, dw2, db2, dw3, db3)
 
 
-class _SwiGLUFusedOp(torch.autograd.Function):
+class SwiGLUFusedOp(torch.autograd.Function):
     NAME = "fused"
 
     @classmethod
