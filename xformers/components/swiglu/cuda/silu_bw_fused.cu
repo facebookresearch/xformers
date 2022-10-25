@@ -69,7 +69,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> silu_bw_fused(
       .build();
 
   AT_DISPATCH_FLOATING_TYPES_AND2(at::ScalarType::Half, at::ScalarType::BFloat16, x2.scalar_type(),
-                                  "silu_bw_fused", [&] {
+                                  "silu_bw_fused", ([&] {
       using acc_t = typename KernelTraits<scalar_t>::AccumulationElement;
       at::native::gpu_kernel_multiple_outputs(
           iter, [=] GPU_LAMBDA (scalar_t x1_, scalar_t x2_, scalar_t dx4_)
@@ -86,7 +86,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> silu_bw_fused(
           x4_
         };
       });
-  });
+  }));
   return std::make_tuple(dx1, dx2, x4);
 }
 } // namespace

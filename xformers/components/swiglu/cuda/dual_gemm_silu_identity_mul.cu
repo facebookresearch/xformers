@@ -115,7 +115,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
   TORCH_CHECK(status == cutlass::Status::kSuccess, "not supported by this kernel");
   status = dual_gemm.initialize(arguments, (uint8_t*)workspace.data_ptr());
   TORCH_CHECK(status == cutlass::Status::kSuccess, "kernel initialize failed");
-  status = dual_gemm();
+  status = dual_gemm(stream);
   TORCH_CHECK(status == cutlass::Status::kSuccess, "kernel run failed");
   return std::make_tuple(d0, d1, d2);
 }
