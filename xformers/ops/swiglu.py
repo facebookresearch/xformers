@@ -33,6 +33,7 @@ class _SwiGLUModule(nn.Module):
             (swiglu_hidden_features + align_as - 1) // align_as * align_as
         )
 
+        self.w12: Optional[nn.Linear]
         if pack_weights:
             self.w12 = nn.Linear(in_features, 2 * swiglu_hidden_features)
         else:
