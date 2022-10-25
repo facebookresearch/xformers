@@ -858,6 +858,8 @@ def test_cuda_streams(
         k,
         kv,
     ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
+    # Needs to be big enough so kernels take some time
+    # as we are trying to do a race-condition here
     q_len = 1024
     kv_len = 1024
     op_device_dtype_B_Mq_Mkv_H_K_Kv = [
