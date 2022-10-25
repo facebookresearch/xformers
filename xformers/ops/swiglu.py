@@ -59,13 +59,13 @@ class _SwiGLUModule(nn.Module):
     def _ordered_params_for_op(self):
         """Used for testing - returns ordered arguments for operators"""
         if self.w12 is not None:
+            w1w2 = self.w12.weight
+            b1b2 = self.w12.bias
             w1, w2 = unbind(
-                self.w12.weight.view(
-                    [2, self.swiglu_hidden_features, self.in_features]
-                ),
+                w1w2.view([2, w1w2.shape[0] // 2, w1w2.shape[1]]),
                 dim=0,
             )
-            b1, b2 = unbind(self.w12.bias.view([2, self.swiglu_hidden_features]), dim=0)
+            b1, b2 = unbind(b1b2.view([2, b1b2.shape[0] // 2]), dim=0)
         else:
             w1, w2 = self.w1.weight, self.w2.weight
             b1, b2 = self.w1.bias, self.w2.bias
