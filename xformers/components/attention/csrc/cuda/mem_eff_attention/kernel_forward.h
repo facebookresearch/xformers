@@ -152,7 +152,7 @@ struct AttentionKernel {
         num_queries = q_next_start - q_start;
         num_keys = k_next_start - k_start;
 
-        if (query_start >= num_queries) {
+        if (num_keys <= 0 || query_start >= num_queries) {
           return false;
         }
       } else {
