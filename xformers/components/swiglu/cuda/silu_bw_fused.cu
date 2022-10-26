@@ -8,6 +8,7 @@
 #include <ATen/native/ReduceOps.h>
 #include <ATen/native/Resize.h>
 #include <ATen/native/cuda/Loops.cuh>
+#include <ATen/AccumulateType.h>
 
 
 namespace {
@@ -24,21 +25,6 @@ def silu_bw_fused(x1, x2, dx4):
     dx1 = (dx3.float() * sigm * (1 + x1.float() * (1 - sigm))).to(x1.dtype)
     return dx1, dx2, x4
 */
-
-template <typename T>
-struct KernelTraits {
-  using AccumulationElement = T;
-};
-
-template <>
-struct KernelTraits<at::Half> {
-  using AccumulationElement = float;
-};
-
-template <>
-struct KernelTraits<at::BFloat16> {
-  using AccumulationElement = float;
-};
 
 std::tuple<at::Tensor, at::Tensor> silu_bw_fused(
     const at::Tensor& x1,
@@ -70,7 +56,7 @@ std::tuple<at::Tensor, at::Tensor> silu_bw_fused(
 
   AT_DISPATCH_FLOATING_TYPES_AND2(at::ScalarType::Half, at::ScalarType::BFloat16, x2.scalar_type(),
                                   "silu_bw_fused", ([&] {
-      using acc_t = typename KernelTraits<scalar_t>::AccumulationElement;
+      using acc_t = typename at::AccumulateType<scalar_t, true>::type;
       at::native::gpu_kernel_multiple_outputs(
           iter, [=] GPU_LAMBDA (scalar_t x1_, scalar_t x2_, scalar_t dx4_)
                -> thrust::tuple<scalar_t, scalar_t, scalar_t> {
