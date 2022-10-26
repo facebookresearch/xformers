@@ -47,6 +47,15 @@ class _SwiGLUModule(nn.Module):
         self.in_features = in_features
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        A baseline forward. Just replace it with the following
+        to use xFormers's kernels
+        ```python
+        return xformers.ops.functional_swiglu(x,
+            *self._ordered_params_for_op(),
+            op=xformers.ops.SwiGLUPackedFusedOp)
+        ```
+        """
         if self.w12 is not None:
             x12 = self.w12(x).view([x.shape[0], 2, self.swiglu_hidden_features])
             x1, x2 = unbind(x12, dim=1)
