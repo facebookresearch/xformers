@@ -346,10 +346,11 @@ def test_cu_seqlen_forward(
     scale = 3
     # Reduce batch size to speedup tests
     batch_size = min(batch_size, 20)
+    q_lens = [r.randint(1, max_q_len) for b in range(batch_size)] + [0, 0, 16]
+    kv_lens = [r.randint(1, max_kv_len) for b in range(batch_size)] + [0, 16, 0]
 
-    for batch_id in range(batch_size):
-        q_len = r.randint(1, max_q_len)
-        kv_len = r.randint(1, max_kv_len)
+    for batch_id in range(len(q_lens)):
+        q_len, kv_len = q_lens[batch_id], kv_lens[batch_id]
 
         all_q.append(
             torch.randn((1, q_len, num_heads, k), device=device, dtype=dtype) * scale

@@ -152,7 +152,7 @@ struct AttentionKernel {
         num_queries = q_next_start - q_start;
         num_keys = k_next_start - k_start;
 
-        if (num_keys <= 0 || query_start >= num_queries) {
+        if (query_start >= num_queries) {
           return false;
         }
       } else {
@@ -799,6 +799,24 @@ struct AttentionKernel {
       } else if (thread_id() < lse_dim) {
         p.logsumexp_ptr[thread_id()] =
             cutlass::platform::numeric_limits<accum_t>::infinity();
+      }
+    }
+
+    // Special case when we have no keys BUT num_queries>0
+    // we still need to fill the output with zeros
+    if (__builtin_expect(p.num_keys <= 0, 0)) {
+      using Epilogue = typename MM1::DefaultEpilogue;
+      using OutputTileIterator = typename MM1::OutputTileIterator;
+      typename OutputTileIterator::Fragment zero;
+      zero.clear();
+      CUTLASS_PRAGMA_UNROLL
+      for (int col = 0; col < p.head_dim_value; col += MM1::Mma::Shape::kN) {
+        auto output_it = createOutputIter(col);
+        CUTLASS_PRAGMA_UNROLL
+        for (int iter = 0; iter < OutputTileIterator::kIterations; ++iter) {
+          output_it.store(zero);
+          ++output_it;
+        }
       }
     }
   }
