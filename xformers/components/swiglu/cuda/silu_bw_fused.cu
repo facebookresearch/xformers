@@ -40,7 +40,7 @@ struct KernelTraits<at::BFloat16> {
   using AccumulationElement = float;
 };
 
-std::tuple<at::Tensor, at::Tensor, at::Tensor> silu_bw_fused(
+std::tuple<at::Tensor, at::Tensor> silu_bw_fused(
     const at::Tensor& x1,
     const at::Tensor& x2,
     const at::Tensor& dx4
@@ -87,7 +87,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> silu_bw_fused(
         };
       });
   }));
-  return std::make_tuple(dx1, dx2, x4);
+  return std::make_tuple(dx1dx2, x4);
 }
 } // namespace
 

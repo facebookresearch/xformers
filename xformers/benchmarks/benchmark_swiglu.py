@@ -13,7 +13,6 @@ from torch.utils import benchmark
 from utils import benchmark_main_helper
 
 import xformers.ops.swiglu as xsw
-from xformers.ops import unbind as xunbind
 
 min_run_time = 0.5
 device = torch.device("cuda")
@@ -30,7 +29,8 @@ SHAPES = [
 
 
 # OP = xsw._SwiGLUDecomposedOp
-OP = xsw.SwiGLUFusedOp
+# OP = xsw.SwiGLUFusedOp
+OP = xsw.SwiGLUPackedFusedOp
 
 
 def product_dict(**kwargs):
@@ -43,7 +43,7 @@ def product_dict(**kwargs):
 CASES = list(
     product_dict(
         shape=SHAPES,
-        dtype=[torch.bfloat16, torch.half, "autocast_half"],
+        dtype=[torch.half, "autocast_half"],
     )
 )
 
@@ -62,7 +62,9 @@ def benchmark_swiglu(shape, dtype):
 
     x = torch.randn(shape[:2], device=device, dtype=inp_dtype)
     module = (
-        xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
+        xsw._SwiGLUModule(
+            in_features=shape[1], hidden_features=shape[2], pack_weights=True
+        )
         .to(device)
         .to(model_dtype)
     )
@@ -107,7 +109,9 @@ def benchmark_swiglu_bw(shape, dtype):
     x = torch.randn(shape[:2], device=device, dtype=inp_dtype)
     x.requires_grad_()
     module = (
-        xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
+        xsw._SwiGLUModule(
+            in_features=shape[1], hidden_features=shape[2], pack_weights=True
+        )
         .to(device)
         .to(model_dtype)
     )
@@ -116,9 +120,6 @@ def benchmark_swiglu_bw(shape, dtype):
     sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]}"
 
     params = module._ordered_params_for_op()
-    w1w2 = torch.cat([params[0], params[2]], dim=0).view([2, *params[0].shape]).detach()
-    w1w2.requires_grad_()
-    params[0], params[2] = xunbind(w1w2, dim=0)
     with cm():
         out = xsw.functional_swiglu(x, *params, op=OP)
     grad = torch.zeros_like(out)

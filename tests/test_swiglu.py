@@ -93,10 +93,12 @@ def generate_test_shapes():
 _test_shapes = list(generate_test_shapes())
 _test_shapes_ids = [str(s) for s in _test_shapes]
 _dtypes = [torch.bfloat16, torch.float16]
+_ops = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
 
 
-@pytest.mark.parametrize("autocast", [True, False])
-@pytest.mark.parametrize("pack_weights", [True, False])
+@pytest.mark.parametrize("autocast", [False, True])
+@pytest.mark.parametrize("pack_weights", [False, True])
+@pytest.mark.parametrize("op", _ops, ids=[getattr(x, "NAME", str(x)) for x in _ops])
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
 @pytest.mark.parametrize("device", _devices)
 @pytest.mark.parametrize(
@@ -107,6 +109,7 @@ _dtypes = [torch.bfloat16, torch.float16]
 def test_forward_backward(
     shape,
     device,
+    op,
     dtype,
     autocast: bool,
     pack_weights: bool,
@@ -131,11 +134,11 @@ def test_forward_backward(
         pytest.skip("Autocast only supported for CUDA+Half")
     if autocast and pack_weights is False:
         pytest.skip("TODO: Autocast only supported with pack_weights=True")
+    if op.PACKED_WEIGHTS and not pack_weights:
+        pytest.skip("OP only supports packed weights")
 
     inp_model_dtype = torch.float if autocast else dtype
     x = torch.randn(shape[:2], device=device, dtype=inp_model_dtype)
-    op = xsw._SwiGLUDecomposedOp
-    op = xsw.SwiGLUFusedOp
 
     module = xsw._SwiGLUModule(
         in_features=shape[1], hidden_features=shape[2], pack_weights=pack_weights
