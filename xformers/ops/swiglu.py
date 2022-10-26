@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .unbind import efficient_stack_or_none, unbind
+from .unbind import efficient_stack_or_none, stack_or_none, unbind
 
 
 class _SwiGLUModule(nn.Module):
@@ -79,7 +79,7 @@ class _SwiGLUModule(nn.Module):
         ]
 
 
-class _SwiGLUDecomposedOp(torch.autograd.Function):
+class _SwiGLUDecomposedFunc(torch.autograd.Function):
     """
     This is just an example implementation with all
     operations explicited. This implementation is worse
@@ -135,8 +135,8 @@ class _SwiGLUDecomposedOp(torch.autograd.Function):
         return (dx, dw1, db1, dw2, db2, dw3, db3)
 
 
-class SwiGLUFusedOp(torch.autograd.Function):
-    NAME = "fused"
+class _SwiGLUFusedFunc(torch.autograd.Function):
+    NAME = "fused.py"
 
     @classmethod
     @torch.cuda.amp.custom_fwd
@@ -154,15 +154,14 @@ class SwiGLUFusedOp(torch.autograd.Function):
         w1w2 = efficient_stack_or_none([w1, w2], dim=0)
 
         dx4 = dx5 @ w3  # 255us (nn)
-        dx1, dx2, x4 = torch.ops.xformers.silu_bw_fused(x1, x2, dx4)
+        dx1dx2, x4 = torch.ops.xformers.silu_bw_fused(x1, x2, dx4)
+        dx1, dx2 = dx1dx2.unbind(1)
         del x1, x2, dx4
 
         db3 = dx5.sum(0)  # 25us
         dw3 = dx5.transpose(-2, -1) @ x4  # 247us (nt)
         del x4, dx5
         if w1w2 is not None:
-            dx1dx2 = efficient_stack_or_none([dx1, dx2], dim=1)
-            assert dx1dx2 is not None
             assert dx1dx2.is_contiguous()
             assert w1w2.is_contiguous()
             w1w2 = w1w2.view([w1.shape[0] * 2, w1.shape[1]])
@@ -183,6 +182,33 @@ class SwiGLUFusedOp(torch.autograd.Function):
         return (dx, dw1, db1, dw2, db2, dw3, db3)
 
 
+class _ForwardToPythonFunc:
+    def __init__(self, op, packed_weights: bool):
+        self.NAME = op.NAME
+        self.PACKED_WEIGHTS = packed_weights
+        self.op = op
+
+    def __call__(self, *args, **kwargs):
+        return self.op.apply(*args, **kwargs)
+
+
+class _ForwardToCppFunc:
+    def __init__(self, op, packed_weights: bool, name: str):
+        self.NAME = name
+        self.PACKED_WEIGHTS = packed_weights
+        self.op = op
+
+    def __call__(self, *args, **kwargs):
+        return self.op(*args, **kwargs)
+
+
+_SwiGLUDecomposedOp = _ForwardToPythonFunc(_SwiGLUDecomposedFunc, False)
+SwiGLUFusedOp = _ForwardToPythonFunc(_SwiGLUFusedFunc, False)
+SwiGLUPackedFusedOp = _ForwardToCppFunc(
+    torch.ops.xformers.swiglu_packedw, True, "fused.p.cpp"
+)
+
+
 def functional_swiglu(
     x: torch.Tensor,
     w1: torch.Tensor,
@@ -195,7 +221,15 @@ def functional_swiglu(
     op=None
 ) -> torch.Tensor:
     if op is not None:
-        return op.apply(x, w1, b1, w2, b2, w3, b3)
+        if not op.PACKED_WEIGHTS:
+            return op(x, w1, b1, w2, b2, w3, b3)
+        w1w2 = stack_or_none((w1, w2), dim=0)
+        b1b2 = stack_or_none((b1, b2), dim=0)
+        if w1w2 is None:
+            raise NotImplementedError("w1/w2 needs to be properly packed")
+        if b1b2 is None:
+            raise NotImplementedError("b1/b2 needs to be properly packed")
+        return op(x, w1w2, b1b2, w3, b3)
     x1 = F.linear(x, w1, b1)
     x2 = F.linear(x, w2, b2)
     hidden = F.silu(x1) * x2
