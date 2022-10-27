@@ -5,8 +5,8 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
 
-#include "43_dual_gemm/device/dual_gemm.h"
-#include "43_dual_gemm/thread/left_silu_and_mul.h"
+#include <43_dual_gemm/device/dual_gemm.h>
+#include <43_dual_gemm/thread/left_silu_and_mul.h>
 
 namespace {
 template <typename scalar_t>
