@@ -11,24 +11,14 @@ from typing import Any, List, Mapping, Optional, Set, Type, Union
 
 import torch
 
+from .common import get_xformers_operator
+
 try:
     from .. import _C_flashattention  # type: ignore[attr-defined]
 
     has_flashattention = True
 except ImportError:
     has_flashattention = False
-
-
-def _get_xformers_operator(name: str):
-    def no_such_operator(*args, **kwargs):
-        raise RuntimeError(
-            f"No such operator xformers::{name} - did you forget to build xformers with `python setup.py develop`?"
-        )
-
-    try:
-        return getattr(torch.ops.xformers, name)
-    except (RuntimeError, AttributeError):
-        return no_such_operator
 
 
 class AttentionMask:
@@ -187,7 +177,7 @@ class AttentionOpBase(torch.autograd.Function):
 
 
 class MemoryEfficientAttentionOp(AttentionOpBase):
-    FORWARD_OPERATOR = _get_xformers_operator("efficient_attention")
+    FORWARD_OPERATOR = get_xformers_operator("efficient_attention")
     SUPPORTED_DEVICES = {"cuda", "cpu"}
     SUPPORTED_DTYPES = {torch.float}
     SUPPORTED_MAX_K: float = 32
@@ -256,7 +246,7 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
 
 
 class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
-    FORWARD_OPERATOR = _get_xformers_operator("efficient_attention_forward_cutlass")
+    FORWARD_OPERATOR = get_xformers_operator("efficient_attention_forward_cutlass")
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.float, torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = math.inf
