@@ -92,6 +92,7 @@ mem_efficient_attention_backward_cutlass(
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
   at::cuda::CUDAGuard device_guard(query.device());
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -223,7 +224,7 @@ mem_efficient_attention_backward_cutlass(
         checkBinaryArchMatches(), "Something went wrong in the build process");
 #endif
 
-    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
+    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
   };
 
   DISPATCH_KERNEL(
