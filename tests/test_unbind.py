@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 import random
 
 import pytest
@@ -38,6 +43,7 @@ def test_unbind(dim: int, contiguous: bool):
     g = torch.randn_like(loss1)
     loss1.backward(g)
     loss2.backward(g)
+    # type: ignore
     assert torch.allclose(x.grad, x2.grad)
 
 
