@@ -16,7 +16,7 @@ torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 if torch.cuda.is_available():
     _devices = ["cuda"]
-    _is_sm80 = torch.cuda.get_device_capability(_devices[0])[0] >= 0
+    _is_sm80 = torch.cuda.get_device_capability(_devices[0])[0] >= 8
 else:
     _devices = []
     _is_sm80 = False
