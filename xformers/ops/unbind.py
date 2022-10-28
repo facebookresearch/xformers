@@ -99,23 +99,6 @@ class _StackOrNone(torch.autograd.Function):
         return None, *grad.unbind(dim=ctx.dim)
 
 
-class _StackOrNone(torch.autograd.Function):
-    """
-    The inverse of the above. Ensures that gradient flows correctly as well
-    """
-
-    @staticmethod
-    # type: ignore
-    def forward(ctx, dim: int, *tensors: torch.Tensor):
-        ctx.dim = dim
-        return efficient_stack_or_none(tensors, dim=dim)
-
-    @classmethod
-    # type: ignore
-    def backward(cls, ctx, grad: torch.Tensor):
-        return None, *grad.unbind(dim=ctx.dim)
-
-
 def unbind(x: torch.Tensor, dim: int) -> Tuple[torch.Tensor, ...]:
     """
     Does exactly the same as `torch.unbind` for the forward.
