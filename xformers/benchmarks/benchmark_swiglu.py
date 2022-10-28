@@ -43,7 +43,7 @@ def product_dict(**kwargs):
 CASES = list(
     product_dict(
         shape=SHAPES,
-        dtype=[torch.half, "autocast_half"],
+        dtype=[torch.bfloat16, torch.half, "autocast_half"],
     )
 )
 
