@@ -4,12 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass
-from typing import Optional, Sequence, Union
+from typing import Dict, Optional, Sequence, Union
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
+from .common import get_xformers_operator
 from .unbind import stack_or_none, unbind
 
 
@@ -229,6 +230,11 @@ class _ForwardToFunc(SwiGLUOp):
     def __call__(self, *args, **kwargs):
         return self.op(*args, **kwargs)
 
+    def info(self):
+        if self.op.__name__ == "no_such_operator":
+            return "not built"
+        return "available"
+
 
 def _eager_functional_swiglu(
     x: torch.Tensor,
@@ -303,7 +309,7 @@ SwiGLUFusedOp = _ForwardToPythonAutogradFunc(
     _SwiGLUFusedFunc, False, "fused", constraints=[_only_sm80, _only_half_or_autocast]
 )
 SwiGLUPackedFusedOp = _ForwardToFunc(
-    torch.ops.xformers.swiglu_packedw,
+    get_xformers_operator("swiglu_packedw"),
     True,
     "fused.p.cpp",
     constraints=[_only_sm80, _only_half_or_autocast],
@@ -314,6 +320,10 @@ SwiGLUEagerOp = _ForwardToFunc(
     "eager",
     constraints=[],
 )
+
+
+def _info() -> Dict[str, str]:
+    return {op.NAME: op.info() for op in [SwiGLUPackedFusedOp]}
 
 
 def functional_swiglu(
