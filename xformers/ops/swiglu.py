@@ -3,13 +3,14 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, Sequence, Union
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .unbind import efficient_stack_or_none, stack_or_none, unbind
+from .unbind import stack_or_none, unbind
 
 
 class _SwiGLUModule(nn.Module):
@@ -160,7 +161,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
     @torch.cuda.amp.custom_bwd
     def backward(cls, ctx, dx5):
         x, w1, w2, w3, x1, x2 = ctx.saved_tensors
-        w1w2 = efficient_stack_or_none([w1, w2], dim=0)
+        w1w2 = stack_or_none([w1, w2], dim=0)
 
         dx4 = dx5 @ w3  # 255us (nn)
         dx1dx2, x4 = torch.ops.xformers.silu_bw_fused(x1, x2, dx4)
@@ -183,7 +184,9 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
             db1, db2 = torch.unbind(db1db2, dim=0)
         else:
             dx = dx2 @ w2  # 260us (nn)
-            torch.addmm(dx, dx1, w1, beta=1, alpha=1, out=dx)  # dx += dx1 @ w1
+            torch.addmm(
+                dx, dx1, w1.to(dx1.dtype), beta=1, alpha=1, out=dx
+            )  # dx += dx1 @ w1
             dw2 = dx2.transpose(-2, -1) @ x  # 245us (nt)
             db2 = dx2.sum(0)  # 50us
             dw1 = dx1.transpose(-2, -1) @ x  # 245us (nt)
@@ -191,30 +194,125 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
         return (dx, dw1, db1, dw2, db2, dw3, db3)
 
 
-class _ForwardToPythonFunc:
-    def __init__(self, op, packed_weights: bool):
-        self.NAME = op.NAME
+class SwiGLUOp:
+    def __init__(self, op, packed_weights: bool, name: str, constraints):
+        self.NAME = name
         self.PACKED_WEIGHTS = packed_weights
         self.op = op
+        self.constraints = constraints
+
+    def supports(self, op: "SwiGLUOpDispatch") -> bool:
+        if self.PACKED_WEIGHTS and not op.packed_weights:
+            return False
+        return all(c(op) for c in self.constraints)
+
+    def __call__(self, *args: torch.Tensor) -> torch.Tensor:
+        pass
+
+    def __str__(self) -> str:
+        return f"SwiGLUOp:{self.NAME}"
+
+
+class _ForwardToPythonAutogradFunc(SwiGLUOp):
+    def supports(self, op: "SwiGLUOpDispatch") -> bool:
+        # Let's disable autocast in bf16 until this issue is fixed
+        # https://github.com/pytorch/pytorch/issues/87979
+        if op.dtype_autocast_gpu == torch.bfloat16:
+            return False
+        return super().supports(op)
 
     def __call__(self, *args, **kwargs):
         return self.op.apply(*args, **kwargs)
 
 
-class _ForwardToCppFunc:
-    def __init__(self, op, packed_weights: bool, name: str):
-        self.NAME = name
-        self.PACKED_WEIGHTS = packed_weights
-        self.op = op
-
+class _ForwardToFunc(SwiGLUOp):
     def __call__(self, *args, **kwargs):
         return self.op(*args, **kwargs)
 
 
-_SwiGLUDecomposedOp = _ForwardToPythonFunc(_SwiGLUDecomposedFunc, False)
-SwiGLUFusedOp = _ForwardToPythonFunc(_SwiGLUFusedFunc, False)
-SwiGLUPackedFusedOp = _ForwardToCppFunc(
-    torch.ops.xformers.swiglu_packedw, True, "fused.p.cpp"
+def _eager_functional_swiglu(
+    x: torch.Tensor,
+    w1: torch.Tensor,
+    b1: torch.Tensor,
+    w2: torch.Tensor,
+    b2: torch.Tensor,
+    w3: torch.Tensor,
+    b3: torch.Tensor,
+) -> torch.Tensor:
+    x1 = F.linear(x, w1, b1)
+    x2 = F.linear(x, w2, b2)
+    hidden = F.silu(x1) * x2
+    return F.linear(hidden, w3, b3)
+
+
+@dataclass
+class SwiGLUOpDispatch:
+    device: Union[torch.device, str]
+    dtype: torch.dtype
+    dtype_autocast_gpu: Optional[torch.dtype]
+    packed_weights: bool
+
+    @property
+    def op(self) -> SwiGLUOp:
+        priorities: Sequence[SwiGLUOp] = [
+            SwiGLUPackedFusedOp,
+            SwiGLUFusedOp,
+        ]
+        for op in priorities:
+            if op.supports(self):
+                return op
+        return SwiGLUEagerOp
+
+    @staticmethod
+    def from_arguments(
+        x: torch.Tensor,
+        w1: torch.Tensor,
+        b1: torch.Tensor,
+        w2: torch.Tensor,
+        b2: torch.Tensor,
+        w3: torch.Tensor,
+        b3: torch.Tensor,
+    ) -> "SwiGLUOpDispatch":
+        return SwiGLUOpDispatch(
+            device=x.device,
+            dtype=x.dtype,
+            packed_weights=stack_or_none((w1, w2), dim=0) is not None,
+            dtype_autocast_gpu=torch.get_autocast_gpu_dtype()
+            if torch.is_autocast_enabled()
+            else w1.dtype,
+        )
+
+
+def _only_sm80(op: SwiGLUOpDispatch) -> bool:
+    return (
+        str(op.device) == "cuda" and torch.cuda.get_device_capability(op.device)[0] >= 8
+    )
+
+
+def _only_half_or_autocast(op: SwiGLUOpDispatch) -> bool:
+    HALF_DTYPES = [torch.half, torch.bfloat16]
+    return op.dtype in HALF_DTYPES or (
+        op.dtype_autocast_gpu is not None and op.dtype_autocast_gpu in HALF_DTYPES
+    )
+
+
+_SwiGLUDecomposedOp = _ForwardToPythonAutogradFunc(
+    _SwiGLUDecomposedFunc, False, "decomposed", constraints=[]
+)
+SwiGLUFusedOp = _ForwardToPythonAutogradFunc(
+    _SwiGLUFusedFunc, False, "fused", constraints=[_only_sm80, _only_half_or_autocast]
+)
+SwiGLUPackedFusedOp = _ForwardToFunc(
+    torch.ops.xformers.swiglu_packedw,
+    True,
+    "fused.p.cpp",
+    constraints=[_only_sm80, _only_half_or_autocast],
+)
+SwiGLUEagerOp = _ForwardToFunc(
+    _eager_functional_swiglu,
+    False,
+    "eager",
+    constraints=[],
 )
 
 
@@ -227,19 +325,17 @@ def functional_swiglu(
     w3: torch.Tensor,
     b3: torch.Tensor,
     *,
-    op=None
+    op: SwiGLUOp = None,
 ) -> torch.Tensor:
-    if op is not None:
-        if not op.PACKED_WEIGHTS:
-            return op(x, w1, b1, w2, b2, w3, b3)
-        w1w2 = stack_or_none((w1, w2), dim=0)
-        b1b2 = stack_or_none((b1, b2), dim=0)
-        if w1w2 is None:
-            raise NotImplementedError("w1/w2 needs to be properly packed")
-        if b1b2 is None:
-            raise NotImplementedError("b1/b2 needs to be properly packed")
-        return op(x, w1w2, b1b2, w3, b3)
-    x1 = F.linear(x, w1, b1)
-    x2 = F.linear(x, w2, b2)
-    hidden = F.silu(x1) * x2
-    return F.linear(hidden, w3, b3)
+    if op is None:
+        op = SwiGLUOpDispatch.from_arguments(x, w1, b1, w2, b2, w3, b3).op
+
+    if not op.PACKED_WEIGHTS:
+        return op(x, w1, b1, w2, b2, w3, b3)
+    w1w2 = stack_or_none((w1, w2), dim=0)
+    b1b2 = stack_or_none((b1, b2), dim=0)
+    if w1w2 is None:
+        raise NotImplementedError("w1/w2 needs to be properly packed")
+    if b1b2 is None:
+        raise NotImplementedError("b1/b2 needs to be properly packed")
+    return op(x, w1w2, b1b2, w3, b3)

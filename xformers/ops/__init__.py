@@ -16,7 +16,13 @@ from .memory_efficient_attention import (  # noqa: F401
     MemoryEfficientAttentionOp,
     memory_efficient_attention,
 )
-from .swiglu import SwiGLUFusedOp, SwiGLUPackedFusedOp, functional_swiglu  # noqa: F401
+from .swiglu import (  # noqa: F401
+    SwiGLUFusedOp,
+    SwiGLUOp,
+    SwiGLUOpDispatch,
+    SwiGLUPackedFusedOp,
+    functional_swiglu,
+)
 from .unbind import efficient_stack, get_stack_strides, unbind  # noqa: F401
 
 

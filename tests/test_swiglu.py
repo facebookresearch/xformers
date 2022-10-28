@@ -5,7 +5,7 @@
 
 import random
 from contextlib import nullcontext
-from typing import Optional
+from typing import Optional, Sequence
 
 import pytest
 import torch
@@ -99,13 +99,12 @@ def generate_test_shapes():
 _test_shapes = list(generate_test_shapes())
 _test_shapes_ids = [str(s) for s in _test_shapes]
 _dtypes = [torch.bfloat16, torch.float16]
-_ops = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
+_ops: Sequence[xsw.SwiGLUOp] = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
 
 
-@sm80_only
 @pytest.mark.parametrize("autocast", [False, True])
 @pytest.mark.parametrize("pack_weights", [False, True])
-@pytest.mark.parametrize("op", _ops, ids=[getattr(x, "NAME", str(x)) for x in _ops])
+@pytest.mark.parametrize("op", _ops, ids=[x.NAME for x in _ops])
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
 @pytest.mark.parametrize("device", _devices)
 @pytest.mark.parametrize(
@@ -135,14 +134,15 @@ def test_forward_backward(
         torch.bfloat16: 4e-2,
     }
 
-    if device == "cpu" and dtype is not torch.float:
-        pytest.skip("Half not supported on CPU")
-    if autocast and (device == "cpu" or dtype is not torch.half):
-        pytest.skip("Autocast only supported for CUDA+Half")
-    if autocast and pack_weights is False:
-        pytest.skip("TODO: Autocast only supported with pack_weights=True")
-    if op.PACKED_WEIGHTS and not pack_weights:
-        pytest.skip("OP only supports packed weights")
+    if not op.supports(
+        xsw.SwiGLUOpDispatch(
+            device=device,
+            dtype=dtype,
+            dtype_autocast_gpu=dtype if autocast and device == "cuda" else None,
+            packed_weights=pack_weights,
+        )
+    ):
+        pytest.skip("Not supported by operator")
 
     inp_model_dtype = torch.float if autocast else dtype
     x = torch.randn(shape[:2], device=device, dtype=inp_model_dtype)

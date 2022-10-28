@@ -50,7 +50,7 @@ std::tuple<at::Tensor, at::Tensor> silu_bw_fused(
       .add_input(x1)
       .add_input(x2)
       .add_input(dx4)
-      .check_all_same_dtype(true)
+      .check_all_same_dtype(false)
       .promote_inputs_to_common_dtype(false)
       .build();
 
