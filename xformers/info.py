@@ -20,6 +20,8 @@ def get_features_status() -> Dict[str, str]:
     features = {}
     for op in ALL_OPS:
         features[f"memory_efficient_attention.{op.NAME}"] = op.info()
+    for k, v in ops.swiglu._info().items():
+        features[f"swiglu.{k}"] = v
     features["is_triton_available"] = str(_is_triton_available())
     features["is_functorch_available"] = str(_is_functorch_available)
     return features
