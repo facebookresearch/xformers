@@ -43,7 +43,7 @@ def get_stack_strides(
     return tuple(final_stride)
 
 
-def efficient_stack_or_none(
+def _stack_or_none_fw(
     tensors: Union[Tuple[torch.Tensor, ...], List[torch.Tensor]],
     dim: int,
 ) -> Optional[torch.Tensor]:
@@ -55,11 +55,11 @@ def efficient_stack_or_none(
     return None
 
 
-def efficient_stack(
+def _stack_fw(
     tensors: Union[Tuple[torch.Tensor, ...], List[torch.Tensor]],
     dim: int,
 ) -> torch.Tensor:
-    out = efficient_stack_or_none(tensors, dim)
+    out = _stack_or_none_fw(tensors, dim)
     if out is None:
         out = torch.stack(tensors, dim=dim)
     return out
@@ -67,10 +67,7 @@ def efficient_stack(
 
 class _Unbind(torch.autograd.Function):
     """
-    Splits a packed `qkv` tensor into query, key and values.
-    The magic happens in the backward. We want to `torch.stack` the tensors
-    together, but we don't need to if the gradients have already the same storage
-    (and that is something that our attention operators support)
+    See function `unbind`
     """
 
     @staticmethod
@@ -82,7 +79,24 @@ class _Unbind(torch.autograd.Function):
     @classmethod
     # type: ignore
     def backward(cls, ctx, *tensors: torch.Tensor):
-        return efficient_stack(tensors, ctx.dim), None
+        return _stack_fw(tensors, ctx.dim), None
+
+
+class _StackOrNone(torch.autograd.Function):
+    """
+    See function `stack_or_none`
+    """
+
+    @staticmethod
+    # type: ignore
+    def forward(ctx, dim: int, *tensors: torch.Tensor):
+        ctx.dim = dim
+        return _stack_or_none_fw(tensors, dim=dim)
+
+    @classmethod
+    # type: ignore
+    def backward(cls, ctx, grad: torch.Tensor):
+        return None, *grad.unbind(dim=ctx.dim)
 
 
 class _StackOrNone(torch.autograd.Function):
@@ -103,8 +117,17 @@ class _StackOrNone(torch.autograd.Function):
 
 
 def unbind(x: torch.Tensor, dim: int) -> Tuple[torch.Tensor, ...]:
+    """
+    Does exactly the same as `torch.unbind` for the forward.
+    In backward, avoids a `torch.cat` if the gradients
+    are already multiple views of the same storage
+    """
     return _Unbind.apply(x, dim)
 
 
 def stack_or_none(tensors: Sequence[torch.Tensor], dim: int) -> torch.Tensor:
+    """
+    Does exactly the same as `torch.stack` if the tensors can be concatenated
+    without any memory operation. Otherwise returns None.
+    """
     return _StackOrNone.apply(dim, *tensors)
