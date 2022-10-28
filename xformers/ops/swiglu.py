@@ -327,6 +327,29 @@ def functional_swiglu(
     *,
     op: SwiGLUOp = None,
 ) -> torch.Tensor:
+    """
+    Computes a SwiGLU block given the weights/bias of the 3
+    linear layers.
+    It is recommended to keep `op=None` so the best implementation
+    available for the inputs will be used.
+
+    NOTE: It's better to provide w1/w2 and b1/b2 are packed together
+        to allow for faster implementations
+    """
+
+    if x.ndim != 2:
+        raise ValueError(f"Expected shape for x: [batch, n_input] but got {x.shape}")
+    if w1.ndim != 2 or w1.shape != w2.shape:
+        raise ValueError(f"Invalid shapes for w1: {w1.shape} / w2: {w2.shape}")
+    if b1.ndim != 1 or b1.shape != b2.shape or b1.shape[0] != w1.shape[0]:
+        raise ValueError(f"Invalid shapes for b1: {b1.shape} / b2: {b2.shape}")
+    if (
+        (w3.ndim, b3.ndim) != (2, 1)
+        or w3.shape[1] != w2.shape[0]
+        or b3.shape[0] != w3.shape[0]
+    ):
+        raise ValueError(f"Invalid shapes for w3: {w3.shape} / b3: {b3.shape}")
+
     if op is None:
         op = SwiGLUOpDispatch.from_arguments(x, w1, b1, w2, b2, w3, b3).op
 
