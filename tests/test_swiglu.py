@@ -14,7 +14,13 @@ import xformers.ops.swiglu as xsw
 
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-_devices = ["cuda"] if torch.cuda.is_available() else []
+if torch.cuda.is_available():
+    _devices = ["cuda"]
+    _is_sm80 = torch.cuda.get_device_capability(_devices[0])[0] >= 0
+else:
+    _devices = []
+    _is_sm80 = False
+sm80_only = pytest.mark.skipif(not _is_sm80, reason="requires sm80")
 
 
 def assert_allclose(
@@ -96,6 +102,7 @@ _dtypes = [torch.bfloat16, torch.float16]
 _ops = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
 
 
+@sm80_only
 @pytest.mark.parametrize("autocast", [False, True])
 @pytest.mark.parametrize("pack_weights", [False, True])
 @pytest.mark.parametrize("op", _ops, ids=[getattr(x, "NAME", str(x)) for x in _ops])
