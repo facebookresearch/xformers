@@ -23,7 +23,7 @@ from .swiglu import (  # noqa: F401
     SwiGLUPackedFusedOp,
     functional_swiglu,
 )
-from .unbind import efficient_stack, get_stack_strides, unbind  # noqa: F401
+from .unbind import get_stack_strides, unbind, stack_or_none  # noqa: F401
 
 
 def masked_matmul(a, b, mask=None):
