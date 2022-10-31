@@ -208,14 +208,14 @@ def create_tensors(
     torch.manual_seed(B * q_len + kv_len * k + kv)
     scale = 3
     if fmt == "BMK":
-        query = torch.randn((B * h, q_len, k), device=device, dtype=dtype) * scale
-        key = torch.randn((B * h, kv_len, k), device=device, dtype=dtype) * scale
-        value = torch.randn((B * h, kv_len, kv), device=device, dtype=dtype) * scale
+        query = torch.randn((B * h, q_len, k), device=device, dtype=dtype).mul_(scale)
+        key = torch.randn((B * h, kv_len, k), device=device, dtype=dtype).mul_(scale)
+        value = torch.randn((B * h, kv_len, kv), device=device, dtype=dtype).mul_(scale)
     else:
         assert fmt == "BMHK"
-        query = torch.randn((B, q_len, h, k), device=device, dtype=dtype) * scale
-        key = torch.randn((B, kv_len, h, k), device=device, dtype=dtype) * scale
-        value = torch.randn((B, kv_len, h, kv), device=device, dtype=dtype) * scale
+        query = torch.randn((B, q_len, h, k), device=device, dtype=dtype).mul_(scale)
+        key = torch.randn((B, kv_len, h, k), device=device, dtype=dtype).mul_(scale)
+        value = torch.randn((B, kv_len, h, kv), device=device, dtype=dtype).mul_(scale)
 
     attn_bias = None
     if attn_bias_type is not None:
