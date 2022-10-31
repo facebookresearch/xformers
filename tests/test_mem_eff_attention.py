@@ -115,9 +115,11 @@ def assert_allclose(
     assert out.shape == ref.shape
     flatten_diff = ((out - ref).abs() - atol - ref.abs() * rtol).flatten()
     max_pos = flatten_diff.argmax()
+    max_diff = flatten_diff[max_pos]
+    del flatten_diff
     assert torch.allclose(out, ref, rtol=rtol, atol=atol), (
         f"{msg}: "
-        f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} (diff={flatten_diff[max_pos]} > 0)"
+        f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} (diff={max_diff} > 0)"
         f"/ atol={atol}, rtol={rtol}"
     )
 
