@@ -3,14 +3,12 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-import torch
 import triton
 import triton.language as tl
 
 # CREDITS: Inspired by the Triton tutorial on fused attention.
 
 
-@triton.heuristics(values={"is_bf16": lambda args: args["Q"].dtype == torch.bfloat16})
 @triton.jit
 def _fwd_kernel(
     Q,
@@ -22,20 +20,20 @@ def _fwd_kernel(
     L,
     M,  # NOTE: TMP is a scratchpad buffer to workaround a compiler bug
     Out,
-    stride_qz,
-    stride_qh,
+    stride_q_batch,
+    stride_q_heads,
     stride_qm,
     stride_qk,
-    stride_kz,
-    stride_kh,
+    stride_k_batch,
+    stride_k_heads,
     stride_kn,
     stride_kk,
-    stride_vz,
-    stride_vh,
+    stride_v_batch,
+    stride_v_heads,
     stride_vk,
     stride_vn,
-    stride_oz,
-    stride_oh,
+    stride_o_batch,
+    stride_o_heads,
     stride_om,
     stride_on,
     Z,
@@ -45,30 +43,37 @@ def _fwd_kernel(
     BLOCK_M: tl.constexpr,
     BLOCK_DMODEL: tl.constexpr,
     BLOCK_N: tl.constexpr,
-    is_bf16: tl.constexpr,
 ):
 
     start_m = tl.program_id(0)
-    off_hz = tl.program_id(1)
+    off_hb = tl.program_id(1)
     # initialize offsets
     offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
     offs_n = tl.arange(0, BLOCK_N)
     offs_d = tl.arange(0, BLOCK_DMODEL)
+
     off_q = (
-        off_hz * stride_qh + offs_m[:, None] * stride_qm + offs_d[None, :] * stride_qk
+        off_hb * stride_q_heads
+        + offs_m[:, None] * stride_qm
+        + offs_d[None, :] * stride_qk
     )
+    # TODO: use k and v strides
     off_k = (
-        off_hz * stride_qh + offs_n[:, None] * stride_kn + offs_d[None, :] * stride_kk
+        off_hb * stride_k_heads
+        + offs_n[:, None] * stride_kn
+        + offs_d[None, :] * stride_kk
     )
     off_v = (
-        off_hz * stride_qh + offs_n[:, None] * stride_qm + offs_d[None, :] * stride_qk
+        off_hb * stride_v_heads
+        + offs_n[:, None] * stride_qm
+        + offs_d[None, :] * stride_qk
     )
     # Initialize pointers to Q, K, V
     q_ptrs = Q + off_q
     k_ptrs = K + off_k
     v_ptrs = V + off_v
     # initialize pointer to m and l
-    t_ptrs = TMP + off_hz * N_CTX + offs_m
+    t_ptrs = TMP + off_hb * N_CTX + offs_m
     m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float("inf")
     l_i = tl.zeros([BLOCK_M], dtype=tl.float32)
     acc = tl.zeros([BLOCK_M, BLOCK_DMODEL], dtype=tl.float32)
@@ -110,10 +115,7 @@ def _fwd_kernel(
         acc = acc * acc_scale[:, None]
         # update acc
         v = tl.load(v_ptrs + start_n * stride_vk)
-        if is_bf16:
-            p = p.to(tl.bfloat16)
-        else:
-            p = p.to(tl.float16)
+        p = p.to(v.dtype)
         acc += tl.dot(p, v)
         # update m_i and l_i
         l_i = l_i_new
@@ -122,14 +124,16 @@ def _fwd_kernel(
     start_m = tl.program_id(0)
     offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
     # write back l and m
-    l_ptrs = L + off_hz * N_CTX + offs_m
-    m_ptrs = M + off_hz * N_CTX + offs_m
+    l_ptrs = L + off_hb * N_CTX + offs_m
+    m_ptrs = M + off_hb * N_CTX + offs_m
     tl.store(l_ptrs, l_i)
     tl.store(m_ptrs, m_i)
     # initialize pointers to output
     offs_n = tl.arange(0, BLOCK_DMODEL)
     off_o = (
-        off_hz * stride_oh + offs_m[:, None] * stride_om + offs_n[None, :] * stride_on
+        off_hb * stride_o_heads
+        + offs_m[:, None] * stride_om
+        + offs_n[None, :] * stride_on
     )
     out_ptrs = Out + off_o
     tl.store(out_ptrs, acc)
@@ -159,7 +163,6 @@ def _bwd_preprocess(
     tl.store(Delta + off_m, delta)
 
 
-@triton.heuristics(values={"is_bf16": lambda args: args["Out"].dtype == torch.bfloat16})
 @triton.jit
 def _bwd_kernel(
     Q,
@@ -174,16 +177,16 @@ def _bwd_kernel(
     L,
     M,
     D,
-    stride_qz,
-    stride_qh,
+    stride_q_batch,
+    stride_q_heads,
     stride_qm,
     stride_qk,
-    stride_kz,
-    stride_kh,
+    stride_k_batch,
+    stride_k_heads,
     stride_kn,
     stride_kk,
-    stride_vz,
-    stride_vh,
+    stride_v_batch,
+    stride_v_heads,
     stride_vk,
     stride_vn,
     Z,
@@ -194,19 +197,18 @@ def _bwd_kernel(
     BLOCK_DMODEL: tl.constexpr,
     BLOCK_N: tl.constexpr,
     is_causal: tl.constexpr,
-    is_bf16: tl.constexpr,
 ):
-    off_hz = tl.program_id(0)
-    off_z = off_hz // H
-    off_h = off_hz % H
+    off_hb = tl.program_id(0)
+    off_z = off_hb // H
+    off_h = off_hb % H
     # offset pointers for batch/head
-    Q += off_z * stride_qz + off_h * stride_qh
-    K += off_z * stride_qz + off_h * stride_qh
-    V += off_z * stride_qz + off_h * stride_qh
-    DO += off_z * stride_qz + off_h * stride_qh
-    DQ += off_z * stride_qz + off_h * stride_qh
-    DK += off_z * stride_qz + off_h * stride_qh
-    DV += off_z * stride_qz + off_h * stride_qh
+    Q += off_z * stride_q_batch + off_h * stride_q_heads
+    K += off_z * stride_q_batch + off_h * stride_q_heads
+    V += off_z * stride_q_batch + off_h * stride_q_heads
+    DO += off_z * stride_q_batch + off_h * stride_q_heads
+    DQ += off_z * stride_q_batch + off_h * stride_q_heads
+    DK += off_z * stride_q_batch + off_h * stride_q_heads
+    DV += off_z * stride_q_batch + off_h * stride_q_heads
     for start_n in range(0, num_block):
         lo = start_n * BLOCK_M if is_causal else 0
         # initialize row/col offsets
@@ -221,8 +223,8 @@ def _bwd_kernel(
         do_ptrs = DO + (offs_qm[:, None] * stride_qm + offs_k[None, :] * stride_qk)
         dq_ptrs = DQ + (offs_qm[:, None] * stride_qm + offs_k[None, :] * stride_qk)
         # pointer to row-wise quantities in value-like data
-        D_ptrs = D + off_hz * N_CTX
-        m_ptrs = M + off_hz * N_CTX
+        D_ptrs = D + off_hb * N_CTX
+        m_ptrs = M + off_hb * N_CTX
         # initialize dv amd dk
         dv = tl.zeros([BLOCK_M, BLOCK_DMODEL], dtype=tl.float32)
         dk = tl.zeros([BLOCK_M, BLOCK_DMODEL], dtype=tl.float32)
@@ -245,27 +247,20 @@ def _bwd_kernel(
             p = tl.exp(qk * sm_scale - m[:, None])
             # compute dv
             do = tl.load(do_ptrs)
-            if is_bf16:
-                dv += tl.dot(p.to(tl.bfloat16), do, trans_a=True)
-            else:
-                dv += tl.dot(p.to(tl.float16), do, trans_a=True)
+            dv += tl.dot(p.to(do.dtype), do, trans_a=True)
             # compute dp = dot(v, do)
             Di = tl.load(D_ptrs + offs_m_curr)
             dp = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32) - Di[:, None]
             dp += tl.dot(do, v, trans_b=True)
             # compute ds = p * (dp - delta[:, None])
-            ds = p * dp * sm_scale
+            # Converting ds to q.dtype here reduces register pressure and makes it much faster
+            # for BLOCK_HEADDIM=128
+            ds = (p * dp * sm_scale).to(q.dtype)
             # compute dk = dot(ds.T, q)
-            if is_bf16:
-                dk += tl.dot(ds.to(tl.bfloat16), q, trans_a=True)
-            else:
-                dk += tl.dot(ds.to(tl.float16), q, trans_a=True)
+            dk += tl.dot(ds, q, trans_a=True)
             # # compute dq
             dq = tl.load(dq_ptrs, eviction_policy="evict_last")
-            if is_bf16:
-                dq += tl.dot(ds.to(tl.bfloat16), k)
-            else:
-                dq += tl.dot(ds.to(tl.float16), k)
+            dq += tl.dot(ds, k)
             tl.store(dq_ptrs, dq, eviction_policy="evict_last")
             # # increment pointers
             dq_ptrs += BLOCK_M * stride_qm
