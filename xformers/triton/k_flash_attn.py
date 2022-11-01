@@ -35,11 +35,11 @@ def _fwd_kernel(
     stride_o_batch,
     stride_o_heads,
     stride_om,
-    stride_on,
-    Z,
+    stride_od,
+    B,
     H,
-    N_CTX,
-    num_block,
+    seqlen_q,
+    seqlen_k,
     BLOCK_M: tl.constexpr,
     BLOCK_DMODEL: tl.constexpr,
     BLOCK_N: tl.constexpr,
@@ -52,41 +52,52 @@ def _fwd_kernel(
     offs_n = tl.arange(0, BLOCK_N)
     offs_d = tl.arange(0, BLOCK_DMODEL)
 
+    current_batch_idx = off_hb // H
+    current_head_idx = off_hb % H
+
+    # Load current q block
     off_q = (
-        off_hb * stride_q_heads
+        current_batch_idx * stride_q_batch
+        + current_head_idx * stride_q_heads
         + offs_m[:, None] * stride_qm
         + offs_d[None, :] * stride_qk
     )
-    # TODO: use k and v strides
+    # Load first k block
     off_k = (
-        off_hb * stride_k_heads
+        current_batch_idx * stride_k_batch
+        + current_head_idx * stride_k_heads
         + offs_n[:, None] * stride_kn
         + offs_d[None, :] * stride_kk
     )
+    # Load first v block
     off_v = (
-        off_hb * stride_v_heads
-        + offs_n[:, None] * stride_qm
-        + offs_d[None, :] * stride_qk
+        current_batch_idx * stride_v_batch
+        + current_head_idx * stride_v_heads
+        + offs_n[:, None] * stride_qm  # stride_vk
+        + offs_d[None, :] * stride_qk  # stride_vn
     )
     # Initialize pointers to Q, K, V
     q_ptrs = Q + off_q
     k_ptrs = K + off_k
     v_ptrs = V + off_v
     # initialize pointer to m and l
-    t_ptrs = TMP + off_hb * N_CTX + offs_m
+    t_ptrs = TMP + off_hb * seqlen_q + offs_m
+    # keeps track of maxs per row
     m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float("inf")
+    # keeps track of denominator per row
     l_i = tl.zeros([BLOCK_M], dtype=tl.float32)
+    # keeps track of output, block of full rows
     acc = tl.zeros([BLOCK_M, BLOCK_DMODEL], dtype=tl.float32)
     # load q: it will stay in SRAM throughout
     q = tl.load(q_ptrs)
     # loop over k, v and update accumulator
+    end_n = seqlen_k
     if is_causal:
-        end = start_m + 1
-    else:
-        end = num_block
-    for start_n in range(0, end * BLOCK_M, BLOCK_N):
+        end_n = tl.minimum((start_m + 1) * BLOCK_M, seqlen_k)
+    for start_n in range(0, end_n, BLOCK_N):
         start_n = tl.multiple_of(start_n, BLOCK_N)
         # -- compute qk ----
+        # load current k block
         k = tl.load(k_ptrs + start_n * stride_kn)
         qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
         qk += tl.dot(q, k, trans_b=True)
@@ -114,6 +125,7 @@ def _fwd_kernel(
         acc_scale = tl.load(t_ptrs)  # BUG: have to store and immediately load
         acc = acc * acc_scale[:, None]
         # update acc
+        # load current v block
         v = tl.load(v_ptrs + start_n * stride_vk)
         p = p.to(v.dtype)
         acc += tl.dot(p, v)
@@ -123,17 +135,17 @@ def _fwd_kernel(
     # rematerialize offsets to save registers
     start_m = tl.program_id(0)
     offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
-    # write back l and m
-    l_ptrs = L + off_hb * N_CTX + offs_m
-    m_ptrs = M + off_hb * N_CTX + offs_m
+    # write back l and m, needed for bwd
+    l_ptrs = L + off_hb * seqlen_q + offs_m
+    m_ptrs = M + off_hb * seqlen_q + offs_m
     tl.store(l_ptrs, l_i)
     tl.store(m_ptrs, m_i)
     # initialize pointers to output
-    offs_n = tl.arange(0, BLOCK_DMODEL)
     off_o = (
-        off_hb * stride_o_heads
+        current_batch_idx * stride_o_batch
+        + current_head_idx * stride_o_heads
         + offs_m[:, None] * stride_om
-        + offs_n[None, :] * stride_on
+        + offs_d[None, :] * stride_od
     )
     out_ptrs = Out + off_o
     tl.store(out_ptrs, acc)
@@ -189,9 +201,9 @@ def _bwd_kernel(
     stride_v_heads,
     stride_vk,
     stride_vn,
-    Z,
+    B,
     H,
-    N_CTX,
+    seqlen_q,
     num_block,
     BLOCK_M: tl.constexpr,
     BLOCK_DMODEL: tl.constexpr,
@@ -223,8 +235,8 @@ def _bwd_kernel(
         do_ptrs = DO + (offs_qm[:, None] * stride_qm + offs_k[None, :] * stride_qk)
         dq_ptrs = DQ + (offs_qm[:, None] * stride_qm + offs_k[None, :] * stride_qk)
         # pointer to row-wise quantities in value-like data
-        D_ptrs = D + off_hb * N_CTX
-        m_ptrs = M + off_hb * N_CTX
+        D_ptrs = D + off_hb * seqlen_q
+        m_ptrs = M + off_hb * seqlen_q
         # initialize dv amd dk
         dv = tl.zeros([BLOCK_M, BLOCK_DMODEL], dtype=tl.float32)
         dk = tl.zeros([BLOCK_M, BLOCK_DMODEL], dtype=tl.float32)

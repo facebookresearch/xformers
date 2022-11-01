@@ -15,11 +15,12 @@ class _flash_attention(torch.autograd.Function):
         ctx, q, k, v, sm_scale, causal: bool = False, no_grad: bool = False
     ):
         BLOCK = 128
-        # shape constraints
+        # shape constraints for head_dim
         Lq, Lk, Lv = q.shape[-1], k.shape[-1], v.shape[-1]
         assert Lq == Lk and Lk == Lv
         assert Lk in {16, 32, 64, 128}
         o = torch.empty_like(q)
+        # [sequence length/block size, B*H]
         grid = (triton.cdiv(q.shape[2], BLOCK), q.shape[0] * q.shape[1])
         tmp = torch.empty(
             (q.shape[0] * q.shape[1], q.shape[2]), device=q.device, dtype=torch.float32
@@ -58,10 +59,10 @@ class _flash_attention(torch.autograd.Function):
             o.stride(1),
             o.stride(2),
             o.stride(3),
-            q.shape[0],
-            q.shape[1],
-            q.shape[2],
-            grid[0],
+            B=q.shape[0],
+            H=q.shape[1],
+            seqlen_q=q.shape[2],
+            seqlen_k=q.shape[2],
             BLOCK_M=BLOCK,
             BLOCK_N=BLOCK,
             BLOCK_DMODEL=Lk,
