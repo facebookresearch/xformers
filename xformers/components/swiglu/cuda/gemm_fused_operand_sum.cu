@@ -2,17 +2,17 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/ScalarOps.h>
 #include <c10/cuda/CUDAGuard.h>
+#include <ATen/autocast_mode.h>
 #include <torch/library.h>
 
 #include "cutlass/cutlass.h"
-#include "cutlass/gemm/device/gemm_universal_adapter.h"
+#include "cutlass/gemm/device/gemm_with_k_reduction.h"
 #include "cutlass/gemm/kernel/default_gemm_with_k_reduction.h"
 #include "cutlass/reduction/device/reduce_split_k.h"
 #include "cutlass/reduction/kernel/reduce_split_k.h"
 #include "cutlass/reduction/thread/reduction_operators.h"
 #include "cutlass/matrix_coord.h"
 
-#define WORKAROUND_CUTLASS_BUG
 
 namespace {
 template <typename scalar_t>
@@ -25,12 +25,8 @@ void gemm_fused_operand_sum_(
   at::cuda::CUDAGuard device_guard(a.device());
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-  int64_t M = a.size(0);
-  int64_t N = b.size(0);
-  int64_t K = a.size(1);
-
   // templati-ze the cutlass kernel
-  cutlass::gemm::GemmCoord problem_size(M, N, K);
+  cutlass::gemm::GemmCoord problem_size(a.size(0), b.size(1), a.size(1));
   using ElementAccumulator = float;                  // Data type of accumulator
   using ElementComputeEpilogue = ElementAccumulator; // Data type of epilogue computation
   using ElementInputA = scalar_t;
@@ -69,11 +65,13 @@ void gemm_fused_operand_sum_(
   constexpr int NumStages = 4;
 
   // Reduce A or B operand along the K dimension
-#ifdef WORKAROUND_CUTLASS_BUG
-  constexpr bool ReduceKForA = false;
-#else
   constexpr bool ReduceKForA = true;
-#endif
+
+  // Alignment of A operand
+  constexpr int AlignmentA = 8;
+
+  // Alignment of B operand
+  constexpr int AlignmentB = 8;
 
   // This code section describes the epilogue part of the kernel, we use default value
   using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
@@ -82,12 +80,11 @@ void gemm_fused_operand_sum_(
                                                           // memory access. This becomes the vector width of
                                                           // math instructions in the epilogue too.
       ElementAccumulator,                                   // Data type of accumulator
-      ElementComputeEpilogue,
-      cutlass::epilogue::thread::ScaleType::NoBetaScaling>;
+      ElementComputeEpilogue>;
 
-  using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmWithKReduction<
-  ElementInputA, LayoutInputA, cutlass::ComplexTransform::kNone, 8,
-  ElementInputB, LayoutInputB, cutlass::ComplexTransform::kNone, 8,
+  using Gemm = typename cutlass::gemm::device::GemmWithKReduction<
+  ElementInputA, LayoutInputA,
+  ElementInputB, LayoutInputB,
   ElementOutput, LayoutOutput,
   ElementAccumulator,
   MMAOp,
@@ -99,13 +96,15 @@ void gemm_fused_operand_sum_(
   EpilogueOp,
   SwizzleThreadBlock,
   NumStages,
-  cutlass::arch::OpMultiplyAdd
-  >::GemmKernel;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  AlignmentA,
+  AlignmentB,
+  cutlass::arch::OpMultiplyAdd,
+  cutlass::ComplexTransform::kNone,
+  cutlass::ComplexTransform::kNone
+  >;
 
   // Below is the reduction kernel used in the case of parallel split-k
-  using ReduceGemmSplitKShape = cutlass::MatrixShape<4, 64>;;
+  using ReduceGemmSplitKShape = cutlass::MatrixShape<4, 64>;
 
   using ReduceOp = cutlass::reduction::thread::ReduceAdd<
       ElementAccumulator,
@@ -131,7 +130,7 @@ void gemm_fused_operand_sum_(
                                                           // math instructions in the epilogue too.
       ElementAccumulator,                                   // Data type of accumulator
       ElementComputeEpilogue,
-      cutlass::epilogue::thread::ScaleType::NoBetaScaling>;
+      cutlass::epilogue::thread::ScaleType::Nothing>;
 
   using ReduceVectorSplitKKernel = cutlass::reduction::kernel::ReduceSplitK<
       ReduceVectorSplitKShape,
@@ -143,11 +142,8 @@ void gemm_fused_operand_sum_(
   auto alpha = ElementComputeEpilogue(1);
   auto beta = ElementComputeEpilogue(0);
 
-  using RefA = cutlass::TensorRef<ElementInputA, LayoutInputA>;
-  using RefB = cutlass::TensorRef<ElementInputB, LayoutInputB>;
-  using RefC = cutlass::TensorRef<ElementOutput, LayoutOutput>;
   int reduce_vector_length = ReduceKForA ? problem_size.m() : problem_size.n();
-  int split_k_slices = 2;
+  int split_k_slices = 1;
   typename Gemm::Arguments arguments{
     cutlass::gemm::GemmUniversalMode::kGemm,
     problem_size,
@@ -192,16 +188,41 @@ std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum(
   TORCH_CHECK(a.dim() == 2);
   TORCH_CHECK(b.dim() == 2);
   TORCH_CHECK(out_mm.dim() == 2);
+  TORCH_CHECK(out_mm.size(0) == a.size(0));
+  TORCH_CHECK(out_mm.size(1) == b.size(1));
+  TORCH_CHECK(out_sum.dim() == 1);
 
   #define FWD_PARAMS a,b,out_mm,out_sum
 
   if (a.scalar_type() == at::ScalarType::Half) {
+    TORCH_CHECK(b.scalar_type() == at::ScalarType::Half);
+    TORCH_CHECK(out_mm.scalar_type() == at::ScalarType::Half);
+    TORCH_CHECK(out_sum.scalar_type() == at::ScalarType::Half);
     gemm_fused_operand_sum_<cutlass::half_t>(FWD_PARAMS);
   } else {
     TORCH_CHECK(a.scalar_type() == at::ScalarType::BFloat16, "Only supports bf16/f16");
+    TORCH_CHECK(b.scalar_type() == at::ScalarType::BFloat16);
+    TORCH_CHECK(out_mm.scalar_type() == at::ScalarType::BFloat16);
+    TORCH_CHECK(out_sum.scalar_type() == at::ScalarType::BFloat16);
     gemm_fused_operand_sum_<cutlass::bfloat16_t>(FWD_PARAMS);
   }
   return std::make_tuple(out_mm, out_sum);
+}
+
+std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum_autocast(
+    const at::Tensor& a,
+    const at::Tensor& b,
+    at::Tensor& out_mm,
+    at::Tensor& out_sum
+) {
+  c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
+  auto exec_type = at::autocast::get_autocast_gpu_dtype();
+  return gemm_fused_operand_sum(
+    at::autocast::cached_cast(exec_type, a),
+    at::autocast::cached_cast(exec_type, b),
+    out_mm,
+    out_sum
+  );
 }
 } // namespace
 
@@ -209,4 +230,10 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::gemm_fused_operand_sum"),
       TORCH_FN(gemm_fused_operand_sum));
+}
+
+TORCH_LIBRARY_IMPL(xformers, Autocast, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::gemm_fused_operand_sum"),
+      TORCH_FN(gemm_fused_operand_sum_autocast));
 }

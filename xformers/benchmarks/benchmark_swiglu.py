@@ -7,6 +7,7 @@
 import itertools
 from contextlib import nullcontext
 from functools import partial
+from typing import Any
 
 import torch
 from torch.utils import benchmark
@@ -44,6 +45,7 @@ CASES = list(
     product_dict(
         shape=SHAPES,
         dtype=[torch.bfloat16, torch.half, "autocast_half"],
+        bias=[True, False],
     )
 )
 
@@ -54,7 +56,7 @@ DTYPE2STR = {
 }
 
 
-def benchmark_swiglu(shape, dtype):
+def benchmark_swiglu(shape, dtype, bias: bool):
     if dtype == "autocast_half":
         inp_dtype, model_dtype, autocast = torch.float, torch.float, True
     else:
@@ -63,14 +65,15 @@ def benchmark_swiglu(shape, dtype):
     x = torch.randn(shape[:2], device=device, dtype=inp_dtype)
     module = (
         xsw._SwiGLUModule(
-            in_features=shape[1], hidden_features=shape[2], pack_weights=True
+            in_features=shape[1], hidden_features=shape[2], pack_weights=True, bias=bias
         )
         .to(device)
         .to(model_dtype)
     )
 
     dtype_str = DTYPE2STR.get(dtype, dtype)
-    sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]}"
+    bstr = "bias" if bias else "nobi"
+    sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]} {bstr}"
 
     params = module._ordered_params_for_op()
 
@@ -98,10 +101,10 @@ def benchmark_swiglu(shape, dtype):
     )
 
 
-def benchmark_swiglu_bw(shape, dtype):
+def benchmark_swiglu_bw(shape, dtype, bias: bool):
     if dtype == "autocast_half":
         inp_dtype, model_dtype = torch.float, torch.float
-        cm = partial(torch.cuda.amp.autocast, enabled=True, dtype=torch.float16)
+        cm: Any = partial(torch.cuda.amp.autocast, enabled=True, dtype=torch.float16)
     else:
         inp_dtype, model_dtype = dtype, dtype
         cm = nullcontext
@@ -110,14 +113,15 @@ def benchmark_swiglu_bw(shape, dtype):
     x.requires_grad_()
     module = (
         xsw._SwiGLUModule(
-            in_features=shape[1], hidden_features=shape[2], pack_weights=True
+            in_features=shape[1], hidden_features=shape[2], pack_weights=True, bias=bias
         )
         .to(device)
         .to(model_dtype)
     )
 
     dtype_str = DTYPE2STR.get(dtype, dtype)
-    sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]}"
+    bstr = "bias" if bias else "nobi"
+    sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]} {bstr}"
 
     params = module._ordered_params_for_op()
     with cm():
