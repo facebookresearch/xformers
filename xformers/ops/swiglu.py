@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Sequence, Union
+from typing import Dict, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -158,6 +158,15 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
         ctx.save_for_backward(x, w1, w2, w3, x1, x2)
         return x5
 
+    @staticmethod
+    def _linear_bw(
+        dy: torch.Tensor, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        db = torch.empty([dy.shape[1]], dtype=dy.dtype, device=dy.device)
+        dw = torch.empty([dy.shape[1], x.shape[1]], dtype=dy.dtype, device=dy.device)
+        torch.ops.xformers.gemm_fused_operand_sum(dy.transpose(-2, -1), x, dw, db)
+        return dw, db
+
     @classmethod
     @torch.cuda.amp.custom_bwd
     def backward(cls, ctx, dx5):
@@ -169,8 +178,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
         dx1, dx2 = dx1dx2.unbind(1)
         del x1, x2, dx4
 
-        db3 = dx5.sum(0)  # 25us
-        dw3 = dx5.transpose(-2, -1) @ x4  # 247us (nt)
+        dw3, db3 = cls._linear_bw(dx5, x4)
         del x4, dx5
         if w1w2 is not None:
             assert dx1dx2.is_contiguous()
@@ -180,7 +188,10 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
 
             # backward of linear1 + linear2 - packed
             dw1dw2 = dx1dx2.view([dx1.shape[0], 2 * dx1.shape[1]]).transpose(-2, -1) @ x
-            db1db2 = dx1dx2.sum(0).view([2, dx1.shape[1]])
+            dw1dw2, db1db2 = cls._linear_bw(
+                dx1dx2.view([dx1.shape[0], 2 * dx1.shape[1]]), x
+            )
+            db1db2 = db1db2.view([2, dx1.shape[1]])
             dw1, dw2 = dw1dw2.view([2, *w1.shape]).unbind(0)
             db1, db2 = torch.unbind(db1db2, dim=0)
         else:
@@ -188,10 +199,8 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
             torch.addmm(
                 dx, dx1, w1.to(dx1.dtype), beta=1, alpha=1, out=dx
             )  # dx += dx1 @ w1
-            dw2 = dx2.transpose(-2, -1) @ x  # 245us (nt)
-            db2 = dx2.sum(0)  # 50us
-            dw1 = dx1.transpose(-2, -1) @ x  # 245us (nt)
-            db1 = dx1.sum(0)  # 50us
+            dw2, db2 = cls._linear_bw(dx2, x)
+            dw1, db1 = cls._linear_bw(dx1, x)
         return (dx, dw1, db1, dw2, db2, dw3, db3)
 
 
