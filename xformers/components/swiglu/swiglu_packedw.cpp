@@ -9,9 +9,9 @@ namespace {
 std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul(
     const at::Tensor& x,
     const at::Tensor& w0,
-    const at::Tensor& b0,
+    const c10::optional<at::Tensor>& b0,
     const at::Tensor& w1,
-    const at::Tensor& b1
+    const c10::optional<at::Tensor>& b1
 ) {
   static auto op = c10::Dispatcher::singleton()
     .findSchemaOrThrow("xformers::dual_gemm_silu_identity_mul", "")
@@ -72,17 +72,22 @@ std::string shapeToStr(c10::IntArrayRef shape) {
 class SwiGLUPackedWeights : public torch::autograd::Function<SwiGLUPackedWeights> {
  public:
   static at::Tensor forward(
-      torch::autograd::AutogradContext *ctx, const at::Tensor& x, const at::Tensor& w1w2, const at::Tensor& b1b2, const at::Tensor w3, const at::Tensor b3) {
+      torch::autograd::AutogradContext *ctx, const at::Tensor& x, const at::Tensor& w1w2, const c10::optional<at::Tensor>& b1b2, const at::Tensor w3, const c10::optional<at::Tensor>& b3) {
     at::AutoDispatchBelowADInplaceOrView g;
     auto w1 = w1w2[0];
     auto w2 = w1w2[1];
-    auto b1 = b1b2[0];
-    auto b2 = b1b2[1];
+    c10::optional<at::Tensor> b1, b2;
+    if (b1b2.has_value()) {
+      b1 = b1b2.value()[0];
+      b2 = b1b2.value()[1];
+    }
     at::Tensor x1, x2, x4;
     std::tie(x1, x2, x4) = dual_gemm_silu_identity_mul(x, w1, b1, w2, b2);
-    auto x5 = torch::nn::functional::linear(x4, w3, b3);
+    auto x5 = torch::nn::functional::linear(x4, w3, b3.has_value() ? b3.value() : at::Tensor());
 
     ctx->save_for_backward({x, w1w2, w3, x1, x2});
+    ctx->saved_data["has_b1b2"] = b1b2.has_value();
+    ctx->saved_data["has_b3"] = b3.has_value();
     return x5;
   }
 
@@ -97,6 +102,8 @@ class SwiGLUPackedWeights : public torch::autograd::Function<SwiGLUPackedWeights
     auto w3 = saved[2];
     auto x1 = saved[3];
     auto x2 = saved[4];
+    bool has_b1b2 = ctx->saved_data["has_b1b2"].toBool();
+    bool has_b3 = ctx->saved_data["has_b3"].toBool();
     int64_t B = x.size(0);
     int64_t H = x2.size(1);
     int64_t I = x.size(1);
@@ -118,10 +125,16 @@ class SwiGLUPackedWeights : public torch::autograd::Function<SwiGLUPackedWeights
     x2.reset();
     dx4.reset();
 
-    auto db3 = torch::empty({O}, w3.options());
-    auto dw3 = torch::empty({O, H}, w3.options());
-    TORCH_INTERNAL_ASSERT(dx5.size(0) == x4.size(0));
-    gemm_fused_operand_sum(dx5.transpose(-2, -1), x4, dw3, db3);
+    at::Tensor db3, dw3;
+
+    if (has_b3) {
+      db3 = torch::empty({O}, w3.options());
+      dw3 = torch::empty({O, H}, w3.options());
+      TORCH_INTERNAL_ASSERT(dx5.size(0) == x4.size(0));
+      gemm_fused_operand_sum(dx5.transpose(-2, -1), x4, dw3, db3);
+    } else {
+      dw3 = torch::mm(dx5.transpose(-2, -1), x4);
+    }
     x4.reset();
     dx5.reset();
 
@@ -133,19 +146,25 @@ class SwiGLUPackedWeights : public torch::autograd::Function<SwiGLUPackedWeights
     auto dx = torch::mm(dx1dx2, w1w2);
 
     // backward of linear1 + linear2 - packed
-    auto dw1dw2 = torch::empty({2 * H, I}, w1w2.options());
-    auto db1db2 = torch::empty({2 * H}, w1w2.options());
-    gemm_fused_operand_sum(dx1dx2.transpose(-2, -1), x, dw1dw2, db1db2);
+    at::Tensor dw1dw2, db1db2;
+    if (has_b1b2) {
+      dw1dw2 = torch::empty({2 * H, I}, w1w2.options());
+      db1db2 = torch::empty({2 * H}, w1w2.options());
+      gemm_fused_operand_sum(dx1dx2.transpose(-2, -1), x, dw1dw2, db1db2);
+      db1db2 = db1db2.view({2, H});
+    } else {
+      dw1dw2 = torch::mm(dx1dx2.transpose(-2, -1), x);
+    }
 
-    return {dx, dw1dw2.view({2, H, I}), db1db2.view({2, H}), dw3, db3};
+    return {dx, dw1dw2.view({2, H, I}), db1db2, dw3, db3};
   }
 };
 
-at::Tensor swiglu_packedw_autograd(const at::Tensor& x, const at::Tensor& w1w2, const at::Tensor& b1b2, const at::Tensor w3, const at::Tensor b3) {
+at::Tensor swiglu_packedw_autograd(const at::Tensor& x, const at::Tensor& w1w2, const c10::optional<at::Tensor> b1b2, const at::Tensor w3, const c10::optional<at::Tensor> b3) {
   return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
 }
 
-at::Tensor swiglu_packedw_autocast(const at::Tensor& x, const at::Tensor& w1w2, const at::Tensor& b1b2, const at::Tensor w3, const at::Tensor b3) {
+at::Tensor swiglu_packedw_autocast(const at::Tensor& x, const at::Tensor& w1w2, const c10::optional<at::Tensor> b1b2, const at::Tensor w3, const c10::optional<at::Tensor> b3) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
   auto exec_type = at::autocast::get_autocast_gpu_dtype();
   return SwiGLUPackedWeights::apply(
@@ -159,7 +178,7 @@ at::Tensor swiglu_packedw_autocast(const at::Tensor& x, const at::Tensor& w1w2, 
 }
 
 TORCH_LIBRARY(xformers, m) {
-  m.def("swiglu_packedw(Tensor x, Tensor w1w2, Tensor b1b2, Tensor w3, Tensor b3) -> Tensor");
+  m.def("swiglu_packedw(Tensor x, Tensor w1w2, Tensor? b1b2, Tensor w3, Tensor? b3) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(xformers, Autograd, m) {

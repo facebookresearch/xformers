@@ -102,6 +102,7 @@ _dtypes = [torch.bfloat16, torch.float16]
 _ops: Sequence[xsw.SwiGLUOp] = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
 
 
+@pytest.mark.parametrize("bias", [False, True], ids=["nobias", "bias"])
 @pytest.mark.parametrize("autocast", [False, True], ids=["regular", "autocast"])
 @pytest.mark.parametrize("pack_weights", [False, True], ids=["regular", "packed"])
 @pytest.mark.parametrize("op", _ops, ids=[x.NAME for x in _ops])
@@ -119,6 +120,7 @@ def test_forward_backward(
     dtype,
     autocast: bool,
     pack_weights: bool,
+    bias: bool,
 ):
     torch.manual_seed(shape[0] * shape[1] * shape[2])
     FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-2, torch.bfloat16: 1e-2}
@@ -140,6 +142,7 @@ def test_forward_backward(
             dtype=dtype,
             dtype_autocast_gpu=dtype if autocast and device == "cuda" else None,
             packed_weights=pack_weights,
+            bias_enabled=bias,
         )
     ):
         pytest.skip("Not supported by operator")
@@ -148,7 +151,10 @@ def test_forward_backward(
     x = torch.randn(shape[:2], device=device, dtype=inp_model_dtype)
 
     module = xsw._SwiGLUModule(
-        in_features=shape[1], hidden_features=shape[2], pack_weights=pack_weights
+        in_features=shape[1],
+        hidden_features=shape[2],
+        pack_weights=pack_weights,
+        bias=bias,
     )
     x_f32: Optional[torch.Tensor]
     ref_f32: Optional[torch.Tensor]

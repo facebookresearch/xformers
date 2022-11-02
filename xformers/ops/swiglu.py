@@ -26,6 +26,7 @@ class _SwiGLUModule(nn.Module):
         out_features: Optional[int] = None,
         align_as: int = 8,
         pack_weights: bool = False,
+        bias: bool = True,
     ) -> None:
         super().__init__()
         out_features = out_features or in_features
@@ -37,12 +38,12 @@ class _SwiGLUModule(nn.Module):
 
         self.w12: Optional[nn.Linear]
         if pack_weights:
-            self.w12 = nn.Linear(in_features, 2 * swiglu_hidden_features)
+            self.w12 = nn.Linear(in_features, 2 * swiglu_hidden_features, bias=bias)
         else:
             self.w12 = None
-            self.w1 = nn.Linear(in_features, swiglu_hidden_features)
-            self.w2 = nn.Linear(in_features, swiglu_hidden_features)
-        self.w3 = nn.Linear(swiglu_hidden_features, out_features)
+            self.w1 = nn.Linear(in_features, swiglu_hidden_features, bias=bias)
+            self.w2 = nn.Linear(in_features, swiglu_hidden_features, bias=bias)
+        self.w3 = nn.Linear(swiglu_hidden_features, out_features, bias=bias)
 
         self.swiglu_hidden_features = swiglu_hidden_features
         self.out_features = out_features
@@ -69,6 +70,8 @@ class _SwiGLUModule(nn.Module):
 
     def _ordered_params_for_op(self):
         """Used for testing - returns ordered arguments for operators"""
+        b1: Optional[torch.Tensor]
+        b2: Optional[torch.Tensor]
         if self.w12 is not None:
             w1w2 = self.w12.weight
             b1b2 = self.w12.bias
@@ -76,7 +79,10 @@ class _SwiGLUModule(nn.Module):
                 w1w2.view([2, w1w2.shape[0] // 2, w1w2.shape[1]]),
                 dim=0,
             )
-            b1, b2 = unbind(b1b2.view([2, b1b2.shape[0] // 2]), dim=0)
+            if b1b2 is not None:
+                b1, b2 = unbind(b1b2.view([2, b1b2.shape[0] // 2]), dim=0)
+            else:
+                b1, b2 = None, None
         else:
             w1, w2 = self.w1.weight, self.w2.weight
             b1, b2 = self.w1.bias, self.w2.bias
@@ -156,12 +162,15 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
 
         x5 = F.linear(x4, w3, b3)
         ctx.save_for_backward(x, w1, w2, w3, x1, x2)
+        ctx.bias = [b1 is not None, b2 is not None, b3 is not None]
         return x5
 
     @staticmethod
     def _linear_bw(
-        dy: torch.Tensor, x: torch.Tensor
+        dy: torch.Tensor, x: torch.Tensor, bias: bool
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if not bias:
+            return (dy.transpose(-2, -1) @ x), None
         db = torch.empty([dy.shape[1]], dtype=dy.dtype, device=dy.device)
         dw = torch.empty([dy.shape[1], x.shape[1]], dtype=dy.dtype, device=dy.device)
         torch.ops.xformers.gemm_fused_operand_sum(dy.transpose(-2, -1), x, dw, db)
@@ -178,7 +187,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
         dx1, dx2 = dx1dx2.unbind(1)
         del x1, x2, dx4
 
-        dw3, db3 = cls._linear_bw(dx5, x4)
+        dw3, db3 = cls._linear_bw(dx5, x4, bias=ctx.bias[2])
         del x4, dx5
         if w1w2 is not None:
             assert dx1dx2.is_contiguous()
@@ -189,18 +198,21 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
             # backward of linear1 + linear2 - packed
             dw1dw2 = dx1dx2.view([dx1.shape[0], 2 * dx1.shape[1]]).transpose(-2, -1) @ x
             dw1dw2, db1db2 = cls._linear_bw(
-                dx1dx2.view([dx1.shape[0], 2 * dx1.shape[1]]), x
+                dx1dx2.view([dx1.shape[0], 2 * dx1.shape[1]]), x, bias=ctx.bias[0]
             )
-            db1db2 = db1db2.view([2, dx1.shape[1]])
             dw1, dw2 = dw1dw2.view([2, *w1.shape]).unbind(0)
-            db1, db2 = torch.unbind(db1db2, dim=0)
+            if ctx.bias[0]:
+                db1db2 = db1db2.view([2, dx1.shape[1]])
+                db1, db2 = torch.unbind(db1db2, dim=0)
+            else:
+                db1 = db2 = None
         else:
             dx = dx2 @ w2  # 260us (nn)
             torch.addmm(
                 dx, dx1, w1.to(dx1.dtype), beta=1, alpha=1, out=dx
             )  # dx += dx1 @ w1
-            dw2, db2 = cls._linear_bw(dx2, x)
-            dw1, db1 = cls._linear_bw(dx1, x)
+            dw2, db2 = cls._linear_bw(dx2, x, bias=ctx.bias[1])
+            dw1, db1 = cls._linear_bw(dx1, x, bias=ctx.bias[0])
         return (dx, dw1, db1, dw2, db2, dw3, db3)
 
 
@@ -266,6 +278,7 @@ class SwiGLUOpDispatch:
     dtype: torch.dtype
     dtype_autocast_gpu: Optional[torch.dtype]
     packed_weights: bool
+    bias_enabled: bool
 
     @property
     def op(self) -> SwiGLUOp:
@@ -282,11 +295,11 @@ class SwiGLUOpDispatch:
     def from_arguments(
         x: torch.Tensor,
         w1: torch.Tensor,
-        b1: torch.Tensor,
+        b1: Optional[torch.Tensor],
         w2: torch.Tensor,
-        b2: torch.Tensor,
+        b2: Optional[torch.Tensor],
         w3: torch.Tensor,
-        b3: torch.Tensor,
+        b3: Optional[torch.Tensor],
     ) -> "SwiGLUOpDispatch":
         return SwiGLUOpDispatch(
             device=x.device,
@@ -295,6 +308,7 @@ class SwiGLUOpDispatch:
             dtype_autocast_gpu=torch.get_autocast_gpu_dtype()
             if torch.is_autocast_enabled()
             else w1.dtype,
+            bias_enabled=b1 is not None and b2 is not None and b3 is not None,
         )
 
 
@@ -311,8 +325,12 @@ def _only_half_or_autocast(op: SwiGLUOpDispatch) -> bool:
     )
 
 
+def _bias_enabled(op: SwiGLUOpDispatch) -> bool:
+    return op.bias_enabled
+
+
 _SwiGLUDecomposedOp = _ForwardToPythonAutogradFunc(
-    _SwiGLUDecomposedFunc, False, "decomposed", constraints=[]
+    _SwiGLUDecomposedFunc, False, "decomposed", constraints=[_bias_enabled]
 )
 SwiGLUFusedOp = _ForwardToPythonAutogradFunc(
     _SwiGLUFusedFunc, False, "fused", constraints=[_only_sm80, _only_half_or_autocast]
@@ -338,11 +356,11 @@ def _info() -> Dict[str, str]:
 def functional_swiglu(
     x: torch.Tensor,
     w1: torch.Tensor,
-    b1: torch.Tensor,
+    b1: Optional[torch.Tensor],
     w2: torch.Tensor,
-    b2: torch.Tensor,
+    b2: Optional[torch.Tensor],
     w3: torch.Tensor,
-    b3: torch.Tensor,
+    b3: Optional[torch.Tensor],
     *,
     op: SwiGLUOp = None,
 ) -> torch.Tensor:
@@ -360,14 +378,17 @@ def functional_swiglu(
         raise ValueError(f"Expected shape for x: [batch, n_input] but got {x.shape}")
     if w1.ndim != 2 or w1.shape != w2.shape:
         raise ValueError(f"Invalid shapes for w1: {w1.shape} / w2: {w2.shape}")
-    if b1.ndim != 1 or b1.shape != b2.shape or b1.shape[0] != w1.shape[0]:
-        raise ValueError(f"Invalid shapes for b1: {b1.shape} / b2: {b2.shape}")
-    if (
-        (w3.ndim, b3.ndim) != (2, 1)
-        or w3.shape[1] != w2.shape[0]
-        or b3.shape[0] != w3.shape[0]
-    ):
-        raise ValueError(f"Invalid shapes for w3: {w3.shape} / b3: {b3.shape}")
+    if b1 is not None:
+        if b1.ndim != 1 or b1.shape[0] != w1.shape[0]:
+            raise ValueError(f"Invalid shapes for b1: {b1.shape}")
+    if b2 is not None:
+        if b2.ndim != 1 or b2.shape[0] != w2.shape[0]:
+            raise ValueError(f"Invalid shapes for b2: {b2.shape}")
+    if w3.ndim != 2 or w3.shape[1] != w2.shape[0]:
+        raise ValueError(f"Invalid shape for w3: {w3.shape}")
+    if b3 is not None:
+        if b3.ndim != 1 or b3.shape[0] != w3.shape[0]:
+            raise ValueError(f"Invalid shapes for w3: {w3.shape} / b3: {b3.shape}")
 
     if op is None:
         op = SwiGLUOpDispatch.from_arguments(x, w1, b1, w2, b2, w3, b3).op
@@ -375,9 +396,14 @@ def functional_swiglu(
     if not op.PACKED_WEIGHTS:
         return op(x, w1, b1, w2, b2, w3, b3)
     w1w2 = stack_or_none((w1, w2), dim=0)
-    b1b2 = stack_or_none((b1, b2), dim=0)
+    if b1 is not None and b2 is not None:
+        b1b2: Optional[torch.Tensor] = stack_or_none((b1, b2), dim=0)
+        if b1b2 is None:
+            raise NotImplementedError("b1/b2 needs to be properly packed")
+    else:
+        b1b2 = None
+        assert b1 is None and b2 is None
+
     if w1w2 is None:
         raise NotImplementedError("w1/w2 needs to be properly packed")
-    if b1b2 is None:
-        raise NotImplementedError("b1/b2 needs to be properly packed")
     return op(x, w1w2, b1b2, w3, b3)
