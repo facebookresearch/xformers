@@ -102,8 +102,8 @@ _dtypes = [torch.bfloat16, torch.float16]
 _ops: Sequence[xsw.SwiGLUOp] = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
 
 
-@pytest.mark.parametrize("autocast", [False, True])
-@pytest.mark.parametrize("pack_weights", [False, True])
+@pytest.mark.parametrize("autocast", [False, True], ids=["regular", "autocast"])
+@pytest.mark.parametrize("pack_weights", [False, True], ids=["regular", "packed"])
 @pytest.mark.parametrize("op", _ops, ids=[x.NAME for x in _ops])
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
 @pytest.mark.parametrize("device", _devices)

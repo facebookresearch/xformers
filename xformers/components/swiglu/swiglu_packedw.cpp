@@ -28,6 +28,17 @@ std::tuple<at::Tensor, at::Tensor> silu_bw_fused(
     .typed<decltype(silu_bw_fused)>();
   return op.call(x1, x2, dx4);
 }
+std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum(
+    const at::Tensor& a,
+    const at::Tensor& b,
+    at::Tensor& out_mm,
+    at::Tensor& out_sum
+) {
+  static auto op = c10::Dispatcher::singleton()
+    .findSchemaOrThrow("xformers::gemm_fused_operand_sum", "")
+    .typed<decltype(gemm_fused_operand_sum)>();
+  return op.call(a, b, out_mm, out_sum);
+}
 
 bool shapesMatch(at::Tensor x, std::vector<int64_t> expectedShape) {
   if (x.dim() != int64_t(expectedShape.size())) {
@@ -107,11 +118,10 @@ class SwiGLUPackedWeights : public torch::autograd::Function<SwiGLUPackedWeights
     x2.reset();
     dx4.reset();
 
-    auto db3 = dx5.sum(0);
+    auto db3 = torch::empty({O}, w3.options());
+    auto dw3 = torch::empty({O, H}, w3.options());
     TORCH_INTERNAL_ASSERT(dx5.size(0) == x4.size(0));
-    auto dw3 = torch::mm(dx5.transpose(-2, -1), x4);
-    TORCH_INTERNAL_ASSERT_SHAPE(db3, O);
-    TORCH_INTERNAL_ASSERT_SHAPE(dw3, O, H);
+    gemm_fused_operand_sum(dx5.transpose(-2, -1), x4, dw3, db3);
     x4.reset();
     dx5.reset();
 
@@ -123,10 +133,10 @@ class SwiGLUPackedWeights : public torch::autograd::Function<SwiGLUPackedWeights
     auto dx = torch::mm(dx1dx2, w1w2);
 
     // backward of linear1 + linear2 - packed
-    auto dw1dw2 = torch::mm(dx1dx2.transpose(-2, -1), x);
-    auto db1db2 = dx1dx2.sum(0);
+    auto dw1dw2 = torch::empty({2 * H, I}, w1w2.options());
+    auto db1db2 = torch::empty({2 * H}, w1w2.options());
+    gemm_fused_operand_sum(dx1dx2.transpose(-2, -1), x, dw1dw2, db1db2);
 
-    auto p = db1db2.view({2, H});
     return {dx, dw1dw2.view({2, H, I}), db1db2.view({2, H}), dw3, db3};
   }
 };
