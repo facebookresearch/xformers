@@ -339,8 +339,10 @@ def benchmark_main_helper(
         name = None
         try:
             for benchmark_object, is_optimized in zip(
-                benchmarks_generator, [True, False]
+                benchmarks_generator,
+                [False, False, False, False, False, False, False, False],
             ):
+                is_optimized = True
                 if benchmark_object is None:
                     continue
                 metadata = {}
