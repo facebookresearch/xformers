@@ -17,6 +17,7 @@ from .memory_efficient_attention import (  # noqa: F401
     memory_efficient_attention,
 )
 from .swiglu import (  # noqa: F401
+    SwiGLUEagerOp,
     SwiGLUFusedOp,
     SwiGLUOp,
     SwiGLUOpDispatch,
