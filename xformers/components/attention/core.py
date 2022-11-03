@@ -108,7 +108,8 @@ def _matmul_with_mask(
         # mask is presumed additive
         # repeat if batch sizes don't match
         if (
-            mask.ndim == 3
+            not isinstance(mask, SparseCS)
+            and mask.ndim == 3
             and mask.shape[0] != att.shape[0]
             and (att.shape[0] % mask.shape[0]) == 0
         ):
