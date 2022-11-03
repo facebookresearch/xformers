@@ -290,9 +290,8 @@ class SwiGLUOpDispatch:
 
 
 def _only_sm80(op: SwiGLUOpDispatch) -> bool:
-    return (
-        str(op.device) == "cuda" and torch.cuda.get_device_capability(op.device)[0] >= 8
-    )
+    device_type = op.device if isinstance(op.device, str) else op.device.type
+    return device_type == "cuda" and torch.cuda.get_device_capability(op.device)[0] >= 8
 
 
 def _only_half_or_autocast(op: SwiGLUOpDispatch) -> bool:
