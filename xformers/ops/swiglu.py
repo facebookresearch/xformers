@@ -168,7 +168,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
     @staticmethod
     def _linear_bw(
         dy: torch.Tensor, x: torch.Tensor, bias: bool
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if not bias:
             return (dy.transpose(-2, -1) @ x), None
         db = torch.empty([dy.shape[1]], dtype=dy.dtype, device=dy.device)
@@ -228,7 +228,7 @@ class SwiGLUOp:
             return False
         return all(c(op) for c in self.constraints)
 
-    def __call__(self, *args: torch.Tensor) -> torch.Tensor:
+    def __call__(self, *args: Optional[torch.Tensor]) -> torch.Tensor:
         pass
 
     def __str__(self) -> str:
