@@ -11,7 +11,6 @@ import logging
 import math
 import os
 import pickle
-import pprint
 import tempfile
 from collections import defaultdict, namedtuple
 from dataclasses import replace
@@ -19,6 +18,7 @@ from typing import Any, Dict, Generator, List, Set, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import torch
 import tqdm
@@ -216,33 +216,93 @@ def temp_files_ctx(num: int) -> Generator:
 
 
 META_ALGORITHM = "algorithm"
+META_IS_REFERENCE = "is_ref"
 
 
-def _compare_benchmarks(results: List[Tuple[Dict[str, Any], Any]]) -> benchmark.Compare:
+def _finalize_results(results: List[Tuple[Dict[str, Any], Any]]) -> List[Any]:
     """
     Returns a `benchmark.Compare` object, except that if we have runs
     with different algorithms, we also add the algorithm name
     in the column titles
     """
     all_algorithms: Set[str] = set()
-    for (metadata, _) in results:
+    all_description: Set[str] = set()
+    for (metadata, r) in results:
         algo = metadata.get(META_ALGORITHM, None)
         if algo is not None:
             all_algorithms.add(algo)
+        all_description.add(r.task_spec.description)
     display_algo = len(all_algorithms) > 1
+    display_descr = len(all_description) > 1
 
     display_results = []
     for (metadata, r) in results:
         algo = metadata.get(META_ALGORITHM, None)
-        if algo is None or not display_algo:
+        if algo is None:
             display_results.append(r)
         else:
             r = copy.copy(r)
-            r.task_spec = replace(
-                r.task_spec, description=f"{r.task_spec.description}[{algo}]"
-            )
+            description = ""
+            if display_descr:
+                description = r.task_spec.description
+            if display_algo:
+                if display_descr:
+                    description += "["
+                description += algo
+                if display_descr:
+                    description += "]"
+            r.task_spec = replace(r.task_spec, description=description)
             display_results.append(r)
-    return benchmark.Compare(display_results)
+    return display_results
+
+
+def _render_bar_plot(results: List[Any]) -> None:
+    runtime: Dict[str, Dict[str, float]] = defaultdict(dict)
+    memory_usage: Dict[str, Dict[str, float]] = defaultdict(dict)
+    all_descriptions: List[str] = []
+    for r in results:
+        # Hacky: use a list to preserve order
+        if r.task_spec.description not in all_descriptions:
+            all_descriptions.append(r.task_spec.description)
+        runtime[r.task_spec.sub_label][r.task_spec.description] = r.mean
+        memory_usage[r.task_spec.sub_label][r.task_spec.description] = r.mem_use
+    all_data_mem: List[Any] = []
+    all_data_run: List[Any] = []
+    for key, runtime_values in runtime.items():
+        memory_values = memory_usage[key]
+        all_data_mem.append(
+            [key]
+            + [
+                memory_values.get(d, 0) / memory_values.get(all_descriptions[0], 0)
+                for d in all_descriptions
+            ]
+        )
+        all_data_run.append(
+            [key]
+            + [
+                runtime_values.get(all_descriptions[0], 0) / runtime_values.get(d, 0)
+                for d in all_descriptions
+            ]
+        )
+    all_descriptions[0] = f"{all_descriptions[0]} (baseline)"
+    df_mem = pd.DataFrame(all_data_mem, columns=["Configuration"] + all_descriptions)
+    df_rt = pd.DataFrame(all_data_run, columns=["Configuration"] + all_descriptions)
+    df_mem.plot(
+        x="Configuration",
+        kind="bar",
+        stacked=False,
+        title="Memory usage (vs baseline, lower is better)",
+    )
+    plt.tight_layout()
+    plt.savefig("mem.png")
+    df_rt.plot(
+        x="Configuration",
+        kind="bar",
+        stacked=False,
+        title="Runtime speedup (vs baseline, higher is better)",
+    )
+    plt.tight_layout()
+    plt.savefig("runtime.png")
 
 
 def benchmark_main_helper(
@@ -275,7 +335,6 @@ def benchmark_main_helper(
 
     results_compare_to = []
     results = []
-    mem_use: Dict[str, Dict[str, float]] = defaultdict(dict)
 
     store_results_folder = os.path.expanduser(
         os.path.join("~", ".cache", "xformers", "benchmarks", benchmark_fn.__name__)
@@ -338,11 +397,8 @@ def benchmark_main_helper(
 
         name = None
         try:
-            for benchmark_object, is_optimized in zip(
-                benchmarks_generator,
-                [False, False, False, False, False, False, False, False],
-            ):
-                is_optimized = True
+            for benchmark_object in benchmarks_generator:
+                is_optimized = benchmark_object._task_spec.description != "eager"
                 if benchmark_object is None:
                     continue
                 metadata = {}
@@ -371,13 +427,13 @@ def benchmark_main_helper(
                     results.append((metadata, measurement))
                     name = measurement.task_spec.description
                     memory = torch.cuda.max_memory_allocated() / 2**20
+                    measurement.mem_use = memory
                 except RuntimeError as e:
                     if "CUDA out of memory" not in str(e):
                         raise
                     pbar.write("Skipped (OOM)")
                 finally:
                     del benchmark_object
-                mem_use[name][measurement.task_spec.sub_label] = memory
                 pbar.write(f"{name}: memory used: {memory} MB")
         except RuntimeError as e:
             if "CUDA out of memory" not in str(e):
@@ -394,15 +450,18 @@ def benchmark_main_helper(
 
             pbar.write(
                 str(
-                    _compare_benchmarks(
-                        list(filter(matches_current, results))
-                        + list(filter(matches_current, results_compare_to))
+                    benchmark.Compare(
+                        _finalize_results(
+                            list(filter(matches_current, results))
+                            + list(filter(matches_current, results_compare_to))
+                        )
                     )
                 )
             )
 
-    pprint.pprint(mem_use)
-    _compare_benchmarks(results + results_compare_to).print()
+    results_for_print = _finalize_results(results + results_compare_to)
+    benchmark.Compare(results_for_print).print()
+    _render_bar_plot(results_for_print)
 
     # Save runs to a file
     if args.label is not None:

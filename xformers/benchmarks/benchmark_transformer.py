@@ -100,7 +100,8 @@ def compose(*fns):
 
 MODELS = [
     # model_name, model_factory, input_shape
-    ("ViT-B/16", timm.models.vit_base_patch16_224, [256, 3, 224, 224])
+    ("ViT-B/16", timm.models.vit_base_patch16_224, [256, 3, 224, 224]),
+    ("ViT-G/14", timm.models.vit_gigantic_patch14_224, [16, 3, 224, 224]),
 ]
 
 MODIFIERS = [
@@ -136,17 +137,17 @@ def benchmark_transformer(model_info, dtype):
 
     for mod_name, mod_apply in MODIFIERS:
         model: nn.Module = model_factory()
-        model_modified = mod_apply(model).to(device).to(dtype)
+        model = mod_apply(model).to(device).to(dtype)
 
         # Make sure we don't have errors
-        out = model_modified(inp)
+        out = model(inp)
         grad = out.clone()
         out.backward(grad)
 
         yield benchmark.Timer(
             stmt="model(inp).backward(grad)",
             globals={
-                "model": model_modified,
+                "model": model,
                 "inp": inp,
                 "grad": grad,
             },
