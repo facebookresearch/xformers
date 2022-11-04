@@ -284,7 +284,10 @@ def _render_bar_plot(results: List[Any]) -> None:
                 for d in all_descriptions
             ]
         )
-    all_descriptions[0] = f"{all_descriptions[0]} (baseline)"
+    if all_descriptions[0] == "":
+        all_descriptions[0] = "baseline"
+    else:
+        all_descriptions[0] = f"{all_descriptions[0]} (baseline)"
     df_mem = pd.DataFrame(all_data_mem, columns=["Configuration"] + all_descriptions)
     df_rt = pd.DataFrame(all_data_run, columns=["Configuration"] + all_descriptions)
     df_mem.plot(

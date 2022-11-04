@@ -100,8 +100,10 @@ def compose(*fns):
 
 MODELS = [
     # model_name, model_factory, input_shape
-    ("ViT-B/16", timm.models.vit_base_patch16_224, [256, 3, 224, 224]),
-    ("ViT-G/14", timm.models.vit_gigantic_patch14_224, [16, 3, 224, 224]),
+    ("ViT-B/16", timm.models.vit_base_patch16_224, [512, 3, 224, 224]),
+    ("ViT-B/8", timm.models.vit_base_patch8_224, [64, 3, 224, 224]),
+    ("ViT-L/16", timm.models.vit_large_patch16_224, [128, 3, 224, 224]),
+    ("ViT-g/14", timm.models.vit_giant_patch14_224, [32, 3, 224, 224]),
 ]
 
 MODIFIERS = [
