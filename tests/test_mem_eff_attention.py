@@ -232,6 +232,8 @@ def create_tensors(
         query=query, key=key, value=value, attn_bias=attn_bias
     )
     if not op.supports(dispatch):
+        # Ensure we free memory to avoid OOMs
+        del query, key, value, attn_bias
         pytest.skip(f"{op.NAME}: unsupported ({dispatch})")
     return query, key, value, attn_bias
 
