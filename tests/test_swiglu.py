@@ -5,7 +5,7 @@
 
 import random
 from contextlib import nullcontext
-from typing import Optional, Sequence
+from typing import ContextManager, Optional, Sequence, cast
 
 import pytest
 import torch
@@ -170,7 +170,10 @@ def test_forward_backward(
     x.requires_grad_()
 
     # Forward
-    cm = torch.autocast("cuda", dtype=dtype) if autocast else nullcontext()
+    cm = cast(
+        ContextManager,
+        torch.autocast("cuda", dtype=dtype) if autocast else nullcontext(),
+    )
     with cm:
         ref = module(x)
         out = xsw.functional_swiglu(x, *module._ordered_params_for_op(), op=op)
