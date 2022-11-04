@@ -67,6 +67,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
   // Optionally, we might not need intermediate GEMM outputs
   constexpr bool kStoreD0 = true;
   constexpr bool kStoreD1 = true;
+  using ArchTag = cutlass::arch::Sm80;
 
   using DualGemm = cutlass::gemm::device::DualGemm<
     scalar_t,
@@ -77,7 +78,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
     cutlass::layout::RowMajor,
     ElementAccumulator,
     cutlass::arch::OpClassTensorOp,
-    cutlass::arch::Sm80,
+    ArchTag,
     ThreadblockShape,
     WarpShape,
     InstructionShape,
@@ -90,6 +91,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
     kStoreD1,
     kSplitKSerial
   >;
+  {
+    cudaDeviceProp* p = at::cuda::getDeviceProperties(x.device().index());
+    TORCH_CHECK(p->major * 10 + p->minor >= ArchTag::kMinComputeCapability, "GPU not supported");
+  }
 
   int split_k_slices = DualGemm::kSplitKSerial ? 2 : 1;
   using RefA = typename cutlass::TensorRef<typename DualGemm::ElementA, typename DualGemm::LayoutA>;
