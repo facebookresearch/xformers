@@ -25,6 +25,10 @@ SHAPES = [
     (4728, 1536, 4096),
     # Some smaller shapes as well
     (4728, 1536, 1024),
+    # GPT-3 (small)
+    (32768, 2048, 5632),
+    # Chinchilla
+    (32768, 8192, 22016),
 ]
 
 
