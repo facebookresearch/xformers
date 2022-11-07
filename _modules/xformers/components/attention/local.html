@@ -232,7 +232,7 @@
 
 
 <span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
@@ -240,6 +240,7 @@
 <span class="kn">from</span> <span class="nn">xformers.components.attention</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">Attention</span><span class="p">,</span>
     <span class="n">AttentionConfig</span><span class="p">,</span>
+    <span class="n">AttentionMask</span><span class="p">,</span>
     <span class="n">maybe_sparsify</span><span class="p">,</span>
     <span class="n">register_attention</span><span class="p">,</span>
     <span class="n">sparsify</span><span class="p">,</span>
@@ -324,7 +325,7 @@
         <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">k</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">v</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">att_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">att_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionMask</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="o">*</span><span class="n">args</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
@@ -333,9 +334,13 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">attention_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_local_mask</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
 
         <span class="c1"># Take into account the optional user mask</span>
-        <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">attention_mask</span> <span class="k">if</span> <span class="n">att_mask</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">attention_mask</span> <span class="o">&amp;</span> <span class="n">att_mask</span>
-        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">att_mask</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">attention_mask</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">att_mask</span><span class="p">,</span> <span class="n">AttentionMask</span><span class="p">):</span>
+                <span class="c1"># Needed because &amp; op not defined for SparseCS with AttentionMask</span>
+                <span class="n">att_mask</span> <span class="o">=</span> <span class="n">att_mask</span><span class="o">.</span><span class="n">to_bool</span><span class="p">()</span>
+            <span class="n">mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">attention_mask</span> <span class="o">&amp;</span> <span class="n">att_mask</span>
 
         <span class="k">return</span> <span class="n">scaled_dot_product_attention</span><span class="p">(</span>
             <span class="n">q</span><span class="o">=</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="o">=</span><span class="n">v</span><span class="p">,</span> <span class="n">att_mask</span><span class="o">=</span><span class="n">mask</span><span class="p">,</span> <span class="n">dropout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">attn_drop</span>
