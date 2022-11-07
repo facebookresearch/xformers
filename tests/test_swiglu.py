@@ -83,9 +83,13 @@ def generate_test_shapes():
     shapes = [
         # Format: [inp.shape[0], inp.shape[1], hidden.shape[1]]
         # ViT-Giant
-        (9456, 1536, 4096),
-        (4440, 1536, 4096),
-        (4728, 1536, 4096),
+        (9456, 1536, 2736),
+        (4440, 1536, 2736),
+        (4728, 1536, 2736),
+        # GPT-3 (small)
+        (2048, 2048, 5632),
+        # Chinchilla
+        (2048, 8192, 22016),
     ]
     # Add some random shapes
     r = random.Random(0)
