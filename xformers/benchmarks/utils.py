@@ -256,14 +256,20 @@ def _finalize_results(results: List[Tuple[Dict[str, Any], Any]]) -> List[Any]:
     return display_results
 
 
-def _render_bar_plot(results: List[Any]) -> None:
+BASELINE_DESCRIPTIONS = ["eager", "vanilla"]
+
+
+def _render_bar_plot(results: List[Any], store_results_folder: str) -> None:
     runtime: Dict[str, Dict[str, float]] = defaultdict(dict)
     memory_usage: Dict[str, Dict[str, float]] = defaultdict(dict)
     all_descriptions: List[str] = []
     for r in results:
         # Hacky: use a list to preserve order
         if r.task_spec.description not in all_descriptions:
-            all_descriptions.append(r.task_spec.description)
+            if r.task_spec.description in BASELINE_DESCRIPTIONS:
+                all_descriptions.insert(0, r.task_spec.description)
+            else:
+                all_descriptions.append(r.task_spec.description)
         runtime[r.task_spec.sub_label][r.task_spec.description] = r.mean
         memory_usage[r.task_spec.sub_label][r.task_spec.description] = r.mem_use
     all_data_mem: List[Any] = []
@@ -280,7 +286,8 @@ def _render_bar_plot(results: List[Any]) -> None:
         all_data_run.append(
             [key]
             + [
-                runtime_values.get(all_descriptions[0], 0) / runtime_values.get(d, 0)
+                runtime_values.get(all_descriptions[0], 0)
+                / runtime_values.get(d, math.inf)
                 for d in all_descriptions
             ]
         )
@@ -288,24 +295,26 @@ def _render_bar_plot(results: List[Any]) -> None:
         all_descriptions[0] = "baseline"
     else:
         all_descriptions[0] = f"{all_descriptions[0]} (baseline)"
-    df_mem = pd.DataFrame(all_data_mem, columns=["Configuration"] + all_descriptions)
-    df_rt = pd.DataFrame(all_data_run, columns=["Configuration"] + all_descriptions)
-    df_mem.plot(
-        x="Configuration",
-        kind="bar",
-        stacked=False,
-        title="Memory usage (vs baseline, lower is better)",
-    )
-    plt.tight_layout()
-    plt.savefig("mem.png")
-    df_rt.plot(
-        x="Configuration",
-        kind="bar",
-        stacked=False,
-        title="Runtime speedup (vs baseline, higher is better)",
-    )
-    plt.tight_layout()
-    plt.savefig("runtime.png")
+
+    for data, filename, title in [
+        (all_data_mem, "mem.png", "Memory usage (vs baseline, lower is better)"),
+        (
+            all_data_run,
+            "runtime.png",
+            "Runtime speedup (vs baseline, higher is better)",
+        ),
+    ]:
+        df = pd.DataFrame(data, columns=["Configuration"] + all_descriptions)
+        df.plot(
+            x="Configuration",
+            kind="bar",
+            stacked=False,
+            title=title,
+        )
+        plt.tight_layout()
+        filename_full = os.path.join(store_results_folder, filename)
+        plt.savefig(filename_full)
+        print(f"Saved plot: {filename_full}")
 
 
 def benchmark_main_helper(
@@ -371,7 +380,7 @@ def benchmark_main_helper(
                             # Backward compatibility
                             metadata, r = {}, row
                         spec = r.task_spec
-                        if r.task_spec.description != "vanilla":
+                        if r.task_spec.description not in BASELINE_DESCRIPTIONS:
                             # (in case the file was renamed)
                             r.task_spec = replace(r.task_spec, description=name)
                         elif spec.env == env:
@@ -401,7 +410,9 @@ def benchmark_main_helper(
         name = None
         try:
             for benchmark_object in benchmarks_generator:
-                is_optimized = benchmark_object._task_spec.description != "eager"
+                is_optimized = (
+                    benchmark_object._task_spec.description not in BASELINE_DESCRIPTIONS
+                )
                 if benchmark_object is None:
                     continue
                 metadata = {}
@@ -464,7 +475,7 @@ def benchmark_main_helper(
 
     results_for_print = _finalize_results(results + results_compare_to)
     benchmark.Compare(results_for_print).print()
-    _render_bar_plot(results_for_print)
+    _render_bar_plot(results_for_print, store_results_folder)
 
     # Save runs to a file
     if args.label is not None:
