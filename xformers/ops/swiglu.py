@@ -22,29 +22,24 @@ class _SwiGLUModule(nn.Module):
     def __init__(
         self,
         in_features: int,
-        hidden_features: Optional[int] = None,
+        hidden_features: int,
         out_features: Optional[int] = None,
-        align_as: int = 8,
         pack_weights: bool = False,
     ) -> None:
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
-        swiglu_hidden_features = int(2 * hidden_features / 3)
-        swiglu_hidden_features = (
-            (swiglu_hidden_features + align_as - 1) // align_as * align_as
-        )
 
         self.w12: Optional[nn.Linear]
         if pack_weights:
-            self.w12 = nn.Linear(in_features, 2 * swiglu_hidden_features)
+            self.w12 = nn.Linear(in_features, 2 * hidden_features)
         else:
             self.w12 = None
-            self.w1 = nn.Linear(in_features, swiglu_hidden_features)
-            self.w2 = nn.Linear(in_features, swiglu_hidden_features)
-        self.w3 = nn.Linear(swiglu_hidden_features, out_features)
+            self.w1 = nn.Linear(in_features, hidden_features)
+            self.w2 = nn.Linear(in_features, hidden_features)
+        self.w3 = nn.Linear(hidden_features, out_features)
 
-        self.swiglu_hidden_features = swiglu_hidden_features
+        self.hidden_features = hidden_features
         self.out_features = out_features
         self.in_features = in_features
 
@@ -59,7 +54,7 @@ class _SwiGLUModule(nn.Module):
         ```
         """
         if self.w12 is not None:
-            x12 = self.w12(x).view([x.shape[0], 2, self.swiglu_hidden_features])
+            x12 = self.w12(x).view([x.shape[0], 2, self.hidden_features])
             x1, x2 = unbind(x12, dim=1)
         else:
             x1 = self.w1(x)

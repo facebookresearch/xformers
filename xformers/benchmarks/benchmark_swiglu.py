@@ -20,9 +20,9 @@ device = torch.device("cuda")
 SHAPES = [
     # Format: [inp.shape[0], inp.shape[1], hidden.shape[1]]
     # ViT-Giant
-    (9456, 1536, 4096),
-    (4440, 1536, 4096),
-    (4728, 1536, 4096),
+    (9456, 1536, 2736),
+    (4440, 1536, 2736),
+    (4728, 1536, 2736),
     # Some smaller shapes as well
     (4728, 1536, 1024),
     # GPT-3 (small)
