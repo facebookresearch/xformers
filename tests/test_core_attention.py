@@ -59,6 +59,15 @@ def test_core_attention_mask_types():
     # Now properly handled
     assert torch.allclose(r_dense_add, r_sparse_add)
 
+    # Test additive mask with mismatched batch dim
+    d = b // 2
+    mask = torch.rand(d, s, s) > prob
+    float_mask_add = torch.zeros_like(mask, dtype=torch.float)
+    float_mask_add = float_mask_add.masked_fill(mask, float("-inf"))
+
+    # Make sure masking doesn't return errors
+    r_dense_add = scaled_dot_product_attention(a, a, a, float_mask_add)
+
 
 @pytest.mark.parametrize("device", _devices)
 def test_amp_attention_dense_no_mask(device):
