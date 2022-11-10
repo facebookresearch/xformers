@@ -5,7 +5,7 @@
 
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 import torch.nn as nn
@@ -13,6 +13,7 @@ import torch.nn as nn
 from xformers.components.attention import (
     Attention,
     AttentionConfig,
+    AttentionMask,
     maybe_sparsify,
     register_attention,
     sparsify,
@@ -97,7 +98,7 @@ class LocalAttention(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
+        att_mask: Optional[Union[torch.Tensor, AttentionMask]] = None,
         *args,
         **kwargs,
     ):
@@ -106,9 +107,13 @@ class LocalAttention(Attention):
             self.attention_mask = self._get_local_mask(q.shape).to(q.device)
 
         # Take into account the optional user mask
-        mask = (
-            self.attention_mask if att_mask is None else self.attention_mask & att_mask
-        )
+        if att_mask is None:
+            mask = self.attention_mask
+        else:
+            if isinstance(att_mask, AttentionMask):
+                # Needed because & op not defined for SparseCS with AttentionMask
+                att_mask = att_mask.to_bool()
+            mask = self.attention_mask & att_mask
 
         return scaled_dot_product_attention(
             q=q, k=k, v=v, att_mask=mask, dropout=self.attn_drop
