@@ -327,7 +327,7 @@ def scaled_dot_product_attention(
         logger.info("Switching causal attention to Triton blocksparse...")
         return blocksparse_attention(q, k, v, dropout, block_size)
 
-    with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
+    with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():  # type: ignore
         if autocast_disabled:
             q, k, v = q.float(), k.float(), v.float()
 
