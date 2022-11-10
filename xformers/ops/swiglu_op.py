@@ -291,8 +291,8 @@ def swiglu(
         to allow for faster implementations
     """
 
-    if x.ndim != 2:
-        raise ValueError(f"Expected shape for x: [batch, n_input] but got {x.shape}")
+    batch_shape = x.shape[:-1]
+    x = x.reshape([-1, x.shape[-1]])
     if w1.ndim != 2 or w1.shape != w2.shape:
         raise ValueError(f"Invalid shapes for w1: {w1.shape} / w2: {w2.shape}")
     if b1 is not None:
@@ -311,7 +311,7 @@ def swiglu(
         op = SwiGLUOpDispatch.from_arguments(x, w1, b1, w2, b2, w3, b3).op
 
     if not op.PACKED_WEIGHTS:
-        return op(x, w1, b1, w2, b2, w3, b3)
+        return op(x, w1, b1, w2, b2, w3, b3).reshape([*batch_shape, -1])
     w1w2 = stack_or_none((w1, w2), dim=0)
     if b1 is not None and b2 is not None:
         b1b2: Optional[torch.Tensor] = stack_or_none((b1, b2), dim=0)
@@ -323,7 +323,7 @@ def swiglu(
 
     if w1w2 is None:
         raise NotImplementedError("w1/w2 needs to be properly packed")
-    return op(x, w1w2, b1b2, w3, b3)
+    return op(x, w1w2, b1b2, w3, b3).reshape([*batch_shape, -1])
 
 
 class SwiGLU(nn.Module):

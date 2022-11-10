@@ -109,8 +109,8 @@ _ops: Sequence[xsw.SwiGLUOp] = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
 
 
 @functools.lru_cache(maxsize=1)
-def create_module_cached(cls, **kwargs) -> torch.nn.Module:
-    return cls(**kwargs)
+def create_module_cached(**kwargs) -> xsw.SwiGLU:
+    return xsw.SwiGLU(**kwargs)
 
 
 @pytest.mark.parametrize("autocast", [False, True], ids=["regular", "autocast"])
@@ -163,7 +163,6 @@ def test_forward_backward(
 
     module = copy.deepcopy(
         create_module_cached(
-            xsw.SwiGLU,
             in_features=shape[1],
             hidden_features=shape[2],
             bias=bias,

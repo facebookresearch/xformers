@@ -57,22 +57,15 @@ class TimmSwiGLU(nn.Module):
     def __init__(self, mlp: TimmMlp, op=None) -> None:
         super().__init__()
         self.fc1 = mlp.fc1
-        self.swiglu = xops.swiglu._SwiGLUModule(
+        self.swiglu = xops.SwiGLU(
             in_features=mlp.fc1.in_features,
             hidden_features=mlp.fc1.out_features,
-            pack_weights=True,
             bias=True,
         )
         self.op = op
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, M, C = x.shape
-
-        x = x.reshape([B * M, C])
-        x = xops.functional_swiglu(x, *self.swiglu._ordered_params_for_op(), op=self.op)
-        x = x.reshape([B, M, C])
-
-        return x
+        return self.swiglu(x)
 
 
 def mod_memeff_attn(model: nn.Module, op=None) -> nn.Module:
