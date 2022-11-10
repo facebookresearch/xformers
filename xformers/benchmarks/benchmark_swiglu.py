@@ -5,6 +5,7 @@
 
 
 import itertools
+from contextlib import nullcontext
 from functools import partial
 
 import torch
@@ -19,13 +20,21 @@ device = torch.device("cuda")
 SHAPES = [
     # Format: [inp.shape[0], inp.shape[1], hidden.shape[1]]
     # ViT-Giant
-    (9456, 1536, 4096),
-    (4440, 1536, 4096),
-    (4728, 1536, 4096),
+    (9456, 1536, 2736),
+    (4440, 1536, 2736),
+    (4728, 1536, 2736),
+    # Some smaller shapes as well
+    (4728, 1536, 1024),
+    # GPT-3 (small)
+    (32768, 2048, 5632),
+    # Chinchilla
+    (32768, 8192, 22016),
 ]
 
 
-OP = xsw._SwiGLUDecomposedOp
+# OP = xsw._SwiGLUDecomposedOp
+# OP = xsw.SwiGLUFusedOp
+OP = xsw.SwiGLUPackedFusedOp
 
 
 def product_dict(**kwargs):
@@ -38,34 +47,43 @@ def product_dict(**kwargs):
 CASES = list(
     product_dict(
         shape=SHAPES,
-        dtype=[torch.half, torch.float],
+        dtype=[torch.bfloat16, torch.half, "autocast_half"],
     )
 )
 
+DTYPE2STR = {
+    torch.bfloat16: "b16   ",
+    torch.half: "f16   ",
+    "autocast_half": "f16.ac",
+}
+
 
 def benchmark_swiglu(shape, dtype):
-    inp_dtype, model_dtype, autocast = dtype, dtype, False
+    if dtype == "autocast_half":
+        inp_dtype, model_dtype, autocast = torch.float, torch.float, True
+    else:
+        inp_dtype, model_dtype, autocast = dtype, dtype, False
 
     x = torch.randn(shape[:2], device=device, dtype=inp_dtype)
     module = (
-        xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
+        xsw._SwiGLUModule(
+            in_features=shape[1], hidden_features=shape[2], pack_weights=True
+        )
         .to(device)
         .to(model_dtype)
     )
 
-    dtype_str = {
-        torch.bfloat16: "b16",
-        torch.half: "f16",
-        torch.float: "f32",
-    }.get(dtype, dtype)
+    dtype_str = DTYPE2STR.get(dtype, dtype)
     sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]}"
 
-    assert not autocast
+    params = module._ordered_params_for_op()
+
+    PREFIX = 'with torch.autocast("cuda", dtype=torch.half):\n    ' if autocast else ""
     yield benchmark.Timer(
-        stmt="fn(x, *args)",
+        stmt=f"{PREFIX}fn(x, *args)",
         globals={
             "x": x,
-            "args": module._ordered_params_for_op(),
+            "args": params,
             "fn": partial(xsw.functional_swiglu, op=OP),
         },
         label="swiglu_fw",
@@ -73,7 +91,7 @@ def benchmark_swiglu(shape, dtype):
         sub_label=sub_label,
     )
     yield benchmark.Timer(
-        stmt="fn(x)",
+        stmt=f"{PREFIX}fn(x)",
         globals={
             "x": x,
             "fn": module,
@@ -85,26 +103,31 @@ def benchmark_swiglu(shape, dtype):
 
 
 def benchmark_swiglu_bw(shape, dtype):
-    inp_dtype, model_dtype, autocast = dtype, dtype, False
+    if dtype == "autocast_half":
+        inp_dtype, model_dtype = torch.float, torch.float
+        cm = partial(torch.cuda.amp.autocast, enabled=True, dtype=torch.float16)
+    else:
+        inp_dtype, model_dtype = dtype, dtype
+        cm = nullcontext
 
     x = torch.randn(shape[:2], device=device, dtype=inp_dtype)
     x.requires_grad_()
     module = (
-        xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
+        xsw._SwiGLUModule(
+            in_features=shape[1], hidden_features=shape[2], pack_weights=True
+        )
         .to(device)
         .to(model_dtype)
     )
 
-    dtype_str = {
-        torch.bfloat16: "b16",
-        torch.half: "f16",
-        torch.float: "f32",
-    }.get(dtype, dtype)
+    dtype_str = DTYPE2STR.get(dtype, dtype)
     sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]}"
 
-    assert not autocast
-    out = xsw.functional_swiglu(x, *module._ordered_params_for_op(), op=OP)
+    params = module._ordered_params_for_op()
+    with cm():
+        out = xsw.functional_swiglu(x, *params, op=OP)
     grad = torch.zeros_like(out)
+
     yield benchmark.Timer(
         stmt="out.backward(grad, retain_graph=True)",
         globals={
@@ -117,10 +140,13 @@ def benchmark_swiglu_bw(shape, dtype):
     )
     del out
 
+    with cm():
+        out = module(x)
+
     yield benchmark.Timer(
         stmt="out.backward(grad, retain_graph=True)",
         globals={
-            "out": module(x),
+            "out": out,
             "grad": grad,
         },
         label="swiglu_bw",

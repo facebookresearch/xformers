@@ -4,7 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import random
-from typing import Optional
+from contextlib import nullcontext
+from typing import Optional, Sequence
 
 import pytest
 import torch
@@ -13,7 +14,13 @@ import xformers.ops.swiglu as xsw
 
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-_devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+if torch.cuda.is_available():
+    _devices = ["cuda"]
+    _is_sm80 = torch.cuda.get_device_capability(_devices[0])[0] >= 8
+else:
+    _devices = []
+    _is_sm80 = False
+sm80_only = pytest.mark.skipif(not _is_sm80, reason="requires sm80")
 
 
 def assert_allclose(
@@ -76,23 +83,32 @@ def generate_test_shapes():
     shapes = [
         # Format: [inp.shape[0], inp.shape[1], hidden.shape[1]]
         # ViT-Giant
-        (9456, 1536, 4096),
-        (4440, 1536, 4096),
-        (4728, 1536, 4096),
+        (9456, 1536, 2736),
+        (4440, 1536, 2736),
+        (4728, 1536, 2736),
+        # GPT-3 (small)
+        (2048, 2048, 5632),
+        # Chinchilla
+        (2048, 8192, 22016),
     ]
     # Add some random shapes
     r = random.Random(0)
     for _ in range(20):
-        shapes.append((r.randint(1, 5000), r.randint(1, 5000), r.randint(1, 512) * 8))
+        shapes.append(
+            (r.randint(1, 1000) * 8, r.randint(1, 1000) * 8, r.randint(1, 512) * 8)
+        )
     return shapes
 
 
 _test_shapes = list(generate_test_shapes())
 _test_shapes_ids = [str(s) for s in _test_shapes]
-_dtypes = [torch.float, torch.float16]
+_dtypes = [torch.bfloat16, torch.float16]
+_ops: Sequence[xsw.SwiGLUOp] = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
 
 
-@pytest.mark.parametrize("autocast", [False])  # TODO: Enable autocast testing
+@pytest.mark.parametrize("autocast", [False, True])
+@pytest.mark.parametrize("pack_weights", [False, True])
+@pytest.mark.parametrize("op", _ops, ids=[x.NAME for x in _ops])
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
 @pytest.mark.parametrize("device", _devices)
 @pytest.mark.parametrize(
@@ -103,29 +119,41 @@ _dtypes = [torch.float, torch.float16]
 def test_forward_backward(
     shape,
     device,
+    op,
     dtype,
     autocast: bool,
+    pack_weights: bool,
 ):
-    FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-3}
+    torch.manual_seed(shape[0] * shape[1] * shape[2])
+    FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-2, torch.bfloat16: 1e-2}
+    FORWARD_RTOL = {torch.float: 1e-5, torch.half: 4e-3, torch.bfloat16: 4e-3}
     BACKWARD_ATOL = {
         torch.float: 3e-4,
         torch.half: 0.5,
+        torch.bfloat16: 4.0,  # !!
     }
     BACKWARD_RTOL = {
         torch.float: 2e-3,
         torch.half: 1e-2,
+        torch.bfloat16: 4e-2,
     }
 
-    if device == "cpu" and dtype is not torch.float:
-        pytest.skip("Half not supported on CPU")
-    if autocast and (device == "cpu" or dtype is not torch.half):
-        pytest.skip("Autocast only supported for CUDA+Half")
+    if not op.supports(
+        xsw.SwiGLUOpDispatch(
+            device=device,
+            dtype=dtype,
+            dtype_autocast_gpu=dtype if autocast and device == "cuda" else None,
+            packed_weights=pack_weights,
+        )
+    ):
+        pytest.skip("Not supported by operator")
 
     inp_model_dtype = torch.float if autocast else dtype
     x = torch.randn(shape[:2], device=device, dtype=inp_model_dtype)
-    op = xsw._SwiGLUDecomposedOp
 
-    module = xsw._SwiGLUModule(in_features=shape[1], hidden_features=shape[2])
+    module = xsw._SwiGLUModule(
+        in_features=shape[1], hidden_features=shape[2], pack_weights=pack_weights
+    )
     x_f32: Optional[torch.Tensor]
     ref_f32: Optional[torch.Tensor]
     module_f32: Optional[torch.nn.Module]
@@ -140,21 +168,16 @@ def test_forward_backward(
     x.requires_grad_()
 
     # Forward
-    if autocast:
-        with torch.autocast("cuda", dtype=dtype):
-            ref = module(x)
-    else:
+    cm = torch.autocast("cuda", dtype=dtype) if autocast else nullcontext()
+    with cm:
         ref = module(x)
-    out = xsw.functional_swiglu(x, *module._ordered_params_for_op(), op=op)
+        out = xsw.functional_swiglu(x, *module._ordered_params_for_op(), op=op)
+
     if ref_f32 is None:
         ref_f32 = ref
 
     assert_allclose(
-        out,
-        ref,
-        ref_f32,
-        "fw",
-        atol=FORWARD_ATOL[dtype],
+        out, ref, ref_f32, "fw", atol=FORWARD_ATOL[dtype], rtol=FORWARD_RTOL[dtype]
     )
 
     # Backward
