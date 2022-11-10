@@ -5,7 +5,7 @@
 
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 import torch.nn as nn
@@ -91,7 +91,7 @@ class RandomAttention(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
+        att_mask: Optional[Union[torch.Tensor, AttentionMask]] = None,
         *args,
         **kwargs,
     ):
@@ -106,6 +106,9 @@ class RandomAttention(Attention):
             ):
                 mask = self.rand_attention_mask + AttentionMask.from_bool(att_mask)
             else:
+                if isinstance(att_mask, AttentionMask):
+                    # Needed because & op not defined for SparseCS with AttentionMask
+                    att_mask = att_mask.to_bool()
                 mask = self.rand_attention_mask & att_mask
         else:
             mask = self.rand_attention_mask

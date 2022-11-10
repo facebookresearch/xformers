@@ -5,7 +5,7 @@
 
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 import torch.nn as nn
@@ -88,7 +88,7 @@ class GlobalAttention(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
+        att_mask: Optional[Union[torch.Tensor, AttentionMask]] = None,
         *_,
         **__,
     ):
@@ -101,7 +101,9 @@ class GlobalAttention(Attention):
             if att_mask.dtype == torch.bool and isinstance(
                 self.attention_mask, AttentionMask
             ):
-                mask = self.attention_mask + AttentionMask.from_bool(att_mask)
+                if not isinstance(att_mask, AttentionMask):
+                    att_mask = AttentionMask.from_bool(att_mask)
+                mask = self.attention_mask + att_mask
             else:
                 mask = self.attention_mask & att_mask
         else:

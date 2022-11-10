@@ -7,14 +7,19 @@
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 import torch.autograd.profiler as profiler
 import torch.nn as nn
 import torch.nn.functional as Fn
 
-from xformers.components.attention import Attention, AttentionConfig, register_attention
+from xformers.components.attention import (
+    Attention,
+    AttentionConfig,
+    AttentionMask,
+    register_attention,
+)
 from xformers.components.attention.core import (
     scaled_dot_product_attention,
     scaled_query_key_softmax,
@@ -83,7 +88,7 @@ class OrthoFormerAttention(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
+        att_mask: Optional[Union[AttentionMask, torch.Tensor]] = None,
         *args,
         **kwargs,
     ):
