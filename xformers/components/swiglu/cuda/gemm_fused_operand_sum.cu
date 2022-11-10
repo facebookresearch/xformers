@@ -104,7 +104,7 @@ void gemm_fused_operand_sum_(
   >;
   {
     cudaDeviceProp* p = at::cuda::getDeviceProperties(a.device().index());
-    TORCH_CHECK(p->major * 10 + p->minor >= SmArch::kMinComputeCapability, "GPU not supported");
+    TORCH_CHECK(p->major * 10 + p->minor >= SmArch::kMinComputeCapability, "Only A100+ GPUs are supported");
   }
 
   // Below is the reduction kernel used in the case of parallel split-k
