@@ -362,8 +362,7 @@ def benchmark_main_helper(
     except RuntimeError:  # No GPU
         env = "cpu"
 
-    if args.compare is not None or args.label is not None:
-        os.makedirs(store_results_folder, exist_ok=True)
+    os.makedirs(store_results_folder, exist_ok=True)
 
     # Load runs that we want to compare to
     skip_vanilla_tasks = set()
