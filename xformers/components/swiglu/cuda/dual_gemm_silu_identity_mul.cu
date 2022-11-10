@@ -13,9 +13,9 @@ template <typename scalar_t>
 std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
     const at::Tensor& x,
     const at::Tensor& w0,
-    const at::Tensor& b0,
+    const c10::optional<at::Tensor>& b0,
     const at::Tensor& w1,
-    const at::Tensor& b1
+    const c10::optional<at::Tensor>& b1
 ) {
   TORCH_CHECK(x.stride(-1) == 1);
   TORCH_CHECK(w0.stride(-1) == 1);
@@ -56,9 +56,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
   >;
 
   const ElementCompute alpha0 = ElementCompute(1);
-  const ElementCompute beta0 = ElementCompute(1);
+  const ElementCompute beta0 = b0.has_value() ? ElementCompute(1) : ElementCompute(0);
   const ElementCompute alpha1 = ElementCompute(1);
-  const ElementCompute beta1 = ElementCompute(1);
+  const ElementCompute beta1 = b1.has_value() ? ElementCompute(1) : ElementCompute(0);
 
   using ThreadblockShape = cutlass::gemm::GemmShape<128, 64, 32>;
   using WarpShape = cutlass::gemm::GemmShape<64, 32, 32>;
@@ -95,14 +95,21 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
   using RefA = typename cutlass::TensorRef<typename DualGemm::ElementA, typename DualGemm::LayoutA>;
   using RefB = typename cutlass::TensorRef<typename DualGemm::ElementB, typename DualGemm::LayoutB>;
   using RefC = typename cutlass::TensorRef<typename DualGemm::ElementC, typename DualGemm::LayoutC>;
+  RefC ref_b0, ref_b1;
+  if (b0.has_value()) {
+    ref_b0 = RefC{(scalar_t*)b0->data_ptr(), typename DualGemm::LayoutC::Stride(0)};
+  }
+  if (b1.has_value()) {
+    ref_b1 = RefC{(scalar_t*)b1->data_ptr(), typename DualGemm::LayoutC::Stride(0)};
+  }
   typename DualGemm::Arguments arguments{
     problem_size,
     RefA{(scalar_t*)x.data_ptr(), typename DualGemm::LayoutA::Stride(x.stride(0))},
     RefB{(scalar_t*)w0.data_ptr(), typename DualGemm::LayoutB::Stride(w0.stride(0))},
-    RefC{(scalar_t*)b0.data_ptr(), typename DualGemm::LayoutC::Stride(0)},
+    ref_b0,
     RefC{(scalar_t*)d0.data_ptr(), typename DualGemm::LayoutC::Stride(d0.stride(0))},
     RefB{(scalar_t*)w1.data_ptr(), typename DualGemm::LayoutB::Stride(w1.stride(0))},
-    RefC{(scalar_t*)b1.data_ptr(), typename DualGemm::LayoutC::Stride(0)},
+    ref_b1,
     RefC{(scalar_t*)d1.data_ptr(), typename DualGemm::LayoutC::Stride(d1.stride(0))},
     RefC{(scalar_t*)d2.data_ptr(), typename DualGemm::LayoutC::Stride(d2.stride(0))},
     typename DualGemm::EpilogueOutputOp0::Params{alpha0, beta0},
@@ -124,9 +131,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
 std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul(
     const at::Tensor& x,
     const at::Tensor& w0,
-    const at::Tensor& b0,
+    const c10::optional<at::Tensor>& b0,
     const at::Tensor& w1,
-    const at::Tensor& b1
+    const c10::optional<at::Tensor>& b1
 ) {
   // TODO: Check all params. This would take a lot of lines of code...
   TORCH_CHECK(x.dim() == 2);
@@ -146,9 +153,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul(
 std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_autocast(
     const at::Tensor& x,
     const at::Tensor& w0,
-    const at::Tensor& b0,
+    const c10::optional<at::Tensor>& b0,
     const at::Tensor& w1,
-    const at::Tensor& b1
+    const c10::optional<at::Tensor>& b1
 ) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
   auto exec_type = at::autocast::get_autocast_gpu_dtype();
