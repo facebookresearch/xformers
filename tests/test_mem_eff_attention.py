@@ -5,6 +5,7 @@
 
 import math
 import random
+from typing import Sequence, Type
 
 import pytest
 import torch
@@ -73,36 +74,54 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
     return shapes
 
 
-def _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(**kwargs):
-    for op in [
-        xformers.ops.MemoryEfficientAttentionOp,
-        xformers.ops.MemoryEfficientAttentionCutlassOp,
-        xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
-        xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp,
-    ]:
-        for shape in generate_test_shapes_B_Mq_Mkv_H_K_Kv(op, **kwargs):
+ALL_OPS: Sequence[Type[xformers.ops.AttentionOpBase]] = [
+    xformers.ops.MemoryEfficientAttentionOp,
+    xformers.ops.MemoryEfficientAttentionCutlassOp,
+    xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
+    xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp,
+]
+
+
+def _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(one_shape_per_op: bool = False):
+    for op in ALL_OPS:
+        for shape in generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
+            has_one = False
             for device in _devices:
                 if device not in op.SUPPORTED_DEVICES:
                     continue
                 for dtype in op.SUPPORTED_DTYPES:
                     yield (op, device, dtype, *shape)
+                    has_one = True
+            if has_one and one_shape_per_op:
+                break
+
+
+def _gen_ids(op_device_dtype_B_Mq_Mkv_H_K_Kv):
+    return [
+        f"{op.NAME}-{device}-{str(dtype)}-{batch_size},{q_len},{kv_len},{h},{k},{kv}"
+        for (
+            op,
+            device,
+            dtype,
+            batch_size,
+            q_len,
+            kv_len,
+            h,
+            k,
+            kv,
+        ) in op_device_dtype_B_Mq_Mkv_H_K_Kv
+    ]
 
 
 _op_device_dtype_B_Mq_Mkv_H_K_Kv = list(_generate_op_device_dtype_B_Mq_Mkv_H_K_Kv())
-_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids = [
-    f"{op.NAME}-{device}-{str(dtype)}-{batch_size},{q_len},{kv_len},{h},{k},{kv}"
-    for (
-        op,
-        device,
-        dtype,
-        batch_size,
-        q_len,
-        kv_len,
-        h,
-        k,
-        kv,
-    ) in _op_device_dtype_B_Mq_Mkv_H_K_Kv
-]
+_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids = _gen_ids(_op_device_dtype_B_Mq_Mkv_H_K_Kv)
+
+_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs = list(
+    _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(one_shape_per_op=True)
+)
+_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids = _gen_ids(
+    _op_device_dtype_B_Mq_Mkv_H_K_Kv__xs
+)
 
 
 def assert_allclose(
@@ -735,3 +754,67 @@ def test_memory_efficient_attention_full_block_masked(
     assert_allclose(grad_q, query.grad, "grad_q", atol=atol)
     assert_allclose(grad_k, key.grad, "grad_k", atol=atol)
     assert_allclose(grad_v, value.grad, "grad_v", atol=atol)
+
+
+@pytest.mark.parametrize(
+    "op_device_dtype_B_Mq_Mkv_H_K_Kv",
+    _op_device_dtype_B_Mq_Mkv_H_K_Kv__xs,
+    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids,
+)
+def test_cuda_streams(
+    op_device_dtype_B_Mq_Mkv_H_K_Kv,
+):
+    (
+        op,
+        device,
+        dtype,
+        batch_size,
+        q_len,
+        kv_len,
+        h,
+        k,
+        kv,
+    ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
+    if device != "cuda":
+        pytest.skip("Not CUDA")
+    # Needs to be big enough so kernels take some time
+    # as we are trying to do a race-condition here
+    q_len = 1024
+    kv_len = 1024
+    op_device_dtype_B_Mq_Mkv_H_K_Kv = [
+        op,
+        device,
+        dtype,
+        batch_size,
+        q_len,
+        kv_len,
+        h,
+        k,
+        kv,
+    ]
+    s_hipri = torch.cuda.Stream(priority=-1)
+    s_lopri = torch.cuda.Stream(priority=0)
+    with torch.cuda.stream(s_lopri):
+        query, key, value, attn_bias = create_tensors(
+            *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=None, fmt="BMHK"
+        )
+        # Queue a lot of kernels
+        for i in range(20):
+            query = query.relu()
+        query = query * 2
+    s_hipri.wait_stream(s_lopri)
+    with torch.cuda.stream(s_hipri):
+        out = xformers.ops.memory_efficient_attention(query, key, value, op=op)
+        # This will run in hi-pri AFTER the kernel if it
+        # runs on the correct stream
+        out = out / 2
+    torch.cuda.synchronize()
+    ref = ref_attention(query, key, value) / 2
+    assert out.shape == ref.shape, out.shape
+
+    assert_allclose(
+        out.float(),
+        ref.float(),
+        atol=op.FORWARD_ERROR_ATOL[dtype],
+        rtol=op.FORWARD_ERROR_RTOL.get(dtype, 1e-5),
+    )
