@@ -93,7 +93,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
   >;
   {
     cudaDeviceProp* p = at::cuda::getDeviceProperties(x.device().index());
-    TORCH_CHECK(p->major * 10 + p->minor >= ArchTag::kMinComputeCapability, "GPU not supported");
+    TORCH_CHECK(p->major * 10 + p->minor >= ArchTag::kMinComputeCapability, "Only A100+ GPUs are supported");
   }
 
   int split_k_slices = DualGemm::kSplitKSerial ? 2 : 1;

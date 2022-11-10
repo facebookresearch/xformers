@@ -133,8 +133,6 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                 "nvcc": extra_compile_args.get("nvcc", [])
                 + [
                     "-O3",
-                    "-U__CUDA_NO_HALF_OPERATORS__",
-                    "-U__CUDA_NO_HALF_CONVERSIONS__",
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
                     "--use_fast_math",

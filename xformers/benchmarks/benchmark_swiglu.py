@@ -13,7 +13,7 @@ import torch
 from torch.utils import benchmark
 from utils import benchmark_main_helper
 
-import xformers.ops.swiglu as xsw
+import xformers.ops.swiglu_op as xsw
 
 min_run_time = 0.5
 device = torch.device("cuda")
@@ -68,9 +68,7 @@ def benchmark_swiglu(shape, dtype, bias: bool):
 
     x = torch.randn(shape[:2], device=device, dtype=inp_dtype)
     module = (
-        xsw._SwiGLUModule(
-            in_features=shape[1], hidden_features=shape[2], pack_weights=True, bias=bias
-        )
+        xsw.SwiGLU(in_features=shape[1], hidden_features=shape[2], bias=bias)
         .to(device)
         .to(model_dtype)
     )
@@ -79,7 +77,7 @@ def benchmark_swiglu(shape, dtype, bias: bool):
     bstr = "bias" if bias else "nobi"
     sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]} {bstr}"
 
-    params = module._ordered_params_for_op()
+    params = module._ordered_params()
 
     PREFIX = 'with torch.autocast("cuda", dtype=torch.half):\n    ' if autocast else ""
     yield benchmark.Timer(
@@ -87,17 +85,18 @@ def benchmark_swiglu(shape, dtype, bias: bool):
         globals={
             "x": x,
             "args": params,
-            "fn": partial(xsw.functional_swiglu, op=OP),
+            "fn": partial(xsw.swiglu, op=OP),
         },
         label="swiglu_fw",
         description=OP.NAME,
         sub_label=sub_label,
     )
     yield benchmark.Timer(
-        stmt=f"{PREFIX}fn(x)",
+        stmt=f"{PREFIX}fn(x, *args)",
         globals={
             "x": x,
-            "fn": module,
+            "args": params,
+            "fn": partial(xsw.swiglu, op=xsw.SwiGLUEagerOp),
         },
         label="swiglu_fw",
         description="eager",
@@ -116,9 +115,7 @@ def benchmark_swiglu_bw(shape, dtype, bias: bool):
     x = torch.randn(shape[:2], device=device, dtype=inp_dtype)
     x.requires_grad_()
     module = (
-        xsw._SwiGLUModule(
-            in_features=shape[1], hidden_features=shape[2], pack_weights=True, bias=bias
-        )
+        xsw.SwiGLU(in_features=shape[1], hidden_features=shape[2], bias=bias)
         .to(device)
         .to(model_dtype)
     )
@@ -127,9 +124,9 @@ def benchmark_swiglu_bw(shape, dtype, bias: bool):
     bstr = "bias" if bias else "nobi"
     sub_label = f"{dtype_str} B={shape[0]}, I={shape[1]}, H={shape[2]} {bstr}"
 
-    params = module._ordered_params_for_op()
+    params = module._ordered_params()
     with cm():
-        out = xsw.functional_swiglu(x, *params, op=OP)
+        out = xsw.swiglu(x, *params, op=OP)
     grad = torch.zeros_like(out)
 
     yield benchmark.Timer(
@@ -145,7 +142,7 @@ def benchmark_swiglu_bw(shape, dtype, bias: bool):
     del out
 
     with cm():
-        out = module(x)
+        out = xsw.swiglu(x, *params, op=xsw.SwiGLUEagerOp)
 
     yield benchmark.Timer(
         stmt="out.backward(grad, retain_graph=True)",
