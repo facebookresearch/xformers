@@ -85,7 +85,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
     EpilogueOutputOp01,
     EpilogueOutputOp01,
     EpilogueOutputOp2,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<2>,
     kStages,
     kStoreD0,
     kStoreD1,
