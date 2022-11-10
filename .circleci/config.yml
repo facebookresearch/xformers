@@ -91,7 +91,7 @@ install_dep: &install_dep
         conda install ninja
         echo "Ninja version $(ninja --version)"
 
-        conda install pytorch "torchvision>=0.13" torchaudio cudatoolkit=11.3 -c pytorch -q
+        conda install pytorch=1.12.1 "torchvision>=0.13" torchaudio cudatoolkit=11.3 -c pytorch -q
         $CONDA_PYTHON -m pip install -r requirements-benchmark.txt --progress-bar off
 
         # Mark install as complete
@@ -106,7 +106,7 @@ install_dep_exp: &install_dep_exp
         if [ -f /home/circleci/venv/check_version.py ]; then $CONDA_PYTHON  /home/circleci/venv/check_version.py torch gt 1.11 && exit 0; fi
         # start installing
         source activate /home/circleci/venv
-        conda install pytorch "torchvision>=0.13" torchaudio cudatoolkit=11.3 -c pytorch -q
+        conda install pytorch=1.12.1 "torchvision>=0.13" torchaudio cudatoolkit=11.3 -c pytorch -q
         $CONDA_PYTHON -m pip install -r experimental/requirements.txt --progress-bar off
 
 install_repo: &install_repo

@@ -633,6 +633,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
 class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlassOp):
     FW_OP = MemoryEfficientAttentionCutlassOp
     BW_OP = MemoryEfficientAttentionFlashAttentionOp
+    SUPPORTED_DTYPES = BW_OP.SUPPORTED_DTYPES.intersection(FW_OP.SUPPORTED_DTYPES)
     NAME = "fctls_bflsh"
 
     @classmethod

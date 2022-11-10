@@ -115,9 +115,11 @@ def assert_allclose(
     assert out.shape == ref.shape
     flatten_diff = ((out - ref).abs() - atol - ref.abs() * rtol).flatten()
     max_pos = flatten_diff.argmax()
+    max_diff = flatten_diff[max_pos]
+    del flatten_diff
     assert torch.allclose(out, ref, rtol=rtol, atol=atol), (
         f"{msg}: "
-        f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} (diff={flatten_diff[max_pos]} > 0)"
+        f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} (diff={max_diff} > 0)"
         f"/ atol={atol}, rtol={rtol}"
     )
 
@@ -187,14 +189,14 @@ def create_tensors(
     torch.manual_seed(B * q_len + kv_len * k + kv)
     scale = 3
     if fmt == "BMK":
-        query = torch.randn((B * h, q_len, k), device=device, dtype=dtype) * scale
-        key = torch.randn((B * h, kv_len, k), device=device, dtype=dtype) * scale
-        value = torch.randn((B * h, kv_len, kv), device=device, dtype=dtype) * scale
+        query = torch.randn((B * h, q_len, k), device=device, dtype=dtype).mul_(scale)
+        key = torch.randn((B * h, kv_len, k), device=device, dtype=dtype).mul_(scale)
+        value = torch.randn((B * h, kv_len, kv), device=device, dtype=dtype).mul_(scale)
     else:
         assert fmt == "BMHK"
-        query = torch.randn((B, q_len, h, k), device=device, dtype=dtype) * scale
-        key = torch.randn((B, kv_len, h, k), device=device, dtype=dtype) * scale
-        value = torch.randn((B, kv_len, h, kv), device=device, dtype=dtype) * scale
+        query = torch.randn((B, q_len, h, k), device=device, dtype=dtype).mul_(scale)
+        key = torch.randn((B, kv_len, h, k), device=device, dtype=dtype).mul_(scale)
+        value = torch.randn((B, kv_len, h, kv), device=device, dtype=dtype).mul_(scale)
 
     attn_bias = None
     if attn_bias_type is not None:
@@ -211,6 +213,8 @@ def create_tensors(
         query=query, key=key, value=value, attn_bias=attn_bias
     )
     if not op.supports(dispatch):
+        # Ensure we free memory to avoid OOMs
+        del query, key, value, attn_bias
         pytest.skip(f"{op.NAME}: unsupported ({dispatch})")
     return query, key, value, attn_bias
 
