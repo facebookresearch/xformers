@@ -20,6 +20,7 @@ from xformers.components import (
     build_multi_head_attention,
     build_patch_embedding,
 )
+from xformers.components.attention import AttentionMask
 from xformers.components.feedforward import build_feedforward
 from xformers.components.positional_embedding import build_positional_embedding
 from xformers.components.residual import get_deepnorm_coefficients
@@ -206,7 +207,7 @@ class xFormerEncoderBlock(torch.nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        att_mask: Optional[torch.Tensor] = None,
+        att_mask: Optional[Union[torch.Tensor, AttentionMask]] = None,
         input_mask: Optional[torch.Tensor] = None,
     ):
         if self.patch_emb is not None:
@@ -327,8 +328,8 @@ class xFormerDecoderBlock(torch.nn.Module):
         self,
         target: torch.Tensor,
         memory: torch.Tensor,
-        encoder_att_mask: Optional[torch.Tensor] = None,
-        decoder_att_mask: Optional[torch.Tensor] = None,
+        encoder_att_mask: Optional[Union[torch.Tensor, AttentionMask]] = None,
+        decoder_att_mask: Optional[Union[torch.Tensor, AttentionMask]] = None,
         input_mask: Optional[torch.Tensor] = None,
     ):
         if self.pose_encoding is not None:
