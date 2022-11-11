@@ -12,13 +12,13 @@ requirements:
     # - numpy >=1.11
     - python
     - pytorch=={{ environ.get('PYTORCH_VERSION') }}
-    - cudatoolkit{{ environ['CONDA_CUDATOOLKIT_CONSTRAINT'] }}
+    - {{environ['CONDA_CUDA_CONSTRAINT']}}
 
   run:
     # - numpy >=1.11
     - python
     - pytorch=={{ environ.get('PYTORCH_VERSION') }}
-    - cudatoolkit{{ environ['CONDA_CUDATOOLKIT_CONSTRAINT'] }}
+    - {{environ['CONDA_CUDA_CONSTRAINT']}}
 
 build:
   string: py{{py}}_cu{{ environ['CU_VERSION'] }}_pyt{{ environ['PYTORCH_VERSION']}}

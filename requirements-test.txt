@@ -14,7 +14,7 @@ click == 8.0.4
 protobuf==3.20.1
 
 # Tools for unit tests & coverage.
-pytest == 5.4.1
+pytest == 7.2.0
 pytest-cov == 2.10.0
 pytest-mpi == 0.4
 pytest-timeout == 1.4.2
@@ -27,4 +27,4 @@ hydra-core >= 1.1
 fairscale >= 0.4.5
 
 # Dependency for fused layers, optional
-triton == 2.0.0.dev20220701
+triton == 2.0.0.dev20221105
