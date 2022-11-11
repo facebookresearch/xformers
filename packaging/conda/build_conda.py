@@ -113,7 +113,9 @@ class Build:
             "conda",
             "build",
             "-c",
-            "fastchan",  # which can avoid needing pytorch and conda-forge
+            "pytorch",
+            "-c",
+            "nvidia",
             "--no-anaconda-upload",
             "--python",
             self.python_version,
