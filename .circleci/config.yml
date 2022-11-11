@@ -375,6 +375,8 @@ jobs:
     parameters:
       dockerimage:
         type: string
+      pytorch_version:
+        type: string
       cu_version:
         type: string
 
@@ -396,8 +398,8 @@ jobs:
           no_output_timeout: 20m
           command: |
             git submodule update --init --recursive
-            python packaging/conda/build_conda.py  --cuda << parameters.cu_version >> --python 3.9 --pytorch 1.12.1 --upload-dev
-            python packaging/conda/build_conda.py  --cuda << parameters.cu_version >> --python 3.10 --pytorch 1.12.1 --upload-dev
+            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >>
+            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >>
 
   gpu_tests_cu114_sm75:
     <<: *gpu_cu114
@@ -542,21 +544,25 @@ workflows:
               - gh-pages
 
       - build_conda:
-          name: conda_build_cu113
+          name: conda_build_cu113_1.12.1
           dockerimage: pytorch/conda-builder:cuda113
-          cu_version: "11.3"
-          filters:
-            branches:
-              only:
-                - main
+          cu_version: 11.3
+          pytorch_version: 1.12.1
       - build_conda:
-          name: conda_build_cu116
+          name: conda_build_cu116_1.12.1
           dockerimage: pytorch/conda-builder:cuda116
-          cu_version: "11.6"
-          filters:
-            branches:
-              only:
-                - main
+          cu_version: 11.6
+          pytorch_version: 1.12.1
+      - build_conda:
+          name: conda_build_cu116_1.13
+          dockerimage: pytorch/conda-builder:cuda116
+          cu_version: 11.6
+          pytorch_version: 1.13
+      - build_conda:
+          name: conda_build_cu117_1.13
+          dockerimage: pytorch/conda-builder:cuda117
+          cu_version: 11.7
+          pytorch_version: 1.13
       - binary_linux_wheel:
           python_version: "3.7"
           name: binary_linux_wheel_py37_cu102
