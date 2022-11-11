@@ -98,7 +98,7 @@ class Build:
         os.environ["CU_VERSION"] = self.cuda_version
         os.environ["SOURCE_ROOT_DIR"] = str(SOURCE_ROOT_DIR)
         cuda_constraint = version_constraint(self.cuda_version)
-        pytorch_version_tuple = [int(v) for v in self.pytorch_version.split('.')]
+        pytorch_version_tuple = tuple(int(v) for v in self.pytorch_version.split('.'))
         if pytorch_version_tuple < (1, 13):
             os.environ["CONDA_CUDA_CONSTRAINT"] = f"cudatoolkit{cuda_constraint}"
         else:
