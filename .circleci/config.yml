@@ -394,13 +394,16 @@ jobs:
 
     steps:
       - checkout
-
+      - run: git submodule update --init --recursive
       - run:
-          name: conda build
+          name: conda build for py3_9
           no_output_timeout: 20m
           command: |
-            git submodule update --init --recursive
             python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >>
+      - run:
+          name: conda build for py3_10
+          no_output_timeout: 20m
+          command: |
             python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >>
 
   gpu_tests_cu114_sm75:
