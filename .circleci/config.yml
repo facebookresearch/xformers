@@ -81,6 +81,7 @@ setup_conda: &setup_conda
 install_dep: &install_dep
   - run:
       name: Install Dependencies with torch nightly
+      no_output_timeout: 30m
       command: |
         source $BASH_ENV
 
