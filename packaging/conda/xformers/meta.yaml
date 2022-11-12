@@ -23,7 +23,7 @@ requirements:
 
 build:
   string: py{{py}}_cu{{ environ['CU_VERSION'] }}_pyt{{ environ['PYTORCH_VERSION']}}
-  script: python setup.py install --single-version-externally-managed --record=record.txt
+  script: {{environ['PYTHON']}} setup.py install --single-version-externally-managed --record=record.txt
   script_env:
     - BUILD_VERSION
     - CUDA_HOME
