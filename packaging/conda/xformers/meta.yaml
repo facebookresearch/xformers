@@ -8,6 +8,8 @@ source:
 requirements:
   build:
     - ninja
+    - pytorch=={{ environ.get('PYTORCH_VERSION') }}
+    - {{environ['CONDA_CUDA_CONSTRAINT']}}
   host:
     # - numpy >=1.11
     - python
