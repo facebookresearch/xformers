@@ -22,6 +22,7 @@ def get_triton_activation_index(activation: Optional[Activation]) -> int:
             Activation.GeLU: 3,
             Activation.SquaredReLU: 4,
             Activation.SmeLU: 5,
+            Activation.StarReLU: 6,
         }[activation]
         if activation is not None
         else 0
@@ -76,6 +77,22 @@ def squared_relu(x):
 @triton.jit
 def squared_relu_grad(x):
     return tl.where(x >= 0.0, 2 * x, 0.0)
+
+
+@triton.jit
+def star_relu(x):
+    """
+    Star ReLU activation, as proposed in the "MetaFormer Baselines for Vision"_ paper.
+
+    .. _ "MetaFormer Baselines for Vision": https://arxiv.org/pdf/2210.13452.pdf
+    """
+    x_sq = x * x
+    return 0.8944 * tl.where(x > 0.0, x_sq, 0.0) - 0.4472
+
+
+@triton.jit
+def star_relu_grad(x):
+    return tl.where(x >= 0.0, 1.7888 * x, 0.0)
 
 
 # Leaky ReLU

@@ -30,15 +30,6 @@ if _triton_available:
 SHAPES = [(128, 256), (8, 384, 128), (8, 784, 512)]
 
 
-def pytorch_tf32():
-    # The flag below controls whether to allow TF32 on matmul. This flag defaults to False
-    # in PyTorch 1.12 and later.
-    torch.backends.cuda.matmul.allow_tf32 = True
-
-    # The flag below controls whether to allow TF32 on cuDNN. This flag defaults to True.
-    torch.backends.cudnn.allow_tf32 = True
-
-
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
 @pytest.mark.skipif(
     not _triton_available or gpu_capabilities_older_than_70(),
@@ -49,7 +40,6 @@ def pytorch_tf32():
 def test_fused_matmul(shape, dtype):
     """Check that the matrix multiply kernel and Pytorch's give the same results"""
     torch.random.manual_seed(0)
-    pytorch_tf32()
 
     # Raw fused matrix multiply first, to catch gross errors
     a = torch.normal(0, 1, size=(shape[-2], shape[-1]), dtype=dtype, device="cuda")
@@ -76,7 +66,9 @@ def test_fused_matmul(shape, dtype):
 
     # Now check that adding an activation to the mix still produces valid results
     # NOTE: SquaredReLU fails, some outlier representation issue
-    for activation in filter(lambda x: x is not Activation.SquaredReLU, Activation):
+    for activation in filter(
+        lambda x: x not in (Activation.SquaredReLU, Activation.StarReLU), Activation
+    ):
         torch_activation = build_activation(activation.value)
         res_torch = torch_activation(torch.addmm(c, a, b))
 
@@ -105,7 +97,6 @@ def test_fused_matmul(shape, dtype):
 def test_fused_linear_parity(shape, activation: Activation, bias: bool, amp: bool):
     """Check that PyTorch and fused linear layers give the same result"""
     torch.random.manual_seed(0)
-    pytorch_tf32()
 
     # Instantiate pytorch and fused layers, same initialization
     X = torch.normal(0, 1, size=shape, device="cuda")

@@ -16,6 +16,7 @@ from xformers.triton.k_activations import (
     relu_grad,
     smelu_grad,
     squared_relu_grad,
+    star_relu_grad,
 )
 from xformers.triton.sum_strided import sum_2d_dim_0
 
@@ -83,6 +84,8 @@ def kernel_bw(
         grad_act = squared_relu_grad(act_in)
     elif ACTIVATION_GRAD == 5:
         grad_act = smelu_grad(act_in)
+    elif ACTIVATION_GRAD == 6:
+        grad_act = star_relu_grad(act_in)
     else:
         grad_act = act_in
 

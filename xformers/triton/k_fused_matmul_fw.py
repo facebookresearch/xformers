@@ -9,7 +9,14 @@ import torch
 import triton
 import triton.language as tl
 
-from xformers.triton.k_activations import gelu, leaky_relu, relu, smelu, squared_relu
+from xformers.triton.k_activations import (
+    gelu,
+    leaky_relu,
+    relu,
+    smelu,
+    squared_relu,
+    star_relu,
+)
 
 # CREDITS: Initially inspired by the Triton tutorial on matrix multiplications
 
@@ -134,6 +141,8 @@ def kernel_fma(
         acc = squared_relu(acc)
     elif ACTIVATION == 5:
         acc = smelu(acc)
+    elif ACTIVATION == 6:
+        acc = star_relu(acc)
 
     # write back result
     out_ptrs = OUT + rm[:, None] * stride_om + rn[None, :]
