@@ -10,7 +10,7 @@ import logging
 import os
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, cast
 
 import pytorch_lightning as pl
 import torch
@@ -51,11 +51,11 @@ def build_model(args: argparse.Namespace, config: Dict) -> nn.Module:
     task = args.task
     attention_name = args.attention
 
-    # type: ignore
-    model: pl.LightningModule = (
+    model = cast(
+        pl.LightningModule,
         ModelForSCDual(config[f"{task}"], attention_name)
         if task == Task.Retrieval
-        else ModelForSC(config[f"{task}"], attention_name)
+        else ModelForSC(config[f"{task}"], attention_name),
     )
 
     logging.info(model)
