@@ -10,7 +10,7 @@ import torch
 try:
     from .version import __version__  # noqa: F401
 except ImportError:
-    pass
+    __version__ = "0.0.0"
 
 
 logger = logging.getLogger("xformers")

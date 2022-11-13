@@ -7,8 +7,8 @@
 <br/><!--
 ![PyPI](https://img.shields.io/pypi/v/xformers)
 ![PyPI - License](https://img.shields.io/pypi/l/xformers)
--->
 [![Documentation Status](https://github.com/facebookresearch/xformers/actions/workflows/gh-pages.yml/badge.svg)](https://github.com/facebookresearch/xformers/actions/workflows/gh-pages.yml/badge.svg)
+-->
 [![CircleCI](https://circleci.com/gh/facebookresearch/xformers.svg?style=shield)](https://app.circleci.com/pipelines/github/facebookresearch/xformers/)
 [![Codecov](https://codecov.io/gh/facebookresearch/xformers/branch/main/graph/badge.svg?token=PKGKDR4JQM)](https://codecov.io/gh/facebookresearch/xformers)
 [![black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -19,115 +19,51 @@
 -->
 --------------------------------------------------------------------------------
 
-## Description
+## xFormers - Toolbox to Accelerate Research on Transformers
 
-xFormers is a modular and field agnostic library to flexibly generate transformer architectures from interoperable and optimized building blocks. These blocks are not limited to xFormers and can also be cherry picked as the user see fit.
+xFormers is:
+- **Customizable building blocks**: Independant/customizable building blocks that can be used without boilerplate code. The components are domain-agnostic and xFormers is used by researchers in vision, NLP and more.
+- **Research first**: xFormers contains bleeding-edge components, that are not yet available in mainstream libraries like pytorch.
+- **Built with efficiency in mind**: Because speed of iteration matters, components are as fast and memory-efficient as possible. xFormers contains its own CUDA kernels, but dispatches to other libraries when relevant. 
 
-## Getting started
+## Installing xFormers
 
-The full [documentation](https://facebookresearch.github.io/xformers/) contains instructions for getting started, deep dives and tutorials about the various APIs.
-If in doubt, please check out the [HOWTO](HOWTO.md). Only some general considerations are laid out in the README.
-
-For recent changes, you can have a look at the [changelog](CHANGELOG.md)
-
-
-### Installation
-
-To install xFormers, it is recommended to use a dedicated virtual environment, as often with python, through `python-virtualenv` or `conda` for instance.
-PyTorch must be installed. Using conda for example:
+* **(RECOMMENDED) Using binaries**: We provide binaries for Linux and recent PyTorch versions. Install xFormers with conda:
 
 ```bash
-  conda create --name xformers python=3.10
-  conda activate xformers
-  conda install -c pytorch -c conda-forge cudatoolkit=11.6 pytorch=1.12.1
+conda install xformers -c xformers/label/dev
 ```
 
-*Please note that Pytorch 1.12 or newer is required.
+* **From source**: Alternatively, if no binaries are available (for instance for windows), you can also install from source:
 
-There are two ways you can install xFormers locally:
+```bash
+# (Optional) Makes the build much faster
+pip install ninja
+# Set TORCH_CUDA_ARCH_LIST if running and building on different GPU types
+pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
+# (this can take dozens of minutes)
+```
 
-<details><summary> Conda dev packages </summary><p>
+* **pip wheels**: There is no updated package available on pip, please install from conda or from source
 
-There are regular builds of xformers as it is developed on the `main` branch.
-To use these, you must be on Linux and have a conda environment with Python 3.9 or 3.10, CUDA 11.3 or 11.6, and PyTorch 1.12.1.
-You can install the latest with
 
-  ```bash
-  conda install xformers -c xformers/label/dev
-  ```
+## Results
 
-</p></details>
+**Memory-efficient MHA**
+![Benchmarks for ViTS](docs/plots/MHA/MHA_vit.png)
+*Setup: A100 on f16, measured total time for a forward+backward pass*
 
-<details><summary> Build from source (dev mode) </summary><p>
+Note that this is exact attention, not an approximation, just by calling [`xformers.ops.memory_efficient_attention`](https://ss.fr)
+**More benchmarks**
 
-  These commands will fetch the latest version of the code and then install xFormers from source.
-  If you want to build the sparse attention CUDA kernels, please make sure that the next point is covered prior to running these instructions.
+xFormers provides many components, and more benchmarks are available in [BENCHMARKS.md](BENCHMARKS.md).
 
-  ```bash
-  git clone git@github.com:facebookresearch/xformers.git
-  git submodule update --init --recursive
-  conda create --name xformer_env python=3.8
-  conda activate xformer_env
-  cd xformers
-  pip install -r requirements.txt
-  pip install -e .
-  # or, for OSX
-  MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ pip install -e .
-  ```
+### (Optional) Testing the installation
 
-</p></details>
-
-### Installing custom (non-pytorch) parts
-
-<details><summary> Sparse attention kernels </summary><p>
-
-Installing the CUDA-based sparse attention kernels may require extra care, as this mobilizes the CUDA toolchain. As a reminder, these kernels are built when you run `pip install -e .` and the CUDA buildchain is available (NVCC compiler). Re-building can for instance be done via `python3 setup.py clean && python3 setup.py develop`, so similarly wipe the `build` folder and redo a pip install -e.
-
-Some advices related to building these CUDA-specific components, tentatively adressing common pitfalls. Please make sure that:
-
-* NVCC and the current CUDA runtime match. Depending on your setup, you may be able to change the CUDA runtime with `module unload cuda module load cuda/xx.x`, possibly also `nvcc`
-* the version of GCC that you're using matches the current NVCC capabilities
-* the `TORCH_CUDA_ARCH_LIST` env variable is set to the architures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;8.0;8.6"`
-
-</p></details>
-
-<details><summary> Triton </summary><p>
-
-Some parts of xFormers use [Triton](http://www.triton-lang.org), and will only expose themselves if Triton is installed, and a compatible GPU is present (nVidia GPU with tensor cores). If Triton was not installed as part of the testing procedure, you can install it directly by running `pip install triton`. You can optionally test that the installation is successful by running one of the Triton-related benchmarks, for instance `python3 xformers/benchmarks/benchmark_triton_softmax.py`
-
-Triton will cache the compiled kernels to `/tmp/triton` by default. If this becomes an issue, this path can be specified through the `TRITON_CACHE_DIR` environment variable.
-
-</p></details>
-
-<details><summary> AOTAutograd/NVFuser </summary><p>
-
-Some parts of xFormers use AOT Autograd from the [FuncTorch](https://pytorch.org/functorch/stable/) library, and will only expose themselves if FuncTorch is installed, and a compatible GPU is present. If functorch was not installed as part of the testing procedure, you can install it directly through pip.
-
-  ```bash
-  pip install functorch
-  ```
-
- Once installed, set the flag `_is_functorch_available = True` in `xformers/__init__.py`. You can optionally test that the installation is successful by running one of the functorch-related benchmarks `python3 xformers/benchmarks/benchmark_nvfuser.py`
-
- If you are importing the xFormers library in a script, you can modify the flag as such:
-
-  ```python
-  import xformers
-  xformers._is_functorch_available = True
-  ```
-
-</p></details>
-
-### Testing the installation
-
-This will run a benchmark of the attention mechanisms exposed by xFormers, and generate a runtime and memory plot.
-If this concludes without errors, the installation is successful. This step is optional, and you will need some extra dependencies for it to
-be able to go through : `pip install -r requirements-benchmark.txt`.
-
-Once this is done, you can run this particular benchmark as follows:
+This command will provide information on an xFormers installation, and what kernels are built/available:
 
 ```python
-python3 xformers/benchmarks/benchmark_encoder.py --activations relu  --plot -emb 256 -bs 32 -heads 16
+python -m xformers.info
 ```
 
 ## Using xFormers
@@ -147,6 +83,8 @@ Models are thus not implemented in monolithic files, which are typically complic
 ### Repo map
 
 ```bash
+├── ops                         # Functional operators
+    └ ...
 ├── components                  # Parts zoo, any of which can be used directly
 │   ├── attention
 │   │    └ ...                  # all the supported attentions
@@ -156,11 +94,7 @@ Models are thus not implemented in monolithic files, which are typically complic
 │   │    └ ...                  # all the supported positional embeddings
 │   ├── activations.py          #
 │   └── multi_head_dispatch.py  # (optional) multihead wrap
-│
-├── factory                     # Build model programatically
-│   ├── block_factory.py        # (optional) helper to programatically generate layers
-│   └── model_factory.py        # (optional) helper to programatically generate models
-│
+|
 ├── benchmarks
 │     └ ...                     # A lot of benchmarks that you can use to test some parts
 └── triton
@@ -258,16 +192,18 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 1. Many attention mechanisms, interchangeables
 2. Optimized building blocks, beyond PyTorch primitives
-   1. sparse attention
-   2. block-sparse attention
-   3. fused softmax
-   4. fused linear layer
-   5. fused layer norm
-   6. fused dropout(activation(x+bias))
+   1. Memory-efficient exact attention - up to 10x faster
+   2. sparse attention
+   3. block-sparse attention
+   4. fused softmax
+   5. fused linear layer
+   6. fused layer norm
+   7. fused dropout(activation(x+bias))
+   8. fused SwiGLU
 3. Benchmarking and testing tools
    1. [micro benchnmarks](BENCHMARKS.md)
    2. transformer block benchmark
-   3. [LRA](xformers/benchmarks/LRA/README.md), with SLURM suppot
+   3. [LRA](xformers/benchmarks/LRA/README.md), with SLURM support
 4. Programatic and sweep friendly layer and model construction
    1. Compatible with hierarchical Transformers, like Swin or Metaformer
 5. Hackable
@@ -275,9 +211,13 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
    2. Using [Triton](https://triton-lang.org/) for some optimized parts, explicit, pythonic and user-accessible
    3. Native support for SquaredReLU (on top of ReLU, LeakyReLU, GeLU, ..), extensible activations
 
-### FAQ ?
+### Install troubleshooting
 
-We've tried to collect a relatively exhaustive list of explanations in the [HOWTO](HOWTO.md)
+
+* NVCC and the current CUDA runtime match. Depending on your setup, you may be able to change the CUDA runtime with `module unload cuda; module load cuda/xx.x`, possibly also `nvcc`
+* the version of GCC that you're using matches the current NVCC capabilities
+* the `TORCH_CUDA_ARCH_LIST` env variable is set to the architures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6"`
+
 
 ### License
 
@@ -288,11 +228,11 @@ xFormers has a BSD-style license, as found in the [LICENSE](LICENSE) file.
 If you use xFormers in your publication, please cite it by using the following BibTeX entry.
 
 ``` bibtex
-@Misc{xFormers2021,
-  author =       {Benjamin Lefaudeux and Francisco Massa and Diana Liskovich and Wenhan Xiong and Vittorio Caggiano and Sean Naren and Min Xu and Jieru Hu and Marta Tintore and Susan Zhang},
+@Misc{xFormers2022,
+  author =       {Benjamin Lefaudeux and Francisco Massa and Diana Liskovich and Wenhan Xiong and Vittorio Caggiano and Sean Naren and Min Xu and Jieru Hu and Marta Tintore and Susan Zhang and Patrick Labatut and Daniel Haziza},
   title =        {xFormers: A modular and hackable Transformer modelling library},
   howpublished = {\url{https://github.com/facebookresearch/xformers}},
-  year =         {2021}
+  year =         {2022}
 }
 ```
 
@@ -308,3 +248,5 @@ The following repositories are used in xFormers, either in close to original for
 * [Nystromformer](https://github.com/mlpen/Nystromformer)
 * [FairScale](https://github.com/facebookresearch/fairscale/)
 * [Pytorch Image Models](https://github.com/rwightman/pytorch-image-models)
+* [CUTLASS](https://github.com/nvidia/cutlass)
+* [Flash-Attention](https://github.com/HazyResearch/flash-attention)
