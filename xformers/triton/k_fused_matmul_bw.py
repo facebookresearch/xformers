@@ -18,18 +18,16 @@ from xformers.triton.k_activations import (
     squared_relu_grad,
     star_relu_grad,
 )
-from xformers.triton.sum_strided import sum_2d_dim_0
 
 
 # fmt: off
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_N": 32}, num_stages=5, num_warps=2),
-        triton.Config({"BLOCK_N": 64}, num_stages=5, num_warps=2),
-        triton.Config({"BLOCK_N": 128}, num_stages=3, num_warps=4),
-        triton.Config({"BLOCK_N": 256}, num_stages=3, num_warps=8),
-        triton.Config({"BLOCK_N": 512}, num_stages=3, num_warps=8),
-        triton.Config({"BLOCK_N": 1024}, num_stages=3, num_warps=8),
+        triton.Config({"BLOCK_N": 64}, num_stages=4, num_warps=2),
+        triton.Config({"BLOCK_N": 128}, num_stages=3, num_warps=2),
+        triton.Config({"BLOCK_N": 256}, num_stages=3, num_warps=4),
+        triton.Config({"BLOCK_N": 512}, num_stages=3, num_warps=4),
+        triton.Config({"BLOCK_N": 1024}, num_stages=3, num_warps=4),
     ],
     key=["N"],
 )
@@ -155,9 +153,9 @@ def fused_matmul_backward(
         # just before the activation
         grad_out_ = grad_act
 
-    # The following ops can also be handled by triton
-    grad_in = grad_out_ @ weight
+    # The following ops can also be handled by pytorch
+    grad_in = triton.ops.matmul(grad_out_, weight)
     grad_weight = grad_out_.transpose(1, 0) @ inputs_ if trainable_weight else None
-    grad_bias = sum_2d_dim_0(grad_out_) if trainable_bias else None
+    grad_bias = torch.sum(grad_out_, dim=0) if trainable_bias else None
 
     return grad_in.reshape_as(inputs), grad_weight, grad_bias

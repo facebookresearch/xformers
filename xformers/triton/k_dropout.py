@@ -31,9 +31,6 @@ _configs = [
     triton.Config({}, num_warps=16),
 ]
 
-MAX_INT32 = 2147483647
-MAX_UINT32 = 4294967295
-
 
 # fmt: off
 @triton.heuristics({"SIZE_RAND_BLOCK": lambda args: args["BLOCK_N"] * args["BLOCK_M"]})
@@ -66,7 +63,7 @@ def k_dropout_fw(
     # fmt: on
 
     row_id = tl.program_id(axis=0)
-    rows = row_id * BLOCK_M + tl.arange(0, BLOCK_M)  # 4x
+    rows = row_id * BLOCK_M + tl.arange(0, BLOCK_M)
 
     col_id = tl.program_id(axis=1)
     cols = col_id * BLOCK_N + tl.arange(0, BLOCK_N)
@@ -106,20 +103,12 @@ def k_dropout_fw(
     # get the random keep mask
     rand_offsets = tl.arange(0, SIZE_RAND_BLOCK)
     seed_int = tl.load(SEEDS + col_id)
+    r = tl.rand(seed_int, rand_offsets)
+    keep_mask = r > p
 
-    if 1:
-        r = tl.rand(seed_int, rand_offsets)
-        keep_mask = r > p
-
-        # prune and normalize in one go
-        keep = tl.reshape(keep_mask, x.shape)
-        output = tl.where(keep, (x * p_scale).to(x.dtype), 0.)
-    else:
-        r0, r1, r2, r3 = tl.randint4x(seed_int, rand_offsets)
-        r = tl.cat(tl.cat(r0, r1), tl.cat(r2, r3))
-        r = r.to(tl.uint32, bitcast=True)
-        r = tl.reshape(r, x.shape)
-        output = tl.where(r > p * MAX_UINT32, x * p_scale, 0.)
+    # prune and normalize in one go
+    keep = tl.reshape(keep_mask, x.shape)
+    output = tl.where(keep, (x * p_scale).to(x.dtype), 0.)
 
     tl.store(y_ptrs, output, mask=block_mask)  # output
 
@@ -158,7 +147,7 @@ def k_dropout_bw(
     # fmt: on
 
     row_id = tl.program_id(axis=0)
-    rows = row_id * BLOCK_M + tl.arange(0, BLOCK_M)  # 4x
+    rows = row_id * BLOCK_M + tl.arange(0, BLOCK_M)
 
     col_id = tl.program_id(axis=1)
     cols = col_id * BLOCK_N + tl.arange(0, BLOCK_N)
@@ -206,16 +195,9 @@ def k_dropout_bw(
     # from the same seeds, so the same drop mask is applied here
     rand_offsets = tl.arange(0, SIZE_RAND_BLOCK)
     seed_int = tl.load(SEEDS + col_id)
-    if 1:
-        r = tl.rand(seed_int, rand_offsets)
-        r = tl.reshape(r, grad_out.shape)
-        output = tl.where(r > p, (grad_out * p_scale).to(grad_out.dtype), 0.)
-    else:
-        r0, r1, r2, r3 = tl.randint4x(seed_int, rand_offsets)
-        r = tl.cat(tl.cat(r0, r1), tl.cat(r2, r3))
-        r = r.to(tl.uint32, bitcast=True)
-        r = tl.reshape(r, inputs.shape)
-        output = tl.where(r > p * MAX_UINT32, grad_out * p_scale, 0.)
+    r = tl.rand(seed_int, rand_offsets)
+    r = tl.reshape(r, grad_out.shape)
+    output = tl.where(r > p, (grad_out * p_scale).to(grad_out.dtype), 0.)
 
     # write-back
     tl.store(grad_in_ptrs, output, mask=block_mask)

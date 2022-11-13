@@ -27,4 +27,4 @@ hydra-core >= 1.1
 fairscale >= 0.4.5
 
 # Dependency for fused layers, optional
-triton==2.0.0.dev20221014
+triton==2.0.0.dev20221105

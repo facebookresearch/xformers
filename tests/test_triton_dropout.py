@@ -17,6 +17,8 @@ _triton_available = True
 
 if _triton_available:
     try:
+        import triton
+
         from xformers.triton import dropout as triton_dropout
         from xformers.triton.dropout import FusedDropoutBias
         from xformers.triton.utils import gpu_capabilities_older_than_70
@@ -130,7 +132,7 @@ def test_dropout(shape, amp, bias, p):
         torch.cuda.manual_seed(0)
         y_2 = triton_dropout(x, p=0.5)
 
-        assert torch.allclose(y_1, y_2)
+        triton.testing.assert_almost_equal(y_1, y_2)
 
 
 @pytest.mark.skipif(not _gpu_available, reason="GPU is not available")

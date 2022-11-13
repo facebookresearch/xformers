@@ -18,7 +18,7 @@ from xformers.triton.k_activations import get_triton_activation_index
 from xformers.triton.k_dropout import k_dropout_bw, k_dropout_fw
 
 BLOCK_M = 32
-BLOCK_N = 128
+BLOCK_N = 64  # NOTE: This should ideally be GPU dependent, big impact on perf
 
 
 # Helper to handle the SPMD launch grid and error cases
@@ -36,7 +36,7 @@ class _dropout(torch.autograd.Function):
 
         def grid(meta):
             return (
-                triton.cdiv(M, meta["BLOCK_M"]),  # 4 x
+                triton.cdiv(M, meta["BLOCK_M"]),
                 triton.cdiv(N, meta["BLOCK_N"]),
             )
 
@@ -101,7 +101,7 @@ class _dropout(torch.autograd.Function):
         # - over N we compromise in between trying to use as much memory paralellism as possible,
         # (fill in the warps, there are 32 threads per warps, and 4 warps default), and not being too
         # big because of register spilling
-        N_BLOCKS_M = triton.cdiv(M, BLOCK_M)  # 4x
+        N_BLOCKS_M = triton.cdiv(M, BLOCK_M)
 
         if ctx.trainable_bias:
             grad_bias = torch.empty(
