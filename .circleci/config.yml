@@ -399,12 +399,12 @@ jobs:
           name: conda build for py3_9
           no_output_timeout: 20m
           command: |
-            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >>
+            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >> --upload-dev
       - run:
           name: conda build for py3_10
           no_output_timeout: 20m
           command: |
-            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >>
+            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >> --upload-dev
 
   gpu_tests_cu114_sm75:
     <<: *gpu_cu114
@@ -553,21 +553,37 @@ workflows:
           dockerimage: pytorch/conda-builder:cuda113
           cu_version: "11.3"
           pytorch_version: "1.12.1"
+          filters:
+            branches:
+              only:
+                - main
       - build_conda:
           name: conda_build_cu116_1.12.1
           dockerimage: pytorch/conda-builder:cuda116
           cu_version: "11.6"
           pytorch_version: "1.12.1"
+          filters:
+            branches:
+              only:
+                - main
       - build_conda:
           name: conda_build_cu116_1.13
           dockerimage: pytorch/conda-builder:cuda116
           cu_version: "11.6"
           pytorch_version: "1.13"
+          filters:
+            branches:
+              only:
+                - main
       - build_conda:
           name: conda_build_cu117_1.13
           dockerimage: pytorch/conda-builder:cuda117
           cu_version: "11.7"
           pytorch_version: "1.13"
+          filters:
+            branches:
+              only:
+                - main
       - binary_linux_wheel:
           python_version: "3.7"
           name: binary_linux_wheel_py37_cu102
