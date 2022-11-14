@@ -17,7 +17,7 @@ Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py 
 
 ## Benchmark the core sparse attention mechanisms
 
-`python3 xformers./benchmarks/benchmark_core.py` will measure the speed of the core sparse attention mechanism. The current numbers are as follows (times in microseconds (us)):
+`python3 xformers/benchmarks/benchmark_core.py` will measure the speed of the core sparse attention mechanism. The current numbers are as follows (times in microseconds (us)):
 
 |                        | **matmul_with_mask**  |                        | **softmax**           |                        | **bmm**               |                        |
 | ---------------------- | --------------------- | ---------------------- | --------------------- | ---------------------- | --------------------- | ---------------------- |

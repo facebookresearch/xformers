@@ -12,8 +12,9 @@ def get_stack_strides(
     tensors: Sequence[torch.Tensor], dim: int
 ) -> Optional[Tuple[int, ...]]:
     """
-    If the tensors are already stacked, returns the strides of the stacked
-    tensors. Otherwise returns None.
+    If the tensors are already stacked on dimension :code:`dim`, \
+        returns the strides of the stacked tensors. \
+        Otherwise returns :code:`None`.
     """
     if len(tensors) <= 1 or dim > tensors[0].ndim:
         return None
@@ -101,8 +102,8 @@ class _StackOrNone(torch.autograd.Function):
 
 def unbind(x: torch.Tensor, dim: int) -> Tuple[torch.Tensor, ...]:
     """
-    Does exactly the same as `torch.unbind` for the forward.
-    In backward, avoids a `torch.cat` if the gradients
+    Does exactly the same as :attr:`torch.unbind` for the forward.
+    In backward, avoids a :attr:`torch.cat` if the gradients
     are already multiple views of the same storage
     """
     return _Unbind.apply(x, dim)
@@ -110,7 +111,7 @@ def unbind(x: torch.Tensor, dim: int) -> Tuple[torch.Tensor, ...]:
 
 def stack_or_none(tensors: Sequence[torch.Tensor], dim: int) -> torch.Tensor:
     """
-    Does exactly the same as `torch.stack` if the tensors can be concatenated
+    Does exactly the same as :attr:`torch.stack` if the tensors can be concatenated
     without any memory operation. Otherwise returns None.
     """
     return _StackOrNone.apply(dim, *tensors)
