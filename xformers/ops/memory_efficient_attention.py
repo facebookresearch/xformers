@@ -5,7 +5,7 @@
 
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any, List, Mapping, Optional, Set, Type, Union
 
@@ -327,6 +327,16 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             matmul_alignment_mn = max(matmul_alignment_mn, 128 // bits_per_scalar)
         if (d.k % matmul_alignment_mn != 0) or (d.kv % matmul_alignment_mn != 0):
             return False
+        # Sm86 does not have enough shared-memory
+        # See https://github.com/facebookresearch/xformers/issues/517
+        if (
+            d.requires_grad
+            and sm >= 80
+            and sm != 80
+            and d.dtype is torch.float
+            and d.k > 64
+        ):
+            return False
         return True
 
     @classmethod
@@ -379,10 +389,12 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         if not super(MemoryEfficientAttentionFlashAttentionOp, cls).supports(d):
             return False
         # We know `d.device` is cuda now
-        # d=128 is only supported on A100
+        # d=128 is only supported on A100 for bw
         device_capability = torch.cuda.get_device_capability(d.device)
-        is_sm80 = device_capability[0] >= 8
-        if d.k not in [16, 32, 64, 128] or (d.k == 128 and not is_sm80):
+        is_sm80 = device_capability[0] == 8 and device_capability[1] == 0
+        if d.k not in [16, 32, 64, 128]:
+            return False
+        if d.requires_grad and d.k == 128 and not is_sm80:
             return False
         return device_capability >= (7, 5)
 
@@ -634,7 +646,9 @@ class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlas
 
     @classmethod
     def supports(cls, d: "AttentionOpDispatch") -> bool:
-        return cls.FW_OP.supports(d) and cls.BW_OP.supports(d)
+        if d.requires_grad and not cls.BW_OP.supports(d):
+            return False
+        return cls.FW_OP.supports(replace(d, requires_grad=False))
 
     @classmethod
     def backward(cls, ctx, grad):
@@ -671,6 +685,7 @@ class AttentionOpDispatch:
     kv: int = -1
     batch_size: int = -1
     num_heads: int = 1
+    requires_grad: bool = True
 
     def __post_init__(self):
         if self.kv == -1:
@@ -693,7 +708,7 @@ class AttentionOpDispatch:
             MemoryEfficientAttentionCutlassOp,
             MemoryEfficientAttentionOp,
         ]
-        if self._is_cutlass_fwd_faster_than_flash():
+        if self.requires_grad and self._is_cutlass_fwd_faster_than_flash():
             priority_list_ops.insert(0, MemoryEfficientAttentionCutlassFwdFlashBwOp)
         for op in priority_list_ops:
             if op.supports(self):
@@ -723,6 +738,7 @@ class AttentionOpDispatch:
             q_len=query.shape[1],
             batch_size=B,
             num_heads=H,
+            requires_grad=any(x.requires_grad for x in [query, key, value]),
         )
 
 
