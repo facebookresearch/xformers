@@ -121,7 +121,7 @@ def test_dropout(shape, amp, bias, p):
         # Check that the drop probability is about right
         y = triton_dropout(x, p=p)
         drop_p = (y.numel() - y.count_nonzero()) / y.numel()
-        assert abs(drop_p - p) < 0.01
+        assert abs(drop_p - p) < 0.02
 
         # Check that the same seeds lead to the same dropout
         torch.manual_seed(0)
