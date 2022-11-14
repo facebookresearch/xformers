@@ -11,10 +11,7 @@ import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 from xformers.components.activations import Activation
-from xformers.triton.k_activations import (
-    get_triton_activation_bwd_kernel,
-    get_triton_activation_kernel,
-)
+from xformers.triton.k_activations import get_triton_activation_index
 from xformers.triton.k_fused_matmul_bw import fused_matmul_backward
 from xformers.triton.k_fused_matmul_fw import fused_matmul
 
@@ -28,7 +25,6 @@ class _fused_linear_triton(torch.autograd.Function):
         weight,
         bias,
         activation,
-        act_grad_kernel,
         trainable_weight,
         trainable_bias,
         save_activation_inputs,
@@ -39,7 +35,7 @@ class _fused_linear_triton(torch.autograd.Function):
             x, weight, bias, activation, save_activation_inputs
         )
 
-        ctx.activation_grad_kernel = act_grad_kernel
+        ctx.activation = activation
         ctx.trainable_weight = trainable_weight
         ctx.trainable_bias = trainable_bias
 
@@ -66,7 +62,7 @@ class _fused_linear_triton(torch.autograd.Function):
             weight=weight,
             trainable_weight=ctx.trainable_weight,
             trainable_bias=ctx.trainable_bias,
-            activation_grad=ctx.activation_grad_kernel,
+            activation_grad=ctx.activation,
         )
 
         return grad_input, grad_weight, grad_bias, None, None, None, None, None, None
@@ -101,9 +97,7 @@ class FusedLinear(nn.Module):
             else None
         )
 
-        self._activation_kernel = get_triton_activation_kernel(activation)
-        self._activation_grad_kernel = get_triton_activation_bwd_kernel(activation)
-
+        self._activation_index = get_triton_activation_index(activation)
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
@@ -118,9 +112,8 @@ class FusedLinear(nn.Module):
             x,
             self.weight,
             self.bias,
-            self._activation_kernel,
-            self._activation_grad_kernel,
+            self._activation_index,
             self.weight.requires_grad,
             self.bias.requires_grad if self.bias is not None else False,
-            self.training and x.requires_grad,
+            self.training and x.requires_grad and self._activation_index > 0,
         )

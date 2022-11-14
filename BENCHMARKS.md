@@ -37,6 +37,8 @@ Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py 
 
 ## Triton layers
 
+Please not that as of November 2022 these layers are not optimized for typical production GPUs out there (not developed for some time and mostly tested on a laptop GPU), and that better performances are probably possible with some minor changes as proven in other libraries since xformers went out.
+
 ### Fused softmax
 
 You can reproduce these numbers locally by running `python3 xformers/benchmarks/benchmark_triton_softmax.py`. The units are GB/s. These results are for a laptop nVidia 3080, Triton 2.0 and PyTorch 1.12.
