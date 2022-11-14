@@ -334,7 +334,7 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             and sm >= 80
             and sm != 80
             and d.dtype is torch.float
-            and d.k > 64
+            and max(d.kv, d.k) > 64
         ):
             return False
         return True
