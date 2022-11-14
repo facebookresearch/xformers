@@ -181,7 +181,7 @@ def _softmax_dispatch(
     try:
         if torch.cuda.is_available() and x.is_cuda and not _triton_registered_warnings:
             return _softmax_triton.apply(x, mask, log, causal)
-    except (triton.code_gen.OutOfResources, RuntimeError) as e:
+    except RuntimeError as e:
         # Catch cases where the current GPU does not have enough registers to hold a full tensor line
         # fallback to PyTorch's implementation, which streams the tensor in and out
         _triton_registered_warnings = True
