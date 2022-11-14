@@ -135,6 +135,8 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
 
 
 class SwiGLUOp:
+    """Base class for any swiglu operator in :attr:`xformers.ops.swiglu`"""
+
     def __init__(self, op, packed_weights: bool, name: str, constraints):
         self.NAME = name
         self.PACKED_WEIGHTS = packed_weights
@@ -192,6 +194,10 @@ def _eager_functional_swiglu(
 
 @dataclass
 class SwiGLUOpDispatch:
+    """Dispatcher to automatically select
+    the best operator in :attr:`xformers.ops.swiglu`
+    """
+
     device: Union[torch.device, str]
     dtype: torch.dtype
     dtype_autocast_gpu: Optional[torch.dtype]
@@ -200,6 +206,11 @@ class SwiGLUOpDispatch:
 
     @property
     def op(self) -> SwiGLUOp:
+        """Computes the best operator
+
+        Returns:
+            SwiGLUOp: The best operator for the configuration
+        """
         priorities: Sequence[SwiGLUOp] = [
             SwiGLUPackedFusedOp,
             SwiGLUFusedOp,
@@ -284,11 +295,32 @@ def swiglu(
     """
     Computes a SwiGLU block given the weights/bias of the 3
     linear layers.
-    It is recommended to keep `op=None` so the best implementation
+
+    - It is recommended to keep ``op=None`` so the best implementation \
     available for the inputs will be used.
 
-    NOTE: It's better to provide w1/w2 and b1/b2 are packed together
-        to allow for faster implementations
+
+    :Equivalent pytorch code:
+
+    .. code-block:: python
+
+        x1 = F.linear(x, w1, b1)
+        x2 = F.linear(x, w2, b2)
+        hidden = F.silu(x1) * x2
+        return F.linear(hidden, w3, b3)
+
+    :Packing weights:
+
+    To allow faster implementations, it's recommended to have w1/w2 come from the same storage, as in:
+        .. code-block:: python
+
+            w1, w2 = xformers.ops.unbind(w12, 0)
+
+    :Supported hardware:
+
+    This operator is only optimized on A100+ on ``torch.half`` or ``torch.bfloat16`` \
+        (autocast is supported), and will fallback to a functional pytorch \
+        implementation otherwise.
     """
 
     batch_shape = x.shape[:-1]
@@ -328,7 +360,8 @@ def swiglu(
 
 class SwiGLU(nn.Module):
     """
-    Reference implementation of a SwiGLU module
+    A Module that encapsulates the call to :attr:`xformers.ops.swiglu`,
+    and holds the weights for the 3 linear layers
     """
 
     def __init__(
@@ -340,6 +373,14 @@ class SwiGLU(nn.Module):
         *,
         _pack_weights: bool = True,
     ) -> None:
+        """Create a SwiGLU module
+
+        Args:
+            in_features (int): Number of features of the input
+            hidden_features (int): Number of hidden features
+            out_features (Optional[int], optional): Number of features of the input. Defaults to None.
+            bias (bool, optional): Whether linear layers also include a bias. Defaults to True.
+        """
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -359,6 +400,14 @@ class SwiGLU(nn.Module):
         self.op = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Computes :attr:`swiglu` with the module's weights
+
+        Args:
+            x (torch.Tensor): A Tensor of shape ``[..., in_features]``
+
+        Returns:
+            torch.Tensor: A Tensor of shape ``[..., out_features]``
+        """
         return swiglu(x, *self._ordered_params(), op=self.op)
 
     def _ordered_params(self):
