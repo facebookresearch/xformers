@@ -24,7 +24,7 @@
 xFormers is:
 - **Customizable building blocks**: Independant/customizable building blocks that can be used without boilerplate code. The components are domain-agnostic and xFormers is used by researchers in vision, NLP and more.
 - **Research first**: xFormers contains bleeding-edge components, that are not yet available in mainstream libraries like pytorch.
-- **Built with efficiency in mind**: Because speed of iteration matters, components are as fast and memory-efficient as possible. xFormers contains its own CUDA kernels, but dispatches to other libraries when relevant. 
+- **Built with efficiency in mind**: Because speed of iteration matters, components are as fast and memory-efficient as possible. xFormers contains its own CUDA kernels, but dispatches to other libraries when relevant.
 
 ## Installing xFormers
 
@@ -50,10 +50,11 @@ pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=
 ## Results
 
 **Memory-efficient MHA**
-![Benchmarks for ViTS](docs/plots/MHA/MHA_vit.png)
+![Benchmarks for ViTS](./docs/plots/mha/mha_vit.png)
 *Setup: A100 on f16, measured total time for a forward+backward pass*
 
-Note that this is exact attention, not an approximation, just by calling [`xformers.ops.memory_efficient_attention`](https://ss.fr)
+Note that this is exact attention, not an approximation, just by calling [`xformers.ops.memory_efficient_attention`](https://facebookresearch.github.io/xformers/components/ops.html#xformers.ops.memory_efficient_attention)
+
 **More benchmarks**
 
 xFormers provides many components, and more benchmarks are available in [BENCHMARKS.md](BENCHMARKS.md).
