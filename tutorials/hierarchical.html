@@ -136,23 +136,23 @@
         
         
         
-        <p><span class="caption-text">Index</span></p>
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../what_is_xformers.html">What is xFormers?</a></li>
 </ul>
-<p><span class="caption-text">Components Documentation</span></p>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../components/index.html">API Reference</a></li>
 </ul>
-<p><span class="caption-text">Build models and blocks programatically</span></p>
+<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../factory/index.html">Factory</a></li>
 </ul>
-<p><span class="caption-text">Tutorials and examples</span></p>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">Tutorials</a></li>
 </ul>
-<p><span class="caption-text">Some custom parts</span></p>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../custom_parts/index.html">Custom parts reference</a></li>
 </ul>
@@ -230,7 +230,7 @@
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
   <section id="hierarchical-transformers">
-<h1>Hierarchical Transformers<a class="headerlink" href="#hierarchical-transformers" title="Permalink to this headline">¶</a></h1>
+<h1>Hierarchical Transformers<a class="headerlink" href="#hierarchical-transformers" title="Permalink to this heading">¶</a></h1>
 <p>The original Transformer proposal processes (“transforms”) sequences of tokens, across possibly many layers. Crucially, the number of tokens is unchanged cross the depth of the model, and this prove to be really efficient in many domains.</p>
 <p>It seems that some domains could however benefit from an architecture more typical from CNN, where there’s a tradeoff across the depth of the model in between the spatial extent (ie: number of tokens) and their expressiveness (ie: the model or embedding dimension). These architectures are handled in xformers, through the “patch_embedding” element, which translates the sequence of tokens from one layer to another.</p>
 <p>A small helper is provided to make it easier to generate matching configurations, as follows. We present in this example a truncated version of a small <a class="reference external" href="https://arxiv.org/abs/2111.11418v1">Metaformer</a>.</p>
@@ -344,10 +344,11 @@
   
   <script type="text/javascript" id="documentation_options" data-url_root="../"
     src="../_static/documentation_options.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
   <script src="../_static/jquery.js"></script>
   <script src="../_static/underscore.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script src="../_static/doctools.js"></script>
-  <script src="../_static/language_data.js"></script>
   
 
   

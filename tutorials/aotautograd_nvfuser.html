@@ -136,23 +136,23 @@
         
         
         
-        <p><span class="caption-text">Index</span></p>
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../what_is_xformers.html">What is xFormers?</a></li>
 </ul>
-<p><span class="caption-text">Components Documentation</span></p>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../components/index.html">API Reference</a></li>
 </ul>
-<p><span class="caption-text">Build models and blocks programatically</span></p>
+<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../factory/index.html">Factory</a></li>
 </ul>
-<p><span class="caption-text">Tutorials and examples</span></p>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">Tutorials</a></li>
 </ul>
-<p><span class="caption-text">Some custom parts</span></p>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../custom_parts/index.html">Custom parts reference</a></li>
 </ul>
@@ -230,7 +230,7 @@
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
   <section id="how-to-enable-fused-operations-using-aotautograd-and-nvfuser">
-<h1>How to Enable Fused Operations Using AOTAutograd and NVFuser<a class="headerlink" href="#how-to-enable-fused-operations-using-aotautograd-and-nvfuser" title="Permalink to this headline">¶</a></h1>
+<h1>How to Enable Fused Operations Using AOTAutograd and NVFuser<a class="headerlink" href="#how-to-enable-fused-operations-using-aotautograd-and-nvfuser" title="Permalink to this heading">¶</a></h1>
 <p>AOT Autograd is a toolkit from <a class="reference external" href="https://pytorch.org/functorch/stable/">FuncTorch</a> which can be used to accelerate model training in xFormers.
 Broadly, it extracts a computational graph of the forward and backward passes of a model ahead of time.
 This allows for some joint graph optimizations enables deep learning compilers such as <a class="reference external" href="https://github.com/pytorch/pytorch/blob/release/1.12/torch/csrc/jit/codegen/cuda/README.md">NVFuser</a> to perform operator fusion.
@@ -309,10 +309,11 @@ We are currently exploring further testing and benchmarking.</p>
   
   <script type="text/javascript" id="documentation_options" data-url_root="../"
     src="../_static/documentation_options.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
   <script src="../_static/jquery.js"></script>
   <script src="../_static/underscore.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script src="../_static/doctools.js"></script>
-  <script src="../_static/language_data.js"></script>
   
 
   

@@ -1,0 +1,827 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!-->
+<html class="no-js" lang="en">
+<!--<![endif]-->
+
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>xformers.ops.swiglu_op | xFormers 0.0.15.dev documentation</title>
+  
+  <script src="../../../_static/js/ga.js"></script>
+  <script src="../../../_static/js/redirect.js"></script>
+  
+  <link rel="shortcut icon" href="../../../_static/images/favicon.png" />
+  
+  
+  <link rel="canonical" href="https://facebookresearch.github.io/xformers_modules/xformers/ops/swiglu_op.html" />
+  
+  <meta property="og:title" content="xformers.ops.swiglu_op | xFormers 0.0.15.dev documentation">
+  <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
+  <!--<meta property="twitter:image" content="https://mmf.sh/img/logo.png">-->
+  <meta name="twitter:image:alt" content="Image for xFormers">
+  <meta name="twitter:card" content="summary_large_image">
+  
+
+  
+  
+  
+
+  
+
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="../../../_static/css/customize.css" type="text/css" />
+  <link rel="index" title="Index" href="../../../genindex.html" />
+  <link rel="search" title="Search" href="../../../search.html" /> 
+
+  
+  <script src="../../../_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="../../../_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://github.com/facebookresearch/xformers"><img
+          src="../../../_static/logo.png" style="padding-right: 90px;" width="280px" height="53px"></a>
+
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers"> xFormers Github</a>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+
+  </div>
+</div>
+
+
+<body class="pytorch-body">
+
+   
+
+  
+
+  <div class="table-of-contents-link-wrapper">
+    <span>Table of Contents</span>
+    <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+  </div>
+
+  <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+    <div class="pytorch-side-scroll">
+      <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+        <div class="pytorch-left-menu-search">
+          
+
+          
+          
+          
+          
+
+          
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        
+        
+        
+        
+        
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../what_is_xformers.html">What is xFormers?</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../components/index.html">API Reference</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../factory/index.html">Factory</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../custom_parts/index.html">Custom parts reference</a></li>
+</ul>
+
+        
+        
+      </div>
+    </div>
+  </nav>
+
+  <div class="pytorch-container">
+    <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+      <div class="pytorch-breadcrumbs-wrapper">
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="../../../index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+          <li><a href="../../index.html">Module code</a> &gt;</li>
+        
+      <li>xformers.ops.swiglu_op</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+      </div>
+
+      <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+        Shortcuts
+      </div>
+    </div>
+
+    <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+      <div class="pytorch-content-left">
+
+        
+        
+          <div class="rst-content">
+            
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+                
+  <h1>Source code for xformers.ops.swiglu_op</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># This source code is licensed under the BSD license found in the</span>
+<span class="c1"># LICENSE file in the root directory of this source tree.</span>
+
+<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span> <span class="nn">torch.nn.functional</span> <span class="k">as</span> <span class="nn">F</span>
+<span class="kn">from</span> <span class="nn">torch</span> <span class="kn">import</span> <span class="n">nn</span>
+
+<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="n">get_xformers_operator</span>
+<span class="kn">from</span> <span class="nn">.unbind</span> <span class="kn">import</span> <span class="n">stack_or_none</span><span class="p">,</span> <span class="n">unbind</span>
+
+
+<span class="k">class</span> <span class="nc">_SwiGLUDecomposedFunc</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This is just an example implementation with all</span>
+<span class="sd">    operations explicited. This implementation is worse</span>
+<span class="sd">    than pytorch, because pytorch is able to fuse some operations</span>
+<span class="sd">    (eg the linear forward ...) that are decomposed here.</span>
+
+<span class="sd">    The time measurements were made on the ViT-Giant setting:</span>
+<span class="sd">    - A100/f16</span>
+<span class="sd">    - input: [4440, 1536]</span>
+<span class="sd">    - hidden: [4440, 4096]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;decomposed&quot;</span>
+    <span class="n">FORCE_BW_F32</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="k">def</span> <span class="nf">_silu_backward</span><span class="p">(</span><span class="n">dy</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="c1"># https://github.com/pytorch/pytorch/blob/563b065f5a4b4055fa6b025c2514b566d5fd9439/aten/src/ATen/native/Activation.cpp#L483</span>
+        <span class="n">sigm</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">x</span><span class="o">.</span><span class="n">float</span><span class="p">()))</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">dy</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">*</span> <span class="n">sigm</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">x</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">sigm</span><span class="p">)))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+    <span class="c1"># 952us</span>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">b3</span><span class="p">):</span>
+        <span class="n">x1</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">w1</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="n">b1</span>  <span class="c1"># 275us</span>
+        <span class="n">x2</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">w2</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="n">b2</span>  <span class="c1"># 275us</span>
+        <span class="n">x3</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">silu</span><span class="p">(</span><span class="n">x1</span><span class="p">)</span>  <span class="c1"># 62us</span>
+        <span class="n">x4</span> <span class="o">=</span> <span class="n">x3</span> <span class="o">*</span> <span class="n">x2</span>  <span class="c1"># 90us</span>
+        <span class="n">x5</span> <span class="o">=</span> <span class="n">x4</span> <span class="o">@</span> <span class="n">w3</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="n">b3</span>  <span class="c1"># 250us</span>
+
+        <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">b3</span><span class="p">,</span> <span class="n">x1</span><span class="p">,</span> <span class="n">x2</span><span class="p">,</span> <span class="n">x3</span><span class="p">,</span> <span class="n">x4</span><span class="p">,</span> <span class="n">x5</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x5</span>
+
+    <span class="c1"># 1900us</span>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">backward</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dx5</span><span class="p">):</span>
+        <span class="n">saved_tensors</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
+        <span class="k">if</span> <span class="bp">cls</span><span class="o">.</span><span class="n">FORCE_BW_F32</span><span class="p">:</span>
+            <span class="n">dx5</span> <span class="o">=</span> <span class="n">dx5</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+            <span class="n">saved_tensors</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span><span class="p">]</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">b3</span><span class="p">,</span> <span class="n">x1</span><span class="p">,</span> <span class="n">x2</span><span class="p">,</span> <span class="n">x3</span><span class="p">,</span> <span class="n">x4</span><span class="p">,</span> <span class="n">x5</span> <span class="o">=</span> <span class="n">saved_tensors</span>
+        <span class="n">dx4</span> <span class="o">=</span> <span class="n">dx5</span> <span class="o">@</span> <span class="n">w3</span>  <span class="c1"># 255us (nn)</span>
+        <span class="n">dw3</span> <span class="o">=</span> <span class="n">dx5</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">x4</span>  <span class="c1"># 247us (nt)</span>
+        <span class="n">db3</span> <span class="o">=</span> <span class="n">dx5</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># 25us</span>
+        <span class="n">dx3</span> <span class="o">=</span> <span class="n">dx4</span> <span class="o">*</span> <span class="n">x2</span>  <span class="c1"># 88us</span>
+        <span class="n">dx2</span> <span class="o">=</span> <span class="n">dx4</span> <span class="o">*</span> <span class="n">x3</span>  <span class="c1"># 88us</span>
+        <span class="n">dx1</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_silu_backward</span><span class="p">(</span><span class="n">dx3</span><span class="p">,</span> <span class="n">x1</span><span class="p">)</span>  <span class="c1"># 90us</span>
+        <span class="n">dx</span> <span class="o">=</span> <span class="n">dx2</span> <span class="o">@</span> <span class="n">w2</span>  <span class="c1"># 260us (nn)</span>
+        <span class="n">dw2</span> <span class="o">=</span> <span class="n">dx2</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">x</span>  <span class="c1"># 245us (nt)</span>
+        <span class="n">db2</span> <span class="o">=</span> <span class="n">dx2</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># 50us</span>
+        <span class="n">dx</span> <span class="o">+=</span> <span class="n">dx1</span> <span class="o">@</span> <span class="n">w1</span>  <span class="c1"># 260us (nn)</span>
+        <span class="n">dw1</span> <span class="o">=</span> <span class="n">dx1</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">x</span>  <span class="c1"># 245us (nt)</span>
+        <span class="n">db1</span> <span class="o">=</span> <span class="n">dx1</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># 50us</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">dx</span><span class="p">,</span> <span class="n">dw1</span><span class="p">,</span> <span class="n">db1</span><span class="p">,</span> <span class="n">dw2</span><span class="p">,</span> <span class="n">db2</span><span class="p">,</span> <span class="n">dw3</span><span class="p">,</span> <span class="n">db3</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">_SwiGLUFusedFunc</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;fused.py&quot;</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">amp</span><span class="o">.</span><span class="n">custom_fwd</span>
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">b3</span><span class="p">):</span>
+        <span class="n">x1</span><span class="p">,</span> <span class="n">x2</span><span class="p">,</span> <span class="n">x4</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">xformers</span><span class="o">.</span><span class="n">dual_gemm_silu_identity_mul</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">b2</span><span class="p">)</span>
+
+        <span class="n">x5</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">x4</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">b3</span><span class="p">)</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">x1</span><span class="p">,</span> <span class="n">x2</span><span class="p">)</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">bias</span> <span class="o">=</span> <span class="p">[</span><span class="n">b1</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="n">b2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="n">b3</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">x5</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_linear_bw</span><span class="p">(</span>
+        <span class="n">dy</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">bias</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">bias</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">dy</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">x</span><span class="p">),</span> <span class="kc">None</span>
+        <span class="n">db</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">([</span><span class="n">dy</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dy</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">dy</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">dw</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">([</span><span class="n">dy</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dy</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">dy</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">xformers</span><span class="o">.</span><span class="n">gemm_fused_operand_sum</span><span class="p">(</span><span class="n">dy</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">x</span><span class="p">,</span> <span class="n">dw</span><span class="p">,</span> <span class="n">db</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">dw</span><span class="p">,</span> <span class="n">db</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">amp</span><span class="o">.</span><span class="n">custom_bwd</span>
+    <span class="k">def</span> <span class="nf">backward</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dx5</span><span class="p">):</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">x1</span><span class="p">,</span> <span class="n">x2</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
+        <span class="n">w1w2</span> <span class="o">=</span> <span class="n">stack_or_none</span><span class="p">([</span><span class="n">w1</span><span class="p">,</span> <span class="n">w2</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">dx4</span> <span class="o">=</span> <span class="n">dx5</span> <span class="o">@</span> <span class="n">w3</span>  <span class="c1"># 255us (nn)</span>
+        <span class="n">dx1dx2</span><span class="p">,</span> <span class="n">x4</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">xformers</span><span class="o">.</span><span class="n">silu_bw_fused</span><span class="p">(</span><span class="n">x1</span><span class="p">,</span> <span class="n">x2</span><span class="p">,</span> <span class="n">dx4</span><span class="p">)</span>
+        <span class="n">dx1</span><span class="p">,</span> <span class="n">dx2</span> <span class="o">=</span> <span class="n">dx1dx2</span><span class="o">.</span><span class="n">unbind</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">del</span> <span class="n">x1</span><span class="p">,</span> <span class="n">x2</span><span class="p">,</span> <span class="n">dx4</span>
+
+        <span class="n">dw3</span><span class="p">,</span> <span class="n">db3</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_linear_bw</span><span class="p">(</span><span class="n">dx5</span><span class="p">,</span> <span class="n">x4</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">bias</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+        <span class="k">del</span> <span class="n">x4</span><span class="p">,</span> <span class="n">dx5</span>
+        <span class="k">if</span> <span class="n">w1w2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">dx1dx2</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">()</span>
+            <span class="k">assert</span> <span class="n">w1w2</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">()</span>
+            <span class="n">w1w2</span> <span class="o">=</span> <span class="n">w1w2</span><span class="o">.</span><span class="n">view</span><span class="p">([</span><span class="n">w1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">w1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]])</span>
+            <span class="n">dx</span> <span class="o">=</span> <span class="n">dx1dx2</span><span class="o">.</span><span class="n">view</span><span class="p">([</span><span class="n">dx1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">dx1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]])</span> <span class="o">@</span> <span class="n">w1w2</span>
+
+            <span class="c1"># backward of linear1 + linear2 - packed</span>
+            <span class="n">dw1dw2</span> <span class="o">=</span> <span class="n">dx1dx2</span><span class="o">.</span><span class="n">view</span><span class="p">([</span><span class="n">dx1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">dx1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]])</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">x</span>
+            <span class="n">dw1dw2</span><span class="p">,</span> <span class="n">db1db2</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_linear_bw</span><span class="p">(</span>
+                <span class="n">dx1dx2</span><span class="o">.</span><span class="n">view</span><span class="p">([</span><span class="n">dx1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">dx1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]),</span> <span class="n">x</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">bias</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="n">dw1</span><span class="p">,</span> <span class="n">dw2</span> <span class="o">=</span> <span class="n">dw1dw2</span><span class="o">.</span><span class="n">view</span><span class="p">([</span><span class="mi">2</span><span class="p">,</span> <span class="o">*</span><span class="n">w1</span><span class="o">.</span><span class="n">shape</span><span class="p">])</span><span class="o">.</span><span class="n">unbind</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">bias</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+                <span class="n">db1db2</span> <span class="o">=</span> <span class="n">db1db2</span><span class="o">.</span><span class="n">view</span><span class="p">([</span><span class="mi">2</span><span class="p">,</span> <span class="n">dx1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]])</span>
+                <span class="n">db1</span><span class="p">,</span> <span class="n">db2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">unbind</span><span class="p">(</span><span class="n">db1db2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">db1</span> <span class="o">=</span> <span class="n">db2</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dx</span> <span class="o">=</span> <span class="n">dx2</span> <span class="o">@</span> <span class="n">w2</span>  <span class="c1"># 260us (nn)</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">addmm</span><span class="p">(</span>
+                <span class="n">dx</span><span class="p">,</span> <span class="n">dx1</span><span class="p">,</span> <span class="n">w1</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dx1</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="n">beta</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">dx</span>
+            <span class="p">)</span>  <span class="c1"># dx += dx1 @ w1</span>
+            <span class="n">dw2</span><span class="p">,</span> <span class="n">db2</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_linear_bw</span><span class="p">(</span><span class="n">dx2</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">bias</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">dw1</span><span class="p">,</span> <span class="n">db1</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_linear_bw</span><span class="p">(</span><span class="n">dx1</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">bias</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">dx</span><span class="p">,</span> <span class="n">dw1</span><span class="p">,</span> <span class="n">db1</span><span class="p">,</span> <span class="n">dw2</span><span class="p">,</span> <span class="n">db2</span><span class="p">,</span> <span class="n">dw3</span><span class="p">,</span> <span class="n">db3</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="SwiGLUOp"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.SwiGLUOp">[docs]</a><span class="k">class</span> <span class="nc">SwiGLUOp</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Base class for any swiglu operator in :attr:`xformers.ops.swiglu`&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">packed_weights</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">constraints</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">NAME</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">PACKED_WEIGHTS</span> <span class="o">=</span> <span class="n">packed_weights</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">op</span> <span class="o">=</span> <span class="n">op</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">constraints</span> <span class="o">=</span> <span class="n">constraints</span>
+
+    <span class="k">def</span> <span class="nf">supports</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="s2">&quot;SwiGLUOpDispatch&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">PACKED_WEIGHTS</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">op</span><span class="o">.</span><span class="n">packed_weights</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="nb">all</span><span class="p">(</span><span class="n">c</span><span class="p">(</span><span class="n">op</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;SwiGLUOp:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2">&quot;</span></div>
+
+
+<span class="k">class</span> <span class="nc">_ForwardToPythonAutogradFunc</span><span class="p">(</span><span class="n">SwiGLUOp</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">supports</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="s2">&quot;SwiGLUOpDispatch&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="c1"># Let&#39;s disable autocast in bf16 until this issue is fixed</span>
+        <span class="c1"># https://github.com/pytorch/pytorch/issues/87979</span>
+        <span class="k">if</span> <span class="n">op</span><span class="o">.</span><span class="n">dtype_autocast_gpu</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">supports</span><span class="p">(</span><span class="n">op</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">_ForwardToFunc</span><span class="p">(</span><span class="n">SwiGLUOp</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;no_such_operator&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;not built&quot;</span>
+        <span class="k">return</span> <span class="s2">&quot;available&quot;</span>
+
+
+<span class="k">def</span> <span class="nf">_eager_functional_swiglu</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">w1</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">b1</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">w2</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">b2</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">w3</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">b3</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="n">x1</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">b1</span><span class="p">)</span>
+    <span class="n">x2</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">b2</span><span class="p">)</span>
+    <span class="n">hidden</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">silu</span><span class="p">(</span><span class="n">x1</span><span class="p">)</span> <span class="o">*</span> <span class="n">x2</span>
+    <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">b3</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="SwiGLUOpDispatch"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.SwiGLUOpDispatch">[docs]</a><span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">SwiGLUOpDispatch</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Dispatcher to automatically select</span>
+<span class="sd">    the best operator in :attr:`xformers.ops.swiglu`</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">device</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>
+    <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span>
+    <span class="n">dtype_autocast_gpu</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span>
+    <span class="n">packed_weights</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">bias_enabled</span><span class="p">:</span> <span class="nb">bool</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">op</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SwiGLUOp</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Computes the best operator</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            SwiGLUOp: The best operator for the configuration</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">priorities</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">SwiGLUOp</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">SwiGLUPackedFusedOp</span><span class="p">,</span>
+            <span class="n">SwiGLUFusedOp</span><span class="p">,</span>
+        <span class="p">]</span>
+        <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">priorities</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">op</span><span class="o">.</span><span class="n">supports</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">op</span>
+        <span class="k">return</span> <span class="n">SwiGLUEagerOp</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">from_arguments</span><span class="p">(</span>
+        <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">w1</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">b1</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">w2</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">b2</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">w3</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">b3</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;SwiGLUOpDispatch&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">SwiGLUOpDispatch</span><span class="p">(</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+            <span class="n">packed_weights</span><span class="o">=</span><span class="n">stack_or_none</span><span class="p">((</span><span class="n">w1</span><span class="p">,</span> <span class="n">w2</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">dtype_autocast_gpu</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">get_autocast_gpu_dtype</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_autocast_enabled</span><span class="p">()</span>
+            <span class="k">else</span> <span class="n">w1</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+            <span class="n">bias_enabled</span><span class="o">=</span><span class="n">b1</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">b2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">b3</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<span class="k">def</span> <span class="nf">_only_sm80</span><span class="p">(</span><span class="n">op</span><span class="p">:</span> <span class="n">SwiGLUOpDispatch</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="n">device_type</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">device</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">op</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span>
+    <span class="k">return</span> <span class="n">device_type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span> <span class="ow">and</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">device</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">8</span>
+
+
+<span class="k">def</span> <span class="nf">_only_half_or_autocast</span><span class="p">(</span><span class="n">op</span><span class="p">:</span> <span class="n">SwiGLUOpDispatch</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="n">HALF_DTYPES</span> <span class="o">=</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">op</span><span class="o">.</span><span class="n">dtype</span> <span class="ow">in</span> <span class="n">HALF_DTYPES</span> <span class="ow">or</span> <span class="p">(</span>
+        <span class="n">op</span><span class="o">.</span><span class="n">dtype_autocast_gpu</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">dtype_autocast_gpu</span> <span class="ow">in</span> <span class="n">HALF_DTYPES</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_bias_enabled</span><span class="p">(</span><span class="n">op</span><span class="p">:</span> <span class="n">SwiGLUOpDispatch</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">op</span><span class="o">.</span><span class="n">bias_enabled</span>
+
+
+<span class="n">_SwiGLUDecomposedOp</span> <span class="o">=</span> <span class="n">_ForwardToPythonAutogradFunc</span><span class="p">(</span>
+    <span class="n">_SwiGLUDecomposedFunc</span><span class="p">,</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;decomposed&quot;</span><span class="p">,</span> <span class="n">constraints</span><span class="o">=</span><span class="p">[</span><span class="n">_bias_enabled</span><span class="p">]</span>
+<span class="p">)</span>
+<span class="n">SwiGLUFusedOp</span> <span class="o">=</span> <span class="n">_ForwardToPythonAutogradFunc</span><span class="p">(</span>
+    <span class="n">_SwiGLUFusedFunc</span><span class="p">,</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;fused&quot;</span><span class="p">,</span> <span class="n">constraints</span><span class="o">=</span><span class="p">[</span><span class="n">_only_sm80</span><span class="p">,</span> <span class="n">_only_half_or_autocast</span><span class="p">]</span>
+<span class="p">)</span>
+<span class="n">SwiGLUPackedFusedOp</span> <span class="o">=</span> <span class="n">_ForwardToFunc</span><span class="p">(</span>
+    <span class="n">get_xformers_operator</span><span class="p">(</span><span class="s2">&quot;swiglu_packedw&quot;</span><span class="p">),</span>
+    <span class="kc">True</span><span class="p">,</span>
+    <span class="s2">&quot;fused.p.cpp&quot;</span><span class="p">,</span>
+    <span class="n">constraints</span><span class="o">=</span><span class="p">[</span><span class="n">_only_sm80</span><span class="p">,</span> <span class="n">_only_half_or_autocast</span><span class="p">],</span>
+<span class="p">)</span>
+<span class="n">SwiGLUEagerOp</span> <span class="o">=</span> <span class="n">_ForwardToFunc</span><span class="p">(</span>
+    <span class="n">_eager_functional_swiglu</span><span class="p">,</span>
+    <span class="kc">False</span><span class="p">,</span>
+    <span class="s2">&quot;eager&quot;</span><span class="p">,</span>
+    <span class="n">constraints</span><span class="o">=</span><span class="p">[],</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_info</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="p">{</span><span class="n">op</span><span class="o">.</span><span class="n">NAME</span><span class="p">:</span> <span class="n">op</span><span class="o">.</span><span class="n">info</span><span class="p">()</span> <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="p">[</span><span class="n">SwiGLUPackedFusedOp</span><span class="p">]}</span>
+
+
+<div class="viewcode-block" id="swiglu"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.swiglu">[docs]</a><span class="k">def</span> <span class="nf">swiglu</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">w1</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">b1</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+    <span class="n">w2</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">b2</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+    <span class="n">w3</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">b3</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">op</span><span class="p">:</span> <span class="n">SwiGLUOp</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Computes a SwiGLU block given the weights/bias of the 3</span>
+<span class="sd">    linear layers.</span>
+
+<span class="sd">    - It is recommended to keep ``op=None`` so the best implementation \</span>
+<span class="sd">    available for the inputs will be used.</span>
+
+
+<span class="sd">    :Equivalent pytorch code:</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">        x1 = F.linear(x, w1, b1)</span>
+<span class="sd">        x2 = F.linear(x, w2, b2)</span>
+<span class="sd">        hidden = F.silu(x1) * x2</span>
+<span class="sd">        return F.linear(hidden, w3, b3)</span>
+
+<span class="sd">    :Packing weights:</span>
+
+<span class="sd">    To allow faster implementations, it&#39;s recommended to have w1/w2 come from the same storage, as in:</span>
+<span class="sd">        .. code-block:: python</span>
+
+<span class="sd">            w1, w2 = xformers.ops.unbind(w12, 0)</span>
+
+<span class="sd">    :Supported hardware:</span>
+
+<span class="sd">    This operator is only optimized on A100+ on ``torch.half`` or ``torch.bfloat16`` \</span>
+<span class="sd">        (autocast is supported), and will fallback to a functional pytorch \</span>
+<span class="sd">        implementation otherwise.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">batch_shape</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]])</span>
+    <span class="k">if</span> <span class="n">w1</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">w1</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">w2</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid shapes for w1: </span><span class="si">{</span><span class="n">w1</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> / w2: </span><span class="si">{</span><span class="n">w2</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">b1</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">b1</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">b1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">w1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid shapes for b1: </span><span class="si">{</span><span class="n">b1</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">b2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">b2</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">b2</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">w2</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid shapes for b2: </span><span class="si">{</span><span class="n">b2</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">w3</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">w3</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">w2</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid shape for w3: </span><span class="si">{</span><span class="n">w3</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">b3</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">b3</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">b3</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">w3</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid shapes for w3: </span><span class="si">{</span><span class="n">w3</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> / b3: </span><span class="si">{</span><span class="n">b3</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">op</span> <span class="o">=</span> <span class="n">SwiGLUOpDispatch</span><span class="o">.</span><span class="n">from_arguments</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">b3</span><span class="p">)</span><span class="o">.</span><span class="n">op</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">op</span><span class="o">.</span><span class="n">PACKED_WEIGHTS</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">op</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">b3</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="o">*</span><span class="n">batch_shape</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">w1w2</span> <span class="o">=</span> <span class="n">stack_or_none</span><span class="p">((</span><span class="n">w1</span><span class="p">,</span> <span class="n">w2</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">b1</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">b2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">b1b2</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="n">stack_or_none</span><span class="p">((</span><span class="n">b1</span><span class="p">,</span> <span class="n">b2</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">b1b2</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;b1/b2 needs to be properly packed&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">b1b2</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">assert</span> <span class="n">b1</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">b2</span> <span class="ow">is</span> <span class="kc">None</span>
+
+    <span class="k">if</span> <span class="n">w1w2</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;w1/w2 needs to be properly packed&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">op</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w1w2</span><span class="p">,</span> <span class="n">b1b2</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">b3</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="o">*</span><span class="n">batch_shape</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="SwiGLU"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.SwiGLU">[docs]</a><span class="k">class</span> <span class="nc">SwiGLU</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A Module that encapsulates the call to :attr:`xformers.ops.swiglu`,</span>
+<span class="sd">    and holds the weights for the 3 linear layers</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="SwiGLU.__init__"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.SwiGLU.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">in_features</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">hidden_features</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">out_features</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">bias</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">_pack_weights</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Create a SwiGLU module</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            in_features (int): Number of features of the input</span>
+<span class="sd">            hidden_features (int): Number of hidden features</span>
+<span class="sd">            out_features (Optional[int], optional): Number of features of the input. Defaults to None.</span>
+<span class="sd">            bias (bool, optional): Whether linear layers also include a bias. Defaults to True.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="n">out_features</span> <span class="o">=</span> <span class="n">out_features</span> <span class="ow">or</span> <span class="n">in_features</span>
+        <span class="n">hidden_features</span> <span class="o">=</span> <span class="n">hidden_features</span> <span class="ow">or</span> <span class="n">in_features</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">w12</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">_pack_weights</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">w12</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">hidden_features</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">w12</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">w1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="p">,</span> <span class="n">hidden_features</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">w2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="p">,</span> <span class="n">hidden_features</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">w3</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden_features</span><span class="p">,</span> <span class="n">out_features</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">hidden_features</span> <span class="o">=</span> <span class="n">hidden_features</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out_features</span> <span class="o">=</span> <span class="n">out_features</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">in_features</span> <span class="o">=</span> <span class="n">in_features</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">op</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="SwiGLU.forward"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.SwiGLU.forward">[docs]</a>    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Computes :attr:`swiglu` with the module&#39;s weights</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            x (torch.Tensor): A Tensor of shape ``[..., in_features]``</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            torch.Tensor: A Tensor of shape ``[..., out_features]``</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">swiglu</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_ordered_params</span><span class="p">(),</span> <span class="n">op</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_ordered_params</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Used for testing - returns ordered arguments for operators&quot;&quot;&quot;</span>
+        <span class="n">b1</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
+        <span class="n">b2</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">w12</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">w1w2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">w12</span><span class="o">.</span><span class="n">weight</span>
+            <span class="n">b1b2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">w12</span><span class="o">.</span><span class="n">bias</span>
+            <span class="n">w1</span><span class="p">,</span> <span class="n">w2</span> <span class="o">=</span> <span class="n">unbind</span><span class="p">(</span>
+                <span class="n">w1w2</span><span class="o">.</span><span class="n">view</span><span class="p">([</span><span class="mi">2</span><span class="p">,</span> <span class="n">w1w2</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">w1w2</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]),</span>
+                <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">b1b2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span> <span class="o">=</span> <span class="n">unbind</span><span class="p">(</span><span class="n">b1b2</span><span class="o">.</span><span class="n">view</span><span class="p">([</span><span class="mi">2</span><span class="p">,</span> <span class="n">b1b2</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">w1</span><span class="p">,</span> <span class="n">w2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">w1</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">w2</span><span class="o">.</span><span class="n">weight</span>
+            <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">w1</span><span class="o">.</span><span class="n">bias</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">w2</span><span class="o">.</span><span class="n">bias</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">w1</span><span class="p">,</span>
+            <span class="n">b1</span><span class="p">,</span>
+            <span class="n">w2</span><span class="p">,</span>
+            <span class="n">b2</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">w3</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">w3</span><span class="o">.</span><span class="n">bias</span><span class="p">,</span>
+        <span class="p">]</span></div>
+</pre></div>
+
+              </article>
+              
+            </div>
+            <footer>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright Copyright © 2021 Meta Platforms, Inc.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+        </div>
+
+        <!-- <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              
+            </div>
+          </div>
+        </div> -->
+    </section>
+  </div>
+
+  
+
+
+  
+
+  
+  <script type="text/javascript" id="documentation_options" data-url_root="../../../"
+    src="../../../_static/documentation_options.js"></script>
+  <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+  <script src="../../../_static/jquery.js"></script>
+  <script src="../../../_static/underscore.js"></script>
+  <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+  <script src="../../../_static/doctools.js"></script>
+  
+
+  
+
+  <script type="text/javascript" src="../../../_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="../../../_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+  <!-- Begin Footer -->
+
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://github.com/facebookresearch/xformers" class="footer-logo"></a>
+      </div>
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://github.com/facebookresearch/xformers">fairscale</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="">Resources</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers">Docs</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://opensource.facebook.com/legal/terms">Terms of Use</a></li>
+            <li><a href="https://opensource.facebook.com/legal/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    </div>
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../../../_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://github.com/facebookresearch/xformers" aria-label="fairscale"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Docs</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Github</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="../../../_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function () {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function (e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+
+</html>

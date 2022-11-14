@@ -136,23 +136,23 @@
         
         
         
-        <p><span class="caption-text">Index</span></p>
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../what_is_xformers.html">What is xFormers?</a></li>
 </ul>
-<p><span class="caption-text">Components Documentation</span></p>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../components/index.html">API Reference</a></li>
 </ul>
-<p><span class="caption-text">Build models and blocks programatically</span></p>
+<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../factory/index.html">Factory</a></li>
 </ul>
-<p><span class="caption-text">Tutorials and examples</span></p>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">Tutorials</a></li>
 </ul>
-<p><span class="caption-text">Some custom parts</span></p>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../custom_parts/index.html">Custom parts reference</a></li>
 </ul>
@@ -230,9 +230,9 @@
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
   <section id="using-the-reversible-block">
-<h1>Using the Reversible block<a class="headerlink" href="#using-the-reversible-block" title="Permalink to this headline">¶</a></h1>
+<h1>Using the Reversible block<a class="headerlink" href="#using-the-reversible-block" title="Permalink to this heading">¶</a></h1>
 <section id="intro">
-<h2>Intro<a class="headerlink" href="#intro" title="Permalink to this headline">¶</a></h2>
+<h2>Intro<a class="headerlink" href="#intro" title="Permalink to this heading">¶</a></h2>
 <p>This block applies to residual paths, and was first proposed by Gomez et al (<a class="footnote-reference brackets" href="#id6" id="id1">1</a>).
 Its application in the Transformer (<a class="footnote-reference brackets" href="#id8" id="id2">3</a>) context was first proposed in the <cite>Reformer</cite> (<a class="footnote-reference brackets" href="#id7" id="id3">2</a>) paper,
 and is largely unrelated to the other proposals from this paper (LSH and chunked MLP processing).</p>
@@ -254,7 +254,7 @@ In a distributed setting, freeing up GPU memory can help using less GPUs, and th
 <p>Moreover, if your model is made of a stack of reversible blocks, then the memory requirement does not increase with the number of blocks.</p>
 </section>
 <section id="transformer">
-<h2>Transformer<a class="headerlink" href="#transformer" title="Permalink to this headline">¶</a></h2>
+<h2>Transformer<a class="headerlink" href="#transformer" title="Permalink to this heading">¶</a></h2>
 <p>Considering the multi-head attention and feedforward blocks (including the residual paths), one can set F as MHA (+ layer norm) and G as Feedforward (+ layer norm) and get to something very close (but not exactly the same) to the original Transformer formulation from [Vaswani et al.][3], as follows</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">y1</span> <span class="o">=</span> <span class="n">x1</span> <span class="o">+</span> <span class="n">MHA</span><span class="p">(</span><span class="n">x2</span><span class="p">)</span>
 <span class="n">y2</span> <span class="o">=</span> <span class="n">x2</span> <span class="o">+</span> <span class="n">Feedforward</span><span class="p">(</span><span class="n">y1</span><span class="p">)</span>
@@ -264,7 +264,7 @@ In a distributed setting, freeing up GPU memory can help using less GPUs, and th
 but in practice if <cite>dim(x1) == dim(x2) == dim(model)</cite>, the accuracy should not be affected, as verified in <a class="footnote-reference brackets" href="#id7" id="id5">2</a> and in xFormers.</p>
 </section>
 <section id="in-practice">
-<h2>In practice<a class="headerlink" href="#in-practice" title="Permalink to this headline">¶</a></h2>
+<h2>In practice<a class="headerlink" href="#in-practice" title="Permalink to this heading">¶</a></h2>
 <p>This repository exposes two main helpers in <cite>xformers.components.reversible</cite>: ReversibleBlock and ReversibleSequence. <cite>ReversibleBlock</cite> will take <cite>f</cite> and <cite>g</cite> as defined above, and <cite>ReversibleSequence</cite> can combine them sequentially, similarly to <cite>torch.nn.ModuleList</cite>.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">ReversibleBlock</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span> <span class="n">g</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
@@ -374,10 +374,11 @@ Attention is all you need, 2017</p>
   
   <script type="text/javascript" id="documentation_options" data-url_root="../"
     src="../_static/documentation_options.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
   <script src="../_static/jquery.js"></script>
   <script src="../_static/underscore.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script src="../_static/doctools.js"></script>
-  <script src="../_static/language_data.js"></script>
   
 
   

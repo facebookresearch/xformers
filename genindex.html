@@ -133,23 +133,23 @@
         
         
         
-        <p><span class="caption-text">Index</span></p>
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="what_is_xformers.html">What is xFormers?</a></li>
 </ul>
-<p><span class="caption-text">Components Documentation</span></p>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="components/index.html">API Reference</a></li>
 </ul>
-<p><span class="caption-text">Build models and blocks programatically</span></p>
+<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="factory/index.html">Factory</a></li>
 </ul>
-<p><span class="caption-text">Tutorials and examples</span></p>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/index.html">Tutorials</a></li>
 </ul>
-<p><span class="caption-text">Some custom parts</span></p>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="custom_parts/index.html">Custom parts reference</a></li>
 </ul>
@@ -240,6 +240,7 @@
  | <a href="#R"><strong>R</strong></a>
  | <a href="#S"><strong>S</strong></a>
  | <a href="#T"><strong>T</strong></a>
+ | <a href="#U"><strong>U</strong></a>
  | <a href="#V"><strong>V</strong></a>
  | <a href="#W"><strong>W</strong></a>
  | <a href="#X"><strong>X</strong></a>
@@ -265,6 +266,10 @@
 </li>
         <li><a href="factory/model.html#xformers.factory.model_factory.xFormer.__init__">(xformers.factory.model_factory.xFormer method)</a>
 </li>
+        <li><a href="components/ops.html#xformers.ops.LowerTriangularMask.__init__">(xformers.ops.LowerTriangularMask method)</a>
+</li>
+        <li><a href="components/ops.html#xformers.ops.SwiGLU.__init__">(xformers.ops.SwiGLU method)</a>
+</li>
       </ul></li>
   </ul></td>
 </tr></table>
@@ -274,9 +279,17 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/attentions.html#xformers.components.attention.Attention">Attention (class in xformers.components.attention)</a>
 </li>
+      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask">AttentionMask (class in xformers.components.attention)</a>
+
+      <ul>
+        <li><a href="components/ops.html#xformers.ops.AttentionMask">(class in xformers.ops)</a>
+</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask">AttentionMask (class in xformers.components.attention)</a>
+      <li><a href="components/ops.html#xformers.ops.AttentionOpBase">AttentionOpBase (class in xformers.ops)</a>
+</li>
+      <li><a href="components/ops.html#xformers.ops.AttentionOpDispatch">AttentionOpDispatch (class in xformers.ops)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -294,6 +307,8 @@
 </li>
       <li><a href="components/position_embedding.html#xformers.components.positional_embedding.build_positional_embedding">build_positional_embedding() (in module xformers.components.positional_embedding)</a>
 </li>
+      <li><a href="components/ops.html#xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp.BW_OP">BW_OP (xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp attribute)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -304,9 +319,9 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.device">device() (xformers.components.attention.AttentionMask property)</a>
+      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.device">device (xformers.components.attention.AttentionMask property)</a>
 </li>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.dtype">dtype() (xformers.components.attention.AttentionMask property)</a>
+      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.dtype">dtype (xformers.components.attention.AttentionMask property)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -359,9 +374,13 @@
 </li>
         <li><a href="factory/model.html#xformers.factory.model_factory.xFormer.forward">(xformers.factory.model_factory.xFormer method)</a>
 </li>
+        <li><a href="components/ops.html#xformers.ops.SwiGLU.forward">(xformers.ops.SwiGLU method)</a>
+</li>
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="components/ops.html#xformers.ops.AttentionOpDispatch.from_arguments">from_arguments() (xformers.ops.AttentionOpDispatch class method)</a>
+</li>
       <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.from_bool">from_bool() (xformers.components.attention.AttentionMask class method)</a>
 </li>
       <li><a href="components/attentions.html#xformers.components.attention.Attention.from_config">from_config() (xformers.components.attention.Attention class method)</a>
@@ -380,6 +399,8 @@
       </ul></li>
       <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.from_multiplicative">from_multiplicative() (xformers.components.attention.AttentionMask class method)</a>
 </li>
+      <li><a href="components/ops.html#xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp.FW_OP">FW_OP (xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp attribute)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -390,6 +411,8 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="components/ops.html#xformers.ops.get_stack_strides">get_stack_strides() (in module xformers.ops)</a>
+</li>
       <li><a href="components/attentions.html#xformers.components.attention.GlobalAttention">GlobalAttention (class in xformers.components.attention)</a>
 </li>
   </ul></td>
@@ -406,7 +429,7 @@
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.is_sparse">is_sparse() (xformers.components.attention.AttentionMask property)</a>
+      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.is_sparse">is_sparse (xformers.components.attention.AttentionMask property)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -420,6 +443,8 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/attentions.html#xformers.components.attention.LocalAttention">LocalAttention (class in xformers.components.attention)</a>
 </li>
+      <li><a href="components/ops.html#xformers.ops.LowerTriangularMask">LowerTriangularMask (class in xformers.ops)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -432,8 +457,20 @@
 </li>
       <li><a href="components/attentions.html#xformers.components.attention.ScaledDotProduct.mask">mask (xformers.components.attention.ScaledDotProduct attribute)</a>
 </li>
+      <li><a href="components/ops.html#xformers.ops.memory_efficient_attention">memory_efficient_attention() (in module xformers.ops)</a>
+</li>
+      <li><a href="components/ops.html#xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp">MemoryEfficientAttentionCutlassFwdFlashBwOp (class in xformers.ops)</a>
+</li>
+      <li><a href="components/ops.html#xformers.ops.MemoryEfficientAttentionCutlassOp">MemoryEfficientAttentionCutlassOp (class in xformers.ops)</a>
+</li>
+      <li><a href="components/ops.html#xformers.ops.MemoryEfficientAttentionFlashAttentionOp">MemoryEfficientAttentionFlashAttentionOp (class in xformers.ops)</a>
+</li>
+      <li><a href="components/ops.html#xformers.ops.MemoryEfficientAttentionOp">MemoryEfficientAttentionOp (class in xformers.ops)</a>
+</li>
       <li><a href="components/feedforward.html#xformers.components.feedforward.MLP">MLP (class in xformers.components.feedforward)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     module
 
@@ -448,11 +485,11 @@
 </li>
         <li><a href="factory/model.html#module-xformers.factory.model_factory">xformers.factory.model_factory</a>
 </li>
+        <li><a href="components/ops.html#module-xformers.ops">xformers.ops</a>
+</li>
         <li><a href="custom_parts/index.html#module-xformers.triton">xformers.triton</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/mha.html#xformers.components.MultiHeadDispatch">MultiHeadDispatch (class in xformers.components)</a>
 </li>
   </ul></td>
@@ -461,7 +498,7 @@
 <h2 id="N">N</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.ndim">ndim() (xformers.components.attention.AttentionMask property)</a>
+      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.ndim">ndim (xformers.components.attention.AttentionMask property)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
@@ -472,6 +509,14 @@
 
 <h2 id="O">O</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="components/ops.html#xformers.ops.AttentionOpDispatch.op">op (xformers.ops.AttentionOpDispatch property)</a>
+
+      <ul>
+        <li><a href="components/ops.html#xformers.ops.SwiGLUOpDispatch.op">(xformers.ops.SwiGLUOpDispatch property)</a>
+</li>
+      </ul></li>
+  </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/attentions.html#xformers.components.attention.OrthoFormerAttention">OrthoFormerAttention (class in xformers.components.attention)</a>
 </li>
@@ -507,13 +552,23 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/attentions.html#xformers.components.attention.ScaledDotProduct">ScaledDotProduct (class in xformers.components.attention)</a>
 </li>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.shape">shape() (xformers.components.attention.AttentionMask property)</a>
+      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.shape">shape (xformers.components.attention.AttentionMask property)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/position_embedding.html#xformers.components.positional_embedding.SinePositionalEmbedding">SinePositionalEmbedding (class in xformers.components.positional_embedding)</a>
 </li>
       <li><a href="factory/model.html#xformers.factory.model_factory.xFormerConfig.stack_configs">stack_configs (xformers.factory.model_factory.xFormerConfig attribute)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="components/ops.html#xformers.ops.stack_or_none">stack_or_none() (in module xformers.ops)</a>
+</li>
+      <li><a href="components/ops.html#xformers.ops.SwiGLU">SwiGLU (class in xformers.ops)</a>
+</li>
+      <li><a href="components/ops.html#xformers.ops.swiglu">swiglu() (in module xformers.ops)</a>
+</li>
+      <li><a href="components/ops.html#xformers.ops.SwiGLUOp">SwiGLUOp (class in xformers.ops)</a>
+</li>
+      <li><a href="components/ops.html#xformers.ops.SwiGLUOpDispatch">SwiGLUOpDispatch (class in xformers.ops)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -527,6 +582,12 @@
 </li>
       <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.to_bool">to_bool() (xformers.components.attention.AttentionMask method)</a>
 </li>
+      <li><a href="components/ops.html#xformers.ops.AttentionMask.to_tensor">to_tensor() (xformers.ops.AttentionMask method)</a>
+
+      <ul>
+        <li><a href="components/ops.html#xformers.ops.LowerTriangularMask.to_tensor">(xformers.ops.LowerTriangularMask method)</a>
+</li>
+      </ul></li>
       <li><a href="components/feedforward.html#xformers.components.feedforward.Feedforward.training">training (xformers.components.feedforward.Feedforward attribute)</a>
 
       <ul>
@@ -553,6 +614,14 @@
         <li><a href="factory/model.html#xformers.factory.model_factory.xFormer.training">(xformers.factory.model_factory.xFormer attribute)</a>
 </li>
       </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="U">U</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="components/ops.html#xformers.ops.unbind">unbind() (in module xformers.ops)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -597,8 +666,6 @@
         <li><a href="components/feedforward.html#module-xformers.components.feedforward">module</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     xformers.components.positional_embedding
 
@@ -606,6 +673,8 @@
         <li><a href="components/position_embedding.html#module-xformers.components.positional_embedding">module</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     xformers.factory.block_factory
 
@@ -618,6 +687,13 @@
 
       <ul>
         <li><a href="factory/model.html#module-xformers.factory.model_factory">module</a>
+</li>
+      </ul></li>
+      <li>
+    xformers.ops
+
+      <ul>
+        <li><a href="components/ops.html#module-xformers.ops">module</a>
 </li>
       </ul></li>
       <li>
@@ -679,10 +755,11 @@
   
   <script type="text/javascript" id="documentation_options" data-url_root="./"
     src="_static/documentation_options.js"></script>
+  <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
   <script src="_static/jquery.js"></script>
   <script src="_static/underscore.js"></script>
+  <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script src="_static/doctools.js"></script>
-  <script src="_static/language_data.js"></script>
   
 
   

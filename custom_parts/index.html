@@ -135,23 +135,23 @@
         
         
         
-        <p><span class="caption-text">Index</span></p>
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../what_is_xformers.html">What is xFormers?</a></li>
 </ul>
-<p><span class="caption-text">Components Documentation</span></p>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../components/index.html">API Reference</a></li>
 </ul>
-<p><span class="caption-text">Build models and blocks programatically</span></p>
+<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../factory/index.html">Factory</a></li>
 </ul>
-<p><span class="caption-text">Tutorials and examples</span></p>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/index.html">Tutorials</a></li>
 </ul>
-<p><span class="caption-text">Some custom parts</span></p>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Custom parts reference</a></li>
 </ul>
@@ -227,11 +227,11 @@
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
   <section id="custom-parts-reference">
-<h1>Custom parts reference<a class="headerlink" href="#custom-parts-reference" title="Permalink to this headline">¶</a></h1>
+<h1>Custom parts reference<a class="headerlink" href="#custom-parts-reference" title="Permalink to this heading">¶</a></h1>
 <section id="sparse-cuda-kernels">
-<h2>Sparse CUDA kernels<a class="headerlink" href="#sparse-cuda-kernels" title="Permalink to this headline">¶</a></h2>
+<h2>Sparse CUDA kernels<a class="headerlink" href="#sparse-cuda-kernels" title="Permalink to this heading">¶</a></h2>
 <section id="building-the-kernels">
-<h3>1. Building the kernels<a class="headerlink" href="#building-the-kernels" title="Permalink to this headline">¶</a></h3>
+<h3>1. Building the kernels<a class="headerlink" href="#building-the-kernels" title="Permalink to this heading">¶</a></h3>
 <p>xFormers transparently supports CUDA kernels to implement sparse attention computations, some of which are based on <a class="reference external" href="https://github.com/google-research/sputnik">Sputnik</a>.
 These kernels require xFormers to be installed from source, and the recipient machine to be able to compile CUDA source code.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git clone git@github.com:fairinternal/xformers.git
@@ -250,21 +250,21 @@ pip install -e .
 </ul>
 </section>
 <section id="usage">
-<h3>2. Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h3>
+<h3>2. Usage<a class="headerlink" href="#usage" title="Permalink to this heading">¶</a></h3>
 <p>The sparse attention computation is automatically triggered when using the <strong>scaled dot product</strong> attention (<a class="reference external" href="https://github.com/facebookresearch/xformers/blob/main/xformers/components/attention/scaled_dot_product.py">see</a>), and a sparse enough mask (currently less than 30% of true values).
 There is nothing specific to do, and a couple of examples are provided in the tutorials.</p>
 </section>
 </section>
 <section id="triton-parts">
-<h2>Triton parts<a class="headerlink" href="#triton-parts" title="Permalink to this headline">¶</a></h2>
+<h2>Triton parts<a class="headerlink" href="#triton-parts" title="Permalink to this heading">¶</a></h2>
 <section id="requirements">
-<h3>1. Requirements<a class="headerlink" href="#requirements" title="Permalink to this headline">¶</a></h3>
+<h3>1. Requirements<a class="headerlink" href="#requirements" title="Permalink to this heading">¶</a></h3>
 <p>We use <a class="reference external" href="https://triton-lang.org/">Triton</a> to implement the following parts.
 These parts will only be visible on a CUDA-enabled machine, and Triton needs to be installed (<cite>pip install triton</cite>),
 if any of these conditions are not met a warning is issued.</p>
 </section>
 <section id="possible-usage">
-<h3>2. Possible usage<a class="headerlink" href="#possible-usage" title="Permalink to this headline">¶</a></h3>
+<h3>2. Possible usage<a class="headerlink" href="#possible-usage" title="Permalink to this heading">¶</a></h3>
 <p>The following parts are independent and can be used as-is in any model,
 provided the above limitations (Triton is installed, and there is a CUDA GPU present) are fullfilled.
 They are used by default, when possible, in some of the xFormers building blocks.</p>
@@ -342,10 +342,11 @@ They are used by default, when possible, in some of the xFormers building blocks
   
   <script type="text/javascript" id="documentation_options" data-url_root="../"
     src="../_static/documentation_options.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
   <script src="../_static/jquery.js"></script>
   <script src="../_static/underscore.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script src="../_static/doctools.js"></script>
-  <script src="../_static/language_data.js"></script>
   
 
   

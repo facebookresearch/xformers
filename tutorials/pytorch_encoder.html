@@ -136,23 +136,23 @@
         
         
         
-        <p><span class="caption-text">Index</span></p>
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../what_is_xformers.html">What is xFormers?</a></li>
 </ul>
-<p><span class="caption-text">Components Documentation</span></p>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../components/index.html">API Reference</a></li>
 </ul>
-<p><span class="caption-text">Build models and blocks programatically</span></p>
+<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../factory/index.html">Factory</a></li>
 </ul>
-<p><span class="caption-text">Tutorials and examples</span></p>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">Tutorials</a></li>
 </ul>
-<p><span class="caption-text">Some custom parts</span></p>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../custom_parts/index.html">Custom parts reference</a></li>
 </ul>
@@ -230,10 +230,10 @@
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
   <section id="building-an-encoder-comparing-to-pytorch">
-<h1>Building an encoder, comparing to PyTorch<a class="headerlink" href="#building-an-encoder-comparing-to-pytorch" title="Permalink to this headline">¶</a></h1>
+<h1>Building an encoder, comparing to PyTorch<a class="headerlink" href="#building-an-encoder-comparing-to-pytorch" title="Permalink to this heading">¶</a></h1>
 <p>Let’s now walk up the hierarchy, and consider a whole encoder block. You may be used to the PyTorch encoder layer so we’ll consider it as a point of comparison, but other libraries would probably expose similar interfaces.</p>
 <section id="pytorch-encoder-layer">
-<h2>PyTorch Encoder Layer<a class="headerlink" href="#pytorch-encoder-layer" title="Permalink to this headline">¶</a></h2>
+<h2>PyTorch Encoder Layer<a class="headerlink" href="#pytorch-encoder-layer" title="Permalink to this heading">¶</a></h2>
 <p>PyTorch already exposes a <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html?highlight=encoder#torch.nn.TransformerEncoderLayer">TransformerEncoderLayer</a>. Its constructor is:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">TransformerEncoderLayer</span><span class="p">(</span>
     <span class="n">d_model</span><span class="p">,</span>
@@ -252,12 +252,12 @@
 <p>Note that you cannot change the attention mechanism, so this example will use the “Scaled Dot Product”, as proposed by Vaswani et al., but in the xFormers case this is a free floating parameter.</p>
 </section>
 <section id="warning">
-<h2>Warning<a class="headerlink" href="#warning" title="Permalink to this headline">¶</a></h2>
+<h2>Warning<a class="headerlink" href="#warning" title="Permalink to this heading">¶</a></h2>
 <p>It’s worth noting that <strong>xFormer’s blocks expect tensors to be batch first, while PyTorch’s transformers uses a sequence first convention. Don’t forget to permute if you use xFormers’s blocks as drop-in replacements.</strong></p>
 <p>Similarly, the attention masks conventions are different: in PyTorch, the mask is <em>True</em> when an element should <em>not</em> be attended to, whereas in xFormer it’s the opposite. Don’t forget to negate your attention masks to use xFormers’ blocks as drop-in replacements.</p>
 </section>
 <section id="block-factory">
-<h2>Block factory<a class="headerlink" href="#block-factory" title="Permalink to this headline">¶</a></h2>
+<h2>Block factory<a class="headerlink" href="#block-factory" title="Permalink to this heading">¶</a></h2>
 <p>We don’t have the exact same interfaces, but we have something fairly close to PyTorch with the <a class="reference external" href="https://github.com/facebookresearch/xformers/blob/main/xformers/factory/model_factory.py">model_factory</a>. Please note that, similarly to the attention example above, you can also directly import the <cite>xFormerEncoderBlock</cite> and construct it from there, but we’ll assume here that you could be interested in systematic evaluation of different architectures, and that as such something which can be easily automated is preferred, so the “factory” path is the one put forward.</p>
 <p>The equivalent to the PyTorch example above would look like the following. You can think of it  as a declaration of the sequence of blocks that you would like instantiated. We’re trying to:</p>
 <ul class="simple">
@@ -314,12 +314,12 @@
 </section>
 </section>
 <section id="building-full-models">
-<h1>Building full models<a class="headerlink" href="#building-full-models" title="Permalink to this headline">¶</a></h1>
+<h1>Building full models<a class="headerlink" href="#building-full-models" title="Permalink to this heading">¶</a></h1>
 <blockquote>
 <div><p>Now let’s build a full Tranformers/xFormer model. Please note that this is just an example, because building the whole model from explicit parts is always an option, from pure PyTorch building blocks or adding some xFormers primitives.</p>
 </div></blockquote>
 <section id="pytorch-transformer">
-<h2>PyTorch Transformer<a class="headerlink" href="#pytorch-transformer" title="Permalink to this headline">¶</a></h2>
+<h2>PyTorch Transformer<a class="headerlink" href="#pytorch-transformer" title="Permalink to this heading">¶</a></h2>
 <p>Am implementation of a full Transformer is supported directly by PyTorch, see the <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Transformer.html?highlight=transformer#torch.nn.Transformer">PyTorchTransformer</a> for more options.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">Transformer</span><span class="p">(</span>
     <span class="n">d_model</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span>
@@ -340,7 +340,7 @@
 </div>
 </section>
 <section id="model-factory">
-<h2>model factory<a class="headerlink" href="#model-factory" title="Permalink to this headline">¶</a></h2>
+<h2>model factory<a class="headerlink" href="#model-factory" title="Permalink to this heading">¶</a></h2>
 <p>We don’t have the exact same interfaces, but we have something to propose with the <a class="reference external" href="https://github.com/facebookresearch/xformers/blob/main/xformers/factory/model_factory.py">model_factory</a>.
 Please note that, similarly to the attention example above, you can also directly import the <cite>xFormer</cite> and <cite>xFormerConfig</cite>
 and construct it from there, but we’ll assume here that you could be interested in systematic evaluation of different architectures,
@@ -458,7 +458,7 @@ Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xForm
 </div>
 </section>
 <section id="build-an-xformer-model-with-hydra">
-<h2>Build an <cite>xFormer</cite> model with Hydra<a class="headerlink" href="#build-an-xformer-model-with-hydra" title="Permalink to this headline">¶</a></h2>
+<h2>Build an <cite>xFormer</cite> model with Hydra<a class="headerlink" href="#build-an-xformer-model-with-hydra" title="Permalink to this heading">¶</a></h2>
 <p>Alternatively, you can use <a class="reference external" href="https://hydra.cc/">Hydra</a> to build an xFormer model.
 We’ve included an example <a class="reference external" href="https://github.com/facebookresearch/xformers/tree/main/examples/build_model/">here</a>.
 The example replicates the model from the above example and demonstrates one way to use Hydra to minimize config duplication.
@@ -744,10 +744,11 @@ xFormer<span class="o">(</span>
   
   <script type="text/javascript" id="documentation_options" data-url_root="../"
     src="../_static/documentation_options.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
   <script src="../_static/jquery.js"></script>
   <script src="../_static/underscore.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script src="../_static/doctools.js"></script>
-  <script src="../_static/language_data.js"></script>
   
 
   

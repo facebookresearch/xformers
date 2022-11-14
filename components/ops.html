@@ -1,0 +1,757 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!-->
+<html class="no-js" lang="en">
+<!--<![endif]-->
+
+<head>
+  <meta charset="utf-8">
+  <meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Operators | xFormers 0.0.15.dev documentation</title>
+  
+  <script src="../_static/js/ga.js"></script>
+  <script src="../_static/js/redirect.js"></script>
+  
+  <link rel="shortcut icon" href="../_static/images/favicon.png" />
+  
+  
+  <link rel="canonical" href="https://facebookresearch.github.io/xformerscomponents/ops.html" />
+  
+  <meta property="og:title" content="Operators | xFormers 0.0.15.dev documentation">
+  <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
+  <!--<meta property="twitter:image" content="https://mmf.sh/img/logo.png">-->
+  <meta name="twitter:image:alt" content="Image for xFormers">
+  <meta name="twitter:card" content="summary_large_image">
+  
+
+  
+  
+  
+
+  
+
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="../_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="../_static/css/customize.css" type="text/css" />
+  <link rel="index" title="Index" href="../genindex.html" />
+  <link rel="search" title="Search" href="../search.html" />
+  <link rel="next" title="Attention mechanisms" href="attentions.html" />
+  <link rel="prev" title="API Reference" href="index.html" /> 
+
+  
+  <script src="../_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://github.com/facebookresearch/xformers"><img
+          src="../_static/logo.png" style="padding-right: 90px;" width="280px" height="53px"></a>
+
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers"> xFormers Github</a>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+
+  </div>
+</div>
+
+
+<body class="pytorch-body">
+
+   
+
+  
+
+  <div class="table-of-contents-link-wrapper">
+    <span>Table of Contents</span>
+    <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+  </div>
+
+  <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+    <div class="pytorch-side-scroll">
+      <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+        <div class="pytorch-left-menu-search">
+          
+
+          
+          
+          
+          
+
+          
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        
+        
+        
+        
+        
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../what_is_xformers.html">What is xFormers?</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../factory/index.html">Factory</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/index.html">Tutorials</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../custom_parts/index.html">Custom parts reference</a></li>
+</ul>
+
+        
+        
+      </div>
+    </div>
+  </nav>
+
+  <div class="pytorch-container">
+    <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+      <div class="pytorch-breadcrumbs-wrapper">
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="../index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+          <li><a href="index.html">API Reference</a> &gt;</li>
+        
+      <li>Operators</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="../_sources/components/ops.rst.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+      </div>
+
+      <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+        Shortcuts
+      </div>
+    </div>
+
+    <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+      <div class="pytorch-content-left">
+
+        
+        
+          <div class="rst-content">
+            
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+                
+  <section id="module-xformers.ops">
+<span id="operators"></span><h1>Operators<a class="headerlink" href="#module-xformers.ops" title="Permalink to this heading">¶</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.AttentionMask">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">AttentionMask</span></span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#AttentionMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.AttentionMask" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#object" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Base class for custom masks that can be applied         in <a class="reference internal" href="#xformers.ops.memory_efficient_attention" title="xformers.ops.memory_efficient_attention"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.memory_efficient_attention</span></code></a>.</p>
+<p>When using an <a class="reference internal" href="#xformers.ops.AttentionMask" title="xformers.ops.AttentionMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.AttentionMask</span></code></a>
+instead of a <code class="xref py py-attr docutils literal notranslate"><span class="pre">torch.Tensor</span></code>, the mask matrix does
+not need to be materialized, and can be
+hardcoded into some kernels for better performance.</p>
+<p>See also <a class="reference internal" href="#xformers.ops.LowerTriangularMask" title="xformers.ops.LowerTriangularMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.LowerTriangularMask</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="xformers.ops.AttentionMask.to_tensor">
+<span class="sig-name descname"><span class="pre">to_tensor</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#AttentionMask.to_tensor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.AttentionMask.to_tensor" title="Permalink to this definition">¶</a></dt>
+<dd><p>Materializes the mask tensor</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>torch.Tensor</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.AttentionOpBase">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">AttentionOpBase</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#AttentionOpBase"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.AttentionOpBase" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://pytorch.org/docs/master/autograd.html#torch.autograd.Function" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><code class="xref py py-class docutils literal notranslate"><span class="pre">Function</span></code></a></p>
+<p>Base class for any attention operator in xFormers</p>
+<p>See:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionOp" title="xformers.ops.MemoryEfficientAttentionOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionOp</span></code></a></p></li>
+<li><p><a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionCutlassOp" title="xformers.ops.MemoryEfficientAttentionCutlassOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionCutlassOp</span></code></a></p></li>
+<li><p><a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionFlashAttentionOp" title="xformers.ops.MemoryEfficientAttentionFlashAttentionOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionFlashAttentionOp</span></code></a></p></li>
+<li><p><a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp" title="xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp</span></code></a></p></li>
+</ul>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.AttentionOpDispatch">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">AttentionOpDispatch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensor_attributes.html#torch.dtype" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">dtype</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Union" title="(in Python v3.6)"><span class="pre">Union</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensor_attributes.html#torch.device" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">device</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">has_dropout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">attn_bias_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Any" title="(in Python v3.6)"><span class="pre">Any</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">kv_len</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">q_len</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">kv</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">-</span> <span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">-</span> <span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_heads</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">requires_grad</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#AttentionOpDispatch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.AttentionOpDispatch" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#object" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Dispatcher to automatically select
+the best operator to run memory-efficient attention.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="xformers.ops.AttentionOpDispatch.op">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">op</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Type" title="(in Python v3.6)"><span class="pre">Type</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#xformers.ops.AttentionOpBase" title="xformers.ops.memory_efficient_attention.AttentionOpBase"><span class="pre">AttentionOpBase</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#xformers.ops.AttentionOpDispatch.op" title="Permalink to this definition">¶</a></dt>
+<dd><p>Computes the best operator</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3.6/library/exceptions.html#NotImplementedError" title="(in Python v3.6)"><strong>NotImplementedError</strong></a> – if not operator was found</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><em>AttentionOp</em> – The best operator for the configuration</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="xformers.ops.AttentionOpDispatch.from_arguments">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_arguments</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">query</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">attn_bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Optional" title="(in Python v3.6)"><span class="pre">Optional</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Union" title="(in Python v3.6)"><span class="pre">Union</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#xformers.ops.AttentionMask" title="xformers.ops.memory_efficient_attention.AttentionMask"><span class="pre">AttentionMask</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#float" title="(in Python v3.6)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#xformers.ops.AttentionOpDispatch" title="xformers.ops.memory_efficient_attention.AttentionOpDispatch"><span class="pre">AttentionOpDispatch</span></a></span></span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#AttentionOpDispatch.from_arguments"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.AttentionOpDispatch.from_arguments" title="Permalink to this definition">¶</a></dt>
+<dd><p>Creates an <a class="reference internal" href="#xformers.ops.AttentionOpDispatch" title="xformers.ops.AttentionOpDispatch"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.AttentionOpDispatch</span></code></a> from <a class="reference internal" href="#xformers.ops.memory_efficient_attention" title="xformers.ops.memory_efficient_attention"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.memory_efficient_attention</span></code></a>’s
+arguments</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>query</strong> (<a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><em>torch.Tensor</em></a>) – </p></li>
+<li><p><strong>key</strong> (<a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><em>torch.Tensor</em></a>) – </p></li>
+<li><p><strong>value</strong> (<a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><em>torch.Tensor</em></a>) – </p></li>
+<li><p><strong>attn_bias</strong> (<em>Optional</em><em>[</em><em>Union</em><em>[</em><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><em>torch.Tensor</em></a><em>, </em><a class="reference internal" href="#xformers.ops.AttentionMask" title="xformers.ops.AttentionMask"><em>xformers.ops.AttentionMask</em></a><em>]</em><em>]</em><em>, </em><em>optional</em>) – Defaults to None.</p></li>
+<li><p><strong>p</strong> (<a class="reference external" href="https://docs.python.org/3.6/library/functions.html#float" title="(in Python v3.6)"><em>float</em></a><em>, </em><em>optional</em>) – Defaults to 0.0.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>AttentionOpDispatch</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.LowerTriangularMask">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">LowerTriangularMask</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">tensor_args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">tensor_kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#LowerTriangularMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.LowerTriangularMask" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#xformers.ops.AttentionMask" title="xformers.ops.memory_efficient_attention.AttentionMask"><code class="xref py py-class docutils literal notranslate"><span class="pre">AttentionMask</span></code></a></p>
+<p>A lower triangular mask that can be used for causal attention</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="xformers.ops.LowerTriangularMask.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">tensor_args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">tensor_kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3.6/library/constants.html#None" title="(in Python v3.6)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#LowerTriangularMask.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.LowerTriangularMask.__init__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Creates a Lower triangular mask.
+It is not requires to specify any parameter, as they are only             used when calling <a class="reference internal" href="#xformers.ops.LowerTriangularMask.to_tensor" title="xformers.ops.LowerTriangularMask.to_tensor"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularMask.to_tensor</span></code></a></p>
+<p>The mask will not be materialized by default, and hence does not use             any additional memory, but acts as an option for the MHA kernel.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="xformers.ops.LowerTriangularMask.to_tensor">
+<span class="sig-name descname"><span class="pre">to_tensor</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#LowerTriangularMask.to_tensor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.LowerTriangularMask.to_tensor" title="Permalink to this definition">¶</a></dt>
+<dd><p>Materializes the mask tensor</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>torch.Tensor</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">MemoryEfficientAttentionCutlassFwdFlashBwOp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#MemoryEfficientAttentionCutlassFwdFlashBwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionCutlassOp" title="xformers.ops.memory_efficient_attention.MemoryEfficientAttentionCutlassOp"><code class="xref py py-class docutils literal notranslate"><span class="pre">MemoryEfficientAttentionCutlassOp</span></code></a></p>
+<p>An operator that uses <a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionCutlassOp" title="xformers.ops.MemoryEfficientAttentionCutlassOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionCutlassOp</span></code></a> for the forward pass         and <a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionFlashAttentionOp" title="xformers.ops.MemoryEfficientAttentionFlashAttentionOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionFlashAttentionOp</span></code></a> for the backward.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp.FW_OP">
+<span class="sig-name descname"><span class="pre">FW_OP</span></span><a class="headerlink" href="#xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp.FW_OP" title="Permalink to this definition">¶</a></dt>
+<dd><p>alias of <a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionCutlassOp" title="xformers.ops.memory_efficient_attention.MemoryEfficientAttentionCutlassOp"><code class="xref py py-class docutils literal notranslate"><span class="pre">MemoryEfficientAttentionCutlassOp</span></code></a></p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp.BW_OP">
+<span class="sig-name descname"><span class="pre">BW_OP</span></span><a class="headerlink" href="#xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp.BW_OP" title="Permalink to this definition">¶</a></dt>
+<dd><p>alias of <a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionFlashAttentionOp" title="xformers.ops.memory_efficient_attention.MemoryEfficientAttentionFlashAttentionOp"><code class="xref py py-class docutils literal notranslate"><span class="pre">MemoryEfficientAttentionFlashAttentionOp</span></code></a></p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.MemoryEfficientAttentionCutlassOp">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">MemoryEfficientAttentionCutlassOp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#MemoryEfficientAttentionCutlassOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.MemoryEfficientAttentionCutlassOp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#xformers.ops.AttentionOpBase" title="xformers.ops.memory_efficient_attention.AttentionOpBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">AttentionOpBase</span></code></a></p>
+<p>xFormers’ MHA kernel based on CUTLASS.
+Supports a large number of settings (including without TensorCores, f32 …)
+and GPUs as old as P100 (Sm60)</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.MemoryEfficientAttentionFlashAttentionOp">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">MemoryEfficientAttentionFlashAttentionOp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#MemoryEfficientAttentionFlashAttentionOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.MemoryEfficientAttentionFlashAttentionOp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#xformers.ops.AttentionOpBase" title="xformers.ops.memory_efficient_attention.AttentionOpBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">AttentionOpBase</span></code></a></p>
+<p>Operator that computes memory-efficient attention using         <a class="reference external" href="https://github.com/HazyResearch/flash-attention">Flash-Attention</a>         implementation.</p>
+<p>This is a wrapper to make FlashAttention compatible with xformers’s API
+Most of this code was taken from:
+<a class="reference external" href="https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attn_interface.py">https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attn_interface.py</a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.MemoryEfficientAttentionOp">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">MemoryEfficientAttentionOp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#MemoryEfficientAttentionOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.MemoryEfficientAttentionOp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#xformers.ops.AttentionOpBase" title="xformers.ops.memory_efficient_attention.AttentionOpBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">AttentionOpBase</span></code></a></p>
+<p>An operator optimized for very small values of K (<code class="docutils literal notranslate"><span class="pre">K</span> <span class="pre">&lt;=</span> <span class="pre">32</span></code>)         and f32 pre-Ampere as it does not use TensorCores.
+Only supports contiguous inputs in BMK format, so an extra reshape         or contiguous call might be done.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Deprecated</dt>
+<dd class="field-odd"><p>This operator is deprecated and should not be used in new code</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="xformers.ops.memory_efficient_attention">
+<span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">memory_efficient_attention</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">query</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">attn_bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Optional" title="(in Python v3.6)"><span class="pre">Optional</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Union" title="(in Python v3.6)"><span class="pre">Union</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#xformers.ops.AttentionMask" title="xformers.ops.memory_efficient_attention.AttentionMask"><span class="pre">AttentionMask</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#float" title="(in Python v3.6)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">op</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Optional" title="(in Python v3.6)"><span class="pre">Optional</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Type" title="(in Python v3.6)"><span class="pre">Type</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#xformers.ops.AttentionOpBase" title="xformers.ops.memory_efficient_attention.AttentionOpBase"><span class="pre">AttentionOpBase</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#memory_efficient_attention"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.memory_efficient_attention" title="Permalink to this definition">¶</a></dt>
+<dd><p>Implements the memory-efficient attention mechanism following
+<a class="reference external" href="http://arxiv.org/abs/2112.05682">“Self-Attention Does Not Need O(n^2) Memory”</a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Inputs shape</dt>
+<dd class="field-odd"><p></p></dd>
+</dl>
+<ul class="simple">
+<li><p>Input tensors must be in format <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">M,</span> <span class="pre">H,</span> <span class="pre">K]</span></code>, where B is the batch size, M         the sequence length, H the number of heads, and K the embeding size per head</p></li>
+<li><p>If inputs have dimension 3, it is assumed that the dimensions are <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">M,</span> <span class="pre">K]</span></code> and <code class="docutils literal notranslate"><span class="pre">H=1</span></code></p></li>
+<li><p>Inputs can be non-contiguous - we only require the last dimension’s stride to be 1</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Equivalent pytorch code</dt>
+<dd class="field-odd"><p></p></dd>
+</dl>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">scale</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mf">0.5</span>
+<span class="n">query</span> <span class="o">=</span> <span class="n">query</span> <span class="o">*</span> <span class="n">scale</span>
+<span class="n">attn</span> <span class="o">=</span> <span class="n">query</span> <span class="o">@</span> <span class="n">key</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">attn_bias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">attn</span> <span class="o">=</span> <span class="n">attn</span> <span class="o">+</span> <span class="n">attn_bias</span>
+<span class="n">attn</span> <span class="o">=</span> <span class="n">attn</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">attn</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">dropout</span><span class="p">(</span><span class="n">attn</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span>
+<span class="k">return</span> <span class="n">attn</span> <span class="o">@</span> <span class="n">value</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Examples</dt>
+<dd class="field-odd"><p></p></dd>
+</dl>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">xformers.ops</span> <span class="k">as</span> <span class="nn">xops</span>
+
+<span class="c1"># Compute regular attention</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">xops</span><span class="o">.</span><span class="n">memory_efficient_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+
+<span class="c1"># With a dropout of 0.2</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">xops</span><span class="o">.</span><span class="n">memory_efficient_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
+
+<span class="c1"># Causal attention</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">xops</span><span class="o">.</span><span class="n">memory_efficient_attention</span><span class="p">(</span>
+    <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span>
+    <span class="n">attn_bias</span><span class="o">=</span><span class="n">xops</span><span class="o">.</span><span class="n">LowerTriangularMask</span><span class="p">()</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Supported hardware</dt>
+<dd class="field-odd"><p>NVIDIA GPUs with compute capability above 6.0 (P100+), datatype <code class="docutils literal notranslate"><span class="pre">f16</span></code>, <code class="docutils literal notranslate"><span class="pre">bf16</span></code> and <code class="docutils literal notranslate"><span class="pre">f32</span></code>.</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3.6/library/exceptions.html#NotImplementedError" title="(in Python v3.6)"><strong>NotImplementedError</strong></a> – if there is no operator available to compute the MHA</p>
+</dd>
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>query</strong> – Tensor of shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">Mq,</span> <span class="pre">H,</span> <span class="pre">K]</span></code></p></li>
+<li><p><strong>key</strong> – Tensor of shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">Mkv,</span> <span class="pre">H,</span> <span class="pre">K]</span></code></p></li>
+<li><p><strong>value</strong> – Tensor of shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">Mkv,</span> <span class="pre">H,</span> <span class="pre">Kv]</span></code></p></li>
+<li><p><strong>attn_bias</strong> – Bias to apply to the attention matrix - defaults to no masking.         For causal attention, use <a class="reference internal" href="#xformers.ops.LowerTriangularMask" title="xformers.ops.LowerTriangularMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.LowerTriangularMask</span></code></a>.         This can also be a <code class="xref py py-attr docutils literal notranslate"><span class="pre">torch.Tensor</span></code> for an arbitrary mask.</p></li>
+<li><p><strong>p</strong> – Dropout probability. Disabled if set to <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></li>
+<li><p><strong>op</strong> – The operator to use - see <a class="reference internal" href="#xformers.ops.AttentionOpBase" title="xformers.ops.AttentionOpBase"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.AttentionOpBase</span></code></a>.         If set to <code class="docutils literal notranslate"><span class="pre">None</span></code> (recommended), xFormers         will dispatch to the best available operator, depending on the inputs         and options.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>multi-head attention Tensor with shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">Mq,</span> <span class="pre">H,</span> <span class="pre">Kv]</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.SwiGLU">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">SwiGLU</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">in_features</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">hidden_features</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_features</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Optional" title="(in Python v3.6)"><span class="pre">Optional</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_pack_weights</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/swiglu_op.html#SwiGLU"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.SwiGLU" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://pytorch.org/docs/master/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></a></p>
+<p>A Module that encapsulates the call to <a class="reference internal" href="#xformers.ops.swiglu" title="xformers.ops.swiglu"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.swiglu</span></code></a>,
+and holds the weights for the 3 linear layers</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="xformers.ops.SwiGLU.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">in_features</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">hidden_features</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_features</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Optional" title="(in Python v3.6)"><span class="pre">Optional</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_pack_weights</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3.6/library/constants.html#None" title="(in Python v3.6)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/xformers/ops/swiglu_op.html#SwiGLU.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.SwiGLU.__init__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Create a SwiGLU module</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>in_features</strong> (<a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><em>int</em></a>) – Number of features of the input</p></li>
+<li><p><strong>hidden_features</strong> (<a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><em>int</em></a>) – Number of hidden features</p></li>
+<li><p><strong>out_features</strong> (<em>Optional</em><em>[</em><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><em>int</em></a><em>]</em><em>, </em><em>optional</em>) – Number of features of the input. Defaults to None.</p></li>
+<li><p><strong>bias</strong> (<a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><em>bool</em></a><em>, </em><em>optional</em>) – Whether linear layers also include a bias. Defaults to True.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="xformers.ops.SwiGLU.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></span><a class="reference internal" href="../_modules/xformers/ops/swiglu_op.html#SwiGLU.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.SwiGLU.forward" title="Permalink to this definition">¶</a></dt>
+<dd><p>Computes <a class="reference internal" href="#xformers.ops.swiglu" title="xformers.ops.swiglu"><code class="xref py py-attr docutils literal notranslate"><span class="pre">swiglu</span></code></a> with the module’s weights</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>x</strong> (<a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><em>torch.Tensor</em></a>) – A Tensor of shape <code class="docutils literal notranslate"><span class="pre">[...,</span> <span class="pre">in_features]</span></code></p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><em>torch.Tensor</em> – A Tensor of shape <code class="docutils literal notranslate"><span class="pre">[...,</span> <span class="pre">out_features]</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.SwiGLUOp">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">SwiGLUOp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">op</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">packed_weights</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">constraints</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/swiglu_op.html#SwiGLUOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.SwiGLUOp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#object" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Base class for any swiglu operator in <a class="reference internal" href="#xformers.ops.swiglu" title="xformers.ops.swiglu"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.swiglu</span></code></a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.SwiGLUOpDispatch">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">SwiGLUOpDispatch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Union" title="(in Python v3.6)"><span class="pre">Union</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensor_attributes.html#torch.device" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">device</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensor_attributes.html#torch.dtype" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">dtype</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype_autocast_gpu</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Optional" title="(in Python v3.6)"><span class="pre">Optional</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensor_attributes.html#torch.dtype" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">dtype</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">packed_weights</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">bias_enabled</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/swiglu_op.html#SwiGLUOpDispatch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.SwiGLUOpDispatch" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#object" title="(in Python v3.6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Dispatcher to automatically select
+the best operator in <a class="reference internal" href="#xformers.ops.swiglu" title="xformers.ops.swiglu"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.swiglu</span></code></a></p>
+<dl class="py property">
+<dt class="sig sig-object py" id="xformers.ops.SwiGLUOpDispatch.op">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">op</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#xformers.ops.SwiGLUOp" title="xformers.ops.swiglu_op.SwiGLUOp"><span class="pre">SwiGLUOp</span></a></em><a class="headerlink" href="#xformers.ops.SwiGLUOpDispatch.op" title="Permalink to this definition">¶</a></dt>
+<dd><p>Computes the best operator</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><em>SwiGLUOp</em> – The best operator for the configuration</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="xformers.ops.swiglu">
+<span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">swiglu</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">w1</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">b1</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Optional" title="(in Python v3.6)"><span class="pre">Optional</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">w2</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">b2</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Optional" title="(in Python v3.6)"><span class="pre">Optional</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">w3</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">b3</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Optional" title="(in Python v3.6)"><span class="pre">Optional</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">op</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Optional" title="(in Python v3.6)"><span class="pre">Optional</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#xformers.ops.SwiGLUOp" title="xformers.ops.swiglu_op.SwiGLUOp"><span class="pre">SwiGLUOp</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></span><a class="reference internal" href="../_modules/xformers/ops/swiglu_op.html#swiglu"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.swiglu" title="Permalink to this definition">¶</a></dt>
+<dd><p>Computes a SwiGLU block given the weights/bias of the 3
+linear layers.</p>
+<ul class="simple">
+<li><p>It is recommended to keep <code class="docutils literal notranslate"><span class="pre">op=None</span></code> so the best implementation     available for the inputs will be used.</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Equivalent pytorch code</dt>
+<dd class="field-odd"><p></p></dd>
+</dl>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">x1</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">b1</span><span class="p">)</span>
+<span class="n">x2</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">b2</span><span class="p">)</span>
+<span class="n">hidden</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">silu</span><span class="p">(</span><span class="n">x1</span><span class="p">)</span> <span class="o">*</span> <span class="n">x2</span>
+<span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">w3</span><span class="p">,</span> <span class="n">b3</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Packing weights</dt>
+<dd class="field-odd"><p></p></dd>
+</dl>
+<dl>
+<dt>To allow faster implementations, it’s recommended to have w1/w2 come from the same storage, as in:</dt><dd><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">w1</span><span class="p">,</span> <span class="n">w2</span> <span class="o">=</span> <span class="n">xformers</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">unbind</span><span class="p">(</span><span class="n">w12</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Supported hardware</dt>
+<dd class="field-odd"><p></p></dd>
+</dl>
+<p>This operator is only optimized on A100+ on <code class="docutils literal notranslate"><span class="pre">torch.half</span></code> or <code class="docutils literal notranslate"><span class="pre">torch.bfloat16</span></code>         (autocast is supported), and will fallback to a functional pytorch         implementation otherwise.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="xformers.ops.unbind">
+<span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">unbind</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dim</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Tuple" title="(in Python v3.6)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/xformers/ops/unbind.html#unbind"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.unbind" title="Permalink to this definition">¶</a></dt>
+<dd><p>Does exactly the same as <code class="xref py py-attr docutils literal notranslate"><span class="pre">torch.unbind</span></code> for the forward.
+In backward, avoids a <code class="xref py py-attr docutils literal notranslate"><span class="pre">torch.cat</span></code> if the gradients
+are already multiple views of the same storage</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="xformers.ops.stack_or_none">
+<span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">stack_or_none</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tensors</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Sequence" title="(in Python v3.6)"><span class="pre">Sequence</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dim</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></span><a class="reference internal" href="../_modules/xformers/ops/unbind.html#stack_or_none"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.stack_or_none" title="Permalink to this definition">¶</a></dt>
+<dd><p>Does exactly the same as <code class="xref py py-attr docutils literal notranslate"><span class="pre">torch.stack</span></code> if the tensors can be concatenated
+without any memory operation. Otherwise returns None.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="xformers.ops.get_stack_strides">
+<span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">get_stack_strides</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tensors</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Sequence" title="(in Python v3.6)"><span class="pre">Sequence</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dim</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Optional" title="(in Python v3.6)"><span class="pre">Optional</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Tuple" title="(in Python v3.6)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/xformers/ops/unbind.html#get_stack_strides"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.get_stack_strides" title="Permalink to this definition">¶</a></dt>
+<dd><p>If the tensors are already stacked on dimension <code class="code docutils literal notranslate"><span class="pre">dim</span></code>,         returns the strides of the stacked tensors.         Otherwise returns <code class="code docutils literal notranslate"><span class="pre">None</span></code>.</p>
+</dd></dl>
+
+</section>
+
+
+              </article>
+              
+            </div>
+            <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="attentions.html" class="btn btn-neutral float-right" title="Attention mechanisms" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="index.html" class="btn btn-neutral" title="API Reference" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright Copyright © 2021 Meta Platforms, Inc.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+        </div>
+
+        <!-- <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">Operators</a></li>
+</ul>
+
+            </div>
+          </div>
+        </div> -->
+    </section>
+  </div>
+
+  
+
+
+  
+
+  
+  <script type="text/javascript" id="documentation_options" data-url_root="../"
+    src="../_static/documentation_options.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+  <script src="../_static/jquery.js"></script>
+  <script src="../_static/underscore.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+  <script src="../_static/doctools.js"></script>
+  
+
+  
+
+  <script type="text/javascript" src="../_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="../_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+  <!-- Begin Footer -->
+
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://github.com/facebookresearch/xformers" class="footer-logo"></a>
+      </div>
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://github.com/facebookresearch/xformers">fairscale</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="">Resources</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers">Docs</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://opensource.facebook.com/legal/terms">Terms of Use</a></li>
+            <li><a href="https://opensource.facebook.com/legal/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    </div>
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://github.com/facebookresearch/xformers" aria-label="fairscale"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Docs</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Github</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="../_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function () {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function (e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+
+</html>

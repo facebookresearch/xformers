@@ -136,23 +136,23 @@
         
         
         
-        <p><span class="caption-text">Index</span></p>
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../what_is_xformers.html">What is xFormers?</a></li>
 </ul>
-<p><span class="caption-text">Components Documentation</span></p>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../components/index.html">API Reference</a></li>
 </ul>
-<p><span class="caption-text">Build models and blocks programatically</span></p>
+<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../factory/index.html">Factory</a></li>
 </ul>
-<p><span class="caption-text">Tutorials and examples</span></p>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">Tutorials</a></li>
 </ul>
-<p><span class="caption-text">Some custom parts</span></p>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../custom_parts/index.html">Custom parts reference</a></li>
 </ul>
@@ -230,7 +230,7 @@
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
   <section id="using-triton-based-layers">
-<h1>Using Triton-based layers<a class="headerlink" href="#using-triton-based-layers" title="Permalink to this headline">¶</a></h1>
+<h1>Using Triton-based layers<a class="headerlink" href="#using-triton-based-layers" title="Permalink to this heading">¶</a></h1>
 <p><a class="reference external" href="https://triton-lang.org/">Triton</a> is a language and compiler for parallel programming, currently applicable to CUDA-enabled GPUs.
 It is compatible with PyTorch CUDA Tensors, and can be interfaced directly with pure python code.</p>
 <p>PyTorch provides many primitives capable of tranforming tensors, which correspond to operators in each of the supported backends.
@@ -239,7 +239,7 @@ so some operations typical of the Transformer family are supported in PyTorch as
 <p>Triton makes it possible to consolidate some of them into ad-hoc fused operators, which are compiled just-in-time.
 xFormers proposes a couple of optimized layers, and the goal is to increase their number over time.</p>
 <section id="fused-softmax-layer">
-<h2>Fused softmax layer<a class="headerlink" href="#fused-softmax-layer" title="Permalink to this headline">¶</a></h2>
+<h2>Fused softmax layer<a class="headerlink" href="#fused-softmax-layer" title="Permalink to this heading">¶</a></h2>
 <p>This is a drop-in replacement to <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Softmax.html">torch.nn.softmax</a>, the only limitation being that the softmax operation is limited to the last dimension.
 Log-softmax is also available. The actual Triton kernel is very similar to <cite>this tutorial&lt;https://triton-lang.org/getting-started/tutorials/02-fused-softmax.html#sphx-glr-getting-started-tutorials-02-fused-softmax-py&gt;</cite></p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">xformers.triton</span> <span class="kn">import</span> <span class="n">softmax</span><span class="p">,</span> <span class="n">log_softmax</span>
@@ -253,7 +253,7 @@ Log-softmax is also available. The actual Triton kernel is very similar to <cite
 <a class="reference internal image-reference" href="../_images/Softmax_Bandwidth_FW_BW_fp32.png"><img alt="Softmax throughput in fp32 - training" src="../_images/Softmax_Bandwidth_FW_BW_fp32.png" style="width: 600px;" /></a>
 </section>
 <section id="fused-linear-layer">
-<h2>Fused linear layer<a class="headerlink" href="#fused-linear-layer" title="Permalink to this headline">¶</a></h2>
+<h2>Fused linear layer<a class="headerlink" href="#fused-linear-layer" title="Permalink to this heading">¶</a></h2>
 <p>This is a drop-in replacement to two PyTorch operands: a <cite>torch.nn.Linear</cite>, and an activation, like <cite>torch.nn.ReLU</cite>. It is Torch AMP and autograd aware, and can be used very simply:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">xformers.triton</span> <span class="kn">import</span> <span class="n">FusedLinearLayer</span>
 
@@ -280,7 +280,7 @@ In all other usecases, you will be better served using PyTorch.</p>
 <a class="reference internal image-reference" href="../_images/FusedLinear_fp16_FW_BW_relu.png"><img alt="Fused linear layers throughput in fp16 - training - ReLU" src="../_images/FusedLinear_fp16_FW_BW_relu.png" style="width: 600px;" /></a>
 </section>
 <section id="fused-layer-norm">
-<h2>Fused layer norm<a class="headerlink" href="#fused-layer-norm" title="Permalink to this headline">¶</a></h2>
+<h2>Fused layer norm<a class="headerlink" href="#fused-layer-norm" title="Permalink to this heading">¶</a></h2>
 <p>You can reproduce these numbers locally by running <cite>python3 xformers/benchmarks/benchmark_triton_layernorm.py</cite>. The units are GB/s. These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.</p>
 <a class="reference internal image-reference" href="../_images/LayerNorm_FW_torch.float16.png"><img alt="Fused layer norm throughput in fp16 - inference" src="../_images/LayerNorm_FW_torch.float16.png" style="width: 600px;" /></a>
 <a class="reference internal image-reference" href="../_images/LayerNorm_FW+BW_torch.float16.png"><img alt="Fused layer norm throughput in fp16 - training" src="../_images/LayerNorm_FW+BW_torch.float16.png" style="width: 600px;" /></a>
@@ -288,7 +288,7 @@ In all other usecases, you will be better served using PyTorch.</p>
 <a class="reference internal image-reference" href="../_images/LayerNorm_FW+BW_torch.float32.png"><img alt="Fused layer norm throughput in fp32 - training" src="../_images/LayerNorm_FW+BW_torch.float32.png" style="width: 600px;" /></a>
 </section>
 <section id="fused-dropout-bias-activation">
-<h2>Fused dropout + bias + activation<a class="headerlink" href="#fused-dropout-bias-activation" title="Permalink to this headline">¶</a></h2>
+<h2>Fused dropout + bias + activation<a class="headerlink" href="#fused-dropout-bias-activation" title="Permalink to this heading">¶</a></h2>
 <p>You can reproduce these numbers locally by running <cite>python3 xformers/benchmarks/benchmark_triton_dropout.py</cite>. The units are GB/s.
 These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.</p>
 <a class="reference internal image-reference" href="../_images/Dropout_Bias_True_FW_torch.float16_Act_gelu.png"><img alt="Fused dropout+ bias throughput in fp16 - inference - GeLU" src="../_images/Dropout_Bias_True_FW_torch.float16_Act_gelu.png" style="width: 600px;" /></a>
@@ -364,10 +364,11 @@ These results are for a laptop nVidia 3080, Triton 1.1 and PyTorch 1.10.</p>
   
   <script type="text/javascript" id="documentation_options" data-url_root="../"
     src="../_static/documentation_options.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
   <script src="../_static/jquery.js"></script>
   <script src="../_static/underscore.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script src="../_static/doctools.js"></script>
-  <script src="../_static/language_data.js"></script>
   
 
   

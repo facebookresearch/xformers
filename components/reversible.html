@@ -136,23 +136,23 @@
         
         
         
-        <p><span class="caption-text">Index</span></p>
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../what_is_xformers.html">What is xFormers?</a></li>
 </ul>
-<p><span class="caption-text">Components Documentation</span></p>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a></li>
 </ul>
-<p><span class="caption-text">Build models and blocks programatically</span></p>
+<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../factory/index.html">Factory</a></li>
 </ul>
-<p><span class="caption-text">Tutorials and examples</span></p>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/index.html">Tutorials</a></li>
 </ul>
-<p><span class="caption-text">Some custom parts</span></p>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../custom_parts/index.html">Custom parts reference</a></li>
 </ul>
@@ -230,58 +230,58 @@
               <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
                 
   <section id="reversible-layer">
-<h1>Reversible layer<a class="headerlink" href="#reversible-layer" title="Permalink to this headline">¶</a></h1>
+<h1>Reversible layer<a class="headerlink" href="#reversible-layer" title="Permalink to this heading">¶</a></h1>
 <dl class="py class">
-<dt id="xformers.components.reversible.Deterministic">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.components.reversible.</code><code class="sig-name descname">Deterministic</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">net</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))">torch.nn.modules.module.Module</a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#Deterministic"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.reversible.Deterministic" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="xformers.components.reversible.Deterministic">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.components.reversible.</span></span><span class="sig-name descname"><span class="pre">Deterministic</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">net</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Module</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#Deterministic"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.components.reversible.Deterministic" title="Permalink to this definition">¶</a></dt>
 <dd><dl class="py method">
-<dt id="xformers.components.reversible.Deterministic.record_rng">
-<code class="sig-name descname">record_rng</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#Deterministic.record_rng"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.reversible.Deterministic.record_rng" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="xformers.components.reversible.Deterministic.record_rng">
+<span class="sig-name descname"><span class="pre">record_rng</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#Deterministic.record_rng"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.components.reversible.Deterministic.record_rng" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py method">
-<dt id="xformers.components.reversible.Deterministic.forward">
-<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="n">record_rng</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></span> <span class="o">=</span> <span class="default_value">False</span></em>, <em class="sig-param"><span class="n">set_rng</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></span> <span class="o">=</span> <span class="default_value">False</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#Deterministic.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.reversible.Deterministic.forward" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="xformers.components.reversible.Deterministic.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">record_rng</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">set_rng</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#Deterministic.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.components.reversible.Deterministic.forward" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
-<dt id="xformers.components.reversible.Deterministic.training">
-<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.components.reversible.Deterministic.training" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="xformers.components.reversible.Deterministic.training">
+<span class="sig-name descname"><span class="pre">training</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></em><a class="headerlink" href="#xformers.components.reversible.Deterministic.training" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 </dd></dl>
 
 <dl class="py class">
-<dt id="xformers.components.reversible.ReversibleBlock">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.components.reversible.</code><code class="sig-name descname">ReversibleBlock</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">f</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))">torch.nn.modules.module.Module</a></span></em>, <em class="sig-param"><span class="n">g</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))">torch.nn.modules.module.Module</a></span></em>, <em class="sig-param"><span class="n">split_dim</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)">int</a></span> <span class="o">=</span> <span class="default_value">- 1</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#ReversibleBlock"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.reversible.ReversibleBlock" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="xformers.components.reversible.ReversibleBlock">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.components.reversible.</span></span><span class="sig-name descname"><span class="pre">ReversibleBlock</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">f</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Module</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">g</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Module</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">split_dim</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">-</span> <span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#ReversibleBlock"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.components.reversible.ReversibleBlock" title="Permalink to this definition">¶</a></dt>
 <dd><dl class="py method">
-<dt id="xformers.components.reversible.ReversibleBlock.forward">
-<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">f_args</span><span class="o">=</span><span class="default_value">{}</span></em>, <em class="sig-param"><span class="n">g_args</span><span class="o">=</span><span class="default_value">{}</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#ReversibleBlock.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.reversible.ReversibleBlock.forward" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="xformers.components.reversible.ReversibleBlock.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">f_args</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">g_args</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{}</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#ReversibleBlock.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.components.reversible.ReversibleBlock.forward" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py method">
-<dt id="xformers.components.reversible.ReversibleBlock.backward_pass">
-<code class="sig-name descname">backward_pass</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">y</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">dy</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))">torch.Tensor</a></span></em>, <em class="sig-param"><span class="n">f_args</span><span class="o">=</span><span class="default_value">{}</span></em>, <em class="sig-param"><span class="n">g_args</span><span class="o">=</span><span class="default_value">{}</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#ReversibleBlock.backward_pass"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.reversible.ReversibleBlock.backward_pass" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="xformers.components.reversible.ReversibleBlock.backward_pass">
+<span class="sig-name descname"><span class="pre">backward_pass</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">Tensor</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">f_args</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">g_args</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{}</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#ReversibleBlock.backward_pass"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.components.reversible.ReversibleBlock.backward_pass" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
-<dt id="xformers.components.reversible.ReversibleBlock.training">
-<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.components.reversible.ReversibleBlock.training" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="xformers.components.reversible.ReversibleBlock.training">
+<span class="sig-name descname"><span class="pre">training</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></em><a class="headerlink" href="#xformers.components.reversible.ReversibleBlock.training" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 </dd></dl>
 
 <dl class="py class">
-<dt id="xformers.components.reversible.ReversibleSequence">
-<em class="property">class </em><code class="sig-prename descclassname">xformers.components.reversible.</code><code class="sig-name descname">ReversibleSequence</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">blocks</span><span class="p">:</span> <span class="n"><a class="reference external" href="https://pytorch.org/docs/master/generated/torch.nn.ModuleList.html#torch.nn.ModuleList" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))">torch.nn.modules.container.ModuleList</a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#ReversibleSequence"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.reversible.ReversibleSequence" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="xformers.components.reversible.ReversibleSequence">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.components.reversible.</span></span><span class="sig-name descname"><span class="pre">ReversibleSequence</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">blocks</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/generated/torch.nn.ModuleList.html#torch.nn.ModuleList" title="(in PyTorch vmaster (1.14.0a0+git48dc24d ))"><span class="pre">ModuleList</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#ReversibleSequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.components.reversible.ReversibleSequence" title="Permalink to this definition">¶</a></dt>
 <dd><dl class="py method">
-<dt id="xformers.components.reversible.ReversibleSequence.forward">
-<code class="sig-name descname">forward</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span></em>, <em class="sig-param"><span class="n">arg_route</span><span class="o">=</span><span class="default_value">True, False</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#ReversibleSequence.forward"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#xformers.components.reversible.ReversibleSequence.forward" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="xformers.components.reversible.ReversibleSequence.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">arg_route</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(True,</span> <span class="pre">False)</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/components/reversible.html#ReversibleSequence.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.components.reversible.ReversibleSequence.forward" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
-<dt id="xformers.components.reversible.ReversibleSequence.training">
-<code class="sig-name descname">training</code><em class="property">: <a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)">bool</a></em><a class="headerlink" href="#xformers.components.reversible.ReversibleSequence.training" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="xformers.components.reversible.ReversibleSequence.training">
+<span class="sig-name descname"><span class="pre">training</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#bool" title="(in Python v3.6)"><span class="pre">bool</span></a></em><a class="headerlink" href="#xformers.components.reversible.ReversibleSequence.training" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 </dd></dl>
@@ -348,10 +348,11 @@
   
   <script type="text/javascript" id="documentation_options" data-url_root="../"
     src="../_static/documentation_options.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
   <script src="../_static/jquery.js"></script>
   <script src="../_static/underscore.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script src="../_static/doctools.js"></script>
-  <script src="../_static/language_data.js"></script>
   
 
   
