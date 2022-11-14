@@ -202,6 +202,7 @@ def create_tensors(
     k,
     kv,
     *,
+    requires_grad=False,
     attn_bias_type=None,
     fmt: str = "BMK",
 ):
@@ -231,6 +232,7 @@ def create_tensors(
     dispatch = xformers.ops.AttentionOpDispatch.from_arguments(
         query=query, key=key, value=value, attn_bias=attn_bias
     )
+    dispatch.requires_grad = requires_grad
     if not op.supports(dispatch):
         # Ensure we free memory to avoid OOMs
         del query, key, value, attn_bias
@@ -498,7 +500,10 @@ def test_backward(
         kv,
     ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
     query, key, value, attn_bias = create_tensors(
-        *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=attn_bias_type, fmt=fmt
+        *op_device_dtype_B_Mq_Mkv_H_K_Kv,
+        requires_grad=True,
+        attn_bias_type=attn_bias_type,
+        fmt=fmt,
     )
     qkv = None
 
