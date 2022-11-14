@@ -14,31 +14,18 @@ from xformers.components import Activation
 _kAlpha = math.sqrt(2.0 / math.pi)
 
 
-def get_triton_activation_kernel(activation: Optional[Activation]):
+def get_triton_activation_index(activation: Optional[Activation]) -> int:
     return (
         {
-            Activation.ReLU: relu,
-            Activation.LeakyReLU: leaky_relu,
-            Activation.GeLU: gelu,
-            Activation.SquaredReLU: squared_relu,
-            Activation.SmeLU: smelu,
+            Activation.ReLU: 1,
+            Activation.LeakyReLU: 2,
+            Activation.GeLU: 3,
+            Activation.SquaredReLU: 4,
+            Activation.SmeLU: 5,
+            Activation.StarReLU: 6,
         }[activation]
-        if activation
-        else None
-    )
-
-
-def get_triton_activation_bwd_kernel(activation: Optional[Activation]):
-    return (
-        {
-            Activation.ReLU: relu_grad,
-            Activation.LeakyReLU: leaky_relu_grad,
-            Activation.GeLU: gelu_grad,
-            Activation.SquaredReLU: squared_relu_grad,
-            Activation.SmeLU: smelu_grad,
-        }[activation]
-        if activation
-        else None
+        if activation is not None
+        else 0
     )
 
 
@@ -65,8 +52,7 @@ def relu(x):
 
     .. _ReLU: https://pytorch.org/docs/stable/generated/torch.nn.ReLU.html
     """
-    zero = 0.0
-    return tl.where(x >= 0, x, zero.to(x.dtype))
+    return tl.where(x >= 0, x, 0.0)
 
 
 @triton.jit
@@ -74,9 +60,7 @@ def relu_grad(x):
     # ReLU is different from other activations
     # in that it does not require the input to retrospectively compute its gradient
     # here the input is the downstream gradient, and we return the upstream gradient directly
-    zero = 0.0
-    one = 1.0
-    return tl.where(x >= 0, one.to(x.dtype), zero.to(x.dtype))
+    return tl.where(x >= 0, 1.0, 0.0)
 
 
 @triton.jit
@@ -86,13 +70,29 @@ def squared_relu(x):
 
     .. _Primer: https://arxiv.org/abs/2109.08668
     """
-    x_ = relu(x)
-    return (x_ * x_).to(x.dtype)
+    x_sq = x * x
+    return tl.where(x > 0.0, x_sq, 0.0)
 
 
 @triton.jit
 def squared_relu_grad(x):
-    return tl.where(x >= 0, 2.0 * x, 0.0)
+    return tl.where(x >= 0.0, 2 * x, 0.0)
+
+
+@triton.jit
+def star_relu(x):
+    """
+    Star ReLU activation, as proposed in the "MetaFormer Baselines for Vision"_ paper.
+
+    .. _ "MetaFormer Baselines for Vision": https://arxiv.org/pdf/2210.13452.pdf
+    """
+    x_sq = x * x
+    return 0.8944 * tl.where(x > 0.0, x_sq, 0.0) - 0.4472
+
+
+@triton.jit
+def star_relu_grad(x):
+    return tl.where(x >= 0.0, 1.7888 * x, 0.0)
 
 
 # Leaky ReLU
@@ -103,20 +103,12 @@ def leaky_relu(x):
 
     .. _LeakyReLU: https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html
     """
-    scale = 0.01 + 0.0
-    scale = scale.to(x.dtype)
-    return tl.where(x >= 0, x, scale * x)
+    return tl.where(x >= 0.0, x, 0.01 * x)
 
 
 @triton.jit
 def leaky_relu_grad(x):
-    min_grad = 0.01
-    max_grad = 1
-
-    min_grad = min_grad.to(x.dtype)
-    max_grad = max_grad.to(x.dtype)
-
-    return tl.where(x >= 0, max_grad, min_grad)
+    return tl.where(x >= 0.0, 1.0, 0.01)
 
 
 @triton.jit
@@ -146,23 +138,15 @@ def smelu(x):
 
     .. _SmeLU: https://arxiv.org/pdf/2202.06499.pdf
     """
-    zero = 0.0
-    four = 4.0
-    two = 2.0
-    beta = two.to(x.dtype)
+    beta = 2.0
 
-    output = (x + beta) * (x + beta) / (four.to(x.dtype) * beta)
-    relu = tl.where(x >= beta, x, zero.to(x.dtype))
-    return tl.where(tl.abs(x) <= beta, output, relu)
+    relu = tl.where(x >= beta, x, 0.0)
+    return tl.where(tl.abs(x) <= beta, (x + beta) * (x + beta) / (4.0 * beta), relu)
 
 
 @triton.jit
 def smelu_grad(x):
-    zero = 0.0
-    one = 1.0
-    two = 2.0
-    beta = two.to(x.dtype)
+    beta = 2.0
 
-    grad = (beta + x) / (two.to(x.dtype) * beta)
-    relu_grad = tl.where(x >= beta, one.to(x.dtype), zero.to(x.dtype))
-    return tl.where(tl.abs(x) <= beta, grad, relu_grad)
+    relu_grad = tl.where(x >= beta, 1.0, 0.0)
+    return tl.where(tl.abs(x) <= beta, (beta + x) / (2.0 * beta), relu_grad)

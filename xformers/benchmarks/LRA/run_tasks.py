@@ -52,9 +52,9 @@ def build_model(args: argparse.Namespace, config: Dict) -> nn.Module:
     attention_name = args.attention
 
     model: pl.LightningModule = (
-        ModelForSCDual(config[f"{task}"], attention_name)
+        ModelForSCDual(config[f"{task}"], attention_name)  # type: ignore
         if task == Task.Retrieval
-        else ModelForSC(config[f"{task}"], attention_name)
+        else ModelForSC(config[f"{task}"], attention_name)  # type: ignore
     )
 
     logging.info(model)
