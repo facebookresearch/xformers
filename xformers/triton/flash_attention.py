@@ -14,11 +14,28 @@ class _flash_attention(torch.autograd.Function):
     def _flash_attn_forward(
         ctx, q, k, v, sm_scale, causal: bool = False, no_grad: bool = False
     ):
+        print(
+            f"DIANA DEBUG: q shape is {q.shape}, v shape is {v.shape}, k shape is {k.shape}. Expecting BHMK - 8 20 2048 "
+        )
+        # Do we need to make the values contiguous?
+
         BLOCK = 128
         # shape constraints for head_dim
         Lq, Lk, Lv = q.shape[-1], k.shape[-1], v.shape[-1]
         assert Lq == Lk and Lk == Lv
         assert Lk in {16, 32, 64, 128}
+        assert q.dtype == k.dtype == v.dtype
+        assert q.dtype in [torch.float16, torch.bfloat16]
+
+        # assuming seq_len is a power of 2
+        BLOCK_M = max(min(128, q.shape[2]), 16)  # minimal size
+        if BLOCK_M == 32:
+            BLOCK_M = 64  # there is a strange triton segfault with 32
+
+        # TODO: is this necessary?
+        assert k.shape[2] % BLOCK_M == 0
+        assert q.shape[2] % BLOCK_M == 0
+
         o = torch.empty_like(q)
         # [sequence length/block size, B*H]
         grid = (triton.cdiv(q.shape[2], BLOCK), q.shape[0] * q.shape[1])

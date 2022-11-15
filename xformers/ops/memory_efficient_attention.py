@@ -770,6 +770,12 @@ class TritonFlashAttentionOp(AttentionOpBase):
             return False
         if d.k not in [16, 32, 64, 128]:
             return False
+        if d.kv not in [16, 32, 64, 128]:
+            return False
+        device_capability = torch.cuda.get_device_capability(d.device)
+        is_sm80 = device_capability[0] >= 8
+        if not is_sm80:
+            return False
         return super(TritonFlashAttentionOp, cls).supports(d)
 
     @classmethod
@@ -794,6 +800,11 @@ class TritonFlashAttentionOp(AttentionOpBase):
     @classmethod
     def forward(cls, ctx, query, key, value, attn_bias, p):
         softmax_scale = query.shape[-1] ** (-0.5)
+        # TODO: reshape, right now input is bmhk, but Triton requires bhmk
+        # query = query.transpose(1, 2)
+        # key = key.transpose(1, 2)
+        # value = value.transpose(1, 2)
+
         return triton_flash.forward(
             ctx=ctx,
             q=query,

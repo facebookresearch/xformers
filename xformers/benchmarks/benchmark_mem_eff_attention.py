@@ -101,6 +101,8 @@ SHAPES = [
     (1, 16384, 16, 40),  # 1024x1024
     # ParlAI model
     (256, 4096, 16, 64),
+    # Zetta B M H K
+    (8, 2048, 20, 128),
     *sorted(
         list(itertools.product([16, 64], [128, 512, 1024], [16], [16, 32, 64, 128]))
     ),
@@ -112,6 +114,8 @@ FORCE_OP = None
 # FORCE_OP = xformers.ops.MemoryEfficientAttentionOp
 # FORCE_OP = xformers.ops.MemoryEfficientAttentionCutlassOp
 # FORCE_OP = xformers.ops.MemoryEfficientAttentionFlashAttentionOp
+# FORCE_OP = xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp
+# FORCE_OP = xformers.ops.TritonFlashAttentionOp
 
 
 def product_dict(**kwargs):

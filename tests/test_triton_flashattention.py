@@ -31,28 +31,28 @@ if _triton_available:
 
     @pytest.mark.parametrize("causal", [True, False])
     @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-    @pytest.mark.parametrize("Z, H, N_CTX, D_HEAD", [(3, 2, 2048, 64)])
-    def test_op(Z, H, N_CTX, D_HEAD, causal, dtype):
+    @pytest.mark.parametrize("Z, H, S_Q, S_KV, D_HEAD", [(8, 160, 2048, 2048, 128)])
+    def test_op(Z, H, S_Q, S_KV, D_HEAD, causal, dtype):
         torch.manual_seed(20)
         q = (
-            torch.empty((Z, H, N_CTX, D_HEAD), dtype=dtype, device="cuda")
+            torch.empty((Z, H, S_Q, D_HEAD), dtype=dtype, device="cuda")
             .normal_(mean=0, std=0.5)
             .requires_grad_()
         )
         k = (
-            torch.empty((Z, H, N_CTX, D_HEAD), dtype=dtype, device="cuda")
+            torch.empty((Z, H, S_KV, D_HEAD), dtype=dtype, device="cuda")
             .normal_(mean=0, std=0.5)
             .requires_grad_()
         )
         v = (
-            torch.empty((Z, H, N_CTX, D_HEAD), dtype=dtype, device="cuda")
+            torch.empty((Z, H, S_KV, D_HEAD), dtype=dtype, device="cuda")
             .normal_(mean=0, std=0.5)
             .requires_grad_()
         )
         sm_scale = 0.3
         dout = torch.randn_like(q)
         # reference implementation
-        M = torch.tril(torch.ones((N_CTX, N_CTX), device="cuda"))
+        M = torch.tril(torch.ones((S_Q, S_KV), device="cuda"))
         p = torch.matmul(q, k.transpose(2, 3)) * sm_scale
         if causal:
             for z in range(Z):

@@ -211,16 +211,16 @@ def _bwd_kernel(
     is_causal: tl.constexpr,
 ):
     off_hb = tl.program_id(0)
-    off_z = off_hb // H
+    off_b = off_hb // H
     off_h = off_hb % H
     # offset pointers for batch/head
-    Q += off_z * stride_q_batch + off_h * stride_q_heads
-    K += off_z * stride_q_batch + off_h * stride_q_heads
-    V += off_z * stride_q_batch + off_h * stride_q_heads
-    DO += off_z * stride_q_batch + off_h * stride_q_heads
-    DQ += off_z * stride_q_batch + off_h * stride_q_heads
-    DK += off_z * stride_q_batch + off_h * stride_q_heads
-    DV += off_z * stride_q_batch + off_h * stride_q_heads
+    Q += off_b * stride_q_batch + off_h * stride_q_heads
+    K += off_b * stride_q_batch + off_h * stride_q_heads
+    V += off_b * stride_q_batch + off_h * stride_q_heads
+    DO += off_b * stride_q_batch + off_h * stride_q_heads
+    DQ += off_b * stride_q_batch + off_h * stride_q_heads
+    DK += off_b * stride_q_batch + off_h * stride_q_heads
+    DV += off_b * stride_q_batch + off_h * stride_q_heads
     for start_n in range(0, num_block):
         lo = start_n * BLOCK_M if is_causal else 0
         # initialize row/col offsets

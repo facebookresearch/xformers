@@ -137,11 +137,14 @@ def assert_allclose(
     flatten_diff = ((out - ref).abs() - atol - ref.abs() * rtol).flatten()
     max_pos = flatten_diff.argmax()
     max_diff = flatten_diff[max_pos]
+    num_different = torch.count_nonzero(flatten_diff > 0)
+    percentage = num_different/flatten_diff.numel()
     del flatten_diff
     assert torch.allclose(out, ref, rtol=rtol, atol=atol), (
         f"{msg}: "
         f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} (diff={max_diff} > 0)"
         f"/ atol={atol}, rtol={rtol}"
+        f"/ total failing elements: {num_different}, percentage={percentage}"
     )
 
 
