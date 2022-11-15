@@ -104,6 +104,7 @@ install_dep: &install_dep
 install_dep_exp: &install_dep_exp
   - run:
       name: Install Dependencies for experimental tests
+      no_output_timeout: 30m
       command: |
         source $BASH_ENV
         # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
