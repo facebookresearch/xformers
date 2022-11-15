@@ -107,6 +107,7 @@ class AttentionOpBase(torch.autograd.Function):
     SUPPORTED_MAX_K: float
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None)}
     SUPPORTS_DROPOUT: bool
+    SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
     NAME: str
 
@@ -127,11 +128,12 @@ class AttentionOpBase(torch.autograd.Function):
         value: torch.Tensor,
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
+        has_custom_scale: bool,
     ) -> torch.Tensor:
         raise NotImplementedError()
 
     @classmethod
-    def forward(cls, ctx, query, key, value, attn_bias, p):
+    def forward(cls, ctx, query, key, value, attn_bias, p, has_custom_scale):
         raise NotImplementedError()
 
     @classmethod
@@ -152,6 +154,8 @@ class AttentionOpBase(torch.autograd.Function):
         if d.attn_bias_type not in cls.SUPPORTED_ATTN_BIAS_TYPES:
             return False
         if d.has_dropout and not cls.SUPPORTS_DROPOUT:
+            return False
+        if d.has_custom_scale and not cls.SUPPORTS_CUSTOM_SCALE:
             return False
         # bfloat16 is only supported on A100+
         # ... although the kernels can still run and give the
@@ -184,6 +188,7 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
     SUPPORTED_MAX_K: float = 32
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), torch.Tensor}
     SUPPORTS_DROPOUT = True
+    SUPPORTS_CUSTOM_SCALE = False
     NAME = "small_k"
 
     # as this kernel is a bit slow, this should make tests run faster
@@ -223,7 +228,10 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
         value: torch.Tensor,
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
+        has_custom_scale: bool,
     ) -> torch.Tensor:
+        if has_custom_scale:
+            raise NotImplementedError("Unsupport custom scale")
         num_heads = query.shape[2]
         query = cls.bmhk2bmk_contiguous(query)
         key = cls.bmhk2bmk_contiguous(key)
@@ -232,7 +240,9 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
         return cls.bmk2bmhk(output, num_heads)
 
     @classmethod
-    def forward(cls, ctx, query, key, value, attn_bias, p):
+    def forward(cls, ctx, query, key, value, attn_bias, p, has_custom_scale):
+        if has_custom_scale:
+            raise NotImplementedError("Unsupport custom scale")
         num_heads = query.shape[2]
         query = cls.bmhk2bmk_contiguous(query)
         key = cls.bmhk2bmk_contiguous(key)
@@ -248,7 +258,7 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
         gq = cls.bmk2bmhk(gq, num_heads)
         gk = cls.bmk2bmhk(gk, num_heads)
         gv = cls.bmk2bmhk(gv, num_heads)
-        return gq, gk, gv, None, None
+        return gq, gk, gv, None, None, None
 
     @classmethod
     def _forward_no_grad_bmk(
@@ -308,6 +318,7 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
     SUPPORTED_MAX_K = math.inf
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
+    SUPPORTS_CUSTOM_SCALE = False
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
     NAME = "cutlass"
 
@@ -325,9 +336,12 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
         value: torch.Tensor,
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
+        has_custom_scale: bool,
     ) -> torch.Tensor:
         if attn_bias is not None and not isinstance(attn_bias, LowerTriangularMask):
             raise NotImplementedError("Unsupported attn_bias type")
+        if has_custom_scale:
+            raise NotImplementedError("Unsupport custom scale")
         return cls.FORWARD_OPERATOR(
             query=query,
             key=key,
@@ -340,9 +354,11 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
         )[0]
 
     @classmethod
-    def forward(cls, ctx, query, key, value, attn_bias, p):
+    def forward(cls, ctx, query, key, value, attn_bias, p, has_custom_scale):
         if attn_bias is not None and not isinstance(attn_bias, LowerTriangularMask):
             raise NotImplementedError("Unsupported attn_bias type")
+        if has_custom_scale:
+            raise NotImplementedError("Unsupport custom scale")
         causal = isinstance(attn_bias, LowerTriangularMask)
         out, lse = cls.FORWARD_OPERATOR(
             query=query,
@@ -413,7 +429,7 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             out.to(dtype),
             causal=ctx.causal,
         )
-        return grad_q, grad_k, grad_v, None, None
+        return grad_q, grad_k, grad_v, None, None, None
 
 
 class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
@@ -433,6 +449,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
     SUPPORTED_MAX_K = 128
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False
+    SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
     NAME = "flshatt"
 
@@ -466,9 +483,11 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         value: torch.Tensor,
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
+        has_custom_scale: bool,
     ) -> torch.Tensor:
         return cls.forward(
-            ctx=None, query=query, key=key, value=value, attn_bias=attn_bias, p=p
+            ctx=None, query=query, key=key, value=value, attn_bias=attn_bias, p=p,
+            has_custom_scale=has_custom_scale
         )
 
     @classmethod
@@ -513,7 +532,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         return query, key, value, cu_seqlens_k, cu_seqlens_q
 
     @classmethod
-    def forward(cls, ctx, query, key, value, attn_bias, p):
+    def forward(cls, ctx, query, key, value, attn_bias, p, has_custom_scale):
         if attn_bias is not None and not isinstance(attn_bias, LowerTriangularMask):
             raise NotImplementedError("Unsupported attn_bias type")
         causal = isinstance(attn_bias, LowerTriangularMask)
@@ -525,7 +544,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
 
         # Save rng_state because the backward pass will regenerate the dropout mask
         rng_state = torch.cuda.get_rng_state() if p > 0 else None
-        softmax_scale = query.shape[-1] ** (-0.5)
+        softmax_scale = query.shape[-1] ** (-0.5) if has_custom_scale else 1
         out, softmax_lse, S_dmask = cls._flash_attn_forward(
             query,
             key,
@@ -622,7 +641,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         dq = dq.reshape(ctx.query_api_input_shape)
         dk = dk.reshape(ctx.key_api_input_shape)
         dv = dv.reshape(ctx.value_api_input_shape)
-        return dq, dk, dv, None, None
+        return dq, dk, dv, None, None, None
 
     @staticmethod
     def _flash_attn_forward(
@@ -705,7 +724,9 @@ class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlas
 
     FW_OP = MemoryEfficientAttentionCutlassOp
     BW_OP = MemoryEfficientAttentionFlashAttentionOp
+    SUPPORTS_CUSTOM_SCALE = False
     SUPPORTED_DTYPES = BW_OP.SUPPORTED_DTYPES.intersection(FW_OP.SUPPORTED_DTYPES)
+
     NAME = "fctls_bflsh"
 
     @classmethod
@@ -747,6 +768,7 @@ class AttentionOpDispatch:
     device: Union[torch.device, str]
     k: int
     has_dropout: bool
+    has_custom_scale: bool
     attn_bias_type: Any
     kv_len: int
     q_len: int
@@ -799,6 +821,7 @@ class AttentionOpDispatch:
         value: torch.Tensor,
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
         p: float = 0.0,
+        has_custom_scale: bool = False,
     ) -> "AttentionOpDispatch":
         """Creates an :attr:`xformers.ops.AttentionOpDispatch` from :attr:`xformers.ops.memory_efficient_attention`'s
         arguments
@@ -809,6 +832,7 @@ class AttentionOpDispatch:
             value (torch.Tensor)
             attn_bias (Optional[Union[torch.Tensor, xformers.ops.AttentionMask]], optional): Defaults to None.
             p (float, optional): Defaults to 0.0.
+            has_custom_scale (bool, optional): Default to False.
 
         Returns:
             AttentionOpDispatch
@@ -822,6 +846,7 @@ class AttentionOpDispatch:
             k=query.shape[-1],
             kv=value.shape[-1],
             has_dropout=p > 0.0,
+            has_custom_scale=has_custom_scale,
             attn_bias_type=type(attn_bias),
             kv_len=value.shape[1],
             q_len=query.shape[1],
@@ -837,6 +862,7 @@ def memory_efficient_attention(
     value: torch.Tensor,
     attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
     p: float = 0.0,
+    has_custom_scale: bool = False,
     *,
     op: Optional[AttentionOp] = None,
 ) -> torch.Tensor:
@@ -898,6 +924,7 @@ def memory_efficient_attention(
         For causal attention, use :attr:`xformers.ops.LowerTriangularMask`. \
         This can also be a :attr:`torch.Tensor` for an arbitrary mask.
     :parameter p: Dropout probability. Disabled if set to ``0.0``
+    :parameter has_custom_scale: Whether the query_state weights are scaled in advance.
     :parameter op: The operator to use - see :attr:`xformers.ops.AttentionOpBase`. \
         If set to ``None`` (recommended), xFormers \
         will dispatch to the best available operator, depending on the inputs \
@@ -919,12 +946,16 @@ def memory_efficient_attention(
 
     if op is None:
         op = AttentionOpDispatch.from_arguments(
-            query=query, key=key, value=value, attn_bias=attn_bias, p=p
+            query=query, key=key, value=value, attn_bias=attn_bias, p=p,
+            has_custom_scale=has_custom_scale
         ).op
 
     # fast-path that doesn't require computing the logsumexp for backward computation
     if all(x.requires_grad is False for x in [query, key, value]):
         return op.forward_no_grad(
-            query=query, key=key, value=value, attn_bias=attn_bias, p=p
+            query=query, key=key, value=value, attn_bias=attn_bias, p=p,
+            has_custom_scale=has_custom_scale
         ).reshape(output_shape)
-    return op.apply(query, key, value, attn_bias, p).reshape(output_shape)
+    return op.apply(query, key, value, attn_bias, p,
+        has_custom_scale
+    ).reshape(output_shape)
