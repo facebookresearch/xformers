@@ -143,7 +143,9 @@ def assert_allclose(
     )
 
 
-def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
+def ref_attention(
+    q, k, v, attn_bias=None, drop_mask=None, p=0.0, has_custom_scale=False
+):
     if q.ndim == 4:
         assert p == 0.0
         return ref_attention_bmhk(q, k, v, attn_bias=attn_bias)
@@ -151,7 +153,8 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     k = k.float()
     v = v.float()
 
-    q = q * (1 / q.shape[-1] ** 0.5)
+    if not has_custom_scale:
+        q = q * (1 / q.shape[-1] ** 0.5)
     attn = q @ k.transpose(-2, -1)
     if attn_bias is not None:
         if isinstance(attn_bias, xformers.ops.AttentionMask):
@@ -165,7 +168,7 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     return attn @ v
 
 
-def ref_attention_bmhk(q, k, v, attn_bias):
+def ref_attention_bmhk(q, k, v, attn_bias, has_custom_scale=False):
     assert q.ndim == 4
 
     def T(t):
@@ -173,7 +176,7 @@ def ref_attention_bmhk(q, k, v, attn_bias):
             [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
         )
 
-    out = ref_attention(T(q), T(k), T(v), attn_bias)
+    out = ref_attention(T(q), T(k), T(v), attn_bias, has_custom_scale=has_custom_scale)
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
 
@@ -823,3 +826,25 @@ def test_cuda_streams(
         atol=op.FORWARD_ERROR_ATOL[dtype],
         rtol=op.FORWARD_ERROR_RTOL.get(dtype, 1e-5),
     )
+
+
+@cuda_only
+@pytest.mark.parametrize("seed", [42])
+@pytest.mark.parametrize("k_len", [32])
+@pytest.mark.parametrize("batch_size", [2])
+@pytest.mark.parametrize("kv_len", [32])
+@pytest.mark.parametrize("q_len", [33])
+@pytest.mark.parametrize("device", ["cuda"])
+def test_custom_scale(device, q_len, kv_len, batch_size, k_len, seed):
+    scale = 3
+    query = torch.randn((batch_size, q_len, k_len), device=device) * scale
+    key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+
+    attn_bias = None
+    p = 0.0
+
+    torch.manual_seed(seed)
+    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, p, True)
+    ref = ref_attention(query, key, value, attn_bias, None, p, False)
+    assert_allclose(out, ref, atol=1e-5), f"{(out - ref).abs().max()}"

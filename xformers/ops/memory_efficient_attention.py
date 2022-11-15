@@ -486,8 +486,13 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         has_custom_scale: bool,
     ) -> torch.Tensor:
         return cls.forward(
-            ctx=None, query=query, key=key, value=value, attn_bias=attn_bias, p=p,
-            has_custom_scale=has_custom_scale
+            ctx=None,
+            query=query,
+            key=key,
+            value=value,
+            attn_bias=attn_bias,
+            p=p,
+            has_custom_scale=has_custom_scale,
         )
 
     @classmethod
@@ -946,16 +951,24 @@ def memory_efficient_attention(
 
     if op is None:
         op = AttentionOpDispatch.from_arguments(
-            query=query, key=key, value=value, attn_bias=attn_bias, p=p,
-            has_custom_scale=has_custom_scale
+            query=query,
+            key=key,
+            value=value,
+            attn_bias=attn_bias,
+            p=p,
+            has_custom_scale=has_custom_scale,
         ).op
 
     # fast-path that doesn't require computing the logsumexp for backward computation
     if all(x.requires_grad is False for x in [query, key, value]):
         return op.forward_no_grad(
-            query=query, key=key, value=value, attn_bias=attn_bias, p=p,
-            has_custom_scale=has_custom_scale
+            query=query,
+            key=key,
+            value=value,
+            attn_bias=attn_bias,
+            p=p,
+            has_custom_scale=has_custom_scale,
         ).reshape(output_shape)
-    return op.apply(query, key, value, attn_bias, p,
-        has_custom_scale
-    ).reshape(output_shape)
+    return op.apply(query, key, value, attn_bias, p, has_custom_scale).reshape(
+        output_shape
+    )
