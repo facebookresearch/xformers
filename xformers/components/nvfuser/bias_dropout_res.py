@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import functools
 from typing import Optional
 
 import torch
@@ -14,8 +15,8 @@ from functorch.compile import memory_efficient_fusion
 def _fn(
     x: torch.Tensor,
     bias: Optional[torch.nn.parameter.Parameter],
-    prob: float,
     residual: torch.Tensor,
+    prob: float,
 ) -> torch.Tensor:
     a = torch.add(x, bias) if bias is not None else x
     b = torch.nn.functional.dropout(a, prob) if prob > 0.0 else a
@@ -41,6 +42,8 @@ class NVFusedBiasDropoutRes(torch.nn.Module):
         self.bias = (
             nn.Parameter(torch.zeros(bias_shape)) if bias_shape is not None else None
         )
+        self._fn_train = functools.partial(_fn, prob=self.p)
+        self._fn_eval = functools.partial(_fn, prob=0.0)
 
         assert (
             self.p < 1.0
@@ -53,12 +56,12 @@ class NVFusedBiasDropoutRes(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, residual: torch.Tensor) -> torch.Tensor:
         # Train/inference
-        p = self.p if self.training else 0.0
+        fn = self._fn_train if self.training else self._fn_eval
 
         # Catch a non-cuda setup, fallback to pytorch
         if not x.is_cuda:
-            return _fn(x, self.bias, p, residual)
+            return fn(x, self.bias, residual)
 
         # AOTAutograd, NVFuser backed path
-        aot_fn = memory_efficient_fusion(fn=_fn, static_argnums=(2))
-        return aot_fn(x, self.bias, p, residual)
+        aot_fn = memory_efficient_fusion(fn)
+        return aot_fn(x, self.bias, residual)

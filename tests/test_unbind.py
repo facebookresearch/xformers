@@ -43,7 +43,8 @@ def test_unbind(dim: int, contiguous: bool):
     g = torch.randn_like(loss1)
     loss1.backward(g)
     loss2.backward(g)
-    # type: ignore
+    assert x.grad is not None
+    assert x2.grad is not None
     assert torch.allclose(x.grad, x2.grad)
 
 
