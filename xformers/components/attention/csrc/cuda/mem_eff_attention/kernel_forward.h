@@ -105,7 +105,7 @@ struct AttentionKernel {
     lse_scalar_t* logsumexp_ptr; // [num_heads, num_queries] - can be null
 
     // Scale
-    float scale;
+    accum_t scale;
 
     // Dimensions/strides
     int32_t head_dim;
@@ -595,16 +595,6 @@ struct AttentionKernel {
             },
             [&](int accum_m) {});
       }
-
-      // Determine scale
-      float scale = p.scale;
-//      float scale;
-//      if (p.scale.has_value()) {
-//          scale = float(*p.scale);
-//      } else {
-//          scale = 1.0f / cutlass::fast_sqrt(float(p.head_dim));
-//      }
-
       DISPATCH_BOOL(iter_key_start == 0, kIsFirst, ([&] {
                       DISPATCH_BOOL(
                           p.num_keys - iter_key_start >= kKeysPerBlock,
@@ -629,7 +619,7 @@ struct AttentionKernel {
                                 warp_id(),
                                 p.num_keys - iter_key_start,
                                 iteratorC_tile_offset,
-                                scale);
+                                p.scale);
                           }));
                     }));
 

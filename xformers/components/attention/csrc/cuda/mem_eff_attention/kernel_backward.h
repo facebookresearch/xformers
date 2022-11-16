@@ -88,7 +88,7 @@ struct AttentionBackwardKernel {
     output_t* grad_value_ptr; //  [Mk, nH, Kv]
 
     // Scale
-    float scale;
+    accum_t scale;
 
     // Dimensions/strides
     int32_t head_dim;

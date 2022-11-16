@@ -183,7 +183,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
       p.cu_seqlens_q_ptr = (int32_t*)cu_seqlens_q->data_ptr();
       p.cu_seqlens_k_ptr = (int32_t*)cu_seqlens_k->data_ptr();
     }
-   
+
     p.num_heads = num_heads;
     p.head_dim = query.size(3);
     p.head_dim_value = value.size(3);
@@ -195,7 +195,6 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
         p.scale = float(*scale);
     } else {
         p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
-        //p.scale = 1.0f / cutlass::fast_sqrt(float(p.head_dim));
     }
 
     ASSIGN_CHECK_OVERFLOW(p.q_strideB, query.stride(0));
