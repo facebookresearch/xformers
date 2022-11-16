@@ -14,88 +14,6 @@ from .common import get_xformers_operator
 from .unbind import stack_or_none, unbind
 
 
-class _SwiGLUModule(nn.Module):
-    """
-    Reference implementation of a SwiGLU module
-    """
-
-    def __init__(
-        self,
-        in_features: int,
-        hidden_features: Optional[int] = None,
-        out_features: Optional[int] = None,
-        align_as: int = 8,
-        pack_weights: bool = False,
-        bias: bool = True,
-    ) -> None:
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        swiglu_hidden_features = int(2 * hidden_features / 3)
-        swiglu_hidden_features = (
-            (swiglu_hidden_features + align_as - 1) // align_as * align_as
-        )
-
-        self.w12: Optional[nn.Linear]
-        if pack_weights:
-            self.w12 = nn.Linear(in_features, 2 * swiglu_hidden_features, bias=bias)
-        else:
-            self.w12 = None
-            self.w1 = nn.Linear(in_features, swiglu_hidden_features, bias=bias)
-            self.w2 = nn.Linear(in_features, swiglu_hidden_features, bias=bias)
-        self.w3 = nn.Linear(swiglu_hidden_features, out_features, bias=bias)
-
-        self.swiglu_hidden_features = swiglu_hidden_features
-        self.out_features = out_features
-        self.in_features = in_features
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        A baseline forward. Just replace it with the following
-        to use xFormers's kernels
-        ```python
-        return xformers.ops.functional_swiglu(x,
-            *self._ordered_params_for_op(),
-            op=xformers.ops.SwiGLUPackedFusedOp)
-        ```
-        """
-        if self.w12 is not None:
-            x12 = self.w12(x).view([x.shape[0], 2, self.swiglu_hidden_features])
-            x1, x2 = unbind(x12, dim=1)
-        else:
-            x1 = self.w1(x)
-            x2 = self.w2(x)
-        hidden = F.silu(x1) * x2
-        return self.w3(hidden)
-
-    def _ordered_params_for_op(self):
-        """Used for testing - returns ordered arguments for operators"""
-        b1: Optional[torch.Tensor]
-        b2: Optional[torch.Tensor]
-        if self.w12 is not None:
-            w1w2 = self.w12.weight
-            b1b2 = self.w12.bias
-            w1, w2 = unbind(
-                w1w2.view([2, w1w2.shape[0] // 2, w1w2.shape[1]]),
-                dim=0,
-            )
-            if b1b2 is not None:
-                b1, b2 = unbind(b1b2.view([2, b1b2.shape[0] // 2]), dim=0)
-            else:
-                b1, b2 = None, None
-        else:
-            w1, w2 = self.w1.weight, self.w2.weight
-            b1, b2 = self.w1.bias, self.w2.bias
-        return [
-            w1,
-            b1,
-            w2,
-            b2,
-            self.w3.weight,
-            self.w3.bias,
-        ]
-
-
 class _SwiGLUDecomposedFunc(torch.autograd.Function):
     """
     This is just an example implementation with all
@@ -217,6 +135,8 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
 
 
 class SwiGLUOp:
+    """Base class for any swiglu operator in :attr:`xformers.ops.swiglu`"""
+
     def __init__(self, op, packed_weights: bool, name: str, constraints):
         self.NAME = name
         self.PACKED_WEIGHTS = packed_weights
@@ -274,6 +194,10 @@ def _eager_functional_swiglu(
 
 @dataclass
 class SwiGLUOpDispatch:
+    """Dispatcher to automatically select
+    the best operator in :attr:`xformers.ops.swiglu`
+    """
+
     device: Union[torch.device, str]
     dtype: torch.dtype
     dtype_autocast_gpu: Optional[torch.dtype]
@@ -282,6 +206,11 @@ class SwiGLUOpDispatch:
 
     @property
     def op(self) -> SwiGLUOp:
+        """Computes the best operator
+
+        Returns:
+            SwiGLUOp: The best operator for the configuration
+        """
         priorities: Sequence[SwiGLUOp] = [
             SwiGLUPackedFusedOp,
             SwiGLUFusedOp,
@@ -313,9 +242,8 @@ class SwiGLUOpDispatch:
 
 
 def _only_sm80(op: SwiGLUOpDispatch) -> bool:
-    return (
-        str(op.device) == "cuda" and torch.cuda.get_device_capability(op.device)[0] >= 8
-    )
+    device_type = op.device if isinstance(op.device, str) else op.device.type
+    return device_type == "cuda" and torch.cuda.get_device_capability(op.device)[0] >= 8
 
 
 def _only_half_or_autocast(op: SwiGLUOpDispatch) -> bool:
@@ -353,7 +281,7 @@ def _info() -> Dict[str, str]:
     return {op.NAME: op.info() for op in [SwiGLUPackedFusedOp]}
 
 
-def functional_swiglu(
+def swiglu(
     x: torch.Tensor,
     w1: torch.Tensor,
     b1: Optional[torch.Tensor],
@@ -367,15 +295,36 @@ def functional_swiglu(
     """
     Computes a SwiGLU block given the weights/bias of the 3
     linear layers.
-    It is recommended to keep `op=None` so the best implementation
+
+    - It is recommended to keep ``op=None`` so the best implementation \
     available for the inputs will be used.
 
-    NOTE: It's better to provide w1/w2 and b1/b2 are packed together
-        to allow for faster implementations
+
+    :Equivalent pytorch code:
+
+    .. code-block:: python
+
+        x1 = F.linear(x, w1, b1)
+        x2 = F.linear(x, w2, b2)
+        hidden = F.silu(x1) * x2
+        return F.linear(hidden, w3, b3)
+
+    :Packing weights:
+
+    To allow faster implementations, it's recommended to have w1/w2 come from the same storage, as in:
+        .. code-block:: python
+
+            w1, w2 = xformers.ops.unbind(w12, 0)
+
+    :Supported hardware:
+
+    This operator is only optimized on A100+ on ``torch.half`` or ``torch.bfloat16`` \
+        (autocast is supported), and will fallback to a functional pytorch \
+        implementation otherwise.
     """
 
-    if x.ndim != 2:
-        raise ValueError(f"Expected shape for x: [batch, n_input] but got {x.shape}")
+    batch_shape = x.shape[:-1]
+    x = x.reshape([-1, x.shape[-1]])
     if w1.ndim != 2 or w1.shape != w2.shape:
         raise ValueError(f"Invalid shapes for w1: {w1.shape} / w2: {w2.shape}")
     if b1 is not None:
@@ -394,7 +343,7 @@ def functional_swiglu(
         op = SwiGLUOpDispatch.from_arguments(x, w1, b1, w2, b2, w3, b3).op
 
     if not op.PACKED_WEIGHTS:
-        return op(x, w1, b1, w2, b2, w3, b3)
+        return op(x, w1, b1, w2, b2, w3, b3).reshape([*batch_shape, -1])
     w1w2 = stack_or_none((w1, w2), dim=0)
     if b1 is not None and b2 is not None:
         b1b2: Optional[torch.Tensor] = stack_or_none((b1, b2), dim=0)
@@ -406,4 +355,84 @@ def functional_swiglu(
 
     if w1w2 is None:
         raise NotImplementedError("w1/w2 needs to be properly packed")
-    return op(x, w1w2, b1b2, w3, b3)
+    return op(x, w1w2, b1b2, w3, b3).reshape([*batch_shape, -1])
+
+
+class SwiGLU(nn.Module):
+    """
+    A Module that encapsulates the call to :attr:`xformers.ops.swiglu`,
+    and holds the weights for the 3 linear layers
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        hidden_features: int,
+        out_features: Optional[int] = None,
+        bias: bool = True,
+        *,
+        _pack_weights: bool = True,
+    ) -> None:
+        """Create a SwiGLU module
+
+        Args:
+            in_features (int): Number of features of the input
+            hidden_features (int): Number of hidden features
+            out_features (Optional[int], optional): Number of features of the input. Defaults to None.
+            bias (bool, optional): Whether linear layers also include a bias. Defaults to True.
+        """
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+
+        self.w12: Optional[nn.Linear]
+        if _pack_weights:
+            self.w12 = nn.Linear(in_features, 2 * hidden_features, bias=bias)
+        else:
+            self.w12 = None
+            self.w1 = nn.Linear(in_features, hidden_features, bias=bias)
+            self.w2 = nn.Linear(in_features, hidden_features, bias=bias)
+        self.w3 = nn.Linear(hidden_features, out_features, bias=bias)
+
+        self.hidden_features = hidden_features
+        self.out_features = out_features
+        self.in_features = in_features
+        self.op = None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Computes :attr:`swiglu` with the module's weights
+
+        Args:
+            x (torch.Tensor): A Tensor of shape ``[..., in_features]``
+
+        Returns:
+            torch.Tensor: A Tensor of shape ``[..., out_features]``
+        """
+        return swiglu(x, *self._ordered_params(), op=self.op)
+
+    def _ordered_params(self):
+        """Used for testing - returns ordered arguments for operators"""
+        b1: Optional[torch.Tensor]
+        b2: Optional[torch.Tensor]
+        if self.w12 is not None:
+            w1w2 = self.w12.weight
+            b1b2 = self.w12.bias
+            w1, w2 = unbind(
+                w1w2.view([2, w1w2.shape[0] // 2, w1w2.shape[1]]),
+                dim=0,
+            )
+            if b1b2 is not None:
+                b1, b2 = unbind(b1b2.view([2, b1b2.shape[0] // 2]), dim=0)
+            else:
+                b1, b2 = None, None
+        else:
+            w1, w2 = self.w1.weight, self.w2.weight
+            b1, b2 = self.w1.bias, self.w2.bias
+        return [
+            w1,
+            b1,
+            w2,
+            b2,
+            self.w3.weight,
+            self.w3.bias,
+        ]

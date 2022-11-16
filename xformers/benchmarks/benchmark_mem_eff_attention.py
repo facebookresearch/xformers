@@ -218,7 +218,7 @@ def benchmark_forward(shape, num_threads: int, attn_bias_type, dtype):
             "fn": ref_attention,
         },
         label=f"attention (attn_bias={attn_bias_type})",
-        description="vanilla",
+        description="eager",
         sub_label=sub_label,
         num_threads=num_threads,
     )

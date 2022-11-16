@@ -200,8 +200,8 @@ mem_efficient_attention_backward_cutlass(
       TORCH_INTERNAL_ASSERT(
           computeCapability >= 70,
           "This kernel requires too much shared memory on this machine!");
-      cudaFuncSetAttribute(
-          kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
+      AT_CUDA_CHECK(cudaFuncSetAttribute(
+          kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes));
     }
 
     // second syntax resulted in the error below on windows
