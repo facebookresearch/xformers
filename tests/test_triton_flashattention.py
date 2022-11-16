@@ -11,7 +11,7 @@ import torch
 _triton_available = torch.cuda.is_available()
 if _triton_available:
     try:
-        from xformers.triton.flash_attention import _flash_attention
+        from xformers.triton.flash_attention import _flash_attention as triton_flash
         from xformers.triton.utils import assert_allclose
     except (ImportError, ModuleNotFoundError):
         _triton_available = False
@@ -27,11 +27,11 @@ ERROR_RTOL: Mapping[torch.dtype, float] = {
 
 if _triton_available:
 
-    attention = _flash_attention.apply
+    attention = triton_flash.apply
 
     @pytest.mark.parametrize("causal", [True, False])
     @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-    @pytest.mark.parametrize("Z, H, S_Q, S_KV, D_HEAD", [(8, 160, 2048, 2048, 128)])
+    @pytest.mark.parametrize("Z, H, S_Q, S_KV, D_HEAD", [(8, 160, 1024, 1024, 128)])
     def test_op(Z, H, S_Q, S_KV, D_HEAD, causal, dtype):
         torch.manual_seed(20)
         q = (

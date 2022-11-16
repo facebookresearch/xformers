@@ -15,37 +15,17 @@ from .common import get_xformers_operator
 
 try:
     from .. import _C_flashattention  # type: ignore[attr-defined]
+
     has_flashattention = True
 except ImportError:
     has_flashattention = False
 
 try:
     from xformers.triton.flash_attention import _flash_attention as triton_flash
+
     has_triton_flashattention = True
 except ImportError:
     has_triton_flashattention = False
-
-
-def masked_matmul(a, b, mask=None):
-    if torch.overrides.has_torch_function((a, b, mask)):
-        return torch.overrides.handle_torch_function(
-            masked_matmul, (a, b, mask), a, b, mask
-        )
-
-    att = a @ b
-
-    if mask is None:
-        return att
-
-    if mask.dtype == torch.bool:
-        if mask.ndim == 2:
-            mask = mask.unsqueeze(0).expand(att.shape[0], -1, -1)
-        # mask is presumed false == ignore
-        att[~mask] = float("-inf")
-    else:
-        # mask is presumed additive
-        att += mask
-    return att
 
 
 class AttentionMask:
@@ -768,10 +748,6 @@ class TritonFlashAttentionOp(AttentionOpBase):
     def supports(cls, d: "AttentionOpDispatch") -> bool:
         if not has_triton_flashattention:
             return False
-        if d.k not in [16, 32, 64, 128]:
-            return False
-        if d.kv not in [16, 32, 64, 128]:
-            return False
         device_capability = torch.cuda.get_device_capability(d.device)
         is_sm80 = device_capability[0] >= 8
         if not is_sm80:
@@ -788,29 +764,26 @@ class TritonFlashAttentionOp(AttentionOpBase):
         p: float,
     ) -> torch.Tensor:
         softmax_scale = query.shape[-1] ** (-0.5)
-        return triton_flash.forward_no_grad(
+        return triton_flash.forward(
             ctx=None,
             q=query,
             k=key,
             v=value,
-            sm_scale=softmax_scale,
+            softmax_scale=softmax_scale,
             causal=isinstance(attn_bias, LowerTriangularMask),
+            no_grad=True,
         )
 
     @classmethod
     def forward(cls, ctx, query, key, value, attn_bias, p):
         softmax_scale = query.shape[-1] ** (-0.5)
-        # TODO: reshape, right now input is bmhk, but Triton requires bhmk
-        # query = query.transpose(1, 2)
-        # key = key.transpose(1, 2)
-        # value = value.transpose(1, 2)
 
         return triton_flash.forward(
             ctx=ctx,
             q=query,
             k=key,
             v=value,
-            sm_scale=softmax_scale,
+            softmax_scale=softmax_scale,
             causal=isinstance(attn_bias, LowerTriangularMask),
         )
 

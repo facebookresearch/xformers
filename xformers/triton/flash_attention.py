@@ -3,179 +3,61 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+# CREDITS: HazyResearch flash attention.
+
 import torch
-import triton
 
-from xformers.triton.k_flash_attn import _bwd_kernel, _bwd_preprocess, _fwd_kernel
+from xformers.triton.k_flash_attn import _flash_attn_backward, _flash_attn_forward
 
 
+# TODO: add functions for qkv packed and kv packed.
 class _flash_attention(torch.autograd.Function):
     @staticmethod
-    def _flash_attn_forward(
-        ctx, q, k, v, sm_scale, causal: bool = False, no_grad: bool = False
+    def forward(
+        ctx, q, k, v, bias=None, causal=False, softmax_scale=None, no_grad=False
     ):
-        print(
-            f"DIANA DEBUG: q shape is {q.shape}, v shape is {v.shape}, k shape is {k.shape}. Expecting BHMK - 8 20 2048 "
-        )
-        # Do we need to make the values contiguous?
-
-        BLOCK = 128
-        # shape constraints for head_dim
-        Lq, Lk, Lv = q.shape[-1], k.shape[-1], v.shape[-1]
-        assert Lq == Lk and Lk == Lv
-        assert Lk in {16, 32, 64, 128}
-        assert q.dtype == k.dtype == v.dtype
-        assert q.dtype in [torch.float16, torch.bfloat16]
-
-        # assuming seq_len is a power of 2
-        BLOCK_M = max(min(128, q.shape[2]), 16)  # minimal size
-        if BLOCK_M == 32:
-            BLOCK_M = 64  # there is a strange triton segfault with 32
-
-        # TODO: is this necessary?
-        assert k.shape[2] % BLOCK_M == 0
-        assert q.shape[2] % BLOCK_M == 0
-
-        o = torch.empty_like(q)
-        # [sequence length/block size, B*H]
-        grid = (triton.cdiv(q.shape[2], BLOCK), q.shape[0] * q.shape[1])
-        tmp = torch.empty(
-            (q.shape[0] * q.shape[1], q.shape[2]), device=q.device, dtype=torch.float32
-        )
-        L = torch.empty(
-            (q.shape[0] * q.shape[1], q.shape[2]), device=q.device, dtype=torch.float32
-        )
-        m = torch.empty(
-            (q.shape[0] * q.shape[1], q.shape[2]), device=q.device, dtype=torch.float32
-        )
-        num_warps = 4 if Lk <= 64 else 8
-
-        _fwd_kernel[grid](
-            q,
-            k,
-            v,
-            sm_scale,
-            causal,
-            tmp,
-            L,
-            m,
-            o,
-            q.stride(0),
-            q.stride(1),
-            q.stride(2),
-            q.stride(3),
-            k.stride(0),
-            k.stride(1),
-            k.stride(2),
-            k.stride(3),
-            v.stride(0),
-            v.stride(1),
-            v.stride(2),
-            v.stride(3),
-            o.stride(0),
-            o.stride(1),
-            o.stride(2),
-            o.stride(3),
-            B=q.shape[0],
-            H=q.shape[1],
-            seqlen_q=q.shape[2],
-            seqlen_k=q.shape[2],
-            BLOCK_M=BLOCK,
-            BLOCK_N=BLOCK,
-            BLOCK_DMODEL=Lk,
-            num_warps=num_warps,
-            num_stages=1,
+        """
+        q: (batch_size, seqlen_q, nheads, headdim)
+        k, v: (batch_size, seqlen_k, nheads, headdim)
+        bias: optional, shape broadcastible to (batch, nheads, seqlen_q, seqlen_k).
+            For example, ALiBi mask for causal would have shape (1, nheads, 1, seqlen_k).
+            ALiBi mask for non-causal would have shape (1, nheads, seqlen_q, seqlen_k)
+        """
+        # Make sure that the last dimension is contiguous
+        q, k, v = [x if x.stride(-1) == 1 else x.contiguous() for x in [q, k, v]]
+        o, lse, softmax_scale = _flash_attn_forward(
+            q, k, v, bias=bias, causal=causal, softmax_scale=softmax_scale
         )
         if not no_grad:
-            ctx.save_for_backward(q, k, v, o, L, m)
-            ctx.is_causal = causal
-            ctx.BLOCK = BLOCK
-            ctx.grid = grid
-            ctx.sm_scale = sm_scale
-            ctx.BLOCK_DMODEL = Lk
+            ctx.softmax_scale = softmax_scale
+            ctx.save_for_backward(q, k, v, o, lse, bias)
+            ctx.causal = causal
         return o
 
     @staticmethod
-    def forward(
-        ctx,
-        q,
-        k,
-        v,
-        sm_scale,
-        causal,
-    ):
-        return _flash_attention._flash_attn_forward(
-            ctx, q, k, v, sm_scale, causal, no_grad=False
-        )
-
-    @staticmethod
-    def forward_no_grad(
-        ctx,
-        q,
-        k,
-        v,
-        sm_scale,
-        causal,
-    ):
-        return _flash_attention._flash_attn_forward(
-            ctx, q, k, v, sm_scale, causal, no_grad=True
-        )
-
-    @staticmethod
     def backward(ctx, do):
-        q, k, v, o, l, m = ctx.saved_tensors
-        do = do.contiguous()
-        dq = torch.zeros_like(q, dtype=torch.float32)
-        dk = torch.empty_like(k)
-        dv = torch.empty_like(v)
-        do_scaled = torch.empty_like(do)
-        delta = torch.empty_like(l)
-        _bwd_preprocess[(ctx.grid[0] * ctx.grid[1],)](
-            o,
-            do,
-            l,
-            do_scaled,
-            delta,
-            BLOCK_M=ctx.BLOCK,
-            D_HEAD=ctx.BLOCK_DMODEL,
-        )
-
-        # NOTE: kernel currently buggy for other values of `num_warps`
-        num_warps = 8
-        _bwd_kernel[(ctx.grid[1],)](
-            q,
-            k,
-            v,
-            ctx.sm_scale,
-            o,
-            do_scaled,
-            dq,
-            dk,
-            dv,
-            l,
-            m,
-            delta,
-            q.stride(0),
-            q.stride(1),
-            q.stride(2),
-            q.stride(3),
-            k.stride(0),
-            k.stride(1),
-            k.stride(2),
-            k.stride(3),
-            v.stride(0),
-            v.stride(1),
-            v.stride(2),
-            v.stride(3),
-            q.shape[0],
-            q.shape[1],
-            q.shape[2],
-            ctx.grid[0],
-            BLOCK_M=ctx.BLOCK,
-            BLOCK_N=ctx.BLOCK,
-            BLOCK_DMODEL=ctx.BLOCK_DMODEL,
-            is_causal=ctx.is_causal,
-            num_warps=num_warps,
-            num_stages=1,
-        )
-        return dq, dk, dv, None, None
+        q, k, v, o, lse, bias = ctx.saved_tensors
+        assert not ctx.needs_input_grad[
+            3
+        ], "FlashAttention does not support bias gradient yet"
+        # Triton's autotune causes the Tensor._version to change, and so Pytorch autograd
+        # does a memcpy. To avoid this we run in inference_mode, which doesn't track the version.
+        with torch.inference_mode():
+            dq = torch.empty_like(q)
+            dk = torch.empty_like(k)
+            dv = torch.empty_like(v)
+            _flash_attn_backward(
+                do,
+                q,
+                k,
+                v,
+                o,
+                lse,
+                dq,
+                dk,
+                dv,
+                bias=bias,
+                causal=ctx.causal,
+                softmax_scale=ctx.softmax_scale,
+            )
+        return dq, dk, dv, None, None, None
