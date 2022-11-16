@@ -751,7 +751,7 @@ class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlas
             ctx_flash, query, key, value
         )
         ctx_flash.kernel_output_shape = (query.shape[0], query.shape[1], value.shape[2])
-        ctx_flash.softmax_scale = ctx.scale
+        ctx_flash.softmax_scale = query.shape[-1] ** (-0.5) if ctx.scale is None else ctx.scale
         rng_state = None
 
         out = out.reshape(ctx_flash.kernel_output_shape)
