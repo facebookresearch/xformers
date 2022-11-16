@@ -420,6 +420,7 @@ def test_cu_seqlen_forward(
         cu_seqlens_k=torch.tensor(cu_seqlen_k, dtype=torch.int32, device=device),
         compute_logsumexp=False,
         causal=attn_bias_type is xformers.ops.LowerTriangularMask,
+        scale=None,
     )
     ref = torch.cat(all_o, dim=1)
     assert_allclose(
@@ -484,6 +485,7 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
             cu_seqlens_k=None,
             compute_logsumexp=True,
             causal=False,
+            scale=None,
         )
         lse = lse[:, 0, :]
     else:
