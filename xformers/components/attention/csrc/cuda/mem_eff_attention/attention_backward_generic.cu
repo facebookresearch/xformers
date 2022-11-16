@@ -53,7 +53,8 @@ mem_efficient_attention_backward_cutlass(
     const at::Tensor& value,
     const at::Tensor& logsumexp,
     const at::Tensor& out,
-    bool causal) {
+    bool causal,
+    const c10::optional<double> scale) {
 #ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD
   TORCH_CHECK(
       false,
@@ -163,6 +164,11 @@ mem_efficient_attention_backward_cutlass(
     p.num_batches = B;
     p.num_heads = nH;
     p.causal = causal;
+    if (scale.has_value()) {
+        p.scale = float(*scale);
+    } else {
+        p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
+    }
 
     ASSIGN_CHECK_OVERFLOW(p.gO_strideB, grad_out.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.gO_strideM, grad_out.stride(1));

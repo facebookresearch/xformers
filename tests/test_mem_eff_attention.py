@@ -143,9 +143,7 @@ def assert_allclose(
     )
 
 
-def ref_attention(
-    q, k, v, attn_bias=None, drop_mask=None, p=0.0, has_custom_scale=False
-):
+def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
     if q.ndim == 4:
         assert p == 0.0
         return ref_attention_bmhk(q, k, v, attn_bias=attn_bias)
@@ -153,8 +151,10 @@ def ref_attention(
     k = k.float()
     v = v.float()
 
-    if not has_custom_scale:
+    if scale is None:
         q = q * (1 / q.shape[-1] ** 0.5)
+    else:
+        q = q * scale
     attn = q @ k.transpose(-2, -1)
     if attn_bias is not None:
         if isinstance(attn_bias, xformers.ops.AttentionMask):
@@ -168,7 +168,7 @@ def ref_attention(
     return attn @ v
 
 
-def ref_attention_bmhk(q, k, v, attn_bias, has_custom_scale=False):
+def ref_attention_bmhk(q, k, v, attn_bias, scale=None):
     assert q.ndim == 4
 
     def T(t):
@@ -176,7 +176,7 @@ def ref_attention_bmhk(q, k, v, attn_bias, has_custom_scale=False):
             [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
         )
 
-    out = ref_attention(T(q), T(k), T(v), attn_bias, has_custom_scale=has_custom_scale)
+    out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale)
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
 
@@ -836,15 +836,35 @@ def test_cuda_streams(
 @pytest.mark.parametrize("q_len", [33])
 @pytest.mark.parametrize("device", ["cuda"])
 def test_custom_scale(device, q_len, kv_len, batch_size, k_len, seed):
-    scale = 3
-    query = torch.randn((batch_size, q_len, k_len), device=device) * scale
-    key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
-    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    pre_scale = 3
+    query = torch.randn((batch_size, q_len, k_len), device=device) * pre_scale
+    key = torch.randn((batch_size, kv_len, k_len), device=device) * pre_scale
+    value = torch.randn((batch_size, kv_len, k_len), device=device) * pre_scale
+    grad_out = torch.ones_like(query)
+
+    query.requires_grad_(True)
+    key.requires_grad_(True)
+    value.requires_grad_(True)
 
     attn_bias = None
     p = 0.0
+    scale = 2.0
 
     torch.manual_seed(seed)
-    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, p, True)
-    ref = ref_attention(query, key, value, attn_bias, None, p, False)
-    assert_allclose(out, ref, atol=1e-5), f"{(out - ref).abs().max()}"
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias, p, scale
+    )
+    out.backward(grad_out)
+    grad_q, grad_k, grad_v = query.grad, key.grad, value.grad
+    query.grad = key.grad = value.grad = None
+
+    ref = ref_attention(query, key, value, attn_bias, None, p, scale)
+    ref.backward(grad_out)
+    ref_grad_q, ref_grad_k, ref_grad_v = query.grad, key.grad, value.grad
+    query.grad = key.grad = value.grad = None
+
+    atol = 3e-4
+    assert_allclose(out, ref, atol=atol), f"{(out - ref).abs().max()}"
+    assert_allclose(grad_q, ref_grad_q, atol=atol), f"{(out - ref).abs().max()}"
+    assert_allclose(grad_k, ref_grad_k, atol=atol), f"{(out - ref).abs().max()}"
+    assert_allclose(grad_v, ref_grad_v, atol=atol), f"{(out - ref).abs().max()}"

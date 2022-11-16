@@ -80,7 +80,8 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     // (Mode 1MHK only) Maximum sequence length across batches
     const c10::optional<int64_t> max_seqlen_q_,
     bool compute_logsumexp,
-    bool causal) {
+    bool causal,
+    c10::optional<double> scale) {
 #ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
   TORCH_CHECK(
       false,
@@ -182,7 +183,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
       p.cu_seqlens_q_ptr = (int32_t*)cu_seqlens_q->data_ptr();
       p.cu_seqlens_k_ptr = (int32_t*)cu_seqlens_k->data_ptr();
     }
-
+   
     p.num_heads = num_heads;
     p.head_dim = query.size(3);
     p.head_dim_value = value.size(3);
@@ -190,6 +191,12 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     p.num_keys = max_seqlen_k;
     p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
     p.causal = causal;
+    if (scale.has_value()) {
+        p.scale = float(*scale);
+    } else {
+        p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
+        //p.scale = 1.0f / cutlass::fast_sqrt(float(p.head_dim));
+    }
 
     ASSIGN_CHECK_OVERFLOW(p.q_strideB, query.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.k_strideB, key.stride(0));
