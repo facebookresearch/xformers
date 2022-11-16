@@ -729,7 +729,7 @@ class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlas
 
     FW_OP = MemoryEfficientAttentionCutlassOp
     BW_OP = MemoryEfficientAttentionFlashAttentionOp
-    SUPPORTS_CUSTOM_SCALE = False
+    SUPPORTS_CUSTOM_SCALE = True
     SUPPORTED_DTYPES = BW_OP.SUPPORTED_DTYPES.intersection(FW_OP.SUPPORTED_DTYPES)
 
     NAME = "fctls_bflsh"
@@ -751,7 +751,7 @@ class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlas
             ctx_flash, query, key, value
         )
         ctx_flash.kernel_output_shape = (query.shape[0], query.shape[1], value.shape[2])
-        ctx_flash.softmax_scale = query.shape[-1] ** (-0.5)
+        ctx_flash.softmax_scale = ctx.scale
         rng_state = None
 
         out = out.reshape(ctx_flash.kernel_output_shape)
@@ -970,6 +970,4 @@ def memory_efficient_attention(
             p=p,
             scale=scale,
         ).reshape(output_shape)
-    return op.apply(query, key, value, attn_bias, p, scale).reshape(
-        output_shape
-    )
+    return op.apply(query, key, value, attn_bias, p, scale).reshape(output_shape)

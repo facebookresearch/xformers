@@ -119,7 +119,9 @@ _op_device_dtype_B_Mq_Mkv_H_K_Kv_ids = _gen_ids(_op_device_dtype_B_Mq_Mkv_H_K_Kv
 _op_device_dtype_B_Mq_Mkv_H_K_Kv__xs = list(
     _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(one_shape_per_op=True)
 )
-_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids = _gen_ids(_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs)
+_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids = _gen_ids(
+    _op_device_dtype_B_Mq_Mkv_H_K_Kv__xs
+)
 
 
 def assert_allclose(
@@ -169,14 +171,18 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None):
     assert q.ndim == 4
 
     def T(t):
-        return t.permute((0, 2, 1, 3)).reshape([t.shape[0] * t.shape[2], t.shape[1], t.shape[3]])
+        return t.permute((0, 2, 1, 3)).reshape(
+            [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
+        )
 
     out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale)
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
 
 
-def create_attn_bias(bias_type, batch_size: int, q_len: int, kv_len: int, device, dtype):
+def create_attn_bias(
+    bias_type, batch_size: int, q_len: int, kv_len: int, device, dtype
+):
     if bias_type is None:
         return None
     if bias_type is torch.Tensor:
@@ -245,7 +251,9 @@ def bmhk2bmk(tensor) -> torch.Tensor:
 
 
 def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
-    return tensor.reshape([-1, num_heads, tensor.shape[1], tensor.shape[2]]).permute((0, 2, 1, 3))
+    return tensor.reshape([-1, num_heads, tensor.shape[1], tensor.shape[2]]).permute(
+        (0, 2, 1, 3)
+    )
 
 
 def backward_error_atol(k, kv_len, q_len, dtype):
@@ -269,7 +277,9 @@ def backward_error_atol(k, kv_len, q_len, dtype):
 
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("packed", [False, True])
-@pytest.mark.parametrize("attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor])
+@pytest.mark.parametrize(
+    "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
+)
 @pytest.mark.parametrize(
     "op_device_dtype_B_Mq_Mkv_H_K_Kv",
     _op_device_dtype_B_Mq_Mkv_H_K_Kv,
@@ -311,7 +321,9 @@ def test_forward(
             query, key, value = xformers.ops.unbind(c, 2)
         assert not query.is_contiguous()
 
-    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, op=op).float()
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias, op=op
+    ).float()
     ref = ref_attention(query, key, value, attn_bias)
     assert out.shape == ref.shape, out.shape
 
@@ -366,9 +378,15 @@ def test_cu_seqlen_forward(
         q_len = r.randint(1, max_q_len)
         kv_len = r.randint(1, max_kv_len)
 
-        all_q.append(torch.randn((1, q_len, num_heads, k), device=device, dtype=dtype) * scale)
-        all_k.append(torch.randn((1, kv_len, num_heads, k), device=device, dtype=dtype) * scale)
-        all_v.append(torch.randn((1, kv_len, num_heads, kv), device=device, dtype=dtype) * scale)
+        all_q.append(
+            torch.randn((1, q_len, num_heads, k), device=device, dtype=dtype) * scale
+        )
+        all_k.append(
+            torch.randn((1, kv_len, num_heads, k), device=device, dtype=dtype) * scale
+        )
+        all_v.append(
+            torch.randn((1, kv_len, num_heads, kv), device=device, dtype=dtype) * scale
+        )
 
         if batch_id == 0:
             if not op.supports(
@@ -452,7 +470,9 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
         or op is xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp
     ):
         return
-    query, key, value, attn_bias = create_tensors(*op_device_dtype_B_Mq_Mkv_H_K_Kv, fmt="BMK")
+    query, key, value, attn_bias = create_tensors(
+        *op_device_dtype_B_Mq_Mkv_H_K_Kv, fmt="BMK"
+    )
 
     if op is xformers.ops.MemoryEfficientAttentionCutlassOp:
         _, lse = op.FORWARD_OPERATOR(
@@ -474,7 +494,9 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
 
 
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
-@pytest.mark.parametrize("attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor])
+@pytest.mark.parametrize(
+    "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
+)
 @pytest.mark.parametrize("grad_out_contiguous", [False, True])
 @pytest.mark.parametrize(
     "op_device_dtype_B_Mq_Mkv_H_K_Kv",
@@ -506,7 +528,11 @@ def test_backward(
     )
     qkv = None
 
-    if fmt == "BMHK" and query.shape[3] == value.shape[3] and query.shape[1] == value.shape[1]:
+    if (
+        fmt == "BMHK"
+        and query.shape[3] == value.shape[3]
+        and query.shape[1] == value.shape[1]
+    ):
         qkv = torch.stack([query, key, value], 2)
         qkv.requires_grad_(True)
         # bm3hk -> 3 x bmhk
@@ -694,7 +720,9 @@ def test_dropout_backward(device, q_len, kv_len, batch_size, k_len, p):
 @pytest.mark.parametrize("kv_len", [3 * 32])
 @pytest.mark.parametrize("q_len", [3 * 32])
 @pytest.mark.parametrize("device", _devices)
-def test_memory_efficient_attention_full_block_masked(device, q_len, kv_len, batch_size, k_len):
+def test_memory_efficient_attention_full_block_masked(
+    device, q_len, kv_len, batch_size, k_len
+):
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
@@ -841,7 +869,9 @@ def test_custom_scale(op_device_dtype_B_Mq_Mkv_H_K_Kv):
     if not op.supports(dispatch):
         pytest.skip(f"{op.NAME}: unsupported ({dispatch})")
 
-    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, p, scale, op=op)
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias, p, scale, op=op
+    )
     out.backward(grad_out)
     grad_q, grad_k, grad_v = query.grad, key.grad, value.grad
     query.grad = key.grad = value.grad = None
