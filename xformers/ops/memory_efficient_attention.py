@@ -96,6 +96,8 @@ class AttentionOpBase(torch.autograd.Function):
     - :attr:`xformers.ops.MemoryEfficientAttentionFlashAttentionOp`
 
     - :attr:`xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp`
+
+    - :attr:`xformers.ops.TritonFlashAttentionOp`
     """
 
     FORWARD_OPERATOR: Any
