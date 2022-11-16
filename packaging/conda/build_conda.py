@@ -16,6 +16,7 @@ PYTORCH_TO_CUDA_VERSIONS = {
     "1.11.0": ["10.2", "11.1", "11.3", "11.5"],
     "1.12.0": ["10.2", "11.3", "11.6"],
     "1.12.1": ["10.2", "11.3", "11.6"],
+    "1.13": ["11.6", "11.7"],
 }
 
 
@@ -33,6 +34,8 @@ def conda_docker_image_for_cuda(cuda_version):
         return "pytorch/conda-builder:cuda115"
     if cuda_version == "11.6":
         return "pytorch/conda-builder:cuda116"
+    if cuda_version == "11.7":
+        return "pytorch/conda-builder:cuda117"
     raise ValueError(f"Unknown cuda version {cuda_version}")
 
 
@@ -94,9 +97,12 @@ class Build:
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
         os.environ["CU_VERSION"] = self.cuda_version
         os.environ["SOURCE_ROOT_DIR"] = str(SOURCE_ROOT_DIR)
-        os.environ["CONDA_CUDATOOLKIT_CONSTRAINT"] = version_constraint(
-            self.cuda_version
-        )
+        cuda_constraint = version_constraint(self.cuda_version)
+        pytorch_version_tuple = tuple(int(v) for v in self.pytorch_version.split("."))
+        if pytorch_version_tuple < (1, 13):
+            os.environ["CONDA_CUDA_CONSTRAINT"] = f"cudatoolkit{cuda_constraint}"
+        else:
+            os.environ["CONDA_CUDA_CONSTRAINT"] = f"pytorch-cuda{cuda_constraint}"
         os.environ["FORCE_CUDA"] = "1"
 
         if self.conda_always_copy:
@@ -107,7 +113,9 @@ class Build:
             "conda",
             "build",
             "-c",
-            "fastchan",  # which can avoid needing pytorch and conda-forge
+            "pytorch",
+            "-c",
+            "nvidia",
             "--no-anaconda-upload",
             "--python",
             self.python_version,

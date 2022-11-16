@@ -8,7 +8,7 @@ import torch
 
 # Automatically fetch all registered attentions and Feedforwards
 from xformers.components import Activation
-from xformers.components.attention import ATTENTION_REGISTRY
+from xformers.components.attention import ATTENTION_REGISTRY, AttentionMask
 from xformers.components.feedforward import FEEDFORWARD_REGISTRY
 from xformers.factory import (
     xFormerDecoderBlock,
@@ -112,10 +112,12 @@ def test_xformer_encoder_block(
     _ = block(inputs)
 
     # Check that we support attention masking, at least interface wise (do not check correctness yet)
-    att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
+    att_mask_tensor = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
+    att_mask = AttentionMask.from_bool(att_mask_tensor)
 
     if block.supports_attention_mask:
         _ = block(inputs, att_mask=att_mask)
+        _ = block(inputs, att_mask=att_mask_tensor)
     else:
         with pytest.raises(AssertionError):
             # Check that passing an attention mask to a mechanism which does not support it raises
@@ -226,7 +228,8 @@ def test_xformer_decoder_block(
     )  # NOTE: does not make a lot of sense, just checking dimensions
 
     # Check that we support masking, at least interface wise (do not check correctness yet)
-    att_mask = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
+    att_mask_tensor = torch.ones(SEQ, SEQ, dtype=torch.bool, device=device)
+    att_mask = AttentionMask.from_bool(att_mask_tensor)
     input_mask = torch.randn(SEQ, dtype=torch.float, device=device)
     input_mask[input_mask < 0.0] = -float("inf")
 
@@ -234,6 +237,9 @@ def test_xformer_decoder_block(
     if decoder_block.supports_attention_mask:
         _ = decoder_block(
             inputs, encoded, encoder_att_mask=att_mask, input_mask=input_mask
+        )
+        _ = decoder_block(
+            inputs, encoded, encoder_att_mask=att_mask_tensor, input_mask=input_mask
         )
 
     # Test different sequence lengths when encoding and decoding

@@ -5,8 +5,9 @@
 
 import torch
 
-from .memory_efficient_attention import (  # noqa: F401
+from .memory_efficient_attention import (
     AttentionMask,
+    AttentionOp,
     AttentionOpBase,
     AttentionOpDispatch,
     LowerTriangularMask,
@@ -16,15 +17,16 @@ from .memory_efficient_attention import (  # noqa: F401
     MemoryEfficientAttentionOp,
     memory_efficient_attention,
 )
-from .swiglu import (  # noqa: F401
+from .swiglu_op import (
+    SwiGLU,
+    SwiGLUEagerOp,
     SwiGLUFusedOp,
     SwiGLUOp,
     SwiGLUOpDispatch,
     SwiGLUPackedFusedOp,
-    _info,
-    functional_swiglu,
+    swiglu,
 )
-from .unbind import get_stack_strides, stack_or_none, unbind  # noqa: F401
+from .unbind import get_stack_strides, stack_or_none, unbind
 
 
 def masked_matmul(a, b, mask=None):
@@ -47,3 +49,28 @@ def masked_matmul(a, b, mask=None):
         # mask is presumed additive
         att += mask
     return att
+
+
+__all__ = [
+    "AttentionMask",
+    "AttentionOp",
+    "AttentionOpBase",
+    "AttentionOpDispatch",
+    "LowerTriangularMask",
+    "MemoryEfficientAttentionCutlassFwdFlashBwOp",
+    "MemoryEfficientAttentionCutlassOp",
+    "MemoryEfficientAttentionFlashAttentionOp",
+    "MemoryEfficientAttentionOp",
+    "memory_efficient_attention",
+    "SwiGLU",
+    "SwiGLUEagerOp",
+    "SwiGLUFusedOp",
+    "SwiGLUOp",
+    "SwiGLUOpDispatch",
+    "SwiGLUPackedFusedOp",
+    "swiglu",
+    "unbind",
+    "stack_or_none",
+    "get_stack_strides",
+    "masked_matmul",
+]

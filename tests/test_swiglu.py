@@ -3,14 +3,16 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
+import functools
 import random
 from contextlib import nullcontext
-from typing import Optional, Sequence
+from typing import ContextManager, Optional, Sequence, cast
 
 import pytest
 import torch
 
-import xformers.ops.swiglu as xsw
+import xformers.ops.swiglu_op as xsw
 
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
@@ -83,9 +85,13 @@ def generate_test_shapes():
     shapes = [
         # Format: [inp.shape[0], inp.shape[1], hidden.shape[1]]
         # ViT-Giant
-        (9456, 1536, 4096),
-        (4440, 1536, 4096),
-        (4728, 1536, 4096),
+        (9456, 1536, 2736),
+        (4440, 1536, 2736),
+        (4728, 1536, 2736),
+        # GPT-3 (small)
+        (2048, 2048, 5632),
+        # Chinchilla
+        (2048, 8192, 22016),
     ]
     # Add some random shapes
     r = random.Random(0)
@@ -102,12 +108,17 @@ _dtypes = [torch.bfloat16, torch.float16]
 _ops: Sequence[xsw.SwiGLUOp] = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
 
 
-@pytest.mark.parametrize("bias", [False, True], ids=["nobias", "bias"])
+@functools.lru_cache(maxsize=1)
+def create_module_cached(**kwargs) -> xsw.SwiGLU:
+    return xsw.SwiGLU(**kwargs)
+
+
 @pytest.mark.parametrize("autocast", [False, True], ids=["regular", "autocast"])
-@pytest.mark.parametrize("pack_weights", [False, True], ids=["regular", "packed"])
 @pytest.mark.parametrize("op", _ops, ids=[x.NAME for x in _ops])
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
 @pytest.mark.parametrize("device", _devices)
+@pytest.mark.parametrize("bias", [False, True], ids=["nobias", "bias"])
+@pytest.mark.parametrize("pack_weights", [False, True], ids=["regular", "packed"])
 @pytest.mark.parametrize(
     "shape",
     _test_shapes,
@@ -150,11 +161,13 @@ def test_forward_backward(
     inp_model_dtype = torch.float if autocast else dtype
     x = torch.randn(shape[:2], device=device, dtype=inp_model_dtype)
 
-    module = xsw._SwiGLUModule(
-        in_features=shape[1],
-        hidden_features=shape[2],
-        pack_weights=pack_weights,
-        bias=bias,
+    module = copy.deepcopy(
+        create_module_cached(
+            in_features=shape[1],
+            hidden_features=shape[2],
+            bias=bias,
+            _pack_weights=pack_weights,
+        )
     )
     x_f32: Optional[torch.Tensor]
     ref_f32: Optional[torch.Tensor]
@@ -170,10 +183,13 @@ def test_forward_backward(
     x.requires_grad_()
 
     # Forward
-    cm = torch.autocast("cuda", dtype=dtype) if autocast else nullcontext()
+    cm = cast(
+        ContextManager,
+        torch.autocast("cuda", dtype=dtype) if autocast else nullcontext(),
+    )
     with cm:
         ref = module(x)
-        out = xsw.functional_swiglu(x, *module._ordered_params_for_op(), op=op)
+        out = xsw.swiglu(x, *module._ordered_params(), op=op)
 
     if ref_f32 is None:
         ref_f32 = ref

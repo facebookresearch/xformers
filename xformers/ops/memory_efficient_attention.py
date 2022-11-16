@@ -5,7 +5,7 @@
 
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any, List, Mapping, Optional, Set, Type, Union
 
@@ -22,17 +22,47 @@ except ImportError:
 
 
 class AttentionMask:
+    """Base class for custom masks that can be applied \
+        in :attr:`xformers.ops.memory_efficient_attention`.
+
+    When using an :attr:`xformers.ops.AttentionMask`
+    instead of a :attr:`torch.Tensor`, the mask matrix does
+    not need to be materialized, and can be
+    hardcoded into some kernels for better performance.
+
+    See also :attr:`xformers.ops.LowerTriangularMask`
+    """
+
     def to_tensor(self) -> torch.Tensor:
+        """Materializes the mask tensor
+
+        Returns:
+            torch.Tensor
+        """
         raise NotImplementedError()
 
 
 class LowerTriangularMask(AttentionMask):
+    """A lower triangular mask that can be used for causal attention"""
+
     def __init__(self, *tensor_args, **tensor_kwargs) -> None:
+        """Creates a Lower triangular mask.
+        It is not requires to specify any parameter, as they are only \
+            used when calling :attr:`LowerTriangularMask.to_tensor`
+
+        The mask will not be materialized by default, and hence does not use \
+            any additional memory, but acts as an option for the MHA kernel.
+        """
         self._tensor: Optional[torch.Tensor] = None
         self._tensor_kwargs = tensor_kwargs
         self._tensor_args = tensor_args
 
     def to_tensor(self) -> torch.Tensor:
+        """Materializes the mask tensor
+
+        Returns:
+            torch.Tensor
+        """
         if self._tensor is None:
             # Work around for "triu_tril_cuda_template" not implemented for 'BFloat16'
             dtype = self._tensor_kwargs.pop("dtype", torch.float)
@@ -48,9 +78,17 @@ class LowerTriangularMask(AttentionMask):
 
 
 class AttentionOpBase(torch.autograd.Function):
-    """
-    Manually doing what our efficient kernels do with Pytorch.
-    Allows to support forward/backwards when not implemented otherwise
+    """Base class for any attention operator in xFormers
+
+    See:
+
+    - :attr:`xformers.ops.MemoryEfficientAttentionOp`
+
+    - :attr:`xformers.ops.MemoryEfficientAttentionCutlassOp`
+
+    - :attr:`xformers.ops.MemoryEfficientAttentionFlashAttentionOp`
+
+    - :attr:`xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp`
     """
 
     FORWARD_OPERATOR: Any
@@ -80,6 +118,87 @@ class AttentionOpBase(torch.autograd.Function):
         if cls.FORWARD_OPERATOR.__name__ == "no_such_operator":
             return "not built"
         return "available"
+
+    @classmethod
+    def forward_no_grad(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
+        p: float,
+    ) -> torch.Tensor:
+        raise NotImplementedError()
+
+    @classmethod
+    def forward(cls, ctx, query, key, value, attn_bias, p):
+        raise NotImplementedError()
+
+    @classmethod
+    def backward(cls, ctx, grad):
+        raise NotImplementedError()
+
+    @classmethod
+    def supports(cls, d: "AttentionOpDispatch") -> bool:
+        device_type = d.device if isinstance(d.device, str) else d.device.type
+        if device_type not in cls.SUPPORTED_DEVICES:
+            return False
+        if d.dtype not in cls.SUPPORTED_DTYPES:
+            return False
+        if not cls.SUPPORTS_DIFFERENT_VALUE_EMBED and d.k != d.kv:
+            return False
+        if max(d.k, d.kv) > cls.SUPPORTED_MAX_K:
+            return False
+        if d.attn_bias_type not in cls.SUPPORTED_ATTN_BIAS_TYPES:
+            return False
+        if d.has_dropout and not cls.SUPPORTS_DROPOUT:
+            return False
+        # bfloat16 is only supported on A100+
+        # ... although the kernels can still run and give the
+        # correct result
+        if d.dtype is torch.bfloat16 and (
+            not device_type.startswith("cuda")
+            or torch.cuda.get_device_capability(d.device)[0] < 8
+        ):
+            return False
+        return True
+
+
+AttentionOp = Type[AttentionOpBase]
+
+
+class MemoryEfficientAttentionOp(AttentionOpBase):
+    """An operator optimized for very small values of K (``K <= 32``) \
+        and f32 pre-Ampere as it does not use TensorCores.
+    Only supports contiguous inputs in BMK format, so an extra reshape \
+        or contiguous call might be done.
+
+    :Deprecated:
+
+        This operator is deprecated and should not be used in new code
+    """
+
+    FORWARD_OPERATOR = get_xformers_operator("efficient_attention")
+    SUPPORTED_DEVICES = {"cuda", "cpu"}
+    SUPPORTED_DTYPES = {torch.float}
+    SUPPORTED_MAX_K: float = 32
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), torch.Tensor}
+    SUPPORTS_DROPOUT = True
+    NAME = "small_k"
+
+    # as this kernel is a bit slow, this should make tests run faster
+    _TEST_BATCH_SIZES = [1, 3]
+    _TEST_K = [2, 3, 8, 16, 32]
+
+    @classmethod
+    def supports(cls, d: "AttentionOpDispatch") -> bool:
+        if not super(MemoryEfficientAttentionOp, cls).supports(d):
+            return False
+        buffer_size = 8
+        for pack in [1, 2, 4]:
+            if (d.k % pack) == 0 and (d.k // pack) <= buffer_size:
+                return True
+        return False
 
     @classmethod
     def bmhk2bmk_contiguous(cls, tensor) -> torch.Tensor:
@@ -140,74 +259,6 @@ class AttentionOpBase(torch.autograd.Function):
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
     ) -> torch.Tensor:
-        raise NotImplementedError()
-
-    @classmethod
-    def _forward_bmk(cls, ctx, query, key, value, attn_bias, p):
-        raise NotImplementedError()
-
-    @staticmethod
-    def _backward_bmk(ctx, grad):
-        raise NotImplementedError()
-
-    @classmethod
-    def supports(cls, d: "AttentionOpDispatch") -> bool:
-        device_type = d.device if isinstance(d.device, str) else d.device.type
-        if device_type not in cls.SUPPORTED_DEVICES:
-            return False
-        if d.dtype not in cls.SUPPORTED_DTYPES:
-            return False
-        if not cls.SUPPORTS_DIFFERENT_VALUE_EMBED and d.k != d.kv:
-            return False
-        if max(d.k, d.kv) > cls.SUPPORTED_MAX_K:
-            return False
-        if d.attn_bias_type not in cls.SUPPORTED_ATTN_BIAS_TYPES:
-            return False
-        if d.has_dropout and not cls.SUPPORTS_DROPOUT:
-            return False
-        # bfloat16 is only supported on A100+
-        # ... although the kernels can still run and give the
-        # correct result
-        if d.dtype is torch.bfloat16 and (
-            not device_type.startswith("cuda")
-            or torch.cuda.get_device_capability(d.device)[0] < 8
-        ):
-            return False
-        return True
-
-
-class MemoryEfficientAttentionOp(AttentionOpBase):
-    FORWARD_OPERATOR = get_xformers_operator("efficient_attention")
-    SUPPORTED_DEVICES = {"cuda", "cpu"}
-    SUPPORTED_DTYPES = {torch.float}
-    SUPPORTED_MAX_K: float = 32
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), torch.Tensor}
-    SUPPORTS_DROPOUT = True
-    NAME = "small_k"
-
-    # as this kernel is a bit slow, this should make tests run faster
-    _TEST_BATCH_SIZES = [1, 3]
-    _TEST_K = [2, 3, 8, 16, 32]
-
-    @classmethod
-    def supports(cls, d: "AttentionOpDispatch") -> bool:
-        if not super(MemoryEfficientAttentionOp, cls).supports(d):
-            return False
-        buffer_size = 8
-        for pack in [1, 2, 4]:
-            if (d.k % pack) == 0 and (d.k // pack) <= buffer_size:
-                return True
-        return False
-
-    @classmethod
-    def _forward_no_grad_bmk(
-        cls,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
-        p: float,
-    ) -> torch.Tensor:
         return cls.FORWARD_OPERATOR(
             query=query,
             key=key,
@@ -246,6 +297,11 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
 
 
 class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
+    """xFormers' MHA kernel based on CUTLASS.
+    Supports a large number of settings (including without TensorCores, f32 ...)
+    and GPUs as old as P100 (Sm60)
+    """
+
     FORWARD_OPERATOR = get_xformers_operator("efficient_attention_forward_cutlass")
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.float, torch.half, torch.bfloat16}
@@ -270,6 +326,8 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
     ) -> torch.Tensor:
+        if attn_bias is not None and not isinstance(attn_bias, LowerTriangularMask):
+            raise NotImplementedError("Unsupported attn_bias type")
         return cls.FORWARD_OPERATOR(
             query=query,
             key=key,
@@ -283,6 +341,8 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
 
     @classmethod
     def forward(cls, ctx, query, key, value, attn_bias, p):
+        if attn_bias is not None and not isinstance(attn_bias, LowerTriangularMask):
+            raise NotImplementedError("Unsupported attn_bias type")
         causal = isinstance(attn_bias, LowerTriangularMask)
         out, lse = cls.FORWARD_OPERATOR(
             query=query,
@@ -323,6 +383,16 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             matmul_alignment_mn = max(matmul_alignment_mn, 128 // bits_per_scalar)
         if (d.k % matmul_alignment_mn != 0) or (d.kv % matmul_alignment_mn != 0):
             return False
+        # Sm86 does not have enough shared-memory
+        # See https://github.com/facebookresearch/xformers/issues/517
+        if (
+            d.requires_grad
+            and sm >= 80
+            and sm != 80
+            and d.dtype is torch.float
+            and max(d.kv, d.k) > 64
+        ):
+            return False
         return True
 
     @classmethod
@@ -347,7 +417,11 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
 
 
 class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
-    """
+    """Operator that computes memory-efficient attention using \
+        `Flash-Attention <https://github.com/HazyResearch/flash-attention>`_ \
+        implementation.
+
+
     This is a wrapper to make FlashAttention compatible with xformers's API
     Most of this code was taken from:
     https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attn_interface.py
@@ -375,10 +449,12 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         if not super(MemoryEfficientAttentionFlashAttentionOp, cls).supports(d):
             return False
         # We know `d.device` is cuda now
-        # d=128 is only supported on A100
+        # d=128 is only supported on A100 for bw
         device_capability = torch.cuda.get_device_capability(d.device)
-        is_sm80 = device_capability[0] >= 8
-        if d.k not in [16, 32, 64, 128] or (d.k == 128 and not is_sm80):
+        is_sm80 = device_capability[0] == 8 and device_capability[1] == 0
+        if d.k not in [16, 32, 64, 128]:
+            return False
+        if d.requires_grad and d.k == 128 and not is_sm80:
             return False
         return device_capability >= (7, 5)
 
@@ -438,6 +514,8 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
 
     @classmethod
     def forward(cls, ctx, query, key, value, attn_bias, p):
+        if attn_bias is not None and not isinstance(attn_bias, LowerTriangularMask):
+            raise NotImplementedError("Unsupported attn_bias type")
         causal = isinstance(attn_bias, LowerTriangularMask)
         return_softmax = False
         ctx_flash = ctx if ctx is not None else SimpleNamespace()
@@ -621,6 +699,10 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
 
 
 class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlassOp):
+    """An operator that uses :attr:`xformers.ops.MemoryEfficientAttentionCutlassOp` for the forward pass \
+        and :attr:`xformers.ops.MemoryEfficientAttentionFlashAttentionOp` for the backward.
+    """
+
     FW_OP = MemoryEfficientAttentionCutlassOp
     BW_OP = MemoryEfficientAttentionFlashAttentionOp
     SUPPORTED_DTYPES = BW_OP.SUPPORTED_DTYPES.intersection(FW_OP.SUPPORTED_DTYPES)
@@ -628,7 +710,9 @@ class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlas
 
     @classmethod
     def supports(cls, d: "AttentionOpDispatch") -> bool:
-        return cls.FW_OP.supports(d) and cls.BW_OP.supports(d)
+        if d.requires_grad and not cls.BW_OP.supports(d):
+            return False
+        return cls.FW_OP.supports(replace(d, requires_grad=False))
 
     @classmethod
     def backward(cls, ctx, grad):
@@ -655,6 +739,10 @@ class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlas
 
 @dataclass
 class AttentionOpDispatch:
+    """Dispatcher to automatically select
+    the best operator to run memory-efficient attention.
+    """
+
     dtype: torch.dtype
     device: Union[torch.device, str]
     k: int
@@ -665,6 +753,7 @@ class AttentionOpDispatch:
     kv: int = -1
     batch_size: int = -1
     num_heads: int = 1
+    requires_grad: bool = True
 
     def __post_init__(self):
         if self.kv == -1:
@@ -681,13 +770,21 @@ class AttentionOpDispatch:
         return max(self.k, self.kv) == 128
 
     @property
-    def op(self) -> Type[AttentionOpBase]:
-        priority_list_ops: List[Type[AttentionOpBase]] = [
+    def op(self) -> AttentionOp:
+        """Computes the best operator
+
+        Raises:
+            NotImplementedError: if not operator was found
+
+        Returns:
+            AttentionOp: The best operator for the configuration
+        """
+        priority_list_ops: List[AttentionOp] = [
             MemoryEfficientAttentionFlashAttentionOp,
             MemoryEfficientAttentionCutlassOp,
             MemoryEfficientAttentionOp,
         ]
-        if self._is_cutlass_fwd_faster_than_flash():
+        if self.requires_grad and self._is_cutlass_fwd_faster_than_flash():
             priority_list_ops.insert(0, MemoryEfficientAttentionCutlassFwdFlashBwOp)
         for op in priority_list_ops:
             if op.supports(self):
@@ -703,6 +800,19 @@ class AttentionOpDispatch:
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
         p: float = 0.0,
     ) -> "AttentionOpDispatch":
+        """Creates an :attr:`xformers.ops.AttentionOpDispatch` from :attr:`xformers.ops.memory_efficient_attention`'s
+        arguments
+
+        Args:
+            query (torch.Tensor)
+            key (torch.Tensor)
+            value (torch.Tensor)
+            attn_bias (Optional[Union[torch.Tensor, xformers.ops.AttentionMask]], optional): Defaults to None.
+            p (float, optional): Defaults to 0.0.
+
+        Returns:
+            AttentionOpDispatch
+        """
         B, H = query.shape[0], 1
         if query.ndim == 4:
             H = query.shape[2]
@@ -717,6 +827,7 @@ class AttentionOpDispatch:
             q_len=query.shape[1],
             batch_size=B,
             num_heads=H,
+            requires_grad=any(x.requires_grad for x in [query, key, value]),
         )
 
 
@@ -727,16 +838,71 @@ def memory_efficient_attention(
     attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
     p: float = 0.0,
     *,
-    op=None,
-):
-    """
-    Implements the memory-efficient attention mechanism following
+    op: Optional[AttentionOp] = None,
+) -> torch.Tensor:
+    """Implements the memory-efficient attention mechanism following
     `"Self-Attention Does Not Need O(n^2) Memory" <http://arxiv.org/abs/2112.05682>`_.
 
-    Supported formats for inputs/outputs:
-        [batch, seqlen, num_heads, K]
-        [batch, seqlen, K] (Legacy format)
-    Inputs can be non-contiguous - we only require the last dimension's stride to be 0
+    :Inputs shape:
+
+    - Input tensors must be in format ``[B, M, H, K]``, where B is the batch size, M \
+        the sequence length, H the number of heads, and K the embeding size per head
+
+    - If inputs have dimension 3, it is assumed that the dimensions are ``[B, M, K]`` and ``H=1``
+
+    - Inputs can be non-contiguous - we only require the last dimension's stride to be 1
+
+
+    :Equivalent pytorch code:
+
+    .. code-block:: python
+
+        scale = 1 / query.shape[-1] ** 0.5
+        query = query * scale
+        attn = query @ key.transpose(-2, -1)
+        if attn_bias is not None:
+            attn = attn + attn_bias
+        attn = attn.softmax(-1)
+        attn = F.dropout(attn, p)
+        return attn @ value
+
+    :Examples:
+
+    .. code-block:: python
+
+        import xformers.ops as xops
+
+        # Compute regular attention
+        y = xops.memory_efficient_attention(q, k, v)
+
+        # With a dropout of 0.2
+        y = xops.memory_efficient_attention(q, k, v, p=0.2)
+
+        # Causal attention
+        y = xops.memory_efficient_attention(
+            q, k, v,
+            attn_bias=xops.LowerTriangularMask()
+        )
+
+    :Supported hardware:
+
+        NVIDIA GPUs with compute capability above 6.0 (P100+), datatype ``f16``, ``bf16`` and ``f32``.
+
+    Raises:
+        NotImplementedError: if there is no operator available to compute the MHA
+
+    :parameter query: Tensor of shape ``[B, Mq, H, K]``
+    :parameter key: Tensor of shape ``[B, Mkv, H, K]``
+    :parameter value: Tensor of shape ``[B, Mkv, H, Kv]``
+    :parameter attn_bias: Bias to apply to the attention matrix - defaults to no masking. \
+        For causal attention, use :attr:`xformers.ops.LowerTriangularMask`. \
+        This can also be a :attr:`torch.Tensor` for an arbitrary mask.
+    :parameter p: Dropout probability. Disabled if set to ``0.0``
+    :parameter op: The operator to use - see :attr:`xformers.ops.AttentionOpBase`. \
+        If set to ``None`` (recommended), xFormers \
+        will dispatch to the best available operator, depending on the inputs \
+        and options.
+    :return: multi-head attention Tensor with shape ``[B, Mq, H, Kv]``
     """
 
     if query.ndim not in [3, 4]:

@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import datetime
 import distutils.command.clean
 import glob
 import os
@@ -33,12 +34,22 @@ def fetch_requirements():
     return reqs
 
 
+def get_local_version_suffix() -> str:
+    date_suffix = datetime.datetime.now().strftime("%Y%m%d")
+    git_hash = subprocess.check_output(
+        ["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).parent
+    ).decode("ascii")[:-1]
+    return f"+{git_hash}.d{date_suffix}"
+
+
 if os.getenv("BUILD_VERSION"):
+    # In CI
     version = os.getenv("BUILD_VERSION")
 else:
     version_txt = os.path.join(this_dir, "version.txt")
     with open(version_txt) as f:
         version = f.readline().strip()
+    version += get_local_version_suffix()
 
 
 def write_version_file():
@@ -122,8 +133,6 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                 "nvcc": extra_compile_args.get("nvcc", [])
                 + [
                     "-O3",
-                    "-U__CUDA_NO_HALF_OPERATORS__",
-                    "-U__CUDA_NO_HALF_CONVERSIONS__",
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
                     "--use_fast_math",
@@ -256,7 +265,6 @@ if __name__ == "__main__":
         name="xformers",
         description="XFormers: A collection of composable Transformer building blocks.",
         version=version,
-        setup_requires=[],
         install_requires=fetch_requirements(),
         packages=setuptools.find_packages(exclude=("tests", "tests.*")),
         ext_modules=get_extensions(),
@@ -267,7 +275,7 @@ if __name__ == "__main__":
         url="https://facebookresearch.github.io/xformers/",
         python_requires=">=3.6",
         author="Facebook AI Research",
-        author_email="lefaudeux@fb.com",
+        author_email="oncall+xformers@xmail.facebook.com",
         long_description="XFormers: A collection of composable Transformer building blocks."
         + "XFormers aims at being able to reproduce most architectures in the Transformer-family SOTA,"
         + "defined as compatible and combined building blocks as opposed to monolithic models",

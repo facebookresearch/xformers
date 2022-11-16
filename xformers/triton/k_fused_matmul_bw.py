@@ -10,24 +10,30 @@ import torch
 import triton
 import triton.language as tl
 
-from xformers.triton.sum_strided import sum_2d_dim_0
+from xformers.triton.k_activations import (
+    gelu_grad,
+    leaky_relu_grad,
+    relu_grad,
+    smelu_grad,
+    squared_relu_grad,
+    star_relu_grad,
+)
 
 
 # fmt: off
-@triton.heuristics({
-    'EVEN_N': lambda args: args["N"] % (args['BLOCK_N']) == 0,
-})
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_N": 32}, num_stages=5, num_warps=2),
-        triton.Config({"BLOCK_N": 64}, num_stages=5, num_warps=2),
-        triton.Config({"BLOCK_N": 128}, num_stages=3, num_warps=4),
-        triton.Config({"BLOCK_N": 256}, num_stages=3, num_warps=8),
-        triton.Config({"BLOCK_N": 512}, num_stages=3, num_warps=8),
-        triton.Config({"BLOCK_N": 1024}, num_stages=3, num_warps=8),
+        triton.Config({"BLOCK_N": 64}, num_stages=4, num_warps=2),
+        triton.Config({"BLOCK_N": 128}, num_stages=3, num_warps=2),
+        triton.Config({"BLOCK_N": 256}, num_stages=3, num_warps=4),
+        triton.Config({"BLOCK_N": 512}, num_stages=3, num_warps=4),
+        triton.Config({"BLOCK_N": 1024}, num_stages=3, num_warps=4),
     ],
     key=["N"],
 )
+@triton.heuristics({
+    'EVEN_N': lambda args: args["N"] % (args['BLOCK_N']) == 0,
+})
 @triton.jit
 def kernel_bw(
     # Pointers to matrices
@@ -66,7 +72,20 @@ def kernel_bw(
     else:
         act_in = tl.load(act_input_ptrs, mask=rn < N, other=0.0)
 
-    grad_act = ACTIVATION_GRAD(act_in)
+    if ACTIVATION_GRAD == 1:
+        grad_act = relu_grad(act_in)
+    elif ACTIVATION_GRAD == 2:
+        grad_act = leaky_relu_grad(act_in)
+    elif ACTIVATION_GRAD == 3:
+        grad_act = gelu_grad(act_in)
+    elif ACTIVATION_GRAD == 4:
+        grad_act = squared_relu_grad(act_in)
+    elif ACTIVATION_GRAD == 5:
+        grad_act = smelu_grad(act_in)
+    elif ACTIVATION_GRAD == 6:
+        grad_act = star_relu_grad(act_in)
+    else:
+        grad_act = act_in
 
     # now read the incoming gradient, the backpropagated one is the multiple of both
     grad_out_ptrs = GRAD_OUT + pid_m * stride_gom + rn
@@ -89,7 +108,7 @@ def fused_matmul_backward(
     weight: torch.Tensor,
     trainable_weight: bool,
     trainable_bias: bool,
-    activation_grad=None,
+    activation_grad: int = 0,
 ):
     """
     Compute grad_in = activation^-1(grad_out) @ weight.transpose()
@@ -111,7 +130,7 @@ def fused_matmul_backward(
     N, _ = weight.shape
 
     # Compute the gradient for the activation
-    if activation_grad is not None:
+    if activation_grad > 0:
         grad_act = torch.empty_like(grad_out_)
 
         # Some activations do not require their inputs to
@@ -134,9 +153,9 @@ def fused_matmul_backward(
         # just before the activation
         grad_out_ = grad_act
 
-    # The following ops can also be handled by triton
-    grad_in = grad_out_ @ weight
+    # The following ops can also be handled by pytorch
+    grad_in = triton.ops.matmul(grad_out_, weight)
     grad_weight = grad_out_.transpose(1, 0) @ inputs_ if trainable_weight else None
-    grad_bias = sum_2d_dim_0(grad_out_) if trainable_bias else None
+    grad_bias = torch.sum(grad_out_, dim=0) if trainable_bias else None
 
     return grad_in.reshape_as(inputs), grad_weight, grad_bias
