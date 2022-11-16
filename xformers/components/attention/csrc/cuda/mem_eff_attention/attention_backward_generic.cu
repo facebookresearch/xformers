@@ -169,7 +169,6 @@ mem_efficient_attention_backward_cutlass(
     } else {
       p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
     }
-    std::cerr << "backward scale: " << p.scale << std::endl;
 
     ASSIGN_CHECK_OVERFLOW(p.gO_strideB, grad_out.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.gO_strideM, grad_out.stride(1));
