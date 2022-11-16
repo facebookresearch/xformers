@@ -826,7 +826,7 @@ class AttentionOpDispatch:
         value: torch.Tensor,
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
         p: float = 0.0,
-        has_custom_scale: bool = False,
+        scale: Optional[float] = None,
     ) -> "AttentionOpDispatch":
         """Creates an :attr:`xformers.ops.AttentionOpDispatch` from :attr:`xformers.ops.memory_efficient_attention`'s
         arguments
@@ -837,7 +837,7 @@ class AttentionOpDispatch:
             value (torch.Tensor)
             attn_bias (Optional[Union[torch.Tensor, xformers.ops.AttentionMask]], optional): Defaults to None.
             p (float, optional): Defaults to 0.0.
-            has_custom_scale (bool, optional): Default to False.
+            scale (float, optional): Custom scale. Default to None (use q.shape[-1]**-0.5).
 
         Returns:
             AttentionOpDispatch
@@ -851,7 +851,7 @@ class AttentionOpDispatch:
             k=query.shape[-1],
             kv=value.shape[-1],
             has_dropout=p > 0.0,
-            has_custom_scale=has_custom_scale,
+            has_custom_scale=scale is not None,
             attn_bias_type=type(attn_bias),
             kv_len=value.shape[1],
             q_len=query.shape[1],
@@ -957,7 +957,7 @@ def memory_efficient_attention(
             value=value,
             attn_bias=attn_bias,
             p=p,
-            has_custom_scale=scale is not None,
+            scale=scale,
         ).op
 
     # fast-path that doesn't require computing the logsumexp for backward computation

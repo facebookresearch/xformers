@@ -192,9 +192,9 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
     p.causal = causal;
     if (scale.has_value()) {
-        p.scale = float(*scale);
+      p.scale = float(*scale);
     } else {
-        p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
+      p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
     }
 
     ASSIGN_CHECK_OVERFLOW(p.q_strideB, query.stride(0));

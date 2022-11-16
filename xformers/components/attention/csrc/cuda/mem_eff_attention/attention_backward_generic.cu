@@ -165,9 +165,9 @@ mem_efficient_attention_backward_cutlass(
     p.num_heads = nH;
     p.causal = causal;
     if (scale.has_value()) {
-        p.scale = float(*scale);
+      p.scale = float(*scale);
     } else {
-        p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
+      p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
     }
 
     ASSIGN_CHECK_OVERFLOW(p.gO_strideB, grad_out.stride(0));
