@@ -15,6 +15,7 @@ from .memory_efficient_attention import (
     MemoryEfficientAttentionCutlassOp,
     MemoryEfficientAttentionFlashAttentionOp,
     MemoryEfficientAttentionOp,
+    TritonFlashAttentionOp,
     memory_efficient_attention,
 )
 from .swiglu_op import (
@@ -69,6 +70,7 @@ __all__ = [
     "SwiGLUOpDispatch",
     "SwiGLUPackedFusedOp",
     "swiglu",
+    "TritonFlashAttentionOp",
     "unbind",
     "stack_or_none",
     "get_stack_strides",
