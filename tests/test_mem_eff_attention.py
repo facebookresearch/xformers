@@ -143,7 +143,7 @@ def assert_allclose(
     )
 
 
-def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
+def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
     if q.ndim == 4:
         assert p == 0.0
         return ref_attention_bmhk(q, k, v, attn_bias=attn_bias)
@@ -151,7 +151,9 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     k = k.float()
     v = v.float()
 
-    q = q * (1 / q.shape[-1] ** 0.5)
+    scale = scale if scale is not None else (1 / q.shape[-1] ** 0.5)
+    q = q * scale
+
     attn = q @ k.transpose(-2, -1)
     if attn_bias is not None:
         if isinstance(attn_bias, xformers.ops.AttentionMask):
@@ -165,7 +167,7 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     return attn @ v
 
 
-def ref_attention_bmhk(q, k, v, attn_bias):
+def ref_attention_bmhk(q, k, v, attn_bias, scale=None):
     assert q.ndim == 4
 
     def T(t):
@@ -173,7 +175,7 @@ def ref_attention_bmhk(q, k, v, attn_bias):
             [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
         )
 
-    out = ref_attention(T(q), T(k), T(v), attn_bias)
+    out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale)
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
 
@@ -252,6 +254,25 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
     return tensor.reshape([-1, num_heads, tensor.shape[1], tensor.shape[2]]).permute(
         (0, 2, 1, 3)
     )
+
+
+def backward_error_atol(k, kv_len, q_len, dtype):
+    atol = 2e-4 + 2e-6 * k * kv_len * math.sqrt(q_len)
+    rtol = 1e-4
+    if dtype is torch.half:
+        atol = 5e-2
+        rtol = 2e-2
+        # TODO: Implement f32 accumulation for bw
+        # Longer sequences mean we iterate more and errors accumulate
+        atol *= 1.4 ** (max(q_len, kv_len) // 64)
+    if dtype is torch.bfloat16:
+        # I've seen (out=-1.9 and ref=-1.0 with flash)
+        atol = 0.5
+        rtol = 0.1
+        # TODO: Implement f32 accumulation for bw
+        # Longer sequences mean we iterate more and errors accumulate
+        atol *= 1.4 ** (max(q_len, kv_len) // 64)
+    return atol, rtol
 
 
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
@@ -399,6 +420,7 @@ def test_cu_seqlen_forward(
         cu_seqlens_k=torch.tensor(cu_seqlen_k, dtype=torch.int32, device=device),
         compute_logsumexp=False,
         causal=attn_bias_type is xformers.ops.LowerTriangularMask,
+        scale=None,
     )
     ref = torch.cat(all_o, dim=1)
     assert_allclose(
@@ -463,6 +485,7 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
             cu_seqlens_k=None,
             compute_logsumexp=True,
             causal=False,
+            scale=None,
         )
         lse = lse[:, 0, :]
     else:
@@ -546,22 +569,7 @@ def test_backward(
     del grad_out
     del ref
 
-    atol = 2e-4 + 2e-6 * k * kv_len * math.sqrt(q_len)
-    rtol = 1e-4
-    if dtype is torch.half:
-        atol = 5e-2
-        rtol = 2e-2
-        # TODO: Implement f32 accumulation for bw
-        # Longer sequences mean we iterate more and errors accumulate
-        atol *= 1.4 ** (max(q_len, kv_len) // 64)
-    if dtype is torch.bfloat16:
-        # I've seen (out=-1.9 and ref=-1.0 with flash)
-        atol = 0.5
-        rtol = 0.1
-        # TODO: Implement f32 accumulation for bw
-        # Longer sequences mean we iterate more and errors accumulate
-        atol *= 1.4 ** (max(q_len, kv_len) // 64)
-
+    atol, rtol = backward_error_atol(k, kv_len, q_len, dtype)
     grads_ref = []
     grads_name = []
     if qkv is None:
@@ -823,3 +831,61 @@ def test_cuda_streams(
         atol=op.FORWARD_ERROR_ATOL[dtype],
         rtol=op.FORWARD_ERROR_RTOL.get(dtype, 1e-5),
     )
+
+
+@pytest.mark.parametrize(
+    "op_device_dtype_B_Mq_Mkv_H_K_Kv",
+    _op_device_dtype_B_Mq_Mkv_H_K_Kv__xs,
+    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids,
+)
+def test_custom_scale(op_device_dtype_B_Mq_Mkv_H_K_Kv):
+    torch.manual_seed(42)
+    p = 0.0
+    scale = 1
+
+    (
+        op,
+        device,
+        dtype,
+        _,
+        q_len,
+        kv_len,
+        _,
+        k,
+        _,
+    ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
+    if device != "cuda":
+        pytest.skip("Not CUDA")
+
+    query, key, value, attn_bias = create_tensors(
+        *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=None, fmt="BMK"
+    )
+    grad_out = torch.ones_like(query)
+    query.requires_grad_(True)
+    key.requires_grad_(True)
+    value.requires_grad_(True)
+
+    dispatch = xformers.ops.AttentionOpDispatch.from_arguments(
+        query=query, key=key, value=value, attn_bias=attn_bias, scale=scale
+    )
+    if not op.supports(dispatch):
+        pytest.skip(f"{op.NAME}: unsupported ({dispatch})")
+
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias, p, scale, op=op
+    )
+    out.backward(grad_out)
+    grad_q, grad_k, grad_v = query.grad, key.grad, value.grad
+    query.grad = key.grad = value.grad = None
+
+    ref = ref_attention(query, key, value, attn_bias, None, p, scale)
+    ref.backward(grad_out)
+    ref_grad_q, ref_grad_k, ref_grad_v = query.grad, key.grad, value.grad
+    query.grad = key.grad = value.grad = None
+
+    atol = op.FORWARD_ERROR_ATOL[dtype]
+    assert_allclose(out.float(), ref.float(), atol=atol)
+    atol, rtol = backward_error_atol(k, kv_len, q_len, dtype)
+    assert_allclose(grad_q, ref_grad_q, atol=atol, rtol=rtol)
+    assert_allclose(grad_k, ref_grad_k, atol=atol, rtol=rtol)
+    assert_allclose(grad_v, ref_grad_v, atol=atol, rtol=rtol)

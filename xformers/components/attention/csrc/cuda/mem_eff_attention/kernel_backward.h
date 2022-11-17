@@ -87,6 +87,9 @@ struct AttentionBackwardKernel {
     output_t* grad_key_ptr; //    [Mk, nH, K]
     output_t* grad_value_ptr; //  [Mk, nH, Kv]
 
+    // Scale
+    accum_t scale;
+
     // Dimensions/strides
     int32_t head_dim;
     int32_t head_dim_value;
@@ -783,7 +786,7 @@ struct AttentionBackwardKernel {
       int32_t query_start,
       int32_t key_start) {
     cutlass::MatrixCoord no_offset{0, 0};
-    accum_t scale = accum_t(1.0 / std::sqrt(float(p.head_dim)));
+    accum_t scale = p.scale;
     int16_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
     int8_t warp_id = warp_uniform(threadIdx.y);
     int8_t lane_id = threadIdx.x;
