@@ -1,0 +1,68 @@
+name: Build wheels
+
+on:
+  workflow_dispatch: {}
+
+env:
+  # all values:
+  # 3.5;3.7;5.0;5.2;5.3;6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6
+  # with optional +PTX
+  # https://github.com/pytorch/vision/blob/d710f3d1edc06afa244468cb96603ba6dbd4d9d5/packaging/pkg_helpers.bash#L63
+  # you need at least cuda 5.0 for some of the stuff compiled here.
+  TORCH_CUDA_ARCH_LIST: "6.0 6.1 7.0 7.5 8.0 8.6"
+  FORCE_CUDA: 1
+
+jobs:
+  build_wheels:
+    strategy:
+      matrix:
+        python:
+          - "python3.7"
+          - "python3.8"
+          - "python3.9"
+          - "python3.10"
+        config:
+          # torch 1.13 is built with cuda 11.6 and 11.7
+          - torch_version: "1.13.0+cu117"
+            pip_index: https://download.pytorch.org/whl/cu117
+            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
+
+          - torch_version: "1.13.0+cu116"
+            pip_index: https://download.pytorch.org/whl/cu116
+            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
+
+          # torch 1.12 is built with cuda 11.3 and 11.6, we ignore 11.3 for now
+          - torch_version: "1.12.1+cu116"
+            pip_index: https://download.pytorch.org/whl/cu116
+            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
+
+    name: ${{ matrix.python }}-torch${{ matrix.config.torch_version }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    container:
+      image: quay.io/pypa/manylinux2014_x86_64
+    steps:
+      - name: install cuda
+        run: >
+          yum install wget git prename -y &&
+          wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
+          sh ./cuda.run --silent --toolkit
+
+      - name: Recursive checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          path: "."
+
+      - name: Install build dependencies
+        run: >
+          ${{ matrix.python }} -m pip install setuptools torch==${{ matrix.config.torch_version }} -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
+          git config --global --add safe.directory "*"
+
+      - name: Build wheel
+        run: ${{ matrix.python }} setup.py bdist_wheel -d "dist/${{ matrix.python }}-torch${{ matrix.config.torch_version }}"
+
+      - uses: actions/upload-artifact@v3
+        with:
+          path: dist
+# Note: it might be helpful to have additional steps that test if the built wheels actually work
