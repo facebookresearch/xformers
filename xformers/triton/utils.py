@@ -38,13 +38,3 @@ def get_current_cuda_device():
 
     logger.warning("Unsupported device, Triton code generation may fail")
     return "P100"  # default to an old GPU
-
-
-def assert_almost_equal(x, y, decimal=2, err_msg=""):
-    import numpy.testing as npt
-
-    if isinstance(x, torch.Tensor):
-        x = x.cpu().detach().numpy()
-    if isinstance(y, torch.Tensor):
-        y = y.cpu().detach().numpy()
-    npt.assert_array_almost_equal(x, y, err_msg=err_msg, decimal=decimal)
