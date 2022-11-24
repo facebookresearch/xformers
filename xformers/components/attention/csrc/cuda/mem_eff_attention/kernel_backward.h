@@ -683,6 +683,7 @@ struct AttentionBackwardKernel {
         p.k_strideH % kMinimumAlignment == 0, "key is not correctly aligned");
     TORCH_CHECK(
         p.v_strideH % kMinimumAlignment == 0, "value is not correctly aligned");
+    return true;
   }
 
   static CUTLASS_DEVICE void kernel(Params& p_) {
