@@ -279,7 +279,8 @@ def _render_bar_plot(results: List[Any], store_results_folder: str) -> None:
         all_data_mem.append(
             [key]
             + [
-                memory_values.get(d, 0) / memory_values.get(all_descriptions[0], 0)
+                memory_values.get(d, 0)
+                / memory_values.get(all_descriptions[0], math.inf)
                 for d in all_descriptions
             ]
         )
