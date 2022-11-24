@@ -112,7 +112,7 @@ if _triton_is_available:
     ):
         device = torch.device("cuda")
 
-        for dtype in [torch.float16, torch.float32]:
+        for dtype in [torch.bfloat16, torch.float16, torch.float32]:
             results: Dict[str, Any] = {}
 
             for B, M, K in shapes:
@@ -134,8 +134,7 @@ if _triton_is_available:
                 title=" ------------- Type: {} ------------- ".format(dtype),
                 units=unit,
             )
-            _type = " fp16" if dtype == torch.float16 else " fp32"
-            pretty_plot(results, title + _type, unit, dash_key="pytorch")
+            pretty_plot(results, title + str(dtype), unit, dash_key="pytorch")
 
 
 def pretty_barplot(results, title, units: str, filename=None, dash_key=""):
