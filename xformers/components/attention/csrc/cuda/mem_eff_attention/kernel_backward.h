@@ -677,11 +677,11 @@ struct AttentionBackwardKernel {
     CHECK_ALIGNED_PTR(p.value_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.output_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.grad_output_ptr, kMinimumAlignment);
-    TORCH_CHECK(
+    XFORMERS_CHECK(
         p.q_strideH % kMinimumAlignment == 0, "query is not correctly aligned");
-    TORCH_CHECK(
+    XFORMERS_CHECK(
         p.k_strideH % kMinimumAlignment == 0, "key is not correctly aligned");
-    TORCH_CHECK(
+    XFORMERS_CHECK(
         p.v_strideH % kMinimumAlignment == 0, "value is not correctly aligned");
     return true;
   }
