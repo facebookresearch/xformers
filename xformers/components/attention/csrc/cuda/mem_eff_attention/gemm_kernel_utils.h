@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iostream>
 #include "cutlass/arch/mma.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -78,6 +77,7 @@
     return false;                 \
   }
 #else
+#include <iostream>
 #define CHECK_ALIGNED_PTR(PTR, ALIGNMENT)            \
   if (!(uint64_t(PTR) % ALIGNMENT == 0)) {           \
     std::cerr << #PTR " is not correctly aligned\n"; \
