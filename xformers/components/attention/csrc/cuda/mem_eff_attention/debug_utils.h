@@ -23,7 +23,7 @@
   if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&        \
       threadIdx.x == PRINT_LANE_ID && threadIdx.y == PRINT_WARP_ID && \
       threadIdx.z == 0) {                                             \
-    printf(msg "\n", __VA_ARGS__);                                    \
+    printf(msg "\n", ##__VA_ARGS__);                                  \
   }
 struct __string_view {
   char const* data;

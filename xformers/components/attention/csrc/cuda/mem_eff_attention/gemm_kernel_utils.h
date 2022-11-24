@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iostream>
 #include "cutlass/arch/mma.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -96,59 +97,6 @@
   }
 
 namespace gemm_kernel_utils {
-
-#ifdef HAS_PYTORCH
-template <typename scalar_t>
-struct TypeTraits;
-
-template <>
-struct TypeTraits<cutlass::half_t> {
-  using scalar_t = cutlass::half_t;
-
-  static constexpr __host__ at::ScalarType atScalarType() {
-    return at::ScalarType::Half;
-  }
-  template <int nDim>
-  static __host__ at::PackedTensorAccessor32<scalar_t, nDim> packed_accessor(
-      at::Tensor const& tensor) {
-    return at::PackedTensorAccessor32<scalar_t, nDim>(
-        (scalar_t*)(tensor.data_ptr()),
-        tensor.sizes().data(),
-        tensor.strides().data());
-  }
-};
-
-template <>
-struct TypeTraits<cutlass::bfloat16_t> {
-  using scalar_t = cutlass::bfloat16_t;
-
-  static constexpr __host__ at::ScalarType atScalarType() {
-    return at::ScalarType::BFloat16;
-  }
-  template <int nDim>
-  static __host__ at::PackedTensorAccessor32<scalar_t, nDim> packed_accessor(
-      at::Tensor const& tensor) {
-    return at::PackedTensorAccessor32<scalar_t, nDim>(
-        (scalar_t*)(tensor.data_ptr()),
-        tensor.sizes().data(),
-        tensor.strides().data());
-  }
-};
-
-template <>
-struct TypeTraits<float> {
-  using scalar_t = float;
-
-  static constexpr __host__ at::ScalarType atScalarType() {
-    return at::ScalarType::Float;
-  }
-  template <int nDim>
-  static __host__ at::PackedTensorAccessor32<scalar_t, nDim> packed_accessor(
-      at::Tensor const& tensor) {
-    return tensor.packed_accessor32<scalar_t, nDim>();
-  }
-};
-#endif
 
 template <typename integer>
 constexpr CUTLASS_HOST_DEVICE integer ceil_div(integer n, integer m) {

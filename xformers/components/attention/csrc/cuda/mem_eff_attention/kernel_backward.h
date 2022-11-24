@@ -1,14 +1,9 @@
 #pragma once
 
-#include <ATen/ATen.h>
-#include <torch/library.h>
 #include <cmath>
 #include <vector>
 
 #include <cuda_fp16.h>
-
-#include <ATen/cuda/CUDAContext.h>
-#include <c10/cuda/CUDAGuard.h>
 
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/layout/matrix.h"
@@ -676,7 +671,7 @@ struct AttentionBackwardKernel {
     }
   };
 
-  static void __host__ check_supported(Params const& p) {
+  static bool __host__ check_supported(Params const& p) {
     CHECK_ALIGNED_PTR(p.query_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.key_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.value_ptr, kMinimumAlignment);

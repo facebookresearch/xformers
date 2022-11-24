@@ -1,10 +1,3 @@
-#ifdef HAS_PYTORCH
-#include <ATen/ATen.h>
-#include <ATen/cuda/CUDAContext.h>
-#include <c10/cuda/CUDAGuard.h>
-#include <torch/library.h>
-#endif
-
 #include <cmath>
 #include <vector>
 
