@@ -560,20 +560,14 @@ template <
     typename Policy1_,
     /// Number of stages,
     int Stages_,
+    int kMaxK_,
     /// Used for partial specialization
     typename Enable = bool>
-class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
-                                          Shape1_,
-                                          AccumulatorSharedStorage::Shape::kN,
-                                          Policy1_,
-                                          Stages_> {
+class MmaMultistageFromSharedMemory
+    : public MmaBaseFromSharedMemory<Shape1_, kMaxK_, Policy1_, Stages_> {
  public:
   ///< Base class
-  using Base = MmaBaseFromSharedMemory<
-      Shape1_,
-      AccumulatorSharedStorage::Shape::kN,
-      Policy1_,
-      Stages_>;
+  using Base = MmaBaseFromSharedMemory<Shape1_, kMaxK_, Policy1_, Stages_>;
 
   ///< Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape1 = Shape1_;
@@ -858,7 +852,6 @@ class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
     Operator1 warp_mma1;
 
     warp_tile_iterator_A1_.load(warp_loaded_frag_A1[0]);
-    PRINT_FRAG_T0_L0("0: warp_loaded_frag_A1", warp_loaded_frag_A1[0]);
     ++warp_tile_iterator_A1_;
 
     this->warp_tile_iterator_B_.set_kgroup_index(0);
@@ -915,9 +908,6 @@ class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
         if (gemm_k_iterations_1 > (-Base::kStages + 2) ||
             warp_mma_k < Base::kWarpGemmIterations1 - 1) {
           warp_tile_iterator_A1_.load(
-              warp_loaded_frag_A1[(warp_mma_k + 1) % 2]);
-          PRINT_FRAG_T0_L0(
-              "R: warp_loaded_frag_A1",
               warp_loaded_frag_A1[(warp_mma_k + 1) % 2]);
           this->warp_tile_iterator_B_.load(
               warp_loaded_frag_B1[(warp_mma_k + 1) % 2]);
@@ -1318,7 +1308,8 @@ struct DefaultMmaFromSharedMemory<
           ElementC_,
           LayoutC_,
           Policy_,
-          kStages>;
+          kStages,
+          kMaxK>;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

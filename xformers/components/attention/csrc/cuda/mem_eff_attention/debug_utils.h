@@ -16,8 +16,8 @@
   }
 
 // Print on the first thread of the first block
-#if 0
-#define PRINT_WARP_ID 2
+#if 1
+#define PRINT_WARP_ID 0
 #define PRINT_LANE_ID 0
 #define PRINT_T0_L0(msg, ...)                                         \
   if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&        \
@@ -86,7 +86,7 @@ constexpr __string_view __get_type_name() {
 
 // Print a given array
 #define PRINT_ACCUM8_T0_L0_START(name, accum, start)  \
-  PRINT_TX_LX(                                        \
+  PRINT_T0_L0(                                        \
       "%s[%d:%d] - {%f, %f, %f, %f, %f, %f, %f, %f}", \
       name,                                           \
       int(start),                                     \

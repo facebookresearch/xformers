@@ -116,12 +116,6 @@ class WarpIteratorFromSmem
   CUTLASS_HOST_DEVICE
   WarpIteratorFromSmem(TensorRef const& ref, TensorCoord extent, int lane_id)
       : ref_(ref), iterations_(0) {
-    PRINT_T0_L0(
-        "Transpose = %d / InstructionCount::kRow=%d / kAccessesInner=%d / kTilesPerInstruction=%d",
-        int(kTranspose),
-        InstructionCount::kRow,
-        kAccessesInner,
-        kTilesPerInstruction);
     int ldsm_vec_num = (lane_id >> 3);
     if (kOperand == Operand::kA) {
       origin_ = MatrixCoord(lane_id % 8, 0);

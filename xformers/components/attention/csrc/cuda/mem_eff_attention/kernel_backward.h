@@ -496,7 +496,7 @@ struct AttentionBackwardKernel {
         // p2 - dQ
         union {
           typename MatmulQK::AccumulatorSharedStorage
-              attn_shared_storage; // (from p1)
+              tmpT_shared_storage; // (from p1)
           typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         };
         typename MatmulGradK::Mma::SharedStorage mm_gradK; // (preload)
@@ -509,7 +509,7 @@ struct AttentionBackwardKernel {
         // p3 - after last iteration on dQ's epilogue / dK
         union {
           typename MatmulQK::AccumulatorSharedStorage
-              attn_shared_storage; // (from p1)
+              tmpT_shared_storage; // (from p1)
           typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         };
         typename MatmulGradK::Mma::SharedStorage mm_gradK; // (preload)
@@ -548,6 +548,7 @@ struct AttentionBackwardKernel {
       printf("    gradQ_epilogue: %db\n", FSZ(p2.gradQ_epilogue));
       printf("    tmp_shared_storage: %db\n", FSZ(p2.tmp_shared_storage));
       printf("  p3: %db\n", FSZ(p3));
+      printf("    tmpT_shared_storage: %db\n", FSZ(p3.tmpT_shared_storage));
       printf("  p4: %db\n", FSZ(p4));
       printf("    mm_qk_q: %db\n", FSZ(p4.mm_qk_q));
       printf("    gradK_epilogue_final: %db\n", FSZ(p4.gradK_epilogue_final));
@@ -569,6 +570,7 @@ struct AttentionBackwardKernel {
     FIELD(p2, mm_gradQ)
     FIELD(p2, gradQ_epilogue)
     FIELD(p2, tmp_shared_storage)
+    FIELD(p3, tmpT_shared_storage)
     FIELD(p3, gradQ_epilogue_lastIter)
     FIELD(p3, gradK_epilogue)
     FIELD(p4, mm_qk_q)
@@ -598,8 +600,11 @@ struct AttentionBackwardKernel {
 
       struct {
         // p3 - DO.V matmul
-        typename MatmulQK::AccumulatorSharedStorage
-            attn_shared_storage; // (from p2)
+        union {
+          typename MatmulQK::AccumulatorSharedStorage
+              attn_shared_storage; // (from p2)
+          typename MatmulQK::AccumulatorSharedStorage tmpT_shared_storage;
+        };
         typename MatmulDOIVJ::Mma::SharedStorage mm_doivj;
       } p3;
 
@@ -607,7 +612,7 @@ struct AttentionBackwardKernel {
         // p4 - compute gradQ
         union {
           typename MatmulQK::AccumulatorSharedStorage
-              attn_shared_storage; // (from p2)
+              tmpT_shared_storage; // (from p2)
           typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         };
         union {
@@ -622,7 +627,7 @@ struct AttentionBackwardKernel {
         // p5 - compute gradK
         union {
           typename MatmulQK::AccumulatorSharedStorage
-              attn_shared_storage; // (from p2)
+              tmpT_shared_storage; // (from p2)
           typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         };
         union {
@@ -663,6 +668,7 @@ struct AttentionBackwardKernel {
     FIELD(p2, mm_gradV)
     FIELD(p2, gradV_epilogue)
     FIELD(p3, mm_doivj)
+    FIELD(p3, tmpT_shared_storage)
     FIELD(p4, tmp_shared_storage)
     FIELD(p4, mm_gradQ)
     FIELD(p4, gradQ_epilogue)
@@ -1106,13 +1112,15 @@ struct AttentionBackwardKernel {
 
             });
         accum = (accum - fragment_di) * fragment_attn * scale;
+        __syncthreads();
         if (!MatmulGradK::DefaultMmaFromSmem::kIsTransposedA) {
+          auto tmpT = shared_storage.tmpT_shared_storage().accum_ref();
           // attn <- attn_T.T
           RegistersIter::iterateRows(
               lane_offset,
               [&](int accum_m) {},
               [&](int accum_m, int accum_n, int idx) {
-                attn_T.at({accum_n, accum_m}) = scalar_t(accum[idx]);
+                tmpT.at({accum_n, accum_m}) = scalar_t(accum[idx]);
               },
               [&](int accum_m) {});
         }
@@ -1154,6 +1162,7 @@ struct AttentionBackwardKernel {
           thread_id,
           no_offset);
 
+      auto a = shared_storage.tmp_shared_storage().accum_ref();
       Mma mma(
           shared_storage.mm_gradQ(),
           shared_storage.tmp_shared_storage(),
@@ -1252,7 +1261,7 @@ struct AttentionBackwardKernel {
           no_offset);
 
       auto getTmp = [&](int) { return &shared_storage.tmp_shared_storage(); };
-      auto getTmpT = [&](int) { return &shared_storage.attn_shared_storage(); };
+      auto getTmpT = [&](int) { return &shared_storage.tmpT_shared_storage(); };
       // this is basically:
       // opA = kIsTransposedA ? getTmp() : getTmpT();
       bool constexpr kIsTransposedA =
