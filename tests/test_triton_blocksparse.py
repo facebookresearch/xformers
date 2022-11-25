@@ -29,10 +29,7 @@ if _triton_available:
         from triton.ops.blocksparse import softmax as blocksparse_softmax
 
         from xformers.components.attention import BlockSparseAttention
-        from xformers.triton.utils import (
-            assert_almost_equal,
-            gpu_capabilities_older_than_70,
-        )
+        from xformers.triton.utils import gpu_capabilities_older_than_70
 
         _triton_available = not gpu_capabilities_older_than_70()
         _matmul_types = ["sdd", "dsd", "dds"]
@@ -94,7 +91,7 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
     tc = block_sparsify_tensor(tc, layout, BLOCK) if MODE == "sdd" else tc
 
     # compare
-    assert_almost_equal(rc, tc)
+    triton.testing.assert_almost_equal(rc, tc)
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
@@ -123,17 +120,18 @@ def test_softmax(BLOCK, WIDTH, DTYPE):
     ry = block_sparsify_tensor(ry, layout, BLOCK)
 
     # compare
-    assert_almost_equal(ry, ty)
+    triton.testing.assert_almost_equal(ry, ty)
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
 @pytest.mark.parametrize("block", [32, 43, 128])  # 16, 32,
+@pytest.mark.parametrize("dtype", [torch.float16])
 def test_attention_fwd_bwd(
     block,
+    dtype,
     input_scale=1.0,
     scale=1 / 8.0,
     n_ctx=384,
-    dtype=torch.float16,
     batch_size=2,
     n_heads=2,
 ):
@@ -188,12 +186,12 @@ def test_attention_fwd_bwd(
         torch_grads = [torch_q.grad, torch_k.grad, torch_v.grad]
 
         # comparison
-        assert_almost_equal(
+        triton.testing.assert_almost_equal(
             loss, torch_loss, err_msg=f"Triton loss {loss} and torch loss {torch_loss}"
         )
 
         for g1, g2 in zip(grads, torch_grads):
-            assert_almost_equal(
+            triton.testing.assert_almost_equal(
                 torch.norm(g1),
                 torch.norm(g2),
                 err_msg=f"Triton grad {torch.norm(g1).item()} and torch grad {torch.norm(g2).item()}",
@@ -201,7 +199,8 @@ def test_attention_fwd_bwd(
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
-def test_blocksparse_attention_parity():
+@pytest.mark.parametrize("dtype", [torch.float16])
+def test_blocksparse_attention_parity(dtype):
     def _reset_seeds():
         torch.manual_seed(0)
 
@@ -223,39 +222,30 @@ def test_blocksparse_attention_parity():
         "layout": torch.ones(seq // block_size, seq // block_size, dtype=torch.long),
     }
 
-    inputs = torch.rand(batched_dim, seq, model, device="cuda").half()
+    inputs = torch.rand(batched_dim, seq, model, device="cuda", dtype=dtype)
 
     _reset_seeds()
     test_config["name"] = "scaled_dot_product"
     attention_sdp = build_attention(test_config)
-    multi_head_sdp = (
-        MultiHeadDispatch(
-            seq_len=seq,
-            dim_model=model,
-            residual_dropout=0.0,
-            num_heads=heads,
-            attention=attention_sdp,
-        )
-        .cuda()
-        .half()
-    )
+    multi_head_sdp = MultiHeadDispatch(
+        seq_len=seq,
+        dim_model=model,
+        residual_dropout=0.0,
+        num_heads=heads,
+        attention=attention_sdp,
+    ).to(device=torch.device("cuda"), dtype=dtype)
     r_sdp = multi_head_sdp(inputs, inputs, inputs)
 
     _reset_seeds()
     test_config["name"] = "blocksparse"
     attention_blocksparse = build_attention(test_config)
-    multi_head_blocksparse = (
-        MultiHeadDispatch(
-            seq_len=seq,
-            dim_model=model,
-            residual_dropout=0.0,
-            num_heads=heads,
-            attention=attention_blocksparse,
-        )
-        .cuda()
-        .half()
-    )
+    multi_head_blocksparse = MultiHeadDispatch(
+        seq_len=seq,
+        dim_model=model,
+        residual_dropout=0.0,
+        num_heads=heads,
+        attention=attention_blocksparse,
+    ).to(device=torch.device("cuda"), dtype=dtype)
     r_blocksparse = multi_head_blocksparse(inputs, inputs, inputs)
 
-    # FIXME: currently has max diff of .009, perhaps can be improved.
-    assert_almost_equal(r_sdp, r_blocksparse)
+    triton.testing.assert_almost_equal(r_sdp, r_blocksparse)
