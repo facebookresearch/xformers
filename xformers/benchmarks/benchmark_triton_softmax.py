@@ -72,7 +72,7 @@ bench_functions(
     SHAPES,
     to_gbs_fw,
     "GB/s",
-    "Softmax_Bandwidth_FW",
+    "Softmax_Bandwidth_FW_",
 )
 
 # Test FW+BW
@@ -87,5 +87,5 @@ bench_functions(
     SHAPES,
     to_gbs_fwbw,
     "GB/s",
-    "Softmax_Bandwidth_FW_BW",
+    "Softmax_Bandwidth_FW_BW_",
 )

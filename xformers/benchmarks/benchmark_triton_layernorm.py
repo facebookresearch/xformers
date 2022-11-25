@@ -32,6 +32,7 @@ def bench_layernorm(backward: bool):
 
     for dtype in [
         torch.float16,
+        torch.bfloat16,
         torch.float32,
     ]:
         results: Dict[str, Any] = {}
