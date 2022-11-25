@@ -398,15 +398,6 @@ jobs:
       - run: git submodule update --init --recursive
       - run: printenv
       - run:
-          name: Skip builds for fairinternal
-          command: |
-            case "$CIRCLE_REPOSITORY_URL" in
-              *fairinternal*)
-                echo "Build skipped (fairinternal repo)"
-                circleci-agent step halt
-                ;;
-            esac
-      - run:
           name: conda build for py3_9
           no_output_timeout: 20m
           command: |
