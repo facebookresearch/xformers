@@ -97,7 +97,7 @@ class _StackOrNone(torch.autograd.Function):
     @classmethod
     # type: ignore
     def backward(cls, ctx, grad: torch.Tensor):
-        return None, *(grad.unbind(dim=ctx.dim))
+        return (None, *grad.unbind(dim=ctx.dim))
 
 
 def unbind(x: torch.Tensor, dim: int) -> Tuple[torch.Tensor, ...]:
