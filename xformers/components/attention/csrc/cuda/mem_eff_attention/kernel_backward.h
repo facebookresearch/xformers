@@ -455,7 +455,7 @@ struct AttentionBackwardKernel {
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
             typename MatmulDOIVJ::AccumulatorSharedStorage,
-            true>;
+            kPreloadMmas>;
     using DefaultMmaFromSmem = typename cutlass::platform::conditional<
         DefaultMmaFromSmemT::kIsTransposedA,
         DefaultMmaFromSmemT,
@@ -600,21 +600,16 @@ struct AttentionBackwardKernel {
 
       struct {
         // p3 - DO.V matmul
-        union {
-          typename MatmulQK::AccumulatorSharedStorage
-              attn_shared_storage; // (from p2)
-          typename MatmulQK::AccumulatorSharedStorage tmpT_shared_storage;
-        };
+        typename MatmulQK::AccumulatorSharedStorage
+            attn_shared_storage; // (from p2)
         typename MatmulDOIVJ::Mma::SharedStorage mm_doivj;
       } p3;
 
       struct {
         // p4 - compute gradQ
-        union {
-          typename MatmulQK::AccumulatorSharedStorage
-              tmpT_shared_storage; // (from p2)
-          typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
-        };
+        typename MatmulQK::AccumulatorSharedStorage
+            tmpT_shared_storage; // (from p2)
+        typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         union {
           typename MatmulGradQ::Mma::SharedStorage mm_gradQ;
           typename MatmulGradQ::DefaultEpilogue::SharedStorage gradQ_epilogue;
@@ -625,11 +620,9 @@ struct AttentionBackwardKernel {
 
       struct {
         // p5 - compute gradK
-        union {
-          typename MatmulQK::AccumulatorSharedStorage
-              tmpT_shared_storage; // (from p2)
-          typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
-        };
+        typename MatmulQK::AccumulatorSharedStorage
+            tmpT_shared_storage; // (from p2)
+        typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         union {
           typename MatmulGradK::Mma::SharedStorage mm_gradK;
           typename MatmulGradK::DefaultEpilogue::SharedStorage gradK_epilogue;
@@ -668,7 +661,7 @@ struct AttentionBackwardKernel {
     FIELD(p2, mm_gradV)
     FIELD(p2, gradV_epilogue)
     FIELD(p3, mm_doivj)
-    FIELD(p3, tmpT_shared_storage)
+    FIELD(p4, tmpT_shared_storage)
     FIELD(p4, tmp_shared_storage)
     FIELD(p4, mm_gradQ)
     FIELD(p4, gradQ_epilogue)
