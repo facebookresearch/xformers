@@ -117,8 +117,8 @@ jobs:
 
       - name: Setup proper pytorch dependency in "requirements.txt"
         run: |
-          sed -i '/pytorch/d' ./requirements.txt
-          echo "pytorch == ${{ matrix.config.torch_version_constraint }}" >> ./requirements.txt
+          sed -i '/torch/d' ./requirements.txt
+          echo "torch == ${{ matrix.config.torch_version_constraint }}" >> ./requirements.txt
           cat ./requirements.txt
 
       - name: Install build dependencies
