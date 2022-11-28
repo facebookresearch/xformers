@@ -731,12 +731,21 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         return dq, dk, dv, softmax_d
 
 
+class _FakeContext(SimpleNamespace):
+    def save_for_backward(self, *args):
+        return
+
+
 class TritonFlashAttentionOp(AttentionOpBase):
     FORWARD_OPERATOR = None
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K: float = 128
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+        type(None),
+        LowerTriangularMask,
+        torch.Tensor,
+    }
     SUPPORTS_DROPOUT = False
     NAME = "tritonflashatt"
 
@@ -765,28 +774,33 @@ class TritonFlashAttentionOp(AttentionOpBase):
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
     ) -> torch.Tensor:
-        softmax_scale = query.shape[-1] ** (-0.5)
-        return triton_flash.forward(
-            ctx=None,
-            q=query,
-            k=key,
-            v=value,
-            softmax_scale=softmax_scale,
-            causal=isinstance(attn_bias, LowerTriangularMask),
-            no_grad=True,
+        ctx = _FakeContext()
+        return cls.forward(
+            ctx=ctx,
+            query=query,
+            key=key,
+            value=value,
+            attn_bias=attn_bias,
+            p=p,
         )
 
     @classmethod
     def forward(cls, ctx, query, key, value, attn_bias, p):
         softmax_scale = query.shape[-1] ** (-0.5)
+        causal = isinstance(attn_bias, LowerTriangularMask)
+        if not causal and attn_bias is not None and attn_bias.ndim == 3:
+            B = query.shape[0]
+            h = attn_bias.shape[0] // B
+            attn_bias = attn_bias.reshape(B, h, attn_bias.shape[1], attn_bias.shape[2])
 
         return triton_flash.forward(
             ctx=ctx,
             q=query,
             k=key,
             v=value,
+            bias=None if causal else attn_bias,
             softmax_scale=softmax_scale,
-            causal=isinstance(attn_bias, LowerTriangularMask),
+            causal=causal,
         )
 
     @staticmethod
