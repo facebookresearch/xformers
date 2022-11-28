@@ -2,6 +2,7 @@ name: Build wheels
 
 on:
   workflow_dispatch: {}
+  pull_request: {}
   schedule:
     # Run at 3am every monday
     - cron: '0 3 * * 1'
@@ -122,7 +123,7 @@ jobs:
 
       - name: Install build dependencies
         run: >
-          $PY -m pip install wheel setuptools torch==${{ matrix.config.torch_version }} -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
+          $PY -m pip install wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
           git config --global --add safe.directory "*"
 
       - name: Build wheel
