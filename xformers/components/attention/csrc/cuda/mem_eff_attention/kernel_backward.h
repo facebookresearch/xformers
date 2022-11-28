@@ -185,7 +185,7 @@ struct AttentionBackwardKernel {
     }
   };
 
-  // Blocks & grid
+  // Block I
   static constexpr bool kSupports64x128 =
       ArchTag::kMinComputeCapability >= 80 ||
       (ArchTag::kMinComputeCapability >= 70 &&
@@ -193,9 +193,6 @@ struct AttentionBackwardKernel {
   static constexpr int64_t kWarpSize = 32;
   static constexpr int64_t kBlockSizeI =
       kSupports64x128 && kMaxK > 64 ? 128 : 64;
-  static constexpr int64_t kBlockSizeJ = 64;
-  static constexpr int64_t kNumWarpsPerBlock =
-      (kBlockSizeI * kBlockSizeJ) / (32 * 32);
 
   // If this is true, we store and accumulate dK/dV in RF
   // rather than going back to gmem everytime
@@ -208,6 +205,12 @@ struct AttentionBackwardKernel {
   static constexpr bool kPrologueDOV = kPreloadMmas;
   static constexpr bool kPrologueGQ = kPreloadMmas;
   static constexpr bool kPrologueGK = kPreloadMmas;
+
+  // Block J
+  static constexpr int64_t kBlockSizeJ = kPreloadMmas && kMaxK > 64 ? 128 : 64;
+  static constexpr int64_t kNumWarpsPerBlock =
+      (kBlockSizeI * kBlockSizeJ) / (32 * 32);
+
 
   // Compute delta for the f16 kernels
   // TODO: Figure out why it's slower on the f32 kernels
