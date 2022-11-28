@@ -135,7 +135,7 @@ mem_efficient_attention_backward_cutlass(
     grad_k = grad_kv_needs_init ? at::zeros_like(key) : at::empty_like(key);
     grad_v = grad_kv_needs_init ? at::zeros_like(value) : at::empty_like(value);
   }
-  at::Tensor gmem_storage;
+  at::Tensor workspace;
 
   auto launchKernel = [&](auto _k, int computeCapability) {
     using Kernel = decltype(_k);
@@ -208,11 +208,11 @@ mem_efficient_attention_backward_cutlass(
     ASSIGN_CHECK_OVERFLOW(p.k_strideH, key.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.v_strideH, value.stride(2));
 
-    int64_t gmem_elements = p.gmem_f32_elements();
-    if (gmem_elements) {
-      gmem_storage = at::empty(
-          {gmem_elements}, query.options().dtype(at::ScalarType::Float));
-      p.gmem_storage = gmem_storage.data_ptr<float>();
+    int64_t size_bytes = p.workspace_size();
+    if (size_bytes) {
+      workspace = at::empty(
+          {size_bytes}, query.options().dtype(at::ScalarType::Byte));
+      p.workspace = (float*)workspace.data_ptr();
     }
     Kernel::check_supported(p);
 

@@ -135,8 +135,8 @@ struct AttentionBackwardKernel {
     output_t* grad_key_ptr; //    [Mk, nH, K]
     output_t* grad_value_ptr; //  [Mk, nH, Kv]
     // Accumulators
-    output_accum_t* gmem_storage = nullptr; // [nH, Mq, K]
-    output_accum_t* gmem_storage_end = nullptr; // [nH, Mq, K]
+    output_accum_t* workspace = nullptr; // [Mq, Kq] + [Mkv, Kq] + [Mkv, Kv]
+    output_accum_t* workspace_end = nullptr; // Only used in debug mode
 
     // Scale
     accum_t scale;
@@ -233,16 +233,13 @@ struct AttentionBackwardKernel {
       grad_value_ptr = warp_uniform(grad_value_ptr);
 
       if (kNeedsAccumGradQ || kNeedsAccumGradK || kNeedsAccumGradV) {
-        assert(gmem_storage != nullptr);
+        assert(workspace != nullptr);
         // format: [B, H, M, K]
-        int32_t strideM = align_up(head_dim, (int32_t)kBlockSizeJ);
-        int32_t strideH = strideM * align_up(num_queries, (int32_t)kBlockSizeI);
-        int32_t strideB = strideH * num_heads;
-        gmem_storage += batch_id * strideB + head_id * strideH;
-        gmem_storage_end = gmem_storage + strideH;
-        gmem_storage = warp_uniform(gmem_storage);
+        workspace += (batch_id * num_heads + head_id) * workspace_strideBH();
+        workspace_end = workspace + workspace_strideBH();
+        workspace = warp_uniform(workspace);
       } else {
-        gmem_storage = nullptr;
+        workspace = nullptr;
       }
     }
 
@@ -252,19 +249,30 @@ struct AttentionBackwardKernel {
     __host__ dim3 getThreadsGrid() const {
       return dim3(kWarpSize, kNumWarpsPerBlock, 1);
     }
-    __host__ size_t gmem_f32_elements() const {
-      // Returns number of f32 elements we need as buffer in gmem
-      size_t elements = 0;
-      if (kNeedsAccumGradQ) {
-        elements += num_batches * num_heads * align_up(num_queries, (int32_t)kBlockSizeI) * align_up(head_dim, (int32_t)kBlockSizeJ);
+    CUTLASS_HOST_DEVICE int64_t workspace_elements_gq() const {
+      if (!kNeedsAccumGradQ) {
+        return 0;
       }
-      if (kNeedsAccumGradK) {
-        elements += num_batches * num_keys * num_heads * head_dim;
+      return align_up(num_queries, (int32_t)kBlockSizeI) * align_up(head_dim, (int32_t)kBlockSizeJ);
+    }
+    CUTLASS_HOST_DEVICE int64_t workspace_elements_gk() const {
+      if (!kNeedsAccumGradK) {
+        return 0;
       }
-      if (kNeedsAccumGradV) {
-        elements += num_batches * num_keys * num_heads * head_dim_value;
+      return align_up(num_keys, (int32_t)kBlockSizeJ) * align_up(head_dim, (int32_t)kBlockSizeI);
+    }
+    CUTLASS_HOST_DEVICE int64_t workspace_elements_gv() const {
+      if (!kNeedsAccumGradV) {
+        return 0;
       }
-      return elements;
+      return align_up(num_keys, (int32_t)kBlockSizeJ) * align_up(head_dim_value, (int32_t)kBlockSizeI);
+    }
+    CUTLASS_HOST_DEVICE int64_t workspace_strideBH() const {
+      return align_up(workspace_elements_gq() + workspace_elements_gk() + workspace_elements_gv(), 4L);
+    }
+    CUTLASS_HOST_DEVICE int64_t workspace_size() const {
+      // Returns memory we need as buffer in gmem to run this kernel
+      return num_batches * num_heads * workspace_strideBH() * sizeof(float);
     }
   };
 
@@ -1254,14 +1262,15 @@ struct AttentionBackwardKernel {
       typename Mma::FragmentC accum;
 
       bool isFirst = key_start == 0;
-      float* __restrict__ gmem_accum_ptr = p.gmem_storage;
-      gmem_accum_ptr += (query_start / kBlockSizeI) * ceil_div(p.head_dim, (int32_t)kBlockSizeJ) * AccumTileIterator::kElementsStored;
-      gmem_accum_ptr += (col / MatmulGradQ::ThreadblockShape::kN) * AccumTileIterator::kElementsStored;
-      assert(gmem_accum_ptr < p.gmem_storage_end);
-      if (isFirst) {
+      float* __restrict__ gmem_accum_ptr = p.workspace;
+      int col_id = col / MatmulGradQ::ThreadblockShape::kN;
+      int storage_id = (col_id + query_start / kBlockSizeI * ceil_div(p.head_dim, MatmulGradQ::ThreadblockShape::kN));
+      gmem_accum_ptr += storage_id * AccumTileIterator::kElementsStored;
+      assert(gmem_accum_ptr < p.workspace_end);
+      if (isFirst || !kNeedsAccumGradQ) {
         accum.clear();
       } else {
-        AccumTileIterator gmem_tile;
+        AccumTileIterator gmem_tile{gmem_accum_ptr};
         gmem_tile.ptr = gmem_accum_ptr;
         gmem_tile.load(accum, thread_id);
       }
@@ -1284,8 +1293,8 @@ struct AttentionBackwardKernel {
       incrIteration(p, p.num_queries, key_start, next_query, next_key);
       bool isLast =
           (p.causal && next_query > query_start) || next_key >= p.num_keys;
-      if (!isLast) {
-        AccumTileIterator gmem_tile;
+      if (kNeedsAccumGradQ && !isLast) {
+        AccumTileIterator gmem_tile{gmem_accum_ptr};
         gmem_tile.ptr = gmem_accum_ptr;
         gmem_tile.store(accum, thread_id);
       } else {
@@ -1299,7 +1308,7 @@ struct AttentionBackwardKernel {
                         : shared_storage.gradQ_epilogue(),
             accum,
             output_it,
-            true);
+            isFirst || kNeedsAccumGradQ);
       }
     }
     /////////////////////////////////////////////////////////////////////////////////////////////////
