@@ -17,6 +17,9 @@ from xformers.components.feedforward import (
     register_feedforward,
 )
 
+logger = logging.getLogger("xformers")
+
+
 if torch.cuda.is_available():
     try:
         from xformers.triton import FusedDropoutBias
@@ -73,4 +76,4 @@ if torch.cuda.is_available():
                 return self.mlp(inputs)
 
     except ImportError:
-        logging.warning("Triton is not available, FusedMLP will not be enabled.")
+        logger.warning("Triton is not available, FusedMLP will not be enabled.")

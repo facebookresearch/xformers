@@ -131,3 +131,50 @@ if _triton_available:
         with pytest.raises(AssertionError):
             # This kernel expects 2D tensors, assert to prevent misuse
             sum_2d_dim_0(a)
+
+    @triton.jit
+    def k_rand(X, Y, SEED_X, SEED_Y, stride_x, stride_y, N: tl.constexpr):
+        # fmt: on
+        """
+        Check the random number generation
+        """
+
+        row = tl.program_id(0)
+
+        # Generate random numbers with seed A
+        rand_offsets = tl.arange(0, N)
+        seed_x = tl.load(SEED_X + row)
+        randx, _, _, _ = tl.randint4x(seed_x, rand_offsets)
+
+        rand_offsets = tl.arange(0, N)
+        seed_y = tl.load(SEED_Y + row)
+        randy, _, _, _ = tl.randint4x(seed_y, rand_offsets)
+
+        # Move to this row
+        tl.store(X + row * stride_x + tl.arange(0, N), randx)
+        tl.store(Y + row * stride_y + tl.arange(0, N), randy)
+
+    def test_rand():
+        # Check that the random generator used in triton works fine
+        torch.random.manual_seed(0)
+        x = torch.zeros((512, 32), device=torch.device("cuda"), dtype=torch.int32)
+        y = torch.zeros((512, 32), device=torch.device("cuda"), dtype=torch.int32)
+
+        M, N = x.shape
+
+        seeds_x = torch.randint(65536, (M,), device=x.device)
+        seeds_y = torch.randint(65536, (M,), device=x.device)
+
+        assert not torch.allclose(seeds_x, seeds_y)
+
+        # enqueue kernels, one per line
+        # fmt: off
+        k_rand[(M,)](
+            x, y,
+            seeds_x, seeds_y,
+            x.stride(0), y.stride(0),
+            N,
+        )
+        # fmt: on
+
+        assert not torch.allclose(x, y)

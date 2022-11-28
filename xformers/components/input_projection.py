@@ -14,6 +14,8 @@ from typing import Optional, Tuple
 import torch
 from torch import nn
 
+logger = logging.getLogger("xformers")
+
 
 @dataclass
 class InputProjectionConfig:
@@ -53,7 +55,7 @@ class InputProjection(nn.Module):
                 key_proj_params.bias,
             )
         else:
-            logging.info(
+            logger.info(
                 "No Key projection parameters were passed, assuming that the weights"
                 + " are shared with the query projection"
             )
@@ -66,7 +68,7 @@ class InputProjection(nn.Module):
                 value_proj_params.bias,
             )
         else:
-            logging.info(
+            logger.info(
                 "No Value projection parameters were passed, assuming that the weights"
                 + " are shared with the query projection"
             )

@@ -14,6 +14,9 @@ cpu_py38: &cpu_py38
   docker:
     - image: cimg/python:3.8
   resource_class: large
+  environment:
+    # We're a bit short on RAM
+    MAX_JOBS: "4"
 
 gpu_cu114: &gpu_cu114
   environment:
@@ -78,6 +81,7 @@ setup_conda: &setup_conda
 install_dep: &install_dep
   - run:
       name: Install Dependencies with torch nightly
+      no_output_timeout: 30m
       command: |
         source $BASH_ENV
 
@@ -91,7 +95,7 @@ install_dep: &install_dep
         conda install ninja
         echo "Ninja version $(ninja --version)"
 
-        conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch -q
+        conda install pytorch=1.13 torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia -q
         $CONDA_PYTHON -m pip install -r requirements-benchmark.txt --progress-bar off
 
         # Mark install as complete
@@ -100,13 +104,14 @@ install_dep: &install_dep
 install_dep_exp: &install_dep_exp
   - run:
       name: Install Dependencies for experimental tests
+      no_output_timeout: 30m
       command: |
         source $BASH_ENV
         # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
         if [ -f /home/circleci/venv/check_version.py ]; then $CONDA_PYTHON  /home/circleci/venv/check_version.py torch gt 1.11 && exit 0; fi
         # start installing
         source activate /home/circleci/venv
-        conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch -q
+        conda install pytorch=1.13 torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia -q
         $CONDA_PYTHON -m pip install -r experimental/requirements.txt --progress-bar off
 
 install_repo: &install_repo
@@ -155,6 +160,7 @@ run_mypy: &run_mypy
        when: always
        command: |
         source $BASH_ENV
+        $CONDA_PYTHON -m mypy --version
         $CONDA_PYTHON -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude "(build|stubs|third_party|docs|setup.py)" .
 
 run_flake8: &run_flake8
@@ -184,7 +190,7 @@ run_coverage: &run_coverage
       when: always
       command: |
         source $BASH_ENV
-        CUDA_LAUNCH_BLOCKING=1 $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --timeout 600 --cov-report=xml --cov=./ tests
+        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --cov-report=xml --cov=./ tests
         #Uploading test coverage for Python code
         bash <(curl -s https://codecov.io/bash) -f coverage.xml -cF Python
 
@@ -194,7 +200,7 @@ run_unittests: &run_unittests
       when: always
       command: |
         source $BASH_ENV
-        CUDA_LAUNCH_BLOCKING=1 $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose tests
+        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose tests
 
 run_experimental_unittests: &run_experimental_unittests
   - run:
@@ -368,6 +374,49 @@ jobs:
       - store_test_results:
           path: test-results
 
+  build_conda:
+    parameters:
+      dockerimage:
+        type: string
+      pytorch_version:
+        type: string
+      cu_version:
+        type: string
+
+    docker:
+      - image: << parameters.dockerimage >>
+    resource_class: xlarge
+
+    environment:
+      CUDA_HOME: "/usr/local/cuda-<< parameters.cu_version >>"
+      MAX_JOBS: 3
+
+    working_directory: ~/xformers
+
+    steps:
+      - checkout
+      - run: git submodule update --init --recursive
+      - run: printenv
+      - run:
+          name: Skip builds for fairinternal
+          command: |
+            case "$CIRCLE_REPOSITORY_URL" in
+              *fairinternal*)
+                echo "Build skipped (fairinternal repo)"
+                circleci-agent step halt
+                ;;
+            esac
+      - run:
+          name: conda build for py3_9
+          no_output_timeout: 20m
+          command: |
+            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >> --upload-dev
+      - run:
+          name: conda build for py3_10
+          no_output_timeout: 20m
+          command: |
+            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >> --upload-dev
+
   gpu_tests_cu114_sm75:
     <<: *gpu_cu114
     machine:
@@ -377,7 +426,6 @@ jobs:
     steps:
       - run_gpu_ci:
           arch: "7.5"
-      - <<: *run_coverage
 
   gpu_tests_cu114_sm70:
     <<: *gpu_cu114
@@ -510,6 +558,42 @@ workflows:
             ignore:
               - gh-pages
 
+      - build_conda:
+          name: conda_build_cu113_1.12.1
+          dockerimage: pytorch/conda-builder:cuda113
+          cu_version: "11.3"
+          pytorch_version: "1.12.1"
+          filters:
+            branches:
+              only:
+                - main
+      - build_conda:
+          name: conda_build_cu116_1.12.1
+          dockerimage: pytorch/conda-builder:cuda116
+          cu_version: "11.6"
+          pytorch_version: "1.12.1"
+          filters:
+            branches:
+              only:
+                - main
+      - build_conda:
+          name: conda_build_cu116_1.13
+          dockerimage: pytorch/conda-builder:cuda116
+          cu_version: "11.6"
+          pytorch_version: "1.13"
+          filters:
+            branches:
+              only:
+                - main
+      - build_conda:
+          name: conda_build_cu117_1.13
+          dockerimage: pytorch/conda-builder:cuda117
+          cu_version: "11.7"
+          pytorch_version: "1.13"
+          filters:
+            branches:
+              only:
+                - main
       - binary_linux_wheel:
           python_version: "3.7"
           name: binary_linux_wheel_py37_cu102

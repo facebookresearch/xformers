@@ -9,13 +9,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 THIS_PATH = Path(__file__).resolve()
-SOURCE_ROOT_DIR = str(THIS_PATH.parents[2])
+SOURCE_ROOT_DIR = THIS_PATH.parents[2]
 
 PYTHON_VERSIONS = ["3.9", "3.10"]
 PYTORCH_TO_CUDA_VERSIONS = {
     "1.11.0": ["10.2", "11.1", "11.3", "11.5"],
     "1.12.0": ["10.2", "11.3", "11.6"],
     "1.12.1": ["10.2", "11.3", "11.6"],
+    "1.13": ["11.6", "11.7"],
 }
 
 
@@ -33,6 +34,8 @@ def conda_docker_image_for_cuda(cuda_version):
         return "pytorch/conda-builder:cuda115"
     if cuda_version == "11.6":
         return "pytorch/conda-builder:cuda116"
+    if cuda_version == "11.7":
+        return "pytorch/conda-builder:cuda117"
     raise ValueError(f"Unknown cuda version {cuda_version}")
 
 
@@ -50,6 +53,13 @@ class Build:
     """
     Represents one configuration of a build, i.e.
     a set of versions of dependent libraries.
+
+    Members:
+        conda_always_copy: avoids hard linking which can behave weirdly.
+        conda_debug: get added information about package search
+        conda_dirty: see intermediate files after build
+        build_inside_tree: output in build/ not ../build
+        upload_dev: upload, to label dev of xformers
     """
 
     python_version: str
@@ -57,7 +67,10 @@ class Build:
     cuda_version: str
 
     conda_always_copy: bool = True
-    conda_debug: bool = True
+    conda_debug: bool = False
+    conda_dirty: bool = False
+    build_inside_tree: bool = False
+    upload_dev: bool = False
 
     def _set_env_for_build(self):
         if "CUDA_HOME" not in os.environ:
@@ -70,15 +83,26 @@ class Build:
             os.environ["CUDA_HOME"] = cuda_home
 
         os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0 8.6"
-        os.environ["BUILD_VERSION"] = "dev"
-        tag = subprocess.check_output(["git", "describe", "--tags"], text=True)
+        code_version = (SOURCE_ROOT_DIR / "version.txt").read_text().strip()
+        assert code_version.endswith("dev")
+        git_hash = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], text=True
+        ).strip()
+        num_commits = subprocess.check_output(
+            ["git", "rev-list", "--count", "HEAD"], text=True
+        ).strip()
+        os.environ["BUILD_VERSION"] = f"{code_version}{num_commits}+git.{git_hash}"
+        tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
         os.environ["GIT_TAG"] = tag
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
         os.environ["CU_VERSION"] = self.cuda_version
-        os.environ["SOURCE_ROOT_DIR"] = SOURCE_ROOT_DIR
-        os.environ["CONDA_CUDATOOLKIT_CONSTRAINT"] = version_constraint(
-            self.cuda_version
-        )
+        os.environ["SOURCE_ROOT_DIR"] = str(SOURCE_ROOT_DIR)
+        cuda_constraint = version_constraint(self.cuda_version)
+        pytorch_version_tuple = tuple(int(v) for v in self.pytorch_version.split("."))
+        if pytorch_version_tuple < (1, 13):
+            os.environ["CONDA_CUDA_CONSTRAINT"] = f"cudatoolkit{cuda_constraint}"
+        else:
+            os.environ["CONDA_CUDA_CONSTRAINT"] = f"pytorch-cuda{cuda_constraint}"
         os.environ["FORCE_CUDA"] = "1"
 
         if self.conda_always_copy:
@@ -89,25 +113,35 @@ class Build:
             "conda",
             "build",
             "-c",
-            "fastchan",  # which can avoid needing pytorch and conda-forge
+            "pytorch",
+            "-c",
+            "nvidia",
             "--no-anaconda-upload",
             "--python",
             self.python_version,
         ]
         if self.conda_debug:
             args += ["--debug"]
-        args += ["--dirty"]
-        args += ["--croot", "../build"]
+        if self.conda_dirty:
+            args += ["--dirty"]
+        if not self.build_inside_tree:
+            args += ["--croot", "../build"]
+        if self.upload_dev:
+            args += ["--user", "xformers", "--label", "dev"]
         return args + ["packaging/conda/xformers"]
 
     def do_build(self):
         self._set_env_for_build()
+        if self.upload_dev:
+            subprocess.check_call(
+                ["conda", "config", "--set", "anaconda_upload", "yes"]
+            )
         args = self._get_build_args()
         print(args)
         subprocess.check_call(args)
 
     def build_in_docker(self):
-        filesystem = subprocess.check_output("stat -f -c %T .", shell=True)
+        filesystem = subprocess.check_output("stat -f -c %T .", shell=True).strip()
         if filesystem in (b"nfs", b"tmpfs"):
             raise ValueError(
                 "Cannot run docker here. "
@@ -115,7 +149,7 @@ class Build:
             )
         image = conda_docker_image_for_cuda(self.cuda_version)
         args = ["sudo", "docker", "run", "-it", "--rm", "-w", "/m"]
-        args += ["-v", f"{SOURCE_ROOT_DIR}:/m", image]
+        args += ["-v", f"{str(SOURCE_ROOT_DIR)}:/m", image]
         args += ["python3", str(THIS_PATH.relative_to(SOURCE_ROOT_DIR))]
         self_args = [
             "--cuda",
@@ -144,11 +178,24 @@ if __name__ == "__main__":
     parser.add_argument(
         "--docker", action="store_true", help="Call this script inside docker."
     )
-
+    parser.add_argument(
+        "--build-inside-tree",
+        action="store_true",
+        help="Build in build/ instead of ../build/",
+    )
+    parser.add_argument(
+        "--upload-dev",
+        action="store_true",
+        help="upload, to label dev of xformers",
+    )
     args = parser.parse_args()
 
     pkg = Build(
-        python_version=args.python, pytorch_version=args.pytorch, cuda_version=args.cuda
+        python_version=args.python,
+        pytorch_version=args.pytorch,
+        cuda_version=args.cuda,
+        build_inside_tree=args.build_inside_tree,
+        upload_dev=args.upload_dev,
     )
 
     if args.docker:
@@ -165,6 +212,5 @@ if __name__ == "__main__":
 
 # TODO:
 # - Make a local conda package cache available inside docker
-# - use ninja
 # - do we need builds for both _GLIBCXX_USE_CXX11_ABI values?
 # - how to prevent some cpu only builds of pytorch from being discovered?

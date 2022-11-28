@@ -17,7 +17,7 @@ Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py 
 
 ## Benchmark the core sparse attention mechanisms
 
-`python3 xformers./benchmarks/benchmark_core.py` will measure the speed of the core sparse attention mechanism. The current numbers are as follows (times in microseconds (us)):
+`python3 xformers/benchmarks/benchmark_core.py` will measure the speed of the core sparse attention mechanism. The current numbers are as follows (times in microseconds (us)):
 
 |                        | **matmul_with_mask**  |                        | **softmax**           |                        | **bmm**               |                        |
 | ---------------------- | --------------------- | ---------------------- | --------------------- | ---------------------- | --------------------- | ---------------------- |
@@ -36,6 +36,8 @@ Some examples, generated with `python3 xformers/benchmarks/benchmark_encoder.py 
 | sparsity sputnik: 0.99 | 43.5                  | 145.4                  | 33.2                  | 32.7                   | 39.7                  | 77.4                   |
 
 ## Triton layers
+
+Please not that as of November 2022 these layers are not optimized for typical production GPUs out there (not developed for some time and mostly tested on a laptop GPU), and that better performances are probably possible with some minor changes as proven in other libraries since xformers went out.
 
 ### Fused softmax
 

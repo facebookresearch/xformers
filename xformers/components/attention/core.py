@@ -30,6 +30,9 @@ if _is_blocksparse_available:
     from xformers.components.attention.blocksparse import BlockSparseAttention
 
 
+logger = logging.getLogger("xformers")
+
+
 def _create_random_sparsity(matrix, sparsity, divisible_by=4):
     assert matrix.ndim == 3
     keep = torch.rand_like(matrix[0], dtype=torch.float32) > sparsity
@@ -103,6 +106,16 @@ def _matmul_with_mask(
         att[~mask] = float("-inf")
     else:
         # mask is presumed additive
+        # repeat if batch sizes don't match
+        if (
+            not isinstance(mask, SparseCS)
+            and mask.ndim == 3
+            and mask.shape[0] != att.shape[0]
+            and (att.shape[0] % mask.shape[0]) == 0
+        ):
+            repeat_factor = att.shape[0] // mask.shape[0]
+            mask = mask.repeat([repeat_factor, 1, 1])
+            logger.info("Mismatched batch dimensions for mask, repeating mask.")
         att += mask
     return att
 
@@ -311,10 +324,10 @@ def scaled_dot_product_attention(
     )
 
     if switch_to_blocksparse:
-        logging.info("Switching causal attention to Triton blocksparse...")
+        logger.info("Switching causal attention to Triton blocksparse...")
         return blocksparse_attention(q, k, v, dropout, block_size)
 
-    with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():
+    with torch.cuda.amp.autocast(enabled=False) if autocast_disabled else nullcontext():  # type: ignore
         if autocast_disabled:
             q, k, v = q.float(), k.float(), v.float()
 

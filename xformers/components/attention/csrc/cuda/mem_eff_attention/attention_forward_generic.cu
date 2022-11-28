@@ -1,3 +1,9 @@
+#include <ATen/ScalarOps.h>
+#include <ATen/Tensor.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <torch/library.h>
+
 #include "kernel_forward.h"
 
 #define DISPATCH_BLOCKSIZE(VALUE_HEAD_DIM, FN)        \
@@ -62,6 +68,57 @@
   }
 
 namespace {
+template <typename scalar_t>
+struct TypeTraits;
+
+template <>
+struct TypeTraits<cutlass::half_t> {
+  using scalar_t = cutlass::half_t;
+
+  static constexpr __host__ at::ScalarType atScalarType() {
+    return at::ScalarType::Half;
+  }
+  template <int nDim>
+  static __host__ at::PackedTensorAccessor32<scalar_t, nDim> packed_accessor(
+      at::Tensor const& tensor) {
+    return at::PackedTensorAccessor32<scalar_t, nDim>(
+        (scalar_t*)(tensor.data_ptr()),
+        tensor.sizes().data(),
+        tensor.strides().data());
+  }
+};
+
+template <>
+struct TypeTraits<cutlass::bfloat16_t> {
+  using scalar_t = cutlass::bfloat16_t;
+
+  static constexpr __host__ at::ScalarType atScalarType() {
+    return at::ScalarType::BFloat16;
+  }
+  template <int nDim>
+  static __host__ at::PackedTensorAccessor32<scalar_t, nDim> packed_accessor(
+      at::Tensor const& tensor) {
+    return at::PackedTensorAccessor32<scalar_t, nDim>(
+        (scalar_t*)(tensor.data_ptr()),
+        tensor.sizes().data(),
+        tensor.strides().data());
+  }
+};
+
+template <>
+struct TypeTraits<float> {
+  using scalar_t = float;
+
+  static constexpr __host__ at::ScalarType atScalarType() {
+    return at::ScalarType::Float;
+  }
+  template <int nDim>
+  static __host__ at::PackedTensorAccessor32<scalar_t, nDim> packed_accessor(
+      at::Tensor const& tensor) {
+    return tensor.packed_accessor32<scalar_t, nDim>();
+  }
+};
+
 /*
   There are 2 modes for using this function.
   (Mode BMHK) With all the heads having the same seqlen
@@ -80,7 +137,13 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     // (Mode 1MHK only) Maximum sequence length across batches
     const c10::optional<int64_t> max_seqlen_q_,
     bool compute_logsumexp,
-    bool causal) {
+    bool causal,
+    c10::optional<double> scale) {
+#ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
+  TORCH_CHECK(
+      false,
+      "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD");
+#else
   TORCH_CHECK(query.dim() == 4);
   TORCH_CHECK(key.dim() == 4);
   TORCH_CHECK(value.dim() == 4);
@@ -185,6 +248,11 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     p.num_keys = max_seqlen_k;
     p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
     p.causal = causal;
+    if (scale.has_value()) {
+      p.scale = float(*scale);
+    } else {
+      p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
+    }
 
     ASSIGN_CHECK_OVERFLOW(p.q_strideB, query.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.k_strideB, key.stride(0));
@@ -206,7 +274,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
           kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes));
     }
     Kernel::check_supported(p);
-    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
+    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
   };
   // Dispatch to the right kernel
   DISPATCH_KERNEL(query, key, value, ([&]() {
@@ -215,6 +283,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
 
   AT_CUDA_CHECK(cudaGetLastError());
   return std::make_tuple(res, logsumexp);
+#endif
 }
 } // namespace
 
