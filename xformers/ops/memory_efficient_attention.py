@@ -21,7 +21,7 @@ except ImportError:
     has_flashattention = False
 
 try:
-    from xformers.triton.flash_attention import _flash_attention as triton_flash
+    from flash_attn.flash_attn_triton import FlashAttnFunc as triton_flash
 
     has_triton_flashattention = True
 except ImportError:
