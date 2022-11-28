@@ -211,7 +211,6 @@ struct AttentionBackwardKernel {
   static constexpr int64_t kNumWarpsPerBlock =
       (kBlockSizeI * kBlockSizeJ) / (32 * 32);
 
-
   // Compute delta for the f16 kernels
   // TODO: Figure out why it's slower on the f32 kernels
   // (something due to RF pressure?)
