@@ -20,6 +20,9 @@ from torch.nn.init import (
     _no_grad_uniform_,
 )
 
+logger = logging.getLogger("xformers")
+
+
 _assert_if_not_initialized = False
 
 
@@ -125,7 +128,7 @@ def _maybe_report_no_init(module, name):
             return
 
         # This is unexpected, warn about a possible unhandled weight
-        logging.warning(
+        logger.warning(
             f"Not initializing weights in {name}, this could be a mistake.\nModule {module}"
         )
 

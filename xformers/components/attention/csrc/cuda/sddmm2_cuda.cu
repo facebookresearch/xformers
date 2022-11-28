@@ -5,7 +5,7 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/types.h>
-#include "computeUtil.h"
+#include "../computeUtil.h"
 
 namespace ge_spmm {
 

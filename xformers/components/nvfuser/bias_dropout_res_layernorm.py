@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import functools
 from typing import Optional
 
 import torch
@@ -16,10 +17,10 @@ from xformers.components import ResidualNormStyle
 def _fn(
     x: torch.Tensor,
     bias: Optional[torch.nn.parameter.Parameter],
+    residual: torch.Tensor,
     prob: float,
     layer_norm_style: Optional[ResidualNormStyle],
     norm: nn.Module,
-    residual: torch.Tensor,
 ) -> torch.Tensor:
     a = torch.add(x, bias) if bias is not None else x
     b = torch.nn.functional.dropout(a, prob) if prob > 0.0 else a
@@ -57,6 +58,18 @@ class NVFusedBiasDropoutResLayerNorm(torch.nn.Module):
             nn.Parameter(torch.zeros(bias_shape)) if bias_shape is not None else None
         )
         self.norm = nn.LayerNorm(d_model)
+        self._fn_train = functools.partial(
+            _fn,
+            prob=p,
+            layer_norm_style=self.layer_norm_style,
+            norm=self.norm,
+        )
+        self._fn_eval = functools.partial(
+            _fn,
+            prob=0.0,
+            layer_norm_style=self.layer_norm_style,
+            norm=self.norm,
+        )
 
         assert (
             self.p < 1.0
@@ -69,12 +82,12 @@ class NVFusedBiasDropoutResLayerNorm(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, residual: torch.Tensor) -> torch.Tensor:
         # Train/inference
-        p = self.p if self.training else 0.0
+        fn = self._fn_train if self.training else self._fn_eval
 
         # Catch a non-cuda setup, fallback to pytorch
         if not x.is_cuda:
-            return _fn(x, self.bias, p, self.layer_norm_style, self.norm, residual)
+            return fn(x, self.bias, residual)
 
         # AOTAutograd, NVFuser backed path
-        aot_fn = memory_efficient_fusion(fn=_fn, static_argnums=(2, 3, 4))
-        return aot_fn(x, self.bias, p, self.layer_norm_style, self.norm, residual)
+        aot_fn = memory_efficient_fusion(fn=fn)
+        return aot_fn(x, self.bias, residual)

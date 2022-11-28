@@ -13,7 +13,12 @@ import torch
 from xformers import _is_triton_available
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 
+logger = logging.getLogger("xformers")
+
+
 _is_blocksparse_available = _is_triton_available()
+
+
 if _is_blocksparse_available:
     from triton.ops.blocksparse import matmul as blocksparse_matmul  # type: ignore
     from triton.ops.blocksparse import softmax as blocksparse_softmax  # type: ignore
@@ -22,7 +27,7 @@ if _is_blocksparse_available:
 
     # Blocksparse requires Tensor cores
     if gpu_capabilities_older_than_70():
-        logging.warning(
+        logger.warning(
             "Blocksparse is not available: the current GPU does not expose Tensor cores"
         )
         _is_blocksparse_available = False
@@ -64,14 +69,14 @@ if _is_blocksparse_available:
             **kwargs,
         ):
             if layout.dim() == 2:
-                logging.warning(
+                logger.warning(
                     "The layout passed is lacking a head dimension and a batch dimension"
                 )
-                logging.warning(
+                logger.warning(
                     "Now assuming that the same layout is to be used across all heads"
                 )
                 layout = layout.unsqueeze(0).expand(num_heads, -1, -1)
-                logging.warning(f"New layout dimensions: {layout.shape}")
+                logger.warning(f"New layout dimensions: {layout.shape}")
 
             assert block_size in (
                 16,
@@ -167,10 +172,6 @@ if _is_blocksparse_available:
                 q.shape[-2], self.block_size
             )
 
-            # Blocksparse only works on fp16
-            q_dtype = q.dtype
-            q, k, v = q.half(), k.half(), v.half()
-
             # Self-attend: (B, nh, S, hs) x (B, nh, hs, S) -> (B, nh, S, S)
             # When the computations are block sparse, the matrix types change along the way:
             # - (sparse) attention matrix = (dense) Kt * (dense) Q
@@ -186,4 +187,4 @@ if _is_blocksparse_available:
 
             # - then (dense) attention is (sparse) attention matrix * dense (value)
             a = self.sparse_dot_dsd(sparse_att_mat, v)
-            return a.to(q_dtype)
+            return a

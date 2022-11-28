@@ -5,14 +5,16 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import datetime
 import distutils.command.clean
 import glob
 import os
-import re
+import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import List
 
 import setuptools
 import torch
@@ -32,18 +34,32 @@ def fetch_requirements():
     return reqs
 
 
-# https://packaging.python.org/guides/single-sourcing-package-version/
-def find_version(version_file_path):
-    with open(version_file_path) as version_file:
-        version_match = re.search(
-            r"^__version__ = ['\"]([^'\"]*)['\"]", version_file.read(), re.M
-        )
-        # The following is used to build release packages.
-        # Users should never use it.
-        suffix = os.getenv("XFORMERS_VERSION_SUFFIX", "")
-        if version_match:
-            return version_match.group(1) + suffix
-        raise RuntimeError("Unable to find version string.")
+def get_local_version_suffix() -> str:
+    date_suffix = datetime.datetime.now().strftime("%Y%m%d")
+    git_hash = subprocess.check_output(
+        ["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).parent
+    ).decode("ascii")[:-1]
+    return f"+{git_hash}.d{date_suffix}"
+
+
+if os.getenv("BUILD_VERSION"):
+    # In CI
+    version = os.getenv("BUILD_VERSION")
+else:
+    version_txt = os.path.join(this_dir, "version.txt")
+    with open(version_txt) as f:
+        version = f.readline().strip()
+    version += get_local_version_suffix()
+
+
+def write_version_file():
+    version_path = os.path.join(this_dir, "xformers", "version.py")
+    with open(version_path, "w") as f:
+        f.write("# noqa: C801\n")
+        f.write(f'__version__ = "{version}"\n')
+        tag = os.getenv("GIT_TAG")
+        if tag is not None:
+            f.write(f'git_tag = "{tag}"\n')
 
 
 def get_cuda_version(cuda_dir) -> int:
@@ -95,7 +111,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
             "to run `git submodule update --init --recursive` ?"
         )
 
-    nvcc_platform_dependant_args = []
+    nvcc_platform_dependant_args: List[str] = []
     if sys.platform == "win32":
         nvcc_platform_dependant_args.append("-std=c++17")
 
@@ -117,8 +133,6 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                 "nvcc": extra_compile_args.get("nvcc", [])
                 + [
                     "-O3",
-                    "-U__CUDA_NO_HALF_OPERATORS__",
-                    "-U__CUDA_NO_HALF_CONVERSIONS__",
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
                     "--use_fast_math",
@@ -140,24 +154,21 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
 
 def get_extensions():
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    extensions_dir = os.path.join(
-        this_dir, "xformers", "components", "attention", "csrc"
-    )
+    extensions_dir = os.path.join(this_dir, "xformers", "components")
 
     main_file = glob.glob(os.path.join(extensions_dir, "*.cpp"))
 
-    source_cpu = glob.glob(os.path.join(extensions_dir, "cpu", "*.cpp")) + glob.glob(
-        os.path.join(extensions_dir, "autograd", "*.cpp")
-    )
+    source_cpu = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
 
     sources = main_file + source_cpu
 
     source_cuda = glob.glob(
-        os.path.join(extensions_dir, "cuda", "**", "*.cu"), recursive=True
+        os.path.join(extensions_dir, "**", "cuda", "**", "*.cu"), recursive=True
     )
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
+    cutlass_examples_dir = os.path.join(this_dir, "third_party", "cutlass", "examples")
     if not os.path.exists(cutlass_dir):
         raise RuntimeError(
             f"CUTLASS submodule not found at {cutlass_dir}. "
@@ -184,14 +195,18 @@ def get_extensions():
     ) == "1":
         extension = CUDAExtension
         sources += source_cuda
-        include_dirs += [sputnik_dir, cutlass_dir]
-        nvcc_flags = os.getenv("NVCC_FLAGS", "")
-        if nvcc_flags == "":
-            nvcc_flags = ["--use_fast_math"]
-            if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
-                nvcc_flags.append("-DNDEBUG")
-        else:
-            nvcc_flags = nvcc_flags.split(" ")
+        include_dirs += [sputnik_dir, cutlass_dir, cutlass_examples_dir]
+        nvcc_flags = [
+            "-DHAS_PYTORCH",
+            "--use_fast_math",
+            "--generate-line-info",
+            "-U__CUDA_NO_HALF_OPERATORS__",
+            "-U__CUDA_NO_HALF_CONVERSIONS__",
+            "--extended-lambda",
+        ]
+        if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
+            nvcc_flags.append("-DNDEBUG")
+        nvcc_flags += shlex.split(os.getenv("NVCC_FLAGS", ""))
         cuda_version = get_cuda_version(CUDA_HOME)
         if cuda_version >= 1102:
             nvcc_flags += [
@@ -245,11 +260,11 @@ class clean(distutils.command.clean.clean):  # type: ignore
 
 
 if __name__ == "__main__":
+    write_version_file()
     setuptools.setup(
         name="xformers",
         description="XFormers: A collection of composable Transformer building blocks.",
-        version=find_version(os.path.join(this_dir, "xformers", "__init__.py")),
-        setup_requires=[],
+        version=version,
         install_requires=fetch_requirements(),
         packages=setuptools.find_packages(exclude=("tests", "tests.*")),
         ext_modules=get_extensions(),
@@ -260,7 +275,7 @@ if __name__ == "__main__":
         url="https://facebookresearch.github.io/xformers/",
         python_requires=">=3.6",
         author="Facebook AI Research",
-        author_email="lefaudeux@fb.com",
+        author_email="oncall+xformers@xmail.facebook.com",
         long_description="XFormers: A collection of composable Transformer building blocks."
         + "XFormers aims at being able to reproduce most architectures in the Transformer-family SOTA,"
         + "defined as compatible and combined building blocks as opposed to monolithic models",

@@ -1,3 +1,10 @@
+#include <ATen/ScalarOps.h>
+#include <ATen/Tensor.h>
+#include <ATen/TensorOperators.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <torch/library.h>
+
 #include "kernel_backward.h"
 
 #define DISPATCH_MAXK(func)                                   \
@@ -53,7 +60,13 @@ mem_efficient_attention_backward_cutlass(
     const at::Tensor& value,
     const at::Tensor& logsumexp,
     const at::Tensor& out,
-    bool causal) {
+    bool causal,
+    const c10::optional<double> scale) {
+#ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD
+  TORCH_CHECK(
+      false,
+      "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD");
+#else
   // ndim
   TORCH_CHECK(query.dim() == grad_out_.dim());
   TORCH_CHECK(query.dim() == key.dim());
@@ -87,6 +100,7 @@ mem_efficient_attention_backward_cutlass(
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
   at::cuda::CUDAGuard device_guard(query.device());
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -160,6 +174,11 @@ mem_efficient_attention_backward_cutlass(
     p.num_batches = B;
     p.num_heads = nH;
     p.causal = causal;
+    if (scale.has_value()) {
+      p.scale = float(*scale);
+    } else {
+      p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
+    }
 
     ASSIGN_CHECK_OVERFLOW(p.gO_strideB, grad_out.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.gO_strideM, grad_out.stride(1));
@@ -203,8 +222,8 @@ mem_efficient_attention_backward_cutlass(
       TORCH_INTERNAL_ASSERT(
           computeCapability >= 70,
           "This kernel requires too much shared memory on this machine!");
-      cudaFuncSetAttribute(
-          kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
+      AT_CUDA_CHECK(cudaFuncSetAttribute(
+          kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes));
     }
 
     // second syntax resulted in the error below on windows
@@ -227,13 +246,14 @@ mem_efficient_attention_backward_cutlass(
         checkBinaryArchMatches(), "Something went wrong in the build process");
 #endif
 
-    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
+    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
   };
 
   DISPATCH_KERNEL(
       query, key, value, ([&] { launchKernel(Kernel{}, computeCapability); }));
   AT_CUDA_CHECK(cudaGetLastError());
   return std::make_tuple(grad_q, grad_k, grad_v);
+#endif
 } // namespace
 
 } // namespace

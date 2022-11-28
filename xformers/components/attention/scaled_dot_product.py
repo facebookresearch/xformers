@@ -18,6 +18,8 @@ from xformers.components.attention import (
 )
 from xformers.components.attention.core import scaled_dot_product_attention
 
+logger = logging.getLogger("xformers")
+
 
 @dataclass
 class ScaledDotProductConfig(AttentionConfig):
@@ -118,7 +120,7 @@ class ScaledDotProduct(Attention):
             if isinstance(att_mask, AttentionMask):
                 att_mask = att_mask.make_crop(seq_len=q.shape[-2])
             else:
-                logging.error(
+                logger.error(
                     "Mismatching sparse attention mask and sequence length."
                     + " Please pad the inputs or adjust the attention mask"
                 )

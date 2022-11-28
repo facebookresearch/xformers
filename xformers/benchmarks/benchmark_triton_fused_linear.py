@@ -22,6 +22,10 @@ SHAPES = [
     (2, 512, 8192),
 ]
 
+# Switch PyTorch to TF32 accumulations, Triton does that also
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
 
 def get_metrics_transform(
     activation: Optional[Activation],
@@ -64,8 +68,8 @@ def bench_linear(activations: List[Optional[Activation]]):
     device = torch.device("cuda")
 
     for dtype in [
-        torch.float16,
         torch.float32,
+        torch.float16,
     ]:
         for backward in [True, False]:
 

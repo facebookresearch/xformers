@@ -8,23 +8,27 @@ source:
 requirements:
   build:
     - ninja
+    - pytorch=={{ environ.get('PYTORCH_VERSION') }}
   host:
     # - numpy >=1.11
     - python
     - pytorch=={{ environ.get('PYTORCH_VERSION') }}
-    - cudatoolkit{{ environ['CONDA_CUDATOOLKIT_CONSTRAINT'] }}
+    - {{environ['CONDA_CUDA_CONSTRAINT']}}
 
   run:
     # - numpy >=1.11
+    - python
     - pytorch=={{ environ.get('PYTORCH_VERSION') }}
-    - cudatoolkit{{ environ['CONDA_CUDATOOLKIT_CONSTRAINT'] }}
+    - {{environ['CONDA_CUDA_CONSTRAINT']}}
 
 build:
   string: py{{py}}_cu{{ environ['CU_VERSION'] }}_pyt{{ environ['PYTORCH_VERSION']}}
-  script: python setup.py install --single-version-externally-managed --record=record.txt
+  script: {{environ['PYTHON']}} setup.py install --single-version-externally-managed --record=record.txt
   script_env:
+    - BUILD_VERSION
     - CUDA_HOME
     - FORCE_CUDA
+    - GIT_TAG
     - MAX_JOBS
     - TORCH_CUDA_ARCH_LIST
 

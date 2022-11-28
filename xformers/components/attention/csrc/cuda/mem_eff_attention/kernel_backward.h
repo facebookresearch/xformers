@@ -1,14 +1,9 @@
 #pragma once
 
-#include <ATen/ATen.h>
-#include <torch/library.h>
 #include <cmath>
 #include <vector>
 
 #include <cuda_fp16.h>
-
-#include <ATen/cuda/CUDAContext.h>
-#include <c10/cuda/CUDAGuard.h>
 
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/layout/matrix.h"
@@ -143,6 +138,9 @@ struct AttentionBackwardKernel {
     output_accum_t* gmem_storage = nullptr; // [nH, Mq, K]
     output_accum_t* gmem_storage_end = nullptr; // [nH, Mq, K]
 
+    // Scale
+    accum_t scale;
+
     // Dimensions/strides
     int32_t head_dim;
     int32_t head_dim_value;
@@ -270,7 +268,7 @@ struct AttentionBackwardKernel {
     }
   };
 
-  // Blocks & grid
+  // Block I
   static constexpr bool kSupports64x128 =
       ArchTag::kMinComputeCapability >= 80 ||
       (ArchTag::kMinComputeCapability >= 70 &&
@@ -278,9 +276,6 @@ struct AttentionBackwardKernel {
   static constexpr int64_t kWarpSize = 32;
   static constexpr int64_t kBlockSizeI =
       kSupports64x128 && kMaxK > 64 ? 128 : 64;
-  static constexpr int64_t kBlockSizeJ = 64;
-  static constexpr int64_t kNumWarpsPerBlock =
-      (kBlockSizeI * kBlockSizeJ) / (32 * 32);
 
   // If this is true, we store and accumulate dK/dV in RF
   // rather than going back to gmem everytime
@@ -293,6 +288,11 @@ struct AttentionBackwardKernel {
   static constexpr bool kPrologueDOV = kPreloadMmas;
   static constexpr bool kPrologueGQ = kPreloadMmas;
   static constexpr bool kPrologueGK = kPreloadMmas;
+
+  // Block J
+  static constexpr int64_t kBlockSizeJ = kPreloadMmas && kMaxK > 64 ? 128 : 64;
+  static constexpr int64_t kNumWarpsPerBlock =
+      (kBlockSizeI * kBlockSizeJ) / (32 * 32);
 
   // Compute delta for the f16 kernels
   // TODO: Figure out why it's slower on the f32 kernels
@@ -540,10 +540,19 @@ struct AttentionBackwardKernel {
         false, // SplitKSerial
         typename GemmType::Operator>;
 
-    using DefaultMmaFromSmem =
+    using DefaultMmaFromSmemN =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
             typename MatmulQK::AccumulatorSharedStorage>;
+    using DefaultMmaFromSmemT =
+        typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
+            typename DefaultGemm::Mma,
+            typename MatmulDOIVJ::AccumulatorSharedStorage,
+            kPreloadMmas>;
+    using DefaultMmaFromSmem = typename cutlass::platform::conditional<
+        DefaultMmaFromSmemT::kIsTransposedA,
+        DefaultMmaFromSmemT,
+        DefaultMmaFromSmemN>::type;
     using Mma = typename DefaultMmaFromSmem::Mma;
     using IteratorB = typename Mma::IteratorB;
     using WarpCount = typename Mma::WarpCount;
@@ -578,19 +587,24 @@ struct AttentionBackwardKernel {
 
       struct {
         // p2 - dQ
-        typename MatmulQK::AccumulatorSharedStorage
-            attn_shared_storage; // (from p1)
+        union {
+          typename MatmulQK::AccumulatorSharedStorage
+              tmpT_shared_storage; // (from p1)
+          typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
+        };
         typename MatmulGradK::Mma::SharedStorage mm_gradK; // (preload)
         typename MatmulGradQ::Mma::SharedStorage mm_gradQ; // (preload)
         typename MatmulGradQ::DefaultEpilogue::SharedStorage gradQ_epilogue;
 
-        typename MatmulDOIVJ::AccumulatorSharedStorage doivj_shared_storage;
       } p2;
 
       struct {
         // p3 - after last iteration on dQ's epilogue / dK
-        typename MatmulQK::AccumulatorSharedStorage
-            attn_shared_storage; // (from p1)
+        union {
+          typename MatmulQK::AccumulatorSharedStorage
+              tmpT_shared_storage; // (from p1)
+          typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
+        };
         typename MatmulGradK::Mma::SharedStorage mm_gradK; // (preload)
         typename MatmulGradQ::DefaultEpilogue::SharedStorage
             gradQ_epilogue_lastIter;
@@ -625,8 +639,9 @@ struct AttentionBackwardKernel {
       printf("    mm_gradK: %db\n", FSZ(p2.mm_gradK));
       printf("    mm_gradQ: %db\n", FSZ(p2.mm_gradQ));
       printf("    gradQ_epilogue: %db\n", FSZ(p2.gradQ_epilogue));
-      printf("    doivj_shared_storage: %db\n", FSZ(p2.doivj_shared_storage));
+      printf("    tmp_shared_storage: %db\n", FSZ(p2.tmp_shared_storage));
       printf("  p3: %db\n", FSZ(p3));
+      printf("    tmpT_shared_storage: %db\n", FSZ(p3.tmpT_shared_storage));
       printf("  p4: %db\n", FSZ(p4));
       printf("    mm_qk_q: %db\n", FSZ(p4.mm_qk_q));
       printf("    gradK_epilogue_final: %db\n", FSZ(p4.gradK_epilogue_final));
@@ -647,7 +662,8 @@ struct AttentionBackwardKernel {
     FIELD(p2, mm_gradK)
     FIELD(p2, mm_gradQ)
     FIELD(p2, gradQ_epilogue)
-    FIELD(p2, doivj_shared_storage)
+    FIELD(p2, tmp_shared_storage)
+    FIELD(p3, tmpT_shared_storage)
     FIELD(p3, gradQ_epilogue_lastIter)
     FIELD(p3, gradK_epilogue)
     FIELD(p4, mm_qk_q)
@@ -685,8 +701,8 @@ struct AttentionBackwardKernel {
       struct {
         // p4 - compute gradQ
         typename MatmulQK::AccumulatorSharedStorage
-            attn_shared_storage; // (from p2)
-        typename MatmulDOIVJ::AccumulatorSharedStorage doivj_shared_storage;
+            tmpT_shared_storage; // (from p2)
+        typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         union {
           typename MatmulGradQ::Mma::SharedStorage mm_gradQ;
           typename MatmulGradQ::DefaultEpilogue::SharedStorage gradQ_epilogue;
@@ -698,9 +714,8 @@ struct AttentionBackwardKernel {
       struct {
         // p5 - compute gradK
         typename MatmulQK::AccumulatorSharedStorage
-            attn_shared_storage; // (from p2)
-        typename MatmulDOIVJ::AccumulatorSharedStorage
-            doivj_shared_storage; // (from p4)
+            tmpT_shared_storage; // (from p2)
+        typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         union {
           typename MatmulGradK::Mma::SharedStorage mm_gradK;
           typename MatmulGradK::DefaultEpilogue::SharedStorage gradK_epilogue;
@@ -739,7 +754,8 @@ struct AttentionBackwardKernel {
     FIELD(p2, mm_gradV)
     FIELD(p2, gradV_epilogue)
     FIELD(p3, mm_doivj)
-    FIELD(p4, doivj_shared_storage)
+    FIELD(p4, tmpT_shared_storage)
+    FIELD(p4, tmp_shared_storage)
     FIELD(p4, mm_gradQ)
     FIELD(p4, gradQ_epilogue)
     FIELD(p4, gradQ_epilogue_lastIter)
@@ -764,18 +780,19 @@ struct AttentionBackwardKernel {
     }
   };
 
-  static void __host__ check_supported(Params const& p) {
+  static bool __host__ check_supported(Params const& p) {
     CHECK_ALIGNED_PTR(p.query_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.key_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.value_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.output_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.grad_output_ptr, kMinimumAlignment);
-    TORCH_CHECK(
+    XFORMERS_CHECK(
         p.q_strideH % kMinimumAlignment == 0, "query is not correctly aligned");
-    TORCH_CHECK(
+    XFORMERS_CHECK(
         p.k_strideH % kMinimumAlignment == 0, "key is not correctly aligned");
-    TORCH_CHECK(
+    XFORMERS_CHECK(
         p.v_strideH % kMinimumAlignment == 0, "value is not correctly aligned");
+    return true;
   }
 
   static CUTLASS_DEVICE void kernel(Params& p_) {
@@ -874,7 +891,7 @@ struct AttentionBackwardKernel {
       int32_t query_start,
       int32_t key_start) {
     cutlass::MatrixCoord no_offset{0, 0};
-    accum_t scale = accum_t(1.0 / std::sqrt(float(p.head_dim)));
+    accum_t scale = p.scale;
     int16_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
     int8_t warp_id = warp_uniform(threadIdx.y);
     int8_t lane_id = threadIdx.x;
@@ -1151,7 +1168,7 @@ struct AttentionBackwardKernel {
       // TODO: This must be terribly inefficient. There must be a better way
       // tmp [RF] <- (accum [RF] - Di [smem] ) * attn_T.T [smem]
       // attn_shared_storage  [smem] <- tmp.T
-      // doivj_shared_storage [smem] <- tmp
+      // tmp_shared_storage [smem] <- tmp
       {
         using RegistersIter = typename DefaultAttentionScalingCoefsUpdater<
             typename Mma::Operator::IteratorC,
@@ -1181,19 +1198,22 @@ struct AttentionBackwardKernel {
 
             });
         accum = (accum - fragment_di) * fragment_attn * scale;
-        // attn <- attn_T.T
-        RegistersIter::iterateRows(
-            lane_offset,
-            [&](int accum_m) {},
-            [&](int accum_m, int accum_n, int idx) {
-              // How does this even work?! We need to change the layout
-              attn_T.at({accum_n, accum_m}) = scalar_t(accum[idx]);
-            },
-            [&](int accum_m) {});
+        __syncthreads();
+        if (!MatmulGradK::DefaultMmaFromSmem::kIsTransposedA) {
+          auto tmpT = shared_storage.tmpT_shared_storage().accum_ref();
+          // attn <- attn_T.T
+          RegistersIter::iterateRows(
+              lane_offset,
+              [&](int accum_m) {},
+              [&](int accum_m, int accum_n, int idx) {
+                tmpT.at({accum_n, accum_m}) = scalar_t(accum[idx]);
+              },
+              [&](int accum_m) {});
+        }
       }
 
       MatmulDOIVJ::B2bGemm::accumToSmem(
-          shared_storage.doivj_shared_storage(),
+          shared_storage.tmp_shared_storage(),
           accum,
           lane_id,
           output_tile_coords);
@@ -1222,9 +1242,10 @@ struct AttentionBackwardKernel {
           thread_id,
           no_offset);
 
+      auto a = shared_storage.tmp_shared_storage().accum_ref();
       Mma mma(
           shared_storage.mm_gradQ(),
-          shared_storage.doivj_shared_storage(),
+          shared_storage.tmp_shared_storage(),
           thread_id,
           warp_id,
           lane_id,
@@ -1243,7 +1264,6 @@ struct AttentionBackwardKernel {
         AccumTileIterator gmem_tile;
         gmem_tile.ptr = gmem_accum_ptr;
         gmem_tile.load(accum, thread_id);
-        PRINT_T0_L0("k=%d/q=%d/col=%d LD %f %f", int(key_start), int(query_start), int(col), float(accum[0]), float(accum[1]));
       }
 
       auto gemm_k_iterations =
@@ -1267,7 +1287,6 @@ struct AttentionBackwardKernel {
       if (!isLast) {
         AccumTileIterator gmem_tile;
         gmem_tile.ptr = gmem_accum_ptr;
-        PRINT_T0_L0("k=%d/q=%d/col=%d ST %f %f", int(key_start), int(query_start), int(col), float(accum[0]), float(accum[1]));
         gmem_tile.store(accum, thread_id);
       } else {
         typename MatmulGradQ::OutputTileIterator output_it(
@@ -1313,9 +1332,19 @@ struct AttentionBackwardKernel {
           thread_id,
           no_offset);
 
+      auto getTmp = [&](int) { return &shared_storage.tmp_shared_storage(); };
+      auto getTmpT = [&](int) { return &shared_storage.tmpT_shared_storage(); };
+      // this is basically:
+      // opA = kIsTransposedA ? getTmp() : getTmpT();
+      bool constexpr kIsTransposedA =
+          MatmulGradK::DefaultMmaFromSmem::kIsTransposedA;
+      auto& opA = *call_conditional<
+          kIsTransposedA,
+          decltype(getTmp),
+          decltype(getTmpT)>::apply(getTmp, getTmpT, 0);
       Mma mma(
           shared_storage.mm_gradK(),
-          shared_storage.attn_shared_storage(), // storing tmp.T
+          opA,
           thread_id,
           warp_id,
           lane_id,

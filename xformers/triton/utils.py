@@ -8,6 +8,9 @@ from typing import Optional
 
 import torch
 
+logger = logging.getLogger("xformers")
+
+
 _gpu_is_old: Optional[bool] = None
 
 
@@ -33,15 +36,5 @@ def get_current_cuda_device():
         if current_device.find(device_str) > 0:
             return device_str
 
-    logging.warning("Unsupported device, Triton code generation may fail")
+    logger.warning("Unsupported device, Triton code generation may fail")
     return "P100"  # default to an old GPU
-
-
-def assert_almost_equal(x, y, decimal=2, err_msg=""):
-    import numpy.testing as npt
-
-    if isinstance(x, torch.Tensor):
-        x = x.cpu().detach().numpy()
-    if isinstance(y, torch.Tensor):
-        y = y.cpu().detach().numpy()
-    npt.assert_array_almost_equal(x, y, err_msg=err_msg, decimal=decimal)
