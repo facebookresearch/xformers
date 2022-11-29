@@ -47,22 +47,15 @@ template <typename FragmentType, int32_t kNumThreads>
 struct GmemTile {
   // 128bits per thread
   using AccessType = cutlass::Array<float, 4>;
+  // 128bytes
+  using PrefetchAccessType = cutlass::Array<float, 32>;
   static constexpr int32_t kBytes = sizeof(AccessType);
   static constexpr int32_t kStride = kNumThreads * AccessType::kElements;
   static constexpr int32_t kNumIters = FragmentType::kElements / AccessType::kElements;
   static constexpr int32_t kElementsStored = kNumThreads * FragmentType::kElements;
   static_assert(FragmentType::kElements % AccessType::kElements == 0, "fragment not aligned on 128 bits");
 
-  float* __restrict__ ptr;
-
-  CUTLASS_DEVICE void prefetch(int thread_id) {
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < kNumIters; ++i) {
-      AccessType* __restrict__ gmem_ptr = reinterpret_cast<AccessType*>(ptr + thread_id * AccessType::kElements + i * kStride);
-      uint64_t addr = (uint64_t)((void*)gmem_ptr);
-      asm volatile("prefetch.global.L1 [ %1 ];" : "=l"(addr) : "l"(addr));
-    }
-  }
+  float* ptr;
 
   CUTLASS_DEVICE void load(FragmentType& fragment, int thread_id) {
     CUTLASS_PRAGMA_UNROLL
@@ -135,7 +128,12 @@ struct AttentionBackwardKernel {
     output_t* grad_key_ptr; //    [Mk, nH, K]
     output_t* grad_value_ptr; //  [Mk, nH, Kv]
     // Accumulators
-    output_accum_t* workspace = nullptr; // [Mq, Kq] + [Mkv, Kq] + [Mkv, Kv]
+    union {
+      output_accum_t* workspace = nullptr; // [Mq, Kq] + [Mkv, Kq] + [Mkv, Kv]
+      output_accum_t* workspace_gk;
+    };
+    output_accum_t* workspace_gv;
+    output_accum_t* workspace_gq;
     output_accum_t* workspace_end = nullptr; // Only used in debug mode
 
     // Scale
@@ -233,11 +231,13 @@ struct AttentionBackwardKernel {
       grad_value_ptr = warp_uniform(grad_value_ptr);
 
       if (kNeedsAccumGradQ || kNeedsAccumGradK || kNeedsAccumGradV) {
-        assert(workspace != nullptr);
-        // format: [B, H, M, K]
+        assert(workspace_size() == 0 || workspace != nullptr);
+
         workspace += (batch_id * num_heads + head_id) * workspace_strideBH();
         workspace_end = workspace + workspace_strideBH();
         workspace = warp_uniform(workspace);
+        workspace_gv = workspace + workspace_elements_gk();
+        workspace_gq = workspace_gv + workspace_elements_gv();
       } else {
         workspace = nullptr;
       }
@@ -248,12 +248,6 @@ struct AttentionBackwardKernel {
     }
     __host__ dim3 getThreadsGrid() const {
       return dim3(kWarpSize, kNumWarpsPerBlock, 1);
-    }
-    CUTLASS_HOST_DEVICE int64_t workspace_elements_gq() const {
-      if (!kNeedsAccumGradQ) {
-        return 0;
-      }
-      return align_up(num_queries, (int32_t)kBlockSizeI) * align_up(head_dim, (int32_t)kBlockSizeJ);
     }
     CUTLASS_HOST_DEVICE int64_t workspace_elements_gk() const {
       if (!kNeedsAccumGradK) {
@@ -267,11 +261,20 @@ struct AttentionBackwardKernel {
       }
       return align_up(num_keys, (int32_t)kBlockSizeJ) * align_up(head_dim_value, (int32_t)kBlockSizeI);
     }
+    CUTLASS_HOST_DEVICE int64_t workspace_elements_gq() const {
+      if (!kNeedsAccumGradQ) {
+        return 0;
+      }
+      if (num_keys <= kBlockSizeJ) {
+        return 0;
+      }
+      return align_up(num_queries, (int32_t)kBlockSizeI) * align_up(head_dim, (int32_t)kBlockSizeJ);
+    }
     CUTLASS_HOST_DEVICE int64_t workspace_strideBH() const {
-      return align_up(workspace_elements_gq() + workspace_elements_gk() + workspace_elements_gv(), 4L);
+      return align_up(workspace_elements_gk() + workspace_elements_gv() + workspace_elements_gq(), 4L);
     }
     CUTLASS_HOST_DEVICE int64_t workspace_size() const {
-      // Returns memory we need as buffer in gmem to run this kernel
+      // Returns size of buffer we need to run this kernel
       return num_batches * num_heads * workspace_strideBH() * sizeof(float);
     }
   };
@@ -518,7 +521,7 @@ struct AttentionBackwardKernel {
     using OutputTileIterator =
         typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
             typename DefaultEpilogue::OutputTileIterator>::Iterator;
-    using AccumTileIterator = GmemTile<typename Mma::FragmentC, kNumThreads>;
+    using AccumTileGmem = GmemTile<typename Mma::FragmentC, kNumThreads>;
   };
   struct MatmulGradK {
     // grad_k <- tmp.transpose(-2, -1) @ q_i
@@ -811,13 +814,6 @@ struct AttentionBackwardKernel {
     extern __shared__ char smem_buffer[];
     SharedStorage& shared_storage = *((SharedStorage*)smem_buffer);
 
-    auto getQueryStart = [&](int32_t key_start) -> int32_t {
-      if (p.causal) {
-        return (key_start / kBlockSizeI) * kBlockSizeI;
-      }
-      return 0;
-    };
-
     if (kPrologueQK) {
       prologueQkNextIteration<true>(shared_storage, p, 0, 0);
     }
@@ -845,7 +841,7 @@ struct AttentionBackwardKernel {
     int32_t key_end = p.num_keys / kBlockSizeJ * kBlockSizeJ;
     for (; key_start < key_end; key_start += kBlockSizeJ) {
       output_frags.clear();
-      int32_t query_start = getQueryStart(key_start);
+      int32_t query_start = getQueryStart(p, key_start);
       int32_t query_end = query_start +
           (p.num_queries - query_start) / kBlockSizeI * kBlockSizeI;
       for (; query_start < query_end; query_start += kBlockSizeI) {
@@ -865,7 +861,7 @@ struct AttentionBackwardKernel {
     // Last (partial) key
     if (key_start != p.num_keys) {
       output_frags.clear();
-      for (int32_t query_start = getQueryStart(key_start);
+      for (int32_t query_start = getQueryStart(p, key_start);
            query_start < p.num_queries;
            query_start += kBlockSizeI) {
         processBlockIJ<false>(
@@ -1122,7 +1118,7 @@ struct AttentionBackwardKernel {
             shared_storage.gradV_epilogue(),
             output_frags.gradV,
             createEpilogueIter(),
-            query_start == 0 || (p.causal && query_start == key_start));
+            query_start == 0 || (p.causal && query_start <= key_start));
       }
     }
     __syncthreads();
@@ -1235,7 +1231,7 @@ struct AttentionBackwardKernel {
     for (int col = 0; col < p.head_dim;
          col += MatmulGradQ::ThreadblockShape::kN) {
       using Mma = typename MatmulGradQ::Mma;
-      using AccumTileIterator = typename MatmulGradQ::AccumTileIterator;
+      using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
 
       cutlass::gemm::GemmCoord problem_size(
           num_queries_in_block,
@@ -1262,16 +1258,13 @@ struct AttentionBackwardKernel {
       typename Mma::FragmentC accum;
 
       bool isFirst = key_start == 0;
-      float* __restrict__ gmem_accum_ptr = p.workspace;
       int col_id = col / MatmulGradQ::ThreadblockShape::kN;
       int storage_id = (col_id + query_start / kBlockSizeI * ceil_div(p.head_dim, MatmulGradQ::ThreadblockShape::kN));
-      gmem_accum_ptr += storage_id * AccumTileIterator::kElementsStored;
+      AccumTileGmem gmem_tile{p.workspace_gq + storage_id * AccumTileGmem::kElementsStored};
       assert(gmem_accum_ptr < p.workspace_end);
       if (isFirst || !kNeedsAccumGradQ) {
         accum.clear();
       } else {
-        AccumTileIterator gmem_tile{gmem_accum_ptr};
-        gmem_tile.ptr = gmem_accum_ptr;
         gmem_tile.load(accum, thread_id);
       }
 
@@ -1294,8 +1287,6 @@ struct AttentionBackwardKernel {
       bool isLast =
           (p.causal && next_query > query_start) || next_key >= p.num_keys;
       if (kNeedsAccumGradQ && !isLast) {
-        AccumTileIterator gmem_tile{gmem_accum_ptr};
-        gmem_tile.ptr = gmem_accum_ptr;
         gmem_tile.store(accum, thread_id);
       } else {
         typename MatmulGradQ::OutputTileIterator output_it(
@@ -1381,12 +1372,8 @@ struct AttentionBackwardKernel {
       }
 
       if (kPrologueQK && isLastColumn) {
-        int32_t next_query = query_start + kBlockSizeI;
-        int32_t next_key = key_start;
-        if (next_query >= p.num_queries) {
-          next_key = key_start + kBlockSizeJ;
-          next_query = p.causal ? next_key : 0;
-        }
+        int32_t next_query, next_key;
+        incrIteration(p, query_start, key_start, next_query, next_key);
         DISPATCH_BOOL(next_key != key_start, kForceReloadK, ([&]() {
                         prologueQkNextIteration<kForceReloadK>(
                             shared_storage, p, next_query, next_key);
@@ -1400,10 +1387,17 @@ struct AttentionBackwardKernel {
                          : shared_storage.gradK_epilogue(),
             output_frags.gradK,
             createEpilogueIter(),
-            query_start == 0 || (p.causal && query_start == key_start));
+            query_start == 0 || (p.causal && query_start <= key_start));
       }
     }
   }
+
+  static CUTLASS_DEVICE int32_t getQueryStart(Params const& p, int32_t key_start) {
+    if (p.causal) {
+      return (key_start / kBlockSizeI) * kBlockSizeI;
+    }
+    return 0;
+  };
 
   static CUTLASS_DEVICE void incrIteration(
       Params const& p,
@@ -1415,7 +1409,7 @@ struct AttentionBackwardKernel {
     next_key = key_start;
     if (next_query >= p.num_queries) {
       next_key = key_start + kBlockSizeJ;
-      next_query = p.causal ? (next_key / kBlockSizeI) * kBlockSizeI : 0;
+      next_query = getQueryStart(p, next_key);
     }
   }
 
