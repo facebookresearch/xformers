@@ -1,3 +1,47 @@
+/***************************************************************************************************
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights
+ *reserved. SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ *ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ *LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ *CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ *SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ *INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ *CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ *ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ *POSSIBILITY OF SUCH DAMAGE.
+ *
+ **************************************************************************************************/
+/*! \file
+    \brief Inspired from
+   "cutlass/gemm/warp/mma_tensor_op_tile_access_iterator.h" Loads tiles of GEMM
+   operands from a RowMajor shared-memory layout into registers to use by A100
+   TensorCores.
+
+    The difference with "mma_tensor_op_tile_access_iterator.h" is that:
+    (1) We use "ldmatrix" to load tiles, rather than manual loads (slightly
+   faster) (2) We support to transpose the operand (eg read `A.transpose()` when
+   the shared memory holds `A`)
+
+    This is only implemented for the specific shapes that are interesting for us
+*/
 #pragma once
 
 #include <cutlass/gemm/gemm.h>
@@ -13,14 +57,7 @@ template <
     /// Data type of A elements
     typename Element_,
     bool kTranspose = false>
-class WarpIteratorFromSmem
-// <
-//     cutlass::MatrixShape<32, 32>,
-//     Operand_,
-//     Element_,
-//     cutlass::layout::RowMajor,
-//     cutlass::MatrixShape<16, 8>, 1, 32, false, 1>
-{
+class WarpIteratorFromSmem {
  public:
   /// Shape of tile to load (concept: MatrixShape)
   using Shape = cutlass::MatrixShape<32, 32>;
