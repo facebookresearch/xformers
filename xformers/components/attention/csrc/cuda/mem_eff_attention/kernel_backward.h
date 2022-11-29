@@ -139,7 +139,6 @@ struct AttentionBackwardKernel {
     };
     output_accum_t* workspace_gv;
     output_accum_t* workspace_gq;
-    output_accum_t* workspace_end = nullptr; // Only used in debug mode
 
     // Scale
     accum_t scale;
@@ -239,7 +238,6 @@ struct AttentionBackwardKernel {
         assert(workspace_size() == 0 || workspace != nullptr);
 
         workspace += (batch_id * num_heads + head_id) * workspace_strideBH();
-        workspace_end = workspace + workspace_strideBH();
         workspace = warp_uniform(workspace);
         workspace_gv = workspace + workspace_elements_gk();
         workspace_gq = workspace_gv + workspace_elements_gv();
@@ -1295,7 +1293,6 @@ struct AttentionBackwardKernel {
                ceil_div(p.head_dim, MatmulGradQ::ThreadblockShape::kN));
       AccumTileGmem gmem_tile{
           p.workspace_gq + storage_id * AccumTileGmem::kElementsStored};
-      assert(gmem_accum_ptr < p.workspace_end);
       if (isFirst || !kNeedsAccumGradQ) {
         accum.clear();
       } else {
