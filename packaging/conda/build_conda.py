@@ -97,6 +97,7 @@ class Build:
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
         os.environ["CU_VERSION"] = self.cuda_version
         os.environ["SOURCE_ROOT_DIR"] = str(SOURCE_ROOT_DIR)
+        os.environ["XFORMERS_BUILD_TYPE"] = "Release"
         cuda_constraint = version_constraint(self.cuda_version)
         pytorch_version_tuple = tuple(int(v) for v in self.pytorch_version.split("."))
         if pytorch_version_tuple < (1, 13):
