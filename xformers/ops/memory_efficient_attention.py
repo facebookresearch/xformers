@@ -624,7 +624,7 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
 
         assert grad.dtype in cls.SUPPORTED_DTYPES
         cls._flash_attn_backward(
-            grad.reshape(ctx.kernel_output_shape),
+            grad.reshape(ctx.kernel_output_shape).contiguous(),
             q,
             k,
             v,
