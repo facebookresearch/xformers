@@ -256,19 +256,6 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
     )
 
 
-def backward_error_atol(k, kv_len, q_len, dtype):
-    atol = 2e-4 + 2e-6 * k
-    rtol = 1e-4
-    if dtype is torch.half:
-        atol = 8e-2
-        rtol = 2e-2
-    if dtype is torch.bfloat16:
-        # I've seen (out=-1.9 and ref=-1.0 with flash)
-        atol = 0.7
-        rtol = 0.1
-    return atol, rtol
-
-
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("packed", [False, True])
 @pytest.mark.parametrize(
@@ -620,7 +607,9 @@ def test_backward(
     del grad_out
     del ref
 
-    atol, rtol = backward_error_atol(k, kv_len, q_len, dtype)
+    atol = op.BACKWARD_ERROR_ATOL[dtype]
+    rtol = op.BACKWARD_ERROR_RTOL[dtype]
+
     grads_ref = []
     grads_name = []
     if qkv is None:
@@ -936,7 +925,8 @@ def test_custom_scale(op_device_dtype_B_Mq_Mkv_H_K_Kv):
 
     atol = op.FORWARD_ERROR_ATOL[dtype]
     assert_allclose(out.float(), ref.float(), atol=atol)
-    atol, rtol = backward_error_atol(k, kv_len, q_len, dtype)
+    atol = op.BACKWARD_ERROR_ATOL[dtype]
+    rtol = op.BACKWARD_ERROR_RTOL[dtype]
     assert_allclose(grad_q, ref_grad_q, atol=atol, rtol=rtol)
     assert_allclose(grad_k, ref_grad_k, atol=atol, rtol=rtol)
     assert_allclose(grad_v, ref_grad_v, atol=atol, rtol=rtol)
