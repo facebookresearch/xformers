@@ -116,6 +116,7 @@ FORCE_OP = None
 # FORCE_OP = xformers.ops.MemoryEfficientAttentionFlashAttentionOp
 # FORCE_OP = xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp
 # FORCE_OP = xformers.ops.TritonFlashAttentionOp
+# FORCE_OP = xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp
 
 
 def product_dict(**kwargs):

@@ -98,6 +98,8 @@ class AttentionOpBase(torch.autograd.Function):
     - :attr:`xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp`
 
     - :attr:`xformers.ops.TritonFlashAttentionOp`
+
+    - :attr:`xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp`
     """
 
     FORWARD_OPERATOR: Any
@@ -744,9 +746,11 @@ class TritonFlashAttentionOp(AttentionOpBase):
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
         LowerTriangularMask,
-        torch.Tensor,
+        # TODO: backwards accuracy is failing for a few cases, perhaps we want to disable this for now.
+        # torch.Tensor,
     }
     SUPPORTS_DROPOUT = False
+    SUPPORTS_CUSTOM_SCALE = True
     NAME = "tritonflashatt"
 
     @classmethod
@@ -773,6 +777,7 @@ class TritonFlashAttentionOp(AttentionOpBase):
         value: torch.Tensor,
         attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
         p: float,
+        scale: Optional[float] = None,
     ) -> torch.Tensor:
         ctx = _FakeContext()
         return cls.forward(
@@ -782,11 +787,12 @@ class TritonFlashAttentionOp(AttentionOpBase):
             value=value,
             attn_bias=attn_bias,
             p=p,
+            scale=scale,
         )
 
     @classmethod
-    def forward(cls, ctx, query, key, value, attn_bias, p):
-        softmax_scale = query.shape[-1] ** (-0.5)
+    def forward(cls, ctx, query, key, value, attn_bias, p, scale):
+        softmax_scale = query.shape[-1] ** (-0.5) if scale is None else scale
         causal = isinstance(attn_bias, LowerTriangularMask)
         if not causal and attn_bias is not None and attn_bias.ndim == 3:
             B = query.shape[0]
@@ -806,6 +812,54 @@ class TritonFlashAttentionOp(AttentionOpBase):
     @staticmethod
     def backward(ctx, grad):
         return triton_flash.backward(ctx, grad)
+
+
+class MemoryEfficientAttentionTritonFwdFlashBwOp(TritonFlashAttentionOp):
+    """An operator that uses :attr:`xformers.ops.TritonFlashAttentionOp` for the forward pass \
+        and :attr:`xformers.ops.MemoryEfficientAttentionFlashAttentionOp` for the backward.
+    """
+
+    FW_OP = TritonFlashAttentionOp
+    BW_OP = MemoryEfficientAttentionFlashAttentionOp
+    SUPPORTS_CUSTOM_SCALE = True
+    SUPPORTED_ATTN_BIAS_TYPES = BW_OP.SUPPORTED_ATTN_BIAS_TYPES.intersection(
+        FW_OP.SUPPORTED_ATTN_BIAS_TYPES
+    )
+    SUPPORTED_DTYPES = BW_OP.SUPPORTED_DTYPES.intersection(FW_OP.SUPPORTED_DTYPES)
+
+    NAME = "ftriton_bflsh"
+
+    @classmethod
+    def supports(cls, d: "AttentionOpDispatch") -> bool:
+        if d.requires_grad and not cls.BW_OP.supports(d):
+            return False
+        return cls.FW_OP.supports(replace(d, requires_grad=False))
+
+    @classmethod
+    def backward(cls, ctx, grad):
+        query, key, value, out, lse, bias = ctx.saved_tensors
+        ctx_flash = SimpleNamespace()
+
+        ctx_flash.causal = ctx.causal
+        ctx_flash.dropout_p = 0.0
+        query, key, value, cu_seqlens_k, cu_seqlens_q = cls.BW_OP.prepare_inputs(
+            ctx_flash, query, key, value
+        )
+        ctx_flash.kernel_output_shape = (query.shape[0], query.shape[1], value.shape[2])
+        ctx_flash.softmax_scale = (
+            query.shape[-1] ** (-0.5)
+            if ctx.softmax_scale is None
+            else ctx.softmax_scale
+        )
+        rng_state = None
+
+        out = out.reshape(ctx_flash.kernel_output_shape)
+        grad = grad.reshape(ctx_flash.kernel_output_shape)
+        return cls.BW_OP._backward(
+            ctx_flash,
+            grad,
+            [query, key, value, out, lse, cu_seqlens_q, cu_seqlens_k, rng_state],
+        )
 
 
 class MemoryEfficientAttentionCutlassFwdFlashBwOp(MemoryEfficientAttentionCutlassOp):
@@ -898,6 +952,7 @@ class AttentionOpDispatch:
             MemoryEfficientAttentionFlashAttentionOp,
             MemoryEfficientAttentionCutlassOp,
             MemoryEfficientAttentionOp,
+            MemoryEfficientAttentionTritonFwdFlashBwOp,
             TritonFlashAttentionOp,
         ]
         if self.requires_grad and self._is_cutlass_fwd_faster_than_flash():

@@ -15,6 +15,7 @@ from .memory_efficient_attention import (
     MemoryEfficientAttentionCutlassOp,
     MemoryEfficientAttentionFlashAttentionOp,
     MemoryEfficientAttentionOp,
+    MemoryEfficientAttentionTritonFwdFlashBwOp,
     TritonFlashAttentionOp,
     memory_efficient_attention,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "MemoryEfficientAttentionCutlassOp",
     "MemoryEfficientAttentionFlashAttentionOp",
     "MemoryEfficientAttentionOp",
+    "MemoryEfficientAttentionTritonFwdFlashBwOp",
     "memory_efficient_attention",
     "SwiGLU",
     "SwiGLUEagerOp",
