@@ -43,10 +43,44 @@ namespace {
 
 template <typename FragmentType, int32_t kNumThreads>
 struct GmemTile {
+  /*
+    Helper functions to efficient store/load RF to gmem
+
+    GEMM accumulators have a particular format on A100, and
+    it takes some compute/shared-memory to rearrange them to
+    a RowMajor or ColumnMajor format in global memory through
+    an Epilogue. The same complexity goes for loading into RF.
+
+    This class loads/stores RF as they are, and can be used for
+    efficient accumulation across gemms for instance:
+
+    ```
+    GmemTile tile;
+    for (int i = 0; i < N; ++i) {
+      // ...
+
+      Fragment accum;
+      if (i == 0) {
+        accum.clear();
+      } else {
+        tile.load(accum);
+      }
+      mma(accum, ...);
+      if (i < N-1) {
+        // Store for next GEMM
+        tile.store(accum);
+      } else {
+        // Store in tensor (eg RowMajor)
+        epilogue(accum);
+      }
+
+      // ...
+    }
+    ```
+  */
+
   // 128bits per thread
   using AccessType = cutlass::Array<float, 4>;
-  // 128bytes
-  using PrefetchAccessType = cutlass::Array<float, 32>;
   static constexpr int32_t kBytes = sizeof(AccessType);
   static constexpr int32_t kStride = kNumThreads * AccessType::kElements;
   static constexpr int32_t kNumIters =
