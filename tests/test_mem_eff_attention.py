@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
 import random
 from dataclasses import dataclass
 from typing import Any, Sequence, Type
@@ -258,21 +257,15 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
 
 
 def backward_error_atol(k, kv_len, q_len, dtype):
-    atol = 2e-4 + 2e-6 * k * kv_len * math.sqrt(q_len)
+    atol = 2e-4 + 2e-6 * k
     rtol = 1e-4
     if dtype is torch.half:
-        atol = 5e-2
+        atol = 8e-2
         rtol = 2e-2
-        # TODO: Implement f32 accumulation for bw
-        # Longer sequences mean we iterate more and errors accumulate
-        atol *= 1.4 ** (max(q_len, kv_len) // 64)
     if dtype is torch.bfloat16:
         # I've seen (out=-1.9 and ref=-1.0 with flash)
-        atol = 0.5
+        atol = 0.7
         rtol = 0.1
-        # TODO: Implement f32 accumulation for bw
-        # Longer sequences mean we iterate more and errors accumulate
-        atol *= 1.4 ** (max(q_len, kv_len) // 64)
     return atol, rtol
 
 
