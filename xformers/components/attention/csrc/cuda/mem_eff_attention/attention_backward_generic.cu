@@ -210,8 +210,8 @@ mem_efficient_attention_backward_cutlass(
 
     int64_t size_bytes = p.workspace_size();
     if (size_bytes) {
-      workspace = at::empty(
-          {size_bytes}, query.options().dtype(at::ScalarType::Byte));
+      workspace =
+          at::empty({size_bytes}, query.options().dtype(at::ScalarType::Byte));
       p.workspace = (float*)workspace.data_ptr();
     }
     Kernel::check_supported(p);

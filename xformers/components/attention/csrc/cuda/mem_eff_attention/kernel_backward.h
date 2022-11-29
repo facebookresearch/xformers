@@ -39,8 +39,6 @@
 
 using namespace gemm_kernel_utils;
 
-
-
 namespace {
 
 template <typename FragmentType, int32_t kNumThreads>
@@ -51,18 +49,24 @@ struct GmemTile {
   using PrefetchAccessType = cutlass::Array<float, 32>;
   static constexpr int32_t kBytes = sizeof(AccessType);
   static constexpr int32_t kStride = kNumThreads * AccessType::kElements;
-  static constexpr int32_t kNumIters = FragmentType::kElements / AccessType::kElements;
-  static constexpr int32_t kElementsStored = kNumThreads * FragmentType::kElements;
-  static_assert(FragmentType::kElements % AccessType::kElements == 0, "fragment not aligned on 128 bits");
+  static constexpr int32_t kNumIters =
+      FragmentType::kElements / AccessType::kElements;
+  static constexpr int32_t kElementsStored =
+      kNumThreads * FragmentType::kElements;
+  static_assert(
+      FragmentType::kElements % AccessType::kElements == 0,
+      "fragment not aligned on 128 bits");
 
   float* ptr;
 
   CUTLASS_DEVICE void load(FragmentType& fragment, int thread_id) {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kNumIters; ++i) {
-      AccessType* __restrict__ gmem_ptr = reinterpret_cast<AccessType*>(ptr + thread_id * AccessType::kElements + i * kStride);
+      AccessType* __restrict__ gmem_ptr = reinterpret_cast<AccessType*>(
+          ptr + thread_id * AccessType::kElements + i * kStride);
       AccessType sub_fragment;
-      cutlass::arch::global_load<AccessType, kBytes>(sub_fragment, gmem_ptr, true);
+      cutlass::arch::global_load<AccessType, kBytes>(
+          sub_fragment, gmem_ptr, true);
       CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < AccessType::kElements; ++j) {
         fragment[i * AccessType::kElements + j] = sub_fragment[j];
@@ -73,17 +77,18 @@ struct GmemTile {
   CUTLASS_DEVICE void store(FragmentType const& fragment, int thread_id) {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kNumIters; ++i) {
-      AccessType* __restrict__ gmem_ptr = reinterpret_cast<AccessType*>(ptr + thread_id * AccessType::kElements + i * kStride);
+      AccessType* __restrict__ gmem_ptr = reinterpret_cast<AccessType*>(
+          ptr + thread_id * AccessType::kElements + i * kStride);
       AccessType sub_fragment;
       CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < AccessType::kElements; ++j) {
         sub_fragment[j] = fragment[i * AccessType::kElements + j];
       }
-      cutlass::arch::global_store<AccessType, kBytes>(sub_fragment, gmem_ptr, true);
+      cutlass::arch::global_store<AccessType, kBytes>(
+          sub_fragment, gmem_ptr, true);
     }
   }
 };
-
 
 template <typename scalar_t, typename Arch>
 constexpr int getWarpsPerSm() {
@@ -253,13 +258,15 @@ struct AttentionBackwardKernel {
       if (!kNeedsAccumGradK) {
         return 0;
       }
-      return align_up(num_keys, (int32_t)kBlockSizeJ) * align_up(head_dim, (int32_t)kBlockSizeI);
+      return align_up(num_keys, (int32_t)kBlockSizeJ) *
+          align_up(head_dim, (int32_t)kBlockSizeI);
     }
     CUTLASS_HOST_DEVICE int64_t workspace_elements_gv() const {
       if (!kNeedsAccumGradV) {
         return 0;
       }
-      return align_up(num_keys, (int32_t)kBlockSizeJ) * align_up(head_dim_value, (int32_t)kBlockSizeI);
+      return align_up(num_keys, (int32_t)kBlockSizeJ) *
+          align_up(head_dim_value, (int32_t)kBlockSizeI);
     }
     CUTLASS_HOST_DEVICE int64_t workspace_elements_gq() const {
       if (!kNeedsAccumGradQ) {
@@ -268,10 +275,14 @@ struct AttentionBackwardKernel {
       if (num_keys <= kBlockSizeJ) {
         return 0;
       }
-      return align_up(num_queries, (int32_t)kBlockSizeI) * align_up(head_dim, (int32_t)kBlockSizeJ);
+      return align_up(num_queries, (int32_t)kBlockSizeI) *
+          align_up(head_dim, (int32_t)kBlockSizeJ);
     }
     CUTLASS_HOST_DEVICE int64_t workspace_strideBH() const {
-      return align_up(workspace_elements_gk() + workspace_elements_gv() + workspace_elements_gq(), 4L);
+      return align_up(
+          workspace_elements_gk() + workspace_elements_gv() +
+              workspace_elements_gq(),
+          4L);
     }
     CUTLASS_HOST_DEVICE int64_t workspace_size() const {
       // Returns size of buffer we need to run this kernel
@@ -436,6 +447,7 @@ struct AttentionBackwardKernel {
     using OutputTileIterator =
         typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
             typename DefaultEpilogue::OutputTileIterator>::Iterator;
+    using AccumTileGmem = GmemTile<typename Mma::FragmentC, kNumThreads>;
   };
 
   struct MatmulDOIVJ {
@@ -574,6 +586,7 @@ struct AttentionBackwardKernel {
     using OutputTileIterator =
         typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
             typename DefaultEpilogue::OutputTileIterator>::Iterator;
+    using AccumTileGmem = GmemTile<typename Mma::FragmentC, kNumThreads>;
   };
 
   // See https://fburl.com/gsheet/l5bltspl
@@ -899,6 +912,12 @@ struct AttentionBackwardKernel {
     int16_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
     int8_t warp_id = warp_uniform(threadIdx.y);
     int8_t lane_id = threadIdx.x;
+
+    bool isFirstQuery =
+        query_start == 0 || (p.causal && query_start <= key_start);
+    int32_t next_query, next_key;
+    incrIteration(p, query_start, key_start, next_query, next_key);
+    bool isLastQuery = next_key != key_start;
     __syncthreads();
     loadDi(shared_storage.di(), p, query_start);
 
@@ -1066,6 +1085,7 @@ struct AttentionBackwardKernel {
     for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim_value);
          col += MatmulGradV::ThreadblockShape::kN) {
       using Mma = typename MatmulGradV::Mma;
+      using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
 
       cutlass::gemm::GemmCoord problem_size(
           num_keys_in_block, p.head_dim_value - col, num_queries_in_block);
@@ -1091,9 +1111,15 @@ struct AttentionBackwardKernel {
           lane_id,
           problem_size.k());
 
+      int storage_id = col / MatmulGradV::ThreadblockShape::kN;
+      AccumTileGmem gmem_tile{
+          p.workspace_gv + storage_id * AccumTileGmem::kElementsStored};
       if (!kOutputInRF) {
-        createEpilogueIter().prefetch_all();
-        output_frags.gradV.clear();
+        if (isFirstQuery || !kNeedsAccumGradV) {
+          output_frags.gradV.clear();
+        } else {
+          gmem_tile.load(output_frags.gradV, thread_id);
+        }
       }
       mma.set_prologue_done(kPrologueGV);
 
@@ -1114,11 +1140,15 @@ struct AttentionBackwardKernel {
       }
 
       if (!kOutputInRF) {
-        accumulateInGmem<MatmulGradV>(
-            shared_storage.gradV_epilogue(),
-            output_frags.gradV,
-            createEpilogueIter(),
-            query_start == 0 || (p.causal && query_start <= key_start));
+        if (kNeedsAccumGradV && !isLastQuery) {
+          gmem_tile.store(output_frags.gradV, thread_id);
+        } else {
+          accumulateInGmem<MatmulGradV>(
+              shared_storage.gradV_epilogue(),
+              output_frags.gradV,
+              createEpilogueIter(),
+              isFirstQuery || kNeedsAccumGradV);
+        }
       }
     }
     __syncthreads();
@@ -1259,8 +1289,12 @@ struct AttentionBackwardKernel {
 
       bool isFirst = key_start == 0;
       int col_id = col / MatmulGradQ::ThreadblockShape::kN;
-      int storage_id = (col_id + query_start / kBlockSizeI * ceil_div(p.head_dim, MatmulGradQ::ThreadblockShape::kN));
-      AccumTileGmem gmem_tile{p.workspace_gq + storage_id * AccumTileGmem::kElementsStored};
+      int storage_id =
+          (col_id +
+           query_start / kBlockSizeI *
+               ceil_div(p.head_dim, MatmulGradQ::ThreadblockShape::kN));
+      AccumTileGmem gmem_tile{
+          p.workspace_gq + storage_id * AccumTileGmem::kElementsStored};
       assert(gmem_accum_ptr < p.workspace_end);
       if (isFirst || !kNeedsAccumGradQ) {
         accum.clear();
@@ -1296,7 +1330,7 @@ struct AttentionBackwardKernel {
             thread_id);
         accumulateInGmem<MatmulGradQ>(
             isLastColumn ? shared_storage.gradQ_epilogue_lastIter()
-                        : shared_storage.gradQ_epilogue(),
+                         : shared_storage.gradQ_epilogue(),
             accum,
             output_it,
             isFirst || kNeedsAccumGradQ);
@@ -1310,6 +1344,7 @@ struct AttentionBackwardKernel {
     for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim);
          col += MatmulGradK::ThreadblockShape::kN) {
       using Mma = typename MatmulGradK::Mma;
+      using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
 
       cutlass::gemm::GemmCoord problem_size(
           num_keys_in_block,
@@ -1350,17 +1385,24 @@ struct AttentionBackwardKernel {
           lane_id,
           problem_size.k());
 
+      int storage_id = col / MatmulGradK::ThreadblockShape::kN;
+      AccumTileGmem gmem_tile{
+          p.workspace_gk + storage_id * AccumTileGmem::kElementsStored};
       if (!kOutputInRF) {
-        output_frags.gradK.clear();
-        createEpilogueIter().prefetch_all();
+        if (isFirstQuery || !kNeedsAccumGradK) {
+          output_frags.gradK.clear();
+        } else {
+          gmem_tile.load(output_frags.gradK, thread_id);
+        }
       }
+      mma.set_prologue_done(kPrologueGK);
 
       auto gemm_k_iterations =
           (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
 
       // Compute threadblock-scoped matrix multiply-add
       __syncthreads();
-      mma.set_prologue_done(kPrologueGK);
+
       mma(gemm_k_iterations,
           output_frags.gradK,
           iterator_B,
@@ -1382,17 +1424,22 @@ struct AttentionBackwardKernel {
 
       // Output results
       if (!kOutputInRF) {
-        accumulateInGmem<MatmulGradK>(
-            isLastColumn ? shared_storage.gradK_epilogue_final()
-                         : shared_storage.gradK_epilogue(),
-            output_frags.gradK,
-            createEpilogueIter(),
-            query_start == 0 || (p.causal && query_start <= key_start));
+        if (kNeedsAccumGradK && !isLastQuery) {
+          gmem_tile.store(output_frags.gradK, thread_id);
+        } else {
+          accumulateInGmem<MatmulGradK>(
+              isLastColumn ? shared_storage.gradK_epilogue_final()
+                           : shared_storage.gradK_epilogue(),
+              output_frags.gradK,
+              createEpilogueIter(),
+              isFirstQuery || kNeedsAccumGradK);
+        }
       }
     }
   }
 
-  static CUTLASS_DEVICE int32_t getQueryStart(Params const& p, int32_t key_start) {
+  static CUTLASS_DEVICE int32_t
+  getQueryStart(Params const& p, int32_t key_start) {
     if (p.causal) {
       return (key_start / kBlockSizeI) * kBlockSizeI;
     }
