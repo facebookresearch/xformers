@@ -19,6 +19,7 @@ env:
   FORCE_CUDA: 1
   MAX_JOBS: 1 # will crash otherwise
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
+  XFORMERS_BUILD_TYPE: "Release"
 
 jobs:
   build_wheels:
