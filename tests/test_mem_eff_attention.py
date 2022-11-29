@@ -605,7 +605,9 @@ def test_backward(
 
     grad_out = torch.ones_like(out)
     if grad_out_contiguous is False:
-        grad_out = torch.tensor([1.0], device=device)[None, None, :].expand_as(out)
+        grad_out = torch.tensor([1.0], dtype=query.dtype, device=device)[
+            None, None, :
+        ].expand_as(out)
 
     out.backward(grad_out)
     del out
