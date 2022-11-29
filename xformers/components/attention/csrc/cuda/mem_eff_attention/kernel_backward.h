@@ -153,6 +153,70 @@ struct AttentionBackwardKernel {
   static constexpr bool kIsAligned = kIsAligned_;
 
   struct Params {
+    uint32_t thread_value;
+    int lane_id;
+
+    CUTLASS_DEVICE uint32_t get_u32(int from_rank) const {
+      return (int32_t)__shfl_sync(0xffffffff, (unsigned)thread_value, from_rank);
+    }
+    CUTLASS_DEVICE void set_u32(uint32_t const& value, int to_rank) {
+      if (lane_id == to_rank) {
+        thread_value = value;
+      }
+    }
+    CUTLASS_DEVICE void* get_ptr(int from_rank) const {
+      struct {
+        union {
+          void* ptr;
+          uint32_t asInt[2];
+        };
+      } p;
+      p.asInt[0] = get_u32(from_rank);
+      p.asInt[1] = get_u32(from_rank + 1);
+      return p.ptr;
+    }
+    CUTLASS_DEVICE void set_ptr(void* ptr, int to_rank) {
+      struct {
+        union {
+          void* ptr;
+          uint32_t asInt[2];
+        };
+      } p;
+      p.ptr = ptr;
+      set_u32(p.asInt[0], to_rank);
+      set_u32(p.asInt[1], to_rank + 1);
+    }
+
+    #define DECL_PTR(RANK, TYPE, NAME) \
+    CUTLASS_DEVICE TYPE* get_ ## NAME() const { return (TYPE*)get_ptr(RANK); } \
+    CUTLASS_DEVICE void set_ ## NAME(TYPE* ptr) { return set_ptr(ptr, RANK); }
+    #define DECL_VAL32(RANK, TYPE, NAME) \
+    CUTLASS_DEVICE TYPE get_ ## NAME() const { return (TYPE)get_u32(RANK); } \
+    CUTLASS_DEVICE void set_ ## NAME(TYPE const& value) { return set_u32(value, RANK); }
+
+    DECL_PTR(0, scalar_t, query_ptr);
+    DECL_PTR(2, scalar_t, key_ptr);
+    DECL_PTR(4, scalar_t, value_ptr);
+    DECL_PTR(6, lse_scalar_t, logsumexp_ptr);
+    DECL_PTR(8, scalar_t, output_ptr);
+    DECL_PTR(10, scalar_t, grad_output_ptr);
+    DECL_PTR(12, accum_t, delta_ptr);
+    DECL_PTR(14, output_t, grad_key_ptr);
+    DECL_PTR(16, output_t, grad_value_ptr);
+    DECL_VAL32(18, int32_t, head_dim);
+    DECL_VAL32(19, int32_t, head_dim_value);
+    DECL_VAL32(20, int32_t, num_queries);
+    DECL_VAL32(21, int32_t, num_keys);
+    DECL_VAL32(22, int32_t, num_heads);
+    DECL_VAL32(23, int32_t, q_strideM);
+    DECL_VAL32(24, int32_t, k_strideM);
+    DECL_VAL32(25, int32_t, v_strideM);
+    DECL_VAL32(26, int32_t, gO_strideM);
+    DECL_VAL32(27, int32_t, gQKV_strideM_multiplier);
+    DECL_PTR(28, output_t, grad_query_ptr);
+  // };
+
+  // struct Params: WarpDistributedRF {
     // Input tensors
     scalar_t* query_ptr; // [Mq, nH, K]
     scalar_t* key_ptr; // [Mk, nH, K]
@@ -231,6 +295,7 @@ struct AttentionBackwardKernel {
 
       int64_t batch_id = blockIdx.z;
       int32_t head_id = blockIdx.y;
+      lane_id = get_lane_id();
 
       query_ptr += batch_id * q_strideB + head_id * q_strideH;
       key_ptr += batch_id * k_strideB + head_id * k_strideH;
@@ -244,29 +309,29 @@ struct AttentionBackwardKernel {
       grad_key_ptr += batch_id * gK_strideB + head_id * gK_strideH;
       grad_value_ptr += batch_id * gV_strideB + head_id * gV_strideH;
 
-      head_dim = warp_uniform(head_dim);
-      head_dim_value = warp_uniform(head_dim_value);
-      num_queries = warp_uniform(num_queries);
-      num_keys = warp_uniform(num_keys);
-      num_heads = warp_uniform(num_heads);
+      set_head_dim(head_dim);
+      set_head_dim_value(head_dim_value);
+      set_num_queries(num_queries);
+      set_num_keys(num_keys);
+      set_num_heads(num_heads);
 
-      gO_strideM = warp_uniform(gO_strideM);
-      gQKV_strideM_multiplier = warp_uniform(gQKV_strideM_multiplier);
-      q_strideM = warp_uniform(q_strideM);
-      k_strideM = warp_uniform(k_strideM);
-      v_strideM = warp_uniform(v_strideM);
+      set_gO_strideM(gO_strideM);
+      set_gQKV_strideM_multiplier(gQKV_strideM_multiplier);
+      set_q_strideM(q_strideM);
+      set_k_strideM(k_strideM);
+      set_v_strideM(v_strideM);
 
-      query_ptr = warp_uniform(query_ptr);
-      key_ptr = warp_uniform(key_ptr);
-      value_ptr = warp_uniform(value_ptr);
-      logsumexp_ptr = warp_uniform(logsumexp_ptr);
-      output_ptr = warp_uniform(output_ptr);
-      grad_output_ptr = warp_uniform(grad_output_ptr);
-      delta_ptr = warp_uniform(delta_ptr);
+      set_query_ptr(query_ptr);
+      set_key_ptr(key_ptr);
+      set_value_ptr(value_ptr);
+      set_logsumexp_ptr(logsumexp_ptr);
+      set_output_ptr(output_ptr);
+      set_grad_output_ptr(grad_output_ptr);
+      set_delta_ptr(delta_ptr);
 
-      grad_query_ptr = warp_uniform(grad_query_ptr);
-      grad_key_ptr = warp_uniform(grad_key_ptr);
-      grad_value_ptr = warp_uniform(grad_value_ptr);
+      set_grad_query_ptr(grad_query_ptr);
+      set_grad_key_ptr(grad_key_ptr);
+      set_grad_value_ptr(grad_value_ptr);
 
       if (kNeedsAccumGradQ || kNeedsAccumGradK || kNeedsAccumGradV) {
         assert(workspace_size() == 0 || workspace != nullptr);
@@ -836,18 +901,18 @@ struct AttentionBackwardKernel {
     }
   };
 
-  static bool __host__ check_supported(Params const& p) {
-    CHECK_ALIGNED_PTR(p.query_ptr, kMinimumAlignment);
-    CHECK_ALIGNED_PTR(p.key_ptr, kMinimumAlignment);
-    CHECK_ALIGNED_PTR(p.value_ptr, kMinimumAlignment);
-    CHECK_ALIGNED_PTR(p.output_ptr, kMinimumAlignment);
-    CHECK_ALIGNED_PTR(p.grad_output_ptr, kMinimumAlignment);
+  static bool __host__ check_supported(Params const& params) {
+    CHECK_ALIGNED_PTR(params.query_ptr, kMinimumAlignment);
+    CHECK_ALIGNED_PTR(params.key_ptr, kMinimumAlignment);
+    CHECK_ALIGNED_PTR(params.value_ptr, kMinimumAlignment);
+    CHECK_ALIGNED_PTR(params.output_ptr, kMinimumAlignment);
+    CHECK_ALIGNED_PTR(params.grad_output_ptr, kMinimumAlignment);
     XFORMERS_CHECK(
-        p.q_strideH % kMinimumAlignment == 0, "query is not correctly aligned");
+        params.q_strideH % kMinimumAlignment == 0, "query is not correctly aligned");
     XFORMERS_CHECK(
-        p.k_strideH % kMinimumAlignment == 0, "key is not correctly aligned");
+        params.k_strideH % kMinimumAlignment == 0, "key is not correctly aligned");
     XFORMERS_CHECK(
-        p.v_strideH % kMinimumAlignment == 0, "value is not correctly aligned");
+        params.v_strideH % kMinimumAlignment == 0, "value is not correctly aligned");
     return true;
   }
 
@@ -867,13 +932,13 @@ struct AttentionBackwardKernel {
     if (kKernelComputesDelta) {
       constexpr int kOptimalElements =
           128 / cutlass::sizeof_bits<scalar_t>::value;
-      if (p.head_dim_value % kOptimalElements == 0) {
-        for (int query_start = 0; query_start < p.num_queries;
+      if (p.get_head_dim_value() % kOptimalElements == 0) {
+        for (int query_start = 0; query_start < p.get_num_queries();
              query_start += kBlockSizeI) {
           computeDelta<kOptimalElements>(p, query_start);
         }
       } else {
-        for (int query_start = 0; query_start < p.num_queries;
+        for (int query_start = 0; query_start < p.get_num_queries();
              query_start += kBlockSizeI) {
           computeDelta<1>(p, query_start);
         }
@@ -883,18 +948,18 @@ struct AttentionBackwardKernel {
 
     OutputFragments register output_frags;
     int32_t key_start = 0;
-    int32_t key_end = p.num_keys / kBlockSizeJ * kBlockSizeJ;
+    int32_t key_end = p.get_num_keys() / kBlockSizeJ * kBlockSizeJ;
     for (; key_start < key_end; key_start += kBlockSizeJ) {
       output_frags.clear();
       int32_t query_start = getQueryStart(p, key_start);
       int32_t query_end = query_start +
-          (p.num_queries - query_start) / kBlockSizeI * kBlockSizeI;
+          (p.get_num_queries() - query_start) / kBlockSizeI * kBlockSizeI;
       for (; query_start < query_end; query_start += kBlockSizeI) {
         processBlockIJ<true>(
             shared_storage, output_frags, p, query_start, key_start);
       }
       // last (partial) query
-      if (query_start < p.num_queries) {
+      if (query_start < p.get_num_queries()) {
         processBlockIJ<false>(
             shared_storage, output_frags, p, query_start, key_start);
       }
@@ -904,10 +969,10 @@ struct AttentionBackwardKernel {
       __syncthreads();
     }
     // Last (partial) key
-    if (key_start != p.num_keys) {
+    if (key_start != p.get_num_keys()) {
       output_frags.clear();
       for (int32_t query_start = getQueryStart(p, key_start);
-           query_start < p.num_queries;
+           query_start < p.get_num_queries();
            query_start += kBlockSizeI) {
         processBlockIJ<false>(
             shared_storage, output_frags, p, query_start, key_start);
@@ -925,7 +990,7 @@ struct AttentionBackwardKernel {
     int32_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
     if (thread_id < kBlockSizeI) {
       accum_t di_rf = accum_t(0);
-      if (query_start + thread_id < p.num_queries) {
+      if (query_start + thread_id < p.get_num_queries()) {
         di_rf = p.delta_ptr[query_start + thread_id];
       }
       di[thread_id] = di_rf;
@@ -956,16 +1021,16 @@ struct AttentionBackwardKernel {
     int32_t num_queries_in_block = skipBoundsChecks
         ? MatmulQK::Mma::Shape::kN
         : std::min(
-              (int32_t)MatmulQK::Mma::Shape::kN, p.num_queries - query_start);
+              (int32_t)MatmulQK::Mma::Shape::kN, p.get_num_queries() - query_start);
     int32_t num_keys_in_block = skipBoundsChecks
         ? MatmulQK::Mma::Shape::kM
-        : std::min((int32_t)MatmulQK::Mma::Shape::kM, p.num_keys - key_start);
+        : std::min((int32_t)MatmulQK::Mma::Shape::kM, p.get_num_keys() - key_start);
 
     auto prologueGradV = [&](int col) {
       typename MatmulGradV::Mma::IteratorB iterator_dO(
-          {int32_t(p.gO_strideM)},
-          p.grad_output_ptr + query_start * p.gO_strideM + col,
-          {num_queries_in_block, p.head_dim_value - col},
+          {int32_t(p.get_gO_strideM())},
+          p.get_grad_output_ptr() + query_start * p.get_gO_strideM() + col,
+          {num_queries_in_block, p.get_head_dim_value() - col},
           thread_id,
           no_offset);
       MatmulGradV::Mma::prologue(
@@ -976,9 +1041,9 @@ struct AttentionBackwardKernel {
     };
     auto prologueGradQ = [&](int col) {
       typename MatmulGradQ::Mma::IteratorB iterator_K(
-          {int32_t(p.k_strideM)},
-          p.key_ptr + key_start * p.k_strideM + col,
-          {num_keys_in_block, p.head_dim - col},
+          {int32_t(p.get_k_strideM())},
+          p.get_key_ptr() + key_start * p.get_k_strideM() + col,
+          {num_keys_in_block, p.get_head_dim() - col},
           thread_id,
           no_offset);
       MatmulGradQ::Mma::prologue(
@@ -986,9 +1051,9 @@ struct AttentionBackwardKernel {
     };
     auto prologueGradK = [&](int col) {
       typename MatmulGradK::Mma::IteratorB iterator_Q(
-          {int32_t(p.q_strideM)},
-          p.query_ptr + query_start * p.q_strideM + col,
-          {num_queries_in_block, p.head_dim - col},
+          {int32_t(p.get_q_strideM())},
+          p.get_query_ptr() + query_start * p.get_q_strideM() + col,
+          {num_queries_in_block, p.get_head_dim() - col},
           thread_id,
           no_offset);
       MatmulGradK::Mma::prologue(
@@ -999,15 +1064,15 @@ struct AttentionBackwardKernel {
     };
     auto prologueDOV = [&]() {
       typename MatmulDOIVJ::Mma::IteratorA iterator_A(
-          {int32_t(p.gO_strideM)},
-          p.grad_output_ptr + query_start * p.gO_strideM,
-          {num_queries_in_block, p.head_dim_value},
+          {int32_t(p.get_gO_strideM())},
+          p.get_grad_output_ptr() + query_start * p.get_gO_strideM(),
+          {num_queries_in_block, p.get_head_dim_value()},
           thread_id,
           no_offset);
       typename MatmulDOIVJ::Mma::IteratorB iterator_B(
-          {int32_t(p.v_strideM)},
-          p.value_ptr + key_start * p.v_strideM,
-          {p.head_dim_value, num_keys_in_block},
+          {int32_t(p.get_v_strideM())},
+          p.get_value_ptr() + key_start * p.get_v_strideM(),
+          {p.get_head_dim_value(), num_keys_in_block},
           thread_id,
           no_offset);
       MatmulDOIVJ::Mma::prologue(
@@ -1015,7 +1080,7 @@ struct AttentionBackwardKernel {
           iterator_A,
           iterator_B,
           thread_id,
-          p.head_dim_value);
+          p.get_head_dim_value());
     };
 
     /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1027,21 +1092,21 @@ struct AttentionBackwardKernel {
       cutlass::gemm::GemmCoord problem_size(
           num_keys_in_block,
           num_queries_in_block,
-          p.head_dim // k
+          p.get_head_dim() // k
       );
 
       // k_j
       typename Mma::IteratorA iterator_A(
-          {int32_t(p.k_strideM)},
-          p.key_ptr + key_start * p.k_strideM,
+          {int32_t(p.get_k_strideM())},
+          p.get_key_ptr() + key_start * p.get_k_strideM(),
           {problem_size.m(), problem_size.k()},
           thread_id,
           no_offset);
 
       // q_i.transpose(-2, -1)
       typename Mma::IteratorB iterator_B(
-          {int32_t(p.q_strideM)},
-          p.query_ptr + query_start * p.q_strideM,
+          {int32_t(p.get_q_strideM())},
+          p.get_query_ptr() + query_start * p.get_q_strideM(),
           {problem_size.k(), problem_size.n()},
           thread_id,
           no_offset);
@@ -1100,7 +1165,7 @@ struct AttentionBackwardKernel {
       MatmulQK::B2bGemm::accumApplyLSEToSmem(
           shared_storage.attn_shared_storage(),
           accum,
-          p.logsumexp_ptr + query_start,
+          p.get_logsumexp_ptr() + query_start,
           problem_size.n(),
           thread_id,
           warp_id,
@@ -1114,24 +1179,24 @@ struct AttentionBackwardKernel {
     //
     // grad_v[j_start:j_end] += attn_T @ do_i
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim_value);
+    for (int col = 0; col < (kOutputInRF ? 1 : p.get_head_dim_value());
          col += MatmulGradV::ThreadblockShape::kN) {
       using Mma = typename MatmulGradV::Mma;
       using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
 
       cutlass::gemm::GemmCoord problem_size(
-          num_keys_in_block, p.head_dim_value - col, num_queries_in_block);
+          num_keys_in_block, p.get_head_dim_value() - col, num_queries_in_block);
       auto createEpilogueIter = [&]() {
         return typename MatmulGradV::OutputTileIterator(
             typename MatmulGradV::OutputTileIterator::Params{p.gV_strideM()},
             p.grad_value_ptr + key_start * p.gV_strideM() + col,
-            {num_keys_in_block, p.head_dim_value - col},
+            {num_keys_in_block, p.get_head_dim_value() - col},
             thread_id);
       };
       typename Mma::IteratorB iterator_B(
-          {int32_t(p.gO_strideM)},
-          p.grad_output_ptr + query_start * p.gO_strideM + col,
-          {num_queries_in_block, p.head_dim_value - col},
+          {int32_t(p.get_gO_strideM())},
+          p.get_grad_output_ptr() + query_start * p.get_gO_strideM() + col,
+          {num_queries_in_block, p.get_head_dim_value() - col},
           thread_id,
           no_offset);
 
@@ -1167,7 +1232,7 @@ struct AttentionBackwardKernel {
           output_frags.gradV);
       __syncthreads();
       if (kPrologueGV &&
-          col + MatmulGradV::ThreadblockShape::kN < p.head_dim_value) {
+          col + MatmulGradV::ThreadblockShape::kN < p.get_head_dim_value()) {
         prologueGradV(col + MatmulGradV::ThreadblockShape::kN);
       }
 
@@ -1191,17 +1256,17 @@ struct AttentionBackwardKernel {
       using Mma = typename MatmulDOIVJ::Mma;
       // do_i
       typename Mma::IteratorA iterator_A(
-          {int32_t(p.gO_strideM)},
-          p.grad_output_ptr + query_start * p.gO_strideM,
-          {num_queries_in_block, p.head_dim_value},
+          {int32_t(p.get_gO_strideM())},
+          p.get_grad_output_ptr() + query_start * p.get_gO_strideM(),
+          {num_queries_in_block, p.get_head_dim_value()},
           thread_id,
           no_offset);
 
       // v_j.transpose(-2, -1)
       typename Mma::IteratorB iterator_B(
-          {int32_t(p.v_strideM)},
-          p.value_ptr + key_start * p.v_strideM,
-          {p.head_dim_value, num_keys_in_block},
+          {int32_t(p.get_v_strideM())},
+          p.get_value_ptr() + key_start * p.get_v_strideM(),
+          {p.get_head_dim_value(), num_keys_in_block},
           thread_id,
           no_offset);
 
@@ -1214,7 +1279,7 @@ struct AttentionBackwardKernel {
       accum.clear();
 
       auto gemm_k_iterations =
-          (p.head_dim_value + Mma::Shape::kK - 1) / Mma::Shape::kK;
+          (p.get_head_dim_value() + Mma::Shape::kK - 1) / Mma::Shape::kK;
 
       // Compute threadblock-scoped matrix multiply-add
       mma(gemm_k_iterations, accum, iterator_A, iterator_B, accum);
@@ -1290,20 +1355,20 @@ struct AttentionBackwardKernel {
     //
     // grad_q[i_start:i_end] += tmp @ k_j
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < p.head_dim;
+    for (int col = 0; col < p.get_head_dim();
          col += MatmulGradQ::ThreadblockShape::kN) {
       using Mma = typename MatmulGradQ::Mma;
       using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
 
       cutlass::gemm::GemmCoord problem_size(
           num_queries_in_block,
-          false ? MatmulGradQ::ThreadblockShape::kN : p.head_dim - col,
+          false ? MatmulGradQ::ThreadblockShape::kN : p.get_head_dim() - col,
           num_keys_in_block);
 
       // k_j
       typename Mma::IteratorB iterator_B(
-          {int32_t(p.k_strideM)},
-          p.key_ptr + key_start * p.k_strideM + col,
+          {int32_t(p.get_k_strideM())},
+          p.get_key_ptr() + key_start * p.get_k_strideM() + col,
           {problem_size.k(), problem_size.n()},
           thread_id,
           no_offset);
@@ -1324,7 +1389,7 @@ struct AttentionBackwardKernel {
       int storage_id =
           (col_id +
            query_start / kBlockSizeI *
-               ceil_div(p.head_dim, MatmulGradQ::ThreadblockShape::kN));
+               ceil_div(p.get_head_dim(), MatmulGradQ::ThreadblockShape::kN));
       AccumTileGmem gmem_tile{
           p.workspace_gq + storage_id * AccumTileGmem::kElementsStored};
       if (isFirst || !kNeedsAccumGradQ) {
@@ -1341,16 +1406,16 @@ struct AttentionBackwardKernel {
       mma.set_prologue_done(kPrologueGQ);
       mma(gemm_k_iterations, accum, iterator_B, accum);
       __syncthreads();
-      bool isLastColumn = col + MatmulGradQ::ThreadblockShape::kN >= p.head_dim;
+      bool isLastColumn = col + MatmulGradQ::ThreadblockShape::kN >= p.get_head_dim();
       if (kPrologueGQ && !isLastColumn) {
         prologueGradQ(col + MatmulGradQ::ThreadblockShape::kN);
       }
 
       // Output results
       int32_t next_query, next_key;
-      incrIteration(p, p.num_queries, key_start, next_query, next_key);
+      incrIteration(p, p.get_num_queries(), key_start, next_query, next_key);
       bool isLast =
-          (p.causal && next_query > query_start) || next_key >= p.num_keys;
+          (p.causal && next_query > query_start) || next_key >= p.get_num_keys();
       if (kNeedsAccumGradQ && !isLast) {
         gmem_tile.store(accum, thread_id);
       } else {
@@ -1372,28 +1437,28 @@ struct AttentionBackwardKernel {
     //
     // grad_k[i_start:i_end] += tmp.transpose(-2, -1) @ q_i
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim);
+    for (int col = 0; col < (kOutputInRF ? 1 : p.get_head_dim());
          col += MatmulGradK::ThreadblockShape::kN) {
       using Mma = typename MatmulGradK::Mma;
       using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
 
       cutlass::gemm::GemmCoord problem_size(
           num_keys_in_block,
-          false ? MatmulGradK::ThreadblockShape::kN : p.head_dim - col,
+          false ? MatmulGradK::ThreadblockShape::kN : p.get_head_dim() - col,
           num_queries_in_block);
       auto createEpilogueIter = [&]() {
         return typename MatmulGradK::OutputTileIterator(
             typename MatmulGradK::OutputTileIterator::Params{p.gK_strideM()},
             p.grad_key_ptr + key_start * p.gK_strideM() + col,
             {num_keys_in_block,
-             false ? MatmulGradK::ThreadblockShape::kN : p.head_dim - col},
+             false ? MatmulGradK::ThreadblockShape::kN : p.get_head_dim() - col},
             thread_id);
       };
 
       // q_i
       typename Mma::IteratorB iterator_B(
-          {int32_t(p.q_strideM)},
-          p.query_ptr + query_start * p.q_strideM + col,
+          {int32_t(p.get_q_strideM())},
+          p.get_query_ptr() + query_start * p.get_q_strideM() + col,
           {problem_size.k(), problem_size.n()},
           thread_id,
           no_offset);
@@ -1439,7 +1504,7 @@ struct AttentionBackwardKernel {
           iterator_B,
           output_frags.gradK);
       __syncthreads();
-      bool isLastColumn = col + MatmulGradK::ThreadblockShape::kN >= p.head_dim;
+      bool isLastColumn = col + MatmulGradK::ThreadblockShape::kN >= p.get_head_dim();
       if (kPrologueGK && !isLastColumn) {
         prologueGradK(col + MatmulGradK::ThreadblockShape::kN);
       }
@@ -1485,7 +1550,7 @@ struct AttentionBackwardKernel {
       int32_t& next_key) {
     next_query = query_start + kBlockSizeI;
     next_key = key_start;
-    if (next_query >= p.num_queries) {
+    if (next_query >= p.get_num_queries()) {
       next_key = key_start + kBlockSizeJ;
       next_query = getQueryStart(p, next_key);
     }
@@ -1497,7 +1562,7 @@ struct AttentionBackwardKernel {
       Params const& p,
       int32_t query_start,
       int32_t key_start) {
-    if (query_start >= p.num_queries || key_start >= p.num_keys) {
+    if (query_start >= p.get_num_queries() || key_start >= p.get_num_keys()) {
       return;
     }
 
@@ -1505,16 +1570,16 @@ struct AttentionBackwardKernel {
         kForceReloadK || !MatmulQK::Mma::kSmemContainsEntireMat;
     auto thread_id = get_thread_id();
     typename MatmulQK::Mma::IteratorA iterator_A(
-        {int32_t(p.k_strideM)},
-        p.key_ptr + key_start * p.k_strideM,
-        {p.num_keys - key_start, p.head_dim},
+        {int32_t(p.get_k_strideM())},
+        p.get_key_ptr() + key_start * p.get_k_strideM(),
+        {p.get_num_keys() - key_start, p.get_head_dim()},
         thread_id,
         cutlass::MatrixCoord{0, 0});
 
     typename MatmulQK::Mma::IteratorB iterator_B(
-        {int32_t(p.q_strideM)},
-        p.query_ptr + query_start * p.q_strideM,
-        {p.head_dim, p.num_queries - query_start},
+        {int32_t(p.get_q_strideM())},
+        p.get_query_ptr() + query_start * p.get_q_strideM(),
+        {p.get_head_dim(), p.get_num_queries() - query_start},
         thread_id,
         cutlass::MatrixCoord{0, 0});
 
@@ -1524,7 +1589,7 @@ struct AttentionBackwardKernel {
         iterator_A,
         iterator_B,
         thread_id,
-        p.head_dim);
+        p.get_head_dim());
   }
 
   template <bool skipBoundsChecks>
@@ -1535,11 +1600,11 @@ struct AttentionBackwardKernel {
       int32_t key_start) {
     int32_t num_keys_in_block = skipBoundsChecks
         ? MatmulQK::Mma::Shape::kM
-        : std::min((int32_t)MatmulQK::Mma::Shape::kM, p.num_keys - key_start);
+        : std::min((int32_t)MatmulQK::Mma::Shape::kM, p.get_num_keys() - key_start);
     typename MatmulGradV::OutputTileIterator outputV_it(
         typename MatmulGradV::OutputTileIterator::Params{p.gV_strideM()},
         p.grad_value_ptr + key_start * p.gV_strideM(),
-        {num_keys_in_block, p.head_dim_value},
+        {num_keys_in_block, p.get_head_dim_value()},
         get_thread_id());
     accumulateInGmem<MatmulGradV>(
         shared_storage.gradV_epilogue_final(),
@@ -1551,7 +1616,7 @@ struct AttentionBackwardKernel {
         typename MatmulGradK::OutputTileIterator::Params{p.gK_strideM()},
         p.grad_key_ptr + key_start * p.gK_strideM(),
         {num_keys_in_block,
-         false ? MatmulGradK::ThreadblockShape::kN : p.head_dim},
+         false ? MatmulGradK::ThreadblockShape::kN : p.get_head_dim()},
         get_thread_id());
     accumulateInGmem<MatmulGradK>(
         shared_storage.gradK_epilogue_final(),
@@ -1617,18 +1682,18 @@ struct AttentionBackwardKernel {
     int16_t laneFirstCol =
         kElementsPerAccess * (get_lane_id() % kNumThreadsPerLine);
     int16_t laneRow = thread_id / kNumThreadsPerLine;
-    bool rowPred = (query_start + laneRow) < p.num_queries;
+    bool rowPred = (query_start + laneRow) < p.get_num_queries();
     bool pred = rowPred;
 
     // on windows, previous syntax __restrict__ AccessType*
     // resulted in error: "restrict" is not allowed
     const AccessType* __restrict__ grad_output_ptr =
         reinterpret_cast<const AccessType*>(
-            p.grad_output_ptr + (query_start + laneRow) * p.gO_strideM +
+            p.get_grad_output_ptr() + (query_start + laneRow) * p.get_gO_strideM() +
             laneFirstCol);
     const AccessType* __restrict__ output_ptr =
         reinterpret_cast<const AccessType*>(
-            p.output_ptr + (query_start + laneRow) * p.o_strideM() +
+            p.get_output_ptr() + (query_start + laneRow) * p.o_strideM() +
             laneFirstCol);
 
     static constexpr int64_t kMaxIters =
@@ -1654,7 +1719,7 @@ struct AttentionBackwardKernel {
       int ld_pos = iter % kPipelineStages;
       pred = pred &&
           (laneFirstCol + iter * kElementsPerAccess * kNumThreadsPerLine) <
-              p.head_dim_value;
+              p.get_head_dim_value();
       loadAndIncrement(ld_pos, pred);
     }
     auto columnIteration = [&](int iter) {
@@ -1663,7 +1728,7 @@ struct AttentionBackwardKernel {
       pred = pred &&
           (laneFirstCol +
            (iter + kPipelineStages - 1) * kElementsPerAccess *
-               kNumThreadsPerLine) < p.head_dim_value;
+               kNumThreadsPerLine) < p.get_head_dim_value();
       loadAndIncrement(ld_pos, pred);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < AccessType::kElements; ++i) {
@@ -1680,7 +1745,7 @@ struct AttentionBackwardKernel {
       }
     } else {
       int num_iters =
-          ceil_div(p.head_dim_value, kElementsPerAccess * kNumThreadsPerLine) *
+          ceil_div(p.get_head_dim_value(), kElementsPerAccess * kNumThreadsPerLine) *
           (kElementsPerAccess * kNumThreadsPerLine);
       for (int iter = 0; iter < num_iters; ++iter) {
         columnIteration(iter);
