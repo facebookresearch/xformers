@@ -1,3 +1,10 @@
+#include <ATen/ScalarOps.h>
+#include <ATen/Tensor.h>
+#include <ATen/TensorOperators.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <torch/library.h>
+
 #include "kernel_backward.h"
 
 #define DISPATCH_MAXK(func)                                   \

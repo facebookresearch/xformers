@@ -1,14 +1,9 @@
 #pragma once
 
-#include <ATen/ATen.h>
-#include <torch/library.h>
 #include <cmath>
 #include <vector>
 
 #include <cuda_fp16.h>
-
-#include <ATen/cuda/CUDAContext.h>
-#include <c10/cuda/CUDAGuard.h>
 
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/layout/matrix.h"
@@ -676,18 +671,19 @@ struct AttentionBackwardKernel {
     }
   };
 
-  static void __host__ check_supported(Params const& p) {
+  static bool __host__ check_supported(Params const& p) {
     CHECK_ALIGNED_PTR(p.query_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.key_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.value_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.output_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.grad_output_ptr, kMinimumAlignment);
-    TORCH_CHECK(
+    XFORMERS_CHECK(
         p.q_strideH % kMinimumAlignment == 0, "query is not correctly aligned");
-    TORCH_CHECK(
+    XFORMERS_CHECK(
         p.k_strideH % kMinimumAlignment == 0, "key is not correctly aligned");
-    TORCH_CHECK(
+    XFORMERS_CHECK(
         p.v_strideH % kMinimumAlignment == 0, "value is not correctly aligned");
+    return true;
   }
 
   static CUTLASS_DEVICE void kernel(Params& p_) {
