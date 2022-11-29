@@ -2,6 +2,9 @@ name: Build wheels
 
 on:
   workflow_dispatch: {}
+  schedule:
+    # Run at 3am every monday
+    - cron: '0 3 * * 1'
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
@@ -33,17 +36,20 @@ jobs:
         config:
           # torch 1.13 is built with cuda 11.6 and 11.7
           - torch_version: "1.13.0+cu117"
+            torch_version_constraint: "1.13"
             cuda_version: "11.7.0"
             pip_index: https://download.pytorch.org/whl/cu117
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
 
           - torch_version: "1.13.0+cu116"
+            torch_version_constraint: "1.13"
             cuda_version: "11.6.2"
             pip_index: https://download.pytorch.org/whl/cu116
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
 
           # torch 1.12 is built with cuda 11.3 and 11.6, we ignore 11.3 for now
           - torch_version: "1.12.1+cu116"
+            torch_version_constraint: "1.12"
             cuda_version: "11.6.2"
             pip_index: https://download.pytorch.org/whl/cu116
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
@@ -108,16 +114,22 @@ jobs:
           submodules: recursive
           path: "."
 
+      - name: Setup proper pytorch dependency in "requirements.txt"
+        run: |
+          sed -i '/torch/d' ./requirements.txt
+          echo "torch == ${{ matrix.config.torch_version_constraint }}" >> ./requirements.txt
+          cat ./requirements.txt
+
       - name: Install build dependencies
         run: >
-          $PY -m pip install wheel setuptools torch==${{ matrix.config.torch_version }} -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
+          $PY -m pip install wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
           git config --global --add safe.directory "*"
 
       - name: Build wheel
-        run: $PY setup.py bdist_wheel -d "dist/torch${{ matrix.config.torch_version }}"
+        run: $PY setup.py bdist_wheel -d "dist"
 
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.os }}
-          path: dist
+          name: xformers-${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}.whl
+          path: dist/*.whl
 # Note: it might be helpful to have additional steps that test if the built wheels actually work
