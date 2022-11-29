@@ -849,7 +849,7 @@
 
         <span class="k">assert</span> <span class="n">grad</span><span class="o">.</span><span class="n">dtype</span> <span class="ow">in</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span>
         <span class="bp">cls</span><span class="o">.</span><span class="n">_flash_attn_backward</span><span class="p">(</span>
-            <span class="n">grad</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">kernel_output_shape</span><span class="p">),</span>
+            <span class="n">grad</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">kernel_output_shape</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
             <span class="n">q</span><span class="p">,</span>
             <span class="n">k</span><span class="p">,</span>
             <span class="n">v</span><span class="p">,</span>
