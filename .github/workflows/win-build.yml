@@ -1,0 +1,66 @@
+name: win-build
+
+on:
+  pull_request: {}
+
+# this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
+# https://github.com/actions/runner/issues/1182
+
+env:
+  TORCH_CUDA_ARCH_LIST: "8.0"
+  FORCE_CUDA: 1
+  MAX_JOBS: 4
+  DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
+  XFORMERS_BUILD_TYPE: "Release"
+  XFORMERS_DISABLE_FLASH_ATTN: 1
+
+jobs:
+  win_build:
+    name: win-build
+    runs-on: windows-2019
+    env:
+      PY: python3
+
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: (Windows) install cuda
+        uses: okazunori2013/cuda-toolkit@v0.3.2
+        with:
+          cuda: "11.7.0"
+          method: network
+
+      - name: (Windows) install python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.7"
+
+      - name: (Windows) setup msvc
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: configure Pagefile
+        uses: al-cheb/configure-pagefile-action@v1.2
+        with:
+          minimum-size: 8GB
+
+      # really unfortunate: https://github.com/ilammy/msvc-dev-cmd#name-conflicts-with-shell-bash
+      - name: (Windows) Remove link.exe
+        run: rm /usr/bin/link
+
+      - name: Recursive checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          path: "."
+
+      - name: Install build dependencies
+        run: |
+          $PY -m pip install wheel setuptools ninja torch==1.13 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu117
+          git config --global --add safe.directory "*"
+          $PY -c "import torch; print('torch', torch.__version__)"
+          $PY -c "import torch; print('torch.cuda', torch.version.cuda)"
+
+      - name: Build
+        run: $PY setup.py develop
