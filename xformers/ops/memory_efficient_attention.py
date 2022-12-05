@@ -736,11 +736,6 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         return dq, dk, dv, softmax_d
 
 
-class _FakeContext(SimpleNamespace):
-    def save_for_backward(self, *args):
-        return
-
-
 class TritonFlashAttentionOp(AttentionOpBase):
     FORWARD_OPERATOR = None
     SUPPORTED_DEVICES = {"cuda"}
