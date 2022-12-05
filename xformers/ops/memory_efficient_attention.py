@@ -740,7 +740,7 @@ class TritonFlashAttentionOp(AttentionOpBase):
     FORWARD_OPERATOR = None
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
-    SUPPORTED_MAX_K: float = 128
+    SUPPORTED_MAX_K = 128
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
         LowerTriangularMask,
@@ -858,6 +858,7 @@ class MemoryEfficientAttentionTritonFwdFlashBwOp(TritonFlashAttentionOp):
         FW_OP.SUPPORTED_ATTN_BIAS_TYPES
     )
     SUPPORTED_DTYPES = BW_OP.SUPPORTED_DTYPES.intersection(FW_OP.SUPPORTED_DTYPES)
+    SUPPORTED_DEVICES = BW_OP.SUPPORTED_DEVICES.intersection(FW_OP.SUPPORTED_DEVICES)
 
     NAME = "ftriton_bflsh"
 
