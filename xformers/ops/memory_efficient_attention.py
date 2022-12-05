@@ -21,7 +21,10 @@ except ImportError:
     has_flashattention = False
 
 try:
-    from flash_attn.flash_attn_triton import FlashAttnFunc as triton_flash
+    from flash_attn.flash_attn_triton import (
+        _flash_attn_backward as triton_flash_backward,
+    )
+    from flash_attn.flash_attn_triton import _flash_attn_forward as triton_flash_forward
 
     has_triton_flashattention = True
 except ImportError:
@@ -779,9 +782,8 @@ class TritonFlashAttentionOp(AttentionOpBase):
         p: float,
         scale: Optional[float] = None,
     ) -> torch.Tensor:
-        ctx = _FakeContext()
         return cls.forward(
-            ctx=ctx,
+            ctx=None,
             query=query,
             key=key,
             value=value,
@@ -798,20 +800,55 @@ class TritonFlashAttentionOp(AttentionOpBase):
             B = query.shape[0]
             h = attn_bias.shape[0] // B
             attn_bias = attn_bias.reshape(B, h, attn_bias.shape[1], attn_bias.shape[2])
+        bias = None if causal else attn_bias
 
-        return triton_flash.forward(
-            ctx=ctx,
+        # Make sure that the last dimension is contiguous
+        query, key, value = [
+            x if x.stride(-1) == 1 else x.contiguous() for x in [query, key, value]
+        ]
+
+        o, lse, softmax_scale = triton_flash_forward(
             q=query,
             k=key,
             v=value,
-            bias=None if causal else attn_bias,
+            bias=bias,
             softmax_scale=softmax_scale,
             causal=causal,
         )
 
+        if ctx is not None:
+            ctx.save_for_backward(query, key, value, o, lse, bias)
+            ctx.causal = causal
+            ctx.softmax_scale = softmax_scale
+        return o
+
     @staticmethod
     def backward(ctx, grad):
-        return triton_flash.backward(ctx, grad)
+        q, k, v, o, lse, bias = ctx.saved_tensors
+        assert not ctx.needs_input_grad[
+            3
+        ], "FlashAttention does not support bias gradient yet"
+        # Triton's autotune causes the Tensor._version to change, and so Pytorch autograd
+        # does a memcpy. To avoid this we run in inference_mode, which doesn't track the version.
+        with torch.inference_mode():
+            dq = torch.empty_like(q)
+            dk = torch.empty_like(k)
+            dv = torch.empty_like(v)
+            triton_flash_backward(
+                grad,
+                q,
+                k,
+                v,
+                o,
+                lse,
+                dq,
+                dk,
+                dv,
+                bias=bias,
+                causal=ctx.causal,
+                softmax_scale=ctx.softmax_scale,
+            )
+        return dq, dk, dv, None, None, None
 
 
 class MemoryEfficientAttentionTritonFwdFlashBwOp(TritonFlashAttentionOp):
