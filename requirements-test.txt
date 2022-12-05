@@ -29,6 +29,3 @@ fairscale >= 0.4.5
 # Dependency for fused layers, optional
 triton==2.0.0.dev20221105
 networkx
-
-# Dependency for triton flash attn
-flash-attn
