@@ -5,7 +5,7 @@
 
 import torch
 
-from .memory_efficient_attention import (
+from .fmha import (
     AttentionMask,
     AttentionOp,
     AttentionOpBase,
