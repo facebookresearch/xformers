@@ -102,6 +102,16 @@ class AttentionOpBase(torch.autograd.Function):
         torch.half: 4e-4,
         torch.bfloat16: 5e-3,
     }
+    BACKWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
+        torch.float: 5e-4,
+        torch.half: 9e-2,
+        torch.bfloat16: 0.7,
+    }
+    BACKWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
+        torch.float: 1e-4,
+        torch.half: 2e-2,
+        torch.bfloat16: 0.1,
+    }
     SUPPORTED_DEVICES: Set[str]
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
@@ -191,6 +201,9 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
     SUPPORTS_CUSTOM_SCALE = False
     NAME = "small_k"
 
+    BACKWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
+        torch.float: 4e-3,
+    }
     # as this kernel is a bit slow, this should make tests run faster
     _TEST_BATCH_SIZES = [1, 3]
     _TEST_K = [2, 3, 8, 16, 32]
