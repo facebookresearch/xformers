@@ -265,6 +265,8 @@ hardcoded into some kernels for better performance.</p>
 <li><p><a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionCutlassOp" title="xformers.ops.MemoryEfficientAttentionCutlassOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionCutlassOp</span></code></a></p></li>
 <li><p><a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionFlashAttentionOp" title="xformers.ops.MemoryEfficientAttentionFlashAttentionOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionFlashAttentionOp</span></code></a></p></li>
 <li><p><a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp" title="xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp</span></code></a></p></li>
+<li><p><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.TritonFlashAttentionOp</span></code></p></li>
+<li><p><a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp" title="xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp</span></code></a></p></li>
 </ul>
 </dd></dl>
 
@@ -387,6 +389,19 @@ Only supports contiguous inputs in BMK format, so an extra reshape         or co
 <dd class="field-odd"><p>This operator is deprecated and should not be used in new code</p>
 </dd>
 </dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.</span></span><span class="sig-name descname"><span class="pre">MemoryEfficientAttentionTritonFwdFlashBwOp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/memory_efficient_attention.html#MemoryEfficientAttentionTritonFwdFlashBwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TritonFlashAttentionOp</span></code></p>
+<p>An operator that uses <code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.TritonFlashAttentionOp</span></code> for the forward pass         and <a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionFlashAttentionOp" title="xformers.ops.MemoryEfficientAttentionFlashAttentionOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionFlashAttentionOp</span></code></a> for the backward.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp.BW_OP">
+<span class="sig-name descname"><span class="pre">BW_OP</span></span><a class="headerlink" href="#xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp.BW_OP" title="Permalink to this definition">¶</a></dt>
+<dd><p>alias of <a class="reference internal" href="#xformers.ops.MemoryEfficientAttentionFlashAttentionOp" title="xformers.ops.memory_efficient_attention.MemoryEfficientAttentionFlashAttentionOp"><code class="xref py py-class docutils literal notranslate"><span class="pre">MemoryEfficientAttentionFlashAttentionOp</span></code></a></p>
+</dd></dl>
+
 </dd></dl>
 
 <dl class="py function">

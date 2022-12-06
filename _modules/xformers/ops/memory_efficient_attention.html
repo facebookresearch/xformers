@@ -245,6 +245,16 @@
 <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
     <span class="n">has_flashattention</span> <span class="o">=</span> <span class="kc">False</span>
 
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">flash_attn.flash_attn_triton</span> <span class="kn">import</span> <span class="p">(</span>
+        <span class="n">_flash_attn_backward</span> <span class="k">as</span> <span class="n">triton_flash_backward</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="kn">from</span> <span class="nn">flash_attn.flash_attn_triton</span> <span class="kn">import</span> <span class="n">_flash_attn_forward</span> <span class="k">as</span> <span class="n">triton_flash_forward</span>
+
+    <span class="n">has_triton_flashattention</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">has_triton_flashattention</span> <span class="o">=</span> <span class="kc">False</span>
+
 
 <div class="viewcode-block" id="AttentionMask"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.AttentionMask">[docs]</a><span class="k">class</span> <span class="nc">AttentionMask</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;Base class for custom masks that can be applied \</span>
@@ -314,6 +324,10 @@
 <span class="sd">    - :attr:`xformers.ops.MemoryEfficientAttentionFlashAttentionOp`</span>
 
 <span class="sd">    - :attr:`xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp`</span>
+
+<span class="sd">    - :attr:`xformers.ops.TritonFlashAttentionOp`</span>
+
+<span class="sd">    - :attr:`xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp`</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">FORWARD_OPERATOR</span><span class="p">:</span> <span class="n">Any</span>
@@ -960,6 +974,165 @@
         <span class="k">return</span> <span class="n">dq</span><span class="p">,</span> <span class="n">dk</span><span class="p">,</span> <span class="n">dv</span><span class="p">,</span> <span class="n">softmax_d</span></div>
 
 
+<span class="k">class</span> <span class="nc">TritonFlashAttentionOp</span><span class="p">(</span><span class="n">AttentionOpBase</span><span class="p">):</span>
+    <span class="n">FORWARD_OPERATOR</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">SUPPORTED_DEVICES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;cuda&quot;</span><span class="p">}</span>
+    <span class="n">SUPPORTED_DTYPES</span> <span class="o">=</span> <span class="p">{</span><span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">}</span>
+    <span class="n">SUPPORTED_MAX_K</span> <span class="o">=</span> <span class="mi">128</span>
+    <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
+        <span class="n">LowerTriangularMask</span><span class="p">,</span>
+        <span class="c1"># TODO: backwards accuracy is failing for a few cases, perhaps we want to disable this for now.</span>
+        <span class="c1"># torch.Tensor,</span>
+    <span class="p">}</span>
+    <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;tritonflashatt&quot;</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">has_triton_flashattention</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;not built&quot;</span>
+        <span class="k">return</span> <span class="s2">&quot;available&quot;</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">supports</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="s2">&quot;AttentionOpDispatch&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">has_triton_flashattention</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="n">device_capability</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">is_sm80</span> <span class="o">=</span> <span class="n">device_capability</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">8</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">is_sm80</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">TritonFlashAttentionOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">supports</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">forward_no_grad</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionMask</span><span class="p">]],</span>
+        <span class="n">p</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">scale</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">forward</span><span class="p">(</span>
+            <span class="n">ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
+            <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">attn_bias</span><span class="o">=</span><span class="n">attn_bias</span><span class="p">,</span>
+            <span class="n">p</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
+            <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">attn_bias</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">scale</span><span class="p">):</span>
+        <span class="n">softmax_scale</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">)</span> <span class="k">if</span> <span class="n">scale</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">scale</span>
+        <span class="n">causal</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">LowerTriangularMask</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">causal</span> <span class="ow">and</span> <span class="n">attn_bias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">B</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">h</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">//</span> <span class="n">B</span>
+            <span class="n">attn_bias</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+        <span class="n">bias</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">causal</span> <span class="k">else</span> <span class="n">attn_bias</span>
+
+        <span class="c1"># Make sure that the last dimension is contiguous</span>
+        <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">x</span> <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">x</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">[</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">]</span>
+        <span class="p">]</span>
+
+        <span class="n">o</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">softmax_scale</span> <span class="o">=</span> <span class="n">triton_flash_forward</span><span class="p">(</span>
+            <span class="n">q</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
+            <span class="n">k</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
+            <span class="n">v</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">,</span>
+            <span class="n">softmax_scale</span><span class="o">=</span><span class="n">softmax_scale</span><span class="p">,</span>
+            <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">bias</span><span class="p">)</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">causal</span> <span class="o">=</span> <span class="n">causal</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">softmax_scale</span> <span class="o">=</span> <span class="n">softmax_scale</span>
+        <span class="k">return</span> <span class="n">o</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">grad</span><span class="p">):</span>
+        <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">bias</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
+        <span class="k">assert</span> <span class="ow">not</span> <span class="n">ctx</span><span class="o">.</span><span class="n">needs_input_grad</span><span class="p">[</span>
+            <span class="mi">3</span>
+        <span class="p">],</span> <span class="s2">&quot;FlashAttention does not support bias gradient yet&quot;</span>
+        <span class="c1"># Triton&#39;s autotune causes the Tensor._version to change, and so Pytorch autograd</span>
+        <span class="c1"># does a memcpy. To avoid this we run in inference_mode, which doesn&#39;t track the version.</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">inference_mode</span><span class="p">():</span>
+            <span class="n">dq</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">dk</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+            <span class="n">dv</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+            <span class="n">triton_flash_backward</span><span class="p">(</span>
+                <span class="n">grad</span><span class="p">,</span>
+                <span class="n">q</span><span class="p">,</span>
+                <span class="n">k</span><span class="p">,</span>
+                <span class="n">v</span><span class="p">,</span>
+                <span class="n">o</span><span class="p">,</span>
+                <span class="n">lse</span><span class="p">,</span>
+                <span class="n">dq</span><span class="p">,</span>
+                <span class="n">dk</span><span class="p">,</span>
+                <span class="n">dv</span><span class="p">,</span>
+                <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">,</span>
+                <span class="n">causal</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">causal</span><span class="p">,</span>
+                <span class="n">softmax_scale</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">softmax_scale</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">dq</span><span class="p">,</span> <span class="n">dk</span><span class="p">,</span> <span class="n">dv</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+
+
+<div class="viewcode-block" id="MemoryEfficientAttentionTritonFwdFlashBwOp"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp">[docs]</a><span class="k">class</span> <span class="nc">MemoryEfficientAttentionTritonFwdFlashBwOp</span><span class="p">(</span><span class="n">TritonFlashAttentionOp</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;An operator that uses :attr:`xformers.ops.TritonFlashAttentionOp` for the forward pass \</span>
+<span class="sd">        and :attr:`xformers.ops.MemoryEfficientAttentionFlashAttentionOp` for the backward.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">FW_OP</span> <span class="o">=</span> <span class="n">TritonFlashAttentionOp</span>
+    <span class="n">BW_OP</span> <span class="o">=</span> <span class="n">MemoryEfficientAttentionFlashAttentionOp</span>
+    <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span> <span class="o">=</span> <span class="n">BW_OP</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span>
+        <span class="n">FW_OP</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span>
+    <span class="p">)</span>
+    <span class="n">SUPPORTED_DTYPES</span> <span class="o">=</span> <span class="n">BW_OP</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">FW_OP</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span><span class="p">)</span>
+    <span class="n">SUPPORTED_DEVICES</span> <span class="o">=</span> <span class="n">BW_OP</span><span class="o">.</span><span class="n">SUPPORTED_DEVICES</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">FW_OP</span><span class="o">.</span><span class="n">SUPPORTED_DEVICES</span><span class="p">)</span>
+
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;ftriton_bflsh&quot;</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">supports</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="s2">&quot;AttentionOpDispatch&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">cls</span><span class="o">.</span><span class="n">BW_OP</span><span class="o">.</span><span class="n">supports</span><span class="p">(</span><span class="n">d</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">FW_OP</span><span class="o">.</span><span class="n">supports</span><span class="p">(</span><span class="n">replace</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">backward</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">grad</span><span class="p">):</span>
+        <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">bias</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
+        <span class="n">ctx_flash</span> <span class="o">=</span> <span class="n">SimpleNamespace</span><span class="p">()</span>
+
+        <span class="n">ctx_flash</span><span class="o">.</span><span class="n">causal</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">causal</span>
+        <span class="n">ctx_flash</span><span class="o">.</span><span class="n">dropout_p</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">cu_seqlens_k</span><span class="p">,</span> <span class="n">cu_seqlens_q</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">BW_OP</span><span class="o">.</span><span class="n">prepare_inputs</span><span class="p">(</span>
+            <span class="n">ctx_flash</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span>
+        <span class="p">)</span>
+        <span class="n">ctx_flash</span><span class="o">.</span><span class="n">kernel_output_shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+        <span class="n">ctx_flash</span><span class="o">.</span><span class="n">softmax_scale</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">softmax_scale</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="n">ctx</span><span class="o">.</span><span class="n">softmax_scale</span>
+        <span class="p">)</span>
+        <span class="n">rng_state</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">ctx_flash</span><span class="o">.</span><span class="n">kernel_output_shape</span><span class="p">)</span>
+        <span class="n">grad</span> <span class="o">=</span> <span class="n">grad</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">ctx_flash</span><span class="o">.</span><span class="n">kernel_output_shape</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">BW_OP</span><span class="o">.</span><span class="n">_backward</span><span class="p">(</span>
+            <span class="n">ctx_flash</span><span class="p">,</span>
+            <span class="n">grad</span><span class="p">,</span>
+            <span class="p">[</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">cu_seqlens_q</span><span class="p">,</span> <span class="n">cu_seqlens_k</span><span class="p">,</span> <span class="n">rng_state</span><span class="p">],</span>
+        <span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="MemoryEfficientAttentionCutlassFwdFlashBwOp"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp">[docs]</a><span class="k">class</span> <span class="nc">MemoryEfficientAttentionCutlassFwdFlashBwOp</span><span class="p">(</span><span class="n">MemoryEfficientAttentionCutlassOp</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;An operator that uses :attr:`xformers.ops.MemoryEfficientAttentionCutlassOp` for the forward pass \</span>
 <span class="sd">        and :attr:`xformers.ops.MemoryEfficientAttentionFlashAttentionOp` for the backward.</span>
@@ -1036,6 +1209,10 @@
         <span class="c1"># Large values of K</span>
         <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">k</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">kv</span><span class="p">)</span> <span class="o">==</span> <span class="mi">128</span>
 
+    <span class="k">def</span> <span class="nf">_is_triton_fwd_faster_than_cutlass</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="c1"># TODO: fill out</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">op</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AttentionOp</span><span class="p">:</span>
         <span class="sd">&quot;&quot;&quot;Computes the best operator</span>
@@ -1048,11 +1225,16 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">priority_list_ops</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">AttentionOp</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">MemoryEfficientAttentionFlashAttentionOp</span><span class="p">,</span>
+            <span class="c1"># TODO: remove once triton_faster_than_cutlass method complete</span>
+            <span class="n">MemoryEfficientAttentionTritonFwdFlashBwOp</span><span class="p">,</span>
             <span class="n">MemoryEfficientAttentionCutlassOp</span><span class="p">,</span>
+            <span class="n">TritonFlashAttentionOp</span><span class="p">,</span>
             <span class="n">MemoryEfficientAttentionOp</span><span class="p">,</span>
         <span class="p">]</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_cutlass_fwd_faster_than_flash</span><span class="p">():</span>
             <span class="n">priority_list_ops</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">MemoryEfficientAttentionCutlassFwdFlashBwOp</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_triton_fwd_faster_than_cutlass</span><span class="p">():</span>
+            <span class="n">priority_list_ops</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">MemoryEfficientAttentionTritonFwdFlashBwOp</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">priority_list_ops</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">op</span><span class="o">.</span><span class="n">supports</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
                 <span class="k">return</span> <span class="n">op</span>
