@@ -327,6 +327,16 @@
         <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">4e-4</span><span class="p">,</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">5e-3</span><span class="p">,</span>
     <span class="p">}</span>
+    <span class="n">BACKWARD_ERROR_ATOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">5e-4</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">9e-2</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">0.7</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">BACKWARD_ERROR_RTOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">1e-4</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">2e-2</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span>
+    <span class="p">}</span>
     <span class="n">SUPPORTED_DEVICES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
     <span class="n">SUPPORTED_DTYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span>
     <span class="n">SUPPORTED_MAX_K</span><span class="p">:</span> <span class="nb">float</span>
@@ -416,6 +426,9 @@
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;small_k&quot;</span>
 
+    <span class="n">BACKWARD_ERROR_ATOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">4e-3</span><span class="p">,</span>
+    <span class="p">}</span>
     <span class="c1"># as this kernel is a bit slow, this should make tests run faster</span>
     <span class="n">_TEST_BATCH_SIZES</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
     <span class="n">_TEST_K</span> <span class="o">=</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span>
