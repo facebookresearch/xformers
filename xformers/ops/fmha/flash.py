@@ -36,8 +36,8 @@ class Op(AttentionOpBase):
     """
 
     FORWARD_OPERATOR = None
-    SUPPORTED_DEVICES = {"cuda"}
-    SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
+    SUPPORTED_DEVICES: Set[str] = {"cuda"}
+    SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 128
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False

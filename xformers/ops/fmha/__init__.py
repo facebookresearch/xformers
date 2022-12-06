@@ -16,8 +16,12 @@ from .common import (
 )
 from .cutlass import Op as MemoryEfficientAttentionCutlassOp
 from .flash import Op as MemoryEfficientAttentionFlashAttentionOp
-from .mixed import MemoryEfficientAttentionCutlassFwdFlashBwOp
+from .mixed import (
+    MemoryEfficientAttentionCutlassFwdFlashBwOp,
+    MemoryEfficientAttentionTritonFwdFlashBwOp,
+)
 from .small_k import Op as MemoryEfficientAttentionOp
+from .triton import Op as TritonFlashAttentionOp
 
 
 def memory_efficient_attention(
@@ -139,8 +143,10 @@ __all__ = [
     "AttentionOpDispatch",
     "LowerTriangularMask",
     "MemoryEfficientAttentionCutlassFwdFlashBwOp",
+    "MemoryEfficientAttentionTritonFwdFlashBwOp",
     "MemoryEfficientAttentionCutlassOp",
     "MemoryEfficientAttentionFlashAttentionOp",
     "MemoryEfficientAttentionOp",
+    "TritonFlashAttentionOp",
     "memory_efficient_attention",
 ]

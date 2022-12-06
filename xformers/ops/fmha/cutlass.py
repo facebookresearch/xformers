@@ -25,8 +25,8 @@ class Op(AttentionOpBase):
     """
 
     FORWARD_OPERATOR = get_xformers_operator("efficient_attention_forward_cutlass")
-    SUPPORTED_DEVICES = {"cuda"}
-    SUPPORTED_DTYPES = {torch.float, torch.half, torch.bfloat16}
+    SUPPORTED_DEVICES: Set[str] = {"cuda"}
+    SUPPORTED_DTYPES: Set[torch.dtype] = {torch.float, torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = math.inf
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
     SUPPORTS_DROPOUT = False

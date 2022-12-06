@@ -1,3 +1,8 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 from dataclasses import dataclass
 from typing import Any, List, Mapping, Optional, Set, Type, Union
 
@@ -197,6 +202,10 @@ class AttentionOpDispatch:
         # Large values of K
         return max(self.k, self.kv) == 128
 
+    def _is_triton_fwd_faster_than_cutlass(self) -> bool:
+        # TODO: fill out
+        return False
+
     @property
     def op(self) -> AttentionOp:
         """Computes the best operator
@@ -209,16 +218,23 @@ class AttentionOpDispatch:
         """
         from .cutlass import Op as MemoryEfficientAttentionCutlassOp
         from .flash import Op as MemoryEfficientAttentionFlashAttentionOp
-        from .mixed import MemoryEfficientAttentionCutlassFwdFlashBwOp
+        from .mixed import (
+            MemoryEfficientAttentionCutlassFwdFlashBwOp,
+            MemoryEfficientAttentionTritonFwdFlashBwOp,
+        )
         from .small_k import Op as MemoryEfficientAttentionOp
 
         priority_list_ops: List[AttentionOp] = [
             MemoryEfficientAttentionFlashAttentionOp,
+            # TODO: remove once triton_faster_than_cutlass method complete
+            MemoryEfficientAttentionTritonFwdFlashBwOp,
             MemoryEfficientAttentionCutlassOp,
             MemoryEfficientAttentionOp,
         ]
         if self.requires_grad and self._is_cutlass_fwd_faster_than_flash():
             priority_list_ops.insert(0, MemoryEfficientAttentionCutlassFwdFlashBwOp)
+        if self.requires_grad and self._is_triton_fwd_faster_than_cutlass():
+            priority_list_ops.insert(0, MemoryEfficientAttentionTritonFwdFlashBwOp)
         for op in priority_list_ops:
             if op.supports(self):
                 return op

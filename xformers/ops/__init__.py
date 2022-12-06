@@ -15,6 +15,8 @@ from .fmha import (
     MemoryEfficientAttentionCutlassOp,
     MemoryEfficientAttentionFlashAttentionOp,
     MemoryEfficientAttentionOp,
+    MemoryEfficientAttentionTritonFwdFlashBwOp,
+    TritonFlashAttentionOp,
     memory_efficient_attention,
 )
 from .swiglu_op import (
@@ -61,6 +63,7 @@ __all__ = [
     "MemoryEfficientAttentionCutlassOp",
     "MemoryEfficientAttentionFlashAttentionOp",
     "MemoryEfficientAttentionOp",
+    "MemoryEfficientAttentionTritonFwdFlashBwOp",
     "memory_efficient_attention",
     "SwiGLU",
     "SwiGLUEagerOp",
@@ -69,6 +72,7 @@ __all__ = [
     "SwiGLUOpDispatch",
     "SwiGLUPackedFusedOp",
     "swiglu",
+    "TritonFlashAttentionOp",
     "unbind",
     "stack_or_none",
     "get_stack_strides",
