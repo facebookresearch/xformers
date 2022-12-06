@@ -104,7 +104,7 @@ class AttentionOpBase(torch.autograd.Function):
     }
     SUPPORTED_DEVICES: Set[str]
     SUPPORTED_DTYPES: Set[torch.dtype]
-    SUPPORTED_MAX_K: float
+    SUPPORTED_MAX_K: int
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None)}
     SUPPORTS_DROPOUT: bool
     SUPPORTS_CUSTOM_SCALE: bool = False
@@ -149,7 +149,7 @@ class AttentionOpBase(torch.autograd.Function):
             return False
         if not cls.SUPPORTS_DIFFERENT_VALUE_EMBED and d.k != d.kv:
             return False
-        if max(d.k, d.kv) > cls.SUPPORTED_MAX_K:
+        if int(max(d.k, d.kv)) > cls.SUPPORTED_MAX_K:
             return False
         if d.attn_bias_type not in cls.SUPPORTED_ATTN_BIAS_TYPES:
             return False
