@@ -103,8 +103,8 @@ class AttentionOpBase(torch.autograd.Function):
         torch.bfloat16: 5e-3,
     }
     BACKWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
-        torch.float: 3e-4,
-        torch.half: 8e-2,
+        torch.float: 5e-4,
+        torch.half: 9e-2,
         torch.bfloat16: 0.7,
     }
     BACKWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
