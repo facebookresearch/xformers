@@ -311,10 +311,11 @@ struct AttentionBackwardKernel {
           align_up(head_dim, (int32_t)kBlockSizeJ);
     }
     CUTLASS_HOST_DEVICE int64_t workspace_strideBH() const {
+      // Aligned on 128bits
       return align_up(
           workspace_elements_gk() + workspace_elements_gv() +
               workspace_elements_gq(),
-          4L);
+          int64_t(4));
     }
     CUTLASS_HOST_DEVICE int64_t workspace_size() const {
       // Returns size of buffer we need to run this kernel
