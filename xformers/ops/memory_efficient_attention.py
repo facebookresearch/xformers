@@ -973,7 +973,7 @@ class AttentionOpDispatch:
 
     def _is_triton_fwd_faster_than_cutlass(self) -> bool:
         # TODO: fill out
-        return True
+        return False
 
     @property
     def op(self) -> AttentionOp:
@@ -987,6 +987,8 @@ class AttentionOpDispatch:
         """
         priority_list_ops: List[AttentionOp] = [
             MemoryEfficientAttentionFlashAttentionOp,
+            # TODO: remove once triton_faster_than_cutlass method complete
+            MemoryEfficientAttentionTritonFwdFlashBwOp,
             MemoryEfficientAttentionCutlassOp,
             TritonFlashAttentionOp,
             MemoryEfficientAttentionOp,
