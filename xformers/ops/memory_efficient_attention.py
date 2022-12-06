@@ -1002,7 +1002,6 @@ class AttentionOpDispatch:
             # TODO: remove once triton_faster_than_cutlass method complete
             MemoryEfficientAttentionTritonFwdFlashBwOp,
             MemoryEfficientAttentionCutlassOp,
-            TritonFlashAttentionOp,
             MemoryEfficientAttentionOp,
         ]
         if self.requires_grad and self._is_cutlass_fwd_faster_than_flash():
