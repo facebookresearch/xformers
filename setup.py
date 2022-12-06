@@ -276,6 +276,7 @@ if __name__ == "__main__":
         version=version,
         install_requires=fetch_requirements(),
         packages=setuptools.find_packages(exclude=("tests", "tests.*")),
+        dependency_links=["file:///./third_party/flash-attention#egg=flash-attention"],
         ext_modules=get_extensions(),
         cmdclass={
             "build_ext": BuildExtension.with_options(no_python_abi_suffix=True),
