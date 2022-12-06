@@ -201,13 +201,6 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
     SUPPORTS_CUSTOM_SCALE = False
     NAME = "small_k"
 
-    BACKWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
-        torch.float: 4e-3,
-    }
-    BACKWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
-        torch.float: 1e-4,
-    }
-
     # as this kernel is a bit slow, this should make tests run faster
     _TEST_BATCH_SIZES = [1, 3]
     _TEST_K = [2, 3, 8, 16, 32]
