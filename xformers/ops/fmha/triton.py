@@ -8,6 +8,10 @@ from typing import Any, Optional, Set, Union
 
 import torch
 
+from ..._flash_attn.flash_attn_triton import (
+    _flash_attn_backward as triton_flash_backward,
+)
+from ..._flash_attn.flash_attn_triton import _flash_attn_forward as triton_flash_forward
 from .common import (
     AttentionMask,
     AttentionOpBase,
@@ -15,15 +19,7 @@ from .common import (
     LowerTriangularMask,
 )
 
-try:
-    from flash_attn.flash_attn_triton import (
-        _flash_attn_backward as triton_flash_backward,
-    )
-    from flash_attn.flash_attn_triton import _flash_attn_forward as triton_flash_forward
-
-    has_triton_flashattention = True
-except ImportError:
-    has_triton_flashattention = False
+has_triton_flashattention = True
 
 
 class Op(AttentionOpBase):
