@@ -128,7 +128,7 @@ class BwOp(AttentionBwOpBase):
                 inp.key,
                 inp.value,
                 ctx.out,
-                ctx.lse,
+                ctx.get_padded_lse(128),
                 grads.dq,
                 grads.dk,
                 grads.dv,

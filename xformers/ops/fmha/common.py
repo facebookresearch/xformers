@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from dataclasses import dataclass
 from typing import Any, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
@@ -101,6 +102,13 @@ class Inputs:
 class Context:
     lse: torch.Tensor
     out: torch.Tensor
+
+    def get_padded_lse(self, pad_to: int) -> torch.Tensor:
+        pad_amount = (pad_to - (self.lse.shape[2] % pad_to)) % pad_to
+        lse = self.lse
+        if pad_amount > 0:
+            lse = torch.nn.functional.pad(self.lse, [0, pad_amount], value=math.inf)
+        return lse
 
 
 @dataclass

@@ -199,6 +199,79 @@ def memory_efficient_attention(
     )
 
 
+def memory_efficient_attention_forward(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+    p: float = 0.0,
+    scale: Optional[float] = None,
+    *,
+    op: Optional[Type[AttentionFwOpBase]] = None,
+) -> torch.Tensor:
+    """Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later"""
+    return _memory_efficient_attention_forward(
+        Inputs(
+            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+        ),
+        op=op,
+    )
+
+
+def memory_efficient_attention_forward_requires_grad(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+    p: float = 0.0,
+    scale: Optional[float] = None,
+    *,
+    op: Optional[Type[AttentionFwOpBase]] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later.
+    See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments
+    See :attr:`xformers.ops.memory_efficient_backward` for running the backward pass
+    """
+    out, ctx = _memory_efficient_attention_forward_requires_grad(
+        Inputs(
+            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+        ),
+        op=op,
+    )
+    return out, ctx.lse
+
+
+def memory_efficient_attention_backward(
+    grad: torch.Tensor,
+    output: torch.Tensor,
+    lse: torch.Tensor,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+    p: float = 0.0,
+    scale: Optional[float] = None,
+    *,
+    op: Optional[Type[AttentionBwOpBase]] = None,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Computes the gradient of the attention.
+    Returns a tuple (dq, dk, dv)
+    See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments.
+    `lse` is the tensor returned by :attr:`xformers.ops.memory_efficient_attention_forward_requires_grad`
+    """
+    gradients = _memory_efficient_attention_backward(
+        Context(out=output, lse=lse),
+        Inputs(
+            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+        ),
+        grad,
+        op=op,
+    )
+    return (gradients.dq, gradients.dk, gradients.dv)
+
+
 def _memory_efficient_attention(
     inp: Inputs, op: Optional[AttentionOp] = None
 ) -> torch.Tensor:
@@ -245,9 +318,21 @@ def _memory_efficient_attention_backward(
             f"out.shape  : {ctx.out.shape} \n"
             f"query.shape: {inp.query.shape}"
         )
+    inp.normalize_bmhk()
+    # LSE has shape [B, H, M] while query has shape [B, M, H, K]
+    if (
+        ctx.lse.ndim != 3
+        or ctx.lse.shape[0] != inp.query.shape[0]
+        or ctx.lse.shape[1] != inp.query.shape[2]
+        or ctx.lse.shape[2] < inp.query.shape[1]
+    ):
+        raise ValueError(
+            "Input tensors have incompatible shapes."
+            f"lse.shape    : {ctx.lse.shape} \n"
+            f"query.shape  : {inp.query.shape}"
+        )
     grad = bmk2bmhk(grad, 1)
     ctx.out = bmk2bmhk(ctx.out, 1)
-    inp.normalize_bmhk()
 
     if op is None:
         op = _dispatch_bw(inp)
