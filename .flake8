@@ -1,8 +1,9 @@
 [flake8]
-exclude = 
+exclude =
     .git
     ,.circleci/run-clang-format.py
     ,third_party
+    ,xformers/_flash_attn
 max-line-length = 120
 copyright-check = True
 select = E,F,W,C
