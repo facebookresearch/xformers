@@ -3,9 +3,9 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
 import random
-from typing import Sequence, Type
+from dataclasses import dataclass
+from typing import Any, Sequence, Type
 
 import pytest
 import torch
@@ -79,6 +79,8 @@ ALL_OPS: Sequence[Type[xformers.ops.AttentionOpBase]] = [
     xformers.ops.MemoryEfficientAttentionCutlassOp,
     xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
     xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp,
+    xformers.ops.TritonFlashAttentionOp,
+    xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp,
 ]
 
 
@@ -135,15 +137,18 @@ def assert_allclose(
     flatten_diff = ((out - ref).abs() - atol - ref.abs() * rtol).flatten()
     max_pos = flatten_diff.argmax()
     max_diff = flatten_diff[max_pos]
+    num_different = torch.count_nonzero(flatten_diff > 0)
+    percentage = num_different / flatten_diff.numel()
     del flatten_diff
     assert torch.allclose(out, ref, rtol=rtol, atol=atol), (
         f"{msg}: "
         f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} (diff={max_diff} > 0)"
         f"/ atol={atol}, rtol={rtol}"
+        f"/ total failing elements: {num_different}, percentage={percentage}"
     )
 
 
-def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
+def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
     if q.ndim == 4:
         assert p == 0.0
         return ref_attention_bmhk(q, k, v, attn_bias=attn_bias)
@@ -151,7 +156,9 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     k = k.float()
     v = v.float()
 
-    q = q * (1 / q.shape[-1] ** 0.5)
+    scale = scale if scale is not None else (1 / q.shape[-1] ** 0.5)
+    q = q * scale
+
     attn = q @ k.transpose(-2, -1)
     if attn_bias is not None:
         if isinstance(attn_bias, xformers.ops.AttentionMask):
@@ -165,7 +172,7 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0):
     return attn @ v
 
 
-def ref_attention_bmhk(q, k, v, attn_bias):
+def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
     assert q.ndim == 4
 
     def T(t):
@@ -173,7 +180,7 @@ def ref_attention_bmhk(q, k, v, attn_bias):
             [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
         )
 
-    out = ref_attention(T(q), T(k), T(v), attn_bias)
+    out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale)
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
 
@@ -319,6 +326,108 @@ shapes_cu_seqlen = generate_test_shapes_B_Mq_Mkv_H_K_Kv(
 )
 
 
+@dataclass
+class CuSeqlenInputs:
+    q: torch.Tensor
+    k: torch.Tensor
+    v: torch.Tensor
+    bias: Sequence[Any]
+
+    cu_seqlen_q: torch.Tensor
+    max_seqlen_q: int
+    cu_seqlen_k: torch.Tensor
+    max_seqlen_k: int
+
+    def ref_attention(self) -> torch.Tensor:
+        assert self.q.shape[0] == 1
+        cu_seqlen_q_cpu = self.cu_seqlen_q.tolist()
+        cu_seqlen_k_cpu = self.cu_seqlen_k.tolist()
+        outs = []
+        for attn_bias, q_start, q_end, k_start, k_end in zip(
+            self.bias,
+            cu_seqlen_q_cpu,
+            cu_seqlen_q_cpu[1:],
+            cu_seqlen_k_cpu,
+            cu_seqlen_k_cpu[1:],
+        ):
+            outs.append(
+                ref_attention(
+                    self.q[:, q_start:q_end],
+                    self.k[:, k_start:k_end],
+                    self.v[:, k_start:k_end],
+                    attn_bias=attn_bias,
+                )
+            )
+        return torch.cat(outs, dim=1)
+
+    @staticmethod
+    def generate(
+        B_Mq_Mkv_H_K_Kv, attn_bias_type, dtype, device, op
+    ) -> "CuSeqlenInputs":
+        batch_size, max_q_len, max_kv_len, num_heads, k, kv = B_Mq_Mkv_H_K_Kv
+        all_q = []
+        all_k = []
+        all_v = []
+        all_bias = []
+        cu_seqlen_q = [0]
+        cu_seqlen_k = [0]
+        scale = 3
+        # Reduce batch size to speedup tests
+        batch_size = min(batch_size, 20)
+        r = random.Random(max_q_len + k * kv)
+        torch.manual_seed(r.randint(0, 128))
+
+        for batch_id in range(batch_size):
+            q_len = r.randint(1, max_q_len)
+            kv_len = r.randint(1, max_kv_len)
+
+            all_q.append(
+                torch.randn((1, q_len, num_heads, k), device=device, dtype=dtype)
+                * scale
+            )
+            all_k.append(
+                torch.randn((1, kv_len, num_heads, k), device=device, dtype=dtype)
+                * scale
+            )
+            all_v.append(
+                torch.randn((1, kv_len, num_heads, kv), device=device, dtype=dtype)
+                * scale
+            )
+
+            if batch_id == 0:
+                if not op.supports(
+                    xformers.ops.AttentionOpDispatch.from_arguments(
+                        query=all_q[-1], key=all_k[-1], value=all_v[-1]
+                    )
+                ):
+                    pytest.skip("unsupported configuration")
+
+            cu_seqlen_q += [cu_seqlen_q[-1] + q_len]
+            cu_seqlen_k += [cu_seqlen_k[-1] + kv_len]
+
+            attn_bias = None
+            if attn_bias_type is not None:
+                attn_bias = create_attn_bias(
+                    attn_bias_type,
+                    batch_size=num_heads,
+                    q_len=q_len,
+                    kv_len=kv_len,
+                    dtype=dtype,
+                    device=device,
+                )
+            all_bias.append(attn_bias)
+        return CuSeqlenInputs(
+            q=torch.cat(all_q, dim=1),
+            k=torch.cat(all_k, dim=1),
+            v=torch.cat(all_v, dim=1),
+            bias=all_bias,
+            cu_seqlen_q=torch.tensor(cu_seqlen_q, dtype=torch.int32, device=device),
+            max_seqlen_q=max_q_len,
+            cu_seqlen_k=torch.tensor(cu_seqlen_k, dtype=torch.int32, device=device),
+            max_seqlen_k=max_kv_len,
+        )
+
+
 @cuda_only
 @pytest.mark.parametrize("attn_bias_type", [None, xformers.ops.LowerTriangularMask])
 @pytest.mark.parametrize(
@@ -338,69 +447,23 @@ def test_cu_seqlen_forward(
     dtype,
 ):
     device = "cuda"
-    batch_size, max_q_len, max_kv_len, num_heads, k, kv = B_Mq_Mkv_H_K_Kv
     op = xformers.ops.MemoryEfficientAttentionCutlassOp
-    r = random.Random(max_q_len + k * kv)
-    torch.manual_seed(r.randint(0, 128))
 
-    all_q = []
-    all_k = []
-    all_v = []
-    all_o = []
-    cu_seqlen_q = [0]
-    cu_seqlen_k = [0]
-    scale = 3
-    # Reduce batch size to speedup tests
-    batch_size = min(batch_size, 20)
-
-    for batch_id in range(batch_size):
-        q_len = r.randint(1, max_q_len)
-        kv_len = r.randint(1, max_kv_len)
-
-        all_q.append(
-            torch.randn((1, q_len, num_heads, k), device=device, dtype=dtype) * scale
-        )
-        all_k.append(
-            torch.randn((1, kv_len, num_heads, k), device=device, dtype=dtype) * scale
-        )
-        all_v.append(
-            torch.randn((1, kv_len, num_heads, kv), device=device, dtype=dtype) * scale
-        )
-
-        if batch_id == 0:
-            if not op.supports(
-                xformers.ops.AttentionOpDispatch.from_arguments(
-                    query=all_q[-1], key=all_k[-1], value=all_v[-1]
-                )
-            ):
-                pytest.skip("unsupported configuration")
-
-        cu_seqlen_q += [cu_seqlen_q[-1] + q_len]
-        cu_seqlen_k += [cu_seqlen_k[-1] + kv_len]
-
-        attn_bias = None
-        if attn_bias_type is not None:
-            attn_bias = create_attn_bias(
-                attn_bias_type,
-                batch_size=num_heads,
-                q_len=q_len,
-                kv_len=kv_len,
-                dtype=dtype,
-                device=device,
-            )
-        all_o.append(ref_attention_bmhk(all_q[-1], all_k[-1], all_v[-1], attn_bias))
+    inputs = CuSeqlenInputs.generate(B_Mq_Mkv_H_K_Kv, attn_bias_type, dtype, device, op)
 
     out, _ = op.FORWARD_OPERATOR(
-        torch.cat(all_q, dim=1),
-        torch.cat(all_k, dim=1),
-        torch.cat(all_v, dim=1),
-        max_seqlen_q=max_q_len,
-        cu_seqlens_q=torch.tensor(cu_seqlen_q, dtype=torch.int32, device=device),
-        cu_seqlens_k=torch.tensor(cu_seqlen_k, dtype=torch.int32, device=device),
+        inputs.q,
+        inputs.k,
+        inputs.v,
+        max_seqlen_q=inputs.max_seqlen_q,
+        cu_seqlens_q=inputs.cu_seqlen_q,
+        cu_seqlens_k=inputs.cu_seqlen_k,
         compute_logsumexp=False,
         causal=attn_bias_type is xformers.ops.LowerTriangularMask,
+        scale=None,
     )
-    ref = torch.cat(all_o, dim=1)
+    ref = inputs.ref_attention()
+
     assert_allclose(
         out.float(),
         ref,
@@ -463,6 +526,7 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
             cu_seqlens_k=None,
             compute_logsumexp=True,
             causal=False,
+            scale=None,
         )
         lse = lse[:, 0, :]
     else:
@@ -526,7 +590,9 @@ def test_backward(
 
     grad_out = torch.ones_like(out)
     if grad_out_contiguous is False:
-        grad_out = torch.tensor([1.0], device=device)[None, None, :].expand_as(out)
+        grad_out = torch.tensor([1.0], dtype=query.dtype, device=device)[
+            None, None, :
+        ].expand_as(out)
 
     out.backward(grad_out)
     del out
@@ -546,21 +612,8 @@ def test_backward(
     del grad_out
     del ref
 
-    atol = 2e-4 + 2e-6 * k * kv_len * math.sqrt(q_len)
-    rtol = 1e-4
-    if dtype is torch.half:
-        atol = 5e-2
-        rtol = 2e-2
-        # TODO: Implement f32 accumulation for bw
-        # Longer sequences mean we iterate more and errors accumulate
-        atol *= 1.4 ** (max(q_len, kv_len) // 64)
-    if dtype is torch.bfloat16:
-        # I've seen (out=-1.9 and ref=-1.0 with flash)
-        atol = 0.5
-        rtol = 0.1
-        # TODO: Implement f32 accumulation for bw
-        # Longer sequences mean we iterate more and errors accumulate
-        atol *= 1.4 ** (max(q_len, kv_len) // 64)
+    atol = op.BACKWARD_ERROR_ATOL[dtype]
+    rtol = op.BACKWARD_ERROR_RTOL[dtype]
 
     grads_ref = []
     grads_name = []
@@ -823,3 +876,62 @@ def test_cuda_streams(
         atol=op.FORWARD_ERROR_ATOL[dtype],
         rtol=op.FORWARD_ERROR_RTOL.get(dtype, 1e-5),
     )
+
+
+@pytest.mark.parametrize(
+    "op_device_dtype_B_Mq_Mkv_H_K_Kv",
+    _op_device_dtype_B_Mq_Mkv_H_K_Kv__xs,
+    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids,
+)
+def test_custom_scale(op_device_dtype_B_Mq_Mkv_H_K_Kv):
+    torch.manual_seed(42)
+    p = 0.0
+    scale = 1
+
+    (
+        op,
+        device,
+        dtype,
+        _,
+        q_len,
+        kv_len,
+        _,
+        k,
+        _,
+    ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
+    if device != "cuda":
+        pytest.skip("Not CUDA")
+
+    query, key, value, attn_bias = create_tensors(
+        *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=None, fmt="BMK"
+    )
+    grad_out = torch.ones_like(query)
+    query.requires_grad_(True)
+    key.requires_grad_(True)
+    value.requires_grad_(True)
+
+    dispatch = xformers.ops.AttentionOpDispatch.from_arguments(
+        query=query, key=key, value=value, attn_bias=attn_bias, scale=scale
+    )
+    if not op.supports(dispatch):
+        pytest.skip(f"{op.NAME}: unsupported ({dispatch})")
+
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias, p, scale, op=op
+    )
+    out.backward(grad_out)
+    grad_q, grad_k, grad_v = query.grad, key.grad, value.grad
+    query.grad = key.grad = value.grad = None
+
+    ref = ref_attention(query, key, value, attn_bias, None, p, scale)
+    ref.backward(grad_out)
+    ref_grad_q, ref_grad_k, ref_grad_v = query.grad, key.grad, value.grad
+    query.grad = key.grad = value.grad = None
+
+    atol = op.FORWARD_ERROR_ATOL[dtype]
+    assert_allclose(out.float(), ref.float(), atol=atol)
+    atol = op.BACKWARD_ERROR_ATOL[dtype]
+    rtol = op.BACKWARD_ERROR_RTOL[dtype]
+    assert_allclose(grad_q, ref_grad_q, atol=atol, rtol=rtol)
+    assert_allclose(grad_k, ref_grad_k, atol=atol, rtol=rtol)
+    assert_allclose(grad_v, ref_grad_v, atol=atol, rtol=rtol)
