@@ -73,10 +73,10 @@ class FwOp(AttentionFwOpBase):
     def supports(cls, d: "Inputs") -> bool:
         if cls.OPERATOR is None:
             return False
-        device_capability = torch.cuda.get_device_capability(d.device)
-        if not device_capability >= (7, 5):
+        if not super(FwOp, cls).supports(d):
             return False
-        return super(FwOp, cls).supports(d)
+        device_capability = torch.cuda.get_device_capability(d.device)
+        return device_capability >= (7, 5)
 
     @classmethod
     def apply(
