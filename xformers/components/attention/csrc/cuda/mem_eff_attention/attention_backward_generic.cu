@@ -180,6 +180,7 @@ mem_efficient_attention_backward_cutlass(
       p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
     }
 
+    ASSIGN_CHECK_OVERFLOW(p.lse_strideM, logsumexp.stride(1));
     ASSIGN_CHECK_OVERFLOW(p.gO_strideB, grad_out.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.gO_strideM, grad_out.stride(1));
     ASSIGN_CHECK_OVERFLOW(p.gO_strideH, grad_out.stride(2));

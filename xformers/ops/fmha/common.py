@@ -251,3 +251,11 @@ class AttentionOpDispatch:
             scale=scale,
         )
         return AttentionOpDispatch(op=(_dispatch_fw(inp), _dispatch_bw(inp)))
+
+
+def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
+    if tensor.ndim == 4:
+        return tensor
+    return tensor.reshape([-1, num_heads, tensor.shape[1], tensor.shape[2]]).permute(
+        (0, 2, 1, 3)
+    )

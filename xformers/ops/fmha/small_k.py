@@ -8,7 +8,14 @@ from typing import Any, Mapping, Optional, Set, Tuple
 import torch
 
 from ..common import get_xformers_operator, register_operator
-from .common import AttentionBwOpBase, AttentionFwOpBase, Context, Gradients, Inputs
+from .common import (
+    AttentionBwOpBase,
+    AttentionFwOpBase,
+    Context,
+    Gradients,
+    Inputs,
+    bmk2bmhk,
+)
 
 
 def _bmhk2bmk_contiguous(tensor) -> torch.Tensor:
@@ -17,12 +24,6 @@ def _bmhk2bmk_contiguous(tensor) -> torch.Tensor:
         .contiguous()
         .view([tensor.shape[0] * tensor.shape[2], tensor.shape[1], tensor.shape[3]])
         .contiguous()
-    )
-
-
-def _bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
-    return tensor.reshape([-1, num_heads, tensor.shape[1], tensor.shape[2]]).permute(
-        (0, 2, 1, 3)
     )
 
 
@@ -84,8 +85,10 @@ class FwOp(AttentionFwOpBase):
             attn_bias=inp.attn_bias,
             p=inp.p,
         )
+        out = bmk2bmhk(out, num_heads)
+        lse = lse.reshape([lse.shape[0], 1, lse.shape[1]])
         ctx = Context(out=out, lse=lse) if needs_gradient else None
-        return _bmk2bmhk(out, num_heads), ctx
+        return out, ctx
 
 
 @register_operator
@@ -98,7 +101,14 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
+    ERROR_ATOL: Mapping[torch.dtype, float] = {
+        torch.float: 4e-3,
+    }
     NAME = "smallkB"
+
+    @classmethod
+    def supports(cls, d: "Inputs") -> bool:
+        return FwOp.supports(d)
 
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:
@@ -107,6 +117,7 @@ class BwOp(AttentionBwOpBase):
         query = _bmhk2bmk_contiguous(inp.query)
         key = _bmhk2bmk_contiguous(inp.key)
         value = _bmhk2bmk_contiguous(inp.value)
+        out = _bmhk2bmk_contiguous(ctx.out)
 
         if inp.p > 0:
             raise NotImplementedError("TODO: Dropout not implemented")
@@ -116,15 +127,16 @@ class BwOp(AttentionBwOpBase):
             query,
             key,
             value,
-            ctx.lse,
-            ctx.out,
+            # LSE: BHM -> (BH)M
+            ctx.lse.reshape([-1, ctx.lse.shape[-1]]),
+            out,
             inp.attn_bias,
             inp.p,
             rng_seed,
             rng_offset,
         )
         return Gradients(
-            dq=_bmk2bmhk(grad_q, num_heads),
-            dk=_bmk2bmhk(grad_k, num_heads),
-            dv=_bmk2bmhk(grad_v, num_heads),
+            dq=bmk2bmhk(grad_q, num_heads),
+            dk=bmk2bmhk(grad_k, num_heads),
+            dv=bmk2bmhk(grad_v, num_heads),
         )
