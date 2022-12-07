@@ -344,8 +344,8 @@ def test_forward(
     assert_allclose(
         out,
         ref,
-        atol=op.FORWARD_ERROR_ATOL[dtype],
-        rtol=op.FORWARD_ERROR_RTOL.get(dtype, 1e-5),
+        atol=op.ERROR_ATOL[dtype],
+        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
     )
 
 
@@ -421,11 +421,8 @@ class CuSeqlenInputs:
             )
 
             if batch_id == 0:
-                if not op.supports(
-                    xformers.ops.AttentionOpDispatch.from_arguments(
-                        query=all_q[-1], key=all_k[-1], value=all_v[-1]
-                    )
-                ):
+                inp = fmha.Inputs(query=all_q[-1], key=all_k[-1], value=all_v[-1])
+                if not op.supports(inp):
                     pytest.skip("unsupported configuration")
 
             cu_seqlen_q += [cu_seqlen_q[-1] + q_len]
@@ -471,11 +468,11 @@ def test_cu_seqlen_forward(
     dtype,
 ):
     device = "cuda"
-    op = xformers.ops.MemoryEfficientAttentionCutlassOp
+    op = fmha.cutlass.FwOp
 
     inputs = CuSeqlenInputs.generate(B_Mq_Mkv_H_K_Kv, attn_bias_type, dtype, device, op)
 
-    out, _ = op.FORWARD_OPERATOR(
+    out, _ = op.OPERATOR(
         inputs.q,
         inputs.k,
         inputs.v,
@@ -491,8 +488,8 @@ def test_cu_seqlen_forward(
     assert_allclose(
         out.float(),
         ref,
-        atol=op.FORWARD_ERROR_ATOL[dtype],
-        rtol=op.FORWARD_ERROR_RTOL.get(dtype, 1e-5),
+        atol=op.ERROR_ATOL[dtype],
+        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
     )
 
 
@@ -531,33 +528,16 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
         k,
         kv,
     ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
-    if (
-        op.FORWARD_OPERATOR is None
-        or op is xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp
-    ):
-        return
     query, key, value, attn_bias = create_tensors(
         *op_device_dtype_B_Mq_Mkv_H_K_Kv, fmt="BMK"
     )
 
-    if op is xformers.ops.MemoryEfficientAttentionCutlassOp:
-        _, lse = op.FORWARD_OPERATOR(
-            query.unsqueeze(2),
-            key.unsqueeze(2),
-            value.unsqueeze(2),
-            max_seqlen_q=None,
-            cu_seqlens_q=None,
-            cu_seqlens_k=None,
-            compute_logsumexp=True,
-            causal=False,
-            scale=None,
-        )
-        lse = lse[:, 0, :]
-    else:
-        _, lse, _, _ = op.FORWARD_OPERATOR(query, key, value, True, None, 0.0)
+    _out, lse = xformers.ops.memory_efficient_attention_forward_requires_grad(
+        query, key, value
+    )
     ref_lse = ((query.float() / k**0.5) @ key.float().transpose(-2, -1)).logsumexp(-1)
 
-    assert_allclose(lse[:, : ref_lse.shape[1]], ref_lse, atol=2e-4)
+    assert_allclose(lse[:, 0, : ref_lse.shape[1]], ref_lse, atol=2e-4)
 
 
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])

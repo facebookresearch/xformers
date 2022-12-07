@@ -96,7 +96,9 @@ class FwOp(AttentionFwOpBase):
         if not super(FwOp, cls).supports(d):
             return False
         matmul_alignment_mn = _minimum_gemm_alignment(d)
-        if d.query.shape[-1] % matmul_alignment_mn != 0:
+        if (d.query.shape[-1] % matmul_alignment_mn != 0) or (
+            d.value.shape[-1] % matmul_alignment_mn != 0
+        ):
             return False
         return True
 
@@ -135,7 +137,11 @@ class BwOp(AttentionBwOpBase):
         ):
             return False
         matmul_alignment_mn = _minimum_gemm_alignment(d)
-        if d.value.shape[-1] % matmul_alignment_mn != 0:
+        if (
+            (d.query.shape[-1] % matmul_alignment_mn != 0)
+            or (d.value.shape[-1] % matmul_alignment_mn != 0)
+            or (d.key.shape[-1] % matmul_alignment_mn != 0)
+        ):
             return False
         return True
 
@@ -148,18 +154,12 @@ class BwOp(AttentionBwOpBase):
         causal = isinstance(inp.attn_bias, LowerTriangularMask)
         dtype = inp.query.dtype
 
-        # We need to pad the LSE
-        LSE_ALIGN = 32
-        pad_amount = (LSE_ALIGN - (ctx.lse.shape[2] % LSE_ALIGN)) % LSE_ALIGN
-        lse = ctx.lse
-        if pad_amount > 0:
-            lse = torch.nn.functional.pad(ctx.lse, [0, pad_amount], value=math.inf)
         (grad_q, grad_k, grad_v,) = cls.OPERATOR(
             grad.to(dtype),
             inp.query,
             inp.key,
             inp.value,
-            lse,
+            ctx.get_padded_lse(32),
             ctx.out.to(dtype),
             causal=causal,
             scale=inp.scale,
