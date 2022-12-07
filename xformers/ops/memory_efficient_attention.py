@@ -775,8 +775,7 @@ class TritonFlashAttentionOp(AttentionOpBase):
         if not has_triton_flashattention:
             return False
         device_capability = torch.cuda.get_device_capability(d.device)
-        is_sm80 = device_capability[0] >= 8
-        if not is_sm80:
+        if not device_capability >= (7, 5):
             return False
         return super(TritonFlashAttentionOp, cls).supports(d)
 
@@ -1003,7 +1002,6 @@ class AttentionOpDispatch:
             # TODO: remove once triton_faster_than_cutlass method complete
             MemoryEfficientAttentionTritonFwdFlashBwOp,
             MemoryEfficientAttentionCutlassOp,
-            TritonFlashAttentionOp,
             MemoryEfficientAttentionOp,
         ]
         if self.requires_grad and self._is_cutlass_fwd_faster_than_flash():
