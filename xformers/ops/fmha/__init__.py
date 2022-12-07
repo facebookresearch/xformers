@@ -3,19 +3,23 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, Optional, Union
+from typing import Any, Optional, Tuple, Type, Union
 
 import torch
 
 from . import cutlass, flash, small_k, triton
 from .common import (
+    AttentionBwOpBase,
+    AttentionFwOpBase,
     AttentionMask,
     AttentionOp,
     AttentionOpBase,
     AttentionOpDispatch,
     Context,
+    Gradients,
     Inputs,
     LowerTriangularMask,
+    bmk2bmhk,
 )
 from .dispatch import _dispatch_bw, _dispatch_fw
 
@@ -198,18 +202,56 @@ def memory_efficient_attention(
 def _memory_efficient_attention(
     inp: Inputs, op: Optional[AttentionOp] = None
 ) -> torch.Tensor:
-    output_shape = inp.normalize_bmhk()
-
     # fast-path that doesn't require computing the logsumexp for backward computation
     if all(x.requires_grad is False for x in [inp.query, inp.key, inp.value]):
-        op_fw = op[0] if op is not None else None
-        if op_fw is None:
-            op_fw = _dispatch_fw(inp)
-        return op_fw.apply(inp, needs_gradient=False)[0].reshape(output_shape)
+        return _memory_efficient_attention_forward(
+            inp, op=op[0] if op is not None else None
+        )
 
+    output_shape = inp.normalize_bmhk()
     return _fMHA.apply(
         op, inp.query, inp.key, inp.value, inp.attn_bias, inp.p, inp.scale
     ).reshape(output_shape)
+
+
+def _memory_efficient_attention_forward(
+    inp: Inputs, op: Optional[Type[AttentionFwOpBase]]
+) -> torch.Tensor:
+    output_shape = inp.normalize_bmhk()
+    if op is None:
+        op = _dispatch_fw(inp)
+    return op.apply(inp, needs_gradient=False)[0].reshape(output_shape)
+
+
+def _memory_efficient_attention_forward_requires_grad(
+    inp: Inputs, op: Optional[Type[AttentionFwOpBase]]
+) -> Tuple[torch.Tensor, Context]:
+    output_shape = inp.normalize_bmhk()
+    if op is None:
+        op = _dispatch_fw(inp)
+    out = op.apply(inp, needs_gradient=True)
+    assert out[1] is not None
+    return (out[0].reshape(output_shape), out[1])
+
+
+def _memory_efficient_attention_backward(
+    ctx: Context, inp: Inputs, grad: torch.Tensor, op: Optional[Type[AttentionBwOpBase]]
+) -> Gradients:
+    """Warning: grad/ctx.out is potentially in BMK format"""
+    if grad.ndim != inp.query.ndim or grad.ndim != ctx.out.ndim:
+        raise ValueError(
+            "All tensors should be either in BMK (ndim=3) or BMHK (ndim=4) format. \n"
+            f"grad.shape : {grad.shape} \n"
+            f"out.shape  : {ctx.out.shape} \n"
+            f"query.shape: {inp.query.shape}"
+        )
+    grad = bmk2bmhk(grad, 1)
+    ctx.out = bmk2bmhk(ctx.out, 1)
+    inp.normalize_bmhk()
+
+    if op is None:
+        op = _dispatch_bw(inp)
+    return op.apply(ctx, inp, grad)
 
 
 __all__ = [

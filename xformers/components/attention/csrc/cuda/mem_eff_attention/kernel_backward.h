@@ -214,6 +214,7 @@ struct AttentionBackwardKernel {
     int64_t q_strideB;
     int64_t k_strideB;
     int64_t v_strideB;
+    int64_t lse_strideM;
     int32_t num_batches;
 
     int64_t gO_strideB;
@@ -226,16 +227,13 @@ struct AttentionBackwardKernel {
     int64_t gV_strideH;
 
     CUTLASS_DEVICE void advance_to_block() {
-      constexpr int32_t kAlignLSE = 32; // block size of backward
-      auto lse_dim = ceil_div((int32_t)num_queries, kAlignLSE) * kAlignLSE;
-
       int64_t batch_id = blockIdx.z;
       int32_t head_id = blockIdx.y;
 
       query_ptr += batch_id * q_strideB + head_id * q_strideH;
       key_ptr += batch_id * k_strideB + head_id * k_strideH;
       value_ptr += batch_id * v_strideB + head_id * v_strideH;
-      logsumexp_ptr += (batch_id * num_heads + head_id) * lse_dim;
+      logsumexp_ptr += (batch_id * num_heads + head_id) * lse_strideM;
       output_ptr += batch_id * o_strideB + head_id * o_strideH;
       grad_output_ptr += batch_id * gO_strideB + head_id * gO_strideH;
       delta_ptr += (batch_id * num_heads + head_id) * num_queries;
@@ -843,6 +841,7 @@ struct AttentionBackwardKernel {
     CHECK_ALIGNED_PTR(p.value_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.output_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.grad_output_ptr, kMinimumAlignment);
+    XFORMERS_CHECK(p.lse_strideM % 8 == 0, "LSE is not correctly aligned");
     XFORMERS_CHECK(
         p.q_strideH % kMinimumAlignment == 0, "query is not correctly aligned");
     XFORMERS_CHECK(
