@@ -34,18 +34,19 @@ def _convert_input_format(
     query, key, value = inp.query, inp.key, inp.value
     batch = query.shape[0]
     seqlen_q = query.shape[1]
-    seqlen_k = key.shape[1]
+    seqlen_kv = key.shape[1]
     num_heads = query.shape[2]
     head_dim_q = query.shape[3]
+    head_dim_v = value.shape[3]
 
     cu_seqlens_k = torch.arange(
         0,
-        (batch + 1) * seqlen_k,
-        step=seqlen_k,
+        (batch + 1) * seqlen_kv,
+        step=seqlen_kv,
         dtype=torch.int32,
         device=query.device,
     )
-    if seqlen_q == seqlen_k:
+    if seqlen_q == seqlen_kv:
         cu_seqlens_q = cu_seqlens_k
     else:
         cu_seqlens_q = torch.arange(
@@ -61,11 +62,11 @@ def _convert_input_format(
     new_inp = replace(
         inp,
         query=query.reshape([batch * seqlen_q, num_heads, head_dim_q]),
-        key=key.reshape([batch * seqlen_q, num_heads, head_dim_q]),
-        value=value.reshape([batch * seqlen_q, num_heads, head_dim_q]),
+        key=key.reshape([batch * seqlen_kv, num_heads, head_dim_q]),
+        value=value.reshape([batch * seqlen_kv, num_heads, head_dim_v]),
     )
     softmax_scale = inp.query.shape[-1] ** (-0.5) if inp.scale is None else inp.scale
-    return new_inp, softmax_scale, cu_seqlens_q, seqlen_q, cu_seqlens_k, seqlen_k
+    return new_inp, softmax_scale, cu_seqlens_q, seqlen_q, cu_seqlens_k, seqlen_kv
 
 
 class FwOp(AttentionFwOpBase):

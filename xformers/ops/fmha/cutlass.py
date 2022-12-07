@@ -20,6 +20,29 @@ from .common import (
 )
 
 
+def _uses_tensorcores(sm: int, is_half: bool) -> bool:
+    if sm >= 80:
+        return True
+    if sm >= 70:
+        return is_half
+    return False
+
+
+def _minimum_gemm_alignment(inp: Inputs) -> int:
+    cap = torch.cuda.get_device_capability(inp.query.device)
+    sm = cap[0] * 10 + cap[1]
+    bits_per_scalar = {torch.float: 32, torch.half: 16, torch.bfloat16: 16}[
+        inp.query.dtype
+    ]
+    uses_tensorcores = _uses_tensorcores(sm, bits_per_scalar == 16)
+    matmul_alignment_mn = 1
+    if sm >= 80:
+        matmul_alignment_mn = 4
+    if uses_tensorcores:
+        matmul_alignment_mn = max(matmul_alignment_mn, 128 // bits_per_scalar)
+    return matmul_alignment_mn
+
+
 class FwOp(AttentionFwOpBase):
     """xFormers' MHA kernel based on CUTLASS.
     Supports a large number of settings (including without TensorCores, f32 ...)
@@ -68,31 +91,11 @@ class FwOp(AttentionFwOpBase):
         return out, ctx
 
     @classmethod
-    def uses_tensorcores(cls, sm: int, is_half: bool) -> bool:
-        if sm >= 80:
-            return True
-        if sm >= 70:
-            return is_half
-        return False
-
-    @classmethod
     def supports(cls, d: Inputs) -> bool:
         if not super(FwOp, cls).supports(d):
             return False
-        cap = torch.cuda.get_device_capability(d.query.device)
-        sm = cap[0] * 10 + cap[1]
-        bits_per_scalar = {torch.float: 32, torch.half: 16, torch.bfloat16: 16}[
-            d.query.dtype
-        ]
-        uses_tensorcores = cls.uses_tensorcores(sm, bits_per_scalar == 16)
-        matmul_alignment_mn = 1
-        if sm >= 80:
-            matmul_alignment_mn = 4
-        if uses_tensorcores:
-            matmul_alignment_mn = max(matmul_alignment_mn, 128 // bits_per_scalar)
-        if (d.query.shape[-1] % matmul_alignment_mn != 0) or (
-            d.key.shape[-1] % matmul_alignment_mn != 0
-        ):
+        matmul_alignment_mn = _minimum_gemm_alignment(d)
+        if d.query.shape[-1] % matmul_alignment_mn != 0:
             return False
         return True
 
@@ -129,6 +132,9 @@ class BwOp(AttentionBwOpBase):
             and max(d.query.shape[-1], d.key.shape[-1]) > 64
         ):
             return False
+        matmul_alignment_mn = _minimum_gemm_alignment(d)
+        if d.value.shape[-1] % matmul_alignment_mn != 0:
+            return False
         return True
 
     @classmethod
@@ -139,12 +145,19 @@ class BwOp(AttentionBwOpBase):
             raise NotImplementedError("Unsupported attn_bias type")
         causal = isinstance(inp.attn_bias, LowerTriangularMask)
         dtype = inp.query.dtype
+
+        # We need to pad the LSE
+        LSE_ALIGN = 32
+        pad_amount = (LSE_ALIGN - (ctx.lse.shape[2] % LSE_ALIGN)) % LSE_ALIGN
+        lse = ctx.lse
+        if pad_amount > 0:
+            lse = torch.nn.functional.pad(ctx.lse, [0, pad_amount], value=math.inf)
         (grad_q, grad_k, grad_v,) = cls.OPERATOR(
             grad.to(dtype),
             inp.query,
             inp.key,
             inp.value,
-            ctx.lse,
+            lse,
             ctx.out.to(dtype),
             causal=causal,
             scale=inp.scale,
