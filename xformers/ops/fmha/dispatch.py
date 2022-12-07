@@ -48,4 +48,15 @@ def _dispatch_fw(inp: Inputs) -> Type[AttentionFwOpBase]:
 
 
 def _dispatch_bw(inp: Inputs) -> Type[AttentionBwOpBase]:
-    return cutlass.BwOp
+    priority_list_ops: List[Type[AttentionBwOpBase]] = [
+        flash.BwOp,
+        cutlass.BwOp,
+        # CUDA illegal memory issues, race conditions etc..
+        # triton.BwOp,
+        # Deprecated
+        small_k.BwOp,
+    ]
+    for op in priority_list_ops:
+        if op.supports(inp):
+            return op
+    raise NotImplementedError(f"No operator found for this attention: {inp}")

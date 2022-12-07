@@ -127,19 +127,27 @@ class FwOp(AttentionFwOpBase):
             cu_seqlens_k,
             max_seqlen_k,
         ) = _convert_input_format(inp)
-
-        out, softmax_lse, S_dmask = cls.OPERATOR(
+        out = torch.empty(
+            [inp.query.shape[0], inp.query.shape[1], inp.value.shape[2]],
+            dtype=inp.query.dtype,
+            device=inp.device,
+        )
+        softmax_lse, *rest = cls.OPERATOR(
             inp.query,
             inp.key,
             inp.value,
+            out,
             cu_seqlens_q,
             cu_seqlens_k,
             max_seqlen_q,
             max_seqlen_k,
             inp.p,
             softmax_scale,
-            causal=causal,
-            return_softmax=return_softmax,
+            False,
+            causal,
+            return_softmax,
+            0,  # num_splits
+            None,
         )
         out = out.reshape(out_shape)
         return out, Context(out=out, lse=softmax_lse)
@@ -180,8 +188,7 @@ class BwOp(AttentionBwOpBase):
         kernel_out_shape = [
             inp.query.shape[0],
             inp.query.shape[1],
-            inp.query.shape[2],
-            inp.value.shape[3],
+            inp.value.shape[2],
         ]
 
         # Create dq,dk,dv
@@ -232,7 +239,10 @@ class BwOp(AttentionBwOpBase):
             max_seqlen_k,
             inp.p,
             softmax_scale,
+            False,
             isinstance(inp.attn_bias, LowerTriangularMask),
+            0,  # num_splits
+            None,
         )
         grads.dq = grads.dq.reshape(dq_shape)
         grads.dk = grads.dk.reshape(dk_shape)

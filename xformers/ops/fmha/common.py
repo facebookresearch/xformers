@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Optional, Set, Tuple, Type, Union
+from typing import Any, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
 import torch
 
@@ -81,6 +81,20 @@ class Inputs:
     @property
     def scale_float(self) -> float:
         return self.query.shape[-1] ** (-0.5) if self.scale is None else self.scale
+
+    def normalize_bmhk(self) -> Sequence[int]:
+        if self.query.ndim not in [3, 4]:
+            raise ValueError(
+                f"Invalid shape for query: {self.query.shape}. "
+                "Expected shape [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
+            )
+        output_shape = (self.query.shape[:-1]) + (self.value.shape[-1],)
+        # Convert from legacy format
+        if self.query.ndim == 3:
+            self.query = self.query.unsqueeze(2)
+            self.key = self.key.unsqueeze(2)
+            self.value = self.value.unsqueeze(2)
+        return output_shape
 
 
 @dataclass

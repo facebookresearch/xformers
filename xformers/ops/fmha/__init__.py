@@ -35,6 +35,10 @@ class _fMHA(torch.autograd.Function):
         op_bw = op[1] if op is not None else None
         if op_fw is None:
             op_fw = _dispatch_fw(inp)
+        if op_fw is None:
+            raise NotImplementedError(
+                f"No memory_efficient_attention operator found for this input: {inp}"
+            )
 
         ctx.attn_bias = inp.attn_bias
         out, op_ctx = op_fw.apply(inp, True)
@@ -94,7 +98,7 @@ class _fMHA(torch.autograd.Function):
             p=ctx.p,
             scale=ctx.scale,
         )
-        ctx = Context(lse=lse, out=out)
+        op_ctx = Context(lse=lse, out=out)
 
         op_bw = ctx.op_bw
         if op_bw is None:
@@ -102,7 +106,7 @@ class _fMHA(torch.autograd.Function):
 
         cur_rng_state = torch.cuda.get_rng_state()
         torch.cuda.set_rng_state(fw_rng_state)
-        grads = op_bw.apply(ctx, inp, grad)
+        grads = op_bw.apply(op_ctx, inp, grad)
         torch.cuda.set_rng_state(cur_rng_state)
         return (None, grads.dq, grads.dk, grads.dv) + (None,) * (ctx.n_args - 3)
 
@@ -194,17 +198,7 @@ def memory_efficient_attention(
 def _memory_efficient_attention(
     inp: Inputs, op: Optional[AttentionOp] = None
 ) -> torch.Tensor:
-    if inp.query.ndim not in [3, 4]:
-        raise ValueError(
-            f"Invalid shape for query: {inp.query.shape}. "
-            "Expected shape [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
-        )
-    output_shape = tuple(inp.query.shape[:-1]) + (inp.value.shape[-1],)
-    # Convert from legacy format
-    if inp.query.ndim == 3:
-        inp.query = inp.query.unsqueeze(2)
-        inp.key = inp.key.unsqueeze(2)
-        inp.value = inp.value.unsqueeze(2)
+    output_shape = inp.normalize_bmhk()
 
     # fast-path that doesn't require computing the logsumexp for backward computation
     if all(x.requires_grad is False for x in [inp.query, inp.key, inp.value]):
