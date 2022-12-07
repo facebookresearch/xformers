@@ -9,7 +9,7 @@ from typing import Any, List, Optional, Set, Tuple
 
 import torch
 
-from ..common import get_xformers_operator
+from ..common import get_xformers_operator, register_operator
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -20,6 +20,7 @@ from .common import (
 )
 
 
+@register_operator
 class FwOp(AttentionFwOpBase):
     """xFormers' MHA kernel based on CUTLASS.
     Supports a large number of settings (including without TensorCores, f32 ...)
@@ -97,6 +98,7 @@ class FwOp(AttentionFwOpBase):
         return True
 
 
+@register_operator
 class BwOp(AttentionBwOpBase):
     OPERATOR = get_xformers_operator("efficient_attention_backward_cutlass")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES

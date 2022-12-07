@@ -9,6 +9,7 @@ from typing import Any, Optional, Set, Tuple
 
 import torch
 
+from ..common import register_operator
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -68,6 +69,7 @@ def _convert_input_format(
     return new_inp, softmax_scale, cu_seqlens_q, seqlen_q, cu_seqlens_k, seqlen_k
 
 
+@register_operator
 class FwOp(AttentionFwOpBase):
     """Operator that computes memory-efficient attention using \
         `Flash-Attention <https://github.com/HazyResearch/flash-attention>`_ \
@@ -153,6 +155,7 @@ class FwOp(AttentionFwOpBase):
         return out, Context(out=out, lse=softmax_lse)
 
 
+@register_operator
 class BwOp(AttentionBwOpBase):
     OPERATOR = _C_flashattention_bwd
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES

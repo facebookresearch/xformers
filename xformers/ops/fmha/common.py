@@ -133,14 +133,15 @@ class AttentionOpBase:
     SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
     NAME: str
+    OPERATOR_CATEGORY = "memory_efficient_attention"
 
     _TEST_BATCH_SIZES: List[int] = [1, 300]
     _TEST_K: List[int] = [32, 128]
 
     @classmethod
     def info(cls):
-        if cls.OPERATOR.__name__ == "no_such_operator":
-            return "not built"
+        if cls.OPERATOR is None or cls.OPERATOR.__name__ == "no_such_operator":
+            return "unavailable"
         return "available"
 
     @classmethod
