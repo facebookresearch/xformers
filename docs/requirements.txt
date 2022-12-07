@@ -6,3 +6,4 @@ torch>=1.6.0
 numpy>=1.19.5
 pyre-extensions == 0.0.23
 jinja2==3.0.3
+einops
