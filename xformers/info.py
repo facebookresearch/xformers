@@ -16,6 +16,8 @@ def get_features_status() -> Dict[str, str]:
         ops.MemoryEfficientAttentionFlashAttentionOp,
         ops.MemoryEfficientAttentionCutlassOp,
         ops.MemoryEfficientAttentionOp,
+        ops.TritonFlashAttentionOp,
+        ops.MemoryEfficientAttentionTritonFwdFlashBwOp,
     ]
     features = {}
     for op in ALL_OPS:

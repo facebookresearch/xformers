@@ -1,0 +1,136 @@
+name: Build wheels
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Run at 3am every monday
+    - cron: '0 3 * * 1'
+
+# this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
+# https://github.com/actions/runner/issues/1182
+
+env:
+  # all values:
+  # 3.5;3.7;5.0;5.2;5.3;6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6
+  # with optional +PTX
+  # https://github.com/pytorch/vision/blob/d710f3d1edc06afa244468cb96603ba6dbd4d9d5/packaging/pkg_helpers.bash#L63
+  # you need at least cuda 5.0 for some of the stuff compiled here.
+  TORCH_CUDA_ARCH_LIST: "6.0 6.1 7.0 7.5 8.0 8.6"
+  FORCE_CUDA: 1
+  MAX_JOBS: 1 # will crash otherwise
+  DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
+  XFORMERS_BUILD_TYPE: "Release"
+
+jobs:
+  build_wheels:
+    strategy:
+      fail-fast: false # don't stop other jobs if one failed
+      matrix:
+        os:
+          - ubuntu-22.04
+          - windows-2019
+        python:
+          - "3.7"
+          - "3.8"
+          - "3.9"
+          - "3.10"
+        config:
+          # torch 1.13 is built with cuda 11.6 and 11.7
+          - torch_version: "1.13.0+cu117"
+            torch_version_constraint: "1.13"
+            cuda_version: "11.7.0"
+            pip_index: https://download.pytorch.org/whl/cu117
+            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
+
+          - torch_version: "1.13.0+cu116"
+            torch_version_constraint: "1.13"
+            cuda_version: "11.6.2"
+            pip_index: https://download.pytorch.org/whl/cu116
+            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
+
+          # torch 1.12 is built with cuda 11.3 and 11.6, we ignore 11.3 for now
+          - torch_version: "1.12.1+cu116"
+            torch_version_constraint: "1.12"
+            cuda_version: "11.6.2"
+            pip_index: https://download.pytorch.org/whl/cu116
+            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
+
+    name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
+    runs-on: ${{ matrix.os }}
+    env:
+      # alias for the current python version
+      # windows does not have per version binary, it is just 'python3'
+      PY: python${{ contains(matrix.os, 'ubuntu') && matrix.python || '3' }}
+
+    container: ${{ contains(matrix.os, 'ubuntu') && 'quay.io/pypa/manylinux2014_x86_64' || null }}
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    steps:
+      ##### linux build setup
+      - if: runner.os == 'Linux'
+        name: (Linux) install cuda
+        run: >
+          yum install wget git prename -y &&
+          wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
+          sh ./cuda.run --silent --toolkit
+      #### end linux build setup
+      ### windows build setup
+      - if: runner.os == 'Windows'
+        name: (Windows) install cuda
+        uses: okazunori2013/cuda-toolkit@v0.3.2
+        with:
+          cuda: ${{ matrix.config.cuda_version }}
+          method: network
+
+      - if: runner.os == 'Windows'
+        name: (Windows) install python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "${{ matrix.python }}"
+
+      - if: runner.os == 'Windows'
+        name: (Windows) setup msvc
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - if: runner.os == 'Windows'
+        name: configure Pagefile
+        # windows runners will OOM with many CUDA architectures
+        # we cheat here with a page file
+        uses: al-cheb/configure-pagefile-action@v1.2
+        with:
+          minimum-size: 8GB
+
+      - if: runner.os == 'Windows'
+        name: (Windows) Remove link.exe
+        # really unfortunate: https://github.com/ilammy/msvc-dev-cmd#name-conflicts-with-shell-bash
+        run: rm /usr/bin/link
+      #### end windows build setup
+
+      #### now the actual build:
+      - name: Recursive checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          path: "."
+
+      - name: Setup proper pytorch dependency in "requirements.txt"
+        run: |
+          sed -i '/torch/d' ./requirements.txt
+          echo "torch == ${{ matrix.config.torch_version_constraint }}" >> ./requirements.txt
+          cat ./requirements.txt
+
+      - name: Install build dependencies
+        run: >
+          $PY -m pip install wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
+          git config --global --add safe.directory "*"
+
+      - name: Build wheel
+        run: $PY setup.py bdist_wheel -d "dist"
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: xformers-${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}.whl
+          path: dist/*.whl
+# Note: it might be helpful to have additional steps that test if the built wheels actually work

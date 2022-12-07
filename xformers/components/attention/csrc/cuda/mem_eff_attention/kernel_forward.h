@@ -1,10 +1,3 @@
-#ifdef HAS_PYTORCH
-#include <ATen/ATen.h>
-#include <ATen/cuda/CUDAContext.h>
-#include <c10/cuda/CUDAGuard.h>
-#include <torch/library.h>
-#endif
-
 #include <cmath>
 #include <vector>
 
@@ -103,6 +96,9 @@ struct AttentionKernel {
     output_accum_t*
         output_accum_ptr; // [num_queries, num_heads, head_dim_value]
     lse_scalar_t* logsumexp_ptr; // [num_heads, num_queries] - can be null
+
+    // Scale
+    accum_t scale;
 
     // Dimensions/strides
     int32_t head_dim;
@@ -616,7 +612,7 @@ struct AttentionKernel {
                                 warp_id(),
                                 p.num_keys - iter_key_start,
                                 iteratorC_tile_offset,
-                                1.0f / cutlass::fast_sqrt(float(p.head_dim)));
+                                p.scale);
                           }));
                     }));
 

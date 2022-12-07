@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import torch
 import triton
 import triton.language as tl
 
@@ -30,7 +29,7 @@ def get_depth(args):
     ],
     key=["K"],
 )
-@triton.heuristics(values={"depth": get_depth , "is_fp16": lambda args: args["Y"].dtype == torch.float16})
+@triton.heuristics(values={"depth": get_depth})
 @triton.jit
 def _softmax(
     Y, X, M,
@@ -42,7 +41,6 @@ def _softmax(
     depth: tl.constexpr,
     causal: tl.constexpr,
     use_mask: tl.constexpr,
-    is_fp16: tl.constexpr,
     log: tl.constexpr,
 ):
     # fmt: om
@@ -71,7 +69,7 @@ def _softmax(
     if causal:
         io_mask = io_mask & (k <= n)
 
-    x = tl.load(x_ptrs, mask=io_mask, other=float("-inf"))
+    x = tl.load(x_ptrs, mask=io_mask, other=float("-inf")).to(tl.float32)
 
     # Causal - 2: enforce correctness over a couple of misloaded values
     if causal:
@@ -81,17 +79,11 @@ def _softmax(
 
     if use_mask:
         mask_ptrs = M + n * stride_mn + k
-        add_mask = tl.load(mask_ptrs, io_mask, other=float("-inf"))
+        add_mask = tl.load(mask_ptrs, io_mask, other=float("-inf")).to(tl.float32)
         x += add_mask
 
     # compute numerically-stable softmax
     z = x - tl.max(x, axis=0)
-
-    if is_fp16:
-        # tl.exp() crashes on fp16 values
-        # See https://github.com/openai/triton/issues/241
-        z = z.to(tl.float32)
-
     num = tl.exp(z)
     denom = tl.sum(num, axis=0)
 
@@ -120,7 +112,6 @@ def _softmax(
     ],
     key=["K"],
 )
-@triton.heuristics(values={"is_fp16": lambda args: args["GradIn"].dtype == torch.float16})
 @triton.jit
 def _softmax_backward(
     GradIn, GradOut, Out,
@@ -131,7 +122,6 @@ def _softmax_backward(
     # meta-params
     depth: tl.constexpr,
     causal: tl.constexpr,
-    is_fp16: tl.constexpr,
     log: tl.constexpr,
 ):
     # fmt: on
@@ -158,8 +148,8 @@ def _softmax_backward(
     if causal:
         io_mask = io_mask & (k <= n)
 
-    g = tl.load(grad_out_ptrs, mask=io_mask, other=float(0))
-    o = tl.load(out_ptrs, mask=io_mask, other=float(0))
+    g = tl.load(grad_out_ptrs, mask=io_mask, other=float(0)).to(tl.float32)
+    o = tl.load(out_ptrs, mask=io_mask, other=float(0)).to(tl.float32)
 
     # Causal - 2: enforce correctness over a couple of misloaded values
     if causal:
@@ -170,8 +160,6 @@ def _softmax_backward(
 
     if log:
         s = tl.sum(g, 0)
-        if is_fp16:
-            o = o.to(tl.float32)
         grad_in = g - tl.exp(o) * s
     else:
         # Step 1: Compute the intermediate sum used for the gradient

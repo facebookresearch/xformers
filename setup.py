@@ -28,6 +28,16 @@ from torch.utils.cpp_extension import (
 this_dir = os.path.dirname(os.path.abspath(__file__))
 
 
+def get_extra_nvcc_flags_for_build_type() -> List[str]:
+    build_type = os.environ.get("XFORMERS_BUILD_TYPE", "RelWithDebInfo").lower()
+    if build_type == "relwithdebinfo":
+        return ["--generate-line-info"]
+    elif build_type == "release":
+        return []
+    else:
+        raise ValueError(f"Unknown build type: {build_type}")
+
+
 def fetch_requirements():
     with open("requirements.txt") as f:
         reqs = f.read().strip().split("\n")
@@ -137,10 +147,10 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                     "--expt-extended-lambda",
                     "--use_fast_math",
                     "--ptxas-options=-v",
-                    "-lineinfo",
                 ]
                 + nvcc_platform_dependant_args
-                + nvcc_archs_flags,
+                + nvcc_archs_flags
+                + get_extra_nvcc_flags_for_build_type(),
             },
             include_dirs=[
                 Path(flash_root) / "csrc" / "flash_attn",
@@ -199,11 +209,10 @@ def get_extensions():
         nvcc_flags = [
             "-DHAS_PYTORCH",
             "--use_fast_math",
-            "--generate-line-info",
             "-U__CUDA_NO_HALF_OPERATORS__",
             "-U__CUDA_NO_HALF_CONVERSIONS__",
             "--extended-lambda",
-        ]
+        ] + get_extra_nvcc_flags_for_build_type()
         if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
             nvcc_flags.append("-DNDEBUG")
         nvcc_flags += shlex.split(os.getenv("NVCC_FLAGS", ""))
@@ -267,6 +276,7 @@ if __name__ == "__main__":
         version=version,
         install_requires=fetch_requirements(),
         packages=setuptools.find_packages(exclude=("tests", "tests.*")),
+        dependency_links=["file:///./third_party/flash-attention#egg=flash-attention"],
         ext_modules=get_extensions(),
         cmdclass={
             "build_ext": BuildExtension.with_options(no_python_abi_suffix=True),
