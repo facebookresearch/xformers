@@ -47,10 +47,10 @@ class Op(AttentionOpBase):
     def supports(cls, d: "AttentionOpDispatch") -> bool:
         if not has_triton_flashattention:
             return False
-        device_capability = torch.cuda.get_device_capability(d.device)
-        if not device_capability >= (7, 5):
+        if not super(Op, cls).supports(d):
             return False
-        return super(Op, cls).supports(d)
+        device_capability = torch.cuda.get_device_capability(d.device)
+        return device_capability >= (7, 5)
 
     @classmethod
     def forward_no_grad(
