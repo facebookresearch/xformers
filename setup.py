@@ -286,6 +286,10 @@ class clean(distutils.command.clean.clean):  # type: ignore
 if __name__ == "__main__":
     write_version_file()
     # Embed a fixed version of flash_attn
+    # NOTE: The correct way to do this would be to use the `package_dir`
+    # parameter in `setuptools.setup`, but this does not work when
+    # developing in editable mode
+    # See: https://github.com/pypa/pip/issues/3160 (closed, but not fixed)
     symlink_package(
         "xformers._flash_attn", Path("third_party") / "flash-attention" / "flash_attn"
     )
