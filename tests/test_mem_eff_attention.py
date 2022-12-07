@@ -719,6 +719,7 @@ def test_dropout(device, q_len, kv_len, batch_size, k_len, p, seed):
     assert all(p_values > p_val_tol)
 
 
+@pytest.mark.skipif(True, reason="Dropout support disabled")
 @cuda_only
 @pytest.mark.parametrize("p", [0.3, 0.7])
 @pytest.mark.parametrize("k_len", [5, 6, 32])
