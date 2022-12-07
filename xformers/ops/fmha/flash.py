@@ -17,7 +17,7 @@ from .common import (
 )
 
 try:
-    from .. import _C_flashattention  # type: ignore[attr-defined]
+    from ... import _C_flashattention  # type: ignore[attr-defined]
 
     has_flashattention = True
 except ImportError:
