@@ -3,25 +3,108 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import torch
 
+from . import cutlass, flash, small_k, triton
 from .common import (
     AttentionMask,
     AttentionOp,
     AttentionOpBase,
     AttentionOpDispatch,
+    Context,
+    Inputs,
     LowerTriangularMask,
 )
-from .cutlass import Op as MemoryEfficientAttentionCutlassOp
-from .flash import Op as MemoryEfficientAttentionFlashAttentionOp
-from .mixed import (
-    MemoryEfficientAttentionCutlassFwdFlashBwOp,
-    MemoryEfficientAttentionTritonFwdFlashBwOp,
-)
-from .small_k import Op as MemoryEfficientAttentionOp
-from .triton import Op as TritonFlashAttentionOp
+from .dispatch import _dispatch_bw, _dispatch_fw
+
+MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
+MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
+MemoryEfficientAttentionTritonFwdFlashBwOp = (triton.FwOp, flash.BwOp)
+MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
+MemoryEfficientAttentionOp = (small_k.FwOp, small_k.BwOp)
+TritonFlashAttentionOp = (triton.FwOp, triton.BwOp)
+
+
+class _fMHA(torch.autograd.Function):
+    @classmethod
+    def forward(cls, ctx, op: AttentionOp, *args):
+        inp = Inputs(*args)
+        op_fw = op[0] if op is not None else None
+        op_bw = op[1] if op is not None else None
+        if op_fw is None:
+            op_fw = _dispatch_fw(inp)
+
+        ctx.attn_bias = inp.attn_bias
+        out, op_ctx = op_fw.apply(inp, True)
+        assert op_ctx is not None
+
+        # Saving attn_bias is a bit complicated, as the
+        # torch part should go in `save_for_backward`
+        if isinstance(inp.attn_bias, torch.Tensor):
+            attn_bias_tensor = inp.attn_bias
+            attn_bias_ctx = None
+        else:
+            attn_bias_tensor = None
+            attn_bias_ctx = inp.attn_bias
+
+        cur_rng_state = torch.cuda.get_rng_state()
+        ctx.save_for_backward(
+            inp.query,
+            inp.key,
+            inp.value,
+            op_ctx.out,
+            op_ctx.lse,
+            attn_bias_tensor,
+            cur_rng_state,
+        )
+        ctx.op_fw = op_fw
+        ctx.op_bw = op_bw
+        ctx.p = inp.p
+        ctx.scale = inp.scale
+        ctx.attn_bias_ctx = attn_bias_ctx
+        ctx.n_args = len(args)
+        return out
+
+    @staticmethod
+    def deserialize_bias(
+        attn_bias_ctx, attn_bias_tensor: Optional[torch.Tensor]
+    ) -> Any:
+        if attn_bias_tensor is None:
+            return attn_bias_ctx
+        return attn_bias_tensor
+
+    @classmethod
+    def backward(cls, ctx, grad):
+        assert all(
+            not ctx.needs_input_grad[i] for i in range(ctx.n_args) if i not in [1, 2, 3]
+        ), (
+            "Only gradients to Q/K/V is implemented. "
+            "For instance, it's not possible to backpropagate through the attention mask"
+        )
+
+        # Re-create context
+        query, key, value, out, lse, attn_bias_tensor, fw_rng_state = ctx.saved_tensors
+        inp = Inputs(
+            query=query,
+            key=key,
+            value=value,
+            attn_bias=cls.deserialize_bias(ctx.attn_bias_ctx, attn_bias_tensor),
+            p=ctx.p,
+            scale=ctx.scale,
+        )
+        ctx = Context(lse=lse, out=out)
+
+        op_bw = ctx.op_bw
+        if op_bw is None:
+            op_bw = _dispatch_bw(inp)
+
+        cur_rng_state = torch.cuda.get_rng_state()
+        torch.cuda.set_rng_state(fw_rng_state)
+        grads = op_bw.apply(ctx, inp, grad)
+        torch.cuda.set_rng_state(cur_rng_state)
+        return (None, grads.dq, grads.dk, grads.dv) + (None,) * (ctx.n_args - 3)
 
 
 def memory_efficient_attention(
@@ -100,40 +183,39 @@ def memory_efficient_attention(
         and options.
     :return: multi-head attention Tensor with shape ``[B, Mq, H, Kv]``
     """
+    return _memory_efficient_attention(
+        Inputs(
+            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+        ),
+        op=op,
+    )
 
-    if query.ndim not in [3, 4]:
+
+def _memory_efficient_attention(
+    inp: Inputs, op: Optional[AttentionOp] = None
+) -> torch.Tensor:
+    if inp.query.ndim not in [3, 4]:
         raise ValueError(
-            f"Invalid shape for query: {query.shape}. "
+            f"Invalid shape for query: {inp.query.shape}. "
             "Expected shape [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
         )
-    output_shape = tuple(query.shape[:-1]) + (value.shape[-1],)
+    output_shape = tuple(inp.query.shape[:-1]) + (inp.value.shape[-1],)
     # Convert from legacy format
-    if query.ndim == 3:
-        query = query.unsqueeze(2)
-        key = key.unsqueeze(2)
-        value = value.unsqueeze(2)
-
-    if op is None:
-        op = AttentionOpDispatch.from_arguments(
-            query=query,
-            key=key,
-            value=value,
-            attn_bias=attn_bias,
-            p=p,
-            scale=scale,
-        ).op
+    if inp.query.ndim == 3:
+        inp.query = inp.query.unsqueeze(2)
+        inp.key = inp.key.unsqueeze(2)
+        inp.value = inp.value.unsqueeze(2)
 
     # fast-path that doesn't require computing the logsumexp for backward computation
-    if all(x.requires_grad is False for x in [query, key, value]):
-        return op.forward_no_grad(
-            query=query,
-            key=key,
-            value=value,
-            attn_bias=attn_bias,
-            p=p,
-            scale=scale,
-        ).reshape(output_shape)
-    return op.apply(query, key, value, attn_bias, p, scale).reshape(output_shape)
+    if all(x.requires_grad is False for x in [inp.query, inp.key, inp.value]):
+        op_fw = op[0] if op is not None else None
+        if op_fw is None:
+            op_fw = _dispatch_fw(inp)
+        return op_fw.apply(inp, needs_gradient=False)[0].reshape(output_shape)
+
+    return _fMHA.apply(
+        op, inp.query, inp.key, inp.value, inp.attn_bias, inp.p, inp.scale
+    ).reshape(output_shape)
 
 
 __all__ = [
