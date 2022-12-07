@@ -161,7 +161,7 @@ run_mypy: &run_mypy
        command: |
         source $BASH_ENV
         $CONDA_PYTHON -m mypy --version
-        $CONDA_PYTHON -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude "(build|stubs|third_party|docs|setup.py)" .
+        $CONDA_PYTHON -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude "(build|stubs|third_party|docs|examples|xformers/_flash_attn|setup.py)" .
 
 run_flake8: &run_flake8
   - run:
