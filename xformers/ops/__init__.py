@@ -18,6 +18,9 @@ from .fmha import (
     MemoryEfficientAttentionTritonFwdFlashBwOp,
     TritonFlashAttentionOp,
     memory_efficient_attention,
+    memory_efficient_attention_backward,
+    memory_efficient_attention_forward,
+    memory_efficient_attention_forward_requires_grad,
 )
 from .swiglu_op import (
     SwiGLU,
@@ -65,6 +68,9 @@ __all__ = [
     "MemoryEfficientAttentionOp",
     "MemoryEfficientAttentionTritonFwdFlashBwOp",
     "memory_efficient_attention",
+    "memory_efficient_attention_backward",
+    "memory_efficient_attention_forward",
+    "memory_efficient_attention_forward_requires_grad",
     "SwiGLU",
     "SwiGLUEagerOp",
     "SwiGLUFusedOp",
