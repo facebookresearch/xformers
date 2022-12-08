@@ -642,7 +642,13 @@ def test_backward(
     del qkv
 
     for name, calc_grad, ref_grad in zip(grads_name, grads, grads_ref):
-        assert_allclose(calc_grad, ref_grad, name, atol=atol, rtol=rtol)
+        assert_allclose(
+            calc_grad,
+            ref_grad,
+            msg=f"{op_fw.NAME}+{op_bw.NAME}:{name}",
+            atol=atol,
+            rtol=rtol,
+        )
 
 
 def _vec_binom_test(x, n, p):
