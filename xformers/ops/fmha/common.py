@@ -5,7 +5,7 @@
 
 import math
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
+from typing import Any, List, Mapping, Optional, Set, Tuple, Type, Union
 
 import torch
 
@@ -83,7 +83,7 @@ class Inputs:
     def scale_float(self) -> float:
         return self.query.shape[-1] ** (-0.5) if self.scale is None else self.scale
 
-    def normalize_bmhk(self) -> Sequence[int]:
+    def normalize_bmhk(self) -> Tuple[int, ...]:
         if self.query.ndim not in [3, 4]:
             raise ValueError(
                 f"Invalid shape for query: {self.query.shape}. "

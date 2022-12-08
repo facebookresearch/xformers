@@ -32,21 +32,16 @@ TritonFlashAttentionOp = (triton.FwOp, triton.BwOp)
 
 
 class _fMHA(torch.autograd.Function):
-    @classmethod
-    def forward(cls, ctx, op: AttentionOp, *args):
+    @staticmethod
+    # type: ignore
+    def forward(ctx, op: AttentionOp, *args: Any) -> Any:
         inp = Inputs(*args)
         op_fw = op[0] if op is not None else None
         op_bw = op[1] if op is not None else None
-        if op_fw is None:
-            op_fw = _dispatch_fw(inp)
-        if op_fw is None:
-            raise NotImplementedError(
-                f"No memory_efficient_attention operator found for this input: {inp}"
-            )
 
-        ctx.attn_bias = inp.attn_bias
-        out, op_ctx = op_fw.apply(inp, True)
-        assert op_ctx is not None
+        out, op_ctx = _memory_efficient_attention_forward_requires_grad(
+            inp=inp, op=op_fw
+        )
 
         # Saving attn_bias is a bit complicated, as the
         # torch part should go in `save_for_backward`
@@ -57,15 +52,8 @@ class _fMHA(torch.autograd.Function):
             attn_bias_tensor = None
             attn_bias_ctx = inp.attn_bias
 
-        cur_rng_state = torch.cuda.get_rng_state()
         ctx.save_for_backward(
-            inp.query,
-            inp.key,
-            inp.value,
-            op_ctx.out,
-            op_ctx.lse,
-            attn_bias_tensor,
-            cur_rng_state,
+            inp.query, inp.key, inp.value, op_ctx.out, op_ctx.lse, attn_bias_tensor
         )
         ctx.op_fw = op_fw
         ctx.op_bw = op_bw
@@ -93,7 +81,7 @@ class _fMHA(torch.autograd.Function):
         )
 
         # Re-create context
-        query, key, value, out, lse, attn_bias_tensor, fw_rng_state = ctx.saved_tensors
+        query, key, value, out, lse, attn_bias_tensor = ctx.saved_tensors
         inp = Inputs(
             query=query,
             key=key,
@@ -103,15 +91,9 @@ class _fMHA(torch.autograd.Function):
             scale=ctx.scale,
         )
         op_ctx = Context(lse=lse, out=out)
-
-        op_bw = ctx.op_bw
-        if op_bw is None:
-            op_bw = _dispatch_bw(inp)
-
-        cur_rng_state = torch.cuda.get_rng_state()
-        torch.cuda.set_rng_state(fw_rng_state)
-        grads = op_bw.apply(op_ctx, inp, grad)
-        torch.cuda.set_rng_state(cur_rng_state)
+        grads = _memory_efficient_attention_backward(
+            ctx=op_ctx, inp=inp, grad=grad, op=ctx.op_bw
+        )
         return (None, grads.dq, grads.dk, grads.dv) + (None,) * (ctx.n_args - 3)
 
 
