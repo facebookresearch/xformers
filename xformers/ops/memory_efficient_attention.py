@@ -315,7 +315,9 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
             attn_bias=attn_bias,
             p=p,
         )
-        ctx.save_for_backward(query, key, value, lse, attn_bias, out)
+        ctx.save_for_backward(
+            query.detach(), key.detach(), value.detach(), lse, attn_bias, out
+        )
         ctx.p = p
         ctx.rng_seed = rng_seed
         ctx.rng_offset = rng_offset
@@ -395,7 +397,7 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             causal=causal,
             scale=scale,
         )
-        ctx.save_for_backward(query, key, value, lse, out)
+        ctx.save_for_backward(query.detach(), key.detach(), value.detach(), lse, out)
         ctx.p = p
         ctx.causal = causal
         ctx.scale = scale
@@ -592,9 +594,9 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         )
         if ctx is not None:
             ctx.save_for_backward(
-                query,
-                key,
-                value,
+                query.detach(),
+                key.detach(),
+                value.detach(),
                 out,
                 softmax_lse,
                 cu_seqlens_q,
