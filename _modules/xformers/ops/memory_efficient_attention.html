@@ -982,8 +982,7 @@
     <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
         <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
         <span class="n">LowerTriangularMask</span><span class="p">,</span>
-        <span class="c1"># TODO: backwards accuracy is failing for a few cases, perhaps we want to disable this for now.</span>
-        <span class="c1"># torch.Tensor,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="p">}</span>
     <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="kc">True</span>
@@ -1000,7 +999,10 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="n">has_triton_flashattention</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">False</span>
         <span class="n">device_capability</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">device_capability</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="mi">5</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">device_capability</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="c1"># backwards accuracy is failing for a few cases, disable Tensor attn_bias for bwd</span>
+        <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">and</span> <span class="n">d</span><span class="o">.</span><span class="n">attn_bias_type</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">False</span>
         <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">TritonFlashAttentionOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">supports</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
 
