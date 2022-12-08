@@ -224,6 +224,8 @@ class BwOp(AttentionBwOpBase):
             )
 
         assert grad.dtype in cls.SUPPORTED_DTYPES
+        if inp.p > 0.0:
+            raise ValueError("TODO: Implement dropout properly")
         cls.OPERATOR(
             grad.reshape(kernel_out_shape).contiguous(),
             inp.query,
