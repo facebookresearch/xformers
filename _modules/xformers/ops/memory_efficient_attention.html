@@ -540,7 +540,9 @@
             <span class="n">attn_bias</span><span class="o">=</span><span class="n">attn_bias</span><span class="p">,</span>
             <span class="n">p</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">attn_bias</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span>
+            <span class="n">query</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">key</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">value</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">lse</span><span class="p">,</span> <span class="n">attn_bias</span><span class="p">,</span> <span class="n">out</span>
+        <span class="p">)</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">p</span> <span class="o">=</span> <span class="n">p</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">rng_seed</span> <span class="o">=</span> <span class="n">rng_seed</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">rng_offset</span> <span class="o">=</span> <span class="n">rng_offset</span>
@@ -620,7 +622,7 @@
             <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">,</span>
             <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">key</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">value</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">lse</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">p</span> <span class="o">=</span> <span class="n">p</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">causal</span> <span class="o">=</span> <span class="n">causal</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">scale</span> <span class="o">=</span> <span class="n">scale</span>
@@ -817,9 +819,9 @@
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span>
-                <span class="n">query</span><span class="p">,</span>
-                <span class="n">key</span><span class="p">,</span>
-                <span class="n">value</span><span class="p">,</span>
+                <span class="n">query</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
+                <span class="n">key</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
+                <span class="n">value</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
                 <span class="n">out</span><span class="p">,</span>
                 <span class="n">softmax_lse</span><span class="p">,</span>
                 <span class="n">cu_seqlens_q</span><span class="p">,</span>
