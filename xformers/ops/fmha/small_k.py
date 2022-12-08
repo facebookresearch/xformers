@@ -86,7 +86,7 @@ class FwOp(AttentionFwOpBase):
             p=inp.p,
         )
         out = bmk2bmhk(out, num_heads)
-        lse = lse.reshape([lse.shape[0], 1, lse.shape[1]])
+        lse = lse.reshape([lse.shape[0] // num_heads, num_heads, lse.shape[1]])
         ctx = Context(out=out, lse=lse) if needs_gradient else None
         return out, ctx
 
