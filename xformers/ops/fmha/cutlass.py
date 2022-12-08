@@ -154,12 +154,13 @@ class BwOp(AttentionBwOpBase):
         causal = isinstance(inp.attn_bias, LowerTriangularMask)
         dtype = inp.query.dtype
 
+        force_pad_inf = torch.cuda.get_device_capability(inp.query.device) == (7, 5)
         (grad_q, grad_k, grad_v,) = cls.OPERATOR(
             grad.to(dtype),
             inp.query,
             inp.key,
             inp.value,
-            ctx.get_padded_lse(32),
+            ctx.get_padded_lse(32, force_pad_inf=force_pad_inf),
             ctx.out.to(dtype),
             causal=causal,
             scale=inp.scale,
