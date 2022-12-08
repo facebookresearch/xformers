@@ -304,7 +304,7 @@ commands:
         # Cache the venv directory that contains dependencies
         - restore_cache:
             keys:
-              - cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+              - cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
         - <<: *setup_conda
         - <<: *install_dep
@@ -318,7 +318,7 @@ commands:
               - ~/miniconda
               - ~/venv
 
-            key: cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+            key: cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt"}}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml"}}
 
         - <<: *install_repo
         - <<: *run_coverage
@@ -345,7 +345,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *setup_conda
 
@@ -360,7 +360,7 @@ jobs:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+          key: cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_repo
 
@@ -461,7 +461,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *setup_conda
       - <<: *install_dep_exp
@@ -476,7 +476,7 @@ jobs:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum ".circleci/config.yml" }}
+          key: cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_experimental_repo
       - <<: *run_experimental_unittests
