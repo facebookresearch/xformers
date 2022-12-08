@@ -201,7 +201,7 @@ class VisionTransformer(pl.LightningModule):
             self.head = nn.Linear(dim, num_classes)
 
         self.criterion = torch.nn.CrossEntropyLoss()
-        self.val_accuracy = Accuracy()
+        self.val_accuracy = Accuracy(task="multiclass", num_classes=num_classes)
 
     @staticmethod
     def linear_warmup_cosine_decay(warmup_steps, total_steps):
