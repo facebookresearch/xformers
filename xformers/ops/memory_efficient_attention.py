@@ -774,7 +774,7 @@ class TritonFlashAttentionOp(AttentionOpBase):
         if not has_triton_flashattention:
             return False
         device_capability = torch.cuda.get_device_capability(d.device)
-        if not device_capability >= (7, 0):
+        if not device_capability >= (8, 0):
             return False
         # backwards accuracy is failing for a few cases, disable Tensor attn_bias for bwd
         if d.requires_grad and d.attn_bias_type == torch.Tensor:
