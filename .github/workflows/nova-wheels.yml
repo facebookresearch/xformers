@@ -1,0 +1,47 @@
+name: Nova - Build Wheels
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  generate-matrix-linux:
+    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@main
+    with:
+      package-type: wheel
+      os: linux
+      channel: release
+      with-cuda: enable
+
+  build-linux:
+    needs: generate-matrix-linux
+    name: build-linux
+    uses: pytorch/test-infra/.github/workflows/build_wheels_linux.yml@main
+    with:
+      repository: ${{ github.repository }}
+      ref: ""
+      pre-script: packaging/workflow_env_setup.sh
+      post-script: ""
+      smoke-test-script: ""
+      package-name: xformers
+      build-matrix: ${{ needs.generate-matrix-linux.outputs.matrix }}
+      # will push to pytorch if event_name is 'push'
+      # trigger-event: ${{ github.event_name }}
+    # secrets:
+    #   AWS_PYTORCH_UPLOADER_ACCESS_KEY_ID: ${{ secrets.AWS_PYTORCH_UPLOADER_ACCESS_KEY_ID }}
+    #   AWS_PYTORCH_UPLOADER_SECRET_ACCESS_KEY: ${{ secrets.AWS_PYTORCH_UPLOADER_SECRET_ACCESS_KEY }}
+
+  # TODO: to be able to publish wheels we have to:
+  # change the suffix of linux wheels to manylinux
+  # use a version name compatible with pypi
+  # publish:
+  #   needs: build-linux
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/download-artifact@v3
+  #     - run: python3 -m pip install --upgrade twine
+  #     - run: |
+  #         shopt -s globstar
+  #         python3 -m twine upload --repository testpypi **/*.whl
+  #       env:
+  #         TWINE_USERNAME: __token__
+  #         TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
