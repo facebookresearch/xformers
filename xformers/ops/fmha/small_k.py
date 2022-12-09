@@ -87,7 +87,12 @@ class FwOp(AttentionFwOpBase):
         )
         out = bmk2bmhk(out, num_heads)
         lse = lse.reshape([lse.shape[0] // num_heads, num_heads, lse.shape[1]])
-        ctx = Context(out=out, lse=lse) if needs_gradient else None
+        if not needs_gradient:
+            return out, None
+        ctx = Context(out=out, lse=lse)
+        if inp.p != 0.0:
+            ctx.op_bw = BwOp
+            ctx.rng_state = torch.LongTensor([rng_seed, rng_offset], device="cpu")
         return out, ctx
 
 
@@ -119,9 +124,16 @@ class BwOp(AttentionBwOpBase):
         value = _bmhk2bmk_contiguous(inp.value)
         out = _bmhk2bmk_contiguous(ctx.out)
 
-        if inp.p > 0:
-            raise NotImplementedError("TODO: Dropout not implemented")
         rng_seed = rng_offset = 0
+        if inp.p != 0.0:
+            if (
+                ctx.rng_state is None
+                or ctx.rng_state.dtype != torch.int64
+                or ctx.rng_state.device.type != "cpu"
+                or ctx.rng_state.shape != (2,)
+            ):
+                raise NotImplementedError(f"Invalid rng_state: {ctx.rng_state}")
+            rng_seed, rng_offset = ctx.rng_state.tolist()
         grad_q, grad_k, grad_v = cls.OPERATOR(
             grad,
             query,

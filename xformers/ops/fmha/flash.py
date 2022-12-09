@@ -87,7 +87,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 128
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
-    SUPPORTS_DROPOUT = False
+    SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
     NAME = "flshattF"
@@ -135,6 +135,7 @@ class FwOp(AttentionFwOpBase):
             dtype=inp.query.dtype,
             device=inp.device,
         )
+        rng_state = torch.cuda.get_rng_state() if inp.p != 0.0 else None
         softmax_lse, *rest = cls.OPERATOR(
             inp.query,
             inp.key,
@@ -153,7 +154,11 @@ class FwOp(AttentionFwOpBase):
             None,
         )
         out = out.reshape(out_shape)
-        return out, Context(out=out, lse=softmax_lse)
+        ctx = Context(out=out, lse=softmax_lse)
+        if inp.p != 0.0:
+            ctx.op_bw = BwOp
+            ctx.rng_state = rng_state
+        return (out, ctx)
 
 
 @register_operator
@@ -227,8 +232,11 @@ class BwOp(AttentionBwOpBase):
             )
 
         assert grad.dtype in cls.SUPPORTED_DTYPES
-        if inp.p > 0.0:
-            raise ValueError("TODO: Implement dropout properly")
+        cur_rng_state = None
+        if inp.p != 0.0:
+            assert ctx.rng_state is not None
+            cur_rng_state = torch.cuda.get_rng_state()
+            torch.cuda.set_rng_state(ctx.rng_state)
         cls.OPERATOR(
             grad.reshape(kernel_out_shape).contiguous(),
             inp.query,
@@ -250,6 +258,8 @@ class BwOp(AttentionBwOpBase):
             0,  # num_splits
             None,
         )
+        if cur_rng_state is not None:
+            torch.cuda.set_rng_state(cur_rng_state)
         grads.dq = grads.dq.reshape(dq_shape)
         grads.dk = grads.dk.reshape(dk_shape)
         grads.dv = grads.dv.reshape(dv_shape)

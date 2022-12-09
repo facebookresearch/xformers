@@ -53,8 +53,21 @@ class _fMHA(torch.autograd.Function):
             attn_bias_ctx = inp.attn_bias
 
         ctx.save_for_backward(
-            inp.query, inp.key, inp.value, op_ctx.out, op_ctx.lse, attn_bias_tensor
+            inp.query,
+            inp.key,
+            inp.value,
+            op_ctx.out,
+            op_ctx.lse,
+            op_ctx.rng_state,
+            attn_bias_tensor,
         )
+        if op_ctx.op_bw is not None:
+            if op_bw is not None and op_bw is not op_ctx.op_bw:
+                raise ValueError(
+                    f"Specified op_bw={op_bw.NAME}, but forward op "
+                    f"can only run with op_bw={op_ctx.op_bw.NAME}. Please set op_bw=None."
+                )
+            op_bw = op_ctx.op_bw
         ctx.op_fw = op_fw
         ctx.op_bw = op_bw
         ctx.p = inp.p
@@ -81,7 +94,7 @@ class _fMHA(torch.autograd.Function):
         )
 
         # Re-create context
-        query, key, value, out, lse, attn_bias_tensor = ctx.saved_tensors
+        query, key, value, out, lse, rng_state, attn_bias_tensor = ctx.saved_tensors
         inp = Inputs(
             query=query,
             key=key,
@@ -90,7 +103,7 @@ class _fMHA(torch.autograd.Function):
             p=ctx.p,
             scale=ctx.scale,
         )
-        op_ctx = Context(lse=lse, out=out)
+        op_ctx = Context(lse=lse, out=out, rng_state=rng_state)
         grads = _memory_efficient_attention_backward(
             ctx=op_ctx, inp=inp, grad=grad, op=ctx.op_bw
         )
@@ -205,7 +218,7 @@ def memory_efficient_attention_forward_requires_grad(
     key: torch.Tensor,
     value: torch.Tensor,
     attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
-    p: float = 0.0,
+    p: Optional[float] = None,
     scale: Optional[float] = None,
     *,
     op: Optional[Type[AttentionFwOpBase]] = None,
@@ -215,6 +228,12 @@ def memory_efficient_attention_forward_requires_grad(
     See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments
     See :attr:`xformers.ops.memory_efficient_backward` for running the backward pass
     """
+    if p is not None:
+        raise NotImplementedError(
+            "dropout is not supported on the non-autograd API."
+            " If you want to use dropout, please call `memory_efficient_attention` directly"
+        )
+    p = 0.0
     out, ctx = _memory_efficient_attention_forward_requires_grad(
         Inputs(
             query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
@@ -243,6 +262,11 @@ def memory_efficient_attention_backward(
     See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments.
     `lse` is the tensor returned by :attr:`xformers.ops.memory_efficient_attention_forward_requires_grad`
     """
+    if p != 0.0:
+        raise NotImplementedError(
+            "dropout is not supported on the non-autograd API."
+            " If you want to use dropout, please call `memory_efficient_attention` directly"
+        )
     gradients = _memory_efficient_attention_backward(
         Context(out=output, lse=lse),
         Inputs(
