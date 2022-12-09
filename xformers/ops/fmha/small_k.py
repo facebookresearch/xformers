@@ -7,7 +7,7 @@ from typing import Any, Mapping, Optional, Set, Tuple
 
 import torch
 
-from ..common import get_xformers_operator
+from ..common import get_xformers_operator, register_operator
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -27,6 +27,7 @@ def _bmhk2bmk_contiguous(tensor) -> torch.Tensor:
     )
 
 
+@register_operator
 class FwOp(AttentionFwOpBase):
     """An operator optimized for very small values of K (``K <= 32``) \
         and f32 pre-Ampere as it does not use TensorCores.
@@ -85,11 +86,12 @@ class FwOp(AttentionFwOpBase):
             p=inp.p,
         )
         out = bmk2bmhk(out, num_heads)
-        lse = lse.reshape([lse.shape[0], 1, lse.shape[1]])
+        lse = lse.reshape([lse.shape[0] // num_heads, num_heads, lse.shape[1]])
         ctx = Context(out=out, lse=lse) if needs_gradient else None
         return out, ctx
 
 
+@register_operator
 class BwOp(AttentionBwOpBase):
     OPERATOR = get_xformers_operator("efficient_attention_backward")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES

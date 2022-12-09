@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Optional, Set, Tuple
 import torch
 
 from ... import _is_triton_available
+from ..common import register_operator
 
 if TYPE_CHECKING or _is_triton_available():
     from ..._flash_attn.flash_attn_triton import (
@@ -48,6 +49,7 @@ def _prepare_inputs(inp: Inputs) -> Inputs:
     return replace(inp, attn_bias=attn_bias, query=query, key=key, value=value)
 
 
+@register_operator
 class FwOp(AttentionFwOpBase):
     OPERATOR = triton_flash_forward
     SUPPORTED_DEVICES = {"cuda"}
@@ -62,12 +64,6 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
     NAME = "tritonflashattF"
-
-    @classmethod
-    def info(cls):
-        if cls.OPERATOR is None:
-            return "not built"
-        return "available"
 
     @classmethod
     def supports(cls, d: "Inputs") -> bool:
@@ -95,6 +91,7 @@ class FwOp(AttentionFwOpBase):
         return out, Context(lse=lse, out=out)
 
 
+@register_operator
 class BwOp(AttentionBwOpBase):
     OPERATOR = triton_flash_backward
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES

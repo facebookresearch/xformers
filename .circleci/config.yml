@@ -126,6 +126,7 @@ install_repo: &install_repo
 
         # Test import.
         $CONDA_PYTHON -c 'import sys; sys.path = sys.path[1:]; import xformers'
+        $CONDA_PYTHON -m xformers.info
 
 install_experimental_repo: &install_experimental_repo
   - run:
