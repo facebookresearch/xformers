@@ -18,6 +18,7 @@ from .common import (
     Inputs,
     LowerTriangularMask,
 )
+from .tensor_with_seqlen import TensorWithSeqLen
 
 try:
     from ... import _C_flashattention  # type: ignore[attr-defined]
@@ -40,23 +41,37 @@ def _convert_input_format(
     head_dim_q = query.shape[3]
     head_dim_v = value.shape[3]
 
-    cu_seqlens_k = torch.arange(
-        0,
-        (batch + 1) * seqlen_kv,
-        step=seqlen_kv,
-        dtype=torch.int32,
-        device=query.device,
-    )
-    if seqlen_q == seqlen_kv:
-        cu_seqlens_q = cu_seqlens_k
+    assert isinstance(inp.key, TensorWithSeqLen) == isinstance(
+        inp.value, TensorWithSeqLen
+    ), "Both key/value should have seqlen information, or none of them"
+    if isinstance(inp.key, TensorWithSeqLen):
+        cu_seqlen_k = inp.key.cu_seqlen
+        max_seqlen_k = inp.key.max_seqlen
     else:
-        cu_seqlens_q = torch.arange(
+        cu_seqlen_k = torch.arange(
             0,
-            (batch + 1) * seqlen_q,
-            step=seqlen_q,
+            (batch + 1) * seqlen_kv,
+            step=seqlen_kv,
             dtype=torch.int32,
             device=query.device,
         )
+        max_seqlen_k = seqlen_kv
+
+    if isinstance(inp.query, TensorWithSeqLen):
+        cu_seqlen_q = inp.query.cu_seqlen
+        max_seqlen_q = inp.query.max_seqlen
+    else:
+        if not isinstance(inp.key, TensorWithSeqLen) and seqlen_q == seqlen_kv:
+            cu_seqlen_q = cu_seqlen_k
+        else:
+            cu_seqlen_q = torch.arange(
+                0,
+                (batch + 1) * seqlen_q,
+                step=seqlen_q,
+                dtype=torch.int32,
+                device=query.device,
+            )
+        max_seqlen_q = seqlen_kv
 
     # Initially we have `query.shape = [batch, seqlen, head_dim_q]`
     # We want format `[batch * seqlen, num_heads, head_dim_q]`
@@ -67,7 +82,7 @@ def _convert_input_format(
         value=value.reshape([batch * seqlen_kv, num_heads, head_dim_v]),
     )
     softmax_scale = inp.query.shape[-1] ** (-0.5) if inp.scale is None else inp.scale
-    return new_inp, softmax_scale, cu_seqlens_q, seqlen_q, cu_seqlens_k, seqlen_kv
+    return new_inp, softmax_scale, cu_seqlen_q, max_seqlen_q, cu_seqlen_k, max_seqlen_k
 
 
 @register_operator
@@ -90,6 +105,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
+    SUPPORTS_TENSOR_WITH_SEQLEN = True
     NAME = "flshattF"
 
     @classmethod
@@ -130,10 +146,10 @@ class FwOp(AttentionFwOpBase):
             cu_seqlens_k,
             max_seqlen_k,
         ) = _convert_input_format(inp)
-        out = torch.empty(
+        out = inp.query.new_empty(
             [inp.query.shape[0], inp.query.shape[1], inp.value.shape[2]],
+            device=inp.query.device,
             dtype=inp.query.dtype,
-            device=inp.device,
         )
         rng_state = torch.cuda.get_rng_state() if inp.p != 0.0 else None
         softmax_lse, *rest = cls.OPERATOR(
@@ -153,6 +169,11 @@ class FwOp(AttentionFwOpBase):
             0,  # num_splits
             None,
         )
+        if isinstance(inp.query, TensorWithSeqLen):
+            out = TensorWithSeqLen(out)
+            out.cu_seqlen = cu_seqlens_q
+            out.max_seqlen = max_seqlen_k
+
         out = out.reshape(out_shape)
         ctx = Context(out=out, lse=softmax_lse)
         if inp.p != 0.0:
@@ -171,6 +192,7 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
+    SUPPORTS_TENSOR_WITH_SEQLEN = FwOp.SUPPORTS_TENSOR_WITH_SEQLEN
     NAME = "flshattB"
 
     @classmethod

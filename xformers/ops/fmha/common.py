@@ -9,6 +9,8 @@ from typing import Any, List, Mapping, Optional, Set, Tuple, Type, Union
 
 import torch
 
+from .tensor_with_seqlen import TensorWithSeqLen
+
 
 class AttentionMask:
     """Base class for custom masks that can be applied \
@@ -147,6 +149,7 @@ class AttentionOpBase:
     SUPPORTS_DROPOUT: bool
     SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
+    SUPPORTS_TENSOR_WITH_SEQLEN: bool = False
     NAME: str
     OPERATOR_CATEGORY = "memory_efficient_attention"
 
@@ -163,6 +166,12 @@ class AttentionOpBase:
     def supports(cls, d: Inputs) -> bool:
         device_type = d.query.device.type
         dtype = d.query.dtype
+        if not cls.SUPPORTS_TENSOR_WITH_SEQLEN and (
+            isinstance(d.query, TensorWithSeqLen)
+            or isinstance(d.key, TensorWithSeqLen)
+            or isinstance(d.value, TensorWithSeqLen)
+        ):
+            return False
         if device_type not in cls.SUPPORTED_DEVICES:
             return False
         if dtype not in cls.SUPPORTED_DTYPES:

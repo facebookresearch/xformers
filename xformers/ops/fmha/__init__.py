@@ -22,6 +22,7 @@ from .common import (
     bmk2bmhk,
 )
 from .dispatch import _dispatch_bw, _dispatch_fw
+from .tensor_with_seqlen import cat_with_offsets
 
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
@@ -299,7 +300,8 @@ def _memory_efficient_attention_forward(
     output_shape = inp.normalize_bmhk()
     if op is None:
         op = _dispatch_fw(inp)
-    return op.apply(inp, needs_gradient=False)[0].reshape(output_shape)
+    out, *_ = op.apply(inp, needs_gradient=False)
+    return out.reshape(output_shape)
 
 
 def _memory_efficient_attention_forward_requires_grad(
