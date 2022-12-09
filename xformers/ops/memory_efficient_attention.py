@@ -315,7 +315,9 @@ class MemoryEfficientAttentionOp(AttentionOpBase):
             attn_bias=attn_bias,
             p=p,
         )
-        ctx.save_for_backward(query, key, value, lse, attn_bias, out)
+        ctx.save_for_backward(
+            query.detach(), key.detach(), value.detach(), lse, attn_bias, out
+        )
         ctx.p = p
         ctx.rng_seed = rng_seed
         ctx.rng_offset = rng_offset
@@ -395,7 +397,7 @@ class MemoryEfficientAttentionCutlassOp(AttentionOpBase):
             causal=causal,
             scale=scale,
         )
-        ctx.save_for_backward(query, key, value, lse, out)
+        ctx.save_for_backward(query.detach(), key.detach(), value.detach(), lse, out)
         ctx.p = p
         ctx.causal = causal
         ctx.scale = scale
@@ -592,9 +594,9 @@ class MemoryEfficientAttentionFlashAttentionOp(AttentionOpBase):
         )
         if ctx is not None:
             ctx.save_for_backward(
-                query,
-                key,
-                value,
+                query.detach(),
+                key.detach(),
+                value.detach(),
                 out,
                 softmax_lse,
                 cu_seqlens_q,
@@ -757,8 +759,7 @@ class TritonFlashAttentionOp(AttentionOpBase):
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
         LowerTriangularMask,
-        # TODO: backwards accuracy is failing for a few cases, perhaps we want to disable this for now.
-        # torch.Tensor,
+        torch.Tensor,
     }
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
@@ -775,7 +776,10 @@ class TritonFlashAttentionOp(AttentionOpBase):
         if not has_triton_flashattention:
             return False
         device_capability = torch.cuda.get_device_capability(d.device)
-        if not device_capability >= (7, 5):
+        if not device_capability >= (8, 0):
+            return False
+        # backwards accuracy is failing for a few cases, disable Tensor attn_bias for bwd
+        if d.requires_grad and d.attn_bias_type == torch.Tensor:
             return False
         return super(TritonFlashAttentionOp, cls).supports(d)
 
