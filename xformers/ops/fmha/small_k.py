@@ -92,7 +92,9 @@ class FwOp(AttentionFwOpBase):
         ctx = Context(out=out, lse=lse)
         if inp.p != 0.0:
             ctx.op_bw = BwOp
-            ctx.rng_state = torch.LongTensor([rng_seed, rng_offset], device="cpu")
+            ctx.rng_state = torch.tensor(
+                [rng_seed, rng_offset], dtype=torch.int64, device="cpu"
+            )
         return out, ctx
 
 
