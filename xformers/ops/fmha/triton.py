@@ -72,7 +72,9 @@ class FwOp(AttentionFwOpBase):
         if not super(FwOp, cls).supports(d):
             return False
         device_capability = torch.cuda.get_device_capability(d.device)
-        return device_capability >= (7, 5)
+        # Has only been tested on 8.0.
+        # Fails on 7.5 with illegal memory access
+        return device_capability == (8, 0)
 
     @classmethod
     def apply(
