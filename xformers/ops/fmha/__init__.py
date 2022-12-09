@@ -85,6 +85,7 @@ class _fMHA(torch.autograd.Function):
         return attn_bias_tensor
 
     @classmethod
+    @torch.autograd.function.once_differentiable
     def backward(cls, ctx, grad):
         assert all(
             not ctx.needs_input_grad[i] for i in range(ctx.n_args) if i not in [1, 2, 3]
@@ -218,7 +219,7 @@ def memory_efficient_attention_forward_requires_grad(
     key: torch.Tensor,
     value: torch.Tensor,
     attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
-    p: Optional[float] = None,
+    p: float = 0.0,
     scale: Optional[float] = None,
     *,
     op: Optional[Type[AttentionFwOpBase]] = None,
@@ -228,12 +229,11 @@ def memory_efficient_attention_forward_requires_grad(
     See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments
     See :attr:`xformers.ops.memory_efficient_backward` for running the backward pass
     """
-    if p is not None:
+    if p != 0.0:
         raise NotImplementedError(
             "dropout is not supported on the non-autograd API."
             " If you want to use dropout, please call `memory_efficient_attention` directly"
         )
-    p = 0.0
     out, ctx = _memory_efficient_attention_forward_requires_grad(
         Inputs(
             query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
