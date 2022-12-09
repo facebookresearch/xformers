@@ -53,9 +53,9 @@ class _fMHA(torch.autograd.Function):
             attn_bias_ctx = inp.attn_bias
 
         ctx.save_for_backward(
-            inp.query,
-            inp.key,
-            inp.value,
+            inp.query.detach(),
+            inp.key.detach(),
+            inp.value.detach(),
             op_ctx.out,
             op_ctx.lse,
             op_ctx.rng_state,
