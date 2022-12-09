@@ -14,6 +14,7 @@ from torch.utils import benchmark
 from utils import benchmark_main_helper
 
 import xformers.ops
+import xformers.ops.fmha as fmha
 
 CHECK_CORRECTNESS = True
 torch.backends.cuda.matmul.allow_tf32 = False
@@ -149,23 +150,15 @@ def benchmark_forward(shape, num_threads: int, attn_bias_type, dtype):
     B, M, H, K = shape
     _, q, k, v = create_tensors(shape, dtype)
 
-    dispatch = xformers.ops.AttentionOpDispatch(
-        dtype=dtype,
-        device=device,
-        k=K,
-        attn_bias_type=attn_bias_type,
-        has_dropout=False,
-        kv_len=M,
-        q_len=M,
-    )
+    inp = fmha.Inputs(query=q, key=k, value=v)
     try:
-        op = dispatch.op if FORCE_OP is None else FORCE_OP
+        op = (fmha._dispatch_fw(inp), None) if FORCE_OP is None else FORCE_OP
     except NotImplementedError:
         return
-    if not op.supports(dispatch):
+    if not op[0].supports(inp):
         return
 
-    attn_bias = create_attn_bias(
+    inp.attn_bias = create_attn_bias(
         attn_bias_type,
         batch_size=B,
         num_heads=H,
@@ -174,6 +167,8 @@ def benchmark_forward(shape, num_threads: int, attn_bias_type, dtype):
         device=device,
         dtype=dtype,
     )
+    if not op[0].supports(inp):
+        return
 
     dtype_str = {
         torch.bfloat16: "b16",
@@ -183,12 +178,14 @@ def benchmark_forward(shape, num_threads: int, attn_bias_type, dtype):
     sub_label = f"{dtype_str} B={B}, M={M}, H={H}, K={K}"
 
     try:
-        r = xformers.ops.memory_efficient_attention(q, k, v, attn_bias, op=op).float()
+        r = xformers.ops.memory_efficient_attention(
+            q, k, v, inp.attn_bias, op=op
+        ).float()
         rr = ref_attention(
             q.float(),
             k.float(),
             v.float(),
-            attn_bias,
+            inp.attn_bias,
         )
         assert not CHECK_CORRECTNESS or (r - rr).abs().max() < 4e-3, (
             (r - rr).abs().max()
@@ -203,12 +200,12 @@ def benchmark_forward(shape, num_threads: int, attn_bias_type, dtype):
             "q": q,
             "k": k,
             "v": v,
-            "attn_bias": attn_bias,
+            "attn_bias": inp.attn_bias,
             "p": p,
             "fn": partial(xformers.ops.memory_efficient_attention, op=op),
         },
         label=f"attention (attn_bias={attn_bias_type})",
-        description=op.NAME,
+        description=op[0].NAME,
         sub_label=sub_label,
         num_threads=num_threads,
     )
@@ -218,7 +215,7 @@ def benchmark_forward(shape, num_threads: int, attn_bias_type, dtype):
             "q": q,
             "k": k,
             "v": v,
-            "attn_bias": attn_bias,
+            "attn_bias": inp.attn_bias,
             "p": p,
             "fn": ref_attention,
         },
@@ -233,23 +230,19 @@ def benchmark_backward(shape, num_threads: int, attn_bias_type, dtype):
     B, M, H, K = shape
     qkv, q, k, v = create_tensors(shape, dtype, requires_grad=True)
 
-    dispatch = xformers.ops.AttentionOpDispatch(
-        dtype=dtype,
-        device=device,
-        k=K,
-        attn_bias_type=attn_bias_type,
-        has_dropout=False,
-        kv_len=M,
-        q_len=M,
-    )
+    inp = fmha.Inputs(query=q, key=k, value=v)
     try:
-        op = dispatch.op if FORCE_OP is None else FORCE_OP
+        op = (
+            (fmha._dispatch_fw(inp), fmha._dispatch_bw(inp))
+            if FORCE_OP is None
+            else FORCE_OP
+        )
     except NotImplementedError:
         return
-    if not op.supports(dispatch):
+    if not op[0].supports(inp) or not op[1].supports(inp):
         return
 
-    attn_bias = create_attn_bias(
+    inp.attn_bias = create_attn_bias(
         attn_bias_type,
         batch_size=B,
         num_heads=H,
@@ -258,6 +251,8 @@ def benchmark_backward(shape, num_threads: int, attn_bias_type, dtype):
         device=device,
         dtype=dtype,
     )
+    if not op[0].supports(inp) or not op[1].supports(inp):
+        return
 
     dtype_str = {
         torch.bfloat16: "b16",
@@ -266,7 +261,7 @@ def benchmark_backward(shape, num_threads: int, attn_bias_type, dtype):
     }[dtype]
     sub_label = f"{dtype_str} B={B}, M={M}, H={H}, K={K}"
 
-    out = xformers.ops.memory_efficient_attention(q, k, v, attn_bias, p, op=op)
+    out = xformers.ops.memory_efficient_attention(q, k, v, inp.attn_bias, p, op=op)
     grad_benchmark = torch.ones_like(q)
 
     yield benchmark.Timer(
@@ -276,7 +271,7 @@ def benchmark_backward(shape, num_threads: int, attn_bias_type, dtype):
             "grad": grad_benchmark,
         },
         label=f"attention backward (attn_bias={attn_bias_type})",
-        description=op.NAME,
+        description=op[1].NAME,
         sub_label=sub_label,
         num_threads=num_threads,
     )
@@ -284,13 +279,13 @@ def benchmark_backward(shape, num_threads: int, attn_bias_type, dtype):
 
     try:
         qkv.grad = None
-        r = xformers.ops.memory_efficient_attention(q, k, v, attn_bias, op=op)
+        r = xformers.ops.memory_efficient_attention(q, k, v, inp.attn_bias, op=op)
         r.backward(torch.ones_like(q))
 
         grad = cast(torch.Tensor, qkv.grad)
         qkv.grad = None
 
-        rr = ref_attention(q, k, v, attn_bias)
+        rr = ref_attention(q, k, v, inp.attn_bias)
         rr.backward(torch.ones_like(q))
         atol = 2e-4 + 2e-6 * K * M * math.sqrt(B) * math.sqrt(M)
         # type: ignore
@@ -303,7 +298,7 @@ def benchmark_backward(shape, num_threads: int, attn_bias_type, dtype):
         yield benchmark.Timer(
             stmt="out.backward(grad, retain_graph=True)",
             globals={
-                "out": ref_attention(q, k, v, attn_bias),
+                "out": ref_attention(q, k, v, inp.attn_bias),
                 "grad": grad_benchmark,
             },
             label=f"attention backward (attn_bias={attn_bias_type})",

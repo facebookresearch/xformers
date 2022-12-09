@@ -13,10 +13,38 @@ from scipy.stats import binom_test
 from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
+from xformers.ops import fmha
 
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+
+
+ALL_FW_OPS: Sequence[Type[fmha.common.AttentionFwOpBase]] = [
+    fmha.cutlass.FwOp,
+    fmha.flash.FwOp,
+    fmha.triton.FwOp,
+    fmha.small_k.FwOp,
+]
+
+ALL_BW_OPS: Sequence[Type[fmha.common.AttentionBwOpBase]] = [
+    fmha.cutlass.BwOp,
+    fmha.flash.BwOp,
+    fmha.triton.BwOp,
+    fmha.small_k.BwOp,
+]
+
+
+def sample_random_supported_fw(
+    inp: fmha.Inputs, seed: int
+) -> Type[fmha.common.AttentionFwOpBase]:
+    r = random.Random(seed)
+    fw_ops = list(ALL_FW_OPS)
+    r.shuffle(fw_ops)
+    for op in fw_ops:
+        if op.supports(inp):
+            return op
+    raise NotImplementedError(f"Could not find a FW operator for: {inp}")
 
 
 def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
@@ -56,8 +84,9 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
     # shapes.append((1, 1, 64000, 300, 128, 128))
     # Add some random shapes
     if op in [
-        xformers.ops.MemoryEfficientAttentionCutlassOp,
-        xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp,
+        fmha.cutlass.FwOp,
+        fmha.cutlass.BwOp,
+        fmha.flash.BwOp,
     ]:
         K_CHOICES = [8 * i for i in range(1, 256 // 8)]
         r = random.Random(0)
@@ -75,18 +104,8 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
     return shapes
 
 
-ALL_OPS: Sequence[Type[xformers.ops.AttentionOpBase]] = [
-    xformers.ops.MemoryEfficientAttentionOp,
-    xformers.ops.MemoryEfficientAttentionCutlassOp,
-    xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
-    xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp,
-    xformers.ops.TritonFlashAttentionOp,
-    xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp,
-]
-
-
-def _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(one_shape_per_op: bool = False):
-    for op in ALL_OPS:
+def _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(ops_list, one_shape_per_op: bool = False):
+    for op in ops_list:
         for shape in generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
             has_one = False
             for device in _devices:
@@ -101,7 +120,7 @@ def _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(one_shape_per_op: bool = False):
 
 def _gen_ids(op_device_dtype_B_Mq_Mkv_H_K_Kv):
     return [
-        f"{op.NAME}-{device}-{str(dtype)}-{batch_size},{q_len},{kv_len},{h},{k},{kv}"
+        f"{op.NAME}-{device}-{str(dtype)}-{batch_size}-{q_len}-{kv_len}-{h}-{k}-{kv}"
         for (
             op,
             device,
@@ -116,14 +135,26 @@ def _gen_ids(op_device_dtype_B_Mq_Mkv_H_K_Kv):
     ]
 
 
-_op_device_dtype_B_Mq_Mkv_H_K_Kv = list(_generate_op_device_dtype_B_Mq_Mkv_H_K_Kv())
-_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids = _gen_ids(_op_device_dtype_B_Mq_Mkv_H_K_Kv)
-
-_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs = list(
-    _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(one_shape_per_op=True)
+_opFW_device_dtype_B_Mq_Mkv_H_K_Kv = list(
+    _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(ALL_FW_OPS)
 )
-_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids = _gen_ids(
-    _op_device_dtype_B_Mq_Mkv_H_K_Kv__xs
+_opFW_device_dtype_B_Mq_Mkv_H_K_Kv_ids = _gen_ids(_opFW_device_dtype_B_Mq_Mkv_H_K_Kv)
+_opBW_device_dtype_B_Mq_Mkv_H_K_Kv = list(
+    _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(ALL_BW_OPS)
+)
+_opBW_device_dtype_B_Mq_Mkv_H_K_Kv_ids = _gen_ids(_opBW_device_dtype_B_Mq_Mkv_H_K_Kv)
+
+_opFW_device_dtype_B_Mq_Mkv_H_K_Kv__xs = list(
+    _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(ALL_FW_OPS, one_shape_per_op=True)
+)
+_opFW_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids = _gen_ids(
+    _opFW_device_dtype_B_Mq_Mkv_H_K_Kv__xs
+)
+_opBW_device_dtype_B_Mq_Mkv_H_K_Kv__xs = list(
+    _generate_op_device_dtype_B_Mq_Mkv_H_K_Kv(ALL_BW_OPS, one_shape_per_op=True)
+)
+_opBW_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids = _gen_ids(
+    _opBW_device_dtype_B_Mq_Mkv_H_K_Kv__xs
 )
 
 
@@ -210,7 +241,6 @@ def create_tensors(
     k,
     kv,
     *,
-    requires_grad=False,
     attn_bias_type=None,
     fmt: str = "BMK",
 ):
@@ -237,14 +267,12 @@ def create_tensors(
             device=device,
         )
 
-    dispatch = xformers.ops.AttentionOpDispatch.from_arguments(
-        query=query, key=key, value=value, attn_bias=attn_bias
-    )
-    dispatch.requires_grad = requires_grad
-    if not op.supports(dispatch):
+    inputs = fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias)
+    if not op.supports(inputs):
+        err_msg = f"{op.NAME}: unsupported ({inputs})"
         # Ensure we free memory to avoid OOMs
-        del query, key, value, attn_bias
-        pytest.skip(f"{op.NAME}: unsupported ({dispatch})")
+        del query, key, value, attn_bias, inputs
+        pytest.skip(err_msg)
     return query, key, value, attn_bias
 
 
@@ -269,8 +297,8 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
 )
 @pytest.mark.parametrize(
     "op_device_dtype_B_Mq_Mkv_H_K_Kv",
-    _op_device_dtype_B_Mq_Mkv_H_K_Kv,
-    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
+    _opFW_device_dtype_B_Mq_Mkv_H_K_Kv,
+    ids=_opFW_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
 )
 def test_forward(
     op_device_dtype_B_Mq_Mkv_H_K_Kv,
@@ -308,7 +336,7 @@ def test_forward(
             query, key, value = xformers.ops.unbind(c, 2)
         assert not query.is_contiguous()
 
-    out = xformers.ops.memory_efficient_attention(
+    out = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op
     ).float()
     ref = ref_attention(query, key, value, attn_bias)
@@ -317,14 +345,12 @@ def test_forward(
     assert_allclose(
         out,
         ref,
-        atol=op.FORWARD_ERROR_ATOL[dtype],
-        rtol=op.FORWARD_ERROR_RTOL.get(dtype, 1e-5),
+        atol=op.ERROR_ATOL[dtype],
+        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
     )
 
 
-shapes_cu_seqlen = generate_test_shapes_B_Mq_Mkv_H_K_Kv(
-    xformers.ops.MemoryEfficientAttentionCutlassOp
-)
+shapes_cu_seqlen = generate_test_shapes_B_Mq_Mkv_H_K_Kv(fmha.cutlass.FwOp)
 
 
 @dataclass
@@ -396,11 +422,8 @@ class CuSeqlenInputs:
             )
 
             if batch_id == 0:
-                if not op.supports(
-                    xformers.ops.AttentionOpDispatch.from_arguments(
-                        query=all_q[-1], key=all_k[-1], value=all_v[-1]
-                    )
-                ):
+                inp = fmha.Inputs(query=all_q[-1], key=all_k[-1], value=all_v[-1])
+                if not op.supports(inp):
                     pytest.skip("unsupported configuration")
 
             cu_seqlen_q += [cu_seqlen_q[-1] + q_len]
@@ -431,9 +454,7 @@ class CuSeqlenInputs:
 
 @cuda_only
 @pytest.mark.parametrize("attn_bias_type", [None, xformers.ops.LowerTriangularMask])
-@pytest.mark.parametrize(
-    "dtype", list(xformers.ops.MemoryEfficientAttentionCutlassOp.SUPPORTED_DTYPES)
-)
+@pytest.mark.parametrize("dtype", list(fmha.cutlass.FwOp.SUPPORTED_DTYPES))
 @pytest.mark.parametrize(
     "B_Mq_Mkv_H_K_Kv",
     shapes_cu_seqlen,
@@ -448,11 +469,11 @@ def test_cu_seqlen_forward(
     dtype,
 ):
     device = "cuda"
-    op = xformers.ops.MemoryEfficientAttentionCutlassOp
+    op = fmha.cutlass.FwOp
 
     inputs = CuSeqlenInputs.generate(B_Mq_Mkv_H_K_Kv, attn_bias_type, dtype, device, op)
 
-    out, _ = op.FORWARD_OPERATOR(
+    out, _ = op.OPERATOR(
         inputs.q,
         inputs.k,
         inputs.v,
@@ -468,8 +489,8 @@ def test_cu_seqlen_forward(
     assert_allclose(
         out.float(),
         ref,
-        atol=op.FORWARD_ERROR_ATOL[dtype],
-        rtol=op.FORWARD_ERROR_RTOL.get(dtype, 1e-5),
+        atol=op.ERROR_ATOL[dtype],
+        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
     )
 
 
@@ -493,8 +514,8 @@ def test_key_query_all_ones(device, q_len, kv_len, batch_size, k_len):
 
 @pytest.mark.parametrize(
     "op_device_dtype_B_Mq_Mkv_H_K_Kv",
-    _op_device_dtype_B_Mq_Mkv_H_K_Kv,
-    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
+    _opFW_device_dtype_B_Mq_Mkv_H_K_Kv,
+    ids=_opFW_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
 )
 def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
     (
@@ -508,33 +529,16 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
         k,
         kv,
     ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
-    if (
-        op.FORWARD_OPERATOR is None
-        or op is xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp
-    ):
-        return
     query, key, value, attn_bias = create_tensors(
         *op_device_dtype_B_Mq_Mkv_H_K_Kv, fmt="BMK"
     )
 
-    if op is xformers.ops.MemoryEfficientAttentionCutlassOp:
-        _, lse = op.FORWARD_OPERATOR(
-            query.unsqueeze(2),
-            key.unsqueeze(2),
-            value.unsqueeze(2),
-            max_seqlen_q=None,
-            cu_seqlens_q=None,
-            cu_seqlens_k=None,
-            compute_logsumexp=True,
-            causal=False,
-            scale=None,
-        )
-        lse = lse[:, 0, :]
-    else:
-        _, lse, _, _ = op.FORWARD_OPERATOR(query, key, value, True, None, 0.0)
+    _out, lse = xformers.ops.memory_efficient_attention_forward_requires_grad(
+        query, key, value
+    )
     ref_lse = ((query.float() / k**0.5) @ key.float().transpose(-2, -1)).logsumexp(-1)
 
-    assert_allclose(lse[:, : ref_lse.shape[1]], ref_lse, atol=2e-4)
+    assert_allclose(lse[:, 0, : ref_lse.shape[1]], ref_lse, atol=2e-4)
 
 
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
@@ -544,8 +548,8 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
 @pytest.mark.parametrize("grad_out_contiguous", [False, True])
 @pytest.mark.parametrize(
     "op_device_dtype_B_Mq_Mkv_H_K_Kv",
-    _op_device_dtype_B_Mq_Mkv_H_K_Kv,
-    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
+    _opBW_device_dtype_B_Mq_Mkv_H_K_Kv,
+    ids=_opBW_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
 )
 def test_backward(
     op_device_dtype_B_Mq_Mkv_H_K_Kv,
@@ -554,7 +558,7 @@ def test_backward(
     fmt,
 ):
     (
-        op,
+        op_bw,
         device,
         dtype,
         batch_size,
@@ -566,9 +570,12 @@ def test_backward(
     ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
     query, key, value, attn_bias = create_tensors(
         *op_device_dtype_B_Mq_Mkv_H_K_Kv,
-        requires_grad=True,
         attn_bias_type=attn_bias_type,
         fmt=fmt,
+    )
+    op_fw = sample_random_supported_fw(
+        fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias),
+        seed=q_len * kv + kv_len * k,
     )
     qkv = None
 
@@ -587,7 +594,9 @@ def test_backward(
     key.requires_grad_(True)
     value.requires_grad_(True)
 
-    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, op=op)
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias, op=(op_fw, op_bw)
+    )
 
     grad_out = torch.ones_like(out)
     if grad_out_contiguous is False:
@@ -598,7 +607,7 @@ def test_backward(
     out.backward(grad_out)
     del out
 
-    if qkv is None and op == xformers.ops.MemoryEfficientAttentionCutlassOp:
+    if qkv is None and op_bw == fmha.cutlass.BwOp:
         assert query.stride() == query.grad.stride()
 
     grads = []
@@ -616,8 +625,8 @@ def test_backward(
     del grad_out
     del ref
 
-    atol = op.BACKWARD_ERROR_ATOL[dtype]
-    rtol = op.BACKWARD_ERROR_RTOL[dtype]
+    atol = op_bw.ERROR_ATOL[dtype]
+    rtol = op_bw.ERROR_RTOL[dtype]
 
     grads_ref = []
     grads_name = []
@@ -637,7 +646,13 @@ def test_backward(
     del qkv
 
     for name, calc_grad, ref_grad in zip(grads_name, grads, grads_ref):
-        assert_allclose(calc_grad, ref_grad, name, atol=atol, rtol=rtol)
+        assert_allclose(
+            calc_grad,
+            ref_grad,
+            msg=f"{op_fw.NAME}+{op_bw.NAME}:{name}",
+            atol=atol,
+            rtol=rtol,
+        )
 
 
 def _vec_binom_test(x, n, p):
@@ -714,6 +729,7 @@ def test_dropout(device, q_len, kv_len, batch_size, k_len, p, seed):
     assert all(p_values > p_val_tol)
 
 
+@pytest.mark.skipif(True, reason="Dropout support disabled")
 @cuda_only
 @pytest.mark.parametrize("p", [0.3, 0.7])
 @pytest.mark.parametrize("k_len", [5, 6, 32])
@@ -820,8 +836,8 @@ def test_memory_efficient_attention_full_block_masked(
 
 @pytest.mark.parametrize(
     "op_device_dtype_B_Mq_Mkv_H_K_Kv",
-    _op_device_dtype_B_Mq_Mkv_H_K_Kv__xs,
-    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids,
+    _opFW_device_dtype_B_Mq_Mkv_H_K_Kv__xs,
+    ids=_opFW_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids,
 )
 def test_cuda_streams(
     op_device_dtype_B_Mq_Mkv_H_K_Kv,
@@ -866,7 +882,7 @@ def test_cuda_streams(
         query = query * 2
     s_hipri.wait_stream(s_lopri)
     with torch.cuda.stream(s_hipri):
-        out = xformers.ops.memory_efficient_attention(query, key, value, op=op)
+        out = xformers.ops.memory_efficient_attention(query, key, value, op=(op, None))
         # This will run in hi-pri AFTER the kernel if it
         # runs on the correct stream
         out = out / 2
@@ -877,15 +893,15 @@ def test_cuda_streams(
     assert_allclose(
         out.float(),
         ref.float(),
-        atol=op.FORWARD_ERROR_ATOL[dtype],
-        rtol=op.FORWARD_ERROR_RTOL.get(dtype, 1e-5),
+        atol=op.ERROR_ATOL[dtype],
+        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
     )
 
 
 @pytest.mark.parametrize(
     "op_device_dtype_B_Mq_Mkv_H_K_Kv",
-    _op_device_dtype_B_Mq_Mkv_H_K_Kv__xs,
-    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids,
+    _opBW_device_dtype_B_Mq_Mkv_H_K_Kv__xs,
+    ids=_opBW_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids,
 )
 def test_custom_scale(op_device_dtype_B_Mq_Mkv_H_K_Kv):
     torch.manual_seed(42)
@@ -893,7 +909,7 @@ def test_custom_scale(op_device_dtype_B_Mq_Mkv_H_K_Kv):
     scale = 1
 
     (
-        op,
+        op_bw,
         device,
         dtype,
         _,
@@ -909,19 +925,22 @@ def test_custom_scale(op_device_dtype_B_Mq_Mkv_H_K_Kv):
     query, key, value, attn_bias = create_tensors(
         *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=None, fmt="BMK"
     )
+    inputs = fmha.Inputs(
+        query=query, key=key, value=value, attn_bias=attn_bias, scale=scale
+    )
+    op_fw = sample_random_supported_fw(inputs, seed=q_len * k + kv_len * k)
     grad_out = torch.ones_like(query)
     query.requires_grad_(True)
     key.requires_grad_(True)
     value.requires_grad_(True)
 
-    dispatch = xformers.ops.AttentionOpDispatch.from_arguments(
-        query=query, key=key, value=value, attn_bias=attn_bias, scale=scale
-    )
-    if not op.supports(dispatch):
-        pytest.skip(f"{op.NAME}: unsupported ({dispatch})")
+    if not op_fw.supports(inputs):
+        pytest.skip(f"{op_fw.NAME}: unsupported ({inputs})")
+    if not op_bw.supports(inputs):
+        pytest.skip(f"{op_bw.NAME}: unsupported ({inputs})")
 
     out = xformers.ops.memory_efficient_attention(
-        query, key, value, attn_bias, p, scale, op=op
+        query, key, value, attn_bias, p, scale, op=(op_fw, op_bw)
     )
     out.backward(grad_out)
     grad_q, grad_k, grad_v = query.grad, key.grad, value.grad
@@ -932,18 +951,18 @@ def test_custom_scale(op_device_dtype_B_Mq_Mkv_H_K_Kv):
     ref_grad_q, ref_grad_k, ref_grad_v = query.grad, key.grad, value.grad
     query.grad = key.grad = value.grad = None
 
-    atol = op.FORWARD_ERROR_ATOL[dtype]
+    atol = op_fw.ERROR_ATOL[dtype]
     assert_allclose(out.float(), ref.float(), atol=atol)
-    atol = op.BACKWARD_ERROR_ATOL[dtype]
-    rtol = op.BACKWARD_ERROR_RTOL[dtype]
+    atol = op_bw.ERROR_ATOL[dtype]
+    rtol = op_bw.ERROR_RTOL[dtype]
     assert_allclose(grad_q, ref_grad_q, atol=atol, rtol=rtol)
     assert_allclose(grad_k, ref_grad_k, atol=atol, rtol=rtol)
     assert_allclose(grad_v, ref_grad_v, atol=atol, rtol=rtol)
 
 
-def apply_attention(query, key, value, attn_bias, op, proj):
+def apply_attention(query, key, value, attn_bias, op_fw, proj):
     x = xformers.ops.memory_efficient_attention(
-        query, key, value, attn_bias=attn_bias, op=op
+        query, key, value, attn_bias=attn_bias, op=(op_fw, None)
     )
     x = proj(x)
     return x
@@ -952,8 +971,8 @@ def apply_attention(query, key, value, attn_bias, op, proj):
 @pytest.mark.parametrize("use_reentrant", [False, True])
 @pytest.mark.parametrize(
     "op_device_dtype_B_Mq_Mkv_H_K_Kv",
-    _op_device_dtype_B_Mq_Mkv_H_K_Kv,
-    ids=_op_device_dtype_B_Mq_Mkv_H_K_Kv_ids,
+    _opFW_device_dtype_B_Mq_Mkv_H_K_Kv__xs,
+    ids=_opFW_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids,
 )
 def test_grad_checkpointing(
     op_device_dtype_B_Mq_Mkv_H_K_Kv,
@@ -973,7 +992,6 @@ def test_grad_checkpointing(
     ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
     query, key, value, attn_bias = create_tensors(
         *op_device_dtype_B_Mq_Mkv_H_K_Kv,
-        requires_grad=True,
         attn_bias_type=None,
         fmt=fmt,
     )

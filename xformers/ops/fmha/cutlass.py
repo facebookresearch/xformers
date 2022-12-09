@@ -5,26 +5,51 @@
 
 
 import math
-from typing import Any, List, Optional, Set, Union
+from typing import Any, List, Optional, Set, Tuple
 
 import torch
 
 from ..common import get_xformers_operator
 from .common import (
-    AttentionMask,
-    AttentionOpBase,
-    AttentionOpDispatch,
+    AttentionBwOpBase,
+    AttentionFwOpBase,
+    Context,
+    Gradients,
+    Inputs,
     LowerTriangularMask,
 )
 
 
-class Op(AttentionOpBase):
+def _uses_tensorcores(sm: int, is_half: bool) -> bool:
+    if sm >= 80:
+        return True
+    if sm >= 70:
+        return is_half
+    return False
+
+
+def _minimum_gemm_alignment(inp: Inputs) -> int:
+    cap = torch.cuda.get_device_capability(inp.query.device)
+    sm = cap[0] * 10 + cap[1]
+    bits_per_scalar = {torch.float: 32, torch.half: 16, torch.bfloat16: 16}[
+        inp.query.dtype
+    ]
+    uses_tensorcores = _uses_tensorcores(sm, bits_per_scalar == 16)
+    matmul_alignment_mn = 1
+    if sm >= 80:
+        matmul_alignment_mn = 4
+    if uses_tensorcores:
+        matmul_alignment_mn = max(matmul_alignment_mn, 128 // bits_per_scalar)
+    return matmul_alignment_mn
+
+
+class FwOp(AttentionFwOpBase):
     """xFormers' MHA kernel based on CUTLASS.
     Supports a large number of settings (including without TensorCores, f32 ...)
     and GPUs as old as P100 (Sm60)
     """
 
-    FORWARD_OPERATOR = get_xformers_operator("efficient_attention_forward_cutlass")
+    OPERATOR = get_xformers_operator("efficient_attention_forward_cutlass")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.float, torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = math.inf
@@ -32,7 +57,7 @@ class Op(AttentionOpBase):
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
-    NAME = "cutlass"
+    NAME = "cutlassF"
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
@@ -41,104 +66,101 @@ class Op(AttentionOpBase):
     ]
 
     @classmethod
-    def forward_no_grad(
-        cls,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
-        p: float,
-        scale: Optional[float] = None,
-    ) -> torch.Tensor:
-        if attn_bias is not None and not isinstance(attn_bias, LowerTriangularMask):
+    def apply(
+        cls, inp: Inputs, needs_gradient: bool
+    ) -> Tuple[torch.Tensor, Optional[Context]]:
+        if inp.attn_bias is not None and not isinstance(
+            inp.attn_bias, LowerTriangularMask
+        ):
             raise NotImplementedError("Unsupported attn_bias type")
-        return cls.FORWARD_OPERATOR(
-            query=query,
-            key=key,
-            value=value,
+        causal = isinstance(inp.attn_bias, LowerTriangularMask)
+        out, lse = cls.OPERATOR(
+            query=inp.query,
+            key=inp.key,
+            value=inp.value,
             cu_seqlens_q=None,
             cu_seqlens_k=None,
             max_seqlen_q=-1,
-            compute_logsumexp=False,
-            causal=isinstance(attn_bias, LowerTriangularMask),
-            scale=scale,
-        )[0]
-
-    @classmethod
-    def forward(cls, ctx, query, key, value, attn_bias, p, scale):
-        if attn_bias is not None and not isinstance(attn_bias, LowerTriangularMask):
-            raise NotImplementedError("Unsupported attn_bias type")
-        causal = isinstance(attn_bias, LowerTriangularMask)
-        out, lse = cls.FORWARD_OPERATOR(
-            query=query,
-            key=key,
-            value=value,
-            cu_seqlens_q=None,
-            cu_seqlens_k=None,
-            max_seqlen_q=-1,
-            compute_logsumexp=True,
+            compute_logsumexp=needs_gradient,
             causal=causal,
-            scale=scale,
+            scale=inp.scale,
         )
-        ctx.save_for_backward(query, key, value, lse, out)
-        ctx.p = p
-        ctx.causal = causal
-        ctx.scale = scale
-        return out
+        ctx: Optional[Context] = None
+        if needs_gradient:
+            ctx = Context(lse=lse, out=out)
+        return out, ctx
 
     @classmethod
-    def uses_tensorcores(cls, d: "AttentionOpDispatch", is_half: bool) -> bool:
-        sm_major = torch.cuda.get_device_capability(d.device)[0]
-        if sm_major >= 8:
-            return True
-        if sm_major >= 7:
-            return is_half
-        return False
-
-    @classmethod
-    def supports(cls, d: "AttentionOpDispatch") -> bool:
-        if not super(Op, cls).supports(d):
+    def supports(cls, d: Inputs) -> bool:
+        if not super(FwOp, cls).supports(d):
             return False
-        cap = torch.cuda.get_device_capability(d.device)
+        matmul_alignment_mn = _minimum_gemm_alignment(d)
+        if (d.query.shape[-1] % matmul_alignment_mn != 0) or (
+            d.value.shape[-1] % matmul_alignment_mn != 0
+        ):
+            return False
+        return True
+
+
+class BwOp(AttentionBwOpBase):
+    OPERATOR = get_xformers_operator("efficient_attention_backward_cutlass")
+    SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
+    SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
+    SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
+    SUPPORTED_ATTN_BIAS_TYPES = FwOp.SUPPORTED_ATTN_BIAS_TYPES
+    SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
+    SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
+    SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
+    NAME = "cutlassB"
+
+    _TEST_K: List[int] = [
+        32,  # 64x64 kernel
+        128,  # 64x128/128x128 kernel
+        256,  # 64x128 with accumulation in gmem
+    ]
+
+    @classmethod
+    def supports(cls, d: Inputs) -> bool:
+        if not FwOp.supports(d):
+            return False
+        cap = torch.cuda.get_device_capability(d.query.device)
         sm = cap[0] * 10 + cap[1]
-        bits_per_scalar = {torch.float: 32, torch.half: 16, torch.bfloat16: 16}[d.dtype]
-        uses_tensorcores = cls.uses_tensorcores(d, bits_per_scalar == 16)
-        matmul_alignment_mn = 1
-        if sm >= 80:
-            matmul_alignment_mn = 4
-        if uses_tensorcores:
-            matmul_alignment_mn = max(matmul_alignment_mn, 128 // bits_per_scalar)
-        if (d.k % matmul_alignment_mn != 0) or (d.kv % matmul_alignment_mn != 0):
-            return False
         # Sm86 does not have enough shared-memory
         # See https://github.com/facebookresearch/xformers/issues/517
         if (
-            d.requires_grad
-            and sm >= 80
+            sm >= 80
             and sm != 80
-            and d.dtype is torch.float
-            and max(d.kv, d.k) > 64
+            and d.query.dtype is torch.float
+            and max(d.query.shape[-1], d.key.shape[-1]) > 64
+        ):
+            return False
+        matmul_alignment_mn = _minimum_gemm_alignment(d)
+        if (
+            (d.query.shape[-1] % matmul_alignment_mn != 0)
+            or (d.value.shape[-1] % matmul_alignment_mn != 0)
+            or (d.key.shape[-1] % matmul_alignment_mn != 0)
         ):
             return False
         return True
 
     @classmethod
-    def backward(cls, ctx, grad):
-        query, key, value, lse, out = ctx.saved_tensors
+    def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:
+        if inp.attn_bias is not None and not isinstance(
+            inp.attn_bias, LowerTriangularMask
+        ):
+            raise NotImplementedError("Unsupported attn_bias type")
+        causal = isinstance(inp.attn_bias, LowerTriangularMask)
+        dtype = inp.query.dtype
 
-        dtype = query.dtype
-        (
-            grad_q,
-            grad_k,
-            grad_v,
-        ) = torch.ops.xformers.efficient_attention_backward_cutlass(
+        force_pad_inf = torch.cuda.get_device_capability(inp.query.device) == (7, 5)
+        (grad_q, grad_k, grad_v,) = cls.OPERATOR(
             grad.to(dtype),
-            query,
-            key,
-            value,
-            lse,
-            out.to(dtype),
-            causal=ctx.causal,
-            scale=ctx.scale,
+            inp.query,
+            inp.key,
+            inp.value,
+            ctx.get_padded_lse(32, force_pad_inf=force_pad_inf),
+            ctx.out.to(dtype),
+            causal=causal,
+            scale=inp.scale,
         )
-        return grad_q, grad_k, grad_v, None, None, None
+        return Gradients(dq=grad_q, dk=grad_k, dv=grad_v)

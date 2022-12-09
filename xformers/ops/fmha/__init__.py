@@ -3,25 +3,98 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, Union
+from typing import Any, Optional, Tuple, Type, Union
 
 import torch
 
+from . import cutlass, flash, small_k, triton
 from .common import (
+    AttentionBwOpBase,
+    AttentionFwOpBase,
     AttentionMask,
     AttentionOp,
     AttentionOpBase,
     AttentionOpDispatch,
+    Context,
+    Gradients,
+    Inputs,
     LowerTriangularMask,
+    bmk2bmhk,
 )
-from .cutlass import Op as MemoryEfficientAttentionCutlassOp
-from .flash import Op as MemoryEfficientAttentionFlashAttentionOp
-from .mixed import (
-    MemoryEfficientAttentionCutlassFwdFlashBwOp,
-    MemoryEfficientAttentionTritonFwdFlashBwOp,
-)
-from .small_k import Op as MemoryEfficientAttentionOp
-from .triton import Op as TritonFlashAttentionOp
+from .dispatch import _dispatch_bw, _dispatch_fw
+
+MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
+MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
+MemoryEfficientAttentionTritonFwdFlashBwOp = (triton.FwOp, flash.BwOp)
+MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
+MemoryEfficientAttentionOp = (small_k.FwOp, small_k.BwOp)
+TritonFlashAttentionOp = (triton.FwOp, triton.BwOp)
+
+
+class _fMHA(torch.autograd.Function):
+    @staticmethod
+    # type: ignore
+    def forward(ctx, op: AttentionOp, *args: Any) -> Any:
+        inp = Inputs(*args)
+        op_fw = op[0] if op is not None else None
+        op_bw = op[1] if op is not None else None
+
+        out, op_ctx = _memory_efficient_attention_forward_requires_grad(
+            inp=inp, op=op_fw
+        )
+
+        # Saving attn_bias is a bit complicated, as the
+        # torch part should go in `save_for_backward`
+        if isinstance(inp.attn_bias, torch.Tensor):
+            attn_bias_tensor = inp.attn_bias
+            attn_bias_ctx = None
+        else:
+            attn_bias_tensor = None
+            attn_bias_ctx = inp.attn_bias
+
+        ctx.save_for_backward(
+            inp.query, inp.key, inp.value, op_ctx.out, op_ctx.lse, attn_bias_tensor
+        )
+        ctx.op_fw = op_fw
+        ctx.op_bw = op_bw
+        ctx.p = inp.p
+        ctx.scale = inp.scale
+        ctx.attn_bias_ctx = attn_bias_ctx
+        ctx.n_args = len(args)
+        return out
+
+    @staticmethod
+    def deserialize_bias(
+        attn_bias_ctx, attn_bias_tensor: Optional[torch.Tensor]
+    ) -> Any:
+        if attn_bias_tensor is None:
+            return attn_bias_ctx
+        return attn_bias_tensor
+
+    @classmethod
+    def backward(cls, ctx, grad):
+        assert all(
+            not ctx.needs_input_grad[i] for i in range(ctx.n_args) if i not in [1, 2, 3]
+        ), (
+            "Only gradients to Q/K/V is implemented. "
+            "For instance, it's not possible to backpropagate through the attention mask"
+        )
+
+        # Re-create context
+        query, key, value, out, lse, attn_bias_tensor = ctx.saved_tensors
+        inp = Inputs(
+            query=query,
+            key=key,
+            value=value,
+            attn_bias=cls.deserialize_bias(ctx.attn_bias_ctx, attn_bias_tensor),
+            p=ctx.p,
+            scale=ctx.scale,
+        )
+        op_ctx = Context(lse=lse, out=out)
+        grads = _memory_efficient_attention_backward(
+            ctx=op_ctx, inp=inp, grad=grad, op=ctx.op_bw
+        )
+        return (None, grads.dq, grads.dk, grads.dv) + (None,) * (ctx.n_args - 3)
 
 
 def memory_efficient_attention(
@@ -100,40 +173,152 @@ def memory_efficient_attention(
         and options.
     :return: multi-head attention Tensor with shape ``[B, Mq, H, Kv]``
     """
+    return _memory_efficient_attention(
+        Inputs(
+            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+        ),
+        op=op,
+    )
 
-    if query.ndim not in [3, 4]:
-        raise ValueError(
-            f"Invalid shape for query: {query.shape}. "
-            "Expected shape [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
+
+def memory_efficient_attention_forward(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+    p: float = 0.0,
+    scale: Optional[float] = None,
+    *,
+    op: Optional[Type[AttentionFwOpBase]] = None,
+) -> torch.Tensor:
+    """Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later"""
+    return _memory_efficient_attention_forward(
+        Inputs(
+            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+        ),
+        op=op,
+    )
+
+
+def memory_efficient_attention_forward_requires_grad(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+    p: float = 0.0,
+    scale: Optional[float] = None,
+    *,
+    op: Optional[Type[AttentionFwOpBase]] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later.
+    See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments
+    See :attr:`xformers.ops.memory_efficient_backward` for running the backward pass
+    """
+    out, ctx = _memory_efficient_attention_forward_requires_grad(
+        Inputs(
+            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+        ),
+        op=op,
+    )
+    return out, ctx.lse
+
+
+def memory_efficient_attention_backward(
+    grad: torch.Tensor,
+    output: torch.Tensor,
+    lse: torch.Tensor,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+    p: float = 0.0,
+    scale: Optional[float] = None,
+    *,
+    op: Optional[Type[AttentionBwOpBase]] = None,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Computes the gradient of the attention.
+    Returns a tuple (dq, dk, dv)
+    See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments.
+    `lse` is the tensor returned by :attr:`xformers.ops.memory_efficient_attention_forward_requires_grad`
+    """
+    gradients = _memory_efficient_attention_backward(
+        Context(out=output, lse=lse),
+        Inputs(
+            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+        ),
+        grad,
+        op=op,
+    )
+    return (gradients.dq, gradients.dk, gradients.dv)
+
+
+def _memory_efficient_attention(
+    inp: Inputs, op: Optional[AttentionOp] = None
+) -> torch.Tensor:
+    # fast-path that doesn't require computing the logsumexp for backward computation
+    if all(x.requires_grad is False for x in [inp.query, inp.key, inp.value]):
+        return _memory_efficient_attention_forward(
+            inp, op=op[0] if op is not None else None
         )
-    output_shape = tuple(query.shape[:-1]) + (value.shape[-1],)
-    # Convert from legacy format
-    if query.ndim == 3:
-        query = query.unsqueeze(2)
-        key = key.unsqueeze(2)
-        value = value.unsqueeze(2)
+
+    output_shape = inp.normalize_bmhk()
+    return _fMHA.apply(
+        op, inp.query, inp.key, inp.value, inp.attn_bias, inp.p, inp.scale
+    ).reshape(output_shape)
+
+
+def _memory_efficient_attention_forward(
+    inp: Inputs, op: Optional[Type[AttentionFwOpBase]]
+) -> torch.Tensor:
+    output_shape = inp.normalize_bmhk()
+    if op is None:
+        op = _dispatch_fw(inp)
+    return op.apply(inp, needs_gradient=False)[0].reshape(output_shape)
+
+
+def _memory_efficient_attention_forward_requires_grad(
+    inp: Inputs, op: Optional[Type[AttentionFwOpBase]]
+) -> Tuple[torch.Tensor, Context]:
+    output_shape = inp.normalize_bmhk()
+    if op is None:
+        op = _dispatch_fw(inp)
+    out = op.apply(inp, needs_gradient=True)
+    assert out[1] is not None
+    return (out[0].reshape(output_shape), out[1])
+
+
+def _memory_efficient_attention_backward(
+    ctx: Context, inp: Inputs, grad: torch.Tensor, op: Optional[Type[AttentionBwOpBase]]
+) -> Gradients:
+    """Warning: grad/ctx.out is potentially in BMK format"""
+    if grad.ndim != inp.query.ndim or grad.ndim != ctx.out.ndim:
+        raise ValueError(
+            "All tensors should be either in BMK (ndim=3) or BMHK (ndim=4) format. \n"
+            f"grad.shape : {grad.shape} \n"
+            f"out.shape  : {ctx.out.shape} \n"
+            f"query.shape: {inp.query.shape}"
+        )
+    inp.normalize_bmhk()
+    # LSE has shape [B, H, M] while query has shape [B, M, H, K]
+    if (
+        ctx.lse.ndim != 3
+        or ctx.lse.shape[0] != inp.query.shape[0]
+        or ctx.lse.shape[1] != inp.query.shape[2]
+        or ctx.lse.shape[2] < inp.query.shape[1]
+    ):
+        raise ValueError(
+            "Input tensors have incompatible shapes."
+            f"lse.shape    : {ctx.lse.shape} \n"
+            f"query.shape  : {inp.query.shape}"
+        )
+    grad = bmk2bmhk(grad, 1)
+    ctx.out = bmk2bmhk(ctx.out, 1)
 
     if op is None:
-        op = AttentionOpDispatch.from_arguments(
-            query=query,
-            key=key,
-            value=value,
-            attn_bias=attn_bias,
-            p=p,
-            scale=scale,
-        ).op
-
-    # fast-path that doesn't require computing the logsumexp for backward computation
-    if all(x.requires_grad is False for x in [query, key, value]):
-        return op.forward_no_grad(
-            query=query,
-            key=key,
-            value=value,
-            attn_bias=attn_bias,
-            p=p,
-            scale=scale,
-        ).reshape(output_shape)
-    return op.apply(query, key, value, attn_bias, p, scale).reshape(output_shape)
+        op = _dispatch_bw(inp)
+    return op.apply(ctx, inp, grad)
 
 
 __all__ = [

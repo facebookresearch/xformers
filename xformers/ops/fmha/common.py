@@ -3,8 +3,9 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Optional, Set, Type, Union
+from typing import Any, List, Mapping, Optional, Set, Tuple, Type, Union
 
 import torch
 
@@ -65,7 +66,64 @@ class LowerTriangularMask(AttentionMask):
         return self._tensor
 
 
-class AttentionOpBase(torch.autograd.Function):
+@dataclass
+class Inputs:
+    query: torch.Tensor
+    key: torch.Tensor
+    value: torch.Tensor
+    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None
+    p: float = 0.0
+    scale: Optional[float] = None
+
+    @property
+    def device(self) -> torch.device:
+        return self.query.device
+
+    @property
+    def scale_float(self) -> float:
+        return self.query.shape[-1] ** (-0.5) if self.scale is None else self.scale
+
+    def normalize_bmhk(self) -> Tuple[int, ...]:
+        if self.query.ndim not in [3, 4]:
+            raise ValueError(
+                f"Invalid shape for query: {self.query.shape}. "
+                "Expected shape [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
+            )
+        output_shape = (self.query.shape[:-1]) + (self.value.shape[-1],)
+        # Convert from legacy format
+        if self.query.ndim == 3:
+            self.query = self.query.unsqueeze(2)
+            self.key = self.key.unsqueeze(2)
+            self.value = self.value.unsqueeze(2)
+        return output_shape
+
+
+@dataclass
+class Context:
+    lse: torch.Tensor
+    out: torch.Tensor
+
+    def get_padded_lse(self, pad_to: int, force_pad_inf: bool = False) -> torch.Tensor:
+        pad_amount = (pad_to - (self.lse.shape[2] % pad_to)) % pad_to
+        lse = self.lse
+        if pad_amount > 0:
+            if force_pad_inf:
+                lse = lse[:, :, : self.out.shape[1]]
+                pad_amount = (pad_to - (lse.shape[2] % pad_to)) % pad_to
+            lse = torch.nn.functional.pad(lse, [0, pad_amount], value=math.inf)
+        elif force_pad_inf and self.out.shape[1] != lse.shape[2]:
+            lse[:, :, self.out.shape[1] :].fill_(math.inf)
+        return lse
+
+
+@dataclass
+class Gradients:
+    dq: torch.Tensor
+    dk: torch.Tensor
+    dv: torch.Tensor
+
+
+class AttentionOpBase:
     """Base class for any attention operator in xFormers
 
     See:
@@ -79,27 +137,7 @@ class AttentionOpBase(torch.autograd.Function):
     - :attr:`xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp`
     """
 
-    FORWARD_OPERATOR: Any
-    FORWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
-        torch.float: 3e-4,
-        torch.half: 4e-3,
-        torch.bfloat16: 2e-2,
-    }
-    FORWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
-        torch.float: 2e-5,
-        torch.half: 4e-4,
-        torch.bfloat16: 5e-3,
-    }
-    BACKWARD_ERROR_ATOL: Mapping[torch.dtype, float] = {
-        torch.float: 5e-4,
-        torch.half: 9e-2,
-        torch.bfloat16: 0.7,
-    }
-    BACKWARD_ERROR_RTOL: Mapping[torch.dtype, float] = {
-        torch.float: 1e-4,
-        torch.half: 2e-2,
-        torch.bfloat16: 0.1,
-    }
+    OPERATOR: Any
     SUPPORTED_DEVICES: Set[str]
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
@@ -114,131 +152,94 @@ class AttentionOpBase(torch.autograd.Function):
 
     @classmethod
     def info(cls):
-        if cls.FORWARD_OPERATOR.__name__ == "no_such_operator":
+        if cls.OPERATOR.__name__ == "no_such_operator":
             return "not built"
         return "available"
 
     @classmethod
-    def forward_no_grad(
-        cls,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        attn_bias: Optional[Union[torch.Tensor, AttentionMask]],
-        p: float,
-        scale: Optional[float] = None,
-    ) -> torch.Tensor:
-        raise NotImplementedError()
-
-    @classmethod
-    def forward(cls, ctx, query, key, value, attn_bias, p, scale):
-        raise NotImplementedError()
-
-    @classmethod
-    def backward(cls, ctx, grad):
-        raise NotImplementedError()
-
-    @classmethod
-    def supports(cls, d: "AttentionOpDispatch") -> bool:
-        device_type = d.device if isinstance(d.device, str) else d.device.type
+    def supports(cls, d: Inputs) -> bool:
+        device_type = d.query.device.type
+        dtype = d.query.dtype
         if device_type not in cls.SUPPORTED_DEVICES:
             return False
-        if d.dtype not in cls.SUPPORTED_DTYPES:
+        if dtype not in cls.SUPPORTED_DTYPES:
             return False
-        if not cls.SUPPORTS_DIFFERENT_VALUE_EMBED and d.k != d.kv:
+        if (
+            not cls.SUPPORTS_DIFFERENT_VALUE_EMBED
+            and d.query.shape[-1] != d.value.shape[-1]
+        ):
             return False
-        if max(d.k, d.kv) > cls.SUPPORTED_MAX_K:
+        if max(d.query.shape[-1], d.value.shape[-1]) > cls.SUPPORTED_MAX_K:
             return False
-        if d.attn_bias_type not in cls.SUPPORTED_ATTN_BIAS_TYPES:
+        if type(d.attn_bias) not in cls.SUPPORTED_ATTN_BIAS_TYPES:
             return False
-        if d.has_dropout and not cls.SUPPORTS_DROPOUT:
+        if (d.p != 0.0) and not cls.SUPPORTS_DROPOUT:
             return False
-        if d.has_custom_scale and not cls.SUPPORTS_CUSTOM_SCALE:
+        if d.scale is not None and not cls.SUPPORTS_CUSTOM_SCALE:
             return False
         # bfloat16 is only supported on A100+
         # ... although the kernels can still run and give the
         # correct result
-        if d.dtype is torch.bfloat16 and (
+        if dtype is torch.bfloat16 and (
             not device_type.startswith("cuda")
-            or torch.cuda.get_device_capability(d.device)[0] < 8
+            or torch.cuda.get_device_capability(d.query.device)[0] < 8
         ):
             return False
         return True
 
 
-AttentionOp = Type[AttentionOpBase]
+class AttentionFwOpBase(AttentionOpBase):
+    ERROR_ATOL: Mapping[torch.dtype, float] = {
+        torch.float: 3e-4,
+        torch.half: 4e-3,
+        torch.bfloat16: 2e-2,
+    }
+    ERROR_RTOL: Mapping[torch.dtype, float] = {
+        torch.float: 2e-5,
+        torch.half: 4e-4,
+        torch.bfloat16: 5e-3,
+    }
+
+    @classmethod
+    def apply(
+        cls, inp: Inputs, needs_gradient: bool
+    ) -> Tuple[torch.Tensor, Optional[Context]]:
+        raise NotImplementedError()
+
+
+class AttentionBwOpBase(AttentionOpBase):
+    ERROR_ATOL: Mapping[torch.dtype, float] = {
+        torch.float: 5e-4,
+        torch.half: 9e-2,
+        torch.bfloat16: 0.7,
+    }
+    ERROR_RTOL: Mapping[torch.dtype, float] = {
+        torch.float: 1e-4,
+        torch.half: 2e-2,
+        torch.bfloat16: 0.1,
+    }
+
+    @classmethod
+    def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:
+        raise NotImplementedError()
+
+
+AttentionOp = Tuple[
+    Optional[Type[AttentionFwOpBase]], Optional[Type[AttentionBwOpBase]]
+]
 
 
 @dataclass
 class AttentionOpDispatch:
     """Dispatcher to automatically select
     the best operator to run memory-efficient attention.
+
+    :Deprecated:
+
+        This class is deprecated and will be removed in a later version
     """
 
-    dtype: torch.dtype
-    device: Union[torch.device, str]
-    k: int
-    has_dropout: bool
-    attn_bias_type: Any
-    kv_len: int
-    q_len: int
-    kv: int = -1
-    batch_size: int = -1
-    num_heads: int = 1
-    has_custom_scale: bool = False
-    requires_grad: bool = True
-
-    def __post_init__(self):
-        if self.kv == -1:
-            self.kv = self.k
-
-    def _is_cutlass_fwd_faster_than_flash(self) -> bool:
-        # Very small batch sizes - if batch size specified
-        if self.batch_size > 0:
-            threads_flash = self.batch_size * self.num_heads
-            threads_cutlass = threads_flash * (self.q_len // 64)
-            if threads_flash < 60 and (threads_cutlass // 2) >= threads_flash:
-                return True
-        # Large values of K
-        return max(self.k, self.kv) == 128
-
-    def _is_triton_fwd_faster_than_cutlass(self) -> bool:
-        # TODO: fill out
-        return False
-
-    @property
-    def op(self) -> AttentionOp:
-        """Computes the best operator
-
-        Raises:
-            NotImplementedError: if not operator was found
-
-        Returns:
-            AttentionOp: The best operator for the configuration
-        """
-        from .cutlass import Op as MemoryEfficientAttentionCutlassOp
-        from .flash import Op as MemoryEfficientAttentionFlashAttentionOp
-        from .mixed import (
-            MemoryEfficientAttentionCutlassFwdFlashBwOp,
-            MemoryEfficientAttentionTritonFwdFlashBwOp,
-        )
-        from .small_k import Op as MemoryEfficientAttentionOp
-
-        priority_list_ops: List[AttentionOp] = [
-            MemoryEfficientAttentionFlashAttentionOp,
-            # TODO: remove once triton_faster_than_cutlass method complete
-            MemoryEfficientAttentionTritonFwdFlashBwOp,
-            MemoryEfficientAttentionCutlassOp,
-            MemoryEfficientAttentionOp,
-        ]
-        if self.requires_grad and self._is_cutlass_fwd_faster_than_flash():
-            priority_list_ops.insert(0, MemoryEfficientAttentionCutlassFwdFlashBwOp)
-        if self.requires_grad and self._is_triton_fwd_faster_than_cutlass():
-            priority_list_ops.insert(0, MemoryEfficientAttentionTritonFwdFlashBwOp)
-        for op in priority_list_ops:
-            if op.supports(self):
-                return op
-        raise NotImplementedError(f"No operator found for this attention: {self}")
+    op: AttentionOp
 
     @classmethod
     def from_arguments(
@@ -250,34 +251,23 @@ class AttentionOpDispatch:
         p: float = 0.0,
         scale: Optional[float] = None,
     ) -> "AttentionOpDispatch":
-        """Creates an :attr:`xformers.ops.AttentionOpDispatch` from :attr:`xformers.ops.memory_efficient_attention`'s
-        arguments
+        """Here for backward compatibility"""
+        from .dispatch import _dispatch_bw, _dispatch_fw
 
-        Args:
-            query (torch.Tensor)
-            key (torch.Tensor)
-            value (torch.Tensor)
-            attn_bias (Optional[Union[torch.Tensor, xformers.ops.AttentionMask]], optional): Defaults to None.
-            p (float, optional): Defaults to 0.0.
-            scale (float, optional): Custom scale. Default to None (use q.shape[-1]**-0.5).
-
-        Returns:
-            AttentionOpDispatch
-        """
-        B, H = query.shape[0], 1
-        if query.ndim == 4:
-            H = query.shape[2]
-        return AttentionOpDispatch(
-            dtype=query.dtype,
-            device=query.device,
-            k=query.shape[-1],
-            kv=value.shape[-1],
-            has_dropout=p > 0.0,
-            has_custom_scale=scale is not None,
-            attn_bias_type=type(attn_bias),
-            kv_len=value.shape[1],
-            q_len=query.shape[1],
-            batch_size=B,
-            num_heads=H,
-            requires_grad=any(x.requires_grad for x in [query, key, value]),
+        inp = Inputs(
+            query=query,
+            key=key,
+            value=value,
+            attn_bias=attn_bias,
+            p=p,
+            scale=scale,
         )
+        return AttentionOpDispatch(op=(_dispatch_fw(inp), _dispatch_bw(inp)))
+
+
+def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
+    if tensor.ndim == 4:
+        return tensor
+    return tensor.reshape([-1, num_heads, tensor.shape[1], tensor.shape[2]]).permute(
+        (0, 2, 1, 3)
+    )
