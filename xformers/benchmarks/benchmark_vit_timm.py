@@ -201,6 +201,8 @@ class VisionTransformer(pl.LightningModule):
             self.head = nn.Linear(dim, num_classes)
 
         self.criterion = torch.nn.CrossEntropyLoss()
+        # For torchmetrics > 0.11:
+        # self.val_accuracy = Accuracy(task="multiclass", num_classes=num_classes)
         self.val_accuracy = Accuracy()
 
     @staticmethod
