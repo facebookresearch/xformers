@@ -3,3 +3,5 @@
 torch >= 1.12
 numpy
 pyre-extensions == 0.0.23
+# Requirements for flash_attn
+einops

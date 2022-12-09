@@ -72,6 +72,17 @@ def write_version_file():
             f.write(f'git_tag = "{tag}"\n')
 
 
+def symlink_package(name: str, path: Path) -> None:
+    cwd = Path(__file__).parent
+    path_from = cwd / path
+    path_to = os.path.join(cwd, *name.split("."))
+    try:
+        os.remove(path_to)
+    except FileNotFoundError:
+        pass
+    os.symlink(src=path_from, dst=path_to)
+
+
 def get_cuda_version(cuda_dir) -> int:
     nvcc_bin = "nvcc" if cuda_dir is None else cuda_dir + "/bin/nvcc"
     raw_output = subprocess.check_output([nvcc_bin, "-V"], universal_newlines=True)
@@ -274,13 +285,22 @@ class clean(distutils.command.clean.clean):  # type: ignore
 
 if __name__ == "__main__":
     write_version_file()
+    # Embed a fixed version of flash_attn
+    # NOTE: The correct way to do this would be to use the `package_dir`
+    # parameter in `setuptools.setup`, but this does not work when
+    # developing in editable mode
+    # See: https://github.com/pypa/pip/issues/3160 (closed, but not fixed)
+    symlink_package(
+        "xformers._flash_attn", Path("third_party") / "flash-attention" / "flash_attn"
+    )
     setuptools.setup(
         name="xformers",
         description="XFormers: A collection of composable Transformer building blocks.",
         version=version,
         install_requires=fetch_requirements(),
-        packages=setuptools.find_packages(exclude=("tests", "tests.*")),
-        dependency_links=["file:///./third_party/flash-attention#egg=flash-attention"],
+        packages=setuptools.find_packages(
+            exclude=("tests*", "benchmarks*", "experimental*")
+        ),
         ext_modules=get_extensions(),
         cmdclass={
             "build_ext": BuildExtension.with_options(no_python_abi_suffix=True),
