@@ -17,6 +17,13 @@ from xformers.ops import fmha
 
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+if torch.cuda.is_available():
+    _devices = ["cuda"]
+    _is_sm75 = torch.cuda.get_device_capability(_devices[0]) >= (7, 5)
+else:
+    _devices = []
+    _is_sm75 = False
+sm75_or_better_only = pytest.mark.skipif(not _is_sm75, reason="requires sm75+")
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
@@ -697,12 +704,17 @@ def test_dropout(device, q_len, kv_len, batch_size, k_len, p, seed):
     value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
 
     attn_bias = None
+    op = (fmha.small_k.FwOp, None)
 
     torch.manual_seed(seed)
-    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, p)
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias, p, op=op
+    )
 
     torch.manual_seed(seed)
-    out2 = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, p)
+    out2 = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias, p, op=op
+    )
 
     assert_allclose(out, out2)
 
@@ -729,19 +741,12 @@ def test_dropout(device, q_len, kv_len, batch_size, k_len, p, seed):
     assert all(p_values > p_val_tol)
 
 
-@pytest.mark.skipif(True, reason="Dropout support disabled")
-@cuda_only
-@pytest.mark.parametrize("p", [0.3, 0.7])
-@pytest.mark.parametrize("k_len", [5, 6, 32])
-@pytest.mark.parametrize("batch_size", [1, 2])
-@pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
-@pytest.mark.parametrize("q_len", [2, 33])
-@pytest.mark.parametrize("device", ["cuda"])
-def test_dropout_backward(device, q_len, kv_len, batch_size, k_len, p):
+def _test_dropout_backward(q_len, kv_len, batch_size, k_len, p, op, dtype):
     scale = 3
-    query = torch.randn((batch_size, q_len, k_len), device=device) * scale
-    key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
-    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    device = "cuda"
+    query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
+    key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
+    value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
 
     query.requires_grad_(True)
     key.requires_grad_(True)
@@ -749,13 +754,17 @@ def test_dropout_backward(device, q_len, kv_len, batch_size, k_len, p):
 
     grad_out = torch.ones_like(query)
 
-    attn_bias = None
+    assert op.supports(fmha.Inputs(query=query, key=key, value=value, p=p))
 
     seed = 42
     torch.manual_seed(seed)
-    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias, p)
+    out = xformers.ops.memory_efficient_attention(query, key, value, p=p, op=(op, None))
 
     out.backward(grad_out)
+
+    # Only test correctness for small_k
+    if op is not fmha.small_k.FwOp:
+        return
 
     grad_q = query.grad
     grad_k = key.grad
@@ -770,7 +779,7 @@ def test_dropout_backward(device, q_len, kv_len, batch_size, k_len, p):
     torch.manual_seed(seed)
     mask = torch.ops.xformers._temp_dropout(mask, p)
 
-    ref = ref_attention(query, key, value, attn_bias, mask, p)
+    ref = ref_attention(query, key, value, None, mask, p)
     ref.backward(grad_out)
 
     # there is some extra precision loss in the CPU implementation due to an
@@ -780,6 +789,30 @@ def test_dropout_backward(device, q_len, kv_len, batch_size, k_len, p):
     assert_allclose(grad_q, query.grad, "grad_q", atol=atol)
     assert_allclose(grad_k, key.grad, "grad_k", atol=atol)
     assert_allclose(grad_v, value.grad, "grad_v", atol=atol)
+
+
+@cuda_only
+@pytest.mark.parametrize("p", [0.3, 0.7])
+@pytest.mark.parametrize("k_len", [5, 6, 32])
+@pytest.mark.parametrize("batch_size", [1, 2])
+@pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
+@pytest.mark.parametrize("q_len", [2, 33])
+def test_dropout_backward_small_k(q_len, kv_len, batch_size, k_len, p):
+    _test_dropout_backward(
+        q_len, kv_len, batch_size, k_len, p, op=fmha.small_k.FwOp, dtype=torch.float32
+    )
+
+
+@sm75_or_better_only
+@pytest.mark.parametrize("p", [0.3, 0.7])
+@pytest.mark.parametrize("k_len", [16, 32])
+@pytest.mark.parametrize("batch_size", [1, 2])
+@pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
+@pytest.mark.parametrize("q_len", [2, 33])
+def test_dropout_backward_flash(q_len, kv_len, batch_size, k_len, p):
+    _test_dropout_backward(
+        q_len, kv_len, batch_size, k_len, p, op=fmha.flash.FwOp, dtype=torch.float16
+    )
 
 
 @pytest.mark.parametrize("k_len", [32])
