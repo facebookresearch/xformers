@@ -470,7 +470,7 @@ Transformer(
     dim_feedforward=2048,
     dropout=0.1,
     activation='relu',
-    custom_encoder=None, # the xFormers exemple below defines that
+    custom_encoder=None, # the xFormers example below defines that
     custom_decoder=None, # Same
     layer_norm_eps=1e-05,
     batch_first=False,
