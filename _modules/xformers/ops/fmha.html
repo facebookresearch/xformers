@@ -1,0 +1,750 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!-->
+<html class="no-js" lang="en">
+<!--<![endif]-->
+
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>xformers.ops.fmha | xFormers 0.0.15.dev documentation</title>
+  
+  <script src="../../../_static/js/ga.js"></script>
+  <script src="../../../_static/js/redirect.js"></script>
+  
+  <link rel="shortcut icon" href="../../../_static/images/favicon.png" />
+  
+  
+  <link rel="canonical" href="https://facebookresearch.github.io/xformers_modules/xformers/ops/fmha.html" />
+  
+  <meta property="og:title" content="xformers.ops.fmha | xFormers 0.0.15.dev documentation">
+  <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
+  <!--<meta property="twitter:image" content="https://mmf.sh/img/logo.png">-->
+  <meta name="twitter:image:alt" content="Image for xFormers">
+  <meta name="twitter:card" content="summary_large_image">
+  
+
+  
+  
+  
+
+  
+
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="../../../_static/css/customize.css" type="text/css" />
+  <link rel="index" title="Index" href="../../../genindex.html" />
+  <link rel="search" title="Search" href="../../../search.html" /> 
+
+  
+  <script src="../../../_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="../../../_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://github.com/facebookresearch/xformers"><img
+          src="../../../_static/logo.png" style="padding-right: 90px;" width="280px" height="53px"></a>
+
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers"> xFormers Github</a>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+
+  </div>
+</div>
+
+
+<body class="pytorch-body">
+
+   
+
+  
+
+  <div class="table-of-contents-link-wrapper">
+    <span>Table of Contents</span>
+    <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+  </div>
+
+  <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+    <div class="pytorch-side-scroll">
+      <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+        <div class="pytorch-left-menu-search">
+          
+
+          
+          
+          
+          
+
+          
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        
+        
+        
+        
+        
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../what_is_xformers.html">What is xFormers?</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../components/index.html">API Reference</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../factory/index.html">Factory</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../custom_parts/index.html">Custom parts reference</a></li>
+</ul>
+
+        
+        
+      </div>
+    </div>
+  </nav>
+
+  <div class="pytorch-container">
+    <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+      <div class="pytorch-breadcrumbs-wrapper">
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="../../../index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+          <li><a href="../../index.html">Module code</a> &gt;</li>
+        
+      <li>xformers.ops.fmha</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+      </div>
+
+      <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+        Shortcuts
+      </div>
+    </div>
+
+    <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+      <div class="pytorch-content-left">
+
+        
+        
+          <div class="rst-content">
+            
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+                
+  <h1>Source code for xformers.ops.fmha</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># This source code is licensed under the BSD license found in the</span>
+<span class="c1"># LICENSE file in the root directory of this source tree.</span>
+
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="kn">import</span> <span class="nn">torch</span>
+
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">cutlass</span><span class="p">,</span> <span class="n">flash</span><span class="p">,</span> <span class="n">small_k</span><span class="p">,</span> <span class="n">triton</span>
+<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AttentionBwOpBase</span><span class="p">,</span>
+    <span class="n">AttentionFwOpBase</span><span class="p">,</span>
+    <span class="n">AttentionMask</span><span class="p">,</span>
+    <span class="n">AttentionOp</span><span class="p">,</span>
+    <span class="n">AttentionOpBase</span><span class="p">,</span>
+    <span class="n">AttentionOpDispatch</span><span class="p">,</span>
+    <span class="n">Context</span><span class="p">,</span>
+    <span class="n">Gradients</span><span class="p">,</span>
+    <span class="n">Inputs</span><span class="p">,</span>
+    <span class="n">LowerTriangularMask</span><span class="p">,</span>
+    <span class="n">bmk2bmhk</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">.dispatch</span> <span class="kn">import</span> <span class="n">_dispatch_bw</span><span class="p">,</span> <span class="n">_dispatch_fw</span>
+
+<span class="n">MemoryEfficientAttentionCutlassOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">cutlass</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">cutlass</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
+<span class="n">MemoryEfficientAttentionCutlassFwdFlashBwOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">cutlass</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
+<span class="n">MemoryEfficientAttentionTritonFwdFlashBwOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">triton</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
+<span class="n">MemoryEfficientAttentionFlashAttentionOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">flash</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
+<span class="n">MemoryEfficientAttentionOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">small_k</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">small_k</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
+<span class="n">TritonFlashAttentionOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">triton</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">triton</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">_fMHA</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
+    <span class="nd">@staticmethod</span>
+    <span class="c1"># type: ignore</span>
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">AttentionOp</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="n">inp</span> <span class="o">=</span> <span class="n">Inputs</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
+        <span class="n">op_fw</span> <span class="o">=</span> <span class="n">op</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">op_bw</span> <span class="o">=</span> <span class="n">op</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="n">out</span><span class="p">,</span> <span class="n">op_ctx</span> <span class="o">=</span> <span class="n">_memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
+            <span class="n">inp</span><span class="o">=</span><span class="n">inp</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">op_fw</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Saving attn_bias is a bit complicated, as the</span>
+        <span class="c1"># torch part should go in `save_for_backward`</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="n">attn_bias_tensor</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span>
+            <span class="n">attn_bias_ctx</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">attn_bias_tensor</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">attn_bias_ctx</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span>
+
+        <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
+            <span class="n">op_ctx</span><span class="o">.</span><span class="n">out</span><span class="p">,</span>
+            <span class="n">op_ctx</span><span class="o">.</span><span class="n">lse</span><span class="p">,</span>
+            <span class="n">op_ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="p">,</span>
+            <span class="n">attn_bias_tensor</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">op_ctx</span><span class="o">.</span><span class="n">op_bw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">op_bw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">op_bw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">op_ctx</span><span class="o">.</span><span class="n">op_bw</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Specified op_bw=</span><span class="si">{</span><span class="n">op_bw</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2">, but forward op &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;can only run with op_bw=</span><span class="si">{</span><span class="n">op_ctx</span><span class="o">.</span><span class="n">op_bw</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2">. Please set op_bw=None.&quot;</span>
+                <span class="p">)</span>
+            <span class="n">op_bw</span> <span class="o">=</span> <span class="n">op_ctx</span><span class="o">.</span><span class="n">op_bw</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">op_fw</span> <span class="o">=</span> <span class="n">op_fw</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">op_bw</span> <span class="o">=</span> <span class="n">op_bw</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">p</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">scale</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">scale</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">attn_bias_ctx</span> <span class="o">=</span> <span class="n">attn_bias_ctx</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">n_args</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">deserialize_bias</span><span class="p">(</span>
+        <span class="n">attn_bias_ctx</span><span class="p">,</span> <span class="n">attn_bias_tensor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">attn_bias_tensor</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">attn_bias_ctx</span>
+        <span class="k">return</span> <span class="n">attn_bias_tensor</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">function</span><span class="o">.</span><span class="n">once_differentiable</span>
+    <span class="k">def</span> <span class="nf">backward</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">grad</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span>
+            <span class="ow">not</span> <span class="n">ctx</span><span class="o">.</span><span class="n">needs_input_grad</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">n_args</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
+        <span class="p">),</span> <span class="p">(</span>
+            <span class="s2">&quot;Only gradients to Q/K/V is implemented. &quot;</span>
+            <span class="s2">&quot;For instance, it&#39;s not possible to backpropagate through the attention mask&quot;</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Re-create context</span>
+        <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">rng_state</span><span class="p">,</span> <span class="n">attn_bias_tensor</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
+        <span class="n">inp</span> <span class="o">=</span> <span class="n">Inputs</span><span class="p">(</span>
+            <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
+            <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">attn_bias</span><span class="o">=</span><span class="bp">cls</span><span class="o">.</span><span class="n">deserialize_bias</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">attn_bias_ctx</span><span class="p">,</span> <span class="n">attn_bias_tensor</span><span class="p">),</span>
+            <span class="n">p</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
+            <span class="n">scale</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">scale</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">op_ctx</span> <span class="o">=</span> <span class="n">Context</span><span class="p">(</span><span class="n">lse</span><span class="o">=</span><span class="n">lse</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">,</span> <span class="n">rng_state</span><span class="o">=</span><span class="n">rng_state</span><span class="p">)</span>
+        <span class="n">grads</span> <span class="o">=</span> <span class="n">_memory_efficient_attention_backward</span><span class="p">(</span>
+            <span class="n">ctx</span><span class="o">=</span><span class="n">op_ctx</span><span class="p">,</span> <span class="n">inp</span><span class="o">=</span><span class="n">inp</span><span class="p">,</span> <span class="n">grad</span><span class="o">=</span><span class="n">grad</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">op_bw</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dk</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dv</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="kc">None</span><span class="p">,)</span> <span class="o">*</span> <span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">n_args</span> <span class="o">-</span> <span class="mi">3</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="memory_efficient_attention"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.memory_efficient_attention">[docs]</a><span class="k">def</span> <span class="nf">memory_efficient_attention</span><span class="p">(</span>
+    <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionMask</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">p</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">scale</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AttentionOp</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Implements the memory-efficient attention mechanism following</span>
+<span class="sd">    `&quot;Self-Attention Does Not Need O(n^2) Memory&quot; &lt;http://arxiv.org/abs/2112.05682&gt;`_.</span>
+
+<span class="sd">    :Inputs shape:</span>
+
+<span class="sd">    - Input tensors must be in format ``[B, M, H, K]``, where B is the batch size, M \</span>
+<span class="sd">        the sequence length, H the number of heads, and K the embeding size per head</span>
+
+<span class="sd">    - If inputs have dimension 3, it is assumed that the dimensions are ``[B, M, K]`` and ``H=1``</span>
+
+<span class="sd">    - Inputs can be non-contiguous - we only require the last dimension&#39;s stride to be 1</span>
+
+
+<span class="sd">    :Equivalent pytorch code:</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">        scale = 1 / query.shape[-1] ** 0.5</span>
+<span class="sd">        query = query * scale</span>
+<span class="sd">        attn = query @ key.transpose(-2, -1)</span>
+<span class="sd">        if attn_bias is not None:</span>
+<span class="sd">            attn = attn + attn_bias</span>
+<span class="sd">        attn = attn.softmax(-1)</span>
+<span class="sd">        attn = F.dropout(attn, p)</span>
+<span class="sd">        return attn @ value</span>
+
+<span class="sd">    :Examples:</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">        import xformers.ops as xops</span>
+
+<span class="sd">        # Compute regular attention</span>
+<span class="sd">        y = xops.memory_efficient_attention(q, k, v)</span>
+
+<span class="sd">        # With a dropout of 0.2</span>
+<span class="sd">        y = xops.memory_efficient_attention(q, k, v, p=0.2)</span>
+
+<span class="sd">        # Causal attention</span>
+<span class="sd">        y = xops.memory_efficient_attention(</span>
+<span class="sd">            q, k, v,</span>
+<span class="sd">            attn_bias=xops.LowerTriangularMask()</span>
+<span class="sd">        )</span>
+
+<span class="sd">    :Supported hardware:</span>
+
+<span class="sd">        NVIDIA GPUs with compute capability above 6.0 (P100+), datatype ``f16``, ``bf16`` and ``f32``.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        NotImplementedError: if there is no operator available to compute the MHA</span>
+
+<span class="sd">    :parameter query: Tensor of shape ``[B, Mq, H, K]``</span>
+<span class="sd">    :parameter key: Tensor of shape ``[B, Mkv, H, K]``</span>
+<span class="sd">    :parameter value: Tensor of shape ``[B, Mkv, H, Kv]``</span>
+<span class="sd">    :parameter attn_bias: Bias to apply to the attention matrix - defaults to no masking. \</span>
+<span class="sd">        For causal attention, use :attr:`xformers.ops.LowerTriangularMask`. \</span>
+<span class="sd">        This can also be a :attr:`torch.Tensor` for an arbitrary mask.</span>
+<span class="sd">    :parameter p: Dropout probability. Disabled if set to ``0.0``</span>
+<span class="sd">    :parameter scale: The scale to query_state weights. If set to ``None``, the default \</span>
+<span class="sd">        scale (q.shape[-1]**-0.5) will be used.</span>
+<span class="sd">    :parameter op: The operator to use - see :attr:`xformers.ops.AttentionOpBase`. \</span>
+<span class="sd">        If set to ``None`` (recommended), xFormers \</span>
+<span class="sd">        will dispatch to the best available operator, depending on the inputs \</span>
+<span class="sd">        and options.</span>
+<span class="sd">    :return: multi-head attention Tensor with shape ``[B, Mq, H, Kv]``</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_memory_efficient_attention</span><span class="p">(</span>
+        <span class="n">Inputs</span><span class="p">(</span>
+            <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">p</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">=</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">scale</span>
+        <span class="p">),</span>
+        <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="memory_efficient_attention_forward"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.memory_efficient_attention_forward">[docs]</a><span class="k">def</span> <span class="nf">memory_efficient_attention_forward</span><span class="p">(</span>
+    <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionMask</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">p</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">scale</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_memory_efficient_attention_forward</span><span class="p">(</span>
+        <span class="n">Inputs</span><span class="p">(</span>
+            <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">p</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">=</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">scale</span>
+        <span class="p">),</span>
+        <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="memory_efficient_attention_forward_requires_grad"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.memory_efficient_attention_forward_requires_grad">[docs]</a><span class="k">def</span> <span class="nf">memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
+    <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionMask</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">p</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">scale</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later.</span>
+<span class="sd">    See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments</span>
+<span class="sd">    See :attr:`xformers.ops.memory_efficient_backward` for running the backward pass</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="s2">&quot;dropout is not supported on the non-autograd API.&quot;</span>
+            <span class="s2">&quot; If you want to use dropout, please call `memory_efficient_attention` directly&quot;</span>
+        <span class="p">)</span>
+    <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span> <span class="o">=</span> <span class="n">_memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
+        <span class="n">Inputs</span><span class="p">(</span>
+            <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">p</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">=</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">scale</span>
+        <span class="p">),</span>
+        <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span></div>
+
+
+<div class="viewcode-block" id="memory_efficient_attention_backward"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.memory_efficient_attention_backward">[docs]</a><span class="k">def</span> <span class="nf">memory_efficient_attention_backward</span><span class="p">(</span>
+    <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">output</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">lse</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionMask</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">p</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">scale</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Computes the gradient of the attention.</span>
+<span class="sd">    Returns a tuple (dq, dk, dv)</span>
+<span class="sd">    See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments.</span>
+<span class="sd">    `lse` is the tensor returned by :attr:`xformers.ops.memory_efficient_attention_forward_requires_grad`</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="s2">&quot;dropout is not supported on the non-autograd API.&quot;</span>
+            <span class="s2">&quot; If you want to use dropout, please call `memory_efficient_attention` directly&quot;</span>
+        <span class="p">)</span>
+    <span class="n">gradients</span> <span class="o">=</span> <span class="n">_memory_efficient_attention_backward</span><span class="p">(</span>
+        <span class="n">Context</span><span class="p">(</span><span class="n">out</span><span class="o">=</span><span class="n">output</span><span class="p">,</span> <span class="n">lse</span><span class="o">=</span><span class="n">lse</span><span class="p">),</span>
+        <span class="n">Inputs</span><span class="p">(</span>
+            <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">p</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">=</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">scale</span>
+        <span class="p">),</span>
+        <span class="n">grad</span><span class="p">,</span>
+        <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">gradients</span><span class="o">.</span><span class="n">dq</span><span class="p">,</span> <span class="n">gradients</span><span class="o">.</span><span class="n">dk</span><span class="p">,</span> <span class="n">gradients</span><span class="o">.</span><span class="n">dv</span><span class="p">)</span></div>
+
+
+<span class="k">def</span> <span class="nf">_memory_efficient_attention</span><span class="p">(</span>
+    <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AttentionOp</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="c1"># fast-path that doesn&#39;t require computing the logsumexp for backward computation</span>
+    <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">is</span> <span class="kc">False</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">]):</span>
+        <span class="k">return</span> <span class="n">_memory_efficient_attention_forward</span><span class="p">(</span>
+            <span class="n">inp</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+
+    <span class="n">output_shape</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">normalize_bmhk</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">_fMHA</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+        <span class="n">op</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">scale</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">output_shape</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_memory_efficient_attention_forward</span><span class="p">(</span>
+    <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="n">output_shape</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">normalize_bmhk</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">op</span> <span class="o">=</span> <span class="n">_dispatch_fw</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">op</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="o">=</span><span class="kc">False</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">output_shape</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
+    <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Context</span><span class="p">]:</span>
+    <span class="n">output_shape</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">normalize_bmhk</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">op</span> <span class="o">=</span> <span class="n">_dispatch_fw</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">out</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">output_shape</span><span class="p">),</span> <span class="n">out</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+
+<span class="k">def</span> <span class="nf">_memory_efficient_attention_backward</span><span class="p">(</span>
+    <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Gradients</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Warning: grad/ctx.out is potentially in BMK format&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">grad</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="ow">or</span> <span class="n">grad</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">out</span><span class="o">.</span><span class="n">ndim</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;All tensors should be either in BMK (ndim=3) or BMHK (ndim=4) format. </span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;grad.shape : </span><span class="si">{</span><span class="n">grad</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> </span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;out.shape  : </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> </span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;query.shape: </span><span class="si">{</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">inp</span><span class="o">.</span><span class="n">normalize_bmhk</span><span class="p">()</span>
+    <span class="c1"># LSE has shape [B, H, M] while query has shape [B, M, H, K]</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">3</span>
+        <span class="ow">or</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="ow">or</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="ow">or</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;Input tensors have incompatible shapes.&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;lse.shape    : </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> </span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;query.shape  : </span><span class="si">{</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">grad</span> <span class="o">=</span> <span class="n">bmk2bmhk</span><span class="p">(</span><span class="n">grad</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">ctx</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">bmk2bmhk</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">out</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">op</span> <span class="o">=</span> <span class="n">_dispatch_bw</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">op</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">grad</span><span class="p">)</span>
+
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;AttentionMask&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;AttentionOp&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;AttentionOpBase&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;AttentionOpDispatch&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;LowerTriangularMask&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;MemoryEfficientAttentionCutlassFwdFlashBwOp&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;MemoryEfficientAttentionTritonFwdFlashBwOp&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;MemoryEfficientAttentionCutlassOp&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;MemoryEfficientAttentionFlashAttentionOp&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;MemoryEfficientAttentionOp&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;TritonFlashAttentionOp&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;memory_efficient_attention&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+</pre></div>
+
+              </article>
+              
+            </div>
+            <footer>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright Copyright © 2021 Meta Platforms, Inc.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+        </div>
+
+        <!-- <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              
+            </div>
+          </div>
+        </div> -->
+    </section>
+  </div>
+
+  
+
+
+  
+
+  
+  <script type="text/javascript" id="documentation_options" data-url_root="../../../"
+    src="../../../_static/documentation_options.js"></script>
+  <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+  <script src="../../../_static/jquery.js"></script>
+  <script src="../../../_static/underscore.js"></script>
+  <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+  <script src="../../../_static/doctools.js"></script>
+  
+
+  
+
+  <script type="text/javascript" src="../../../_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="../../../_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+  <!-- Begin Footer -->
+
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://github.com/facebookresearch/xformers" class="footer-logo"></a>
+      </div>
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://github.com/facebookresearch/xformers">fairscale</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="">Resources</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers">Docs</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://opensource.facebook.com/legal/terms">Terms of Use</a></li>
+            <li><a href="https://opensource.facebook.com/legal/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    </div>
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../../../_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://github.com/facebookresearch/xformers" aria-label="fairscale"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Docs</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Github</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="../../../_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function () {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function (e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+
+</html>
