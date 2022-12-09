@@ -131,9 +131,11 @@ mem_efficient_attention_backward_cutlass(
     grad_k = chunk.select(2, 1);
     grad_v = chunk.select(2, 2);
   } else {
-    grad_q = at::empty_like(query);
-    grad_k = grad_kv_needs_init ? at::zeros_like(key) : at::empty_like(key);
-    grad_v = grad_kv_needs_init ? at::zeros_like(value) : at::empty_like(value);
+    grad_q = at::empty(query.sizes(), query.options());
+    grad_k = grad_kv_needs_init ? at::zeros(key.sizes(), key.options())
+                                : at::empty(key.sizes(), key.options());
+    grad_v = grad_kv_needs_init ? at::zeros(value.sizes(), value.options())
+                                : at::empty(value.sizes(), value.options());
   }
   at::Tensor workspace;
 
