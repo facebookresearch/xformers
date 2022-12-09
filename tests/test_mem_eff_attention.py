@@ -10,6 +10,7 @@ from typing import Any, Sequence, Type
 import pytest
 import torch
 from scipy.stats import binom_test
+from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
 from xformers.ops import fmha
@@ -606,6 +607,9 @@ def test_backward(
     out.backward(grad_out)
     del out
 
+    if qkv is None and op_bw == fmha.cutlass.BwOp:
+        assert query.stride() == query.grad.stride()
+
     grads = []
     if qkv is None:
         grads = [query.grad, key.grad, value.grad]
@@ -954,3 +958,72 @@ def test_custom_scale(op_device_dtype_B_Mq_Mkv_H_K_Kv):
     assert_allclose(grad_q, ref_grad_q, atol=atol, rtol=rtol)
     assert_allclose(grad_k, ref_grad_k, atol=atol, rtol=rtol)
     assert_allclose(grad_v, ref_grad_v, atol=atol, rtol=rtol)
+
+
+def apply_attention(query, key, value, attn_bias, op_fw, proj):
+    x = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias=attn_bias, op=(op_fw, None)
+    )
+    x = proj(x)
+    return x
+
+
+@pytest.mark.parametrize("use_reentrant", [False, True])
+@pytest.mark.parametrize(
+    "op_device_dtype_B_Mq_Mkv_H_K_Kv",
+    _opFW_device_dtype_B_Mq_Mkv_H_K_Kv__xs,
+    ids=_opFW_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids,
+)
+def test_grad_checkpointing(
+    op_device_dtype_B_Mq_Mkv_H_K_Kv,
+    use_reentrant,
+):
+    fmt = "BMHK"
+    (
+        op,
+        device,
+        dtype,
+        batch_size,
+        q_len,
+        kv_len,
+        h,
+        k,
+        kv,
+    ) = op_device_dtype_B_Mq_Mkv_H_K_Kv
+    query, key, value, attn_bias = create_tensors(
+        *op_device_dtype_B_Mq_Mkv_H_K_Kv,
+        attn_bias_type=None,
+        fmt=fmt,
+    )
+    qkv = None
+
+    if (
+        fmt == "BMHK"
+        and query.shape[3] == value.shape[3]
+        and query.shape[1] == value.shape[1]
+    ):
+        qkv = torch.stack([query, key, value], 2)
+        qkv.requires_grad_(True)
+        # bm3hk -> 3 x bmhk
+        query, key, value = xformers.ops.unbind(qkv, 2)
+        assert not query.is_contiguous()
+
+    query.requires_grad_(True)
+    key.requires_grad_(True)
+    value.requires_grad_(True)
+
+    proj = torch.nn.Linear(kv, k, device=device, dtype=dtype)
+
+    x = query
+    for _ in range(5):
+        x = checkpoint(
+            apply_attention,
+            x,
+            key,
+            value,
+            attn_bias,
+            op,
+            proj,
+            use_reentrant=use_reentrant,
+        )
+    x.mean().backward()
