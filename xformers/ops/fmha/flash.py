@@ -59,11 +59,12 @@ class Op(AttentionOpBase):
             return False
         # We know `d.device` is cuda now
         # d=128 is only supported on A100 for bw
+        # d > 64 is only supported on A100 for bw
         device_capability = torch.cuda.get_device_capability(d.device)
         is_sm80 = device_capability[0] == 8 and device_capability[1] == 0
-        if d.k not in [16, 32, 64, 128]:
+        if (d.k % 8) > 0:
             return False
-        if d.requires_grad and d.k == 128 and not is_sm80:
+        if d.requires_grad and max(d.kv, d.k) > 64 and not is_sm80:
             return False
         return device_capability >= (7, 5)
 
@@ -254,10 +255,14 @@ class Op(AttentionOpBase):
         causal,
         return_softmax,
     ):
-        out, softmax_lse, *rest = _C_flashattention.fwd(
+        out = torch.empty(
+            [q.shape[0], q.shape[1], v.shape[2]], dtype=q.dtype, device=q.device
+        )
+        softmax_lse, *rest = _C_flashattention.fwd(
             q,
             k,
             v,
+            out,
             cu_seqlens_q,
             cu_seqlens_k,
             max_seqlen_q,
@@ -267,6 +272,7 @@ class Op(AttentionOpBase):
             False,
             causal,
             return_softmax,
+            0,  # num_splits
             None,
         )
         S_dmask = rest[0] if return_softmax else None
@@ -309,6 +315,7 @@ class Op(AttentionOpBase):
             softmax_scale,
             False,
             causal,
+            0,  # num_splits
             None,
         )
         return dq, dk, dv, softmax_d
