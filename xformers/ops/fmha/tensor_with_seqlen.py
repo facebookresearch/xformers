@@ -32,6 +32,9 @@ def _find_arg_to_copy_metadata(cls, func, args, kwargs) -> Optional["TensorWithS
 
 
 class TensorWithSeqLen(torch.Tensor):
+    max_seqlen: int
+    cu_seqlen: torch.Tensor
+
     def __new__(cls, data):
         t = torch.Tensor._make_subclass(cls, data)
         t.cu_seqlen = None
@@ -68,7 +71,7 @@ class TensorWithSeqLen(torch.Tensor):
 
 
 def cat_with_offsets(tensors: Sequence[torch.Tensor], dim: int = 0) -> torch.Tensor:
-    c = TensorWithSeqLen(torch.cat(tensors, dim=dim))
+    c = TensorWithSeqLen(torch.cat(tuple(tensors), dim=dim))
     cu_seqlen = [0]
     max_seqlen = -1
     for tensor in tensors:
