@@ -469,6 +469,7 @@ def test_cu_seqlen_forward(
     )
     # We should not copy the metadata, and ensure we reuse the one from query
     assert isinstance(out, fmha.tensor_with_seqlen.TensorWithSeqLen)
+    assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
     assert out.cu_seqlen.storage().data_ptr() == q.cu_seqlen.storage().data_ptr()
 
     ref = inputs.ref_attention()
@@ -490,11 +491,13 @@ def test_tensor_with_seqlen() -> None:
         torch.randn([1, 1, H, K]),
     ]
     q = fmha.cat_with_offsets(queries, dim=1)
+    assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
     assert q.shape == (1, 7, H, K)
     assert q.device.type == "cpu"
     assert q.cu_seqlen.device.type == "cpu"
     assert q.max_seqlen == 4
     q = q.to("cuda")
+    assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
     assert q.device.type == "cuda"
     assert q.cu_seqlen.device.type == "cuda"
 
