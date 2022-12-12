@@ -56,14 +56,13 @@ def _get_seqlen_info(
 
     if isinstance(inp.key, TensorWithSeqLen):
         cu_seqlen_k = inp.key.cu_seqlen
-    else:
-        cu_seqlen_k = None
-
-    if isinstance(inp.query, TensorWithSeqLen):
         cu_seqlen_q = inp.query.cu_seqlen
         max_seqlen_q = inp.query.max_seqlen
     else:
+        cu_seqlen_k = None
+        cu_seqlen_k = None
         max_seqlen_q = -1
+
     return cu_seqlen_k, cu_seqlen_q, max_seqlen_q
 
 
