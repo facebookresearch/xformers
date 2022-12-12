@@ -65,7 +65,7 @@ class CompositionalAttention(Attention):
     (Softmax(QKt)), then retrieve information given the Value.
 
     Contrary to the original attention proposal, which does not consider interactions in between heads,
-    the comppositional attention will consider all possible interactions and softmax over that dimension,
+    the compositional attention will consider all possible interactions and softmax over that dimension,
     so that the information retrieved covers the most relevant dimensions. The number of heads and rules to
     use is thus typically smaller than for a comparable traditional Transformer, and asking for the same number of heads
     may not fit in memory.
@@ -226,7 +226,7 @@ class CompositionalAttention(Attention):
         Input shape: Time x Batch x Channel
 
         Args:
-            attn_mask (ByteTensor, optional): typically used to
+            att_mask (ByteTensor, optional): typically used to
                 implement causal attention, where the mask prevents the
                 attention from looking forward in time (default: None).
         """
