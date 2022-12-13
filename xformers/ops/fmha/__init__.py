@@ -299,6 +299,10 @@ def _memory_efficient_attention_forward(
     output_shape = inp.normalize_bmhk()
     if op is None:
         op = _dispatch_fw(inp)
+    elif not op.supports(inp):
+        raise ValueError(
+            f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
+        )
     return op.apply(inp, needs_gradient=False)[0].reshape(output_shape)
 
 
@@ -308,6 +312,10 @@ def _memory_efficient_attention_forward_requires_grad(
     output_shape = inp.normalize_bmhk()
     if op is None:
         op = _dispatch_fw(inp)
+    elif not op.supports(inp):
+        raise ValueError(
+            f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
+        )
     out = op.apply(inp, needs_gradient=True)
     assert out[1] is not None
     return (out[0].reshape(output_shape), out[1])
@@ -342,6 +350,10 @@ def _memory_efficient_attention_backward(
 
     if op is None:
         op = _dispatch_bw(inp)
+    elif not op.supports(inp):
+        raise ValueError(
+            f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
+        )
     return op.apply(ctx, inp, grad)
 
 
