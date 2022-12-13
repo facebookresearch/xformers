@@ -22,6 +22,7 @@ from .common import (
     bmk2bmhk,
 )
 from .dispatch import _dispatch_bw, _dispatch_fw
+from .tensor_with_seqlen import TensorWithSeqLen  # noqa
 
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
@@ -303,7 +304,9 @@ def _memory_efficient_attention_forward(
         raise ValueError(
             f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
         )
-    return op.apply(inp, needs_gradient=False)[0].reshape(output_shape)
+
+    out, *_ = op.apply(inp, needs_gradient=False)
+    return out.reshape(output_shape)
 
 
 def _memory_efficient_attention_forward_requires_grad(

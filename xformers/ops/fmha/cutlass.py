@@ -18,6 +18,7 @@ from .common import (
     Inputs,
     LowerTriangularMask,
 )
+from .tensor_with_seqlen import TensorWithSeqLen
 
 
 def _uses_tensorcores(sm: int, is_half: bool) -> bool:
@@ -43,6 +44,29 @@ def _minimum_gemm_alignment(inp: Inputs) -> int:
     return matmul_alignment_mn
 
 
+def _get_seqlen_info(
+    inp: Inputs,
+) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], int]:
+    MISMATCH_ERR = (
+        "All of query/key/value should have seqlen information, or none of them"
+    )
+
+    if isinstance(inp.key, TensorWithSeqLen):
+        assert isinstance(inp.query, TensorWithSeqLen), MISMATCH_ERR
+        assert isinstance(inp.value, TensorWithSeqLen), MISMATCH_ERR
+        cu_seqlen_k = inp.key.cu_seqlen
+        cu_seqlen_q = inp.query.cu_seqlen
+        max_seqlen_q = inp.query.max_seqlen
+    else:
+        assert not isinstance(inp.query, TensorWithSeqLen), MISMATCH_ERR
+        assert not isinstance(inp.value, TensorWithSeqLen), MISMATCH_ERR
+        cu_seqlen_k = None
+        cu_seqlen_q = None
+        max_seqlen_q = -1
+
+    return cu_seqlen_k, cu_seqlen_q, max_seqlen_q
+
+
 @register_operator
 class FwOp(AttentionFwOpBase):
     """xFormers' MHA kernel based on CUTLASS.
@@ -58,6 +82,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
+    SUPPORTS_TENSOR_WITH_SEQLEN = True
     NAME = "cutlassF"
 
     _TEST_K: List[int] = [
@@ -75,13 +100,14 @@ class FwOp(AttentionFwOpBase):
         ):
             raise NotImplementedError("Unsupported attn_bias type")
         causal = isinstance(inp.attn_bias, LowerTriangularMask)
+        cu_seqlen_k, cu_seqlen_q, max_seqlen_q = _get_seqlen_info(inp)
         out, lse = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
             value=inp.value,
-            cu_seqlens_q=None,
-            cu_seqlens_k=None,
-            max_seqlen_q=-1,
+            cu_seqlens_q=cu_seqlen_q,
+            cu_seqlens_k=cu_seqlen_k,
+            max_seqlen_q=max_seqlen_q,
             compute_logsumexp=needs_gradient,
             causal=causal,
             scale=inp.scale,
@@ -113,6 +139,7 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
+    SUPPORTS_TENSOR_WITH_SEQLEN = False
     NAME = "cutlassB"
 
     _TEST_K: List[int] = [

@@ -5,7 +5,7 @@
 
 import random
 from dataclasses import dataclass
-from typing import Any, Sequence, Type
+from typing import Any, Sequence, Tuple, Type
 
 import pytest
 import torch
@@ -357,42 +357,30 @@ def test_forward(
     )
 
 
-shapes_cu_seqlen = generate_test_shapes_B_Mq_Mkv_H_K_Kv(fmha.cutlass.FwOp)
-
-
 @dataclass
 class CuSeqlenInputs:
-    q: torch.Tensor
-    k: torch.Tensor
-    v: torch.Tensor
+    q: Sequence[torch.Tensor]
+    k: Sequence[torch.Tensor]
+    v: Sequence[torch.Tensor]
     bias: Sequence[Any]
 
-    cu_seqlen_q: torch.Tensor
-    max_seqlen_q: int
-    cu_seqlen_k: torch.Tensor
-    max_seqlen_k: int
-
     def ref_attention(self) -> torch.Tensor:
-        assert self.q.shape[0] == 1
-        cu_seqlen_q_cpu = self.cu_seqlen_q.tolist()
-        cu_seqlen_k_cpu = self.cu_seqlen_k.tolist()
         outs = []
-        for attn_bias, q_start, q_end, k_start, k_end in zip(
+        for q, k, v, bias in zip(
+            self.q,
+            self.k,
+            self.v,
             self.bias,
-            cu_seqlen_q_cpu,
-            cu_seqlen_q_cpu[1:],
-            cu_seqlen_k_cpu,
-            cu_seqlen_k_cpu[1:],
         ):
-            outs.append(
-                ref_attention(
-                    self.q[:, q_start:q_end],
-                    self.k[:, k_start:k_end],
-                    self.v[:, k_start:k_end],
-                    attn_bias=attn_bias,
-                )
-            )
+            outs.append(ref_attention(q, k, v, bias))
         return torch.cat(outs, dim=1)
+
+    def cat_qkv(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return (
+            fmha.TensorWithSeqLen.from_tensor_list(self.q, dim=1),
+            fmha.TensorWithSeqLen.from_tensor_list(self.k, dim=1),
+            fmha.TensorWithSeqLen.from_tensor_list(self.v, dim=1),
+        )
 
     @staticmethod
     def generate(
@@ -403,8 +391,6 @@ class CuSeqlenInputs:
         all_k = []
         all_v = []
         all_bias = []
-        cu_seqlen_q = [0]
-        cu_seqlen_k = [0]
         scale = 3
         # Reduce batch size to speedup tests
         batch_size = min(batch_size, 20)
@@ -433,9 +419,6 @@ class CuSeqlenInputs:
                 if not op.supports(inp):
                     pytest.skip("unsupported configuration")
 
-            cu_seqlen_q += [cu_seqlen_q[-1] + q_len]
-            cu_seqlen_k += [cu_seqlen_k[-1] + kv_len]
-
             attn_bias = None
             if attn_bias_type is not None:
                 attn_bias = create_attn_bias(
@@ -448,57 +431,79 @@ class CuSeqlenInputs:
                 )
             all_bias.append(attn_bias)
         return CuSeqlenInputs(
-            q=torch.cat(all_q, dim=1),
-            k=torch.cat(all_k, dim=1),
-            v=torch.cat(all_v, dim=1),
+            q=all_q,
+            k=all_k,
+            v=all_v,
             bias=all_bias,
-            cu_seqlen_q=torch.tensor(cu_seqlen_q, dtype=torch.int32, device=device),
-            max_seqlen_q=max_q_len,
-            cu_seqlen_k=torch.tensor(cu_seqlen_k, dtype=torch.int32, device=device),
-            max_seqlen_k=max_kv_len,
         )
+
+
+# Shapes with B>1
+shapes_cu_seqlen = [
+    (op, device, dtype, B, *other)
+    for (op, device, dtype, B, *other) in _opFW_device_dtype_B_Mq_Mkv_H_K_Kv
+    if B > 1 and op.SUPPORTS_TENSOR_WITH_SEQLEN
+]
 
 
 @cuda_only
 @pytest.mark.parametrize("attn_bias_type", [None, xformers.ops.LowerTriangularMask])
-@pytest.mark.parametrize("dtype", list(fmha.cutlass.FwOp.SUPPORTED_DTYPES))
 @pytest.mark.parametrize(
-    "B_Mq_Mkv_H_K_Kv",
+    "op_device_dtype_B_Mq_Mkv_H_K_Kv",
     shapes_cu_seqlen,
-    ids=[
-        f"{B},{max_q_len},{max_kv_len},{h},{k},{kv}"
-        for (B, max_q_len, max_kv_len, h, k, kv) in shapes_cu_seqlen
-    ],
+    ids=_gen_ids(shapes_cu_seqlen),
 )
 def test_cu_seqlen_forward(
-    B_Mq_Mkv_H_K_Kv,
+    op_device_dtype_B_Mq_Mkv_H_K_Kv,
     attn_bias_type,
-    dtype,
 ):
-    device = "cuda"
-    op = fmha.cutlass.FwOp
-
-    inputs = CuSeqlenInputs.generate(B_Mq_Mkv_H_K_Kv, attn_bias_type, dtype, device, op)
-
-    out, _ = op.OPERATOR(
-        inputs.q,
-        inputs.k,
-        inputs.v,
-        max_seqlen_q=inputs.max_seqlen_q,
-        cu_seqlens_q=inputs.cu_seqlen_q,
-        cu_seqlens_k=inputs.cu_seqlen_k,
-        compute_logsumexp=False,
-        causal=attn_bias_type is xformers.ops.LowerTriangularMask,
-        scale=None,
+    op_fw, device, dtype, *B_Mq_Mkv_H_K_Kv = op_device_dtype_B_Mq_Mkv_H_K_Kv
+    inputs = CuSeqlenInputs.generate(
+        B_Mq_Mkv_H_K_Kv, attn_bias_type, dtype, device, op_fw
     )
+    q, k, v = inputs.cat_qkv()
+    assert op_fw.supports(fmha.Inputs(q, k, v))
+
+    out = xformers.ops.memory_efficient_attention(
+        q, k, v, attn_bias=inputs.bias[0], op=(op_fw, None)
+    )
+    # We should not copy the metadata, and ensure we reuse the one from query
+    assert isinstance(out, fmha.tensor_with_seqlen.TensorWithSeqLen)
+    assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
+    assert out.cu_seqlen.storage().data_ptr() == q.cu_seqlen.storage().data_ptr()
+
     ref = inputs.ref_attention()
 
     assert_allclose(
         out.float(),
         ref,
-        atol=op.ERROR_ATOL[dtype],
-        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
+        atol=op_fw.ERROR_ATOL[dtype],
+        rtol=op_fw.ERROR_RTOL.get(dtype, 1e-5),
     )
+
+
+@cuda_only
+def test_tensor_with_seqlen() -> None:
+    H, K = 16, 32
+    queries = [
+        torch.randn([1, 2, H, K]),
+        torch.randn([1, 4, H, K]),
+        torch.randn([1, 1, H, K]),
+    ]
+    q = fmha.TensorWithSeqLen.from_tensor_list(queries, dim=1)
+    assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
+    assert q.shape == (1, 7, H, K)
+    assert q.device.type == "cpu"
+    assert q.cu_seqlen.device.type == "cpu"
+    assert q.max_seqlen == 4
+    q = q.to("cuda")
+    assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
+    assert q.device.type == "cuda"
+    assert q.cu_seqlen.device.type == "cuda"
+    a, b, c = q.to_tensor_list(dim=1)
+    assert a.shape[:2] == queries[0].shape[:2]
+    assert b.shape[:2] == queries[1].shape[:2]
+    assert c.shape[:2] == queries[2].shape[:2]
 
 
 @pytest.mark.parametrize("k_len", [5, 6, 32])
