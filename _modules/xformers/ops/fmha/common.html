@@ -236,6 +236,8 @@
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
+<span class="kn">from</span> <span class="nn">.tensor_with_seqlen</span> <span class="kn">import</span> <span class="n">TensorWithSeqLen</span>
+
 
 <div class="viewcode-block" id="AttentionMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.AttentionMask">[docs]</a><span class="k">class</span> <span class="nc">AttentionMask</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;Base class for custom masks that can be applied \</span>
@@ -374,6 +376,7 @@
     <span class="n">SUPPORTS_DROPOUT</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">SUPPORTS_TENSOR_WITH_SEQLEN</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">NAME</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">OPERATOR_CATEGORY</span> <span class="o">=</span> <span class="s2">&quot;memory_efficient_attention&quot;</span>
 
@@ -390,6 +393,12 @@
     <span class="k">def</span> <span class="nf">supports</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
         <span class="n">device_type</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span>
         <span class="n">dtype</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTS_TENSOR_WITH_SEQLEN</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">TensorWithSeqLen</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">TensorWithSeqLen</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">TensorWithSeqLen</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
         <span class="k">if</span> <span class="n">device_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_DEVICES</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">False</span>
         <span class="k">if</span> <span class="n">dtype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span><span class="p">:</span>

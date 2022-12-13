@@ -247,6 +247,7 @@
     <span class="n">bmk2bmhk</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">.dispatch</span> <span class="kn">import</span> <span class="n">_dispatch_bw</span><span class="p">,</span> <span class="n">_dispatch_fw</span>
+<span class="kn">from</span> <span class="nn">.tensor_with_seqlen</span> <span class="kn">import</span> <span class="n">TensorWithSeqLen</span>  <span class="c1"># noqa</span>
 
 <span class="n">MemoryEfficientAttentionCutlassOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">cutlass</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">cutlass</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
 <span class="n">MemoryEfficientAttentionCutlassFwdFlashBwOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">cutlass</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
@@ -524,7 +525,13 @@
     <span class="n">output_shape</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">normalize_bmhk</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">op</span> <span class="o">=</span> <span class="n">_dispatch_fw</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">op</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="o">=</span><span class="kc">False</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">output_shape</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">op</span><span class="o">.</span><span class="n">supports</span><span class="p">(</span><span class="n">inp</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;xformers.memory_efficient_attention: Operator </span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2"> does not support this input&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">out</span><span class="p">,</span> <span class="o">*</span><span class="n">_</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">output_shape</span><span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">_memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
@@ -533,6 +540,10 @@
     <span class="n">output_shape</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">normalize_bmhk</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">op</span> <span class="o">=</span> <span class="n">_dispatch_fw</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">op</span><span class="o">.</span><span class="n">supports</span><span class="p">(</span><span class="n">inp</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;xformers.memory_efficient_attention: Operator </span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2"> does not support this input&quot;</span>
+        <span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="k">assert</span> <span class="n">out</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
     <span class="k">return</span> <span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">output_shape</span><span class="p">),</span> <span class="n">out</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
@@ -567,6 +578,10 @@
 
     <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">op</span> <span class="o">=</span> <span class="n">_dispatch_bw</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">op</span><span class="o">.</span><span class="n">supports</span><span class="p">(</span><span class="n">inp</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;xformers.memory_efficient_attention: Operator </span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2"> does not support this input&quot;</span>
+        <span class="p">)</span>
     <span class="k">return</span> <span class="n">op</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">grad</span><span class="p">)</span>
 
 
