@@ -1,14 +1,28 @@
 #pragma once
 
 #include <cmath>
+#include <type_traits>
 #include <vector>
 
 #include <cuda_fp16.h>
+#include <curand_kernel.h>
 
+#include <ATen/cuda/CUDAContext.h>
+#include <ATen/cuda/CUDAGeneratorImpl.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <ATen/cuda/CUDAGraphsUtils.cuh>
+
+#include "cutlass/cutlass.h"
+#include "cutlass/epilogue/thread/linear_combination.h"
+#include "cutlass/epilogue/thread/scale_type.h"
+#include "cutlass/fast_math.h"
+#include "cutlass/functional.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/layout/vector.h"
+#include "cutlass/numeric_conversion.h"
 #include "cutlass/numeric_types.h"
+#include "cutlass/tensor_ref.h"
 
 #include "debug_utils.h"
 #include "gemm_kernel_utils.h"
@@ -34,6 +48,7 @@
 #include "find_default_mma.h"
 #include "gemm/custom_mma.h"
 #include "mma_from_smem.h"
+#include "transform/tile_smem_loader.h"
 
 #include <inttypes.h>
 
@@ -141,6 +156,8 @@ template <
     typename scalar_t_,
     // run optimized kernel because memory accesses will be aligned
     bool kIsAligned_,
+    // use dropout if enabled
+    bool kApplyDropout,
     // upperbound on `max(value.shape[-1], query.shape[-1])`
     int kMaxK = std::numeric_limits<int>::max()>
 struct AttentionBackwardKernel {
@@ -157,6 +174,7 @@ struct AttentionBackwardKernel {
     scalar_t* query_ptr; // [Mq, nH, K]
     scalar_t* key_ptr; // [Mk, nH, K]
     scalar_t* value_ptr; // [Mk, nH, Kv]
+    scalar_t* bias_ptr = nullptr;
     lse_scalar_t* logsumexp_ptr; // [nH, Mq]
     scalar_t* output_ptr; // [Mq, nH, Kv]
     scalar_t* grad_output_ptr; // [Mq, nH, Kv]
@@ -166,6 +184,8 @@ struct AttentionBackwardKernel {
     output_t* grad_query_ptr; //  [Mq, nH, K]
     output_t* grad_key_ptr; //    [Mk, nH, K]
     output_t* grad_value_ptr; //  [Mk, nH, Kv]
+    output_t* grad_bias_ptr = nullptr;
+
     // Accumulators
     union {
       output_accum_t* workspace = nullptr; // [Mq, Kq] + [Mkv, Kq] + [Mkv, Kv]
@@ -188,8 +208,16 @@ struct AttentionBackwardKernel {
     int32_t q_strideM;
     int32_t k_strideM;
     int32_t v_strideM;
+    int32_t bias_strideM;
     int32_t gO_strideM;
+    int32_t gB_strideM;
     int8_t gQKV_strideM_multiplier; // 3 for packed, 1 otherwise
+
+    // dropout
+    at::PhiloxCudaState rng_engine_inputs;
+    // RNG sequence offset based on batch_id and head_id
+    unsigned long long dropout_batch_head_rng_offset;
+    float dropout_prob;
 
     CUTLASS_HOST_DEVICE int32_t o_strideM() const {
       return head_dim_value * num_heads;
@@ -210,10 +238,12 @@ struct AttentionBackwardKernel {
     int32_t q_strideH;
     int32_t k_strideH;
     int32_t v_strideH;
+    int32_t bias_strideH;
     int64_t o_strideB;
     int64_t q_strideB;
     int64_t k_strideB;
     int64_t v_strideB;
+    int64_t bias_strideB;
     int64_t lse_strideM;
     int32_t num_batches;
 
@@ -221,10 +251,12 @@ struct AttentionBackwardKernel {
     int64_t gQ_strideB;
     int64_t gK_strideB;
     int64_t gV_strideB;
+    int64_t gB_strideB;
     int64_t gO_strideH;
     int64_t gQ_strideH;
     int64_t gK_strideH;
     int64_t gV_strideH;
+    int64_t gB_strideH;
 
     CUTLASS_DEVICE void advance_to_block() {
       int64_t batch_id = blockIdx.z;
@@ -234,6 +266,9 @@ struct AttentionBackwardKernel {
       key_ptr += batch_id * k_strideB + head_id * k_strideH;
       value_ptr += batch_id * v_strideB + head_id * v_strideH;
       logsumexp_ptr += (batch_id * num_heads + head_id) * lse_strideM;
+      if (bias_ptr != nullptr) {
+        bias_ptr += batch_id * bias_strideB + head_id * bias_strideH;
+      }
       output_ptr += batch_id * o_strideB + head_id * o_strideH;
       grad_output_ptr += batch_id * gO_strideB + head_id * gO_strideH;
       delta_ptr += (batch_id * num_heads + head_id) * num_queries;
@@ -241,6 +276,13 @@ struct AttentionBackwardKernel {
       grad_query_ptr += batch_id * gQ_strideB + head_id * gQ_strideH;
       grad_key_ptr += batch_id * gK_strideB + head_id * gK_strideH;
       grad_value_ptr += batch_id * gV_strideB + head_id * gV_strideH;
+      if (grad_bias_ptr != nullptr) {
+        grad_bias_ptr += batch_id * gB_strideB + head_id * gB_strideH;
+      }
+
+      dropout_batch_head_rng_offset =
+          batch_id * (num_heads * num_queries * num_keys) +
+          head_id * (num_queries * num_keys);
 
       head_dim = warp_uniform(head_dim);
       head_dim_value = warp_uniform(head_dim_value);
@@ -257,6 +299,7 @@ struct AttentionBackwardKernel {
       query_ptr = warp_uniform(query_ptr);
       key_ptr = warp_uniform(key_ptr);
       value_ptr = warp_uniform(value_ptr);
+      bias_ptr = warp_uniform(bias_ptr);
       logsumexp_ptr = warp_uniform(logsumexp_ptr);
       output_ptr = warp_uniform(output_ptr);
       grad_output_ptr = warp_uniform(grad_output_ptr);
@@ -265,6 +308,7 @@ struct AttentionBackwardKernel {
       grad_query_ptr = warp_uniform(grad_query_ptr);
       grad_key_ptr = warp_uniform(grad_key_ptr);
       grad_value_ptr = warp_uniform(grad_value_ptr);
+      grad_bias_ptr = warp_uniform(grad_bias_ptr);
 
       if (kNeedsAccumGradQ || kNeedsAccumGradK || kNeedsAccumGradV) {
         assert(workspace_size() == 0 || workspace != nullptr);
@@ -416,6 +460,18 @@ struct AttentionBackwardKernel {
     using Mma =
         typename MakeCustomMma<typename DefaultMma::ThreadblockMma, kMaxK>::Mma;
 
+    // used for efficient load of bias tile (Bij) from global memory to shared
+    // memory
+    using BiasLoader = TileSmemLoader<
+        scalar_t,
+        // Bij is applied to transposed attn matrix tile (Pij.T). Bij is loaded
+        // row-major but needs to have transposed shape so we get the same
+        // elements.
+        cutlass::MatrixShape<ThreadblockShape::kN, ThreadblockShape::kM>,
+        MmaCore::kThreads,
+        // input restriction: kv_len has to be a multiple of this value
+        128 / cutlass::sizeof_bits<scalar_t>::value>;
+
     // Epilogue to store to shared-memory in a format that we can use later for
     // the second matmul
     using B2bGemm = typename cutlass::gemm::threadblock::B2bGemm<
@@ -464,11 +520,24 @@ struct AttentionBackwardKernel {
         false, // SplitKSerial
         typename GemmType::Operator>;
 
+    // if dropout:
+    //   for computing dVj += (Pij.T * Zij) @ dOi
+    //   Pij_dropped.T = Pij.T * Zij is computed on the fly as fragments of
+    //   Pij.T are loaded in. The reason we do it this way is because Pij.T and
+    //   Zij are reused in later steps, while Pij_dropped.T is only needed in
+    //   this step. computing Pij_dropped.T on the fly allows us to avoid
+    //   keeping all 3 of Pij_dropped.T, Pij.T, and Zij in shared memory at the
+    //   same time.
+    // if no dropout:
+    //   for computing dVj += Pij.T @ dOi
     using DefaultMmaFromSmem =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
-            typename MatmulQK::AccumulatorSharedStorage>;
+            typename MatmulQK::AccumulatorSharedStorage,
+            kApplyDropout>; // kScaleOperandA
+
     using Mma = typename DefaultMmaFromSmem::Mma;
+    using WarpIteratorA = typename DefaultMmaFromSmem::WarpIteratorA;
     using IteratorB = typename Mma::IteratorB;
     using WarpCount = typename Mma::WarpCount;
 
@@ -489,27 +558,50 @@ struct AttentionBackwardKernel {
     using ThreadblockShape =
         cutlass::gemm::GemmShape<kBlockSizeI, kBlockSizeJ, GemmType::ThreadK>;
     using WarpShape = cutlass::gemm::GemmShape<32, 32, GemmType::WarpK>;
-    using DefaultMma = typename cutlass::gemm::threadblock::DefaultMma<
+
+    using ElementC = output_t;
+    using ElementAccum = accum_t;
+
+    // no-op output op - epilogue just stores result to global memory
+    using BiasGradEpilogueOutputOp =
+        typename cutlass::epilogue::thread::LinearCombination<
+            ElementC,
+            DefaultConfig::EpilogueOutputOp::kCount,
+            typename DefaultConfig::EpilogueOutputOp::ElementAccumulator,
+            typename DefaultConfig::EpilogueOutputOp::ElementCompute,
+            cutlass::epilogue::thread::ScaleType::Nothing>;
+
+    using DefaultGemm = typename cutlass::gemm::kernel::DefaultGemm<
         scalar_t, // ElementA
         cutlass::layout::RowMajor, // LayoutA
         kIsAligned ? DefaultConfig::kAlignmentA : GemmType::kMinimumAlignment,
         scalar_t, // ElementB
         cutlass::layout::ColumnMajor, // LayoutB
         kIsAligned ? DefaultConfig::kAlignmentB : GemmType::kMinimumAlignment,
-        accum_t, // ElementC
+        ElementC, // ElementC
         cutlass::layout::RowMajor, // LayoutC
+        ElementAccum, // ElementAccumulator
         typename GemmType::OpClass,
         ArchTag,
         ThreadblockShape,
         WarpShape,
         typename GemmType::InstructionShape,
-        DefaultConfig::kStages,
+        BiasGradEpilogueOutputOp, // EpilogueOutputOp
+        void, // ThreadblockSwizzle (not used)
+        // multiple preloads, dropout Zij tile, and 3 stages push us over shared
+        // memory capacity on A100. set a ceiling on number of stages to save
+        // shared memory if dropout is in use.
+        kPreloadMmas && kApplyDropout
+            ? cutlass::const_min(2, DefaultConfig::kStages)
+            : DefaultConfig::kStages, // Stages
+        false, // SplitKSerial
         typename GemmType::Operator,
-        false, // AccumulatorsInRowMajor = false,
         cutlass::gemm::SharedMemoryClearOption::kNone>;
-    using MmaCore = typename DefaultMma::MmaCore;
-    using Mma =
-        typename MakeCustomMma<typename DefaultMma::ThreadblockMma, kMaxK>::Mma;
+    using Mma = typename MakeCustomMma<typename DefaultGemm::Mma, kMaxK>::Mma;
+
+    // epilogue used to write bias gradient, which is just the output of this
+    // matmul with some operations applied to the fragment
+    using BiasGradEpilogue = typename DefaultGemm::Epilogue;
 
     // Epilogue to store to shared-memory in a format that we can use later for
     // the second matmul
@@ -553,7 +645,8 @@ struct AttentionBackwardKernel {
     using DefaultMmaFromSmem =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
-            typename MatmulDOIVJ::AccumulatorSharedStorage>;
+            typename MatmulDOIVJ::AccumulatorSharedStorage,
+            false>; // kScaleOperandA
     using Mma = typename DefaultMmaFromSmem::Mma;
     using IteratorB = typename Mma::IteratorB;
     using WarpCount = typename Mma::WarpCount;
@@ -597,12 +690,14 @@ struct AttentionBackwardKernel {
     using DefaultMmaFromSmemN =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
-            typename MatmulQK::AccumulatorSharedStorage>;
+            typename MatmulQK::AccumulatorSharedStorage,
+            false>; // kScaleOperandA
     using DefaultMmaFromSmemT =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
             typename MatmulDOIVJ::AccumulatorSharedStorage,
-            kPreloadMmas>;
+            false, // kScaleOperandA
+            kPreloadMmas>; // kTransposeA
     using DefaultMmaFromSmem = typename cutlass::platform::conditional<
         DefaultMmaFromSmemT::kIsTransposedA,
         DefaultMmaFromSmemT,
@@ -620,6 +715,18 @@ struct AttentionBackwardKernel {
     using AccumTileGmem = GmemTile<typename Mma::FragmentC, kNumThreads>;
   };
 
+  // shared storage for keeping Zij matrix. not needed if we aren't using
+  // dropout, in which case we use an empty array to save shared memory
+  using ZijSharedStorage = typename cutlass::platform::conditional<
+      kApplyDropout,
+      typename MatmulQK::AccumulatorSharedStorage,
+      // dummy shared storage object that takes up no space.
+      typename cutlass::gemm::threadblock::AccumulatorSharedStorage<
+          typename cutlass::gemm::GemmShape<0, 0, 0>,
+          typename MatmulQK::AccumulatorSharedStorage::Element,
+          typename MatmulQK::AccumulatorSharedStorage::Layout,
+          typename cutlass::MatrixShape<0, 0>>>::type;
+
   // See https://fburl.com/gsheet/l5bltspl
   // for an illustration of how smem is used
   struct SharedStoragePrologue {
@@ -630,13 +737,34 @@ struct AttentionBackwardKernel {
     union {
       struct {
         // p1 - after Q.K / dV / dO.V
-        typename MatmulQK::AccumulatorSharedStorage attn_shared_storage;
+        union {
+          // 1. efficient load of bias tile Bij, which is then applied to Pij
+          typename MatmulQK::BiasLoader::SmemTile bias;
+          // 4. store Pij. it is needed:
+          // - in dVj += (Pij.T * Zij) @ dOi
+          // - in dSij = Pij * (dPij - Di)
+          // 6. dVj += (Pij.T * Zij) @ dOi
+          // 10. write to fragment
+          typename MatmulQK::AccumulatorSharedStorage attn_shared_storage;
+        };
+        // 5. store Zij. it is needed:
+        // - to compute Pij_dropped = Pij * Zij on the fly as fragments of Pij
+        // are loaded for the computation of dVj.
+        // - to compute dPij = (dOi @ Vj.T) * Zij
+        // 6. used in dVj += (Pij.T * Zij) @ dOi
+        // 9. used in dPij = dPij_dropped * Zij
+        ZijSharedStorage zij;
 
         union {
+          // 2. prologue for dVj
+          // 6. workspace for dVj += (Pij.T * Zij) @ dOi
           typename MatmulGradV::Mma::SharedStorage mm_gradV;
+          // 7. dVj epilogue
           typename MatmulGradV::DefaultEpilogue::SharedStorage gradV_epilogue;
         };
 
+        // 3. prologue for dPij_dropped
+        // 8. used in dPij_dropped = dOi @ Vj.T
         typename MatmulDOIVJ::Mma::SharedStorage mm_doivj;
       } p1;
 
@@ -649,7 +777,11 @@ struct AttentionBackwardKernel {
         };
         typename MatmulGradK::Mma::SharedStorage mm_gradK; // (preload)
         typename MatmulGradQ::Mma::SharedStorage mm_gradQ; // (preload)
-        typename MatmulGradQ::DefaultEpilogue::SharedStorage gradQ_epilogue;
+        union {
+          // store dB = dSij to global memory
+          typename MatmulDOIVJ::BiasGradEpilogue::SharedStorage gradB_epilogue;
+          typename MatmulGradQ::DefaultEpilogue::SharedStorage gradQ_epilogue;
+        };
 
       } p2;
 
@@ -686,15 +818,19 @@ struct AttentionBackwardKernel {
       printf("  persistent: %db\n", FSZ(persistent));
       printf("    mm_qk_k: %db\n", FSZ(persistent.mm_qk_k));
       printf("  p1: %db\n", FSZ(p1));
+      printf("    bias: %db\n", FSZ(p1.bias));
       printf("    attn_shared_storage: %db\n", FSZ(p1.attn_shared_storage));
+      printf("    zij: %db\n", FSZ(p1.zij));
       printf("    mm_gradV: %db\n", FSZ(p1.mm_gradV));
       printf("    gradV_epilogue: %db\n", FSZ(p1.gradV_epilogue));
       printf("    mm_doivj: %db\n", FSZ(p1.mm_doivj));
       printf("  p2: %db\n", FSZ(p2));
+      printf("    tmpT_shared_storage: %db\n", FSZ(p2.tmpT_shared_storage));
+      printf("    tmp_shared_storage: %db\n", FSZ(p2.tmp_shared_storage));
       printf("    mm_gradK: %db\n", FSZ(p2.mm_gradK));
       printf("    mm_gradQ: %db\n", FSZ(p2.mm_gradQ));
+      printf("    gradB_epilogue: %db\n", FSZ(p2.gradB_epilogue));
       printf("    gradQ_epilogue: %db\n", FSZ(p2.gradQ_epilogue));
-      printf("    tmp_shared_storage: %db\n", FSZ(p2.tmp_shared_storage));
       printf("  p3: %db\n", FSZ(p3));
       printf("    tmpT_shared_storage: %db\n", FSZ(p3.tmpT_shared_storage));
       printf("  p4: %db\n", FSZ(p4));
@@ -710,12 +846,15 @@ struct AttentionBackwardKernel {
 
     FIELD(persistent, di)
     FIELD(persistent, mm_qk_k)
+    FIELD(p1, bias)
     FIELD(p1, attn_shared_storage)
+    FIELD(p1, zij)
     FIELD(p1, mm_gradV)
     FIELD(p1, gradV_epilogue)
     FIELD(p1, mm_doivj)
     FIELD(p2, mm_gradK)
     FIELD(p2, mm_gradQ)
+    FIELD(p2, gradB_epilogue)
     FIELD(p2, gradQ_epilogue)
     FIELD(p2, tmp_shared_storage)
     FIELD(p3, tmpT_shared_storage)
@@ -739,7 +878,21 @@ struct AttentionBackwardKernel {
 
       struct {
         // p2 - compute gradV
-        typename MatmulQK::AccumulatorSharedStorage attn_shared_storage;
+        union {
+          // 1. efficient load of bias tile Bij, which is then applied to Pij
+          typename MatmulQK::BiasLoader::SmemTile bias;
+          // 2. store Pij to shared memory. it is needed:
+          // - in this step, where it is used in dVj += (Pij.T * Zij) @ dOi
+          // - in next step where it is used in dSij = Pij * (dPij - Di)
+          typename MatmulQK::AccumulatorSharedStorage attn_shared_storage;
+        };
+        // 3. store Zij. it is needed:
+        // - in this step, where it is used to compute Pij_dropped = Pij * Zij
+        // on the
+        //   fly as fragments of Pij are loaded for the computation of dVj.
+        // - later to compute dPij = (dOi @ Vj.T) * Zij
+        ZijSharedStorage zij;
+
         union {
           typename MatmulGradV::Mma::SharedStorage mm_gradV;
           typename MatmulGradV::DefaultEpilogue::SharedStorage gradV_epilogue;
@@ -748,9 +901,20 @@ struct AttentionBackwardKernel {
 
       struct {
         // p3 - DO.V matmul
-        typename MatmulQK::AccumulatorSharedStorage
-            attn_shared_storage; // (from p2)
-        typename MatmulDOIVJ::Mma::SharedStorage mm_doivj;
+        union {
+          // first compute dPij = (dOi @ Vj.T) * Zij
+          // and dSij = Pij * (dPij - Di)
+          struct {
+            // (from p2) - Pij for computing dSij = Pij * (dPij - Di)
+            typename MatmulQK::AccumulatorSharedStorage attn_shared_storage;
+            // (from p2) - Zij for computing dPij = dPij_dropped * Zij
+            ZijSharedStorage zij;
+            // matmul to compute dOiVj
+            typename MatmulDOIVJ::Mma::SharedStorage mm_doivj;
+          };
+          // then store dB = dSij to global memory
+          typename MatmulDOIVJ::BiasGradEpilogue::SharedStorage gradB_epilogue;
+        };
       } p3;
 
       struct {
@@ -805,10 +969,13 @@ struct AttentionBackwardKernel {
     FIELD(persistent, di)
     FIELD(p1, mm_qk_k)
     FIELD(p1, mm_qk_q)
+    FIELD(p2, bias)
     FIELD(p2, attn_shared_storage)
+    FIELD(p2, zij)
     FIELD(p2, mm_gradV)
     FIELD(p2, gradV_epilogue)
     FIELD(p3, mm_doivj)
+    FIELD(p3, gradB_epilogue)
     FIELD(p4, tmpT_shared_storage)
     FIELD(p4, tmp_shared_storage)
     FIELD(p4, mm_gradQ)
@@ -878,6 +1045,25 @@ struct AttentionBackwardKernel {
     }
 
     OutputFragments output_frags;
+
+    curandStatePhilox4_32_10_t rng_state_init;
+    if (kApplyDropout) {
+      auto seeds = at::cuda::philox::unpack(p.rng_engine_inputs);
+      // each element of the attention matrix P with shape
+      // (batch_sz, n_heads, n_queries, n_keys) is associated with a single
+      // offset in RNG sequence. we initialize the RNG state with offset that
+      // starts at the beginning of a (n_queries, n_keys) matrix for this
+      // block's batch_id and head_id
+      // initializing rng state is very expensive, so we run once per kernel,
+      // rather than once per iteration. each iteration takes a copy of the
+      // initialized RNG state and offsets it as needed.
+      curand_init(
+          std::get<0>(seeds),
+          0,
+          std::get<1>(seeds) + p.dropout_batch_head_rng_offset,
+          &rng_state_init);
+    }
+
     int32_t key_start = 0;
     int32_t key_end = p.num_keys / kBlockSizeJ * kBlockSizeJ;
     for (; key_start < key_end; key_start += kBlockSizeJ) {
@@ -887,12 +1073,22 @@ struct AttentionBackwardKernel {
           (p.num_queries - query_start) / kBlockSizeI * kBlockSizeI;
       for (; query_start < query_end; query_start += kBlockSizeI) {
         processBlockIJ<true>(
-            shared_storage, output_frags, p, query_start, key_start);
+            shared_storage,
+            output_frags,
+            p,
+            query_start,
+            key_start,
+            rng_state_init);
       }
       // last (partial) query
       if (query_start < p.num_queries) {
         processBlockIJ<false>(
-            shared_storage, output_frags, p, query_start, key_start);
+            shared_storage,
+            output_frags,
+            p,
+            query_start,
+            key_start,
+            rng_state_init);
       }
       if (kOutputInRF) {
         writeFragsToGmem<true>(shared_storage, output_frags, p, key_start);
@@ -906,7 +1102,12 @@ struct AttentionBackwardKernel {
            query_start < p.num_queries;
            query_start += kBlockSizeI) {
         processBlockIJ<false>(
-            shared_storage, output_frags, p, query_start, key_start);
+            shared_storage,
+            output_frags,
+            p,
+            query_start,
+            key_start,
+            rng_state_init);
       }
       if (kOutputInRF) {
         writeFragsToGmem<false>(shared_storage, output_frags, p, key_start);
@@ -934,7 +1135,8 @@ struct AttentionBackwardKernel {
       OutputFragments& output_frags,
       Params const& p,
       int32_t query_start,
-      int32_t key_start) {
+      int32_t key_start,
+      const curandStatePhilox4_32_10_t& curand_state_init) {
     cutlass::MatrixCoord no_offset{0, 0};
     accum_t scale = p.scale;
     int16_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
@@ -1070,6 +1272,39 @@ struct AttentionBackwardKernel {
       auto output_tile_coords = cutlass::MatrixCoord{
           warp_idx_mn_0 % Mma::Base::WarpCount::kM,
           warp_idx_mn_0 / Mma::Base::WarpCount::kM};
+
+      // apply bias if applicable
+      if (p.bias_ptr != nullptr) {
+        // load bias tile Bij into shared memory
+        typename MatmulQK::BiasLoader::GmemTileIterator bias_iter(
+            {cutlass::layout::RowMajor(p.bias_strideM)},
+            p.bias_ptr + query_start * p.bias_strideM + key_start,
+            {num_queries_in_block, num_keys_in_block},
+            thread_id);
+        cutlass::TensorRef<scalar_t, cutlass::layout::RowMajor> bias_tensor_ref(
+            shared_storage.bias().data(),
+            cutlass::layout::RowMajor(MatmulQK::ThreadblockShape::kM));
+        typename MatmulQK::BiasLoader::SmemTileIterator smem_tile_iter(
+            bias_tensor_ref, thread_id);
+        MatmulQK::BiasLoader::load(bias_iter, smem_tile_iter);
+
+        // Pij += Bij, where Pij is in register fragment and Bij is in shmem
+        auto lane_offset = MatmulQK::ScalingCoefsUpdater::get_lane_offset(
+            lane_id, warp_id, output_tile_coords);
+        MatmulQK::ScalingCoefsUpdater::iterateRows(
+            lane_offset,
+            [&](int accum_n) {},
+            [&](int accum_m, int accum_n, int idx) {
+              // remember we are transposed
+              if (skipBoundsChecks ||
+                  (accum_n < num_queries_in_block &&
+                   accum_m < num_keys_in_block)) {
+                accum[idx] += bias_tensor_ref.at({accum_n, accum_m});
+              }
+            },
+            [&](int accum_n) {});
+      }
+
       // Apply mask
       if (p.causal) {
         auto lane_offset = MatmulQK::ScalingCoefsUpdater::get_lane_offset(
@@ -1102,6 +1337,59 @@ struct AttentionBackwardKernel {
           warp_id,
           lane_id,
           output_tile_coords);
+
+      // if we are using dropout, compute Zij, writing it to shared memory.
+      // each element of Zij is:
+      // - 0 with probability dropout_p
+      // - 1 / (1 - dropout_p) with probability 1 - dropout_p
+      if (kApplyDropout) {
+        auto zij = shared_storage.zij().accum_ref();
+        // each thread generates a contiguous sequence of elements in Zij, all
+        // in the same row. the reason they have to come from the same row is
+        // that sampling random numbers from a contiguous random number sequence
+        // is much more efficient than jumping around, and the linear offset of
+        // each element of Z (the global matrix) maps to an offset in a random
+        // number sequence. for Z, the end of a row and the beginning of the
+        // next have adjacent offsets, but for Zij (tile of global matrix), this
+        // is not necessarily the case.
+        const int num_threads = blockDim.x * blockDim.y * blockDim.z;
+        const int threads_per_row = cutlass::fast_min(
+            num_threads / num_queries_in_block, num_keys_in_block);
+        const int elts_per_thread = cutlass::round_nearest(
+            cutlass::ceil_div(num_keys_in_block, threads_per_row), 4);
+
+        const int thread_i = thread_id / threads_per_row;
+        const int thread_start_j =
+            (thread_id % threads_per_row) * elts_per_thread;
+
+        if (thread_i < num_queries_in_block &&
+            thread_start_j < num_keys_in_block) {
+          curandStatePhilox4_32_10_t curand_state = curand_state_init;
+          skipahead(
+              (query_start + thread_i) * p.num_keys +
+                  (key_start + thread_start_j),
+              &curand_state);
+          const float dropout_scale = 1.0 / (1.0 - p.dropout_prob);
+
+          // generate elements of Zij, 4 elements at a time
+          for (int zij_start_col_idx = thread_start_j; zij_start_col_idx <
+               cutlass::fast_min(thread_start_j + elts_per_thread,
+                                 num_keys_in_block);
+               zij_start_col_idx += 4) {
+            const float4 rand_uniform_quad = curand_uniform4(&curand_state);
+
+            CUTLASS_PRAGMA_UNROLL
+            for (int quad_idx = 0; quad_idx < 4; ++quad_idx) {
+              // we'll write Zij transposed since attention is also transposed
+              // during the matmul to compute dV.
+              zij.at({zij_start_col_idx + quad_idx, thread_i}) =
+                  static_cast<scalar_t>(
+                      dropout_scale *
+                      ((&rand_uniform_quad.x)[quad_idx] > p.dropout_prob));
+            }
+          }
+        }
+      }
       __syncthreads();
     }
 
@@ -1131,13 +1419,20 @@ struct AttentionBackwardKernel {
           thread_id,
           no_offset);
 
+      // if dropout: dVj += (Pij.T * Zij) @ dOi
+      // otherwise:  dVj += Pij.T @ dOi
       Mma mma(
           shared_storage.mm_gradV(),
-          shared_storage.attn_shared_storage(),
+          // operand A: Pij
+          typename MatmulGradV::WarpIteratorA(
+              shared_storage.attn_shared_storage().accum_ref(), lane_id),
+          // if we're using dropout, operand A is Pij_dropped = Pij * Zij
+          // which is computed on the fly as fragments of Pij are loaded in
+          typename Mma::WarpIteratorAScale(
+              shared_storage.zij().accum_ref(), lane_id),
           thread_id,
           warp_id,
-          lane_id,
-          problem_size.k());
+          lane_id);
 
       int storage_id = col / MatmulGradV::ThreadblockShape::kN;
       AccumTileGmem gmem_tile{
@@ -1234,10 +1529,33 @@ struct AttentionBackwardKernel {
       {
         using RegistersIter = typename DefaultAttentionScalingCoefsUpdater<
             typename Mma::Operator::IteratorC,
-            typename MatmulDOIVJ::DefaultMma::MmaCore::ElementC,
+            typename MatmulDOIVJ::ElementAccum,
             kWarpSize>::Updater;
         auto lane_offset = RegistersIter::get_lane_offset(
             lane_id, warp_id, output_tile_coords);
+
+        // if dropout was used, compute dPij = dPij_dropped * Zij
+        // Zij was written to shared memory earlier, and the elementwise
+        // multiplication occurs on a fragment of dPij_dropped
+        if (kApplyDropout) {
+          const auto zij = shared_storage.zij().accum_ref();
+
+          RegistersIter::iterateRows(
+              lane_offset,
+              [&](int accum_m) {},
+              [&](int accum_m, int accum_n, int idx) {
+                const int global_query_idx = query_start + accum_m;
+                const int global_key_idx = key_start + accum_n;
+
+                if (skipBoundsChecks ||
+                    (global_query_idx < p.num_queries &&
+                     global_key_idx < p.num_keys)) {
+                  accum[idx] *= zij.at({accum_n, accum_m});
+                }
+              },
+              [&](int accum_m) {});
+        }
+
         auto attn_T = shared_storage.attn_shared_storage().accum_ref();
         accum_t current_di;
         typename Mma::FragmentC fragment_attn, fragment_di;
@@ -1259,7 +1577,35 @@ struct AttentionBackwardKernel {
             [&](int accum_m) {
 
             });
-        accum = (accum - fragment_di) * fragment_attn * scale;
+        // dSij = (dPij - Di) * Pij
+        accum = (accum - fragment_di) * fragment_attn;
+
+        // store bias gradient tile dBij to global memory,
+        // where dBij = dSij = Pij * (dPij - Di)
+        if (p.grad_bias_ptr != nullptr) {
+          typename MatmulDOIVJ::BiasGradEpilogue::OutputTileIterator
+              output_iter(
+                  typename MatmulDOIVJ::BiasGradEpilogue::OutputTileIterator::
+                      Params{p.gB_strideM},
+                  // grad_bias_ptr is offset to point at beginning of
+                  // matrix of shape (queries, keys) for a given
+                  // (batch_id, head_id) the pointer arithmetic here produces
+                  // a pointer to the start of the current tile within that
+                  // matrix
+                  p.grad_bias_ptr + query_start * p.gB_strideM + key_start,
+                  {num_queries_in_block, num_keys_in_block},
+                  thread_id);
+
+          // no-op epilogue operator - just casting and storing contents of
+          // accum to global memory
+          typename MatmulDOIVJ::BiasGradEpilogue::OutputOp output_op({1, 1});
+          typename MatmulDOIVJ::BiasGradEpilogue epilogue(
+              shared_storage.gradB_epilogue(), thread_id, warp_id, lane_id);
+          epilogue(output_op, output_iter, accum, output_iter);
+        }
+
+        accum = accum * scale;
+
         __syncthreads();
         if (!MatmulGradK::DefaultMmaFromSmem::kIsTransposedA) {
           auto tmpT = shared_storage.tmpT_shared_storage().accum_ref();

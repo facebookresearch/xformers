@@ -612,7 +612,7 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
     )
 
     _out, lse = xformers.ops.memory_efficient_attention_forward_requires_grad(
-        query, key, value
+        query, key, value, op=op
     )
     ref_lse = ((query.float() / k**0.5) @ key.float().transpose(-2, -1)).logsumexp(-1)
 
@@ -621,7 +621,13 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
 
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize(
-    "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
+    "attn_bias_cfg",  # (type(bias), bias.requires_grad)
+    [
+        (None, False),
+        (xformers.ops.LowerTriangularMask, False),
+        (torch.Tensor, True),
+        (torch.Tensor, False),
+    ],
 )
 @pytest.mark.parametrize("grad_out_contiguous", [False, True])
 @pytest.mark.parametrize(
@@ -632,9 +638,10 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
 def test_backward(
     op_device_dtype_B_Mq_Mkv_H_K_Kv,
     grad_out_contiguous,
-    attn_bias_type,
+    attn_bias_cfg,
     fmt,
 ):
+    attn_bias_type, attn_bias_requires_grad = attn_bias_cfg
     (
         op_bw,
         device,
@@ -651,9 +658,13 @@ def test_backward(
         attn_bias_type=attn_bias_type,
         fmt=fmt,
     )
-    op_fw = sample_random_supported_fw(
-        fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias),
-        seed=q_len * kv + kv_len * k,
+    op_fw = (
+        sample_random_supported_fw(
+            fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias),
+            seed=q_len * kv + kv_len * k,
+        )
+        if op_bw != fmha.cutlass.BwOp
+        else fmha.cutlass.FwOp
     )
     qkv = None
 
@@ -671,6 +682,11 @@ def test_backward(
     query.requires_grad_(True)
     key.requires_grad_(True)
     value.requires_grad_(True)
+    if isinstance(attn_bias, torch.Tensor):
+        attn_bias.requires_grad_(attn_bias_requires_grad)
+
+    if not op_bw.supports(fmha.Inputs(query, key, value, attn_bias)):
+        pytest.skip("inputs not supported")
 
     out = xformers.ops.memory_efficient_attention(
         query, key, value, attn_bias, op=(op_fw, op_bw)
@@ -697,6 +713,9 @@ def test_backward(
     else:
         grads = [qkv.grad]
         qkv.grad = None
+    if attn_bias_requires_grad:
+        grads.append(attn_bias.grad)
+        attn_bias.grad = None
 
     ref = ref_attention(query, key, value, attn_bias)
     ref.backward(grad_out)
@@ -718,6 +737,12 @@ def test_backward(
         assert isinstance(qkv.grad, torch.Tensor)
         grads_ref = [qkv.grad]
         grads_name = ["qkv"]
+
+    if attn_bias_requires_grad:
+        assert isinstance(attn_bias.grad, torch.Tensor)
+        grads_ref.append(attn_bias.grad)
+        grads_name.append("bias")
+
     del query
     del key
     del value
@@ -760,6 +785,19 @@ def _vec_binom_test(x, n, p):
     return pval
 
 
+def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
+    if op == fmha.cutlass.FwOp:
+        mask = torch.empty((batch_size, 1, q_len, kv_len), device=device)
+        rand_uniform = torch.ops.xformers._cutlass_rand_uniform(p, mask)
+        mask = (rand_uniform > p).to(torch.float32)
+        mask = mask.reshape(batch_size, q_len, kv_len)
+    else:
+        mask = torch.empty((batch_size, q_len, kv_len), device=device)
+        mask = torch.ops.xformers._temp_dropout(mask, p)
+
+    return mask
+
+
 @cuda_only
 @pytest.mark.parametrize("seed", [42, 124])
 @pytest.mark.parametrize("p", [0.3, 0.7])
@@ -767,42 +805,44 @@ def _vec_binom_test(x, n, p):
 @pytest.mark.parametrize("batch_size", [1, 2])
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
 @pytest.mark.parametrize("q_len", [2, 33])
-@pytest.mark.parametrize("device", ["cuda"])
-def test_dropout(device, q_len, kv_len, batch_size, k_len, p, seed):
+@pytest.mark.parametrize("op", ALL_FW_OPS, ids=list(map(lambda t: t.NAME, ALL_FW_OPS)))
+def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed):
+    device = "cuda"
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
     value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
 
     attn_bias = None
-    op = (fmha.small_k.FwOp, None)
+
+    inputs_for_support_check = fmha.Inputs(query, key, value, attn_bias, p, None)
+    if not op.supports(inputs_for_support_check):
+        del query, key, value, attn_bias
+        pytest.skip(f"{op.NAME}: unsupported input")
 
     torch.manual_seed(seed)
     out = xformers.ops.memory_efficient_attention(
-        query, key, value, attn_bias, p, op=op
+        query, key, value, attn_bias, p, op=(op, None)
     )
 
     torch.manual_seed(seed)
     out2 = xformers.ops.memory_efficient_attention(
-        query, key, value, attn_bias, p, op=op
+        query, key, value, attn_bias, p, op=(op, None)
     )
 
     assert_allclose(out, out2)
 
-    mask = torch.empty((batch_size, q_len, kv_len), device=device)
-
     torch.manual_seed(seed)
-    mask = torch.ops.xformers._temp_dropout(mask, p)
-
+    mask = _get_drop_mask(op, batch_size, q_len, kv_len, p, device)
     ref = ref_attention(query, key, value, attn_bias, mask, p)
     assert_allclose(out, ref, atol=2e-4), f"{(out - ref).abs().max()}"
 
     num_trials = 1000
-    p_val_tol = 0.0001
+    p_val_tol = 1e-6
     keep_prob = 1 - p
     masks = []
     for i in range(num_trials):
-        mask = torch.ops.xformers._temp_dropout(mask, p)
+        mask = _get_drop_mask(op, batch_size, q_len, kv_len, p, device)
         masks.append(mask.clone().cpu())
     masks = torch.stack(masks, dim=0)
     p_value = binom_test(masks.sum(), masks.numel(), p=keep_prob)
@@ -845,10 +885,8 @@ def _test_dropout_backward(q_len, kv_len, batch_size, k_len, p, op, dtype):
     key.grad = None
     value.grad = None
 
-    mask = torch.empty((batch_size, q_len, kv_len), device=device)
-
     torch.manual_seed(seed)
-    mask = torch.ops.xformers._temp_dropout(mask, p)
+    mask = _get_drop_mask(op, batch_size, q_len, kv_len, p, device)
 
     ref = ref_attention(query, key, value, None, mask, p)
     ref.backward(grad_out)
@@ -883,6 +921,18 @@ def test_dropout_backward_small_k(q_len, kv_len, batch_size, k_len, p):
 def test_dropout_backward_flash(q_len, kv_len, batch_size, k_len, p):
     _test_dropout_backward(
         q_len, kv_len, batch_size, k_len, p, op=fmha.flash.FwOp, dtype=torch.float16
+    )
+
+
+@cuda_only
+@pytest.mark.parametrize("p", [0.3, 0.7])
+@pytest.mark.parametrize("k_len", [16, 32])
+@pytest.mark.parametrize("batch_size", [1, 2])
+@pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
+@pytest.mark.parametrize("q_len", [2, 33])
+def test_dropout_backward_cutlass(q_len, kv_len, batch_size, k_len, p):
+    _test_dropout_backward(
+        q_len, kv_len, batch_size, k_len, p, op=fmha.cutlass.FwOp, dtype=torch.float16
     )
 
 

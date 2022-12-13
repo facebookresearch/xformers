@@ -17,11 +17,13 @@ TORCH_LIBRARY_FRAGMENT(xformers, m) {
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention(Tensor query, Tensor key, Tensor value, bool compute_logsumexp, Tensor? attn_bias, float p) -> (Tensor, Tensor, int, int)"));
   m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::efficient_attention_forward_cutlass(Tensor query, Tensor key, Tensor value, Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, int? max_seqlen_q, bool compute_logsumexp, bool causal, float? scale) -> (Tensor, Tensor)"));
+      "xformers::efficient_attention_forward_cutlass(Tensor query, Tensor key, Tensor value, Tensor? attn_bias, Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, int? max_seqlen_q, float dropout_p, bool compute_logsumexp, bool causal, float? scale) -> (Tensor, Tensor, int, int)"));
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor logsumexp, Tensor output, Tensor? attn_bias, float p, int rng_seed, int rng_offset) -> (Tensor, Tensor, Tensor)"));
   m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::efficient_attention_backward_cutlass(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor logsumexp, Tensor output, bool causal, float? scale) -> (Tensor, Tensor, Tensor)"));
+      "xformers::efficient_attention_backward_cutlass(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor? bias, Tensor logsumexp, Tensor output, float dropout_p, int rng_seed, int rng_offset, bool causal, float? scale) -> (Tensor, Tensor, Tensor, Tensor)"));
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::_temp_dropout(Tensor out, float p) -> Tensor"));
+  m.def(TORCH_SELECTIVE_SCHEMA(
+      "xformers::_cutlass_rand_uniform(float p, Tensor out) -> Tensor"));
 }

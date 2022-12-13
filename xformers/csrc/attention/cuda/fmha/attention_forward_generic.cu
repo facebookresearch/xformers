@@ -1,10 +1,18 @@
+#include <cmath>
+#include <mutex>
+
 #include <ATen/ScalarOps.h>
 #include <ATen/Tensor.h>
+#include <ATen/core/Generator.h>
 #include <ATen/cuda/CUDAContext.h>
+#include <ATen/cuda/CUDAGeneratorImpl.h>
 #include <c10/cuda/CUDAGuard.h>
+#include <c10/util/Optional.h>
 #include <torch/library.h>
+#include <ATen/cuda/CUDAGraphsUtils.cuh>
 
 #include "kernel_forward.h"
+#include "pytorch_utils.h"
 
 #define DISPATCH_BLOCKSIZE(VALUE_HEAD_DIM, FN)        \
   {                                                   \
@@ -124,10 +132,12 @@ struct TypeTraits<float> {
   (Mode BMHK) With all the heads having the same seqlen
   (Mode 1MHK) `batch=1` with all tokens across batches concatenated
 */
-std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
+std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
+efficient_attention_forward_cutlass(
     const at::Tensor& query, // [b, seqlen, num_heads, K]
     const at::Tensor& key, // [b, seqlen, num_heads, K]
     const at::Tensor& value, // [b, seqlen, num_heads, Kv]
+    const c10::optional<at::Tensor>& bias, // [b, num_heads, seqlen, seqlen]
     // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
     // position of the first query token for batch $b
     const c10::optional<at::Tensor>& cu_seqlens_q,
@@ -136,6 +146,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     const c10::optional<at::Tensor>& cu_seqlens_k,
     // (Mode 1MHK only) Maximum sequence length across batches
     const c10::optional<int64_t> max_seqlen_q_,
+    double dropout_p, // attention matrix dropout probability
     bool compute_logsumexp,
     bool causal,
     c10::optional<double> scale) {
@@ -196,6 +207,19 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
 
   at::Tensor res;
   at::Tensor logsumexp;
+
+  const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
+  at::PhiloxCudaState rng_engine_inputs;
+  if (use_dropout) {
+    at::CUDAGeneratorImpl* gen =
+        at::get_generator_or_default<at::CUDAGeneratorImpl>(
+            c10::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
+
+    std::lock_guard<std::mutex> lock(gen->mutex_);
+    // if using dropout, we produce 1 random number for each element of the
+    // attention tensor
+    rng_engine_inputs = gen->philox_cuda_state(B * num_heads * M * N);
+  }
 
   auto launchKernel = [&](auto _k, int computeCapability) {
     using Kernel = decltype(_k);
@@ -264,6 +288,25 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     ASSIGN_CHECK_OVERFLOW(p.k_strideH, key.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.v_strideH, value.stride(2));
 
+    if (bias.has_value()) {
+      CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
+      p.attn_bias_ptr = (scalar_t*)bias->data_ptr();
+
+      // assign strides for bias, viewed as
+      // (batch_sz, n_heads, n_queries, n_keys)
+      const at::Tensor bias_4d_view =
+          get_bias_4d_view(*bias, B, num_heads, M, N);
+      ASSIGN_CHECK_OVERFLOW(p.bias_strideB, bias_4d_view.stride(0));
+      ASSIGN_CHECK_OVERFLOW(p.bias_strideH, bias_4d_view.stride(1));
+      ASSIGN_CHECK_OVERFLOW(p.bias_strideM, bias_4d_view.stride(2));
+    }
+
+    p.use_dropout = use_dropout;
+    if (p.use_dropout) {
+      p.rng_engine_inputs = rng_engine_inputs;
+      p.dropout_prob = dropout_p;
+    }
+
     constexpr auto kernel_fn = attention_kernel_batched<Kernel>;
     size_t smem_bytes = sizeof(typename Kernel::SharedStorage);
     if (smem_bytes > 0xc000) {
@@ -282,7 +325,16 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
                   }));
 
   AT_CUDA_CHECK(cudaGetLastError());
-  return std::make_tuple(res, logsumexp);
+
+  // uint64_t -> int64_t bitwise casting as PyTorch don't support uint64_t
+  // so just fake it as a int64_t
+  int64_t seed, offset;
+  if (use_dropout) {
+    std::memcpy(&seed, &rng_engine_inputs.seed_, sizeof(seed));
+    std::memcpy(&offset, &rng_engine_inputs.offset_.val, sizeof(offset));
+  }
+
+  return std::make_tuple(res, logsumexp, seed, offset);
 #endif
 }
 } // namespace

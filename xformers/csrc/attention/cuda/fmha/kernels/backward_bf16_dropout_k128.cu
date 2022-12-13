@@ -3,22 +3,22 @@
 #include "../kernel_backward.h"
 INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM50(
     cutlass::bfloat16_t,
-    true,
     false,
-    64);
+    true,
+    128);
 INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM70(
     cutlass::bfloat16_t,
-    true,
     false,
-    64);
+    true,
+    128);
 INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM75(
     cutlass::bfloat16_t,
-    true,
     false,
-    64);
+    true,
+    128);
 INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM80(
     cutlass::bfloat16_t,
-    true,
     false,
-    64);
+    true,
+    128);
 #endif

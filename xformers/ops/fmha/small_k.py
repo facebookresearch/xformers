@@ -115,6 +115,8 @@ class BwOp(AttentionBwOpBase):
 
     @classmethod
     def supports(cls, d: "Inputs") -> bool:
+        if not super().supports(d):
+            return False
         return FwOp.supports(d)
 
     @classmethod

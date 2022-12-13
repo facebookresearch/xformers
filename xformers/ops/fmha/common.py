@@ -143,6 +143,10 @@ class Context:
     out: torch.Tensor
     op_bw: Optional[Type["AttentionBwOpBase"]] = None
     rng_state: Optional[torch.Tensor] = None
+    # used for cutlass backward with dropout
+    rng_seed: Optional[int] = None
+    # used for cutlass backward with dropout
+    rng_offset: Optional[int] = None
 
     def get_padded_lse(self, pad_to: int, force_pad_inf: bool = False) -> torch.Tensor:
         pad_amount = (pad_to - (self.lse.shape[2] % pad_to)) % pad_to
@@ -162,6 +166,8 @@ class Gradients:
     dq: torch.Tensor
     dk: torch.Tensor
     dv: torch.Tensor
+    # bias gradient. None if there is no tensor bias or if it doesn't require grad
+    db: Optional[torch.Tensor] = None
 
 
 class AttentionOpBase:
@@ -267,6 +273,20 @@ class AttentionBwOpBase(AttentionOpBase):
         torch.half: 2e-2,
         torch.bfloat16: 0.1,
     }
+    SUPPORTS_ATTN_BIAS_GRAD = False
+
+    @classmethod
+    def supports(cls, d: Inputs) -> bool:
+        if not super(AttentionBwOpBase, cls).supports(d):
+            return False
+        if (
+            isinstance(d.attn_bias, torch.Tensor)
+            and d.attn_bias.requires_grad
+            and not cls.SUPPORTS_ATTN_BIAS_GRAD
+        ):
+            return False
+
+        return True
 
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:

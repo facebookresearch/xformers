@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+## [0.0.15] - 2022-12-13
+### Fixed
+
+### Added
+- Added tensor attn bias support to CUTLASS FlashAttention
+- Added tensor attn bias grad support to CUTLASS FlashAttention
+- Added dropout support to CUTLASS FlashAttention
+
 ## [0.0.12] - 2022-08-08
 ### Fixed
 - Removed duplicated biases in the FusedMLP layers [#317]
