@@ -500,6 +500,10 @@ def test_tensor_with_seqlen() -> None:
     assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
     assert q.device.type == "cuda"
     assert q.cu_seqlen.device.type == "cuda"
+    a, b, c = fmha.split_batches(q, dim=1)
+    assert a.shape[:2] == queries[0].shape[:2]
+    assert b.shape[:2] == queries[1].shape[:2]
+    assert c.shape[:2] == queries[2].shape[:2]
 
 
 @pytest.mark.parametrize("k_len", [5, 6, 32])

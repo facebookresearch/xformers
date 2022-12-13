@@ -5,7 +5,7 @@
 
 import copy
 import itertools
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence
 
 import torch
 
@@ -16,8 +16,10 @@ def _copy_seqlen_info(
     dst.max_seqlen = src.max_seqlen
     if deepcopy:
         dst.cu_seqlen = copy.deepcopy(src.cu_seqlen)
+        dst.cu_seqlen_py = copy.deepcopy(src.cu_seqlen_py)
     else:
         dst.cu_seqlen = src.cu_seqlen
+        dst.cu_seqlen_py = src.cu_seqlen_py
         if dst.device != dst.cu_seqlen.device:
             dst.cu_seqlen = dst.cu_seqlen.to(dst.device)
 
@@ -39,10 +41,12 @@ def _find_arg_to_copy_metadata(cls, func, args, kwargs) -> Optional["TensorWithS
 class TensorWithSeqLen(torch.Tensor):
     max_seqlen: int
     cu_seqlen: torch.Tensor
+    cu_seqlen_py: Sequence[int]
 
     def __new__(cls, data):
         t = torch.Tensor._make_subclass(cls, data)
         t.cu_seqlen = None
+        t.cu_seqlen_py = []
         t.max_seqlen = -1
         t.extra_state = {
             "last_func_called": "new",
@@ -84,5 +88,20 @@ def cat_with_offsets(tensors: Sequence[torch.Tensor], dim: int = 0) -> torch.Ten
         max_seqlen = max(max_seqlen, seqlen)
         cu_seqlen.append(cu_seqlen[len(cu_seqlen) - 1] + seqlen)
     c.cu_seqlen = torch.tensor(cu_seqlen, dtype=torch.int32, device=tensors[0].device)
+    c.cu_seqlen_py = cu_seqlen
     c.max_seqlen = max_seqlen
     return c
+
+
+def split_batches(x: torch.Tensor, dim: int) -> List[torch.Tensor]:
+    assert isinstance(x, TensorWithSeqLen)
+    if x.cu_seqlen_py[-1] != x.shape[dim]:
+        raise ValueError(
+            f"Invalid `TensorWithSeqLen` of shape {x.shape}.\n"
+            " cu_seqlen: {x.cu_seqlen_py}"
+        )
+    out = []
+    for begin, end in zip(x.cu_seqlen_py, x.cu_seqlen_py[1:]):
+        s = x[(slice(None),) * dim + (slice(begin, end),)]
+        out.append(s)
+    return out
