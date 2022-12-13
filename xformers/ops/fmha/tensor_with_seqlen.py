@@ -78,31 +78,33 @@ class TensorWithSeqLen(torch.Tensor):
         _copy_seqlen_info(out, self)
         return out
 
-
-def cat_with_offsets(tensors: Sequence[torch.Tensor], dim: int = 0) -> torch.Tensor:
-    c = TensorWithSeqLen(torch.cat(tuple(tensors), dim=dim))
-    cu_seqlen = [0]
-    max_seqlen = -1
-    for tensor in tensors:
-        assert not isinstance(tensor, TensorWithSeqLen)
-        seqlen = tensor.shape[dim]
-        max_seqlen = max(max_seqlen, seqlen)
-        cu_seqlen.append(cu_seqlen[len(cu_seqlen) - 1] + seqlen)
-    c.cu_seqlen = torch.tensor(cu_seqlen, dtype=torch.int32, device=tensors[0].device)
-    c.cu_seqlen_py = cu_seqlen
-    c.max_seqlen = max_seqlen
-    return c
-
-
-def split_batches(x: torch.Tensor, dim: int) -> List[torch.Tensor]:
-    assert isinstance(x, TensorWithSeqLen)
-    if x.cu_seqlen_py[-1] != x.shape[dim]:
-        raise ValueError(
-            f"Invalid `TensorWithSeqLen` of shape {x.shape}.\n"
-            " cu_seqlen: {x.cu_seqlen_py}"
+    @classmethod
+    def from_tensor_list(
+        cls, tensors: Sequence[torch.Tensor], dim: int = 0
+    ) -> torch.Tensor:
+        c = cls(torch.cat(tuple(tensors), dim=dim))
+        cu_seqlen = [0]
+        max_seqlen = -1
+        for tensor in tensors:
+            assert not isinstance(tensor, TensorWithSeqLen)
+            seqlen = tensor.shape[dim]
+            max_seqlen = max(max_seqlen, seqlen)
+            cu_seqlen.append(cu_seqlen[len(cu_seqlen) - 1] + seqlen)
+        c.cu_seqlen = torch.tensor(
+            cu_seqlen, dtype=torch.int32, device=tensors[0].device
         )
-    out = []
-    for begin, end in zip(x.cu_seqlen_py, x.cu_seqlen_py[1:]):
-        s = x[(slice(None),) * dim + (slice(begin, end),)]
-        out.append(s)
-    return out
+        c.cu_seqlen_py = cu_seqlen
+        c.max_seqlen = max_seqlen
+        return c
+
+    def to_tensor_list(self, dim: int) -> List[torch.Tensor]:
+        if self.cu_seqlen_py[-1] != self.shape[dim]:
+            raise ValueError(
+                f"Invalid `TensorWithSeqLen` of shape {self.shape}.\n"
+                f" cu_seqlen: {self.cu_seqlen_py}"
+            )
+        out = []
+        for begin, end in zip(self.cu_seqlen_py, self.cu_seqlen_py[1:]):
+            s = self[(slice(None),) * dim + (slice(begin, end),)]
+            out.append(s)
+        return out

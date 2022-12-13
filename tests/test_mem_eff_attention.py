@@ -377,9 +377,9 @@ class CuSeqlenInputs:
 
     def cat_qkv(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return (
-            fmha.cat_with_offsets(self.q, dim=1),
-            fmha.cat_with_offsets(self.k, dim=1),
-            fmha.cat_with_offsets(self.v, dim=1),
+            fmha.TensorWithSeqLen.from_tensor_list(self.q, dim=1),
+            fmha.TensorWithSeqLen.from_tensor_list(self.k, dim=1),
+            fmha.TensorWithSeqLen.from_tensor_list(self.v, dim=1),
         )
 
     @staticmethod
@@ -490,7 +490,7 @@ def test_tensor_with_seqlen() -> None:
         torch.randn([1, 4, H, K]),
         torch.randn([1, 1, H, K]),
     ]
-    q = fmha.cat_with_offsets(queries, dim=1)
+    q = fmha.TensorWithSeqLen.from_tensor_list(queries, dim=1)
     assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
     assert q.shape == (1, 7, H, K)
     assert q.device.type == "cpu"
@@ -500,7 +500,7 @@ def test_tensor_with_seqlen() -> None:
     assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
     assert q.device.type == "cuda"
     assert q.cu_seqlen.device.type == "cuda"
-    a, b, c = fmha.split_batches(q, dim=1)
+    a, b, c = q.to_tensor_list(dim=1)
     assert a.shape[:2] == queries[0].shape[:2]
     assert b.shape[:2] == queries[1].shape[:2]
     assert c.shape[:2] == queries[2].shape[:2]

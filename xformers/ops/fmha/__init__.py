@@ -22,7 +22,7 @@ from .common import (
     bmk2bmhk,
 )
 from .dispatch import _dispatch_bw, _dispatch_fw
-from .tensor_with_seqlen import cat_with_offsets, split_batches  # noqa
+from .tensor_with_seqlen import TensorWithSeqLen  # noqa
 
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
