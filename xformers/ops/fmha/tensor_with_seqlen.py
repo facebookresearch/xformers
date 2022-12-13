@@ -84,6 +84,7 @@ def cat_with_offsets(tensors: Sequence[torch.Tensor], dim: int = 0) -> torch.Ten
     cu_seqlen = [0]
     max_seqlen = -1
     for tensor in tensors:
+        assert not isinstance(tensor, TensorWithSeqLen)
         seqlen = tensor.shape[dim]
         max_seqlen = max(max_seqlen, seqlen)
         cu_seqlen.append(cu_seqlen[len(cu_seqlen) - 1] + seqlen)
