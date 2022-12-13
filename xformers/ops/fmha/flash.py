@@ -71,7 +71,7 @@ def _convert_input_format(
                 dtype=torch.int32,
                 device=query.device,
             )
-        max_seqlen_q = seqlen_kv
+        max_seqlen_q = seqlen_q
 
     # Initially we have `query.shape = [batch, seqlen, head_dim_q]`
     # We want format `[batch * seqlen, num_heads, head_dim_q]`
