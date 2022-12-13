@@ -54,7 +54,7 @@ class GlobalAttention(Attention):
 
         Args:
             dropout (float): probability of an element to be zeroed
-            attention_mask (torch.Tensor): if true, this query can attend to all the others
+            attention_query_mask (torch.Tensor): if true, this query can attend to all the others
 
         """
         super().__init__()

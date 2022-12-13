@@ -337,8 +337,6 @@ class VariableSparsityConfig(SparsityConfig):
                 of global_block_indices parameter, and combining this two parameters, for each index i,
                 blocks from global_block_indices[i] to global_block_end_indices[i] (exclusive) are
                 considered as global attention.
-             num_global_blocks: optional: an integer determining how many consecutive blocks in a local
-                window is used as the representative of the window for global attention.
              attention: optional: a string determining attention type. Attention can be `unidirectional`,
                 such as autoregressive models, in which tokens attend only to tokens appear before them
                 in the context. Considering that, the upper triangular of attention matrix is empty as
