@@ -76,11 +76,21 @@ def symlink_package(name: str, path: Path) -> None:
     cwd = Path(__file__).parent
     path_from = cwd / path
     path_to = os.path.join(cwd, *name.split("."))
+
+    # OSError: [WinError 1314] A required privilege is not held by the client
+    # Windows requires special permission to symlink. Fallback to copy
+    use_symlink = os.name != "nt"
     try:
-        os.remove(path_to)
+        if use_symlink:
+            os.remove(path_to)
+        else:
+            shutil.rmtree(path_to)
     except FileNotFoundError:
         pass
-    os.symlink(src=path_from, dst=path_to)
+    if use_symlink:
+        os.symlink(src=path_from, dst=path_to)
+    else:
+        shutil.copytree(src=path_from, dst=path_to)
 
 
 def get_cuda_version(cuda_dir) -> int:
