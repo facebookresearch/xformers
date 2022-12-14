@@ -564,9 +564,22 @@
     <span class="c1"># LSE has shape [B, H, M] while query has shape [B, M, H, K]</span>
     <span class="k">if</span> <span class="p">(</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">3</span>
-        <span class="ow">or</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="c1"># Dim 0</span>
+        <span class="ow">or</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">TensorWithSeqLen</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="ow">or</span> <span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">TensorWithSeqLen</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">cu_seqlen</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="p">)</span>
+        <span class="c1"># Dim 1</span>
         <span class="ow">or</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
-        <span class="ow">or</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="c1"># Dim 2</span>
+        <span class="ow">or</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">TensorWithSeqLen</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="p">)</span>
     <span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
             <span class="s2">&quot;Input tensors have incompatible shapes.&quot;</span>
