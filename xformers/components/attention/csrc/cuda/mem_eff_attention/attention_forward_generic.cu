@@ -211,7 +211,7 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
     // not a good number for loading during backward
     constexpr decltype(M) kAlignLSE = Kernel::kAlignLSE;
     logsumexp = at::empty(
-        {B,
+        {cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B,
          num_heads,
          compute_logsumexp ? ceil_div(max_seqlen_q, kAlignLSE) * kAlignLSE : 0},
         query.options().dtype(at::ScalarType::Float));

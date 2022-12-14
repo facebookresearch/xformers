@@ -5,9 +5,10 @@
 
 import copy
 import itertools
-from typing import List, Optional, Sequence
+from typing import Any, List, Optional, Sequence
 
 import torch
+from torch.utils._pytree import tree_flatten
 
 
 def _copy_seqlen_info(
@@ -25,16 +26,20 @@ def _copy_seqlen_info(
 
 
 def _find_arg_to_copy_metadata(cls, func, args, kwargs) -> Optional["TensorWithSeqLen"]:
+    all_elements, _ = tree_flatten(args)
+    elements_kwargs: List[Any] = []
+    if kwargs is not None:
+        elements_kwargs, _ = tree_flatten(kwargs)
     first_cls = None
-    for a in itertools.chain(args, kwargs.values() if kwargs is not None else []):
-        if isinstance(a, cls):
+    for x in itertools.chain(all_elements, elements_kwargs):
+        if isinstance(x, cls):
             if first_cls is not None:
                 assert first_cls.cu_seqlen is not None
                 assert first_cls.max_seqlen > 0
-                assert first_cls.cu_seqlen.shape == a.cu_seqlen.shape, f"Op: {func}"
-                assert first_cls.max_seqlen == a.max_seqlen, f"Op: {func}"
-            first_cls = a
-    assert first_cls is not None, f"Op: {func}"
+                assert first_cls.cu_seqlen.shape == x.cu_seqlen.shape, f"Op: {func}"
+                assert first_cls.max_seqlen == x.max_seqlen, f"Op: {func}"
+            first_cls = x
+    assert first_cls is not None, f"can't find TensorWithSeqLen argument for op: {func}"
     return first_cls
 
 
@@ -43,14 +48,17 @@ class TensorWithSeqLen(torch.Tensor):
     cu_seqlen: torch.Tensor
     cu_seqlen_py: Sequence[int]
 
-    def __new__(cls, data):
-        t = torch.Tensor._make_subclass(cls, data)
-        t.cu_seqlen = None
-        t.cu_seqlen_py = []
-        t.max_seqlen = -1
-        t.extra_state = {
-            "last_func_called": "new",
-        }
+    def __new__(
+        cls,
+        data: torch.Tensor,
+        max_seqlen: int,
+        cu_seqlen: torch.Tensor,
+        cu_seqlen_py: Sequence[int],
+    ):
+        t: TensorWithSeqLen = torch.Tensor._make_subclass(cls, data, require_grad=data.requires_grad)  # type: ignore
+        t.cu_seqlen_py = cu_seqlen_py
+        t.cu_seqlen = cu_seqlen
+        t.max_seqlen = max_seqlen
         return t
 
     @classmethod
@@ -74,7 +82,7 @@ class TensorWithSeqLen(torch.Tensor):
 
     # new_empty() must be defined for deepcopy to work
     def new_empty(self, *args, **kwargs):
-        out = type(self)(torch.empty(*args, **kwargs))
+        out = type(self)(torch.empty(*args, **kwargs), -1, None, [])
         _copy_seqlen_info(out, self)
         return out
 
@@ -82,7 +90,28 @@ class TensorWithSeqLen(torch.Tensor):
     def from_tensor_list(
         cls, tensors: Sequence[torch.Tensor], dim: int = 0
     ) -> torch.Tensor:
-        c = cls(torch.cat(tuple(tensors), dim=dim))
+        class FromTensorListOp(torch.autograd.Function):
+            @staticmethod
+            # type: ignore
+            def forward(
+                ctx, tensor: torch.Tensor, max_seqlen: int, cu_seqlen_py: Sequence[int]
+            ) -> "TensorWithSeqLen":
+                cu_seqlen = torch.tensor(
+                    cu_seqlen_py, dtype=torch.int32, device=tensor.device
+                )
+                return TensorWithSeqLen(
+                    tensor,
+                    max_seqlen=max_seqlen,
+                    cu_seqlen=cu_seqlen,
+                    cu_seqlen_py=cu_seqlen_py,
+                )
+
+            @staticmethod
+            @torch.autograd.function.once_differentiable
+            def backward(ctx, grad: torch.Tensor):
+                return grad, None, None
+
+        c = torch.cat(tuple(tensors), dim=dim)
         cu_seqlen = [0]
         max_seqlen = -1
         for tensor in tensors:
@@ -90,12 +119,7 @@ class TensorWithSeqLen(torch.Tensor):
             seqlen = tensor.shape[dim]
             max_seqlen = max(max_seqlen, seqlen)
             cu_seqlen.append(cu_seqlen[len(cu_seqlen) - 1] + seqlen)
-        c.cu_seqlen = torch.tensor(
-            cu_seqlen, dtype=torch.int32, device=tensors[0].device
-        )
-        c.cu_seqlen_py = cu_seqlen
-        c.max_seqlen = max_seqlen
-        return c
+        return FromTensorListOp.apply(c, max_seqlen, cu_seqlen)
 
     def to_tensor_list(self, dim: int) -> List[torch.Tensor]:
         if self.cu_seqlen_py[-1] != self.shape[dim]:

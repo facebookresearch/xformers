@@ -439,10 +439,21 @@ class CuSeqlenInputs:
 
 
 # Shapes with B>1
+# Needs to be supported by Flash as we use it for the BW
+def _make_empty_input(device, dtype, B, Mq, Mkv, H, K, Kv) -> fmha.Inputs:
+    return fmha.Inputs(
+        query=torch.empty([B, Mq, H, K], dtype=dtype, device=device),
+        key=torch.empty([B, Mkv, H, K], dtype=dtype, device=device),
+        value=torch.empty([B, Mkv, H, Kv], dtype=dtype, device=device),
+    )
+
+
 shapes_cu_seqlen = [
     (op, device, dtype, B, *other)
     for (op, device, dtype, B, *other) in _opFW_device_dtype_B_Mq_Mkv_H_K_Kv
-    if B > 1 and op.SUPPORTS_TENSOR_WITH_SEQLEN
+    if B > 1
+    and op.SUPPORTS_TENSOR_WITH_SEQLEN
+    and fmha.flash.BwOp.supports(_make_empty_input(device, dtype, B, *other))
 ]
 
 
@@ -453,7 +464,7 @@ shapes_cu_seqlen = [
     shapes_cu_seqlen,
     ids=_gen_ids(shapes_cu_seqlen),
 )
-def test_cu_seqlen_forward(
+def test_cu_seqlen(
     op_device_dtype_B_Mq_Mkv_H_K_Kv,
     attn_bias_type,
 ):
@@ -461,11 +472,20 @@ def test_cu_seqlen_forward(
     inputs = CuSeqlenInputs.generate(
         B_Mq_Mkv_H_K_Kv, attn_bias_type, dtype, device, op_fw
     )
+
+    for tensors in [inputs.q, inputs.k, inputs.v]:
+        for x in tensors:
+            x.requires_grad_()
     q, k, v = inputs.cat_qkv()
+    q.retain_grad()
+    k.retain_grad()
+    v.retain_grad()
     assert op_fw.supports(fmha.Inputs(q, k, v))
 
+    # Test forward
+    op_bw = fmha.flash.BwOp
     out = xformers.ops.memory_efficient_attention(
-        q, k, v, attn_bias=inputs.bias[0], op=(op_fw, None)
+        q, k, v, attn_bias=inputs.bias[0], op=(op_fw, op_bw)
     )
     # We should not copy the metadata, and ensure we reuse the one from query
     assert isinstance(out, fmha.tensor_with_seqlen.TensorWithSeqLen)
@@ -480,6 +500,30 @@ def test_cu_seqlen_forward(
         atol=op_fw.ERROR_ATOL[dtype],
         rtol=op_fw.ERROR_RTOL.get(dtype, 1e-5),
     )
+
+    # Test backward
+    grad = torch.randn_like(ref)
+    ref.backward(grad)
+    ref_grads = []
+    for tensors in [inputs.q, inputs.k, inputs.v]:
+        for x in tensors:
+            ref_grads.append(x.grad)
+            x.grad = None
+    out.backward(grad)
+    i = 0
+    for tensors, name in [(inputs.q, "q"), (inputs.k, "k"), (inputs.v, "v")]:
+        for sub_i, x in enumerate(tensors):
+            ref_grad = ref_grads[i]
+            assert x.grad is not None
+            i += 1
+            assert_allclose(
+                ref_grad.float(),
+                x.grad.float(),
+                f"{name}[{sub_i}].grad",
+                atol=op_bw.ERROR_ATOL[dtype],
+                rtol=op_bw.ERROR_RTOL[dtype],
+            )
+            x.grad = None
 
 
 @cuda_only
@@ -504,6 +548,27 @@ def test_tensor_with_seqlen() -> None:
     assert a.shape[:2] == queries[0].shape[:2]
     assert b.shape[:2] == queries[1].shape[:2]
     assert c.shape[:2] == queries[2].shape[:2]
+
+
+@cuda_only
+def test_tensor_with_seqlen_grad() -> None:
+    H, K = 16, 32
+    queries = [
+        torch.randn([1, 2, H, K]),
+        torch.randn([1, 4, H, K]),
+        torch.randn([1, 1, H, K]),
+    ]
+    for q in queries:
+        q.requires_grad_()
+    q = fmha.TensorWithSeqLen.from_tensor_list(queries, dim=1)
+    assert isinstance(q, fmha.TensorWithSeqLen)
+
+    grad = torch.randn_like(queries[0])
+    q.to_tensor_list(dim=1)[0].backward(grad)
+    assert queries[0].grad is not None and torch.allclose(queries[0].grad, grad)
+    assert queries[1].grad is not None and torch.allclose(
+        queries[1].grad, torch.zeros_like(queries[1])
+    )
 
 
 @pytest.mark.parametrize("k_len", [5, 6, 32])
