@@ -339,9 +339,22 @@ def _memory_efficient_attention_backward(
     # LSE has shape [B, H, M] while query has shape [B, M, H, K]
     if (
         ctx.lse.ndim != 3
-        or ctx.lse.shape[0] != inp.query.shape[0]
+        # Dim 0
+        or (
+            not isinstance(inp.query, TensorWithSeqLen)
+            and ctx.lse.shape[0] != inp.query.shape[0]
+        )
+        or (
+            isinstance(inp.query, TensorWithSeqLen)
+            and ctx.lse.shape[0] != inp.query.cu_seqlen.shape[0] - 1
+        )
+        # Dim 1
         or ctx.lse.shape[1] != inp.query.shape[2]
-        or ctx.lse.shape[2] < inp.query.shape[1]
+        # Dim 2
+        or (
+            not isinstance(inp.query, TensorWithSeqLen)
+            and ctx.lse.shape[2] < inp.query.shape[1]
+        )
     ):
         raise ValueError(
             "Input tensors have incompatible shapes."

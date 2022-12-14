@@ -170,9 +170,12 @@ class FwOp(AttentionFwOpBase):
             None,
         )
         if isinstance(inp.query, TensorWithSeqLen):
-            out = TensorWithSeqLen(out)
-            out.cu_seqlen = cu_seqlens_q
-            out.max_seqlen = max_seqlen_k
+            out = TensorWithSeqLen(
+                out,
+                max_seqlen=max_seqlen_k,
+                cu_seqlen=cu_seqlens_q,
+                cu_seqlen_py=inp.query.cu_seqlen_py,
+            )
 
         out = out.reshape(out_shape)
         ctx = Context(out=out, lse=softmax_lse)
