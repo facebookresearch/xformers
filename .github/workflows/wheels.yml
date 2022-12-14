@@ -1,19 +1,14 @@
 name: Build wheels
 
 on:
-  workflow_dispatch: {}
-  schedule:
-    # Run at 3am every monday
-    - cron: '0 3 * * 1'
+  push:
+    branches:
+      - main
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
 
 env:
-  # all values:
-  # 3.5;3.7;5.0;5.2;5.3;6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6
-  # with optional +PTX
-  # https://github.com/pytorch/vision/blob/d710f3d1edc06afa244468cb96603ba6dbd4d9d5/packaging/pkg_helpers.bash#L63
   # you need at least cuda 5.0 for some of the stuff compiled here.
   TORCH_CUDA_ARCH_LIST: "6.0 6.1 7.0 7.5 8.0 8.6"
   FORCE_CUDA: 1
@@ -24,7 +19,7 @@ env:
 jobs:
   build_wheels:
     strategy:
-      fail-fast: false # don't stop other jobs if one failed
+      fail-fast: false
       matrix:
         os:
           - ubuntu-22.04
@@ -35,25 +30,19 @@ jobs:
           - "3.9"
           - "3.10"
         config:
-          # torch 1.13 is built with cuda 11.6 and 11.7
           - torch_version: "1.13.0+cu117"
             torch_version_constraint: "1.13"
-            cuda_version: "11.7.0"
+            cuda_version: "11.7.1"
             pip_index: https://download.pytorch.org/whl/cu117
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
+            publish: true # publish only latest version
 
-          - torch_version: "1.13.0+cu116"
-            torch_version_constraint: "1.13"
-            cuda_version: "11.6.2"
-            pip_index: https://download.pytorch.org/whl/cu116
-            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
-
-          # torch 1.12 is built with cuda 11.3 and 11.6, we ignore 11.3 for now
           - torch_version: "1.12.1+cu116"
             torch_version_constraint: "1.12"
             cuda_version: "11.6.2"
             pip_index: https://download.pytorch.org/whl/cu116
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
+            publish: false
 
     name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
     runs-on: ${{ matrix.os }}
@@ -79,7 +68,7 @@ jobs:
       ### windows build setup
       - if: runner.os == 'Windows'
         name: (Windows) install cuda
-        uses: okazunori2013/cuda-toolkit@v0.3.2
+        uses: okazunori2013/cuda-toolkit@v0.3.3
         with:
           cuda: ${{ matrix.config.cuda_version }}
           method: network
@@ -95,10 +84,10 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - if: runner.os == 'Windows'
-        name: configure Pagefile
+        name: (Windows) configure Pagefile
         # windows runners will OOM with many CUDA architectures
         # we cheat here with a page file
-        uses: al-cheb/configure-pagefile-action@v1.2
+        uses: al-cheb/configure-pagefile-action@v1.3
         with:
           minimum-size: 8GB
 
@@ -114,6 +103,13 @@ jobs:
         with:
           submodules: recursive
           path: "."
+          fetch-depth: 0 # for tags
+
+      - name: Define version
+        run: |
+          git config --global --add safe.directory "*"
+          echo BUILD_VERSION=`$PY packaging/compute_rc_version.py` >> ${GITHUB_ENV}
+          cat ${GITHUB_ENV}
 
       - name: Setup proper pytorch dependency in "requirements.txt"
         run: |
@@ -121,16 +117,23 @@ jobs:
           echo "torch == ${{ matrix.config.torch_version_constraint }}" >> ./requirements.txt
           cat ./requirements.txt
 
-      - name: Install build dependencies
-        run: >
-          $PY -m pip install wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
-          git config --global --add safe.directory "*"
+      - name: Install dependencies
+        run: $PY -m pip install wheel setuptools twine -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }}
 
       - name: Build wheel
-        run: $PY setup.py bdist_wheel -d "dist"
+        run: $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
+        env:
+          PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
 
       - uses: actions/upload-artifact@v3
         with:
-          name: xformers-${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}.whl
+          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}.zip
           path: dist/*.whl
+
+      - name: Upload to PyPi
+        if: matrix.config.publish
+        run: $PY -m twine upload dist/*.whl
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 # Note: it might be helpful to have additional steps that test if the built wheels actually work
