@@ -299,6 +299,7 @@ def _memory_efficient_attention(
 def _memory_efficient_attention_forward(
     inp: Inputs, op: Optional[Type[AttentionFwOpBase]]
 ) -> torch.Tensor:
+    inp.validate_inputs()
     output_shape = inp.normalize_bmhk()
     if op is None:
         op = _dispatch_fw(inp)
@@ -307,7 +308,6 @@ def _memory_efficient_attention_forward(
             f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
         )
 
-    inp.validate_bmhk()
     out, *_ = op.apply(inp, needs_gradient=False)
     return out.reshape(output_shape)
 
@@ -315,6 +315,7 @@ def _memory_efficient_attention_forward(
 def _memory_efficient_attention_forward_requires_grad(
     inp: Inputs, op: Optional[Type[AttentionFwOpBase]]
 ) -> Tuple[torch.Tensor, Context]:
+    inp.validate_inputs()
     output_shape = inp.normalize_bmhk()
     if op is None:
         op = _dispatch_fw(inp)
@@ -322,7 +323,6 @@ def _memory_efficient_attention_forward_requires_grad(
         raise ValueError(
             f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
         )
-    inp.validate_bmhk()
     out = op.apply(inp, needs_gradient=True)
     assert out[1] is not None
     return (out[0].reshape(output_shape), out[1])
@@ -332,6 +332,7 @@ def _memory_efficient_attention_backward(
     ctx: Context, inp: Inputs, grad: torch.Tensor, op: Optional[Type[AttentionBwOpBase]]
 ) -> Gradients:
     """Warning: grad/ctx.out is potentially in BMK format"""
+    inp.validate_inputs()
     if grad.ndim != inp.query.ndim or grad.ndim != ctx.out.ndim:
         raise ValueError(
             "All tensors should be either in BMK (ndim=3) or BMHK (ndim=4) format. \n"

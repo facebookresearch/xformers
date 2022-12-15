@@ -91,7 +91,7 @@ class TensorWithSeqLen(torch.Tensor):
 
     # new_empty() must be defined for deepcopy to work
     def new_empty(self, *args, **kwargs):
-        out = type(self)(super().new_empty(*args, **kwargs), -1, None, [])
+        out = type(self)(super().new_empty(*args, **kwargs), -1, None, [], [])
         _copy_seqlen_info(out, self)
         return out
 
@@ -147,13 +147,14 @@ class TensorWithSeqLen(torch.Tensor):
                 f"Invalid `TensorWithSeqLen` of shape {self.shape}.\n"
                 f" cu_seqlen: {self.cu_seqlen_py}"
             )
-        out = []
+        split_chunks = []
         it = 0
         for batch_size in self.batch_sizes:
-            this_tensor = []
-            for _ in range(batch_size):
-                begin, end = self.cu_seqlen_py[it], self.cu_seqlen_py[it + 1]
-                this_tensor.append(self[:, begin:end])
-                it += 1
-            out.append(torch.cat(this_tensor, dim=0))
-        return out
+            split_chunks.append(
+                self.cu_seqlen_py[it + batch_size] - self.cu_seqlen_py[it]
+            )
+            it += batch_size
+        return [
+            tensor.reshape([bs, -1, *tensor.shape[2:]])
+            for bs, tensor in zip(self.batch_sizes, self.split(split_chunks, dim=1))
+        ]
