@@ -279,14 +279,14 @@
             <span class="n">attn_bias_ctx</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span>
 
         <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
             <span class="n">op_ctx</span><span class="o">.</span><span class="n">out</span><span class="p">,</span>
             <span class="n">op_ctx</span><span class="o">.</span><span class="n">lse</span><span class="p">,</span>
-            <span class="n">op_ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="p">,</span>
-            <span class="n">attn_bias_tensor</span><span class="p">,</span>
         <span class="p">)</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span> <span class="o">=</span> <span class="n">op_ctx</span><span class="o">.</span><span class="n">rng_state</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">attn_bias_tensor</span> <span class="o">=</span> <span class="n">attn_bias_tensor</span>
         <span class="k">if</span> <span class="n">op_ctx</span><span class="o">.</span><span class="n">op_bw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">op_bw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">op_bw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">op_ctx</span><span class="o">.</span><span class="n">op_bw</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -321,7 +321,9 @@
         <span class="p">)</span>
 
         <span class="c1"># Re-create context</span>
-        <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">rng_state</span><span class="p">,</span> <span class="n">attn_bias_tensor</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
+        <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">lse</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
+        <span class="n">attn_bias_tensor</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">attn_bias_tensor</span>
+        <span class="n">rng_state</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span>
         <span class="n">inp</span> <span class="o">=</span> <span class="n">Inputs</span><span class="p">(</span>
             <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
             <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
