@@ -11,12 +11,18 @@ version = (THIS_PATH.parents[1] / "version.txt").read_text().strip()
 
 
 try:
-    tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
+    tag = subprocess.check_output(
+        ["git", "describe", "--tags", "--exact-match", "HEAD"], text=True
+    ).strip()
 except subprocess.CalledProcessError:  # no tag
     tag = ""
 
 if tag:
-    assert version == tag, "The version in version.txt does not match the given tag"
+    if tag.startswith("v"):
+        tag = tag[1:]
+    assert (
+        version == tag
+    ), f"The version in version.txt ({version}) does not match the given tag ({tag})"
     print(tag, end="")
     exit(0)
 
