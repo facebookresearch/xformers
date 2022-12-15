@@ -524,6 +524,7 @@
 <span class="k">def</span> <span class="nf">_memory_efficient_attention_forward</span><span class="p">(</span>
     <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="n">inp</span><span class="o">.</span><span class="n">validate_inputs</span><span class="p">()</span>
     <span class="n">output_shape</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">normalize_bmhk</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">op</span> <span class="o">=</span> <span class="n">_dispatch_fw</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
@@ -539,6 +540,7 @@
 <span class="k">def</span> <span class="nf">_memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
     <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Context</span><span class="p">]:</span>
+    <span class="n">inp</span><span class="o">.</span><span class="n">validate_inputs</span><span class="p">()</span>
     <span class="n">output_shape</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">normalize_bmhk</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">op</span> <span class="o">=</span> <span class="n">_dispatch_fw</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
@@ -555,6 +557,7 @@
     <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Gradients</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;Warning: grad/ctx.out is potentially in BMK format&quot;&quot;&quot;</span>
+    <span class="n">inp</span><span class="o">.</span><span class="n">validate_inputs</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">grad</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="ow">or</span> <span class="n">grad</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">out</span><span class="o">.</span><span class="n">ndim</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
             <span class="s2">&quot;All tensors should be either in BMK (ndim=3) or BMHK (ndim=4) format. </span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -562,6 +565,9 @@
             <span class="sa">f</span><span class="s2">&quot;out.shape  : </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> </span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;query.shape: </span><span class="si">{</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
+    <span class="n">shape_dq</span><span class="p">,</span> <span class="n">shape_dk</span><span class="p">,</span> <span class="n">shape_dv</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+        <span class="n">x</span><span class="o">.</span><span class="n">shape</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+    <span class="p">)</span>
     <span class="n">inp</span><span class="o">.</span><span class="n">normalize_bmhk</span><span class="p">()</span>
     <span class="c1"># LSE has shape [B, H, M] while query has shape [B, M, H, K]</span>
     <span class="k">if</span> <span class="p">(</span>
@@ -597,7 +603,11 @@
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;xformers.memory_efficient_attention: Operator </span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2"> does not support this input&quot;</span>
         <span class="p">)</span>
-    <span class="k">return</span> <span class="n">op</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">grad</span><span class="p">)</span>
+    <span class="n">grads</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">grad</span><span class="p">)</span>
+    <span class="n">grads</span><span class="o">.</span><span class="n">dq</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">shape_dq</span><span class="p">)</span>
+    <span class="n">grads</span><span class="o">.</span><span class="n">dk</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">dk</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">shape_dk</span><span class="p">)</span>
+    <span class="n">grads</span><span class="o">.</span><span class="n">dv</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">dv</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">shape_dv</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">grads</span>
 
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
