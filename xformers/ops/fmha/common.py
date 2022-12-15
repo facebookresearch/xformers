@@ -99,11 +99,11 @@ class Inputs:
             self.value = self.value.unsqueeze(2)
         return output_shape
 
-    def validate_bmhk(self) -> None:
+    def validate_inputs(self) -> None:
         qkv = (self.query, self.key, self.value)
-        if tuple(x.ndim for x in qkv) != (4, 4, 4):
+        if self.query.ndim not in (3, 4) or any(x.ndim != self.query.ndim for x in qkv):
             raise ValueError(
-                f"Query/Key/Value should have BMHK format.\n"
+                f"Query/Key/Value should all have BMHK or BMK shape.\n"
                 f"  query.shape: {self.query.shape}\n"
                 f"  key.shape  : {self.key.shape}\n"
                 f"  value.shape: {self.value.shape}"
