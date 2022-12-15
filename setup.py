@@ -218,9 +218,11 @@ def get_extensions():
     include_dirs = [extensions_dir]
     ext_modules = []
 
-    if (torch.cuda.is_available() and ((CUDA_HOME is not None))) or os.getenv(
-        "FORCE_CUDA", "0"
-    ) == "1":
+    if (
+        (torch.cuda.is_available() and ((CUDA_HOME is not None)))
+        or os.getenv("FORCE_CUDA", "0") == "1"
+        or os.getenv("TORCH_CUDA_ARCH_LIST", "") != ""
+    ):
         extension = CUDAExtension
         sources += source_cuda
         include_dirs += [sputnik_dir, cutlass_dir, cutlass_examples_dir]
