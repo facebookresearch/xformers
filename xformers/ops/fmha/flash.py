@@ -9,7 +9,7 @@ from typing import Any, Optional, Set, Tuple
 
 import torch
 
-from ..common import register_operator
+from ..common import get_operator, register_operator
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -23,11 +23,103 @@ from .tensor_with_seqlen import TensorWithSeqLen
 try:
     from ... import _C_flashattention  # type: ignore[attr-defined]
 
-    _C_flashattention_fwd = _C_flashattention.fwd
-    _C_flashattention_bwd = _C_flashattention.bwd
+    # create library so that flash-attn goes through the PyTorch Dispatcher
+    _flash_lib = torch.library.Library("xformers_flash", "DEF")
+
+    _flash_lib.define(
+        "flash_fwd(Tensor query, Tensor key, Tensor value, "
+        "Tensor cu_seqlens_q, Tensor cu_seqlens_k, "
+        "int max_seqlen_q, int max_seqlen_k, "
+        "float p, float softmax_scale, "
+        "bool is_causal, bool return_softmax) -> (Tensor, Tensor)"
+    )
+
+    _flash_lib.define(
+        "flash_bwd(Tensor dout, Tensor query, Tensor key, Tensor value, "
+        "Tensor out, Tensor softmax_lse_, Tensor dq, Tensor dk, Tensor dv, "
+        "Tensor cu_seqlens_q, Tensor cu_seqlens_k, "
+        "int max_seqlen_q, int max_seqlen_k, "
+        "float p, float softmax_scale, bool is_causal) -> Tensor"
+    )
+
+    def _flash_fwd(
+        query,
+        key,
+        value,
+        cu_seq_lens_q,
+        cu_seq_lens_k,
+        max_seq_len_q,
+        max_seq_len_k,
+        p,
+        softmax_scale,
+        causal,
+        return_softmax,
+    ):
+        out = query.new_empty(query.shape[0], query.shape[1], value.shape[2])
+        lse = _C_flashattention.fwd(
+            query,
+            key,
+            value,
+            out,
+            cu_seq_lens_q,
+            cu_seq_lens_k,
+            max_seq_len_q,
+            max_seq_len_k,
+            p,
+            softmax_scale,
+            False,
+            causal,
+            return_softmax,
+            0,
+            None,
+        )[0]
+        return out, lse
+
+    def _flash_bwd(
+        grad,
+        query,
+        key,
+        value,
+        out,
+        lse,
+        dq,
+        dk,
+        dv,
+        cu_seq_lens_q,
+        cu_seq_lens_k,
+        max_seq_len_q,
+        max_seq_len_k,
+        p,
+        softmax_scale,
+        causal,
+    ):
+        _C_flashattention.bwd(
+            grad,
+            query,
+            key,
+            value,
+            out,
+            lse,
+            dq,
+            dk,
+            dv,
+            cu_seq_lens_q,
+            cu_seq_lens_k,
+            max_seq_len_q,
+            max_seq_len_k,
+            p,
+            softmax_scale,
+            False,
+            causal,
+            0,
+            None,
+        )
+        return dq
+
+    _flash_lib.impl("flash_fwd", _flash_fwd, "CUDA")
+    _flash_lib.impl("flash_bwd", _flash_bwd, "CUDA")
 except ImportError:
-    _C_flashattention_fwd = None
-    _C_flashattention_bwd = None
+    pass
 
 
 def _convert_input_format(
@@ -97,7 +189,7 @@ class FwOp(AttentionFwOpBase):
     https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attn_interface.py
     """
 
-    OPERATOR = _C_flashattention_fwd
+    OPERATOR = get_operator("xformers_flash", "flash_fwd")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 128
@@ -110,8 +202,6 @@ class FwOp(AttentionFwOpBase):
 
     @classmethod
     def supports(cls, d: "Inputs") -> bool:
-        if cls.OPERATOR is None:
-            return False
         if not super(FwOp, cls).supports(d):
             return False
         # We know `d.device` is cuda now
@@ -146,36 +236,20 @@ class FwOp(AttentionFwOpBase):
             cu_seqlens_k,
             max_seqlen_k,
         ) = _convert_input_format(inp)
-        out = inp.query.new_empty(
-            [inp.query.shape[0], inp.query.shape[1], inp.value.shape[2]],
-            device=inp.query.device,
-            dtype=inp.query.dtype,
-        )
         rng_state = torch.cuda.get_rng_state() if inp.p != 0.0 else None
-        softmax_lse, *rest = cls.OPERATOR(
+        out, softmax_lse = cls.OPERATOR(
             inp.query,
             inp.key,
             inp.value,
-            out,
             cu_seqlens_q,
             cu_seqlens_k,
             max_seqlen_q,
             max_seqlen_k,
             inp.p,
             softmax_scale,
-            False,
             causal,
             return_softmax,
-            0,  # num_splits
-            None,
         )
-        if isinstance(inp.query, TensorWithSeqLen):
-            out = TensorWithSeqLen(
-                out,
-                max_seqlen=max_seqlen_k,
-                cu_seqlen=cu_seqlens_q,
-                cu_seqlen_py=inp.query.cu_seqlen_py,
-            )
 
         out = out.reshape(out_shape)
         ctx = Context(out=out, lse=softmax_lse)
@@ -187,7 +261,7 @@ class FwOp(AttentionFwOpBase):
 
 @register_operator
 class BwOp(AttentionBwOpBase):
-    OPERATOR = _C_flashattention_bwd
+    OPERATOR = get_operator("xformers_flash", "flash_bwd")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
@@ -278,10 +352,7 @@ class BwOp(AttentionBwOpBase):
             max_seqlen_k,
             inp.p,
             softmax_scale,
-            False,
             isinstance(inp.attn_bias, LowerTriangularMask),
-            0,  # num_splits
-            None,
         )
         if cur_rng_state is not None:
             torch.cuda.set_rng_state(cur_rng_state)

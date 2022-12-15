@@ -54,14 +54,14 @@ class _fMHA(torch.autograd.Function):
             attn_bias_ctx = inp.attn_bias
 
         ctx.save_for_backward(
-            inp.query.detach(),
-            inp.key.detach(),
-            inp.value.detach(),
+            inp.query,
+            inp.key,
+            inp.value,
             op_ctx.out,
             op_ctx.lse,
-            op_ctx.rng_state,
-            attn_bias_tensor,
         )
+        ctx.rng_state = op_ctx.rng_state
+        ctx.attn_bias_tensor = attn_bias_tensor
         if op_ctx.op_bw is not None:
             if op_bw is not None and op_bw is not op_ctx.op_bw:
                 raise ValueError(
@@ -96,7 +96,9 @@ class _fMHA(torch.autograd.Function):
         )
 
         # Re-create context
-        query, key, value, out, lse, rng_state, attn_bias_tensor = ctx.saved_tensors
+        query, key, value, out, lse = ctx.saved_tensors
+        attn_bias_tensor = ctx.attn_bias_tensor
+        rng_state = ctx.rng_state
         inp = Inputs(
             query=query,
             key=key,

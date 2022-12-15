@@ -68,6 +68,10 @@ class TensorWithSeqLen(torch.Tensor):
             _copy_seqlen_info(result[0], kwargs["query"])  # output
             _copy_seqlen_info(result[1], kwargs["query"])  # LSE
             return result
+        elif func.__name__ == "flash_fwd":
+            _copy_seqlen_info(result[0], args[0])  # output
+            _copy_seqlen_info(result[1], args[0])  # LSE
+            return result
         elif isinstance(result, cls):
             _copy_seqlen_info(
                 result, _find_arg_to_copy_metadata(cls, func, args, kwargs)
@@ -82,7 +86,7 @@ class TensorWithSeqLen(torch.Tensor):
 
     # new_empty() must be defined for deepcopy to work
     def new_empty(self, *args, **kwargs):
-        out = type(self)(torch.empty(*args, **kwargs), -1, None, [])
+        out = type(self)(super().new_empty(*args, **kwargs), -1, None, [])
         _copy_seqlen_info(out, self)
         return out
 
