@@ -535,16 +535,17 @@ def test_tensor_with_seqlen() -> None:
         torch.randn([1, 1, H, K]),
     ]
     q = fmha.TensorWithSeqLen.from_tensor_list(queries)
-    assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
+    assert isinstance(q, fmha.TensorWithSeqLen)
     assert q.shape == (1, 2 + 3 * 4 + 1, H, K)
     assert q.device.type == "cpu"
     assert q.cu_seqlen.device.type == "cpu"
     assert q.max_seqlen == 4
     q = q.to("cuda")
-    assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
+    assert isinstance(q, fmha.TensorWithSeqLen)
     assert q.device.type == "cuda"
     assert q.cu_seqlen.device.type == "cuda"
     a, b, c = q.to_tensor_list()
+    assert not isinstance(a, fmha.TensorWithSeqLen)
     assert a.shape[:2] == queries[0].shape[:2]
     assert b.shape[:2] == queries[1].shape[:2]
     assert c.shape[:2] == queries[2].shape[:2]

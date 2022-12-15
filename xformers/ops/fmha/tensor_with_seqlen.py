@@ -5,7 +5,7 @@
 
 import copy
 import itertools
-from typing import Any, List, Optional, Sequence
+from typing import Any, List, Optional, Sequence, Tuple
 
 import torch
 from torch.utils._pytree import tree_flatten
@@ -142,6 +142,17 @@ class TensorWithSeqLen(torch.Tensor):
         return FromTensorListOp.apply(c, max_seqlen, cu_seqlen, batch_sizes)
 
     def to_tensor_list(self) -> List[torch.Tensor]:
+        class UnwrapToTorchTensor(torch.autograd.Function):
+            @staticmethod
+            # type: ignore
+            def forward(ctx, *tensors: "TensorWithSeqLen") -> Tuple[torch.Tensor, ...]:
+                return tuple(torch.tensor(x) for x in tensors)
+
+            @staticmethod
+            @torch.autograd.function.once_differentiable
+            def backward(ctx, *grads: torch.Tensor):
+                return tuple(grad for grad in grads)
+
         if self.cu_seqlen_py[-1] != self.shape[1] or self.shape[0] != 1:
             raise ValueError(
                 f"Invalid `TensorWithSeqLen` of shape {self.shape}.\n"
@@ -154,7 +165,9 @@ class TensorWithSeqLen(torch.Tensor):
                 self.cu_seqlen_py[it + batch_size] - self.cu_seqlen_py[it]
             )
             it += batch_size
-        return [
-            tensor.reshape([bs, -1, *tensor.shape[2:]])
-            for bs, tensor in zip(self.batch_sizes, self.split(split_chunks, dim=1))
-        ]
+        return UnwrapToTorchTensor.apply(
+            *[
+                tensor.reshape([bs, -1, *tensor.shape[2:]])
+                for bs, tensor in zip(self.batch_sizes, self.split(split_chunks, dim=1))
+            ]
+        )
