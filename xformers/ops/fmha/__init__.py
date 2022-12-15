@@ -299,6 +299,7 @@ def _memory_efficient_attention(
 def _memory_efficient_attention_forward(
     inp: Inputs, op: Optional[Type[AttentionFwOpBase]]
 ) -> torch.Tensor:
+    inp.validate_inputs()
     output_shape = inp.normalize_bmhk()
     if op is None:
         op = _dispatch_fw(inp)
@@ -314,6 +315,7 @@ def _memory_efficient_attention_forward(
 def _memory_efficient_attention_forward_requires_grad(
     inp: Inputs, op: Optional[Type[AttentionFwOpBase]]
 ) -> Tuple[torch.Tensor, Context]:
+    inp.validate_inputs()
     output_shape = inp.normalize_bmhk()
     if op is None:
         op = _dispatch_fw(inp)
@@ -330,6 +332,7 @@ def _memory_efficient_attention_backward(
     ctx: Context, inp: Inputs, grad: torch.Tensor, op: Optional[Type[AttentionBwOpBase]]
 ) -> Gradients:
     """Warning: grad/ctx.out is potentially in BMK format"""
+    inp.validate_inputs()
     if grad.ndim != inp.query.ndim or grad.ndim != ctx.out.ndim:
         raise ValueError(
             "All tensors should be either in BMK (ndim=3) or BMHK (ndim=4) format. \n"

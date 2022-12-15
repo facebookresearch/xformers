@@ -99,6 +99,43 @@ class Inputs:
             self.value = self.value.unsqueeze(2)
         return output_shape
 
+    def validate_inputs(self) -> None:
+        qkv = (self.query, self.key, self.value)
+        if self.query.ndim not in (3, 4) or any(x.ndim != self.query.ndim for x in qkv):
+            raise ValueError(
+                f"Query/Key/Value should all have BMHK or BMK shape.\n"
+                f"  query.shape: {self.query.shape}\n"
+                f"  key.shape  : {self.key.shape}\n"
+                f"  value.shape: {self.value.shape}"
+            )
+        if any(x.device != self.query.device for x in qkv):
+            raise ValueError("Query/Key/Value should all be on the same device")
+        if any(x.dtype != self.query.dtype for x in qkv):
+            raise ValueError(
+                "Query/Key/Value should all have the same dtype\n"
+                f"  query.dtype: {self.query.dtype}\n"
+                f"  key.dtype  : {self.key.dtype}\n"
+                f"  value.dtype: {self.value.dtype}"
+            )
+        has_seqlen = any(isinstance(x, TensorWithSeqLen) for x in qkv)
+        if has_seqlen:
+            if not all(isinstance(x, TensorWithSeqLen) for x in qkv):
+                raise ValueError(
+                    f"One of Query/Key/Value has sequence length information, but not all of them\n"
+                    f"  type(query): {type(self.query)}\n"
+                    f"  type(key)  : {type(self.key)}\n"
+                    f"  type(value): {type(self.value)}"
+                )
+            if any(x.shape[0] != 1 for x in qkv):
+                raise ValueError(
+                    f"Expected batch_size=1 when using sequence length information\n"
+                    f"  query.shape: {self.query.shape}\n"
+                    f"  key.shape  : {self.key.shape}\n"
+                    f"  value.shape: {self.value.shape}"
+                )
+        if self.p < 0.0 or self.p > 1.0:
+            raise ValueError(f"Invalid dropout probability: p={self.p}")
+
 
 @dataclass
 class Context:
