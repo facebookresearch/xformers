@@ -307,6 +307,7 @@ def _memory_efficient_attention_forward(
             f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
         )
 
+    inp.validate_bmhk()
     out, *_ = op.apply(inp, needs_gradient=False)
     return out.reshape(output_shape)
 
@@ -321,6 +322,7 @@ def _memory_efficient_attention_forward_requires_grad(
         raise ValueError(
             f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
         )
+    inp.validate_bmhk()
     out = op.apply(inp, needs_gradient=True)
     assert out[1] is not None
     return (out[0].reshape(output_shape), out[1])
