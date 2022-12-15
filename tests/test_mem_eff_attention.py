@@ -377,9 +377,9 @@ class CuSeqlenInputs:
 
     def cat_qkv(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return (
-            fmha.TensorWithSeqLen.from_tensor_list(self.q, dim=1),
-            fmha.TensorWithSeqLen.from_tensor_list(self.k, dim=1),
-            fmha.TensorWithSeqLen.from_tensor_list(self.v, dim=1),
+            fmha.TensorWithSeqLen.from_tensor_list(self.q),
+            fmha.TensorWithSeqLen.from_tensor_list(self.k),
+            fmha.TensorWithSeqLen.from_tensor_list(self.v),
         )
 
     @staticmethod
@@ -531,12 +531,12 @@ def test_tensor_with_seqlen() -> None:
     H, K = 16, 32
     queries = [
         torch.randn([1, 2, H, K]),
-        torch.randn([1, 4, H, K]),
+        torch.randn([3, 4, H, K]),
         torch.randn([1, 1, H, K]),
     ]
-    q = fmha.TensorWithSeqLen.from_tensor_list(queries, dim=1)
+    q = fmha.TensorWithSeqLen.from_tensor_list(queries)
     assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
-    assert q.shape == (1, 7, H, K)
+    assert q.shape == (1, 2 + 3 * 4 + 1, H, K)
     assert q.device.type == "cpu"
     assert q.cu_seqlen.device.type == "cpu"
     assert q.max_seqlen == 4
@@ -544,7 +544,7 @@ def test_tensor_with_seqlen() -> None:
     assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
     assert q.device.type == "cuda"
     assert q.cu_seqlen.device.type == "cuda"
-    a, b, c = q.to_tensor_list(dim=1)
+    a, b, c = q.to_tensor_list()
     assert a.shape[:2] == queries[0].shape[:2]
     assert b.shape[:2] == queries[1].shape[:2]
     assert c.shape[:2] == queries[2].shape[:2]
@@ -560,11 +560,11 @@ def test_tensor_with_seqlen_grad() -> None:
     ]
     for q in queries:
         q.requires_grad_()
-    q = fmha.TensorWithSeqLen.from_tensor_list(queries, dim=1)
+    q = fmha.TensorWithSeqLen.from_tensor_list(queries)
     assert isinstance(q, fmha.TensorWithSeqLen)
 
     grad = torch.randn_like(queries[0])
-    q.to_tensor_list(dim=1)[0].backward(grad)
+    q.to_tensor_list()[0].backward(grad)
     assert queries[0].grad is not None and torch.allclose(queries[0].grad, grad)
     assert queries[1].grad is not None and torch.allclose(
         queries[1].grad, torch.zeros_like(queries[1])

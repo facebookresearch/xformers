@@ -18,9 +18,11 @@ def _copy_seqlen_info(
     if deepcopy:
         dst.cu_seqlen = copy.deepcopy(src.cu_seqlen)
         dst.cu_seqlen_py = copy.deepcopy(src.cu_seqlen_py)
+        dst.batch_sizes = copy.deepcopy(src.batch_sizes)
     else:
         dst.cu_seqlen = src.cu_seqlen
         dst.cu_seqlen_py = src.cu_seqlen_py
+        dst.batch_sizes = src.batch_sizes
         if dst.device != dst.cu_seqlen.device:
             dst.cu_seqlen = dst.cu_seqlen.to(dst.device)
 
@@ -47,6 +49,7 @@ class TensorWithSeqLen(torch.Tensor):
     max_seqlen: int
     cu_seqlen: torch.Tensor
     cu_seqlen_py: Sequence[int]
+    batch_sizes: Sequence[int]
 
     def __new__(
         cls,
@@ -54,11 +57,13 @@ class TensorWithSeqLen(torch.Tensor):
         max_seqlen: int,
         cu_seqlen: torch.Tensor,
         cu_seqlen_py: Sequence[int],
+        batch_sizes: Sequence[int],
     ):
         t: TensorWithSeqLen = torch.Tensor._make_subclass(cls, data, require_grad=data.requires_grad)  # type: ignore
         t.cu_seqlen_py = cu_seqlen_py
         t.cu_seqlen = cu_seqlen
         t.max_seqlen = max_seqlen
+        t.batch_sizes = batch_sizes
         return t
 
     @classmethod
@@ -86,19 +91,25 @@ class TensorWithSeqLen(torch.Tensor):
 
     # new_empty() must be defined for deepcopy to work
     def new_empty(self, *args, **kwargs):
-        out = type(self)(super().new_empty(*args, **kwargs), -1, None, [])
+        out = type(self)(super().new_empty(*args, **kwargs), -1, None, [], [])
         _copy_seqlen_info(out, self)
         return out
 
     @classmethod
-    def from_tensor_list(
-        cls, tensors: Sequence[torch.Tensor], dim: int = 0
-    ) -> torch.Tensor:
+    def from_tensor_list(cls, tensors: Sequence[torch.Tensor]) -> torch.Tensor:
+        """
+        Input tensors are assumed to be in shape [B, M, *]
+        """
+
         class FromTensorListOp(torch.autograd.Function):
             @staticmethod
             # type: ignore
             def forward(
-                ctx, tensor: torch.Tensor, max_seqlen: int, cu_seqlen_py: Sequence[int]
+                ctx,
+                tensor: torch.Tensor,
+                max_seqlen: int,
+                cu_seqlen_py: Sequence[int],
+                batch_sizes: Sequence[int],
             ) -> "TensorWithSeqLen":
                 cu_seqlen = torch.tensor(
                     cu_seqlen_py, dtype=torch.int32, device=tensor.device
@@ -108,31 +119,42 @@ class TensorWithSeqLen(torch.Tensor):
                     max_seqlen=max_seqlen,
                     cu_seqlen=cu_seqlen,
                     cu_seqlen_py=cu_seqlen_py,
+                    batch_sizes=batch_sizes,
                 )
 
             @staticmethod
             @torch.autograd.function.once_differentiable
             def backward(ctx, grad: torch.Tensor):
-                return grad, None, None
+                return grad, None, None, None
 
-        c = torch.cat(tuple(tensors), dim=dim)
+        tensors_bs1 = tuple(x.reshape([1, -1, *x.shape[2:]]) for x in tensors)
+        c = torch.cat(tensors_bs1, dim=1)
         cu_seqlen = [0]
+        batch_sizes = []
         max_seqlen = -1
         for tensor in tensors:
             assert not isinstance(tensor, TensorWithSeqLen)
-            seqlen = tensor.shape[dim]
+            seqlen = tensor.shape[1]
             max_seqlen = max(max_seqlen, seqlen)
-            cu_seqlen.append(cu_seqlen[len(cu_seqlen) - 1] + seqlen)
-        return FromTensorListOp.apply(c, max_seqlen, cu_seqlen)
+            for _ in range(tensor.shape[0]):
+                cu_seqlen.append(cu_seqlen[len(cu_seqlen) - 1] + seqlen)
+            batch_sizes.append(tensor.shape[0])
+        return FromTensorListOp.apply(c, max_seqlen, cu_seqlen, batch_sizes)
 
-    def to_tensor_list(self, dim: int) -> List[torch.Tensor]:
-        if self.cu_seqlen_py[-1] != self.shape[dim]:
+    def to_tensor_list(self) -> List[torch.Tensor]:
+        if self.cu_seqlen_py[-1] != self.shape[1] or self.shape[0] != 1:
             raise ValueError(
                 f"Invalid `TensorWithSeqLen` of shape {self.shape}.\n"
                 f" cu_seqlen: {self.cu_seqlen_py}"
             )
-        out = []
-        for begin, end in zip(self.cu_seqlen_py, self.cu_seqlen_py[1:]):
-            s = self[(slice(None),) * dim + (slice(begin, end),)]
-            out.append(s)
-        return out
+        split_chunks = []
+        it = 0
+        for batch_size in self.batch_sizes:
+            split_chunks.append(
+                self.cu_seqlen_py[it + batch_size] - self.cu_seqlen_py[it]
+            )
+            it += batch_size
+        return [
+            tensor.reshape([bs, -1, *tensor.shape[2:]])
+            for bs, tensor in zip(self.batch_sizes, self.split(split_chunks, dim=1))
+        ]
