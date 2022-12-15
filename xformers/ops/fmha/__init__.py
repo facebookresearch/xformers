@@ -339,6 +339,9 @@ def _memory_efficient_attention_backward(
             f"out.shape  : {ctx.out.shape} \n"
             f"query.shape: {inp.query.shape}"
         )
+    shape_dq, shape_dk, shape_dv = tuple(
+        x.shape for x in (inp.query, inp.key, inp.value)
+    )
     inp.normalize_bmhk()
     # LSE has shape [B, H, M] while query has shape [B, M, H, K]
     if (
@@ -374,7 +377,11 @@ def _memory_efficient_attention_backward(
         raise ValueError(
             f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
         )
-    return op.apply(ctx, inp, grad)
+    grads = op.apply(ctx, inp, grad)
+    grads.dq = grads.dq.reshape(shape_dq)
+    grads.dk = grads.dk.reshape(shape_dk)
+    grads.dv = grads.dv.reshape(shape_dv)
+    return grads
 
 
 __all__ = [
