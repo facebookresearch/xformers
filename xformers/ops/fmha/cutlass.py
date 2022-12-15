@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import math
 from typing import Any, List, Optional, Set, Tuple
 
 import torch
