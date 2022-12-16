@@ -183,7 +183,7 @@ run_clang_format: &run_clang_format
         clang-format --version
 
         # apply to our files
-        ./.circleci/run-clang-format.py -r xformers/components/attention/csrc
+        ./.circleci/run-clang-format.py -r xformers/csrc
 
 run_coverage: &run_coverage
   - run:

@@ -189,17 +189,10 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
 
 def get_extensions():
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    extensions_dir = os.path.join(this_dir, "xformers", "components")
+    extensions_dir = os.path.join(this_dir, "xformers", "csrc")
 
-    main_file = glob.glob(os.path.join(extensions_dir, "*.cpp"))
-
-    source_cpu = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
-
-    sources = main_file + source_cpu
-
-    source_cuda = glob.glob(
-        os.path.join(extensions_dir, "**", "cuda", "**", "*.cu"), recursive=True
-    )
+    sources = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
+    source_cuda = glob.glob(os.path.join(extensions_dir, "**", "*.cu"), recursive=True)
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")

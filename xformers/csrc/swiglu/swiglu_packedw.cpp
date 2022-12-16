@@ -1,8 +1,8 @@
-#include <ATen/core/dispatch/Dispatcher.h>
 #include <ATen/autocast_mode.h>
-#include <torch/library.h>
-#include <torch/csrc/autograd/custom_function.h>
+#include <ATen/core/dispatch/Dispatcher.h>
 #include <torch/csrc/api/include/torch/nn/modules/linear.h>
+#include <torch/csrc/autograd/custom_function.h>
+#include <torch/library.h>
 
 namespace {
 // Kernels implemented in `cuda/`
@@ -11,32 +11,31 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul(
     const at::Tensor& w0,
     const c10::optional<at::Tensor>& b0,
     const at::Tensor& w1,
-    const c10::optional<at::Tensor>& b1
-) {
-  static auto op = c10::Dispatcher::singleton()
-    .findSchemaOrThrow("xformers::dual_gemm_silu_identity_mul", "")
-    .typed<decltype(dual_gemm_silu_identity_mul)>();
+    const c10::optional<at::Tensor>& b1) {
+  static auto op =
+      c10::Dispatcher::singleton()
+          .findSchemaOrThrow("xformers::dual_gemm_silu_identity_mul", "")
+          .typed<decltype(dual_gemm_silu_identity_mul)>();
   return op.call(x, w0, b0, w1, b1);
 }
 std::tuple<at::Tensor, at::Tensor> silu_bw_fused(
     const at::Tensor& x1,
     const at::Tensor& x2,
-    const at::Tensor& dx4
-) {
+    const at::Tensor& dx4) {
   static auto op = c10::Dispatcher::singleton()
-    .findSchemaOrThrow("xformers::silu_bw_fused", "")
-    .typed<decltype(silu_bw_fused)>();
+                       .findSchemaOrThrow("xformers::silu_bw_fused", "")
+                       .typed<decltype(silu_bw_fused)>();
   return op.call(x1, x2, dx4);
 }
 std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum(
     const at::Tensor& a,
     const at::Tensor& b,
     at::Tensor& out_mm,
-    at::Tensor& out_sum
-) {
-  static auto op = c10::Dispatcher::singleton()
-    .findSchemaOrThrow("xformers::gemm_fused_operand_sum", "")
-    .typed<decltype(gemm_fused_operand_sum)>();
+    at::Tensor& out_sum) {
+  static auto op =
+      c10::Dispatcher::singleton()
+          .findSchemaOrThrow("xformers::gemm_fused_operand_sum", "")
+          .typed<decltype(gemm_fused_operand_sum)>();
   return op.call(a, b, out_mm, out_sum);
 }
 
@@ -63,16 +62,23 @@ std::string shapeToStr(c10::IntArrayRef shape) {
 }
 
 #define TORCH_INTERNAL_ASSERT_SHAPE(X, ...) \
-  TORCH_INTERNAL_ASSERT(\
-    shapesMatch(X, {__VA_ARGS__}),\
-    "%s: shape is %s but expected %s", \
-    #X, shapeToStr(X.sizes()).c_str(), shapeToStr({__VA_ARGS__}).c_str() \
-  );
+  TORCH_INTERNAL_ASSERT(                    \
+      shapesMatch(X, {__VA_ARGS__}),        \
+      "%s: shape is %s but expected %s",    \
+      #X,                                   \
+      shapeToStr(X.sizes()).c_str(),        \
+      shapeToStr({__VA_ARGS__}).c_str());
 
-class SwiGLUPackedWeights : public torch::autograd::Function<SwiGLUPackedWeights> {
+class SwiGLUPackedWeights
+    : public torch::autograd::Function<SwiGLUPackedWeights> {
  public:
   static at::Tensor forward(
-      torch::autograd::AutogradContext *ctx, const at::Tensor& x, const at::Tensor& w1w2, const c10::optional<at::Tensor>& b1b2, const at::Tensor w3, const c10::optional<at::Tensor>& b3) {
+      torch::autograd::AutogradContext* ctx,
+      const at::Tensor& x,
+      const at::Tensor& w1w2,
+      const c10::optional<at::Tensor>& b1b2,
+      const at::Tensor w3,
+      const c10::optional<at::Tensor>& b3) {
     at::AutoDispatchBelowADInplaceOrView g;
     auto w1 = w1w2[0];
     auto w2 = w1w2[1];
@@ -83,7 +89,8 @@ class SwiGLUPackedWeights : public torch::autograd::Function<SwiGLUPackedWeights
     }
     at::Tensor x1, x2, x4;
     std::tie(x1, x2, x4) = dual_gemm_silu_identity_mul(x, w1, b1, w2, b2);
-    auto x5 = torch::nn::functional::linear(x4, w3, b3.has_value() ? b3.value() : at::Tensor());
+    auto x5 = torch::nn::functional::linear(
+        x4, w3, b3.has_value() ? b3.value() : at::Tensor());
 
     ctx->save_for_backward({x, w1w2, w3, x1, x2});
     ctx->saved_data["has_b1b2"] = b1b2.has_value();
@@ -91,7 +98,9 @@ class SwiGLUPackedWeights : public torch::autograd::Function<SwiGLUPackedWeights
     return x5;
   }
 
-  static torch::autograd::variable_list backward(torch::autograd::AutogradContext *ctx, torch::autograd::variable_list grad_outputs) {
+  static torch::autograd::variable_list backward(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_outputs) {
     at::AutoDispatchBelowADInplaceOrView g;
 
     // Unpack variables
@@ -160,25 +169,35 @@ class SwiGLUPackedWeights : public torch::autograd::Function<SwiGLUPackedWeights
   }
 };
 
-at::Tensor swiglu_packedw_autograd(const at::Tensor& x, const at::Tensor& w1w2, const c10::optional<at::Tensor> b1b2, const at::Tensor w3, const c10::optional<at::Tensor> b3) {
+at::Tensor swiglu_packedw_autograd(
+    const at::Tensor& x,
+    const at::Tensor& w1w2,
+    const c10::optional<at::Tensor> b1b2,
+    const at::Tensor w3,
+    const c10::optional<at::Tensor> b3) {
   return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
 }
 
-at::Tensor swiglu_packedw_autocast(const at::Tensor& x, const at::Tensor& w1w2, const c10::optional<at::Tensor> b1b2, const at::Tensor w3, const c10::optional<at::Tensor> b3) {
+at::Tensor swiglu_packedw_autocast(
+    const at::Tensor& x,
+    const at::Tensor& w1w2,
+    const c10::optional<at::Tensor> b1b2,
+    const at::Tensor w3,
+    const c10::optional<at::Tensor> b3) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
   auto exec_type = at::autocast::get_autocast_gpu_dtype();
   return SwiGLUPackedWeights::apply(
-    at::autocast::cached_cast(exec_type, x),
-    at::autocast::cached_cast(exec_type, w1w2),
-    at::autocast::cached_cast(exec_type, b1b2),
-    at::autocast::cached_cast(exec_type, w3),
-    at::autocast::cached_cast(exec_type, b3)
-  );
+      at::autocast::cached_cast(exec_type, x),
+      at::autocast::cached_cast(exec_type, w1w2),
+      at::autocast::cached_cast(exec_type, b1b2),
+      at::autocast::cached_cast(exec_type, w3),
+      at::autocast::cached_cast(exec_type, b3));
 }
-}
+} // namespace
 
 TORCH_LIBRARY(xformers, m) {
-  m.def("swiglu_packedw(Tensor x, Tensor w1w2, Tensor? b1b2, Tensor w3, Tensor? b3) -> Tensor");
+  m.def(
+      "swiglu_packedw(Tensor x, Tensor w1w2, Tensor? b1b2, Tensor w3, Tensor? b3) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(xformers, Autograd, m) {
