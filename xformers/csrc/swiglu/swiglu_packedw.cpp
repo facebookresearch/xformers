@@ -1,5 +1,5 @@
-#include <ATen/autocast_mode.h>
 #include <ATen/core/dispatch/Dispatcher.h>
+#include <ATen/autocast_mode.h>
 #include <torch/csrc/api/include/torch/nn/modules/linear.h>
 #include <torch/csrc/autograd/custom_function.h>
 #include <torch/library.h>
