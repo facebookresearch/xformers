@@ -408,19 +408,15 @@ jobs:
                 ;;
             esac
       - run:
-          name: decide label for upload
-          command: |
-            export LABEL=$(git describe --tags --exact-match --match 'v*' HEAD && echo --upload || echo --upload-dev)
-      - run:
           name: conda build for py3_9
           no_output_timeout: 20m
           command: |
-            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >> $LABEL
+            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >> --upload
       - run:
           name: conda build for py3_10
           no_output_timeout: 20m
           command: |
-            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >> $LABEL
+            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >> --upload
 
   gpu_tests_cu114_sm75:
     <<: *gpu_cu114

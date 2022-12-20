@@ -20,6 +20,17 @@ PYTORCH_TO_CUDA_VERSIONS = {
 }
 
 
+def is_on_release_tag() -> bool:
+    try:
+        tag = subprocess.check_output(
+            ["git", "describe", "--tags", "--exact-match", "HEAD"], text=True
+        ).strip()
+    except subprocess.CalledProcessError:  # no tag
+        return False
+
+    return tag.startswith("v")
+
+
 def conda_docker_image_for_cuda(cuda_version):
     """
     Given a cuda version, return a docker image we could
@@ -59,8 +70,7 @@ class Build:
         conda_debug: get added information about package search
         conda_dirty: see intermediate files after build
         build_inside_tree: output in build/ not ../build
-        upload_dev: upload, to label dev of xformers
-        upload: release build, upload to label main of xformers
+        upload: release build, upload to xformers on anaconda
     """
 
     python_version: str
@@ -71,12 +81,11 @@ class Build:
     conda_debug: bool = False
     conda_dirty: bool = False
     build_inside_tree: bool = False
-    upload_dev: bool = False
     upload: bool = False
 
-    def _get_build_version(self):
+    def _get_build_version(self, is_release):
         code_version = (SOURCE_ROOT_DIR / "version.txt").read_text().strip()
-        if self.upload:
+        if is_release:
             return code_version
         git_hash = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
@@ -86,7 +95,7 @@ class Build:
         ).strip()
         return f"{code_version}.dev{num_commits}+git.{git_hash}"
 
-    def _set_env_for_build(self):
+    def _set_env_for_build(self, is_release):
         if "CUDA_HOME" not in os.environ:
             if "FAIR_ENV_CLUSTER" in os.environ:
                 cuda_home = "/public/apps/cuda/" + self.cuda_version
@@ -97,7 +106,7 @@ class Build:
             os.environ["CUDA_HOME"] = cuda_home
 
         os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0 8.6"
-        os.environ["BUILD_VERSION"] = self._get_build_version()
+        os.environ["BUILD_VERSION"] = self._get_build_version(is_release)
         tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
         os.environ["GIT_TAG"] = tag
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
@@ -115,7 +124,7 @@ class Build:
         if self.conda_always_copy:
             os.environ["CONDA_ALWAYS_COPY"] = "true"
 
-    def _get_build_args(self):
+    def _get_build_args(self, is_release):
         args = [
             "conda",
             "build",
@@ -134,18 +143,20 @@ class Build:
         if not self.build_inside_tree:
             args += ["--croot", "../build"]
         if self.upload:
-            args += ["--user", "xformers"]
-        elif self.upload_dev:
-            args += ["--user", "xformers", "--label", "dev"]
+            if is_release:
+                args += ["--user", "xformers"]
+            else:
+                args += ["--user", "xformers", "--label", "dev"]
         return args + ["packaging/conda/xformers"]
 
     def do_build(self):
-        self._set_env_for_build()
-        if self.upload_dev or self.upload:
+        is_release = is_on_release_tag()
+        self._set_env_for_build(is_release)
+        if self.upload:
             subprocess.check_call(
                 ["conda", "config", "--set", "anaconda_upload", "yes"]
             )
-        args = self._get_build_args()
+        args = self._get_build_args(is_release)
         print(args)
         subprocess.check_call(args)
 
@@ -193,14 +204,9 @@ if __name__ == "__main__":
         help="Build in build/ instead of ../build/",
     )
     parser.add_argument(
-        "--upload-dev",
-        action="store_true",
-        help="upload, to label dev of xformers",
-    )
-    parser.add_argument(
         "--upload",
         action="store_true",
-        help="release build, upload to label main of xformers",
+        help="whether to upload to xformers anaconda",
     )
     args = parser.parse_args()
 
@@ -209,7 +215,6 @@ if __name__ == "__main__":
         pytorch_version=args.pytorch,
         cuda_version=args.cuda,
         build_inside_tree=args.build_inside_tree,
-        upload_dev=args.upload_dev,
         upload=args.upload,
     )
 
