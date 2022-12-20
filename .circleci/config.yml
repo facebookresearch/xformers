@@ -408,15 +408,19 @@ jobs:
                 ;;
             esac
       - run:
+          name: decide label for upload
+          command: |
+            export LABEL=$(git describe --tags --exact-match --match 'v*' HEAD && echo --upload || echo --upload-dev)
+      - run:
           name: conda build for py3_9
           no_output_timeout: 20m
           command: |
-            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >> --upload-dev
+            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >> $LABEL
       - run:
           name: conda build for py3_10
           no_output_timeout: 20m
           command: |
-            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >> --upload-dev
+            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >> $LABEL
 
   gpu_tests_cu114_sm75:
     <<: *gpu_cu114
@@ -568,6 +572,8 @@ workflows:
             branches:
               only:
                 - main
+            tags:
+              only: /^v*/
       - build_conda:
           name: conda_build_cu116_1.12.1
           dockerimage: pytorch/conda-builder:cuda116
@@ -577,6 +583,8 @@ workflows:
             branches:
               only:
                 - main
+            tags:
+              only: /^v*/
       - build_conda:
           name: conda_build_cu116_1.13
           dockerimage: pytorch/conda-builder:cuda116
@@ -586,6 +594,8 @@ workflows:
             branches:
               only:
                 - main
+            tags:
+              only: /^v*/
       - build_conda:
           name: conda_build_cu117_1.13
           dockerimage: pytorch/conda-builder:cuda117
@@ -595,6 +605,8 @@ workflows:
             branches:
               only:
                 - main
+            tags:
+              only: /^v*/
       - binary_linux_wheel:
           python_version: "3.7"
           name: binary_linux_wheel_py37_cu102
