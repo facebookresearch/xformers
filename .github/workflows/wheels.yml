@@ -65,53 +65,27 @@ jobs:
       run:
         shell: bash
     steps:
-      ##### linux build setup
-      - if: runner.os == 'Linux'
-        name: (Linux) install cuda
-        run: >
-          yum install wget git prename -y &&
-          wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
-          sh ./cuda.run --silent --toolkit
-      #### end linux build setup
-      ### windows build setup
-      - if: runner.os == 'Windows'
-        name: (Windows) install cuda
-        uses: okazunori2013/cuda-toolkit@v0.3.3
-        with:
-          cuda: ${{ matrix.config.cuda_version }}
-          method: network
-
-      - if: runner.os == 'Windows'
-        name: (Windows) install python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "${{ matrix.python }}"
-
-      - if: runner.os == 'Windows'
-        name: (Windows) setup msvc
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - if: runner.os == 'Windows'
-        name: (Windows) configure Pagefile
-        # windows runners will OOM with many CUDA architectures
-        # we cheat here with a page file
-        uses: al-cheb/configure-pagefile-action@v1.3
-        with:
-          minimum-size: 8GB
-
-      - if: runner.os == 'Windows'
-        name: (Windows) Remove link.exe
-        # really unfortunate: https://github.com/ilammy/msvc-dev-cmd#name-conflicts-with-shell-bash
-        run: rm /usr/bin/link
-      #### end windows build setup
-
-      #### now the actual build:
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
           submodules: recursive
           path: "."
           fetch-depth: 0 # for tags
+
+      - if: runner.os == 'Linux'
+        name: (Linux) install cuda
+        run: >
+          yum install wget git prename -y &&
+          wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
+          sh ./cuda.run --silent --toolkit &&
+          rm ./cuda.run
+
+      - if: runner.os == 'Windows'
+        name: (Windows) Setup Runner
+        uses: ./.github/actions/setup-windows-runner
+        with:
+          cuda: ${{ matrix.config.cuda_version }}
+          python: ${{ matrix.python }}
 
       - name: Define version
         run: |

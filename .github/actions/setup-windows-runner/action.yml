@@ -1,0 +1,40 @@
+name: Set up Windows Runner
+
+inputs:
+  cuda:
+    description: Cuda version to install
+    type: string
+    default: "11.7.1"
+  python:
+    description: Python version to install
+    type: string
+    default: "3.10"
+
+runs:
+  using: composite
+  steps:
+    - name: Install cuda
+      uses: okazunori2013/cuda-toolkit@v0.3.3
+      with:
+        cuda: ${{ inputs.cuda }}
+        method: network
+
+    - name: Install python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ inputs.python }}
+
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Configure Pagefile
+      # windows runners will OOM with many CUDA architectures
+      # we cheat here with a page file
+      uses: al-cheb/configure-pagefile-action@v1.3
+      with:
+        minimum-size: 8GB
+
+    # really unfortunate: https://github.com/ilammy/msvc-dev-cmd#name-conflicts-with-shell-bash
+    - name: Remove link.exe
+      shell: bash
+      run: rm /usr/bin/link
