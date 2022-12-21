@@ -62,7 +62,7 @@ def write_version_file(version: str):
             f.write(f'git_tag = "{tag}"\n')
 
 
-def symlink_package(name: str, path: Path) -> None:
+def symlink_package(name: str, path: Path, is_building_wheel: bool) -> None:
     cwd = Path(__file__).parent
     path_from = cwd / path
     path_to = os.path.join(cwd, *name.split("."))
@@ -78,7 +78,9 @@ def symlink_package(name: str, path: Path) -> None:
         pass
     # OSError: [WinError 1314] A required privilege is not held by the client
     # Windows requires special permission to symlink. Fallback to copy
-    use_symlink = os.name != "nt"
+    # When building wheels for linux 3.7 and 3.8, symlinks are not included
+    # So we force a copy, see #611
+    use_symlink = os.name != "nt" and not is_building_wheel
     if use_symlink:
         os.symlink(src=path_from, dst=path_to)
     else:
@@ -296,13 +298,17 @@ if __name__ == "__main__":
                 version = f.readline().strip()
             version += get_local_version_suffix()
         write_version_file(version)
+
+    is_building_wheel = "bdist_wheel" in sys.argv
     # Embed a fixed version of flash_attn
     # NOTE: The correct way to do this would be to use the `package_dir`
     # parameter in `setuptools.setup`, but this does not work when
     # developing in editable mode
     # See: https://github.com/pypa/pip/issues/3160 (closed, but not fixed)
     symlink_package(
-        "xformers._flash_attn", Path("third_party") / "flash-attention" / "flash_attn"
+        "xformers._flash_attn",
+        Path("third_party") / "flash-attention" / "flash_attn",
+        is_building_wheel,
     )
     setuptools.setup(
         name="xformers",
