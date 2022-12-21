@@ -205,11 +205,9 @@ def benchmark_forward(shape, num_threads: int, attn_bias_cfg, dropout_p, dtype):
             inp.p,
         )
 
-        if inp.p > 0 and CHECK_CORRECTNESS:
-            raise NotImplementedError(
-                "correctness checking not yet implemented for dropout"
-            )
-
+        assert not (
+            inp.p > 0 and CHECK_CORRECTNESS
+        ), "correctness checking not yet implemented for dropout"
         assert not CHECK_CORRECTNESS or (r - rr).abs().max() < 4e-3, (
             (r - rr).abs().max()
         )
@@ -266,10 +264,20 @@ def benchmark_backward(shape, num_threads: int, attn_bias_cfg, dropout_p, dtype)
     )
     inp = fmha.Inputs(query=q, key=k, value=v, attn_bias=bias, p=dropout_p)
     try:
-        op = (None, fmha._dispatch_bw(inp)) if FORCE_OP is None else FORCE_OP
+        if FORCE_OP:
+            op = FORCE_OP
+        else:
+            op_bw = fmha._dispatch_bw(inp)
+            if op_bw == fmha.flash.BwOp:
+                op_fw = fmha.flash.FwOp
+            elif op_bw == fmha.cutlass.BwOp:
+                op_fw = fmha.cutlass.FwOp
+            else:
+                op_fw = fmha._dispatch_fw(inp)
+            op = (op_fw, op_bw)
     except NotImplementedError:
         return
-    if not op[1].supports(inp):
+    if not (op[0].supports(inp) and op[1].supports(inp)):
         return
 
     dtype_str = {
@@ -313,10 +321,9 @@ def benchmark_backward(shape, num_threads: int, attn_bias_cfg, dropout_p, dtype)
         rr = ref_attention(q, k, v, inp.attn_bias, dropout_p)
         rr.backward(torch.ones_like(q))
         atol = 2e-4 + 2e-6 * K * M * math.sqrt(B) * math.sqrt(M)
-        if dropout_p > 0 and CHECK_CORRECTNESS:
-            raise NotImplementedError(
-                "correctness checking not yet implemented for dropout"
-            )
+        assert not (
+            dropout_p > 0 and CHECK_CORRECTNESS
+        ), "correctness checking not yet implemented for dropout"
         # type: ignore
         assert (
             not CHECK_CORRECTNESS or (grad - qkv.grad).abs().max() < atol
