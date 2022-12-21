@@ -52,17 +52,7 @@ def get_local_version_suffix() -> str:
     return f"+{git_hash}.d{date_suffix}"
 
 
-if os.getenv("BUILD_VERSION"):
-    # In CI
-    version = os.getenv("BUILD_VERSION")
-else:
-    version_txt = os.path.join(this_dir, "version.txt")
-    with open(version_txt) as f:
-        version = f.readline().strip()
-    version += get_local_version_suffix()
-
-
-def write_version_file():
+def write_version_file(version: str):
     version_path = os.path.join(this_dir, "xformers", "version.py")
     with open(version_path, "w") as f:
         f.write("# noqa: C801\n")
@@ -77,16 +67,18 @@ def symlink_package(name: str, path: Path) -> None:
     path_from = cwd / path
     path_to = os.path.join(cwd, *name.split("."))
 
+    try:
+        if os.path.islink(path_to):
+            os.unlink(path_to)
+        elif os.path.isdir(path_to):
+            shutil.rmtree(path_to)
+        else:
+            os.remove(path_to)
+    except FileNotFoundError:
+        pass
     # OSError: [WinError 1314] A required privilege is not held by the client
     # Windows requires special permission to symlink. Fallback to copy
     use_symlink = os.name != "nt"
-    try:
-        if use_symlink:
-            os.remove(path_to)
-        else:
-            shutil.rmtree(path_to)
-    except FileNotFoundError:
-        pass
     if use_symlink:
         os.symlink(src=path_from, dst=path_to)
     else:
@@ -289,7 +281,21 @@ class clean(distutils.command.clean.clean):  # type: ignore
 
 
 if __name__ == "__main__":
-    write_version_file()
+
+    try:
+        # when installing as a source distribution, the version module should exist
+        from xformers.version import __version__
+
+        version = __version__
+    except ModuleNotFoundError:
+        if os.getenv("BUILD_VERSION"):  # In CI
+            version = os.getenv("BUILD_VERSION")
+        else:
+            version_txt = os.path.join(this_dir, "version.txt")
+            with open(version_txt) as f:
+                version = f.readline().strip()
+            version += get_local_version_suffix()
+        write_version_file(version)
     # Embed a fixed version of flash_attn
     # NOTE: The correct way to do this would be to use the `package_dir`
     # parameter in `setuptools.setup`, but this does not work when

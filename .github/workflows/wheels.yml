@@ -33,15 +33,15 @@ jobs:
           - "3.9"
           - "3.10"
         config:
-          - torch_version: "1.13.0+cu117"
-            torch_version_constraint: "1.13"
+          - torch_version: "1.13.1+cu117"
+            torch_version_constraint: "1.13.1"
             cuda_version: "11.7.1"
             pip_index: https://download.pytorch.org/whl/cu117
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
             publish: true # publish only latest version
 
           - torch_version: "1.12.1+cu116"
-            torch_version_constraint: "1.12"
+            torch_version_constraint: "1.12.1"
             cuda_version: "11.6.2"
             pip_index: https://download.pytorch.org/whl/cu116
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
@@ -111,7 +111,7 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}.zip
+          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
           path: dist/*.whl
 
       - name: Upload wheel to PyPi
@@ -124,6 +124,8 @@ jobs:
         if: matrix.config.publish && matrix.sdist
         run: |
           rm -rf dist/
+          # unpin pytorch version
+          git checkout HEAD -- ./requirements.txt
           $PY setup.py sdist -d sdist/
           $PY -m twine upload sdist/*
         env:
