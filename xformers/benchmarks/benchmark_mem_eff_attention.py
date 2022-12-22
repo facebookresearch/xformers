@@ -7,7 +7,7 @@
 import itertools
 import math
 from functools import partial
-from typing import cast
+from typing import Any, cast
 
 import torch
 from torch.utils import benchmark
@@ -267,6 +267,7 @@ def benchmark_backward(shape, num_threads: int, attn_bias_cfg, dropout_p, dtype)
         if FORCE_OP:
             op = FORCE_OP
         else:
+            op_fw: Any = None
             op_bw = fmha._dispatch_bw(inp)
             if op_bw == fmha.flash.BwOp:
                 op_fw = fmha.flash.FwOp
