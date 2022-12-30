@@ -41,11 +41,11 @@ __global__ void rand_uniform_kernel(
       std::get<1>(seeds) + dropout_seq_start + query_idx * n_keys,
       &curand_state);
 
-  for (uint key_start_idx = 0; key_start_idx < n_keys; key_start_idx += 4) {
+  for (int key_start_idx = 0; key_start_idx < n_keys; key_start_idx += 4) {
     float4 rand_quad = curand_uniform4(&curand_state);
 
 #pragma unroll
-    for (uint i = 0; i < 4; ++i) {
+    for (int i = 0; i < 4; ++i) {
       const int64_t linear_idx = batch_id * (n_heads * n_queries * n_keys) +
           head_id * (n_queries * n_keys) + query_idx * n_keys + key_start_idx +
           i;

@@ -722,7 +722,15 @@ struct AttentionBackwardKernel {
       typename MatmulQK::AccumulatorSharedStorage,
       // dummy shared storage object that takes up no space.
       typename cutlass::gemm::threadblock::AccumulatorSharedStorage<
+#ifdef _WIN32
+          // windows builds throw the error:
+          // "type containing an unknown-size array is not allowed"
+          // if we try to make Zij shared storage zero-sized.
+          // To get around this just make it sized 1 on windows.
+          typename cutlass::gemm::GemmShape<1, 1, 0>,
+#else
           typename cutlass::gemm::GemmShape<0, 0, 0>,
+#endif
           typename MatmulQK::AccumulatorSharedStorage::Element,
           typename MatmulQK::AccumulatorSharedStorage::Layout,
           typename cutlass::MatrixShape<0, 0>>>::type;
