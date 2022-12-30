@@ -9,8 +9,9 @@
 namespace {
 
 /**
- * simple kernel that generates a dropout mask. currently only used
- * for testing purposes, not much attention is paid to performance.
+ * simple kernel that populates a tensor with rand uniform values.
+ * currently only used for testing purposes, not much attention
+ * is paid to performance.
  *
  * problem is partitioned as follows:
  * - (batch, head) is given by block coordinates
