@@ -240,7 +240,7 @@
 
 
 <span class="k">class</span> <span class="nc">_SwiGLUDecomposedFunc</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    This is just an example implementation with all</span>
 <span class="sd">    operations explicited. This implementation is worse</span>
 <span class="sd">    than pytorch, because pytorch is able to fuse some operations</span>
@@ -360,7 +360,7 @@
 
 
 <div class="viewcode-block" id="SwiGLUOp"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.SwiGLUOp">[docs]</a><span class="k">class</span> <span class="nc">SwiGLUOp</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;Base class for any swiglu operator in :attr:`xformers.ops.swiglu`&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for any swiglu operator in :attr:`xformers.ops.swiglu`&quot;&quot;&quot;</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">packed_weights</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">constraints</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">NAME</span> <span class="o">=</span> <span class="n">name</span>
@@ -419,7 +419,7 @@
 
 <div class="viewcode-block" id="SwiGLUOpDispatch"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.SwiGLUOpDispatch">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">SwiGLUOpDispatch</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;Dispatcher to automatically select</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Dispatcher to automatically select</span>
 <span class="sd">    the best operator in :attr:`xformers.ops.swiglu`</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -431,7 +431,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">op</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SwiGLUOp</span><span class="p">:</span>
-        <span class="sd">&quot;&quot;&quot;Computes the best operator</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Computes the best operator</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            SwiGLUOp: The best operator for the configuration</span>
@@ -517,7 +517,7 @@
     <span class="o">*</span><span class="p">,</span>
     <span class="n">op</span><span class="p">:</span> <span class="n">SwiGLUOp</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes a SwiGLU block given the weights/bias of the 3</span>
 <span class="sd">    linear layers.</span>
 
@@ -584,7 +584,7 @@
 
 
 <div class="viewcode-block" id="SwiGLU"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.SwiGLU">[docs]</a><span class="k">class</span> <span class="nc">SwiGLU</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A Module that encapsulates the call to :attr:`xformers.ops.swiglu`,</span>
 <span class="sd">    and holds the weights for the 3 linear layers</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -598,7 +598,7 @@
         <span class="o">*</span><span class="p">,</span>
         <span class="n">_pack_weights</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="sd">&quot;&quot;&quot;Create a SwiGLU module</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create a SwiGLU module</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            in_features (int): Number of features of the input</span>
@@ -625,7 +625,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">op</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 <div class="viewcode-block" id="SwiGLU.forward"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.SwiGLU.forward">[docs]</a>    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-        <span class="sd">&quot;&quot;&quot;Computes :attr:`swiglu` with the module&#39;s weights</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Computes :attr:`swiglu` with the module&#39;s weights</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            x (torch.Tensor): A Tensor of shape ``[..., in_features]``</span>
@@ -636,7 +636,7 @@
         <span class="k">return</span> <span class="n">swiglu</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_ordered_params</span><span class="p">(),</span> <span class="n">op</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="p">)</span></div>
 
     <span class="k">def</span> <span class="nf">_ordered_params</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Used for testing - returns ordered arguments for operators&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Used for testing - returns ordered arguments for operators&quot;&quot;&quot;</span>
         <span class="n">b1</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
         <span class="n">b2</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">w12</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>

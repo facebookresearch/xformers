@@ -236,7 +236,7 @@
 <div class="viewcode-block" id="get_stack_strides"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.get_stack_strides">[docs]</a><span class="k">def</span> <span class="nf">get_stack_strides</span><span class="p">(</span>
     <span class="n">tensors</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    If the tensors are already stacked on dimension :code:`dim`, \</span>
 <span class="sd">        returns the strides of the stacked tensors. \</span>
 <span class="sd">        Otherwise returns :code:`None`.</span>
@@ -292,7 +292,7 @@
 
 
 <span class="k">class</span> <span class="nc">_Unbind</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    See function `unbind`</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -309,7 +309,7 @@
 
 
 <span class="k">class</span> <span class="nc">_StackOrNone</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    See function `stack_or_none`</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -326,7 +326,7 @@
 
 
 <div class="viewcode-block" id="unbind"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.unbind">[docs]</a><span class="k">def</span> <span class="nf">unbind</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Does exactly the same as :attr:`torch.unbind` for the forward.</span>
 <span class="sd">    In backward, avoids a :attr:`torch.cat` if the gradients</span>
 <span class="sd">    are already multiple views of the same storage</span>
@@ -335,7 +335,7 @@
 
 
 <div class="viewcode-block" id="stack_or_none"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.stack_or_none">[docs]</a><span class="k">def</span> <span class="nf">stack_or_none</span><span class="p">(</span><span class="n">tensors</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Does exactly the same as :attr:`torch.stack` if the tensors can be concatenated</span>
 <span class="sd">    without any memory operation. Otherwise returns None.</span>
 <span class="sd">    &quot;&quot;&quot;</span>

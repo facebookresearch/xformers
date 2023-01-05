@@ -254,7 +254,7 @@
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">NystromSelfAttentionConfig</span><span class="p">(</span><span class="n">AttentionConfig</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    num_heads               Number of heads.</span>
 <span class="sd">    num_landmarks           Number of landmarks to use for softmax approximation. 64 often sufficient for a good</span>
 <span class="sd">                            approximation according to https://arxiv.org/pdf/2102.03902.pdf.</span>
@@ -341,7 +341,7 @@
         <span class="o">*</span><span class="n">args</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Nystrom attention mechanism, from Nystromformer_.</span>
 <span class="sd">        ::</span>
 
@@ -399,7 +399,7 @@
         <span class="o">*</span><span class="n">args</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
-        <span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        key_padding_mask    Only a key padding mask is accepted here. The size must be (batch size, sequence length) or</span>
 <span class="sd">                            (batch size * num_heads, 1, sequence length). If dimensions are not correct, the mask will</span>
 <span class="sd">                            be ignored. An additive mask is expected, meaning float values using &quot;-inf&quot; to mask values</span>
@@ -438,7 +438,7 @@
 
             <span class="k">assert</span> <span class="n">key_padding_mask</span><span class="o">.</span><span class="n">size</span><span class="p">()</span> <span class="o">==</span> <span class="p">(</span><span class="n">batched_dim</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">),</span> <span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;key_padding_mask has invalid dimensions </span><span class="si">{</span><span class="n">key_padding_mask</span><span class="o">.</span><span class="n">size</span><span class="p">()</span><span class="si">}</span><span class="s2">.&quot;</span>
-                <span class="sa">f</span><span class="s2">&quot; Must have dimensions </span><span class="si">{</span><span class="n">batched_dim</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">seq_len</span><span class="si">}</span><span class="s2"> or (batch_size, </span><span class="si">{</span><span class="n">seq_len</span><span class="si">}</span><span class="s2">).&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot; Must have dimensions </span><span class="si">{</span><span class="n">batched_dim</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">seq_len</span><span class="si">}</span><span class="s2"> or (batch_size, </span><span class="si">{</span><span class="n">seq_len</span><span class="si">}</span><span class="s2">).&quot;</span>
             <span class="p">)</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_landmarks</span> <span class="o">&gt;=</span> <span class="n">seq_len</span><span class="p">:</span>

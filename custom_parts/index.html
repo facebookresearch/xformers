@@ -234,12 +234,12 @@
 <h3>1. Building the kernels<a class="headerlink" href="#building-the-kernels" title="Permalink to this heading">¶</a></h3>
 <p>xFormers transparently supports CUDA kernels to implement sparse attention computations, some of which are based on <a class="reference external" href="https://github.com/google-research/sputnik">Sputnik</a>.
 These kernels require xFormers to be installed from source, and the recipient machine to be able to compile CUDA source code.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git clone git@github.com:fairinternal/xformers.git
-conda create --name xformer_env <span class="nv">python</span><span class="o">=</span><span class="m">3</span>.8
-conda activate xformer_env
-<span class="nb">cd</span> xformers
-pip install -r requirements.txt
-pip install -e .
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>git@github.com:fairinternal/xformers.git
+conda<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span>xformer_env<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.8
+conda<span class="w"> </span>activate<span class="w"> </span>xformer_env
+<span class="nb">cd</span><span class="w"> </span>xformers
+pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
 </pre></div>
 </div>
 <p>Common issues are related to:</p>

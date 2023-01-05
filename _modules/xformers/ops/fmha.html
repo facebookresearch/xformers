@@ -349,7 +349,7 @@
     <span class="o">*</span><span class="p">,</span>
     <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AttentionOp</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;Implements the memory-efficient attention mechanism following</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Implements the memory-efficient attention mechanism following</span>
 <span class="sd">    `&quot;Self-Attention Does Not Need O(n^2) Memory&quot; &lt;http://arxiv.org/abs/2112.05682&gt;`_.</span>
 
 <span class="sd">    :Inputs shape:</span>
@@ -433,7 +433,7 @@
     <span class="o">*</span><span class="p">,</span>
     <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">_memory_efficient_attention_forward</span><span class="p">(</span>
         <span class="n">Inputs</span><span class="p">(</span>
             <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">p</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">=</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">scale</span>
@@ -452,7 +452,7 @@
     <span class="o">*</span><span class="p">,</span>
     <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later.</span>
 <span class="sd">    See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments</span>
 <span class="sd">    See :attr:`xformers.ops.memory_efficient_backward` for running the backward pass</span>
@@ -484,7 +484,7 @@
     <span class="o">*</span><span class="p">,</span>
     <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the gradient of the attention.</span>
 <span class="sd">    Returns a tuple (dq, dk, dv)</span>
 <span class="sd">    See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments.</span>
@@ -556,7 +556,7 @@
 <span class="k">def</span> <span class="nf">_memory_efficient_attention_backward</span><span class="p">(</span>
     <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Gradients</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;Warning: grad/ctx.out is potentially in BMK format&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Warning: grad/ctx.out is potentially in BMK format&quot;&quot;&quot;</span>
     <span class="n">inp</span><span class="o">.</span><span class="n">validate_inputs</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">grad</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="ow">or</span> <span class="n">grad</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">out</span><span class="o">.</span><span class="n">ndim</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>

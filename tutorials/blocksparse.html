@@ -314,8 +314,8 @@ We provide a small helper (this is just maxpooling) to convert in between a per 
 </pre></div>
 </div>
 <p>On a V100, with PyTorch 1.9, Triton 1.1 and xFormers 0.0.2 this reports something along the lines of:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>Blocksparse - Peak memory use: 151MB - <span class="m">6</span>.619ms
-PyTorch - Peak memory use: 393MB - <span class="m">6</span>.837ms
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>Blocksparse<span class="w"> </span>-<span class="w"> </span>Peak<span class="w"> </span>memory<span class="w"> </span>use:<span class="w"> </span>151MB<span class="w"> </span>-<span class="w"> </span><span class="m">6</span>.619ms
+PyTorch<span class="w"> </span>-<span class="w"> </span>Peak<span class="w"> </span>memory<span class="w"> </span>use:<span class="w"> </span>393MB<span class="w"> </span>-<span class="w"> </span><span class="m">6</span>.837ms
 </pre></div>
 </div>
 <p>Note that the pattern here is not that sparse (half of the matrix is empty), the more sparse it gets the more biased the result will get towards BlockSparseAttention.</p>

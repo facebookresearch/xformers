@@ -243,7 +243,7 @@
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">AttentionConfig</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;Parameters required for all Attentions.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parameters required for all Attentions.</span>
 <span class="sd">    Can accept and store extra parameters.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -256,7 +256,7 @@
 
 <span class="c1"># Define the common interface, every attention block needs to derive from it</span>
 <div class="viewcode-block" id="Attention"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.Attention">[docs]</a><span class="k">class</span> <span class="nc">Attention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span> <span class="n">metaclass</span><span class="o">=</span><span class="n">ABCMeta</span><span class="p">):</span>
-    <span class="sa">r</span><span class="sd">&quot;&quot;&quot;The base Attention mechanism, which is typically a sub-part of the multi-head attention&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;The base Attention mechanism, which is typically a sub-part of the multi-head attention&quot;&quot;&quot;</span>
 
     <span class="n">_causal_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AttentionMask</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
@@ -305,7 +305,7 @@
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span> <span class="nf">_maybe_pad_sequence</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        If the sequence is shorter than the mask, return a padded view</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span> <span class="o">!=</span> <span class="n">mask</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>

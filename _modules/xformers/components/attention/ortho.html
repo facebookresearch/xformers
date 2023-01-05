@@ -264,7 +264,7 @@
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">OrthoformerAttentionConfig</span><span class="p">(</span><span class="n">AttentionConfig</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    num_landmarks           Number of landmarks to use for softmax approximation.</span>
 <span class="sd">    subsample_fraction      Percentage of q_samples matrix to sample per iteration</span>
 <span class="sd">    landmark_selection      Landmark selection strategy</span>
@@ -286,7 +286,7 @@
         <span class="o">*</span><span class="n">args</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Orthoformer_ attention mechanism.</span>
 <span class="sd">        ::</span>
 
@@ -362,7 +362,7 @@
         <span class="n">spherical</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">num_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">6</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Construct set of landmarks by recursively selecting new landmarks</span>
 <span class="sd">        that are maximally orthogonal to the existing set.</span>
 <span class="sd">        Returns near orthogonal landmarks with shape (B, M, D).</span>
@@ -390,7 +390,7 @@
         <span class="k">return</span> <span class="n">landmarks</span>  <span class="c1"># (B, M, D)</span>
 
     <span class="k">def</span> <span class="nf">_kmeans</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">K</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">num_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Arguments:</span>
 <span class="sd">            x: (B, N, D)</span>
 <span class="sd">            K: number of clusters</span>
@@ -429,7 +429,7 @@
         <span class="k">return</span> <span class="n">c</span>
 
     <span class="k">def</span> <span class="nf">_kmeans_spherical</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">K</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">num_iters</span><span class="o">=</span><span class="mi">10</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Arguments:</span>
 <span class="sd">            x: (B, N, D)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -464,7 +464,7 @@
         <span class="k">return</span> <span class="n">c</span>
 
     <span class="k">def</span> <span class="nf">_compute_orthogonal_landmarks</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Construct set of landmarks by recursively selecting new landmarks</span>
 <span class="sd">        that are maximally orthogonal to the existing set.</span>
 <span class="sd">        Returns near orthogonal landmarks with shape (B, M, D).</span>

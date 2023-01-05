@@ -443,17 +443,17 @@ There’s also an added flexibility with xFormers in that attention mechanisms c
 <p>You can compare the speed and memory use of the vanilla PyTorch Transformer Encoder and an equivalent from xFormers, there is an existing benchmark for that (<a class="reference external" href="https://github.com/facebookresearch/xformers/blob/main/xformers/benchmarks/benchmark_pytorch_transformer.py">see</a>).
 It can be run with <cite>python3 xformers/benchmarks/benchmark_pytorch_transformer.py</cite>, and returns the loss values for every step along with the training time for a couple of shapes that you can customize.
 Current results are as follows, on a nVidia V100 (PyTorch 1.9, Triton 1.1, xFormers 0.0.2):</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>--- Transformer training benchmark - runtime ---
-<span class="p">|</span> Units: s <span class="p">|</span> emb <span class="m">128</span> - heads <span class="m">8</span> <span class="p">|</span> emb <span class="m">1024</span> - heads <span class="m">8</span> <span class="p">|</span> emb <span class="m">2048</span> - heads <span class="m">8</span> <span class="p">|</span>
-<span class="p">|</span> -------- <span class="p">|</span> ----------------- <span class="p">|</span> ------------------ <span class="p">|</span> ------------------ <span class="p">|</span>
-<span class="p">|</span> xformers <span class="p">|</span> <span class="m">0</span>.3               <span class="p">|</span> <span class="m">0</span>.4                <span class="p">|</span> <span class="m">0</span>.7                <span class="p">|</span>
-<span class="p">|</span> pytorch  <span class="p">|</span> <span class="m">0</span>.2               <span class="p">|</span> <span class="m">0</span>.6                <span class="p">|</span> <span class="m">0</span>.8                <span class="p">|</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>---<span class="w"> </span>Transformer<span class="w"> </span>training<span class="w"> </span>benchmark<span class="w"> </span>-<span class="w"> </span>runtime<span class="w"> </span>---
+<span class="p">|</span><span class="w"> </span>Units:<span class="w"> </span>s<span class="w"> </span><span class="p">|</span><span class="w"> </span>emb<span class="w"> </span><span class="m">128</span><span class="w"> </span>-<span class="w"> </span>heads<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>emb<span class="w"> </span><span class="m">1024</span><span class="w"> </span>-<span class="w"> </span>heads<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>emb<span class="w"> </span><span class="m">2048</span><span class="w"> </span>-<span class="w"> </span>heads<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="p">|</span>
+<span class="p">|</span><span class="w"> </span>--------<span class="w"> </span><span class="p">|</span><span class="w"> </span>-----------------<span class="w"> </span><span class="p">|</span><span class="w"> </span>------------------<span class="w"> </span><span class="p">|</span><span class="w"> </span>------------------<span class="w"> </span><span class="p">|</span>
+<span class="p">|</span><span class="w"> </span>xformers<span class="w"> </span><span class="p">|</span><span class="w"> </span><span class="m">0</span>.3<span class="w">               </span><span class="p">|</span><span class="w"> </span><span class="m">0</span>.4<span class="w">                </span><span class="p">|</span><span class="w"> </span><span class="m">0</span>.7<span class="w">                </span><span class="p">|</span>
+<span class="p">|</span><span class="w"> </span>pytorch<span class="w">  </span><span class="p">|</span><span class="w"> </span><span class="m">0</span>.2<span class="w">               </span><span class="p">|</span><span class="w"> </span><span class="m">0</span>.6<span class="w">                </span><span class="p">|</span><span class="w"> </span><span class="m">0</span>.8<span class="w">                </span><span class="p">|</span>
 
---- Transformer training benchmark - memory use ---
-<span class="p">|</span> Units: MB <span class="p">|</span> emb <span class="m">128</span> - heads <span class="m">8</span> <span class="p">|</span> emb <span class="m">1024</span> - heads <span class="m">8</span> <span class="p">|</span> emb <span class="m">2048</span> - heads <span class="m">8</span> <span class="p">|</span>
-<span class="p">|</span> --------- <span class="p">|</span> ----------------- <span class="p">|</span> ------------------ <span class="p">|</span> ------------------ <span class="p">|</span>
-<span class="p">|</span> xformers  <span class="p">|</span> <span class="m">89</span>                <span class="p">|</span> <span class="m">1182</span>               <span class="p">|</span> <span class="m">2709</span>               <span class="p">|</span>
-<span class="p">|</span> pytorch   <span class="p">|</span> <span class="m">155</span>               <span class="p">|</span> <span class="m">1950</span>               <span class="p">|</span> <span class="m">4117</span>               <span class="p">|</span>
+---<span class="w"> </span>Transformer<span class="w"> </span>training<span class="w"> </span>benchmark<span class="w"> </span>-<span class="w"> </span>memory<span class="w"> </span>use<span class="w"> </span>---
+<span class="p">|</span><span class="w"> </span>Units:<span class="w"> </span>MB<span class="w"> </span><span class="p">|</span><span class="w"> </span>emb<span class="w"> </span><span class="m">128</span><span class="w"> </span>-<span class="w"> </span>heads<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>emb<span class="w"> </span><span class="m">1024</span><span class="w"> </span>-<span class="w"> </span>heads<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>emb<span class="w"> </span><span class="m">2048</span><span class="w"> </span>-<span class="w"> </span>heads<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="p">|</span>
+<span class="p">|</span><span class="w"> </span>---------<span class="w"> </span><span class="p">|</span><span class="w"> </span>-----------------<span class="w"> </span><span class="p">|</span><span class="w"> </span>------------------<span class="w"> </span><span class="p">|</span><span class="w"> </span>------------------<span class="w"> </span><span class="p">|</span>
+<span class="p">|</span><span class="w"> </span>xformers<span class="w">  </span><span class="p">|</span><span class="w"> </span><span class="m">89</span><span class="w">                </span><span class="p">|</span><span class="w"> </span><span class="m">1182</span><span class="w">               </span><span class="p">|</span><span class="w"> </span><span class="m">2709</span><span class="w">               </span><span class="p">|</span>
+<span class="p">|</span><span class="w"> </span>pytorch<span class="w">   </span><span class="p">|</span><span class="w"> </span><span class="m">155</span><span class="w">               </span><span class="p">|</span><span class="w"> </span><span class="m">1950</span><span class="w">               </span><span class="p">|</span><span class="w"> </span><span class="m">4117</span><span class="w">               </span><span class="p">|</span>
 </pre></div>
 </div>
 </section>
@@ -466,207 +466,207 @@ The example is built on top of some more advanced Hydra features. If you are new
 <a class="reference external" href="https://hydra.cc/docs/tutorials/intro/">basic tutorials</a>, <a class="reference external" href="https://hydra.cc/docs/patterns/extending_configs/">extending configs</a>,
 <a class="reference external" href="https://hydra.cc/docs/advanced/overriding_packages/">Hydra packages</a> and
 <a class="reference external" href="https://hydra.cc/docs/advanced/instantiate_objects/overview/">instantiation API</a>.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">defaults</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">/stack@xformer.stack_configs</span><span class="p">:</span><span class="w"></span>
-<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">encoder_local</span><span class="w"></span>
-<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">encoder_random</span><span class="w"></span>
-<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">decoder_nystrom_favor</span><span class="w"></span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">_self_</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">defaults</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">/stack@xformer.stack_configs</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">encoder_local</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">encoder_random</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">decoder_nystrom_favor</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">_self_</span>
 
-<span class="nt">xformer</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">xformers.factory.model_factory.xFormer</span><span class="w"></span>
+<span class="nt">xformer</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">xformers.factory.model_factory.xFormer</span>
 </pre></div>
 </div>
 <p>Building a model this way makes it possible for you to leverage many features Hydra has to offer.
 For example, you can override the model architecture from the commandline:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python examples/build_model/my_model.py  <span class="s1">&#39;stack@xformer.stack_configs=[encoder_local]&#39;</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>examples/build_model/my_model.py<span class="w">  </span><span class="s1">&#39;stack@xformer.stack_configs=[encoder_local]&#39;</span>
 
-Built a model with <span class="m">1</span> stack: dict_keys<span class="o">([</span><span class="s1">&#39;encoder_local&#39;</span><span class="o">])</span>
-    xFormer<span class="o">(</span>
-    <span class="o">(</span>encoders<span class="o">)</span>: ModuleList<span class="o">(</span>
-        <span class="o">(</span><span class="m">0</span><span class="o">)</span>: xFormerEncoderBlock<span class="o">(</span>
-        <span class="o">(</span>pose_encoding<span class="o">)</span>: VocabEmbedding<span class="o">(</span>
-            <span class="o">(</span>dropout<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-            <span class="o">(</span>position_embeddings<span class="o">)</span>: Embedding<span class="o">(</span><span class="m">1024</span>, <span class="m">384</span><span class="o">)</span>
-            <span class="o">(</span>word_embeddings<span class="o">)</span>: Embedding<span class="o">(</span><span class="m">64</span>, <span class="m">384</span><span class="o">)</span>
-        <span class="o">)</span>
-        <span class="o">(</span>mha<span class="o">)</span>: MultiHeadDispatch<span class="o">(</span>
-            <span class="o">(</span>attention<span class="o">)</span>: LocalAttention<span class="o">(</span>
-            <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-            <span class="o">)</span>
-            <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
-            <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-            <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-        <span class="o">)</span>
-        <span class="o">(</span>feedforward<span class="o">)</span>: MLP<span class="o">(</span>
-            <span class="o">(</span>mlp<span class="o">)</span>: Sequential<span class="o">(</span>
-            <span class="o">(</span><span class="m">0</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-            <span class="o">(</span><span class="m">1</span><span class="o">)</span>: ReLU<span class="o">()</span>
-            <span class="o">(</span><span class="m">2</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-            <span class="o">(</span><span class="m">3</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-            <span class="o">(</span><span class="m">4</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-            <span class="o">)</span>
-        <span class="o">)</span>
-        <span class="o">(</span>wrap_att<span class="o">)</span>: Residual<span class="o">(</span>
-            <span class="o">(</span>layer<span class="o">)</span>: PreNorm<span class="o">(</span>
-            <span class="o">(</span>norm<span class="o">)</span>: FusedLayerNorm<span class="o">()</span>
-            <span class="o">(</span>sublayer<span class="o">)</span>: MultiHeadDispatch<span class="o">(</span>
-                <span class="o">(</span>attention<span class="o">)</span>: LocalAttention<span class="o">(</span>
-                <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-                <span class="o">)</span>
-                <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
-                <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-                <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-            <span class="o">)</span>
-            <span class="o">)</span>
-        <span class="o">)</span>
-        <span class="o">(</span>wrap_ff<span class="o">)</span>: PostNorm<span class="o">(</span>
-            <span class="o">(</span>norm<span class="o">)</span>: FusedLayerNorm<span class="o">()</span>
-            <span class="o">(</span>sublayer<span class="o">)</span>: Residual<span class="o">(</span>
-            <span class="o">(</span>layer<span class="o">)</span>: PreNorm<span class="o">(</span>
-                <span class="o">(</span>norm<span class="o">)</span>: FusedLayerNorm<span class="o">()</span>
-                <span class="o">(</span>sublayer<span class="o">)</span>: MLP<span class="o">(</span>
-                <span class="o">(</span>mlp<span class="o">)</span>: Sequential<span class="o">(</span>
-                    <span class="o">(</span><span class="m">0</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-                    <span class="o">(</span><span class="m">1</span><span class="o">)</span>: ReLU<span class="o">()</span>
-                    <span class="o">(</span><span class="m">2</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-                    <span class="o">(</span><span class="m">3</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-                    <span class="o">(</span><span class="m">4</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-                <span class="o">)</span>
-                <span class="o">)</span>
-            <span class="o">)</span>
-            <span class="o">)</span>
-        <span class="o">)</span>
-        <span class="o">)</span>
-    <span class="o">)</span>
-    <span class="o">(</span>decoders<span class="o">)</span>: ModuleList<span class="o">()</span>
-    <span class="o">)</span>
+Built<span class="w"> </span>a<span class="w"> </span>model<span class="w"> </span>with<span class="w"> </span><span class="m">1</span><span class="w"> </span>stack:<span class="w"> </span>dict_keys<span class="o">([</span><span class="s1">&#39;encoder_local&#39;</span><span class="o">])</span>
+<span class="w">    </span>xFormer<span class="o">(</span>
+<span class="w">    </span><span class="o">(</span>encoders<span class="o">)</span>:<span class="w"> </span>ModuleList<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span><span class="m">0</span><span class="o">)</span>:<span class="w"> </span>xFormerEncoderBlock<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>pose_encoding<span class="o">)</span>:<span class="w"> </span>VocabEmbedding<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>dropout<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">            </span><span class="o">(</span>position_embeddings<span class="o">)</span>:<span class="w"> </span>Embedding<span class="o">(</span><span class="m">1024</span>,<span class="w"> </span><span class="m">384</span><span class="o">)</span>
+<span class="w">            </span><span class="o">(</span>word_embeddings<span class="o">)</span>:<span class="w"> </span>Embedding<span class="o">(</span><span class="m">64</span>,<span class="w"> </span><span class="m">384</span><span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>mha<span class="o">)</span>:<span class="w"> </span>MultiHeadDispatch<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>attention<span class="o">)</span>:<span class="w"> </span>LocalAttention<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>attn_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">            </span><span class="o">(</span>in_proj_container<span class="o">)</span>:<span class="w"> </span>InputProjection<span class="o">()</span>
+<span class="w">            </span><span class="o">(</span>resid_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">            </span><span class="o">(</span>proj<span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>feedforward<span class="o">)</span>:<span class="w"> </span>MLP<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>mlp<span class="o">)</span>:<span class="w"> </span>Sequential<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span><span class="m">0</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">            </span><span class="o">(</span><span class="m">1</span><span class="o">)</span>:<span class="w"> </span>ReLU<span class="o">()</span>
+<span class="w">            </span><span class="o">(</span><span class="m">2</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">            </span><span class="o">(</span><span class="m">3</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">            </span><span class="o">(</span><span class="m">4</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>wrap_att<span class="o">)</span>:<span class="w"> </span>Residual<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>layer<span class="o">)</span>:<span class="w"> </span>PreNorm<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>norm<span class="o">)</span>:<span class="w"> </span>FusedLayerNorm<span class="o">()</span>
+<span class="w">            </span><span class="o">(</span>sublayer<span class="o">)</span>:<span class="w"> </span>MultiHeadDispatch<span class="o">(</span>
+<span class="w">                </span><span class="o">(</span>attention<span class="o">)</span>:<span class="w"> </span>LocalAttention<span class="o">(</span>
+<span class="w">                </span><span class="o">(</span>attn_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">                </span><span class="o">)</span>
+<span class="w">                </span><span class="o">(</span>in_proj_container<span class="o">)</span>:<span class="w"> </span>InputProjection<span class="o">()</span>
+<span class="w">                </span><span class="o">(</span>resid_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">                </span><span class="o">(</span>proj<span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>wrap_ff<span class="o">)</span>:<span class="w"> </span>PostNorm<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>norm<span class="o">)</span>:<span class="w"> </span>FusedLayerNorm<span class="o">()</span>
+<span class="w">            </span><span class="o">(</span>sublayer<span class="o">)</span>:<span class="w"> </span>Residual<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>layer<span class="o">)</span>:<span class="w"> </span>PreNorm<span class="o">(</span>
+<span class="w">                </span><span class="o">(</span>norm<span class="o">)</span>:<span class="w"> </span>FusedLayerNorm<span class="o">()</span>
+<span class="w">                </span><span class="o">(</span>sublayer<span class="o">)</span>:<span class="w"> </span>MLP<span class="o">(</span>
+<span class="w">                </span><span class="o">(</span>mlp<span class="o">)</span>:<span class="w"> </span>Sequential<span class="o">(</span>
+<span class="w">                    </span><span class="o">(</span><span class="m">0</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">                    </span><span class="o">(</span><span class="m">1</span><span class="o">)</span>:<span class="w"> </span>ReLU<span class="o">()</span>
+<span class="w">                    </span><span class="o">(</span><span class="m">2</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">                    </span><span class="o">(</span><span class="m">3</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">                    </span><span class="o">(</span><span class="m">4</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">                </span><span class="o">)</span>
+<span class="w">                </span><span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
+<span class="w">    </span><span class="o">(</span>decoders<span class="o">)</span>:<span class="w"> </span>ModuleList<span class="o">()</span>
+<span class="w">    </span><span class="o">)</span>
 </pre></div>
 </div>
 <p>You can also launch multiple runs of your application with different architectures:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ python my_model.py  --multirun <span class="s1">&#39;stack@xformer.stack_configs=[encoder_local], [encoder_random]&#39;</span>
-<span class="o">[</span>HYDRA<span class="o">]</span> Launching <span class="m">2</span> <span class="nb">jobs</span> locally
-<span class="o">[</span>HYDRA<span class="o">]</span>        <span class="c1">#0 : stack@xformer.stack_configs=[encoder_local]</span>
-Built a model with <span class="m">1</span> stack: dict_keys<span class="o">([</span><span class="s1">&#39;encoder_local&#39;</span><span class="o">])</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>python<span class="w"> </span>my_model.py<span class="w">  </span>--multirun<span class="w"> </span><span class="s1">&#39;stack@xformer.stack_configs=[encoder_local], [encoder_random]&#39;</span>
+<span class="o">[</span>HYDRA<span class="o">]</span><span class="w"> </span>Launching<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>locally
+<span class="o">[</span>HYDRA<span class="o">]</span><span class="w">        </span><span class="c1">#0 : stack@xformer.stack_configs=[encoder_local]</span>
+Built<span class="w"> </span>a<span class="w"> </span>model<span class="w"> </span>with<span class="w"> </span><span class="m">1</span><span class="w"> </span>stack:<span class="w"> </span>dict_keys<span class="o">([</span><span class="s1">&#39;encoder_local&#39;</span><span class="o">])</span>
 xFormer<span class="o">(</span>
-<span class="o">(</span>encoders<span class="o">)</span>: ModuleList<span class="o">(</span>
-    <span class="o">(</span><span class="m">0</span><span class="o">)</span>: xFormerEncoderBlock<span class="o">(</span>
-    <span class="o">(</span>pose_encoding<span class="o">)</span>: VocabEmbedding<span class="o">(</span>
-        <span class="o">(</span>dropout<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-        <span class="o">(</span>position_embeddings<span class="o">)</span>: Embedding<span class="o">(</span><span class="m">1024</span>, <span class="m">384</span><span class="o">)</span>
-        <span class="o">(</span>word_embeddings<span class="o">)</span>: Embedding<span class="o">(</span><span class="m">64</span>, <span class="m">384</span><span class="o">)</span>
-    <span class="o">)</span>
-    <span class="o">(</span>mha<span class="o">)</span>: MultiHeadDispatch<span class="o">(</span>
-        <span class="o">(</span>attention<span class="o">)</span>: LocalAttention<span class="o">(</span>
-        <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-        <span class="o">)</span>
-        <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
-        <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-        <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-    <span class="o">)</span>
-    <span class="o">(</span>feedforward<span class="o">)</span>: MLP<span class="o">(</span>
-        <span class="o">(</span>mlp<span class="o">)</span>: Sequential<span class="o">(</span>
-        <span class="o">(</span><span class="m">0</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-        <span class="o">(</span><span class="m">1</span><span class="o">)</span>: ReLU<span class="o">()</span>
-        <span class="o">(</span><span class="m">2</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-        <span class="o">(</span><span class="m">3</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-        <span class="o">(</span><span class="m">4</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-        <span class="o">)</span>
-    <span class="o">)</span>
-    <span class="o">(</span>wrap_att<span class="o">)</span>: Residual<span class="o">(</span>
-        <span class="o">(</span>layer<span class="o">)</span>: PreNorm<span class="o">(</span>
-        <span class="o">(</span>norm<span class="o">)</span>: FusedLayerNorm<span class="o">()</span>
-        <span class="o">(</span>sublayer<span class="o">)</span>: MultiHeadDispatch<span class="o">(</span>
-            <span class="o">(</span>attention<span class="o">)</span>: LocalAttention<span class="o">(</span>
-            <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-            <span class="o">)</span>
-            <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
-            <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-            <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-        <span class="o">)</span>
-        <span class="o">)</span>
-    <span class="o">)</span>
-    <span class="o">(</span>wrap_ff<span class="o">)</span>: PostNorm<span class="o">(</span>
-        <span class="o">(</span>norm<span class="o">)</span>: FusedLayerNorm<span class="o">()</span>
-        <span class="o">(</span>sublayer<span class="o">)</span>: Residual<span class="o">(</span>
-        <span class="o">(</span>layer<span class="o">)</span>: PreNorm<span class="o">(</span>
-            <span class="o">(</span>norm<span class="o">)</span>: FusedLayerNorm<span class="o">()</span>
-            <span class="o">(</span>sublayer<span class="o">)</span>: MLP<span class="o">(</span>
-            <span class="o">(</span>mlp<span class="o">)</span>: Sequential<span class="o">(</span>
-                <span class="o">(</span><span class="m">0</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-                <span class="o">(</span><span class="m">1</span><span class="o">)</span>: ReLU<span class="o">()</span>
-                <span class="o">(</span><span class="m">2</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-                <span class="o">(</span><span class="m">3</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-                <span class="o">(</span><span class="m">4</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-            <span class="o">)</span>
-            <span class="o">)</span>
-        <span class="o">)</span>
-        <span class="o">)</span>
-    <span class="o">)</span>
-    <span class="o">)</span>
+<span class="o">(</span>encoders<span class="o">)</span>:<span class="w"> </span>ModuleList<span class="o">(</span>
+<span class="w">    </span><span class="o">(</span><span class="m">0</span><span class="o">)</span>:<span class="w"> </span>xFormerEncoderBlock<span class="o">(</span>
+<span class="w">    </span><span class="o">(</span>pose_encoding<span class="o">)</span>:<span class="w"> </span>VocabEmbedding<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>dropout<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>position_embeddings<span class="o">)</span>:<span class="w"> </span>Embedding<span class="o">(</span><span class="m">1024</span>,<span class="w"> </span><span class="m">384</span><span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>word_embeddings<span class="o">)</span>:<span class="w"> </span>Embedding<span class="o">(</span><span class="m">64</span>,<span class="w"> </span><span class="m">384</span><span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
+<span class="w">    </span><span class="o">(</span>mha<span class="o">)</span>:<span class="w"> </span>MultiHeadDispatch<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>attention<span class="o">)</span>:<span class="w"> </span>LocalAttention<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>attn_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>in_proj_container<span class="o">)</span>:<span class="w"> </span>InputProjection<span class="o">()</span>
+<span class="w">        </span><span class="o">(</span>resid_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>proj<span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
+<span class="w">    </span><span class="o">(</span>feedforward<span class="o">)</span>:<span class="w"> </span>MLP<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>mlp<span class="o">)</span>:<span class="w"> </span>Sequential<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span><span class="m">0</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">        </span><span class="o">(</span><span class="m">1</span><span class="o">)</span>:<span class="w"> </span>ReLU<span class="o">()</span>
+<span class="w">        </span><span class="o">(</span><span class="m">2</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">        </span><span class="o">(</span><span class="m">3</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">        </span><span class="o">(</span><span class="m">4</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
+<span class="w">    </span><span class="o">(</span>wrap_att<span class="o">)</span>:<span class="w"> </span>Residual<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>layer<span class="o">)</span>:<span class="w"> </span>PreNorm<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>norm<span class="o">)</span>:<span class="w"> </span>FusedLayerNorm<span class="o">()</span>
+<span class="w">        </span><span class="o">(</span>sublayer<span class="o">)</span>:<span class="w"> </span>MultiHeadDispatch<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>attention<span class="o">)</span>:<span class="w"> </span>LocalAttention<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>attn_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">            </span><span class="o">(</span>in_proj_container<span class="o">)</span>:<span class="w"> </span>InputProjection<span class="o">()</span>
+<span class="w">            </span><span class="o">(</span>resid_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">            </span><span class="o">(</span>proj<span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
+<span class="w">    </span><span class="o">(</span>wrap_ff<span class="o">)</span>:<span class="w"> </span>PostNorm<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>norm<span class="o">)</span>:<span class="w"> </span>FusedLayerNorm<span class="o">()</span>
+<span class="w">        </span><span class="o">(</span>sublayer<span class="o">)</span>:<span class="w"> </span>Residual<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>layer<span class="o">)</span>:<span class="w"> </span>PreNorm<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>norm<span class="o">)</span>:<span class="w"> </span>FusedLayerNorm<span class="o">()</span>
+<span class="w">            </span><span class="o">(</span>sublayer<span class="o">)</span>:<span class="w"> </span>MLP<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>mlp<span class="o">)</span>:<span class="w"> </span>Sequential<span class="o">(</span>
+<span class="w">                </span><span class="o">(</span><span class="m">0</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">                </span><span class="o">(</span><span class="m">1</span><span class="o">)</span>:<span class="w"> </span>ReLU<span class="o">()</span>
+<span class="w">                </span><span class="o">(</span><span class="m">2</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">                </span><span class="o">(</span><span class="m">3</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">                </span><span class="o">(</span><span class="m">4</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
 <span class="o">)</span>
-<span class="o">(</span>decoders<span class="o">)</span>: ModuleList<span class="o">()</span>
+<span class="o">(</span>decoders<span class="o">)</span>:<span class="w"> </span>ModuleList<span class="o">()</span>
 <span class="o">)</span>
-<span class="o">[</span>HYDRA<span class="o">]</span>        <span class="c1">#1 : stack@xformer.stack_configs=[encoder_random]</span>
-Built a model with <span class="m">1</span> stack: dict_keys<span class="o">([</span><span class="s1">&#39;encoder_random&#39;</span><span class="o">])</span>
+<span class="o">[</span>HYDRA<span class="o">]</span><span class="w">        </span><span class="c1">#1 : stack@xformer.stack_configs=[encoder_random]</span>
+Built<span class="w"> </span>a<span class="w"> </span>model<span class="w"> </span>with<span class="w"> </span><span class="m">1</span><span class="w"> </span>stack:<span class="w"> </span>dict_keys<span class="o">([</span><span class="s1">&#39;encoder_random&#39;</span><span class="o">])</span>
 xFormer<span class="o">(</span>
-<span class="o">(</span>encoders<span class="o">)</span>: ModuleList<span class="o">(</span>
-    <span class="o">(</span><span class="m">0</span><span class="o">)</span>: xFormerEncoderBlock<span class="o">(</span>
-    <span class="o">(</span>pose_encoding<span class="o">)</span>: VocabEmbedding<span class="o">(</span>
-        <span class="o">(</span>dropout<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-        <span class="o">(</span>position_embeddings<span class="o">)</span>: Embedding<span class="o">(</span><span class="m">1024</span>, <span class="m">384</span><span class="o">)</span>
-        <span class="o">(</span>word_embeddings<span class="o">)</span>: Embedding<span class="o">(</span><span class="m">64</span>, <span class="m">384</span><span class="o">)</span>
-    <span class="o">)</span>
-    <span class="o">(</span>mha<span class="o">)</span>: MultiHeadDispatch<span class="o">(</span>
-        <span class="o">(</span>attention<span class="o">)</span>: RandomAttention<span class="o">(</span>
-        <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-        <span class="o">)</span>
-        <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
-        <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-        <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-    <span class="o">)</span>
-    <span class="o">(</span>feedforward<span class="o">)</span>: MLP<span class="o">(</span>
-        <span class="o">(</span>mlp<span class="o">)</span>: Sequential<span class="o">(</span>
-        <span class="o">(</span><span class="m">0</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-        <span class="o">(</span><span class="m">1</span><span class="o">)</span>: ReLU<span class="o">()</span>
-        <span class="o">(</span><span class="m">2</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-        <span class="o">(</span><span class="m">3</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-        <span class="o">(</span><span class="m">4</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-        <span class="o">)</span>
-    <span class="o">)</span>
-    <span class="o">(</span>wrap_att<span class="o">)</span>: Residual<span class="o">(</span>
-        <span class="o">(</span>layer<span class="o">)</span>: PreNorm<span class="o">(</span>
-        <span class="o">(</span>norm<span class="o">)</span>: FusedLayerNorm<span class="o">()</span>
-        <span class="o">(</span>sublayer<span class="o">)</span>: MultiHeadDispatch<span class="o">(</span>
-            <span class="o">(</span>attention<span class="o">)</span>: RandomAttention<span class="o">(</span>
-            <span class="o">(</span>attn_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-            <span class="o">)</span>
-            <span class="o">(</span>in_proj_container<span class="o">)</span>: InputProjection<span class="o">()</span>
-            <span class="o">(</span>resid_drop<span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-            <span class="o">(</span>proj<span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-        <span class="o">)</span>
-        <span class="o">)</span>
-    <span class="o">)</span>
-    <span class="o">(</span>wrap_ff<span class="o">)</span>: PostNorm<span class="o">(</span>
-        <span class="o">(</span>norm<span class="o">)</span>: FusedLayerNorm<span class="o">()</span>
-        <span class="o">(</span>sublayer<span class="o">)</span>: Residual<span class="o">(</span>
-        <span class="o">(</span>layer<span class="o">)</span>: PreNorm<span class="o">(</span>
-            <span class="o">(</span>norm<span class="o">)</span>: FusedLayerNorm<span class="o">()</span>
-            <span class="o">(</span>sublayer<span class="o">)</span>: MLP<span class="o">(</span>
-            <span class="o">(</span>mlp<span class="o">)</span>: Sequential<span class="o">(</span>
-                <span class="o">(</span><span class="m">0</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-                <span class="o">(</span><span class="m">1</span><span class="o">)</span>: ReLU<span class="o">()</span>
-                <span class="o">(</span><span class="m">2</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-                <span class="o">(</span><span class="m">3</span><span class="o">)</span>: Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>, <span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>, <span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
-                <span class="o">(</span><span class="m">4</span><span class="o">)</span>: Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>, <span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
-            <span class="o">)</span>
-            <span class="o">)</span>
-        <span class="o">)</span>
-        <span class="o">)</span>
-    <span class="o">)</span>
-    <span class="o">)</span>
+<span class="o">(</span>encoders<span class="o">)</span>:<span class="w"> </span>ModuleList<span class="o">(</span>
+<span class="w">    </span><span class="o">(</span><span class="m">0</span><span class="o">)</span>:<span class="w"> </span>xFormerEncoderBlock<span class="o">(</span>
+<span class="w">    </span><span class="o">(</span>pose_encoding<span class="o">)</span>:<span class="w"> </span>VocabEmbedding<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>dropout<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>position_embeddings<span class="o">)</span>:<span class="w"> </span>Embedding<span class="o">(</span><span class="m">1024</span>,<span class="w"> </span><span class="m">384</span><span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>word_embeddings<span class="o">)</span>:<span class="w"> </span>Embedding<span class="o">(</span><span class="m">64</span>,<span class="w"> </span><span class="m">384</span><span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
+<span class="w">    </span><span class="o">(</span>mha<span class="o">)</span>:<span class="w"> </span>MultiHeadDispatch<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>attention<span class="o">)</span>:<span class="w"> </span>RandomAttention<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>attn_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>in_proj_container<span class="o">)</span>:<span class="w"> </span>InputProjection<span class="o">()</span>
+<span class="w">        </span><span class="o">(</span>resid_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">        </span><span class="o">(</span>proj<span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
+<span class="w">    </span><span class="o">(</span>feedforward<span class="o">)</span>:<span class="w"> </span>MLP<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>mlp<span class="o">)</span>:<span class="w"> </span>Sequential<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span><span class="m">0</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">        </span><span class="o">(</span><span class="m">1</span><span class="o">)</span>:<span class="w"> </span>ReLU<span class="o">()</span>
+<span class="w">        </span><span class="o">(</span><span class="m">2</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">        </span><span class="o">(</span><span class="m">3</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">        </span><span class="o">(</span><span class="m">4</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
+<span class="w">    </span><span class="o">(</span>wrap_att<span class="o">)</span>:<span class="w"> </span>Residual<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>layer<span class="o">)</span>:<span class="w"> </span>PreNorm<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>norm<span class="o">)</span>:<span class="w"> </span>FusedLayerNorm<span class="o">()</span>
+<span class="w">        </span><span class="o">(</span>sublayer<span class="o">)</span>:<span class="w"> </span>MultiHeadDispatch<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>attention<span class="o">)</span>:<span class="w"> </span>RandomAttention<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>attn_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>.0,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">            </span><span class="o">(</span>in_proj_container<span class="o">)</span>:<span class="w"> </span>InputProjection<span class="o">()</span>
+<span class="w">            </span><span class="o">(</span>resid_drop<span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">            </span><span class="o">(</span>proj<span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
+<span class="w">    </span><span class="o">(</span>wrap_ff<span class="o">)</span>:<span class="w"> </span>PostNorm<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>norm<span class="o">)</span>:<span class="w"> </span>FusedLayerNorm<span class="o">()</span>
+<span class="w">        </span><span class="o">(</span>sublayer<span class="o">)</span>:<span class="w"> </span>Residual<span class="o">(</span>
+<span class="w">        </span><span class="o">(</span>layer<span class="o">)</span>:<span class="w"> </span>PreNorm<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>norm<span class="o">)</span>:<span class="w"> </span>FusedLayerNorm<span class="o">()</span>
+<span class="w">            </span><span class="o">(</span>sublayer<span class="o">)</span>:<span class="w"> </span>MLP<span class="o">(</span>
+<span class="w">            </span><span class="o">(</span>mlp<span class="o">)</span>:<span class="w"> </span>Sequential<span class="o">(</span>
+<span class="w">                </span><span class="o">(</span><span class="m">0</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">                </span><span class="o">(</span><span class="m">1</span><span class="o">)</span>:<span class="w"> </span>ReLU<span class="o">()</span>
+<span class="w">                </span><span class="o">(</span><span class="m">2</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">                </span><span class="o">(</span><span class="m">3</span><span class="o">)</span>:<span class="w"> </span>Linear<span class="o">(</span><span class="nv">in_features</span><span class="o">=</span><span class="m">1536</span>,<span class="w"> </span><span class="nv">out_features</span><span class="o">=</span><span class="m">384</span>,<span class="w"> </span><span class="nv">bias</span><span class="o">=</span>True<span class="o">)</span>
+<span class="w">                </span><span class="o">(</span><span class="m">4</span><span class="o">)</span>:<span class="w"> </span>Dropout<span class="o">(</span><span class="nv">p</span><span class="o">=</span><span class="m">0</span>,<span class="w"> </span><span class="nv">inplace</span><span class="o">=</span>False<span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">            </span><span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">        </span><span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
+<span class="w">    </span><span class="o">)</span>
 <span class="o">)</span>
-<span class="o">(</span>decoders<span class="o">)</span>: ModuleList<span class="o">()</span>
+<span class="o">(</span>decoders<span class="o">)</span>:<span class="w"> </span>ModuleList<span class="o">()</span>
 <span class="o">)</span>
 </pre></div>
 </div>

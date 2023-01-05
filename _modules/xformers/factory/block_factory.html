@@ -267,7 +267,7 @@
     <span class="n">normalization</span><span class="p">:</span> <span class="n">NormalizationType</span> <span class="o">=</span> <span class="n">NormalizationType</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">,</span>
     <span class="n">residual_scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
 <span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Handle all the supported residual path configurations.</span>
 
 <span class="sd">    ..Note: we return the appropriate constructor, not an actual layer</span>
@@ -318,7 +318,7 @@
 
 
 <div class="viewcode-block" id="xFormerEncoderBlock"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock">[docs]</a><span class="k">class</span> <span class="nc">xFormerEncoderBlock</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="sa">r</span><span class="sd">&quot;&quot;&quot;A vanilla Transformer Encoder block&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;A vanilla Transformer Encoder block&quot;&quot;&quot;</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">xFormerEncoderConfig</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -464,7 +464,7 @@
 
 
 <div class="viewcode-block" id="xFormerDecoderBlock"><a class="viewcode-back" href="../../../factory/block.html#xformers.factory.block_factory.xFormerDecoderBlock">[docs]</a><span class="k">class</span> <span class="nc">xFormerDecoderBlock</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="sa">r</span><span class="sd">&quot;&quot;&quot;A vanilla Transformer Decoder block</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;A vanilla Transformer Decoder block</span>
 
 <span class="sd">    ... note: this implementation is not (yet ?) reversible&quot;&quot;&quot;</span>
 
