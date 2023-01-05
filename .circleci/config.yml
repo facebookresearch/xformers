@@ -582,10 +582,10 @@ workflows:
             tags:
               only: /^v*/
       - build_conda:
-          name: conda_build_cu116_1.13
+          name: conda_build_cu116_1.13.1
           dockerimage: pytorch/conda-builder:cuda116
           cu_version: "11.6"
-          pytorch_version: "1.13"
+          pytorch_version: "1.13.1"
           filters:
             branches:
               only:
@@ -593,10 +593,10 @@ workflows:
             tags:
               only: /^v*/
       - build_conda:
-          name: conda_build_cu117_1.13
+          name: conda_build_cu117_1.13.1
           dockerimage: pytorch/conda-builder:cuda117
           cu_version: "11.7"
-          pytorch_version: "1.13"
+          pytorch_version: "1.13.1"
           filters:
             branches:
               only:
