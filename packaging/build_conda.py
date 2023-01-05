@@ -140,7 +140,7 @@ class Build:
                 args += ["--user", "xformers"]
             else:
                 args += ["--user", "xformers", "--label", "dev"]
-        return args + ["packaging/conda/xformers"]
+        return args + ["packaging/xformers"]
 
     def do_build(self):
         self._set_env_for_build()
