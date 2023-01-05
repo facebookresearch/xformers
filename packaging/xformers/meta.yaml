@@ -20,6 +20,7 @@ requirements:
     - python
     - pytorch=={{ environ.get('PYTORCH_VERSION') }}
     - {{environ['CONDA_CUDA_CONSTRAINT']}}
+    - einops
 
 build:
   string: py{{py}}_cu{{ environ['CU_VERSION'] }}_pyt{{ environ['PYTORCH_VERSION']}}
