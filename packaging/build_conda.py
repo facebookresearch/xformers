@@ -5,11 +5,13 @@
 import argparse
 import os
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from compute_wheel_version import is_exact_version
+
 THIS_PATH = Path(__file__).resolve()
-SOURCE_ROOT_DIR = THIS_PATH.parents[2]
+SOURCE_ROOT_DIR = THIS_PATH.parents[1]
 
 PYTHON_VERSIONS = ["3.9", "3.10"]
 PYTORCH_TO_CUDA_VERSIONS = {
@@ -59,7 +61,8 @@ class Build:
         conda_debug: get added information about package search
         conda_dirty: see intermediate files after build
         build_inside_tree: output in build/ not ../build
-        upload_dev: upload, to label dev of xformers
+        upload: whether to upload to xformers on anaconda
+        is_release: whether this is an official versioned release
     """
 
     python_version: str
@@ -70,7 +73,20 @@ class Build:
     conda_debug: bool = False
     conda_dirty: bool = False
     build_inside_tree: bool = False
-    upload_dev: bool = False
+    upload: bool = False
+    is_release: bool = field(default_factory=is_exact_version)
+
+    def _get_build_version(self):
+        code_version = (SOURCE_ROOT_DIR / "version.txt").read_text().strip()
+        if self.is_release:
+            return code_version
+        git_hash = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], text=True
+        ).strip()
+        num_commits = subprocess.check_output(
+            ["git", "rev-list", "--count", "HEAD"], text=True
+        ).strip()
+        return f"{code_version}.dev{num_commits}+git.{git_hash}"
 
     def _set_env_for_build(self):
         if "CUDA_HOME" not in os.environ:
@@ -83,14 +99,7 @@ class Build:
             os.environ["CUDA_HOME"] = cuda_home
 
         os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0 8.6"
-        code_version = (SOURCE_ROOT_DIR / "version.txt").read_text().strip()
-        git_hash = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], text=True
-        ).strip()
-        num_commits = subprocess.check_output(
-            ["git", "rev-list", "--count", "HEAD"], text=True
-        ).strip()
-        os.environ["BUILD_VERSION"] = f"{code_version}.dev{num_commits}+git.{git_hash}"
+        os.environ["BUILD_VERSION"] = self._get_build_version()
         tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
         os.environ["GIT_TAG"] = tag
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
@@ -126,13 +135,16 @@ class Build:
             args += ["--dirty"]
         if not self.build_inside_tree:
             args += ["--croot", "../build"]
-        if self.upload_dev:
-            args += ["--user", "xformers", "--label", "dev"]
+        if self.upload:
+            if self.is_release:
+                args += ["--user", "xformers"]
+            else:
+                args += ["--user", "xformers", "--label", "dev"]
         return args + ["packaging/conda/xformers"]
 
     def do_build(self):
         self._set_env_for_build()
-        if self.upload_dev:
+        if self.upload:
             subprocess.check_call(
                 ["conda", "config", "--set", "anaconda_upload", "yes"]
             )
@@ -184,9 +196,9 @@ if __name__ == "__main__":
         help="Build in build/ instead of ../build/",
     )
     parser.add_argument(
-        "--upload-dev",
+        "--upload",
         action="store_true",
-        help="upload, to label dev of xformers",
+        help="whether to upload to xformers anaconda",
     )
     args = parser.parse_args()
 
@@ -195,7 +207,7 @@ if __name__ == "__main__":
         pytorch_version=args.pytorch,
         cuda_version=args.cuda,
         build_inside_tree=args.build_inside_tree,
-        upload_dev=args.upload_dev,
+        upload=args.upload,
     )
 
     if args.docker:
