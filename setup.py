@@ -226,6 +226,7 @@ def get_extensions():
             "-U__CUDA_NO_HALF_OPERATORS__",
             "-U__CUDA_NO_HALF_CONVERSIONS__",
             "--extended-lambda",
+            "-D_ENABLE_EXTENDED_ALIGNED_STORAGE",
         ] + get_extra_nvcc_flags_for_build_type()
         if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
             nvcc_flags.append("-DNDEBUG")
@@ -291,7 +292,7 @@ if __name__ == "__main__":
         version = __version__
     except ModuleNotFoundError:
         if os.getenv("BUILD_VERSION"):  # In CI
-            version = os.getenv("BUILD_VERSION")
+            version = os.getenv("BUILD_VERSION", "0.0.0")
         else:
             version_txt = os.path.join(this_dir, "version.txt")
             with open(version_txt) as f:

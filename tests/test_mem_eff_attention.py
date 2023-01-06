@@ -15,6 +15,8 @@ from torch.utils.checkpoint import checkpoint
 import xformers.ops
 from xformers.ops import fmha
 
+from .utils import assert_allclose
+
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 if torch.cuda.is_available():
@@ -163,28 +165,6 @@ _opBW_device_dtype_B_Mq_Mkv_H_K_Kv__xs = list(
 _opBW_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids = _gen_ids(
     _opBW_device_dtype_B_Mq_Mkv_H_K_Kv__xs
 )
-
-
-def assert_allclose(
-    out: torch.Tensor,
-    ref: torch.Tensor,
-    msg: str = "failed",
-    atol: float = 1e-8,
-    rtol: float = 1e-5,
-) -> None:
-    assert out.shape == ref.shape
-    flatten_diff = ((out - ref).abs() - atol - ref.abs() * rtol).flatten()
-    max_pos = flatten_diff.argmax()
-    max_diff = flatten_diff[max_pos]
-    num_different = torch.count_nonzero(flatten_diff > 0)
-    percentage = num_different / flatten_diff.numel()
-    del flatten_diff
-    assert torch.allclose(out, ref, rtol=rtol, atol=atol), (
-        f"{msg}: "
-        f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} (diff={max_diff} > 0)"
-        f"/ atol={atol}, rtol={rtol}"
-        f"/ total failing elements: {num_different}, percentage={percentage}"
-    )
 
 
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):

@@ -33,3 +33,15 @@ def register_operator(cls: ClsT) -> ClsT:
     global OPERATORS_REGISTRY
     OPERATORS_REGISTRY.append(cls)
     return cls
+
+
+class BaseOperator:
+    OPERATOR: Any
+    NAME: str
+    OPERATOR_CATEGORY: str
+
+    @classmethod
+    def info(cls):
+        if cls.OPERATOR is None or cls.OPERATOR.__name__ == "no_such_operator":
+            return "unavailable"
+        return "available"
