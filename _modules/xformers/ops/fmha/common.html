@@ -237,6 +237,7 @@
 <span class="kn">import</span> <span class="nn">torch</span>
 
 <span class="kn">from</span> <span class="nn">.tensor_with_seqlen</span> <span class="kn">import</span> <span class="n">TensorWithSeqLen</span>
+<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">BaseOperator</span>
 
 
 <div class="viewcode-block" id="AttentionMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.AttentionMask">[docs]</a><span class="k">class</span> <span class="nc">AttentionMask</span><span class="p">:</span>
@@ -391,7 +392,7 @@
     <span class="n">dv</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
 
 
-<div class="viewcode-block" id="AttentionOpBase"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.AttentionOpBase">[docs]</a><span class="k">class</span> <span class="nc">AttentionOpBase</span><span class="p">:</span>
+<div class="viewcode-block" id="AttentionOpBase"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.AttentionOpBase">[docs]</a><span class="k">class</span> <span class="nc">AttentionOpBase</span><span class="p">(</span><span class="n">BaseOperator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for any attention operator in xFormers</span>
 
 <span class="sd">    See:</span>
@@ -419,12 +420,6 @@
 
     <span class="n">_TEST_BATCH_SIZES</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">300</span><span class="p">]</span>
     <span class="n">_TEST_K</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">128</span><span class="p">]</span>
-
-    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;no_such_operator&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="s2">&quot;unavailable&quot;</span>
-        <span class="k">return</span> <span class="s2">&quot;available&quot;</span>
 
     <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">supports</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
