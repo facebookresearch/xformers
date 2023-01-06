@@ -136,10 +136,6 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
             "to run `git submodule update --init --recursive` ?"
         )
 
-    nvcc_platform_dependant_args: List[str] = []
-    if sys.platform == "win32":
-        nvcc_platform_dependant_args.append("-std=c++17")
-
     return [
         CUDAExtension(
             name="xformers._C_flashattention",
@@ -162,12 +158,12 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                 "nvcc": extra_compile_args.get("nvcc", [])
                 + [
                     "-O3",
+                    "-std=c++17",
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
                     "--use_fast_math",
                     "--ptxas-options=-v",
                 ]
-                + nvcc_platform_dependant_args
                 + nvcc_archs_flags
                 + get_extra_nvcc_flags_for_build_type(),
             },
