@@ -12,7 +12,7 @@ on:
 
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: "6.0 6.1 7.0 7.5 8.0 8.6"
+  TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0 8.6"
   FORCE_CUDA: 1
   MAX_JOBS: 1 # will crash otherwise
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
