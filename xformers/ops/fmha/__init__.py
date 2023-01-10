@@ -172,6 +172,12 @@ def memory_efficient_attention(
 
         NVIDIA GPUs with compute capability above 6.0 (P100+), datatype ``f16``, ``bf16`` and ``f32``.
 
+    :Note:
+
+        This function has been reported to exhibit non-deterministic behavior \
+        [`#618 <https://github.com/facebookresearch/xformers/issues/618>`_]. \ 
+        This may affects to the application such as diffusion models.
+
     Raises:
         NotImplementedError: if there is no operator available to compute the MHA
 
