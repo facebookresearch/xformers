@@ -4,6 +4,7 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
+#include <ATen/Context.h>
 
 #include "kernel_backward.h"
 
@@ -67,6 +68,8 @@ mem_efficient_attention_backward_cutlass(
       false,
       "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD");
 #else
+  at::globalContext().alertNotDeterministic("mem_efficient_attention_backward_cutlass");
+
   // ndim
   TORCH_CHECK(query.dim() == grad_out_.dim());
   TORCH_CHECK(query.dim() == key.dim());
