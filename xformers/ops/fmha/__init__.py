@@ -174,9 +174,7 @@ def memory_efficient_attention(
 
     :Note:
 
-        This function has been reported to exhibit non-deterministic behavior \
-        [`#618 <https://github.com/facebookresearch/xformers/issues/618>`_]. \ 
-        This may affects to the application such as diffusion models.
+        This operator may be nondeterministic.
 
     Raises:
         NotImplementedError: if there is no operator available to compute the MHA
