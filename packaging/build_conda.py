@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 import argparse
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -152,7 +153,15 @@ class Build:
         print(args)
         subprocess.check_call(args)
 
-    def build_in_docker(self):
+    def move_artifacts_to_store(self):
+        """run after a build to move artifacts elsewhere"""
+        assert not self.build_inside_tree
+        artifacts = Path("artifacts")
+        artifacts.mkdir(exist_ok=True)
+        for filename in Path("../build").resolve().glob("*.bz2"):
+            shutil.move(filename, artifacts)
+
+    def build_in_docker(self) -> None:
         filesystem = subprocess.check_output("stat -f -c %T .", shell=True).strip()
         if filesystem in (b"nfs", b"tmpfs"):
             raise ValueError(
@@ -200,20 +209,29 @@ if __name__ == "__main__":
         action="store_true",
         help="whether to upload to xformers anaconda",
     )
+    parser.add_argument(
+        "--upload-or-store",
+        action="store_true",
+        help="upload to xformers anaconda if FACEBOOKRESEARCH, else position artifact to store",
+    )
     args = parser.parse_args()
+
+    facebookresearch = os.getenv("CIRCLE_PROJECT_USERNAME", "") == "facebookresearch"
 
     pkg = Build(
         python_version=args.python,
         pytorch_version=args.pytorch,
         cuda_version=args.cuda,
         build_inside_tree=args.build_inside_tree,
-        upload=args.upload,
+        upload=args.upload or (facebookresearch and args.upload_or_store),
     )
 
     if args.docker:
         pkg.build_in_docker()
     else:
         pkg.do_build()
+        if args.upload_or_store and not facebookresearch:
+            pkg.move_artifacts_to_store()
 
 
 # python packaging/conda/build_conda.py  --cuda 11.6 --python 3.10 --pytorch 1.12.1

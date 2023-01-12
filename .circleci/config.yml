@@ -399,24 +399,17 @@ jobs:
       - run: git submodule update --init --recursive
       - run: printenv
       - run:
-          name: Skip builds for fairinternal
-          command: |
-            case "$CIRCLE_REPOSITORY_URL" in
-              *fairinternal*)
-                echo "Build skipped (fairinternal repo)"
-                circleci-agent step halt
-                ;;
-            esac
-      - run:
           name: conda build for py3_9
           no_output_timeout: 20m
           command: |
-            python packaging/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >> --upload
+            python packaging/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >> --upload-or-store
       - run:
           name: conda build for py3_10
           no_output_timeout: 20m
           command: |
-            python packaging/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >> --upload
+            python packaging/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >> --upload-or-store
+      - store_artifacts:
+          path: artifacts/*
 
   gpu_tests_cu114_sm75:
     <<: *gpu_cu114
@@ -532,32 +525,32 @@ workflows:
   build:
     jobs:
       - cpu_tests_py38:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
+          filters:
+            branches:
+              ignore:
+                - gh-pages
 
       - gpu_tests_cu114_sm61:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
+          filters:
+            branches:
+              ignore:
+                - gh-pages
       - gpu_tests_cu114_sm70:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
+          filters:
+            branches:
+              ignore:
+                - gh-pages
       - gpu_tests_cu114_sm75:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
+          filters:
+            branches:
+              ignore:
+                - gh-pages
 
       - gpu_experimental_tests:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
+          filters:
+            branches:
+              ignore:
+                - gh-pages
 
       - build_conda:
           name: conda_build_cu113_1.12.1
