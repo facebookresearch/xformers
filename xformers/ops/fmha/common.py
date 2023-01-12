@@ -9,6 +9,7 @@ from typing import Any, List, Mapping, Optional, Set, Tuple, Type, Union
 
 import torch
 
+from ..._cpp_lib import _built_with_cuda
 from ..common import BaseOperator
 from .tensor_with_seqlen import TensorWithSeqLen
 
@@ -216,6 +217,8 @@ class AttentionOpBase(BaseOperator):
             reasons.append("tensors with custom seqlen are not supported")
         if device_type not in cls.SUPPORTED_DEVICES:
             reasons.append(f"device={device_type} (supported: {cls.SUPPORTED_DEVICES})")
+        if device_type == "cuda" and not _built_with_cuda:
+            reasons.append("xFormers wasn't build with CUDA support")
         if dtype not in cls.SUPPORTED_DTYPES:
             reasons.append(f"dtype={dtype} (supported: {cls.SUPPORTED_DTYPES})")
         if (

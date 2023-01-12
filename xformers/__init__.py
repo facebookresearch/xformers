@@ -7,7 +7,7 @@ import logging
 
 import torch
 
-from . import cpp_lib
+from . import _cpp_lib
 
 try:
     from .version import __version__  # noqa: F401
@@ -17,7 +17,7 @@ except ImportError:
 
 logger = logging.getLogger("xformers")
 
-_has_cpp_library: bool = cpp_lib._cpp_library_load_exception is None
+_has_cpp_library: bool = _cpp_lib._cpp_library_load_exception is None
 
 # Set to true to utilize functorch
 _is_functorch_available: bool = False

@@ -8,7 +8,7 @@ from typing import Dict
 
 import torch
 
-from . import __version__, _is_functorch_available, _is_triton_available, ops
+from . import __version__, _cpp_lib, _is_functorch_available, _is_triton_available, ops
 from .ops.common import OPERATORS_REGISTRY
 
 
@@ -35,6 +35,22 @@ def print_info():
         features["gpu.name"] = torch.cuda.get_device_name(device)
     else:
         features["pytorch.cuda"] = "not available"
+
+    build_info = _cpp_lib._build_metadata
+    if build_info is None and isinstance(
+        _cpp_lib._cpp_library_load_exception, _cpp_lib.xFormersInvalidLibException
+    ):
+        build_info = _cpp_lib._cpp_library_load_exception.build_info
+    if build_info is not None:
+        features["build.info"] = "available"
+        features["build.cuda_version"] = build_info.cuda_version
+        features["build.python_version"] = build_info.python_version
+        features["build.torch_version"] = build_info.torch_version
+        for k, v in build_info.build_env.items():
+            features[f"build.env.{k}"] = v
+    else:
+        features["build.info"] = "none"
+
     for name, status in features.items():
         print("{:<50} {}".format(f"{name}:", status))
 

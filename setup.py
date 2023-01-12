@@ -8,7 +8,9 @@
 import datetime
 import distutils.command.clean
 import glob
+import json
 import os
+import platform
 import shlex
 import shutil
 import subprocess
@@ -207,6 +209,7 @@ def get_extensions():
 
     include_dirs = [extensions_dir]
     ext_modules = []
+    cuda_version = None
 
     if (
         (torch.cuda.is_available() and ((CUDA_HOME is not None)))
@@ -260,7 +263,23 @@ def get_extensions():
         )
     )
 
-    return ext_modules
+    return ext_modules, {
+        "version": {
+            "cuda": cuda_version,
+            "torch": torch.__version__,
+            "python": platform.python_version(),
+        },
+        "env": {
+            k: os.environ.get(k)
+            for k in [
+                "TORCH_CUDA_ARCH_LIST",
+                "XFORMERS_BUILD_TYPE",
+                "XFORMERS_ENABLE_DEBUG_ASSERTIONS",
+                "NVCC_FLAGS",
+                "XFORMERS_PACKAGE_FROM",
+            ]
+        },
+    }
 
 
 class clean(distutils.command.clean.clean):  # type: ignore
@@ -277,6 +296,18 @@ class clean(distutils.command.clean.clean):  # type: ignore
 
         # It's an old-style class in Python 2.7...
         distutils.command.clean.clean.run(self)
+
+
+class BuildExtensionWithMetadata(BuildExtension):
+    def __init__(self, *args, **kwargs) -> None:
+        self.xformers_build_metadata = kwargs.pop("xformers_build_metadata")
+        super().__init__(*args, **kwargs)
+
+    def build_extensions(self) -> None:
+        super().build_extensions()
+        metadata_json = os.path.join(this_dir, "xformers", "cpp_lib.json")
+        with open(metadata_json, "w+") as fp:
+            json.dump(self.xformers_build_metadata, fp)
 
 
 if __name__ == "__main__":
@@ -307,6 +338,7 @@ if __name__ == "__main__":
         Path("third_party") / "flash-attention" / "flash_attn",
         is_building_wheel,
     )
+    extensions, extensions_metadata = get_extensions()
     setuptools.setup(
         name="xformers",
         description="XFormers: A collection of composable Transformer building blocks.",
@@ -315,11 +347,15 @@ if __name__ == "__main__":
         packages=setuptools.find_packages(
             exclude=("tests*", "benchmarks*", "experimental*")
         ),
-        ext_modules=get_extensions(),
+        ext_modules=extensions,
         cmdclass={
-            "build_ext": BuildExtension.with_options(no_python_abi_suffix=True),
+            "build_ext": BuildExtensionWithMetadata.with_options(
+                no_python_abi_suffix=True, xformers_build_metadata=extensions_metadata
+            ),
             "clean": clean,
         },
+        data_files=[("xformers", ["xformers/cpp_lib.json"])],
+        include_package_data=True,
         url="https://facebookresearch.github.io/xformers/",
         python_requires=">=3.7",
         author="Facebook AI Research",
