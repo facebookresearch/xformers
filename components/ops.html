@@ -13,7 +13,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Operators | xFormers 0.0.15 documentation</title>
+  <title>Operators | xFormers 0.0.16 documentation</title>
   
   <script src="../_static/js/ga.js"></script>
   <script src="../_static/js/redirect.js"></script>
@@ -23,7 +23,7 @@
   
   <link rel="canonical" href="https://facebookresearch.github.io/xformerscomponents/ops.html" />
   
-  <meta property="og:title" content="Operators | xFormers 0.0.15 documentation">
+  <meta property="og:title" content="Operators | xFormers 0.0.16 documentation">
   <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
@@ -266,6 +266,13 @@ hardcoded into some kernels for better performance.</p>
 <li><p><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionFlashAttentionOp</span></code></p></li>
 <li><p><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp</span></code></p></li>
 </ul>
+<dl class="py method">
+<dt class="sig sig-object py" id="xformers.ops.AttentionOpBase.not_supported_reasons">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">not_supported_reasons</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Inputs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.List" title="(in Python v3.6)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3.6/library/stdtypes.html#str" title="(in Python v3.6)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/common.html#AttentionOpBase.not_supported_reasons"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.AttentionOpBase.not_supported_reasons" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns a list of reasons why this is not supported.
+The kernel can run these inputs only if the returned list is empty</p>
+</dd></dl>
+
 </dd></dl>
 
 <dl class="py class">
