@@ -9,8 +9,8 @@ from typing import Any, List, Mapping, Optional, Set, Tuple, Type, Union
 
 import torch
 
-from .tensor_with_seqlen import TensorWithSeqLen
 from ..common import BaseOperator
+from .tensor_with_seqlen import TensorWithSeqLen
 
 
 class AttentionMask:

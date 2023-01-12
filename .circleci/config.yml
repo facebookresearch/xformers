@@ -139,52 +139,6 @@ install_experimental_repo: &install_experimental_repo
         cd experimental
         $CONDA_PYTHON -m pip install -v -e .
 
-run_isort: &run_isort
-   - run:
-      name: Run Linter (isort)
-      when: always
-      command: |
-        source $BASH_ENV
-        $CONDA_PYTHON -m isort . --check --profile black
-
-run_black: &run_black
-   - run:
-      name: Run Linter (black)
-      when: always
-      command: |
-        source $BASH_ENV
-        $CONDA_PYTHON -m black --check . --exclude "third_party/"
-
-run_mypy: &run_mypy
-   - run:
-       name: Run type-checking (mypy)
-       when: always
-       command: |
-        source $BASH_ENV
-        $CONDA_PYTHON -m mypy --version
-        $CONDA_PYTHON -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude "(build|stubs|third_party|docs|examples|xformers/_flash_attn|setup.py)" .
-
-run_flake8: &run_flake8
-  - run:
-      name: Run Linter (flake8)
-      when: always
-      command: |
-        source $BASH_ENV
-        $CONDA_PYTHON -m flake8 --config .flake8 --show-source --statistics
-
-run_clang_format: &run_clang_format
-  - run:
-      name: Run Linter (clang-format)
-      when: always
-      command: |
-        # install clang-format here, so that it gets cached
-        sudo apt-get update
-        sudo apt-get install clang-format
-        clang-format --version
-
-        # apply to our files
-        ./.circleci/run-clang-format.py -r xformers/csrc
-
 run_coverage: &run_coverage
   - run:
       name: Run Unit Tests With Coverage
@@ -363,12 +317,6 @@ jobs:
           key: cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_repo
-
-      - <<: *run_isort
-      - <<: *run_black
-      - <<: *run_mypy
-      - <<: *run_flake8
-      - <<: *run_clang_format
       - <<: *run_unittests
       - <<: *run_doc_build
 

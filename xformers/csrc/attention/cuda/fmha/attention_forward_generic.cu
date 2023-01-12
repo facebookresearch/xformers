@@ -1,9 +1,9 @@
+#include <ATen/Context.h>
 #include <ATen/ScalarOps.h>
 #include <ATen/Tensor.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
-#include <ATen/Context.h>
 
 #include "kernel_forward.h"
 
@@ -145,7 +145,8 @@ std::tuple<at::Tensor, at::Tensor> efficient_attention_forward_cutlass(
       false,
       "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD");
 #else
-  at::globalContext().alertNotDeterministic("efficient_attention_forward_cutlass");
+  at::globalContext().alertNotDeterministic(
+      "efficient_attention_forward_cutlass");
 
   TORCH_CHECK(query.dim() == 4);
   TORCH_CHECK(key.dim() == 4);

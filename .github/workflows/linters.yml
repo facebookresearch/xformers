@@ -1,0 +1,10 @@
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+
+jobs:
+  repo:
+    uses: ./.github/workflows/linters_reusable.yml
+
