@@ -170,10 +170,12 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                 + get_extra_nvcc_flags_for_build_type(),
             },
             include_dirs=[
-                Path(flash_root) / "csrc" / "flash_attn",
-                Path(flash_root) / "csrc" / "flash_attn" / "src",
-                #            Path(flash_root) / 'csrc' / 'flash_attn' / 'cutlass' / 'include',
-                Path(this_dir) / "third_party" / "cutlass" / "include",
+                p.absolute()
+                for p in [
+                    Path(flash_root) / "csrc" / "flash_attn",
+                    Path(flash_root) / "csrc" / "flash_attn" / "src",
+                    Path(this_dir) / "third_party" / "cutlass" / "include",
+                ]
             ],
         )
     ]
@@ -254,7 +256,7 @@ def get_extensions():
         extension(
             "xformers._C",
             sorted(sources),
-            include_dirs=include_dirs,
+            include_dirs=[os.path.abspath(p) for p in include_dirs],
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
         )
