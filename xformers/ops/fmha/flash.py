@@ -5,7 +5,7 @@
 
 
 from dataclasses import replace
-from typing import Any, Optional, Set, Tuple
+from typing import Any, List, Optional, Set, Tuple
 
 import torch
 
@@ -17,6 +17,7 @@ from .common import (
     Gradients,
     Inputs,
     LowerTriangularMask,
+    check_lastdim_alignment_stride1,
 )
 from .tensor_with_seqlen import TensorWithSeqLen
 
@@ -191,6 +192,7 @@ class FwOp(AttentionFwOpBase):
 
     OPERATOR = get_operator("xformers_flash", "flash_fwd")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
+    CUDA_MINIMUM_COMPUTE_CAPABILITY = (7, 5)
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 128
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
@@ -201,16 +203,14 @@ class FwOp(AttentionFwOpBase):
     NAME = "flshattF"
 
     @classmethod
-    def supports(cls, d: "Inputs") -> bool:
-        if not super(FwOp, cls).supports(d):
-            return False
-        # We know `d.device` is cuda now
-        # d=128 is only supported on A100 for bw
-        # d > 64 is only supported on A100 for bw
-        device_capability = torch.cuda.get_device_capability(d.device)
-        if (d.query.shape[-1] % 8) > 0:
-            return False
-        return device_capability >= (7, 5)
+    def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        reasons = super(FwOp, cls).not_supported_reasons(d)
+        check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
+        if d.device.type == "cuda":
+            device_capability = torch.cuda.get_device_capability(d.device)
+            if device_capability < (7, 5):
+                reasons.append("requires a GPU with compute capability > 7.5")
+        return reasons
 
     @classmethod
     def apply(
@@ -263,6 +263,7 @@ class FwOp(AttentionFwOpBase):
 class BwOp(AttentionBwOpBase):
     OPERATOR = get_operator("xformers_flash", "flash_bwd")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
+    CUDA_MINIMUM_COMPUTE_CAPABILITY = FwOp.CUDA_MINIMUM_COMPUTE_CAPABILITY
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
     SUPPORTED_ATTN_BIAS_TYPES = FwOp.SUPPORTED_ATTN_BIAS_TYPES
@@ -273,14 +274,22 @@ class BwOp(AttentionBwOpBase):
     NAME = "flshattB"
 
     @classmethod
-    def supports(cls, d: Inputs) -> bool:
-        if not FwOp.supports(d):
-            return False
-        device_capability = torch.cuda.get_device_capability(d.device)
-        is_sm80 = device_capability[0] == 8 and device_capability[1] == 0
-        if max(d.key.shape[-1], d.query.shape[-1]) > 64 and not is_sm80:
-            return False
-        return True
+    def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        reasons = super(BwOp, cls).not_supported_reasons(d)
+        check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
+        if d.device.type == "cuda":
+            # We know `d.device` is cuda now
+            # d=128 is only supported on A100 for bw
+            # d > 64 is only supported on A100 for bw
+            device_capability = torch.cuda.get_device_capability(d.device)
+            if device_capability < (7, 5):
+                reasons.append("requires a GPU with compute capability > 7.5")
+            is_sm80 = device_capability[0] == 8 and device_capability[1] == 0
+            if max(d.key.shape[-1], d.query.shape[-1]) > 64 and not is_sm80:
+                reasons.append(
+                    "requires a GPU with compute capability == 8.0 for 'query.shape[-1] > 64'"
+                )
+        return reasons
 
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:

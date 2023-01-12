@@ -5,7 +5,7 @@
 
 import random
 from dataclasses import dataclass
-from typing import Any, Sequence, Tuple, Type
+from typing import Any, Sequence, Tuple, Type, TypeVar
 
 import pytest
 import torch
@@ -19,15 +19,13 @@ from .utils import assert_allclose
 
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+compute_capability = (0, 0)
 if torch.cuda.is_available():
-    _devices = ["cuda"]
-    _is_sm75 = torch.cuda.get_device_capability(_devices[0]) >= (7, 5)
-else:
-    _devices = []
-    _is_sm75 = False
-sm75_or_better_only = pytest.mark.skipif(not _is_sm75, reason="requires sm75+")
+    compute_capability = torch.cuda.get_device_capability("cuda")
+sm75_or_better_only = pytest.mark.skipif(
+    compute_capability < (7, 5), reason="requires sm75+"
+)
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
-
 
 ALL_FW_OPS: Sequence[Type[fmha.common.AttentionFwOpBase]] = [
     fmha.cutlass.FwOp,
@@ -42,6 +40,23 @@ ALL_BW_OPS: Sequence[Type[fmha.common.AttentionBwOpBase]] = [
     fmha.triton.BwOp,
     fmha.small_k.BwOp,
 ]
+
+T = TypeVar(
+    "T", Type[fmha.common.AttentionFwOpBase], Type[fmha.common.AttentionBwOpBase]
+)
+
+
+def _filter_unsupported_ops(ops: Sequence[T]) -> Sequence[T]:
+    return [
+        op
+        for op in ops
+        if "cpu" in op.SUPPORTED_DEVICES
+        or op.CUDA_MINIMUM_COMPUTE_CAPABILITY <= compute_capability
+    ]
+
+
+ALL_FW_OPS = _filter_unsupported_ops(ALL_FW_OPS)
+ALL_BW_OPS = _filter_unsupported_ops(ALL_BW_OPS)
 
 
 def sample_random_supported_fw(
@@ -1111,3 +1126,43 @@ def test_grad_checkpointing(
             use_reentrant=use_reentrant,
         )
     x.mean().backward()
+
+
+ALL_FW_OPS_NO_SMALLK = [op for op in ALL_FW_OPS if op is not fmha.small_k.FwOp]
+
+
+@pytest.mark.parametrize(
+    "op", ALL_FW_OPS_NO_SMALLK, ids=[op.NAME for op in ALL_FW_OPS_NO_SMALLK]
+)
+def test_unsupported_cpu(op: Type[fmha.AttentionFwOpBase]):
+    q = torch.empty([1, 1, 1, 32])
+    with pytest.raises(ValueError):
+        fmha.memory_efficient_attention(q, q, q, op=(op, None))
+
+
+@cuda_only
+@pytest.mark.parametrize(
+    "op", ALL_FW_OPS_NO_SMALLK, ids=[op.NAME for op in ALL_FW_OPS_NO_SMALLK]
+)
+def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
+    q = torch.empty([1, 1, 32, 4], device="cuda", dtype=torch.float16).permute(
+        0, 1, 3, 2
+    )
+    try:
+        fmha.memory_efficient_attention(q, q, q, op=(op, None))
+    except ValueError:
+        q = q.contiguous()
+        fmha.memory_efficient_attention(q, q, q, op=(op, None))
+
+
+@cuda_only
+@pytest.mark.parametrize(
+    "op", ALL_FW_OPS_NO_SMALLK, ids=[op.NAME for op in ALL_FW_OPS_NO_SMALLK]
+)
+def test_unsupported_stride_alignment(op: Type[fmha.AttentionFwOpBase]):
+    q = torch.empty([1, 2, 2, 33], device="cuda", dtype=torch.float16)[:, :, :, :32]
+    try:
+        fmha.memory_efficient_attention(q, q, q, op=(op, None))
+    except ValueError:
+        q = q.contiguous()
+        fmha.memory_efficient_attention(q, q, q, op=(op, None))

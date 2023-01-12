@@ -4,7 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import List, Type
+import textwrap
+from typing import List, Type, TypeVar
 
 from . import cutlass, flash, small_k, triton
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
@@ -27,6 +28,48 @@ def _is_triton_fwd_fastest(inp: Inputs) -> bool:
     return False
 
 
+T = TypeVar("T", Type[AttentionFwOpBase], Type[AttentionBwOpBase])
+
+
+def _format_inputs_description(inp: Inputs) -> str:
+    return f"""query       : shape={tuple(inp.query.shape)} ({inp.query.dtype})
+key         : shape={tuple(inp.key.shape)} ({inp.key.dtype})
+value       : shape={tuple(inp.value.shape)} ({inp.value.dtype})
+attn_bias   : {type(inp.attn_bias)}
+p           : {inp.p}"""
+
+
+def _ensure_op_supports_or_raise(exc_type, name: str, op, inp: Inputs) -> None:
+    reasons = op.not_supported_reasons(inp)
+    if not reasons:
+        return
+    raise exc_type(
+        f"""Operator `{name}` does not support inputs:
+{textwrap.indent(_format_inputs_description(inp), '     ')}
+{_format_not_supported_reasons(op, reasons)}"""
+    )
+
+
+def _format_not_supported_reasons(op, reasons: List[str]) -> str:
+    return f"`{op.NAME}` is not supported because:\n    " + "\n    ".join(reasons)
+
+
+def _run_priority_list(name: str, priority_list: List[T], inp: Inputs) -> T:
+    not_supported_reasons: List[List[str]] = []
+    for op in priority_list:
+        not_supported = op.not_supported_reasons(inp)
+        if not not_supported:
+            return op
+        not_supported_reasons.append(not_supported)
+
+    # Let's write a nice message explaining what we tried and why it's not supported
+    msg = f"""No operator found for `{name}` with inputs:
+{textwrap.indent(_format_inputs_description(inp), '     ')}"""
+    for op, not_supported in zip(priority_list, not_supported_reasons):
+        msg += "\n" + _format_not_supported_reasons(op, not_supported)
+    raise NotImplementedError(msg)
+
+
 def _dispatch_fw(inp: Inputs) -> Type[AttentionFwOpBase]:
     """Computes the best operator for forward
 
@@ -44,13 +87,14 @@ def _dispatch_fw(inp: Inputs) -> Type[AttentionFwOpBase]:
         small_k.FwOp,
     ]
     if _is_cutlass_fwd_faster_than_flash(inp):
+        priority_list_ops.remove(cutlass.FwOp)
         priority_list_ops.insert(0, cutlass.FwOp)
     if _is_triton_fwd_fastest(inp):
+        priority_list_ops.remove(triton.FwOp)
         priority_list_ops.insert(0, triton.FwOp)
-    for op in priority_list_ops:
-        if op.supports(inp):
-            return op
-    raise NotImplementedError(f"No operator found for this attention: {inp}")
+    return _run_priority_list(
+        "memory_efficient_attention_forward", priority_list_ops, inp
+    )
 
 
 def _dispatch_bw(inp: Inputs) -> Type[AttentionBwOpBase]:
@@ -62,7 +106,6 @@ def _dispatch_bw(inp: Inputs) -> Type[AttentionBwOpBase]:
         # Deprecated
         small_k.BwOp,
     ]
-    for op in priority_list_ops:
-        if op.supports(inp):
-            return op
-    raise NotImplementedError(f"No operator found for this attention: {inp}")
+    return _run_priority_list(
+        "memory_efficient_attention_backward", priority_list_ops, inp
+    )

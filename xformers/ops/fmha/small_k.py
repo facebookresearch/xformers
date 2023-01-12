@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, Mapping, Optional, Set, Tuple
+from typing import Any, List, Mapping, Optional, Set, Tuple
 
 import torch
 
@@ -56,15 +56,15 @@ class FwOp(AttentionFwOpBase):
     _TEST_K = [2, 3, 8, 16, 32]
 
     @classmethod
-    def supports(cls, d: "Inputs") -> bool:
-        if not super(FwOp, cls).supports(d):
-            return False
+    def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        reasons = super(FwOp, cls).not_supported_reasons(d)
         buffer_size = 8
         k = d.query.shape[-1]
         for pack in [1, 2, 4]:
             if (k % pack) == 0 and (k // pack) <= buffer_size:
-                return True
-        return False
+                return reasons
+        reasons.append(f"unsupported embed per head: {k}")
+        return reasons
 
     @classmethod
     def apply(
@@ -114,8 +114,15 @@ class BwOp(AttentionBwOpBase):
     NAME = "smallkB"
 
     @classmethod
-    def supports(cls, d: "Inputs") -> bool:
-        return FwOp.supports(d)
+    def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        reasons = super(BwOp, cls).not_supported_reasons(d)
+        buffer_size = 8
+        k = d.query.shape[-1]
+        for pack in [1, 2, 4]:
+            if (k % pack) == 0 and (k // pack) <= buffer_size:
+                return reasons
+        reasons.append(f"unsupported embed per head: {k}")
+        return reasons
 
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:
