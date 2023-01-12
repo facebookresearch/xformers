@@ -98,7 +98,7 @@ class Build:
             assert Path(cuda_home).is_dir
             os.environ["CUDA_HOME"] = cuda_home
 
-        os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0 8.6"
+        os.environ["TORCH_CUDA_ARCH_LIST"] = "5.0+PTX 6.0 6.1 7.0 7.5 8.0 8.6"
         os.environ["BUILD_VERSION"] = self._get_build_version()
         tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
         os.environ["GIT_TAG"] = tag
