@@ -98,7 +98,7 @@ class Build:
 
         os.environ["TORCH_CUDA_ARCH_LIST"] = "5.0+PTX 6.0 6.1 7.0 7.5 8.0 8.6"
         os.environ["BUILD_VERSION"] = self._get_build_version()
-        tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
+        tag = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
         os.environ["GIT_TAG"] = tag
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
         os.environ["CU_VERSION"] = self.cuda_version
