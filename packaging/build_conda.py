@@ -8,7 +8,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from compute_wheel_version import is_exact_version
+import compute_wheel_version
 
 THIS_PATH = Path(__file__).resolve()
 SOURCE_ROOT_DIR = THIS_PATH.parents[1]
@@ -74,19 +74,16 @@ class Build:
     conda_dirty: bool = False
     build_inside_tree: bool = False
     upload: bool = False
-    is_release: bool = field(default_factory=is_exact_version)
+    is_release: bool = field(default_factory=compute_wheel_version.is_exact_version)
 
     def _get_build_version(self):
-        code_version = (SOURCE_ROOT_DIR / "version.txt").read_text().strip()
         if self.is_release:
-            return code_version
+            return compute_wheel_version.code_version
         git_hash = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
         ).strip()
-        num_commits = subprocess.check_output(
-            ["git", "rev-list", "--count", "HEAD"], text=True
-        ).strip()
-        return f"{code_version}.dev{num_commits}+git.{git_hash}"
+        dev_version = compute_wheel_version.get_dev_version()
+        return f"{dev_version}+git.{git_hash}"
 
     def _set_env_for_build(self):
         if "CUDA_HOME" not in os.environ:

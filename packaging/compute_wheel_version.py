@@ -32,16 +32,15 @@ def is_exact_version() -> bool:
     return True
 
 
-if __name__ == "__main__":
-    if is_exact_version():
-        print(version, end="")
-        exit(0)
-
+def get_dev_version() -> str:
     num_commits = subprocess.check_output(
         ["git", "rev-list", "--count", "HEAD"], text=True
     ).strip()
-    # increment patch
-    last_part = version.rindex(".") + 1
-    version = version[:last_part] + str(1 + int(version[last_part:]))
+    return f"{version}.dev{num_commits}"
 
-    print(f"{version}rc{num_commits}", end="")
+
+if __name__ == "__main__":
+    if is_exact_version():
+        print(version, end="")
+    else:
+        print(get_dev_version(), end="")
