@@ -1,6 +1,7 @@
 name: Build wheels
 
 on:
+  workflow_dispatch: {}
   push:
     branches:
       - main
@@ -116,13 +117,13 @@ jobs:
           path: dist/*.whl
 
       - name: Upload wheel to PyPi
-        if: matrix.config.publish
+        if: ${{ github.ref_name == 'main' && matrix.config.publish }}
         run: $PY -m twine upload dist/*.whl
         env:
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 
       - name: Upload source distribution to PyPi
-        if: matrix.config.publish && matrix.sdist
+        if: ${{ github.ref_name == 'main' && matrix.config.publish && matrix.sdist }}
         run: |
           rm -rf dist/
           # unpin pytorch version

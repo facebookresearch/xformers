@@ -47,5 +47,11 @@ jobs:
           $PY -c "import torch; print('torch', torch.__version__)"
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"
 
-      - name: Build
-        run: $PY setup.py develop
+      - name: Create sdist
+        run: $PY setup.py sdist
+
+      - name: Build from sdist
+        run: $PY -m pip install -v dist/*
+
+      - name: Info
+        run: $PY -m xformers.info

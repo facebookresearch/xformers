@@ -8,6 +8,7 @@
 import datetime
 import distutils.command.clean
 import glob
+import importlib.util
 import json
 import os
 import platform
@@ -27,7 +28,7 @@ from torch.utils.cpp_extension import (
     CUDAExtension,
 )
 
-this_dir = os.path.dirname(os.path.abspath(__file__))
+this_dir = os.path.dirname(__file__)
 
 
 def get_extra_nvcc_flags_for_build_type() -> List[str]:
@@ -130,7 +131,6 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     if not nvcc_archs_flags:
         return []
 
-    this_dir = os.path.dirname(os.path.abspath(__file__))
     flash_root = os.path.join(this_dir, "third_party", "flash-attention")
     if not os.path.exists(flash_root):
         raise RuntimeError(
@@ -142,7 +142,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
         CUDAExtension(
             name="xformers._C_flashattention",
             sources=[
-                os.path.join(this_dir, "third_party", "flash-attention", path)
+                os.path.join("third_party", "flash-attention", path)
                 for path in [
                     "csrc/flash_attn/fmha_api.cpp",
                     "csrc/flash_attn/src/fmha_fwd_hdim32.cu",
@@ -180,8 +180,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
 
 
 def get_extensions():
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-    extensions_dir = os.path.join(this_dir, "xformers", "csrc")
+    extensions_dir = os.path.join("xformers", "csrc")
 
     sources = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
     source_cuda = glob.glob(os.path.join(extensions_dir, "**", "*.cu"), recursive=True)
@@ -251,8 +250,6 @@ def get_extensions():
             cuda_version=cuda_version, extra_compile_args=extra_compile_args
         )
 
-    sources = [os.path.join(extensions_dir, s) for s in sources]
-
     ext_modules.append(
         extension(
             "xformers._C",
@@ -314,10 +311,17 @@ if __name__ == "__main__":
 
     try:
         # when installing as a source distribution, the version module should exist
-        from xformers.version import __version__
-
-        version = __version__
-    except ModuleNotFoundError:
+        # Let's import it manually to not trigger the load of the C++
+        # library - which does not exist yet, and creates a WARNING
+        spec = importlib.util.spec_from_file_location(
+            "xformers_version", os.path.join(this_dir, "xformers", "version.py")
+        )
+        if spec is None or spec.loader is None:
+            raise FileNotFoundError()
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        version = module.__version__
+    except FileNotFoundError:
         if os.getenv("BUILD_VERSION"):  # In CI
             version = os.getenv("BUILD_VERSION", "0.0.0")
         else:
