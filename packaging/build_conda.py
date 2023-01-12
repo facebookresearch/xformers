@@ -158,7 +158,8 @@ class Build:
         assert not self.build_inside_tree
         artifacts = Path("artifacts")
         artifacts.mkdir(exist_ok=True)
-        for filename in Path("../build").resolve().glob("*.bz2"):
+        for filename in Path("../build/linux-64").resolve().glob("*.bz2"):
+            print("moving", filename)
             shutil.move(filename, artifacts)
 
     def build_in_docker(self) -> None:
