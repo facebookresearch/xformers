@@ -6,112 +6,143 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## TBD
 ### Fixed
-- Updated triton dependency [#418]
-- Fixed strides for QKV gradients for cutlass attention [#535]
+### Added
+
+
+## [0.0.16] - 2023-01-12
+### Fixed
+- Updated triton dependency [facebookresearch/xformers#418]
+- Stripe lineinfo from binaries, reducing the binary size [facebookresearch/xformers#549]
+- Added support for pip wheels [facebookresearch/xformers#588, facebookresearch/xformers#573, facebookresearch/xformers#534, facebookresearch/xformers#523, ...] big thanks to [@AbdBarho](https://github.com/AbdBarho)!
+- Fixed compatibility with Python 3.7 [facebookresearch/xformers#541] - thanks to [@susumuota](https://github.com/susumuota)
+- fMHA: Fixed strides for QKV gradients for cutlass attention [facebookresearch/xformers#535]
+- fMHA: Stricter inputs validation to avoid CUDA errors for unsupported inputs [facebookresearch/xformers#592]
+- fMHA/Flash-Attention: Updated to https://github.com/HazyResearch/flash-attention/commit/a1f49a2b92b6fa022379bbebafed9d7f5e96a675 with multiple changes from [@TriDao](https://github.com/tridao) that make the operator up to 20% faster
+- fMHA/Flash-Attention: Fixed backward pass wrapper, where non-contiguous gradients could give the wrong result [facebookresearch/xformers#548]
+- fMHA: Separate each operator into forward and backward operators. It's now possible to use any combination of forward+backward (for instance Triton forward and Flash-Attention backward) [facebookresearch/xformers#560]
 
 ### Added
+- fMHA: Added Triton operator for forward pass from [Flash-Attention](https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attn_triton.py) authored by [@TriDao](https://github.com/tridao), will be automatically used on A100 when compatible
+- fMHA: Added [`xformers.ops.memory_efficient_attention_forward`](https://facebookresearch.github.io/xformers/components/ops.html#xformers.ops.memory_efficient_attention_forward), [`xformers.ops.memory_efficient_attention_forward_requires_grad`](https://facebookresearch.github.io/xformers/components/ops.html#xformers.ops.memory_efficient_attention_forward_requires_grad), [`xformers.ops.memory_efficient_attention_backward`](https://facebookresearch.github.io/xformers/components/ops.html#xformers.ops.memory_efficient_attention_backward) for power-users who write custom autograd functions [facebookresearch/xformers#560]
+- fMHA: Support for custom scaling for the CUTLASS-based kernel [facebookresearch/xformers#530] - contribution from [@comaniac](https://github.com/comaniac)
+
+## [0.0.15] - Skipped
+
+## [0.0.14] - 2022-11-10
+### Fixed
+- fMHA/CUTLASS: The current CUDA stream is now used by the kernel [facebookresearch/xformers#491]
+- fMHA/CUTLASS: Improve overall performance
+
+### Added
+- SwiGLU: Added `xformers.ops.SwiGLU` and its functional counterpart (`xformers.ops.swiglu`) [facebookresearch/xformers#490]
+- fMHA: Possible to combine CUTLASS's forward with flash-attention's backward pass [facebookresearch/xformers#469] - improves performance on A100 for K = 128
+- fMHA: Add custom `xformers.ops.unbind` operator to avoid a cat in the attention block [facebookresearch/xformers#458]
+
+## [0.0.13] - 2022-09-26
+### Added
+- fMHA: Added CUTLASS-based kernel for `xformers.ops.memory_efficient_attention`. This kernel is automatically depending on the inputs, and works on any GPU after P100 [facebookresearch/xformers#362]
 
 ## [0.0.12] - 2022-08-08
 ### Fixed
-- Removed duplicated biases in the FusedMLP layers [#317]
-- Rotary embeddings respecting input types [#326]
-- Poolformer style instantiating useless projection layers [#349]
-- Fix layer position not being properly tracked, causing extra layernorms for programmatic xformers [#348]
-- Pass use_triton flag to LayerNorm module [#336]
+- Removed duplicated biases in the FusedMLP layers [facebookresearch/xformers#317]
+- Rotary embeddings respecting input types [facebookresearch/xformers#326]
+- Poolformer style instantiating useless projection layers [facebookresearch/xformers#349]
+- Fix layer position not being properly tracked, causing extra layernorms for programmatic xformers [facebookresearch/xformers#348]
+- Pass use_triton flag to LayerNorm module [facebookresearch/xformers#336]
 
 ### Added
-- Four blocksparsity layouts from DeepSpeed [#320]
-- Support several initialization options [#312]
-- Conv2DFeedforward feedforward part [#321]
-- VisualAttention [#329]
-- Automatic blocksparse for causal attention [#334]
-- Better hierarchical transformer generation [#345]
-- Fused operations with AOTAutograd/NVFuser, integration into MLP [#357]
-- Refactor LRA code to use Pytorch Lightning [#343]
+- Four blocksparsity layouts from DeepSpeed [facebookresearch/xformers#320]
+- Support several initialization options [facebookresearch/xformers#312]
+- Conv2DFeedforward feedforward part [facebookresearch/xformers#321]
+- VisualAttention [facebookresearch/xformers#329]
+- Automatic blocksparse for causal attention [facebookresearch/xformers#334]
+- Better hierarchical transformer generation [facebookresearch/xformers#345]
+- Fused operations with AOTAutograd/NVFuser, integration into MLP [facebookresearch/xformers#357]
+- Refactor LRA code to use Pytorch Lightning [facebookresearch/xformers#343]
 
 ## [0.0.11] - 2022-05-30
 ### Fixed
-- Fix some torchscriptability [#246]
-- Fix FourierMix being compatible with AMP [#258]
-- Better asserts on QKV dimensions [#264]
-- Better perfs for FusedMLP and FusedLinearLayer [#283]
-- Deepnorm init missing self-attention [#284]
+- Fix some torchscriptability [facebookresearch/xformers#246]
+- Fix FourierMix being compatible with AMP [facebookresearch/xformers#258]
+- Better asserts on QKV dimensions [facebookresearch/xformers#264]
+- Better perfs for FusedMLP and FusedLinearLayer [facebookresearch/xformers#283]
+- Deepnorm init missing self-attention [facebookresearch/xformers#284]
 
 ### Added
-- Simplicial Embeddings [#259]
-- Mem efficient attention, FW pass [#267]
+- Simplicial Embeddings [facebookresearch/xformers#259]
+- Mem efficient attention, FW pass [facebookresearch/xformers#267]
 - MHA benchmark
 - MLP benchmark
-- Move all triton kernels to triton v2 [#272]
-- Mem efficient attention, BW pass [#281]
-- Metaformer support [#294]
+- Move all triton kernels to triton v2 [facebookresearch/xformers#272]
+- Mem efficient attention, BW pass [facebookresearch/xformers#281]
+- Metaformer support [facebookresearch/xformers#294]
 
 ## [0.0.10] - 2022-03-14
 ### Fixed
-- Expose bias flag for feedforwards, same default as Timm [#220]
-- Update eps value for layernorm, same default as torch [#221]
-- PreNorm bugfix, only one input was normalized [#233]
-- Fix bug where embedding dimensions that did not match model dim would lead to a crash [#244]
+- Expose bias flag for feedforwards, same default as Timm [facebookresearch/xformers#220]
+- Update eps value for layernorm, same default as torch [facebookresearch/xformers#221]
+- PreNorm bugfix, only one input was normalized [facebookresearch/xformers#233]
+- Fix bug where embedding dimensions that did not match model dim would lead to a crash [facebookresearch/xformers#244]
 
 ### Added
-- Add DeepNet (DeepNorm) residual path and init [#227]
+- Add DeepNet (DeepNorm) residual path and init [facebookresearch/xformers#227]
 
 ## [0.0.9] - 2022-02-09
 ### Added
-- Compositional Attention [#41]
-- Experimental Ragged attention [#189]
-- Mixture of Experts [#181]
-- BlockSparseTensor [#202]
-- Nd-tensor support for triton softmax [#210]
+- Compositional Attention [facebookresearch/xformers#41]
+- Experimental Ragged attention [facebookresearch/xformers#189]
+- Mixture of Experts [facebookresearch/xformers#181]
+- BlockSparseTensor [facebookresearch/xformers#202]
+- Nd-tensor support for triton softmax [facebookresearch/xformers#210]
 
 ### Fixed
-- Bugfix Favor, single feature map [#183]
-- Sanity check blocksparse settings [#207]
-- Fixed some picklability [#204]
+- Bugfix Favor, single feature map [facebookresearch/xformers#183]
+- Sanity check blocksparse settings [facebookresearch/xformers#207]
+- Fixed some picklability [facebookresearch/xformers#204]
 
 ## [0.0.8] - 2022-01-07
 ### Fixed
-- Much faster fused dropout [#164]
-- Fused dropout repeatability [#173]
+- Much faster fused dropout [facebookresearch/xformers#164]
+- Fused dropout repeatability [facebookresearch/xformers#173]
 
 ### Added
-- Embedding weight tying option [#172]
+- Embedding weight tying option [facebookresearch/xformers#172]
 
 ## [0.0.7] - 2021-11-30
 ### Fixed
-- Dropout setting not properly passed in many attentions [#123]
+- Dropout setting not properly passed in many attentions [facebookresearch/xformers#123]
 
 ## [0.0.6] - 2021-11-24
 ### Fixed
-- Fix self attention optimization not being triggered, broken residual path [#119]
-- Improve speed by not using contiguous Tensors when not needed [#119]
+- Fix self attention optimization not being triggered, broken residual path [facebookresearch/xformers#119]
+- Improve speed by not using contiguous Tensors when not needed [facebookresearch/xformers#119]
 
 ### Added
-- Attention mask wrapper [#113]
-- ViT comparison benchmark [#117]
+- Attention mask wrapper [facebookresearch/xformers#113]
+- ViT comparison benchmark [facebookresearch/xformers#117]
 
 ## [0.0.4] - 2021-11-16
 ### Fixed
-- Homogenizing the masks, additive or bool [#79][#85][#86]
-- Fix causality flag not being respected [#103]
+- Homogenizing the masks, additive or bool [facebookresearch/xformers#79][facebookresearch/xformers#85][facebookresearch/xformers#86]
+- Fix causality flag not being respected [facebookresearch/xformers#103]
 - Enabling FusedLayerNorm by default in the factory if Triton is available
 - Fixing Favor with fp16
 - Fixing Favor trainability
 
 ### Added
-- Fused dropout/bias/activation layer [#58]
-- Fused layernorm used by default in the factory [#92]
+- Fused dropout/bias/activation layer [facebookresearch/xformers#58]
+- Fused layernorm used by default in the factory [facebookresearch/xformers#92]
 
 
 ## [0.0.3] - 2021-11-01
 ### Fixed
-- Nystrom causal attention [#75]
+- Nystrom causal attention [facebookresearch/xformers#75]
 
 
 ## [0.0.2] - 2021-11-01
 ### Fixed
-- More robust blocksparse [#24]
+- More robust blocksparse [facebookresearch/xformers#24]
 
 ### Added
-- Rotary embeddings [#32]
-- More flexible layernorm [#50]
+- Rotary embeddings [facebookresearch/xformers#32]
+- More flexible layernorm [facebookresearch/xformers#50]
