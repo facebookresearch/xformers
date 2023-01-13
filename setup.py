@@ -300,13 +300,28 @@ class clean(distutils.command.clean.clean):  # type: ignore
 class BuildExtensionWithMetadata(BuildExtension):
     def __init__(self, *args, **kwargs) -> None:
         self.xformers_build_metadata = kwargs.pop("xformers_build_metadata")
+        self.pkg_name = "xformers"
+        self.metadata_json = "cpp_lib.json"
         super().__init__(*args, **kwargs)
 
     def build_extensions(self) -> None:
         super().build_extensions()
-        metadata_json = os.path.join(this_dir, "xformers", "cpp_lib.json")
-        with open(metadata_json, "w+") as fp:
+        with open(
+            os.path.join(self.build_lib, self.pkg_name, self.metadata_json), "w+"
+        ) as fp:
             json.dump(self.xformers_build_metadata, fp)
+
+    def copy_extensions_to_source(self):
+        """
+        Used for `pip install -e .`
+        Copies everything we built back into the source repo
+        """
+        build_py = self.get_finalized_command("build_py")
+        package_dir = build_py.get_package_dir(self.pkg_name)
+        inplace_file = os.path.join(package_dir, self.metadata_json)
+        regular_file = os.path.join(self.build_lib, self.pkg_name, self.metadata_json)
+        self.copy_file(regular_file, inplace_file, level=self.verbose)
+        super().copy_extensions_to_source()
 
 
 if __name__ == "__main__":
@@ -360,8 +375,6 @@ if __name__ == "__main__":
             ),
             "clean": clean,
         },
-        data_files=[("xformers", ["xformers/cpp_lib.json"])],
-        include_package_data=True,
         url="https://facebookresearch.github.io/xformers/",
         python_requires=">=3.7",
         author="Facebook AI Research",
