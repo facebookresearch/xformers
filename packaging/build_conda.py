@@ -155,11 +155,12 @@ class Build:
 
     def move_artifacts_to_store(self):
         """run after a build to move artifacts elsewhere"""
+        print("moving artifacts")
         assert not self.build_inside_tree
-        artifacts = Path("artifacts")
+        artifacts = Path("packages")
         artifacts.mkdir(exist_ok=True)
         for filename in Path("../build/linux-64").resolve().glob("*.tar.bz2"):
-            print("moving", filename)
+            print("moving", filename, "to", artifacts)
             shutil.move(filename, artifacts)
 
     def build_in_docker(self) -> None:

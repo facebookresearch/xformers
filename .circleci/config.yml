@@ -358,7 +358,7 @@ jobs:
           command: |
             python packaging/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >> --upload-or-store
       - store_artifacts:
-          path: artifacts/*
+          path: packages
 
   gpu_tests_cu114_sm75:
     <<: *gpu_cu114
