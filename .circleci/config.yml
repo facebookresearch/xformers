@@ -347,6 +347,7 @@ jobs:
       - checkout
       - run: git submodule update --init --recursive
       - run: printenv
+      - run: python -m pip install packaging
       - run:
           name: conda build for py3_9
           no_output_timeout: 20m
