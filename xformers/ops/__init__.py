@@ -6,7 +6,7 @@
 import torch
 
 from .fmha import (
-    AttentionMask,
+    AttentionBias,
     AttentionOp,
     AttentionOpBase,
     AttentionOpDispatch,
@@ -57,7 +57,7 @@ def masked_matmul(a, b, mask=None):
 
 
 __all__ = [
-    "AttentionMask",
+    "AttentionBias",
     "AttentionOp",
     "AttentionOpBase",
     "AttentionOpDispatch",

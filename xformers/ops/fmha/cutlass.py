@@ -18,7 +18,6 @@ from .common import (
     LowerTriangularMask,
     check_lastdim_alignment_stride1,
 )
-from .tensor_with_seqlen import TensorWithSeqLen
 
 
 def _uses_tensorcores(sm: int, is_half: bool) -> bool:
@@ -49,19 +48,11 @@ def _minimum_gemm_alignment(inp: Inputs) -> int:
 def _get_seqlen_info(
     inp: Inputs,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], int]:
-    MISMATCH_ERR = (
-        "All of query/key/value should have seqlen information, or none of them"
-    )
-
-    if isinstance(inp.key, TensorWithSeqLen):
-        assert isinstance(inp.query, TensorWithSeqLen), MISMATCH_ERR
-        assert isinstance(inp.value, TensorWithSeqLen), MISMATCH_ERR
-        cu_seqlen_k = inp.key.cu_seqlen
-        cu_seqlen_q = inp.query.cu_seqlen
-        max_seqlen_q = inp.query.max_seqlen
+    if inp.attn_bias.block_diag is not None:
+        cu_seqlen_k = inp.attn_bias.block_diag.k_seqinfo.cu_seqlen
+        cu_seqlen_q = inp.attn_bias.block_diag.q_seqinfo.cu_seqlen
+        max_seqlen_q = inp.attn_bias.block_diag.q_seqinfo.max_seqlen
     else:
-        assert not isinstance(inp.query, TensorWithSeqLen), MISMATCH_ERR
-        assert not isinstance(inp.value, TensorWithSeqLen), MISMATCH_ERR
         cu_seqlen_k = None
         cu_seqlen_q = None
         max_seqlen_q = -1

@@ -19,7 +19,6 @@ from .common import (
     LowerTriangularMask,
     check_lastdim_alignment_stride1,
 )
-from .tensor_with_seqlen import TensorWithSeqLen
 
 try:
     from ... import _C_flashattention  # type: ignore[attr-defined]
@@ -134,12 +133,11 @@ def _convert_input_format(
     head_dim_q = query.shape[3]
     head_dim_v = value.shape[3]
 
-    assert isinstance(inp.key, TensorWithSeqLen) == isinstance(
-        inp.value, TensorWithSeqLen
-    ), "Both key/value should have seqlen information, or none of them"
-    if isinstance(inp.key, TensorWithSeqLen):
-        cu_seqlen_k = inp.key.cu_seqlen
-        max_seqlen_k = inp.key.max_seqlen
+    if inp.attn_bias.block_diag is not None:
+        cu_seqlen_k = inp.attn_bias.block_diag.k_seqinfo.cu_seqlen
+        cu_seqlen_q = inp.attn_bias.block_diag.q_seqinfo.cu_seqlen
+        max_seqlen_q = inp.attn_bias.block_diag.q_seqinfo.max_seqlen
+        max_seqlen_k = inp.attn_bias.block_diag.k_seqinfo.max_seqlen
     else:
         cu_seqlen_k = torch.arange(
             0,
@@ -148,13 +146,7 @@ def _convert_input_format(
             dtype=torch.int32,
             device=query.device,
         )
-        max_seqlen_k = seqlen_kv
-
-    if isinstance(inp.query, TensorWithSeqLen):
-        cu_seqlen_q = inp.query.cu_seqlen
-        max_seqlen_q = inp.query.max_seqlen
-    else:
-        if not isinstance(inp.key, TensorWithSeqLen) and seqlen_q == seqlen_kv:
+        if seqlen_q == seqlen_kv:
             cu_seqlen_q = cu_seqlen_k
         else:
             cu_seqlen_q = torch.arange(
@@ -165,6 +157,7 @@ def _convert_input_format(
                 device=query.device,
             )
         max_seqlen_q = seqlen_q
+        max_seqlen_k = seqlen_kv
 
     # Initially we have `query.shape = [batch, seqlen, head_dim_q]`
     # We want format `[batch * seqlen, num_heads, head_dim_q]`
@@ -216,11 +209,8 @@ class FwOp(AttentionFwOpBase):
     def apply(
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
-        if inp.attn_bias is not None and not isinstance(
-            inp.attn_bias, LowerTriangularMask
-        ):
+        if inp.attn_bias.bias is not None:
             raise NotImplementedError("Unsupported attn_bias type")
-        causal = isinstance(inp.attn_bias, LowerTriangularMask)
         return_softmax = False
         out_shape = [
             inp.query.shape[0],
@@ -247,7 +237,7 @@ class FwOp(AttentionFwOpBase):
             max_seqlen_k,
             inp.p,
             softmax_scale,
-            causal,
+            inp.attn_bias.causal,
             return_softmax,
         )
 
@@ -361,7 +351,7 @@ class BwOp(AttentionBwOpBase):
             max_seqlen_k,
             inp.p,
             softmax_scale,
-            isinstance(inp.attn_bias, LowerTriangularMask),
+            inp.attn_bias.causal,
         )
         if cur_rng_state is not None:
             torch.cuda.set_rng_state(cur_rng_state)

@@ -11,73 +11,34 @@ import torch
 
 from ..._cpp_lib import _built_with_cuda
 from ..common import BaseOperator
-from .tensor_with_seqlen import TensorWithSeqLen
+from .attn_bias import AttentionBias, LowerTriangularMask
 
 
-class AttentionMask:
-    """Base class for custom masks that can be applied \
-        in :attr:`xformers.ops.memory_efficient_attention`.
-
-    When using an :attr:`xformers.ops.AttentionMask`
-    instead of a :attr:`torch.Tensor`, the mask matrix does
-    not need to be materialized, and can be
-    hardcoded into some kernels for better performance.
-
-    See also :attr:`xformers.ops.LowerTriangularMask`
+class Inputs:
+    """
+    Stores inputs to the `memory_efficient_attention` operators
     """
 
-    def to_tensor(self) -> torch.Tensor:
-        """Materializes the mask tensor
+    def __init__(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
+        p: float = 0.0,
+        scale: Optional[float] = None,
+    ) -> None:
+        if attn_bias is None:
+            attn_bias = AttentionBias()
+        elif isinstance(attn_bias, torch.Tensor):
+            attn_bias = AttentionBias().add_bias(attn_bias)
 
-        Returns:
-            torch.Tensor
-        """
-        raise NotImplementedError()
-
-
-class LowerTriangularMask(AttentionMask):
-    """A lower triangular mask that can be used for causal attention"""
-
-    def __init__(self, *tensor_args, **tensor_kwargs) -> None:
-        """Creates a Lower triangular mask.
-        It is not requires to specify any parameter, as they are only \
-            used when calling :attr:`LowerTriangularMask.to_tensor`
-
-        The mask will not be materialized by default, and hence does not use \
-            any additional memory, but acts as an option for the MHA kernel.
-        """
-        self._tensor: Optional[torch.Tensor] = None
-        self._tensor_kwargs = tensor_kwargs
-        self._tensor_args = tensor_args
-
-    def to_tensor(self) -> torch.Tensor:
-        """Materializes the mask tensor
-
-        Returns:
-            torch.Tensor
-        """
-        if self._tensor is None:
-            # Work around for "triu_tril_cuda_template" not implemented for 'BFloat16'
-            dtype = self._tensor_kwargs.pop("dtype", torch.float)
-            create_as = dtype if dtype is not torch.bfloat16 else torch.float32
-            self._tensor = torch.full(  # type: ignore
-                *self._tensor_args,
-                **self._tensor_kwargs,
-                dtype=create_as,
-                fill_value=float("-inf"),
-            )
-            self._tensor = torch.triu(self._tensor, diagonal=1).to(dtype)  # type: ignore
-        return self._tensor
-
-
-@dataclass
-class Inputs:
-    query: torch.Tensor
-    key: torch.Tensor
-    value: torch.Tensor
-    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None
-    p: float = 0.0
-    scale: Optional[float] = None
+        self.query = query
+        self.key = key
+        self.value = value
+        self.attn_bias = attn_bias
+        self.p = p
+        self.scale = scale
 
     @property
     def device(self) -> torch.device:
@@ -119,18 +80,10 @@ class Inputs:
                 f"  key.dtype  : {self.key.dtype}\n"
                 f"  value.dtype: {self.value.dtype}"
             )
-        has_seqlen = any(isinstance(x, TensorWithSeqLen) for x in qkv)
-        if has_seqlen:
-            if not all(isinstance(x, TensorWithSeqLen) for x in qkv):
-                raise ValueError(
-                    f"One of Query/Key/Value has sequence length information, but not all of them\n"
-                    f"  type(query): {type(self.query)}\n"
-                    f"  type(key)  : {type(self.key)}\n"
-                    f"  type(value): {type(self.value)}"
-                )
+        if self.attn_bias.block_diag is not None:
             if any(x.shape[0] != 1 for x in qkv):
                 raise ValueError(
-                    f"Expected batch_size=1 when using sequence length information\n"
+                    f"Expected batch_size=1 when using block-diagonal bias\n"
                     f"  query.shape: {self.query.shape}\n"
                     f"  key.shape  : {self.key.shape}\n"
                     f"  value.shape: {self.value.shape}"
@@ -306,7 +259,7 @@ class AttentionOpDispatch:
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+        attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
         p: float = 0.0,
         scale: Optional[float] = None,
     ) -> "AttentionOpDispatch":

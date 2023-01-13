@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 import random
 from dataclasses import dataclass
 from typing import Any, Sequence, Tuple, Type, TypeVar
@@ -1166,3 +1167,63 @@ def test_unsupported_stride_alignment(op: Type[fmha.AttentionFwOpBase]):
     except ValueError:
         q = q.contiguous()
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
+
+
+def test_attn_bias_no_materialize() -> None:
+    attn_bias = fmha.AttentionBias()
+    with pytest.raises(ValueError):
+        attn_bias.materialize()
+
+
+def test_attn_bias_causal() -> None:
+    attn_bias = fmha.AttentionBias([3, 2])
+    assert_allclose(attn_bias.materialize(), torch.zeros([3, 2]), "zeros")
+    m = -math.inf
+    attn_bias.causal = True
+    assert_allclose(
+        attn_bias.materialize(), torch.tensor([[0, m], [0, 0], [0, 0]]), "causal"
+    )
+
+
+def test_attn_bias_torch_tensor() -> None:
+    tensor_bias = torch.tensor([[1.0, 2.0, 3.0], [3.0, 4.0, 5.0]])
+    attn_bias = fmha.AttentionBias([2, 3])
+    assert_allclose(attn_bias.materialize(), torch.zeros([2, 3]), "zeros")
+    attn_bias.bias = tensor_bias
+    assert_allclose(attn_bias.materialize(), tensor_bias, "tensor_bias")
+    attn_bias.causal = True
+    m = -math.inf
+    causal_bias = torch.tensor([[0, m, m], [0, 0, m]])
+    assert_allclose(
+        attn_bias.materialize(), causal_bias + tensor_bias, "tensor_bias+causal"
+    )
+
+
+def test_attn_bias_torch_tensor_infer_shape() -> None:
+    tensor_bias = torch.tensor([[1.0, 2.0, 3.0], [3.0, 4.0, 5.0]])
+    attn_bias = fmha.AttentionBias()
+    attn_bias.bias = tensor_bias
+    attn_bias.bias = None
+    assert_allclose(attn_bias.materialize(), torch.zeros_like(tensor_bias), "zeros")
+
+
+def test_attn_bias_blockdiag() -> None:
+    queries = [
+        torch.randn([1, 3, 1, 8]),
+        torch.randn([1, 2, 1, 8]),
+        torch.randn([1, 5, 1, 8]),
+    ]
+    q, attn_bias = fmha.cat_for_attention(queries)
+
+    # Verify mask
+    as_tensor = attn_bias.materialize()
+    assert int(as_tensor.sum().item()) == 3 * 3 + 2 * 2 + 5 * 5
+    assert_allclose(as_tensor[0:3, 0:3], torch.ones([3, 3]), "batch0")
+    assert_allclose(as_tensor[3:5, 3:5], torch.ones([2, 2]), "batch1")
+    assert_allclose(as_tensor[5:, 5:], torch.ones([5, 5]), "batch2")
+
+    # Verify we can split it back
+    queries2 = fmha.split_after_attention(q, attn_bias)
+    assert len(queries) == len(queries2)
+    for q1, q2 in zip(queries, queries2):
+        assert_allclose(q1, q2)

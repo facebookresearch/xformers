@@ -8,21 +8,24 @@ from typing import Any, Optional, Tuple, Type, Union
 import torch
 
 from . import cutlass, flash, small_k, triton
+from .attn_bias import (
+    AttentionBias,
+    LowerTriangularMask,
+    cat_for_attention,
+    split_after_attention,
+)
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
-    AttentionMask,
     AttentionOp,
     AttentionOpBase,
     AttentionOpDispatch,
     Context,
     Gradients,
     Inputs,
-    LowerTriangularMask,
     bmk2bmhk,
 )
 from .dispatch import _dispatch_bw, _dispatch_fw, _ensure_op_supports_or_raise
-from .tensor_with_seqlen import TensorWithSeqLen  # noqa
 
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
@@ -118,7 +121,7 @@ def memory_efficient_attention(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
     p: float = 0.0,
     scale: Optional[float] = None,
     *,
@@ -206,7 +209,7 @@ def memory_efficient_attention_forward(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
     p: float = 0.0,
     scale: Optional[float] = None,
     *,
@@ -225,7 +228,7 @@ def memory_efficient_attention_forward_requires_grad(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
     p: float = 0.0,
     scale: Optional[float] = None,
     *,
@@ -257,7 +260,7 @@ def memory_efficient_attention_backward(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
     p: float = 0.0,
     scale: Optional[float] = None,
     *,
@@ -387,7 +390,7 @@ def _memory_efficient_attention_backward(
 
 
 __all__ = [
-    "AttentionMask",
+    "AttentionBias",
     "AttentionOp",
     "AttentionOpBase",
     "AttentionOpDispatch",
@@ -399,4 +402,6 @@ __all__ = [
     "MemoryEfficientAttentionOp",
     "TritonFlashAttentionOp",
     "memory_efficient_attention",
+    "cat_for_attention",
+    "split_after_attention",
 ]
