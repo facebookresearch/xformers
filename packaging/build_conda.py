@@ -8,6 +8,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 import compute_wheel_version
 
@@ -75,11 +76,13 @@ class Build:
     conda_dirty: bool = False
     build_inside_tree: bool = False
     upload: bool = False
-    is_release: bool = field(default_factory=compute_wheel_version.is_exact_version)
+    tagged_version: Optional[str] = field(
+        default_factory=compute_wheel_version.get_tagged_version
+    )
 
-    def _get_build_version(self):
-        if self.is_release:
-            return compute_wheel_version.code_version
+    def _get_build_version(self) -> str:
+        if self.tagged_version is not None:
+            return self.tagged_version
         git_hash = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
         ).strip()
@@ -137,7 +140,7 @@ class Build:
         if not self.build_inside_tree:
             args += ["--croot", "../build"]
         if self.upload:
-            if self.is_release:
+            if self.tagged_version is not None:
                 args += ["--user", "xformers"]
             else:
                 args += ["--user", "xformers", "--label", "dev"]

@@ -6,7 +6,7 @@ on:
     branches:
       - main
     tags:
-      - "v?[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+*"
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
