@@ -19,7 +19,7 @@ env:
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
-  XFORMERS_PACKAGE_FROM: "wheel"
+  XFORMERS_PACKAGE_FROM: "wheel-${{ github.ref_name }}"
 
 jobs:
   build_wheels:
@@ -118,13 +118,13 @@ jobs:
           path: dist/*.whl
 
       - name: Upload wheel to PyPi
-        if: ${{ github.ref_name == 'main' && matrix.config.publish }}
+        if: ${{ matrix.config.publish }}
         run: $PY -m twine upload dist/*.whl
         env:
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 
       - name: Upload source distribution to PyPi
-        if: ${{ github.ref_name == 'main' && matrix.config.publish && matrix.sdist }}
+        if: ${{ matrix.config.publish && matrix.sdist }}
         run: |
           rm -rf dist/
           # unpin pytorch version

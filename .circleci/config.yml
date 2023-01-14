@@ -512,7 +512,7 @@ workflows:
               only:
                 - main
             tags:
-              only: /^v*/
+              only: /^v.*/
       - build_conda:
           name: conda_build_cu116_1.12.1
           dockerimage: pytorch/conda-builder:cuda116
@@ -523,7 +523,7 @@ workflows:
               only:
                 - main
             tags:
-              only: /^v*/
+              only: /^v.*/
       - build_conda:
           name: conda_build_cu116_1.13.1
           dockerimage: pytorch/conda-builder:cuda116
@@ -534,7 +534,7 @@ workflows:
               only:
                 - main
             tags:
-              only: /^v*/
+              only: /^v.*/
       - build_conda:
           name: conda_build_cu117_1.13.1
           dockerimage: pytorch/conda-builder:cuda117
@@ -545,7 +545,7 @@ workflows:
               only:
                 - main
             tags:
-              only: /^v*/
+              only: /^v.*/
       - binary_linux_wheel:
           python_version: "3.7"
           name: binary_linux_wheel_py37_cu102
