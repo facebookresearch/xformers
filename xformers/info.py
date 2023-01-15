@@ -8,7 +8,14 @@ from typing import Dict
 
 import torch
 
-from . import __version__, _cpp_lib, _is_functorch_available, _is_triton_available, ops
+from . import (
+    __version__,
+    _cpp_lib,
+    _is_functorch_available,
+    _is_opensource,
+    _is_triton_available,
+    ops,
+)
 from .ops.common import OPERATORS_REGISTRY
 
 
@@ -50,6 +57,11 @@ def print_info():
             features[f"build.env.{k}"] = v
     else:
         features["build.info"] = "none"
+
+    if _is_opensource:
+        features["source.privacy"] = "open source"
+    else:
+        features["source.privacy"] = "fairinternal"
 
     for name, status in features.items():
         print("{:<50} {}".format(f"{name}:", status))
