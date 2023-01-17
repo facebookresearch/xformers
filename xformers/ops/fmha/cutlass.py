@@ -210,7 +210,7 @@ class BwOp(AttentionBwOpBase):
             bits_per_scalar = torch.finfo(d.attn_bias.dtype).bits
             # restriction comes from each thread loading bias 128 bits at a time
             if d.attn_bias.shape[-1] % (128 // bits_per_scalar) != 0:
-               reasons.append("bias tensor not aligned for 128 bit loads")
+                reasons.append("bias tensor not aligned for 128 bit loads")
 
         return reasons
 
