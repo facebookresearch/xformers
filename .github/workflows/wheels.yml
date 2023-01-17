@@ -1,23 +1,25 @@
 name: Build wheels
 
 on:
+  workflow_dispatch: {}
   push:
     branches:
       - main
     tags:
-      - "v?[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+*"
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
 
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: "6.0 6.1 7.0 7.5 8.0 8.6"
+  TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0 8.6"
   FORCE_CUDA: 1
   MAX_JOBS: 1 # will crash otherwise
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
+  XFORMERS_PACKAGE_FROM: "wheel-${{ github.ref_name }}"
 
 jobs:
   build_wheels:
@@ -33,15 +35,15 @@ jobs:
           - "3.9"
           - "3.10"
         config:
-          - torch_version: "1.13.0+cu117"
-            torch_version_constraint: "1.13"
+          - torch_version: "1.13.1+cu117"
+            torch_version_constraint: "1.13.1"
             cuda_version: "11.7.1"
             pip_index: https://download.pytorch.org/whl/cu117
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
             publish: true # publish only latest version
 
           - torch_version: "1.12.1+cu116"
-            torch_version_constraint: "1.12"
+            torch_version_constraint: "1.12.1"
             cuda_version: "11.6.2"
             pip_index: https://download.pytorch.org/whl/cu116
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
@@ -91,6 +93,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           git config --global --add safe.directory "*"
+          $PY -m pip install packaging
           version=`$PY packaging/compute_wheel_version.py`
           echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}
           cat ${GITHUB_ENV}
@@ -111,19 +114,21 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}.zip
+          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
           path: dist/*.whl
 
       - name: Upload wheel to PyPi
-        if: matrix.config.publish
+        if: ${{ matrix.config.publish }}
         run: $PY -m twine upload dist/*.whl
         env:
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 
       - name: Upload source distribution to PyPi
-        if: matrix.config.publish && matrix.sdist
+        if: ${{ matrix.config.publish && matrix.sdist }}
         run: |
           rm -rf dist/
+          # unpin pytorch version
+          git checkout HEAD -- ./requirements.txt
           $PY setup.py sdist -d sdist/
           $PY -m twine upload sdist/*
         env:

@@ -1,6 +1,7 @@
 #include <cmath>
 #include <mutex>
 
+#include <ATen/Context.h>
 #include <ATen/ScalarOps.h>
 #include <ATen/Tensor.h>
 #include <ATen/core/Generator.h>
@@ -155,6 +156,9 @@ efficient_attention_forward_cutlass(
       false,
       "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD");
 #else
+  at::globalContext().alertNotDeterministic(
+      "efficient_attention_forward_cutlass");
+
   TORCH_CHECK(query.dim() == 4);
   TORCH_CHECK(key.dim() == 4);
   TORCH_CHECK(value.dim() == 4);

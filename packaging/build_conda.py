@@ -4,12 +4,16 @@
 # LICENSE file in the root directory of this source tree.
 import argparse
 import os
+import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
+
+import compute_wheel_version
 
 THIS_PATH = Path(__file__).resolve()
-SOURCE_ROOT_DIR = THIS_PATH.parents[2]
+SOURCE_ROOT_DIR = THIS_PATH.parents[1]
 
 PYTHON_VERSIONS = ["3.9", "3.10"]
 PYTORCH_TO_CUDA_VERSIONS = {
@@ -59,7 +63,8 @@ class Build:
         conda_debug: get added information about package search
         conda_dirty: see intermediate files after build
         build_inside_tree: output in build/ not ../build
-        upload_dev: upload, to label dev of xformers
+        upload: whether to upload to xformers on anaconda
+        is_release: whether this is an official versioned release
     """
 
     python_version: str
@@ -70,7 +75,19 @@ class Build:
     conda_debug: bool = False
     conda_dirty: bool = False
     build_inside_tree: bool = False
-    upload_dev: bool = False
+    upload: bool = False
+    tagged_version: Optional[str] = field(
+        default_factory=compute_wheel_version.get_tagged_version
+    )
+
+    def _get_build_version(self) -> str:
+        if self.tagged_version is not None:
+            return self.tagged_version
+        git_hash = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], text=True
+        ).strip()
+        dev_version = compute_wheel_version.get_dev_version()
+        return f"{dev_version}+git.{git_hash}"
 
     def _set_env_for_build(self):
         if "CUDA_HOME" not in os.environ:
@@ -82,21 +99,17 @@ class Build:
             assert Path(cuda_home).is_dir
             os.environ["CUDA_HOME"] = cuda_home
 
-        os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0 8.6"
-        code_version = (SOURCE_ROOT_DIR / "version.txt").read_text().strip()
-        git_hash = subprocess.check_output(
+        os.environ["TORCH_CUDA_ARCH_LIST"] = "5.0+PTX 6.0 6.1 7.0 7.5 8.0 8.6"
+        os.environ["BUILD_VERSION"] = self._get_build_version()
+        tag = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
         ).strip()
-        num_commits = subprocess.check_output(
-            ["git", "rev-list", "--count", "HEAD"], text=True
-        ).strip()
-        os.environ["BUILD_VERSION"] = f"{code_version}.dev{num_commits}+git.{git_hash}"
-        tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
         os.environ["GIT_TAG"] = tag
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
         os.environ["CU_VERSION"] = self.cuda_version
         os.environ["SOURCE_ROOT_DIR"] = str(SOURCE_ROOT_DIR)
         os.environ["XFORMERS_BUILD_TYPE"] = "Release"
+        os.environ["XFORMERS_PACKAGE_FROM"] = "conda"
         cuda_constraint = version_constraint(self.cuda_version)
         pytorch_version_tuple = tuple(int(v) for v in self.pytorch_version.split("."))
         if pytorch_version_tuple < (1, 13):
@@ -126,13 +139,16 @@ class Build:
             args += ["--dirty"]
         if not self.build_inside_tree:
             args += ["--croot", "../build"]
-        if self.upload_dev:
-            args += ["--user", "xformers", "--label", "dev"]
-        return args + ["packaging/conda/xformers"]
+        if self.upload:
+            if self.tagged_version is not None:
+                args += ["--user", "xformers"]
+            else:
+                args += ["--user", "xformers", "--label", "dev"]
+        return args + ["packaging/xformers"]
 
     def do_build(self):
         self._set_env_for_build()
-        if self.upload_dev:
+        if self.upload:
             subprocess.check_call(
                 ["conda", "config", "--set", "anaconda_upload", "yes"]
             )
@@ -140,7 +156,17 @@ class Build:
         print(args)
         subprocess.check_call(args)
 
-    def build_in_docker(self):
+    def move_artifacts_to_store(self):
+        """run after a build to move artifacts elsewhere"""
+        print("moving artifacts")
+        assert not self.build_inside_tree
+        artifacts = Path("packages")
+        artifacts.mkdir(exist_ok=True)
+        for filename in Path("../build/linux-64").resolve().glob("*.tar.bz2"):
+            print("moving", filename, "to", artifacts)
+            shutil.move(filename, artifacts)
+
+    def build_in_docker(self) -> None:
         filesystem = subprocess.check_output("stat -f -c %T .", shell=True).strip()
         if filesystem in (b"nfs", b"tmpfs"):
             raise ValueError(
@@ -184,24 +210,33 @@ if __name__ == "__main__":
         help="Build in build/ instead of ../build/",
     )
     parser.add_argument(
-        "--upload-dev",
+        "--upload",
         action="store_true",
-        help="upload, to label dev of xformers",
+        help="whether to upload to xformers anaconda",
+    )
+    parser.add_argument(
+        "--upload-or-store",
+        action="store_true",
+        help="upload to xformers anaconda if FACEBOOKRESEARCH, else position artifact to store",
     )
     args = parser.parse_args()
+
+    facebookresearch = os.getenv("CIRCLE_PROJECT_USERNAME", "") == "facebookresearch"
 
     pkg = Build(
         python_version=args.python,
         pytorch_version=args.pytorch,
         cuda_version=args.cuda,
         build_inside_tree=args.build_inside_tree,
-        upload_dev=args.upload_dev,
+        upload=args.upload or (facebookresearch and args.upload_or_store),
     )
 
     if args.docker:
         pkg.build_in_docker()
     else:
         pkg.do_build()
+        if args.upload_or_store and not facebookresearch:
+            pkg.move_artifacts_to_store()
 
 
 # python packaging/conda/build_conda.py  --cuda 11.6 --python 3.10 --pytorch 1.12.1

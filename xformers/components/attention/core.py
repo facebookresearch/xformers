@@ -12,10 +12,10 @@ from typing import Optional, Union
 
 import torch
 
-from xformers import _is_sparse_available, _is_triton_available
+from xformers import _has_cpp_library, _is_triton_available
 from xformers.components.attention.attention_mask import AttentionMask
 
-if _is_sparse_available:
+if _has_cpp_library:
     from ._sputnik_sparse import SparseCS
 
 if _is_triton_available():
@@ -81,7 +81,7 @@ def _matmul_with_mask(
     if mask is None:
         return a @ b
 
-    if _is_sparse_available and mask.dtype == torch.bool:
+    if _has_cpp_library and mask.dtype == torch.bool:
         if isinstance(mask, SparseCS):
             return mask.matmul_with_mask(a, b)
         if mask.is_sparse:
@@ -94,7 +94,7 @@ def _matmul_with_mask(
         return torch.ops.xformers.matmul_with_mask(a, b, mask)
 
     # Non optimized codepath
-    if _is_sparse_available:
+    if _has_cpp_library:
         assert not isinstance(mask, SparseCS)
 
     att = a @ b
@@ -121,7 +121,7 @@ def _matmul_with_mask(
 
 
 def _softmax(a: torch.Tensor, causal: bool = False) -> torch.Tensor:
-    if _is_sparse_available and isinstance(a, SparseCS):
+    if _has_cpp_library and isinstance(a, SparseCS):
         return a.softmax()
 
     if a.is_sparse:
@@ -133,7 +133,7 @@ def _softmax(a: torch.Tensor, causal: bool = False) -> torch.Tensor:
         return torch.softmax(a, dim=a.ndim - 1)
 
 
-if _is_sparse_available:
+if _has_cpp_library:
 
     class SparseBMM(torch.autograd.Function):
         @staticmethod
@@ -170,7 +170,7 @@ if _is_sparse_available:
 
 
 def bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    if _is_sparse_available:
+    if _has_cpp_library:
         if isinstance(a, SparseCS):
             return a.spmm(b)
         if a.is_sparse:
@@ -183,7 +183,7 @@ def _apply_dropout(att, dropout):
         return att
 
     # Dropout chokes on sparse tensors
-    if _is_sparse_available:
+    if _has_cpp_library:
         if isinstance(att, SparseCS):
             values = att.values.clone()
             values = dropout(values)
@@ -303,7 +303,7 @@ def scaled_dot_product_attention(
     block_size: int = 128,
 ) -> torch.Tensor:
     autocast_disabled = (
-        _is_sparse_available
+        _has_cpp_library
         and isinstance(att_mask, SparseCS)
         or (att_mask is not None and att_mask.is_sparse)
     )

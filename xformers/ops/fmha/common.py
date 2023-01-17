@@ -9,6 +9,8 @@ from typing import Any, List, Mapping, Optional, Set, Tuple, Type, Union
 
 import torch
 
+from ..._cpp_lib import _built_with_cuda
+from ..common import BaseOperator
 from .tensor_with_seqlen import TensorWithSeqLen
 
 
@@ -170,7 +172,7 @@ class Gradients:
     db: Optional[torch.Tensor] = None
 
 
-class AttentionOpBase:
+class AttentionOpBase(BaseOperator):
     """Base class for any attention operator in xFormers
 
     See:
@@ -186,6 +188,7 @@ class AttentionOpBase:
 
     OPERATOR: Any
     SUPPORTED_DEVICES: Set[str]
+    CUDA_MINIMUM_COMPUTE_CAPABILITY: Tuple[int, int] = (5, 0)
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None)}
@@ -200,13 +203,16 @@ class AttentionOpBase:
     _TEST_K: List[int] = [32, 128]
 
     @classmethod
-    def info(cls):
-        if cls.OPERATOR is None or cls.OPERATOR.__name__ == "no_such_operator":
-            return "unavailable"
-        return "available"
+    def supports(cls, d: Inputs) -> bool:
+        return not cls.not_supported_reasons(d)
 
     @classmethod
-    def supports(cls, d: Inputs) -> bool:
+    def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        """
+        Returns a list of reasons why this is not supported.
+        The kernel can run these inputs only if the returned list is empty
+        """
+        reasons = []
         device_type = d.query.device.type
         dtype = d.query.dtype
         if not cls.SUPPORTS_TENSOR_WITH_SEQLEN and (
@@ -214,24 +220,28 @@ class AttentionOpBase:
             or isinstance(d.key, TensorWithSeqLen)
             or isinstance(d.value, TensorWithSeqLen)
         ):
-            return False
+            reasons.append("tensors with custom seqlen are not supported")
         if device_type not in cls.SUPPORTED_DEVICES:
-            return False
+            reasons.append(f"device={device_type} (supported: {cls.SUPPORTED_DEVICES})")
+        if device_type == "cuda" and not _built_with_cuda:
+            reasons.append("xFormers wasn't build with CUDA support")
         if dtype not in cls.SUPPORTED_DTYPES:
-            return False
+            reasons.append(f"dtype={dtype} (supported: {cls.SUPPORTED_DTYPES})")
         if (
             not cls.SUPPORTS_DIFFERENT_VALUE_EMBED
             and d.query.shape[-1] != d.value.shape[-1]
         ):
-            return False
+            reasons.append("query.shape[-1] != value.shape[-1]")
         if max(d.query.shape[-1], d.value.shape[-1]) > cls.SUPPORTED_MAX_K:
-            return False
+            reasons.append(
+                f"max(query.shape[-1] != value.shape[-1]) > {cls.SUPPORTED_MAX_K}"
+            )
         if type(d.attn_bias) not in cls.SUPPORTED_ATTN_BIAS_TYPES:
-            return False
+            reasons.append(f"attn_bias type is {type(d.attn_bias)}")
         if (d.p != 0.0) and not cls.SUPPORTS_DROPOUT:
-            return False
+            reasons.append("dropout > 0.0")
         if d.scale is not None and not cls.SUPPORTS_CUSTOM_SCALE:
-            return False
+            reasons.append("has custom scale")
         # bfloat16 is only supported on A100+
         # ... although the kernels can still run and give the
         # correct result
@@ -239,8 +249,8 @@ class AttentionOpBase:
             not device_type.startswith("cuda")
             or torch.cuda.get_device_capability(d.query.device)[0] < 8
         ):
-            return False
-        return True
+            reasons.append("bf16 is only supported on A100+ GPUs")
+        return reasons
 
 
 class AttentionFwOpBase(AttentionOpBase):
@@ -340,3 +350,19 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
     return tensor.reshape([-1, num_heads, tensor.shape[1], tensor.shape[2]]).permute(
         (0, 2, 1, 3)
     )
+
+
+def check_lastdim_alignment_stride1(
+    reasons: List[str], name: str, x: torch.Tensor, alignment: int
+) -> None:
+    if x.shape[-1] % alignment != 0:
+        reasons.append(f"{name}.shape[-1] % {alignment} != 0")
+    elif x.stride(-2) % alignment != 0:
+        reasons.append(
+            f"{name}.stride(-2) % {alignment} != 0 ({name}.stride() = {x.stride()})"
+        )
+    # We can have stride=0 sometimes if dimension=1
+    if x.stride(-1) > 1:
+        reasons.append(
+            f"{name}.stride(-1) > 1 ({name}.stride() = {x.stride()}) - you should call `.contiguous()` on the input"
+        )

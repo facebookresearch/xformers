@@ -5,7 +5,7 @@
 
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple
 
 import torch
 
@@ -31,6 +31,7 @@ from .common import (
     Gradients,
     Inputs,
     LowerTriangularMask,
+    check_lastdim_alignment_stride1,
 )
 
 
@@ -53,6 +54,7 @@ def _prepare_inputs(inp: Inputs) -> Inputs:
 class FwOp(AttentionFwOpBase):
     OPERATOR = triton_flash_forward
     SUPPORTED_DEVICES = {"cuda"}
+    CUDA_MINIMUM_COMPUTE_CAPABILITY = (8, 0)
     SUPPORTED_DTYPES = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 128
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
@@ -66,15 +68,19 @@ class FwOp(AttentionFwOpBase):
     NAME = "tritonflashattF"
 
     @classmethod
-    def supports(cls, d: "Inputs") -> bool:
+    def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        reasons = super(FwOp, cls).not_supported_reasons(d)
+        check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
+        check_lastdim_alignment_stride1(reasons, "key", d.key, 8)
+        check_lastdim_alignment_stride1(reasons, "value", d.value, 8)
         if cls.OPERATOR is None:
-            return False
-        if not super(FwOp, cls).supports(d):
-            return False
-        device_capability = torch.cuda.get_device_capability(d.device)
-        # Has only been tested on 8.0.
-        # Fails on 7.5 with illegal memory access
-        return device_capability == (8, 0)
+            reasons.append("triton is not available")
+        if d.device.type == "cuda":
+            # Has only been tested on 8.0.
+            # Fails on 7.5 with illegal memory access
+            if torch.cuda.get_device_capability(d.device) != (8, 0):
+                reasons.append("requires A100 GPU")
+        return reasons
 
     @classmethod
     def apply(
@@ -97,6 +103,7 @@ class FwOp(AttentionFwOpBase):
 class BwOp(AttentionBwOpBase):
     OPERATOR = triton_flash_backward
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
+    CUDA_MINIMUM_COMPUTE_CAPABILITY = FwOp.CUDA_MINIMUM_COMPUTE_CAPABILITY
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
     SUPPORTED_ATTN_BIAS_TYPES = FwOp.SUPPORTED_ATTN_BIAS_TYPES
@@ -106,8 +113,17 @@ class BwOp(AttentionBwOpBase):
     NAME = "tritonflashattB"
 
     @classmethod
-    def supports(cls, d: "Inputs") -> bool:
-        return cls.OPERATOR is not None and FwOp.supports(d)
+    def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        reasons = super(BwOp, cls).not_supported_reasons(d)
+        check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
+        check_lastdim_alignment_stride1(reasons, "key", d.key, 8)
+        check_lastdim_alignment_stride1(reasons, "value", d.value, 8)
+        if cls.OPERATOR is None:
+            reasons.append("triton is not available")
+        if d.device.type == "cuda":
+            if torch.cuda.get_device_capability(d.device) != (8, 0):
+                reasons.append("requires A100 GPU")
+        return reasons
 
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:

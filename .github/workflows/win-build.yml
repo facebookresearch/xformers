@@ -4,19 +4,24 @@ on:
   pull_request: {}
 
 env:
-  TORCH_CUDA_ARCH_LIST: "8.0"
   FORCE_CUDA: 1
   MAX_JOBS: 4
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
-  XFORMERS_DISABLE_FLASH_ATTN: 1
 
 jobs:
   win_build:
-    name: win-build
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - "8.0"
+          - "7.0"
+    name: win-build-${{ matrix.arch }}
     runs-on: windows-2019
     env:
       PY: python3
+      TORCH_CUDA_ARCH_LIST: ${{ matrix.arch }}
 
     timeout-minutes: 360
     defaults:
@@ -42,5 +47,11 @@ jobs:
           $PY -c "import torch; print('torch', torch.__version__)"
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"
 
-      - name: Build
-        run: $PY setup.py develop
+      - name: Create sdist
+        run: $PY setup.py sdist
+
+      - name: Build from sdist
+        run: $PY -m pip install -v dist/*
+
+      - name: Info
+        run: $PY -m xformers.info

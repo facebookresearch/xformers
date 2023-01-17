@@ -430,6 +430,7 @@ def benchmark_main_helper(
                 try:
                     torch.cuda.synchronize()
                     torch.cuda.reset_peak_memory_stats()
+                    mem_begin = torch.cuda.max_memory_allocated() / 2**20
                     benchmark_object._task_spec = replace(
                         benchmark_object._task_spec, env=env
                     )
@@ -439,7 +440,7 @@ def benchmark_main_helper(
                     torch.cuda.synchronize()
                     results.append((metadata, measurement))
                     name = measurement.task_spec.description
-                    memory = torch.cuda.max_memory_allocated() / 2**20
+                    memory = torch.cuda.max_memory_allocated() / 2**20 - mem_begin
                     measurement.mem_use = memory
                 except RuntimeError as e:
                     if "CUDA out of memory" not in str(e):

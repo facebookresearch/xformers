@@ -126,6 +126,7 @@ install_repo: &install_repo
 
         # Test import.
         $CONDA_PYTHON -c 'import sys; sys.path = sys.path[1:]; import xformers'
+        ls xformers
         $CONDA_PYTHON -m xformers.info
 
 install_experimental_repo: &install_experimental_repo
@@ -138,52 +139,6 @@ install_experimental_repo: &install_experimental_repo
 
         cd experimental
         $CONDA_PYTHON -m pip install -v -e .
-
-run_isort: &run_isort
-   - run:
-      name: Run Linter (isort)
-      when: always
-      command: |
-        source $BASH_ENV
-        $CONDA_PYTHON -m isort . --check --profile black
-
-run_black: &run_black
-   - run:
-      name: Run Linter (black)
-      when: always
-      command: |
-        source $BASH_ENV
-        $CONDA_PYTHON -m black --check . --exclude "third_party/"
-
-run_mypy: &run_mypy
-   - run:
-       name: Run type-checking (mypy)
-       when: always
-       command: |
-        source $BASH_ENV
-        $CONDA_PYTHON -m mypy --version
-        $CONDA_PYTHON -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude "(build|stubs|third_party|docs|examples|xformers/_flash_attn|setup.py)" .
-
-run_flake8: &run_flake8
-  - run:
-      name: Run Linter (flake8)
-      when: always
-      command: |
-        source $BASH_ENV
-        $CONDA_PYTHON -m flake8 --config .flake8 --show-source --statistics
-
-run_clang_format: &run_clang_format
-  - run:
-      name: Run Linter (clang-format)
-      when: always
-      command: |
-        # install clang-format here, so that it gets cached
-        sudo apt-get update
-        sudo apt-get install clang-format
-        clang-format --version
-
-        # apply to our files
-        ./.circleci/run-clang-format.py -r xformers/csrc
 
 run_coverage: &run_coverage
   - run:
@@ -363,12 +318,6 @@ jobs:
           key: cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_repo
-
-      - <<: *run_isort
-      - <<: *run_black
-      - <<: *run_mypy
-      - <<: *run_flake8
-      - <<: *run_clang_format
       - <<: *run_unittests
       - <<: *run_doc_build
 
@@ -398,25 +347,19 @@ jobs:
       - checkout
       - run: git submodule update --init --recursive
       - run: printenv
-      - run:
-          name: Skip builds for fairinternal
-          command: |
-            case "$CIRCLE_REPOSITORY_URL" in
-              *fairinternal*)
-                echo "Build skipped (fairinternal repo)"
-                circleci-agent step halt
-                ;;
-            esac
+      - run: python -m pip install packaging
       - run:
           name: conda build for py3_9
           no_output_timeout: 20m
           command: |
-            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >> --upload-dev
+            python packaging/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch << parameters.pytorch_version >> --upload-or-store
       - run:
           name: conda build for py3_10
           no_output_timeout: 20m
           command: |
-            python packaging/conda/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >> --upload-dev
+            python packaging/build_conda.py --cuda << parameters.cu_version >> --python 3.10 --pytorch << parameters.pytorch_version >> --upload-or-store
+      - store_artifacts:
+          path: packages
 
   gpu_tests_cu114_sm75:
     <<: *gpu_cu114
@@ -532,32 +475,32 @@ workflows:
   build:
     jobs:
       - cpu_tests_py38:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
+          filters:
+            branches:
+              ignore:
+                - gh-pages
 
       - gpu_tests_cu114_sm61:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
+          filters:
+            branches:
+              ignore:
+                - gh-pages
       - gpu_tests_cu114_sm70:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
+          filters:
+            branches:
+              ignore:
+                - gh-pages
       - gpu_tests_cu114_sm75:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
+          filters:
+            branches:
+              ignore:
+                - gh-pages
 
       - gpu_experimental_tests:
-        filters:
-          branches:
-            ignore:
-              - gh-pages
+          filters:
+            branches:
+              ignore:
+                - gh-pages
 
       - build_conda:
           name: conda_build_cu113_1.12.1
@@ -568,6 +511,8 @@ workflows:
             branches:
               only:
                 - main
+            tags:
+              only: /^v.*/
       - build_conda:
           name: conda_build_cu116_1.12.1
           dockerimage: pytorch/conda-builder:cuda116
@@ -577,24 +522,30 @@ workflows:
             branches:
               only:
                 - main
+            tags:
+              only: /^v.*/
       - build_conda:
-          name: conda_build_cu116_1.13
+          name: conda_build_cu116_1.13.1
           dockerimage: pytorch/conda-builder:cuda116
           cu_version: "11.6"
-          pytorch_version: "1.13"
+          pytorch_version: "1.13.1"
           filters:
             branches:
               only:
                 - main
+            tags:
+              only: /^v.*/
       - build_conda:
-          name: conda_build_cu117_1.13
+          name: conda_build_cu117_1.13.1
           dockerimage: pytorch/conda-builder:cuda117
           cu_version: "11.7"
-          pytorch_version: "1.13"
+          pytorch_version: "1.13.1"
           filters:
             branches:
               only:
                 - main
+            tags:
+              only: /^v.*/
       - binary_linux_wheel:
           python_version: "3.7"
           name: binary_linux_wheel_py37_cu102

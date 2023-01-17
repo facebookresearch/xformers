@@ -58,3 +58,5 @@ outputs
 
 .benchmarks
 xformers/_flash_attn
+xformers/version.py
+xformers/cpp_lib.json

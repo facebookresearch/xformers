@@ -16,6 +16,7 @@ from .common import (
     Gradients,
     Inputs,
     LowerTriangularMask,
+    check_lastdim_alignment_stride1,
 )
 from .tensor_with_seqlen import TensorWithSeqLen
 
@@ -29,7 +30,9 @@ def _uses_tensorcores(sm: int, is_half: bool) -> bool:
 
 
 def _minimum_gemm_alignment(inp: Inputs) -> int:
-    cap = torch.cuda.get_device_capability(inp.query.device)
+    if inp.device.type != "cuda":
+        return 1
+    cap = torch.cuda.get_device_capability(inp.device)
     sm = cap[0] * 10 + cap[1]
     bits_per_scalar = {torch.float: 32, torch.half: 16, torch.bfloat16: 16}[
         inp.query.dtype
@@ -131,22 +134,19 @@ class FwOp(AttentionFwOpBase):
         return out, ctx
 
     @classmethod
-    def supports(cls, d: Inputs) -> bool:
-        if not super(FwOp, cls).supports(d):
-            return False
+    def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        reasons = super(FwOp, cls).not_supported_reasons(d)
         matmul_alignment_mn = _minimum_gemm_alignment(d)
-        if (d.query.shape[-1] % matmul_alignment_mn != 0) or (
-            d.value.shape[-1] % matmul_alignment_mn != 0
-        ):
-            return False
+        check_lastdim_alignment_stride1(reasons, "query", d.query, matmul_alignment_mn)
+        check_lastdim_alignment_stride1(reasons, "value", d.value, matmul_alignment_mn)
 
         if isinstance(d.attn_bias, torch.Tensor):
             bits_per_scalar = torch.finfo(d.attn_bias.dtype).bits
             # restriction comes from each thread loading bias 128 bits at a time
             if d.attn_bias.shape[-1] % (128 // bits_per_scalar) != 0:
-                return False
+                reasons.append("bias tensor not aligned for 128 bit loads")
 
-        return True
+        return reasons
 
 
 @register_operator
@@ -183,35 +183,36 @@ class BwOp(AttentionBwOpBase):
     ]
 
     @classmethod
-    def supports(cls, d: Inputs) -> bool:
-        if not FwOp.supports(d):
-            return False
-        cap = torch.cuda.get_device_capability(d.query.device)
-        sm = cap[0] * 10 + cap[1]
-        # Sm86 does not have enough shared-memory
-        # See https://github.com/facebookresearch/xformers/issues/517
-        if (
-            sm >= 80
-            and sm != 80
-            and d.query.dtype is torch.float
-            and max(d.query.shape[-1], d.key.shape[-1]) > 64
-        ):
-            return False
+    def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        reasons = super(BwOp, cls).not_supported_reasons(d)
         matmul_alignment_mn = _minimum_gemm_alignment(d)
-        if (
-            (d.query.shape[-1] % matmul_alignment_mn != 0)
-            or (d.value.shape[-1] % matmul_alignment_mn != 0)
-            or (d.key.shape[-1] % matmul_alignment_mn != 0)
-        ):
-            return False
+
+        check_lastdim_alignment_stride1(reasons, "query", d.query, matmul_alignment_mn)
+        check_lastdim_alignment_stride1(reasons, "key", d.key, matmul_alignment_mn)
+        check_lastdim_alignment_stride1(reasons, "value", d.value, matmul_alignment_mn)
+        if d.device.type == "cuda":
+            cap = torch.cuda.get_device_capability(d.device)
+            sm = cap[0] * 10 + cap[1]
+            # Sm86 does not have enough shared-memory
+            # See https://github.com/facebookresearch/xformers/issues/517
+            if (
+                sm >= 80
+                and sm != 80
+                and d.query.dtype is torch.float
+                and max(d.query.shape[-1], d.key.shape[-1]) > 64
+            ):
+                reasons.append(
+                    f"Sm{sm} does not have enough shared-memory to run this kernel"
+                    " - see https://github.com/facebookresearch/xformers/issues/517"
+                )
 
         if isinstance(d.attn_bias, torch.Tensor):
             bits_per_scalar = torch.finfo(d.attn_bias.dtype).bits
             # restriction comes from each thread loading bias 128 bits at a time
             if d.attn_bias.shape[-1] % (128 // bits_per_scalar) != 0:
-                return False
+               reasons.append("bias tensor not aligned for 128 bit loads")
 
-        return True
+        return reasons
 
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:

@@ -21,7 +21,7 @@ from .common import (
     LowerTriangularMask,
     bmk2bmhk,
 )
-from .dispatch import _dispatch_bw, _dispatch_fw
+from .dispatch import _dispatch_bw, _dispatch_fw, _ensure_op_supports_or_raise
 from .tensor_with_seqlen import TensorWithSeqLen  # noqa
 
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
@@ -178,6 +178,10 @@ def memory_efficient_attention(
 
         NVIDIA GPUs with compute capability above 6.0 (P100+), datatype ``f16``, ``bf16`` and ``f32``.
 
+    :Note:
+
+        This operator may be nondeterministic.
+
     Raises:
         NotImplementedError: if there is no operator available to compute the MHA
 
@@ -309,10 +313,8 @@ def _memory_efficient_attention_forward(
     output_shape = inp.normalize_bmhk()
     if op is None:
         op = _dispatch_fw(inp)
-    elif not op.supports(inp):
-        raise ValueError(
-            f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
-        )
+    else:
+        _ensure_op_supports_or_raise(ValueError, "memory_efficient_attention", op, inp)
 
     out, *_ = op.apply(inp, needs_gradient=False)
     return out.reshape(output_shape)
@@ -325,10 +327,8 @@ def _memory_efficient_attention_forward_requires_grad(
     output_shape = inp.normalize_bmhk()
     if op is None:
         op = _dispatch_fw(inp)
-    elif not op.supports(inp):
-        raise ValueError(
-            f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
-        )
+    else:
+        _ensure_op_supports_or_raise(ValueError, "memory_efficient_attention", op, inp)
     out = op.apply(inp, needs_gradient=True)
     assert out[1] is not None
     return (out[0].reshape(output_shape), out[1])
@@ -380,10 +380,11 @@ def _memory_efficient_attention_backward(
 
     if op is None:
         op = _dispatch_bw(inp)
-    elif not op.supports(inp):
-        raise ValueError(
-            f"xformers.memory_efficient_attention: Operator {op.NAME} does not support this input"
+    else:
+        _ensure_op_supports_or_raise(
+            ValueError, "memory_efficient_attention_backward", op, inp
         )
+
     grads = op.apply(ctx, inp, grad)
     grads.dq = grads.dq.reshape(shape_dq)
     grads.dk = grads.dk.reshape(shape_dk)
