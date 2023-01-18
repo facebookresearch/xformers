@@ -1,12 +1,18 @@
+#include <cmath>
+
 #include <ATen/Context.h>
 #include <ATen/ScalarOps.h>
 #include <ATen/Tensor.h>
 #include <ATen/TensorOperators.h>
 #include <ATen/cuda/CUDAContext.h>
+#include <ATen/cuda/CUDAGeneratorImpl.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
+#include "ATen/ops/empty_like.h"
 
+#include "gemm_kernel_utils.h"
 #include "kernel_backward.h"
+#include "pytorch_utils.h"
 
 #define DISPATCH_MAXK(func)                                   \
   {                                                           \
@@ -23,44 +29,62 @@
     }                                                         \
   }
 
-#define DISPATCH_KERNEL(QUERY, KEY, VALUE, FUNC)                               \
-  {                                                                            \
-    cudaDeviceProp* properties =                                               \
-        at::cuda::getDeviceProperties(QUERY.device().index());                 \
-    const int computeCapability = properties->major * 10 + properties->minor;  \
-    DISPATCH_MAXK(([&] {                                                       \
-      DISPATCH_TYPES(                                                          \
-          QUERY, ([&]() {                                                      \
-            DISPATCH_ARCHTAG(                                                  \
-                computeCapability, ([&]() {                                    \
-                  using AlignedAK =                                            \
-                      AttentionBackwardKernel<ArchTag, scalar_t, true, kMaxK>; \
-                  bool isAligned =                                             \
-                      (QUERY.stride(2) % AlignedAK::kOptimalAlignement == 0 && \
-                       KEY.stride(2) % AlignedAK::kOptimalAlignement == 0 &&   \
-                       VALUE.stride(2) % AlignedAK::kOptimalAlignement == 0);  \
-                  DISPATCH_BOOL(isAligned, kIsAligned, ([&]() {                \
-                                  using Kernel = AttentionBackwardKernel<      \
-                                      ArchTag,                                 \
-                                      scalar_t,                                \
-                                      kIsAligned,                              \
-                                      kMaxK>;                                  \
-                                  FUNC();                                      \
-                                }))                                            \
-                }))                                                            \
-          }))                                                                  \
-    }));                                                                       \
+#define DISPATCH_KERNEL(QUERY, KEY, VALUE, USE_DROPOUT, FUNC)                 \
+  {                                                                           \
+    cudaDeviceProp* properties =                                              \
+        at::cuda::getDeviceProperties(QUERY.device().index());                \
+    const int computeCapability = properties->major * 10 + properties->minor; \
+    DISPATCH_MAXK(([&] {                                                      \
+      DISPATCH_TYPES(                                                         \
+          QUERY, ([&]() {                                                     \
+            DISPATCH_BOOL(                                                    \
+                USE_DROPOUT, kApplyDropout, ([&]() {                          \
+                  DISPATCH_ARCHTAG(                                           \
+                      computeCapability, ([&]() {                             \
+                        using AlignedAK = AttentionBackwardKernel<            \
+                            ArchTag,                                          \
+                            scalar_t,                                         \
+                            true,                                             \
+                            kApplyDropout,                                    \
+                            kMaxK>;                                           \
+                        bool isAligned =                                      \
+                            (QUERY.stride(2) %                                \
+                                     AlignedAK::kOptimalAlignement ==         \
+                                 0 &&                                         \
+                             KEY.stride(2) % AlignedAK::kOptimalAlignement == \
+                                 0 &&                                         \
+                             VALUE.stride(2) %                                \
+                                     AlignedAK::kOptimalAlignement ==         \
+                                 0);                                          \
+                        DISPATCH_BOOL(isAligned, kIsAligned, ([&]() {         \
+                                        using Kernel =                        \
+                                            AttentionBackwardKernel<          \
+                                                ArchTag,                      \
+                                                scalar_t,                     \
+                                                kIsAligned,                   \
+                                                kApplyDropout,                \
+                                                kMaxK>;                       \
+                                        FUNC();                               \
+                                      }))                                     \
+                      }))                                                     \
+                }))                                                           \
+          }))                                                                 \
+    }));                                                                      \
   }
 
 namespace {
-std::tuple<at::Tensor, at::Tensor, at::Tensor>
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor>
 mem_efficient_attention_backward_cutlass(
     const at::Tensor& grad_out_,
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
+    const c10::optional<at::Tensor>& bias, // additive attention bias
     const at::Tensor& logsumexp,
     const at::Tensor& out,
+    double dropout_p, // dropout probability
+    int64_t rng_seed, // seed using for generating random numbers for dropout
+    int64_t rng_offset, // offset into random number sequence
     bool causal,
     const c10::optional<double> scale) {
 #ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD
@@ -120,7 +144,9 @@ mem_efficient_attention_backward_cutlass(
   // keys with no query associated, so they are not
   // initialized
   bool grad_kv_needs_init = causal && N > M;
-  at::Tensor grad_q, grad_k, grad_v;
+  const bool bias_requires_grad = bias.has_value() && bias->requires_grad();
+
+  at::Tensor grad_q, grad_k, grad_v, grad_bias;
   if (!grad_kv_needs_init && query.size(1) == key.size(1) &&
       query.size(3) == value.size(3) &&
       query.storage().is_alias_of(key.storage()) &&
@@ -141,7 +167,13 @@ mem_efficient_attention_backward_cutlass(
     grad_v = grad_kv_needs_init ? at::zeros(value.sizes(), value.options())
                                 : at::empty(value.sizes(), value.options());
   }
+  if (bias_requires_grad) {
+    grad_bias = at::empty(bias->sizes(), bias->options());
+  }
   at::Tensor workspace;
+
+  const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
+  at::PhiloxCudaState rng_engine_inputs(rng_seed, rng_offset);
 
   auto launchKernel = [&](auto _k, int computeCapability) {
     using Kernel = decltype(_k);
@@ -215,6 +247,41 @@ mem_efficient_attention_backward_cutlass(
     ASSIGN_CHECK_OVERFLOW(p.k_strideH, key.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.v_strideH, value.stride(2));
 
+    if (bias.has_value()) {
+      CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
+
+      p.bias_ptr = (scalar_t*)bias->data_ptr();
+
+      // assign strides for bias, viewed as:
+      // (batch_sz, n_heads, n_queries, n_keys)
+      const at::Tensor bias_4d_view = get_bias_4d_view(*bias, B, nH, M, N);
+      ASSIGN_CHECK_OVERFLOW(p.bias_strideB, bias_4d_view.stride(0));
+      ASSIGN_CHECK_OVERFLOW(p.bias_strideH, bias_4d_view.stride(1));
+      ASSIGN_CHECK_OVERFLOW(p.bias_strideM, bias_4d_view.stride(2));
+
+      if (bias_requires_grad) {
+        p.grad_bias_ptr = (scalar_t*)grad_bias.data_ptr();
+
+        // assign strides for gB, viewed as
+        // (batch_sz, n_heads, n_queries, n_keys). might have different strides
+        // than B, for example if bias tensor was created with
+        // torch.tensor((B * nH, 1, nK)).expand((B * nH, nQ, nK)),
+        // different values of Q will point to the same memory
+        // locations, meaning bias.stride(1) == 0, while we'd want
+        // grad_bias.stride(1) == nK
+        const at::Tensor grad_bias_4d_view =
+            get_bias_4d_view(grad_bias, B, nH, M, N);
+        ASSIGN_CHECK_OVERFLOW(p.gB_strideB, grad_bias_4d_view.stride(0));
+        ASSIGN_CHECK_OVERFLOW(p.gB_strideH, grad_bias_4d_view.stride(1));
+        ASSIGN_CHECK_OVERFLOW(p.gB_strideM, grad_bias_4d_view.stride(2));
+      }
+    }
+
+    if (use_dropout) {
+      p.rng_engine_inputs = rng_engine_inputs;
+      p.dropout_prob = dropout_p;
+    }
+
     int64_t size_bytes = p.workspace_size();
     if (size_bytes) {
       workspace =
@@ -256,10 +323,11 @@ mem_efficient_attention_backward_cutlass(
     kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
   };
 
-  DISPATCH_KERNEL(
-      query, key, value, ([&] { launchKernel(Kernel{}, computeCapability); }));
+  DISPATCH_KERNEL(query, key, value, use_dropout, ([&] {
+                    launchKernel(Kernel{}, computeCapability);
+                  }));
   AT_CUDA_CHECK(cudaGetLastError());
-  return std::make_tuple(grad_q, grad_k, grad_v);
+  return std::make_tuple(grad_q, grad_k, grad_v, grad_bias);
 #endif
 } // namespace
 

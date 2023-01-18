@@ -72,6 +72,10 @@ class _fMHA(torch.autograd.Function):
         ctx.op_fw = op_fw
         ctx.op_bw = op_bw
         ctx.p = inp.p
+        # used for cutlass backward with dropout
+        ctx.rng_seed = op_ctx.rng_seed
+        ctx.rng_offset = op_ctx.rng_offset
+
         ctx.scale = inp.scale
         ctx.attn_bias_ctx = attn_bias_ctx
         ctx.n_args = len(args)
@@ -88,13 +92,6 @@ class _fMHA(torch.autograd.Function):
     @classmethod
     @torch.autograd.function.once_differentiable
     def backward(cls, ctx, grad):
-        assert all(
-            not ctx.needs_input_grad[i] for i in range(ctx.n_args) if i not in [1, 2, 3]
-        ), (
-            "Only gradients to Q/K/V is implemented. "
-            "For instance, it's not possible to backpropagate through the attention mask"
-        )
-
         # Re-create context
         query, key, value, out, lse = ctx.saved_tensors
         attn_bias_tensor = ctx.attn_bias_tensor
@@ -107,11 +104,20 @@ class _fMHA(torch.autograd.Function):
             p=ctx.p,
             scale=ctx.scale,
         )
-        op_ctx = Context(lse=lse, out=out, rng_state=rng_state)
+        op_ctx = Context(
+            lse=lse,
+            out=out,
+            rng_state=rng_state,
+            # rng_seed and rng_offset used for cutlass implementation
+            rng_seed=ctx.rng_seed,
+            rng_offset=ctx.rng_offset,
+        )
         grads = _memory_efficient_attention_backward(
             ctx=op_ctx, inp=inp, grad=grad, op=ctx.op_bw
         )
-        return (None, grads.dq, grads.dk, grads.dv) + (None,) * (ctx.n_args - 3)
+        return (None, grads.dq, grads.dk, grads.dv, grads.db) + (None,) * (
+            ctx.n_args - 2
+        )
 
 
 def memory_efficient_attention(
@@ -262,10 +268,10 @@ def memory_efficient_attention_backward(
     scale: Optional[float] = None,
     *,
     op: Optional[Type[AttentionBwOpBase]] = None,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
     """
     Computes the gradient of the attention.
-    Returns a tuple (dq, dk, dv)
+    Returns a tuple (dq, dk, dv, db)
     See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments.
     `lse` is the tensor returned by :attr:`xformers.ops.memory_efficient_attention_forward_requires_grad`
     """
@@ -282,7 +288,7 @@ def memory_efficient_attention_backward(
         grad,
         op=op,
     )
-    return (gradients.dq, gradients.dk, gradients.dv)
+    return (gradients.dq, gradients.dk, gradients.dv, gradients.db)
 
 
 def _memory_efficient_attention(

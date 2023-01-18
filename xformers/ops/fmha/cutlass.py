@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, List, Mapping, Optional, Set, Tuple
 
 import torch
 
@@ -80,8 +80,12 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.float, torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 65536
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), LowerTriangularMask}
-    SUPPORTS_DROPOUT = False
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+        type(None),
+        torch.Tensor,
+        LowerTriangularMask,
+    }
+    SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
     SUPPORTS_TENSOR_WITH_SEQLEN = True
@@ -97,26 +101,36 @@ class FwOp(AttentionFwOpBase):
     def apply(
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
-        if inp.attn_bias is not None and not isinstance(
-            inp.attn_bias, LowerTriangularMask
-        ):
+        if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
+        uses_attn_bias = isinstance(inp.attn_bias, torch.Tensor)
         causal = isinstance(inp.attn_bias, LowerTriangularMask)
         cu_seqlen_k, cu_seqlen_q, max_seqlen_q = _get_seqlen_info(inp)
-        out, lse = cls.OPERATOR(
+        out, lse, rng_seed, rng_offset = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
             value=inp.value,
+            attn_bias=inp.attn_bias if uses_attn_bias else None,
             cu_seqlens_q=cu_seqlen_q,
             cu_seqlens_k=cu_seqlen_k,
             max_seqlen_q=max_seqlen_q,
+            dropout_p=inp.p,
             compute_logsumexp=needs_gradient,
             causal=causal,
             scale=inp.scale,
         )
         ctx: Optional[Context] = None
         if needs_gradient:
-            ctx = Context(lse=lse, out=out)
+            ctx = Context(
+                out=out,
+                lse=lse,
+                rng_seed=rng_seed,
+                rng_offset=rng_offset,
+                # cutlass forward is only compatible with cutlass backward if
+                # dropout is used (because of the way RNG states are passed and the
+                # way random numbers are generated during backward)
+                op_bw=BwOp if inp.p != 0 else None,
+            )
         return out, ctx
 
     @classmethod
@@ -125,6 +139,13 @@ class FwOp(AttentionFwOpBase):
         matmul_alignment_mn = _minimum_gemm_alignment(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, matmul_alignment_mn)
         check_lastdim_alignment_stride1(reasons, "value", d.value, matmul_alignment_mn)
+
+        if isinstance(d.attn_bias, torch.Tensor):
+            bits_per_scalar = torch.finfo(d.attn_bias.dtype).bits
+            # restriction comes from each thread loading bias 128 bits at a time
+            if d.attn_bias.shape[-1] % (128 // bits_per_scalar) != 0:
+                reasons.append("bias tensor not aligned for 128 bit loads")
+
         return reasons
 
 
@@ -135,11 +156,25 @@ class BwOp(AttentionBwOpBase):
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
     SUPPORTED_ATTN_BIAS_TYPES = FwOp.SUPPORTED_ATTN_BIAS_TYPES
+    SUPPORTS_ATTN_BIAS_GRAD = True
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
     SUPPORTS_TENSOR_WITH_SEQLEN = False
     NAME = "cutlassB"
+
+    ERROR_ATOL: Mapping[torch.dtype, float] = {
+        torch.float: 5e-4,
+        # increased from 9e-2, more opportunities for numerical errors when bias is
+        # used, noticed in gK on SM80
+        torch.half: 9.5e-2,
+        torch.bfloat16: 7e-1,
+    }
+    ERROR_RTOL: Mapping[torch.dtype, float] = {
+        torch.float: 1e-4,
+        torch.half: 2e-2,
+        torch.bfloat16: 1e-1,
+    }
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
@@ -151,6 +186,7 @@ class BwOp(AttentionBwOpBase):
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(BwOp, cls).not_supported_reasons(d)
         matmul_alignment_mn = _minimum_gemm_alignment(d)
+
         check_lastdim_alignment_stride1(reasons, "query", d.query, matmul_alignment_mn)
         check_lastdim_alignment_stride1(reasons, "key", d.key, matmul_alignment_mn)
         check_lastdim_alignment_stride1(reasons, "value", d.value, matmul_alignment_mn)
@@ -169,26 +205,48 @@ class BwOp(AttentionBwOpBase):
                     f"Sm{sm} does not have enough shared-memory to run this kernel"
                     " - see https://github.com/facebookresearch/xformers/issues/517"
                 )
+
+        if isinstance(d.attn_bias, torch.Tensor):
+            bits_per_scalar = torch.finfo(d.attn_bias.dtype).bits
+            # restriction comes from each thread loading bias 128 bits at a time
+            if d.attn_bias.shape[-1] % (128 // bits_per_scalar) != 0:
+                reasons.append("bias tensor not aligned for 128 bit loads")
+
         return reasons
 
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:
-        if inp.attn_bias is not None and not isinstance(
-            inp.attn_bias, LowerTriangularMask
-        ):
+        if type(inp.attn_bias) not in BwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
+        uses_attn_bias = isinstance(inp.attn_bias, torch.Tensor)
         causal = isinstance(inp.attn_bias, LowerTriangularMask)
         dtype = inp.query.dtype
 
         force_pad_inf = torch.cuda.get_device_capability(inp.query.device) == (7, 5)
-        (grad_q, grad_k, grad_v,) = cls.OPERATOR(
+        (grad_q, grad_k, grad_v, grad_bias) = cls.OPERATOR(
             grad.to(dtype),
             inp.query,
             inp.key,
             inp.value,
+            inp.attn_bias if uses_attn_bias else None,
             ctx.get_padded_lse(32, force_pad_inf=force_pad_inf),
             ctx.out.to(dtype),
+            dropout_p=inp.p,
+            # if not using dropout, seed and offset are irrelevant but still expected
+            # in function signature so just pass 0
+            # seed and offset could be None if a different FW op other than cutlass
+            # was used.
+            rng_seed=ctx.rng_seed if inp.p != 0 else 0,
+            rng_offset=ctx.rng_offset if inp.p != 0 else 0,
             causal=causal,
             scale=inp.scale,
         )
-        return Gradients(dq=grad_q, dk=grad_k, dv=grad_v)
+
+        # c++/CUDA implementation returns an uninitialized tensor if bias doesn't
+        # require grad
+        if not (
+            isinstance(inp.attn_bias, torch.Tensor) and inp.attn_bias.requires_grad
+        ):
+            grad_bias = None
+
+        return Gradients(dq=grad_q, dk=grad_k, dv=grad_v, db=grad_bias)
