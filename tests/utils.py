@@ -13,7 +13,7 @@ def assert_allclose(
     atol: float = 1e-8,
     rtol: float = 1e-5,
 ) -> None:
-    assert out.shape == ref.shape
+    assert out.shape == ref.shape, f"Shape: {out.shape} (expected: {ref.shape})"
     flatten_diff = ((out - ref).abs() - atol - ref.abs() * rtol).flatten()
     max_pos = flatten_diff.argmax()
     max_diff = flatten_diff[max_pos]

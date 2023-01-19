@@ -3,9 +3,9 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 import random
-from dataclasses import dataclass
-from typing import Any, Sequence, Tuple, Type, TypeVar
+from typing import List, Optional, Sequence, Tuple, Type, TypeVar
 
 import pytest
 import torch
@@ -195,8 +195,12 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
 
     attn = q @ k.transpose(-2, -1)
     if attn_bias is not None:
-        if isinstance(attn_bias, xformers.ops.AttentionMask):
-            attn_bias = attn_bias.to_tensor()
+        if isinstance(attn_bias, xformers.ops.AttentionBias):
+            attn_bias = attn_bias.materialize(
+                (q.shape[0], q.shape[1], k.shape[1]),
+                device=q.device,
+                dtype=torch.float32,
+            )
         if attn_bias.shape[0] != attn.shape[0]:
             attn_bias = bmk2bmhk(attn_bias, k.shape[2])
         attn = attn + attn_bias.float()
@@ -219,17 +223,83 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
     return out.permute((0, 2, 1, 3))
 
 
+def _rand_seqlens(
+    bs: int, q_len: int, kv_len: int
+) -> Tuple[Sequence[int], Sequence[int]]:
+    q_len *= bs
+    kv_len *= bs
+
+    seqlens_q: List[int] = []
+    seqlens_k: List[int] = []
+
+    step_q = [max(1, q_len // 10), max(2, q_len // 2)]
+    step_k = [max(1, kv_len // 10), max(2, kv_len // 2)]
+    while sum(seqlens_q) < q_len and sum(seqlens_k) < kv_len:
+        seqlens_q.append(random.randrange(*step_q))
+        seqlens_k.append(random.randrange(*step_k))
+    seqlens_q[-1] = q_len - sum(seqlens_q[:-1])
+    seqlens_k[-1] = kv_len - sum(seqlens_k[:-1])
+    return seqlens_q, seqlens_k
+
+
 def create_attn_bias(
-    bias_type, batch_size: int, q_len: int, kv_len: int, device, dtype
+    bias_type,
+    batch_size: int,
+    num_heads: int,
+    q_len: int,
+    kv_len: int,
+    device,
+    dtype,
+    requires_grad: bool,
 ):
     if bias_type is None:
         return None
     if bias_type is torch.Tensor:
-        attn_bias = torch.randn((batch_size, 1, kv_len), device=device, dtype=dtype) * 3
-        return attn_bias.expand(batch_size, q_len, kv_len)
-    if bias_type is xformers.ops.LowerTriangularMask:
-        return bias_type([batch_size, q_len, kv_len], dtype=dtype, device=device)
+        attn_bias = (
+            torch.randn((batch_size * num_heads, 1, kv_len), device=device, dtype=dtype)
+            * 3
+        )
+        attn_bias = attn_bias.expand(batch_size * num_heads, q_len, kv_len)
+        if requires_grad:
+            attn_bias.requires_grad_(True)
+        return attn_bias
+    if bias_type is fmha.attn_bias.LowerTriangularMask:
+        return fmha.attn_bias.LowerTriangularMask()
+    if bias_type is fmha.attn_bias.LowerTriangularMaskWithTensorBias:
+        attn_bias = (
+            torch.randn(
+                (batch_size, num_heads, q_len, kv_len), device=device, dtype=dtype
+            )
+            * 3
+        )
+        if requires_grad:
+            attn_bias.requires_grad_(True)
+        return fmha.attn_bias.LowerTriangularMaskWithTensorBias(attn_bias)
+    if bias_type in [
+        fmha.attn_bias.BlockDiagonalMask,
+        fmha.attn_bias.BlockDiagonalCausalMask,
+    ]:
+        block_diag = fmha.attn_bias.BlockDiagonalMask.from_seqlens(
+            *_rand_seqlens(batch_size * num_heads, q_len, kv_len)
+        )
+        if bias_type is fmha.attn_bias.BlockDiagonalCausalMask:
+            block_diag = block_diag.make_causal()
+        return block_diag
     assert False, f"Unsupported bias type: {bias_type}"
+
+
+def get_bias_grad(attn_bias, clear: bool = False) -> Optional[torch.Tensor]:
+    tensor_with_grad: Optional[torch.Tensor] = None
+    if isinstance(attn_bias, torch.Tensor):
+        tensor_with_grad = attn_bias
+    if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
+        tensor_with_grad = attn_bias._bias
+    if tensor_with_grad is not None:
+        grad = tensor_with_grad.grad
+        if clear:
+            tensor_with_grad.grad = None
+        return grad
+    return None
 
 
 def create_tensors(
@@ -244,6 +314,7 @@ def create_tensors(
     kv,
     *,
     attn_bias_type=None,
+    attn_bias_requires_grad: bool = False,
     fmt: str = "BMK",
 ):
     torch.manual_seed(B * q_len + kv_len * k + kv)
@@ -262,12 +333,18 @@ def create_tensors(
     if attn_bias_type is not None:
         attn_bias = create_attn_bias(
             attn_bias_type,
-            batch_size=B * h,
+            batch_size=B,
+            num_heads=h,
             q_len=q_len,
             kv_len=kv_len,
             dtype=dtype,
             device=device,
+            requires_grad=attn_bias_requires_grad,
         )
+        if isinstance(attn_bias, fmha.attn_bias.BlockDiagonalMask):
+            query, key, value = [
+                x.reshape([1, -1, *x.shape[2:]]) for x in [query, key, value]
+            ]
 
     inputs = fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias)
     if not op.supports(inputs):
@@ -349,221 +426,6 @@ def test_forward(
         ref,
         atol=op.ERROR_ATOL[dtype],
         rtol=op.ERROR_RTOL.get(dtype, 1e-5),
-    )
-
-
-@dataclass
-class CuSeqlenInputs:
-    q: Sequence[torch.Tensor]
-    k: Sequence[torch.Tensor]
-    v: Sequence[torch.Tensor]
-    bias: Sequence[Any]
-
-    def ref_attention(self) -> torch.Tensor:
-        outs = []
-        for q, k, v, bias in zip(
-            self.q,
-            self.k,
-            self.v,
-            self.bias,
-        ):
-            outs.append(ref_attention(q, k, v, bias))
-        return torch.cat(outs, dim=1)
-
-    def cat_qkv(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        return (
-            fmha.TensorWithSeqLen.from_tensor_list(self.q),
-            fmha.TensorWithSeqLen.from_tensor_list(self.k),
-            fmha.TensorWithSeqLen.from_tensor_list(self.v),
-        )
-
-    @staticmethod
-    def generate(
-        B_Mq_Mkv_H_K_Kv, attn_bias_type, dtype, device, op
-    ) -> "CuSeqlenInputs":
-        batch_size, max_q_len, max_kv_len, num_heads, k, kv = B_Mq_Mkv_H_K_Kv
-        all_q = []
-        all_k = []
-        all_v = []
-        all_bias = []
-        scale = 3
-        # Reduce batch size to speedup tests
-        batch_size = min(batch_size, 20)
-        r = random.Random(max_q_len + k * kv)
-        torch.manual_seed(r.randint(0, 128))
-
-        for batch_id in range(batch_size):
-            q_len = r.randint(1, max_q_len)
-            kv_len = r.randint(1, max_kv_len)
-
-            all_q.append(
-                torch.randn((1, q_len, num_heads, k), device=device, dtype=dtype)
-                * scale
-            )
-            all_k.append(
-                torch.randn((1, kv_len, num_heads, k), device=device, dtype=dtype)
-                * scale
-            )
-            all_v.append(
-                torch.randn((1, kv_len, num_heads, kv), device=device, dtype=dtype)
-                * scale
-            )
-
-            if batch_id == 0:
-                inp = fmha.Inputs(query=all_q[-1], key=all_k[-1], value=all_v[-1])
-                if not op.supports(inp):
-                    pytest.skip("unsupported configuration")
-
-            attn_bias = None
-            if attn_bias_type is not None:
-                attn_bias = create_attn_bias(
-                    attn_bias_type,
-                    batch_size=num_heads,
-                    q_len=q_len,
-                    kv_len=kv_len,
-                    dtype=dtype,
-                    device=device,
-                )
-            all_bias.append(attn_bias)
-        return CuSeqlenInputs(
-            q=all_q,
-            k=all_k,
-            v=all_v,
-            bias=all_bias,
-        )
-
-
-# Shapes with B>1
-# Needs to be supported by Flash as we use it for the BW
-def _make_empty_input(device, dtype, B, Mq, Mkv, H, K, Kv) -> fmha.Inputs:
-    return fmha.Inputs(
-        query=torch.empty([B, Mq, H, K], dtype=dtype, device=device),
-        key=torch.empty([B, Mkv, H, K], dtype=dtype, device=device),
-        value=torch.empty([B, Mkv, H, Kv], dtype=dtype, device=device),
-    )
-
-
-shapes_cu_seqlen = [
-    (op, device, dtype, B, *other)
-    for (op, device, dtype, B, *other) in _opFW_device_dtype_B_Mq_Mkv_H_K_Kv
-    if B > 1
-    and op.SUPPORTS_TENSOR_WITH_SEQLEN
-    and fmha.flash.BwOp.supports(_make_empty_input(device, dtype, B, *other))
-]
-
-
-@cuda_only
-@pytest.mark.parametrize("attn_bias_type", [None, xformers.ops.LowerTriangularMask])
-@pytest.mark.parametrize(
-    "op_device_dtype_B_Mq_Mkv_H_K_Kv",
-    shapes_cu_seqlen,
-    ids=_gen_ids(shapes_cu_seqlen),
-)
-def test_cu_seqlen(
-    op_device_dtype_B_Mq_Mkv_H_K_Kv,
-    attn_bias_type,
-):
-    op_fw, device, dtype, *B_Mq_Mkv_H_K_Kv = op_device_dtype_B_Mq_Mkv_H_K_Kv
-    inputs = CuSeqlenInputs.generate(
-        B_Mq_Mkv_H_K_Kv, attn_bias_type, dtype, device, op_fw
-    )
-
-    for tensors in [inputs.q, inputs.k, inputs.v]:
-        for x in tensors:
-            x.requires_grad_()
-    q, k, v = inputs.cat_qkv()
-    q.retain_grad()
-    k.retain_grad()
-    v.retain_grad()
-    assert op_fw.supports(fmha.Inputs(q, k, v))
-
-    # Test forward
-    op_bw = fmha.flash.BwOp
-    out = xformers.ops.memory_efficient_attention(
-        q, k, v, attn_bias=inputs.bias[0], op=(op_fw, op_bw)
-    )
-    # We should not copy the metadata, and ensure we reuse the one from query
-    assert isinstance(out, fmha.tensor_with_seqlen.TensorWithSeqLen)
-    assert isinstance(q, fmha.tensor_with_seqlen.TensorWithSeqLen)
-    assert out.cu_seqlen.storage().data_ptr() == q.cu_seqlen.storage().data_ptr()
-
-    ref = inputs.ref_attention()
-
-    assert_allclose(
-        out.float(),
-        ref,
-        atol=op_fw.ERROR_ATOL[dtype],
-        rtol=op_fw.ERROR_RTOL.get(dtype, 1e-5),
-    )
-
-    # Test backward
-    grad = torch.randn_like(ref)
-    ref.backward(grad)
-    ref_grads = []
-    for tensors in [inputs.q, inputs.k, inputs.v]:
-        for x in tensors:
-            ref_grads.append(x.grad)
-            x.grad = None
-    out.backward(grad)
-    i = 0
-    for tensors, name in [(inputs.q, "q"), (inputs.k, "k"), (inputs.v, "v")]:
-        for sub_i, x in enumerate(tensors):
-            ref_grad = ref_grads[i]
-            assert x.grad is not None
-            i += 1
-            assert_allclose(
-                ref_grad.float(),
-                x.grad.float(),
-                f"{name}[{sub_i}].grad",
-                atol=op_bw.ERROR_ATOL[dtype],
-                rtol=op_bw.ERROR_RTOL[dtype],
-            )
-            x.grad = None
-
-
-@cuda_only
-def test_tensor_with_seqlen() -> None:
-    H, K = 16, 32
-    queries = [
-        torch.randn([1, 2, H, K]),
-        torch.randn([3, 4, H, K]),
-        torch.randn([1, 1, H, K]),
-    ]
-    q = fmha.TensorWithSeqLen.from_tensor_list(queries)
-    assert isinstance(q, fmha.TensorWithSeqLen)
-    assert q.shape == (1, 2 + 3 * 4 + 1, H, K)
-    assert q.device.type == "cpu"
-    assert q.cu_seqlen.device.type == "cpu"
-    assert q.max_seqlen == 4
-    q = q.to("cuda")
-    assert isinstance(q, fmha.TensorWithSeqLen)
-    assert q.device.type == "cuda"
-    assert q.cu_seqlen.device.type == "cuda"
-    a, b, c = q.to_tensor_list()
-    assert not isinstance(a, fmha.TensorWithSeqLen)
-    assert a.shape[:2] == queries[0].shape[:2]
-    assert b.shape[:2] == queries[1].shape[:2]
-    assert c.shape[:2] == queries[2].shape[:2]
-
-
-@cuda_only
-def test_tensor_with_seqlen_grad() -> None:
-    H, K = 16, 32
-    queries = [
-        torch.randn([1, 2, H, K]),
-        torch.randn([1, 4, H, K]),
-        torch.randn([1, 1, H, K]),
-    ]
-    for q in queries:
-        q.requires_grad_()
-    q = fmha.TensorWithSeqLen.from_tensor_list(queries)
-    assert isinstance(q, fmha.TensorWithSeqLen)
-
-    grad = torch.randn_like(queries[0])
-    q.to_tensor_list()[0].backward(grad)
-    assert queries[0].grad is not None and torch.allclose(queries[0].grad, grad)
-    assert queries[1].grad is not None and torch.allclose(
-        queries[1].grad, torch.zeros_like(queries[1])
     )
 
 
@@ -651,6 +513,7 @@ def test_backward(
     query, key, value, attn_bias = create_tensors(
         *op_device_dtype_B_Mq_Mkv_H_K_Kv,
         attn_bias_type=attn_bias_type,
+        attn_bias_requires_grad=attn_bias_requires_grad,
         fmt=fmt,
     )
     op_fw = (
@@ -677,8 +540,6 @@ def test_backward(
     query.requires_grad_(True)
     key.requires_grad_(True)
     value.requires_grad_(True)
-    if isinstance(attn_bias, torch.Tensor):
-        attn_bias.requires_grad_(attn_bias_requires_grad)
 
     if not op_bw.supports(fmha.Inputs(query, key, value, attn_bias)):
         pytest.skip("inputs not supported")
@@ -709,8 +570,9 @@ def test_backward(
         grads = [qkv.grad]
         qkv.grad = None
     if attn_bias_requires_grad:
-        grads.append(attn_bias.grad)
-        attn_bias.grad = None
+        attn_bias_grad = get_bias_grad(attn_bias, clear=True)
+        if attn_bias_grad is not None:
+            grads.append(attn_bias_grad)
 
     ref = ref_attention(query, key, value, attn_bias)
     ref.backward(grad_out)
@@ -734,15 +596,19 @@ def test_backward(
         grads_name = ["qkv"]
 
     if attn_bias_requires_grad:
-        assert isinstance(attn_bias.grad, torch.Tensor)
-        grads_ref.append(attn_bias.grad)
-        grads_name.append("bias")
+        attn_bias_grad = get_bias_grad(attn_bias)
+        if attn_bias_grad is not None:
+            grads_ref.append(attn_bias.grad)
+            grads_name.append("bias")
 
     del query
     del key
     del value
     del qkv
 
+    assert len(grads_ref) == len(
+        grads
+    ), "Wrong number of gradients (maybe bias grad didn't backprop?)"
     for name, calc_grad, ref_grad in zip(grads_name, grads, grads_ref):
         assert_allclose(
             calc_grad,
@@ -825,7 +691,7 @@ def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed):
         query, key, value, attn_bias, p, op=(op, None)
     )
 
-    assert_allclose(out, out2)
+    assert_allclose(out, out2, "dropout reproducibility")
 
     torch.manual_seed(seed)
     mask = _get_drop_mask(op, batch_size, q_len, kv_len, p, device)
@@ -1049,7 +915,7 @@ def test_cuda_streams(
 
 @pytest.mark.parametrize(
     "op_device_dtype_B_Mq_Mkv_H_K_Kv",
-    _opBW_device_dtype_B_Mq_Mkv_H_K_Kv__xs,
+    argvalues=_opBW_device_dtype_B_Mq_Mkv_H_K_Kv__xs,
     ids=_opBW_device_dtype_B_Mq_Mkv_H_K_Kv__xs_ids,
 )
 def test_custom_scale(op_device_dtype_B_Mq_Mkv_H_K_Kv):
@@ -1233,3 +1099,124 @@ def test_unsupported_dropout_combine_flash_cutlass() -> None:
             q, q, q, p=0.1, op=(fmha.flash.FwOp, fmha.cutlass.BwOp)
         )
         out.backward(out)
+
+
+def test_attn_bias_causal() -> None:
+    m = -math.inf
+    causal_mask = torch.tensor([[0, m], [0, 0], [0, 0]])
+    tensor_bias = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+
+    attn_bias = fmha.attn_bias.LowerTriangularMask()
+    assert_allclose(attn_bias.materialize(causal_mask.shape), causal_mask, "causal")
+    attn_bias = attn_bias.add_bias(tensor_bias)
+    assert_allclose(
+        attn_bias.materialize(causal_mask.shape),
+        tensor_bias + causal_mask,
+        "causal+tensor_bias",
+    )
+
+
+def test_attn_bias_torch_tensor() -> None:
+    tensor_bias = torch.tensor([[1.0, 2.0, 3.0], [3.0, 4.0, 5.0]])
+    attn_bias = fmha.attn_bias.LowerTriangularMaskWithTensorBias(tensor_bias)
+    m = -math.inf
+    causal_bias = torch.tensor([[0, m, m], [0, 0, m]])
+    assert_allclose(
+        attn_bias.materialize((2, 3)), causal_bias + tensor_bias, "tensor_bias+causal"
+    )
+
+
+def test_attn_bias_blockdiag() -> None:
+    queries = [
+        torch.randn([1, 3, 1, 8]),
+        torch.randn([1, 2, 1, 8]),
+        torch.randn([1, 5, 1, 8]),
+    ]
+    attn_bias, q = fmha.BlockDiagonalMask.from_tensor_list(queries)
+
+    # Verify mask
+    as_tensor = attn_bias.materialize((10, 10))
+    assert int((as_tensor != -math.inf).sum().item()) == 3 * 3 + 2 * 2 + 5 * 5
+    assert_allclose(as_tensor[0:3, 0:3], torch.zeros([3, 3]), "batch0")
+    assert_allclose(as_tensor[3:5, 3:5], torch.zeros([2, 2]), "batch1")
+    assert_allclose(as_tensor[5:, 5:], torch.zeros([5, 5]), "batch2")
+
+    # Verify we can split it back
+    queries2 = attn_bias.split(q)
+    assert len(queries) == len(queries2)
+    for q1, q2 in zip(queries, queries2):
+        assert_allclose(q1, q2)
+
+
+def test_attn_bias_blockdiag_batched() -> None:
+    queries = [
+        torch.randn([1, 3, 1, 8]),
+        torch.randn([3, 2, 1, 8]),
+        torch.randn([1, 5, 1, 8]),
+    ]
+    attn_bias, q = fmha.BlockDiagonalMask.from_tensor_list(queries)
+
+    # Verify mask
+    as_tensor = attn_bias.materialize((14, 14))
+    assert int((as_tensor != -math.inf).sum().item()) == 3 * 3 + 3 * 2 * 2 + 5 * 5
+    assert_allclose(as_tensor[0:3, 0:3], torch.zeros([3, 3]), "batch0")
+    assert_allclose(as_tensor[3:5, 3:5], torch.zeros([2, 2]), "batch1.0")
+    assert_allclose(as_tensor[5:7, 5:7], torch.zeros([2, 2]), "batch1.1")
+    assert_allclose(as_tensor[7:9, 7:9], torch.zeros([2, 2]), "batch1.2")
+    assert_allclose(as_tensor[9:, 9:], torch.zeros([5, 5]), "batch2")
+
+    # Verify we can split it back
+    queries2 = attn_bias.split(q)
+    assert len(queries) == len(queries2)
+    for q1, q2 in zip(queries, queries2):
+        assert_allclose(q1, q2)
+
+
+def test_attn_bias_blockdiag_crossattn_causal() -> None:
+    # Q / KV have different seqlen
+    list_q = [
+        torch.randn([1, 3, 1, 8]),
+        torch.randn([2, 1, 1, 8]),
+    ]
+    list_k = [
+        torch.randn([1, 2, 1, 8]),
+        torch.randn([2, 3, 1, 8]),
+    ]
+
+    attn_bias, q, k, _ = fmha.attn_bias.BlockDiagonalMask.from_tensor_lists_qkv(
+        list_q, list_k
+    )
+
+    # Verify mask
+    as_tensor = attn_bias.materialize((q.shape[1], k.shape[1]))
+    assert int((as_tensor != -math.inf).sum().item()) == 3 * 2 + 2 * 3 * 1
+    assert_allclose(as_tensor[0:3, 0:2], torch.zeros([3, 2]), "batch0")
+    assert_allclose(as_tensor[3:4, 2:5], torch.zeros([1, 3]), "batch1.0")
+    assert_allclose(as_tensor[4:, 5:], torch.zeros([1, 3]), "batch1.1")
+
+    # Also test causal version
+    as_tensor = attn_bias.make_causal().materialize((q.shape[1], k.shape[1]))
+    assert_allclose(
+        as_tensor[3:4, 2:5],
+        fmha.attn_bias.LowerTriangularMask().materialize((1, 3)),
+        "batch1.0[causal]",
+    )
+
+    # Verify we can split it back
+    list_q2 = attn_bias.split_queries(q)
+    assert len(list_q) == len(list_q2)
+    for q1, q2 in zip(list_q, list_q2):
+        assert_allclose(q1, q2)
+    with pytest.raises(ValueError):
+        attn_bias.split_queries(k)
+    list_k2 = attn_bias.split_kv(k)
+    assert len(list_k) == len(list_k2)
+    for k1, k2 in zip(list_k, list_k2):
+        assert_allclose(k1, k2)
+
+
+def test_attn_bias_from_seqlens() -> None:
+    bias = fmha.attn_bias.BlockDiagonalMask.from_seqlens([3, 5, 1])
+    out = bias.split(torch.randn([1, 3 + 5 + 1, 16]))
+    assert len(out) == 3
+    assert tuple(out[0].shape) == (1, 3, 16)

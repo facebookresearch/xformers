@@ -24,13 +24,13 @@ else:
     triton_flash_backward = None
     triton_flash_forward = None
 
+from .attn_bias import LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
     Context,
     Gradients,
     Inputs,
-    LowerTriangularMask,
     check_lastdim_alignment_stride1,
 )
 

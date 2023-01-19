@@ -6,7 +6,7 @@
 import torch
 
 from .fmha import (
-    AttentionMask,
+    AttentionBias,
     AttentionOp,
     AttentionOpBase,
     AttentionOpDispatch,
@@ -33,6 +33,9 @@ from .swiglu_op import (
 )
 from .unbind import get_stack_strides, stack_or_none, unbind
 
+# BW compatibility
+AttentionMask = AttentionBias
+
 
 def masked_matmul(a, b, mask=None):
     if torch.overrides.has_torch_function((a, b, mask)):
@@ -57,6 +60,7 @@ def masked_matmul(a, b, mask=None):
 
 
 __all__ = [
+    "AttentionBias",
     "AttentionMask",
     "AttentionOp",
     "AttentionOpBase",

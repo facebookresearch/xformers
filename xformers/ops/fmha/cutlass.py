@@ -4,21 +4,26 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Any, List, Mapping, Optional, Set, Tuple
+from typing import Any, List, Mapping, Optional, Set, Tuple, Union
 
 import torch
 
 from ..common import get_xformers_operator, register_operator
+from .attn_bias import (
+    AttentionBias,
+    BlockDiagonalCausalMask,
+    BlockDiagonalMask,
+    LowerTriangularMask,
+    LowerTriangularMaskWithTensorBias,
+)
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
     Context,
     Gradients,
     Inputs,
-    LowerTriangularMask,
     check_lastdim_alignment_stride1,
 )
-from .tensor_with_seqlen import TensorWithSeqLen
 
 
 def _uses_tensorcores(sm: int, is_half: bool) -> bool:
@@ -49,24 +54,44 @@ def _minimum_gemm_alignment(inp: Inputs) -> int:
 def _get_seqlen_info(
     inp: Inputs,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], int]:
-    MISMATCH_ERR = (
-        "All of query/key/value should have seqlen information, or none of them"
-    )
-
-    if isinstance(inp.key, TensorWithSeqLen):
-        assert isinstance(inp.query, TensorWithSeqLen), MISMATCH_ERR
-        assert isinstance(inp.value, TensorWithSeqLen), MISMATCH_ERR
-        cu_seqlen_k = inp.key.cu_seqlen
-        cu_seqlen_q = inp.query.cu_seqlen
-        max_seqlen_q = inp.query.max_seqlen
+    attn_bias = inp.attn_bias
+    if isinstance(attn_bias, BlockDiagonalMask):
+        attn_bias.k_seqinfo.cu_seqlen = attn_bias.k_seqinfo.cu_seqlen.to(
+            inp.query.device, non_blocking=True
+        )
+        attn_bias.q_seqinfo.cu_seqlen = attn_bias.q_seqinfo.cu_seqlen.to(
+            inp.query.device, non_blocking=True
+        )
+        cu_seqlen_k = attn_bias.k_seqinfo.cu_seqlen
+        cu_seqlen_q = attn_bias.q_seqinfo.cu_seqlen
+        max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
     else:
-        assert not isinstance(inp.query, TensorWithSeqLen), MISMATCH_ERR
-        assert not isinstance(inp.value, TensorWithSeqLen), MISMATCH_ERR
         cu_seqlen_k = None
         cu_seqlen_q = None
         max_seqlen_q = -1
 
     return cu_seqlen_k, cu_seqlen_q, max_seqlen_q
+
+
+def _get_tensor_bias(
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
+) -> Optional[torch.Tensor]:
+    if isinstance(attn_bias, torch.Tensor):
+        return attn_bias
+    elif isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
+        return attn_bias._bias
+    return None
+
+
+def _check_bias_alignment(
+    reasons: List[str], attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
+) -> None:
+    attn_bias_tensor = _get_tensor_bias(attn_bias)
+    if attn_bias_tensor is not None:
+        alignment = 128 // torch.finfo(attn_bias_tensor.dtype).bits
+        check_lastdim_alignment_stride1(
+            reasons, "attn_bias", attn_bias_tensor, alignment
+        )
 
 
 @register_operator
@@ -84,11 +109,13 @@ class FwOp(AttentionFwOpBase):
         type(None),
         torch.Tensor,
         LowerTriangularMask,
+        LowerTriangularMaskWithTensorBias,
+        BlockDiagonalMask,
+        BlockDiagonalCausalMask,
     }
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
-    SUPPORTS_TENSOR_WITH_SEQLEN = True
     NAME = "cutlassF"
 
     _TEST_K: List[int] = [
@@ -103,14 +130,15 @@ class FwOp(AttentionFwOpBase):
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
-        uses_attn_bias = isinstance(inp.attn_bias, torch.Tensor)
-        causal = isinstance(inp.attn_bias, LowerTriangularMask)
+        causal = isinstance(
+            inp.attn_bias, (LowerTriangularMask, BlockDiagonalCausalMask)
+        )
         cu_seqlen_k, cu_seqlen_q, max_seqlen_q = _get_seqlen_info(inp)
         out, lse, rng_seed, rng_offset = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
             value=inp.value,
-            attn_bias=inp.attn_bias if uses_attn_bias else None,
+            attn_bias=_get_tensor_bias(inp.attn_bias),
             cu_seqlens_q=cu_seqlen_q,
             cu_seqlens_k=cu_seqlen_k,
             max_seqlen_q=max_seqlen_q,
@@ -141,13 +169,7 @@ class FwOp(AttentionFwOpBase):
         matmul_alignment_mn = _minimum_gemm_alignment(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, matmul_alignment_mn)
         check_lastdim_alignment_stride1(reasons, "value", d.value, matmul_alignment_mn)
-
-        if isinstance(d.attn_bias, torch.Tensor):
-            bits_per_scalar = torch.finfo(d.attn_bias.dtype).bits
-            # restriction comes from each thread loading bias 128 bits at a time
-            if d.attn_bias.shape[-1] % (128 // bits_per_scalar) != 0:
-                reasons.append("bias tensor not aligned for 128 bit loads")
-
+        _check_bias_alignment(reasons, d.attn_bias)
         return reasons
 
 
@@ -157,12 +179,17 @@ class BwOp(AttentionBwOpBase):
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
-    SUPPORTED_ATTN_BIAS_TYPES = FwOp.SUPPORTED_ATTN_BIAS_TYPES
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+        type(None),
+        torch.Tensor,
+        LowerTriangularMask,
+        # TODO: Fix handling of gradient through the fMHA autograd function
+        # LowerTriangularMaskWithTensorBias,
+    }
     SUPPORTS_ATTN_BIAS_GRAD = True
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
-    SUPPORTS_TENSOR_WITH_SEQLEN = False
     NAME = "cutlassB"
 
     ERROR_ATOL: Mapping[torch.dtype, float] = {
@@ -192,6 +219,28 @@ class BwOp(AttentionBwOpBase):
         check_lastdim_alignment_stride1(reasons, "query", d.query, matmul_alignment_mn)
         check_lastdim_alignment_stride1(reasons, "key", d.key, matmul_alignment_mn)
         check_lastdim_alignment_stride1(reasons, "value", d.value, matmul_alignment_mn)
+        _check_bias_alignment(reasons, d.attn_bias)
+        attn_bias_tensor = _get_tensor_bias(d.attn_bias)
+
+        # Backprop of gradient through broadcasted bias is not supported
+        if attn_bias_tensor is not None and attn_bias_tensor.requires_grad:
+            # Don't forget that inputs are either in BMK or BMHK!
+            if d.query.ndim == 3 and attn_bias_tensor.ndim == 3:
+                expected_bias_shape = (*d.query.shape[:2], d.key.shape[1])
+            else:
+                # bias is B H Mq Mk
+                expected_bias_shape = (
+                    d.query.shape[0],
+                    d.query.shape[2] if d.query.ndim == 4 else 1,
+                    d.query.shape[1],
+                    d.key.shape[1],
+                )
+            if tuple(attn_bias_tensor.shape) != expected_bias_shape:
+                reasons.append(
+                    "Broadcasting the `attn_bias` tensor is not supported "
+                    f"(shape: {tuple(attn_bias_tensor.shape)}"
+                    f"/ expected: {expected_bias_shape})"
+                )
         if d.device.type == "cuda":
             cap = torch.cuda.get_device_capability(d.device)
             sm = cap[0] * 10 + cap[1]
@@ -207,21 +256,16 @@ class BwOp(AttentionBwOpBase):
                     f"Sm{sm} does not have enough shared-memory to run this kernel"
                     " - see https://github.com/facebookresearch/xformers/issues/517"
                 )
-
-        if isinstance(d.attn_bias, torch.Tensor):
-            bits_per_scalar = torch.finfo(d.attn_bias.dtype).bits
-            # restriction comes from each thread loading bias 128 bits at a time
-            if d.attn_bias.shape[-1] % (128 // bits_per_scalar) != 0:
-                reasons.append("bias tensor not aligned for 128 bit loads")
-
         return reasons
 
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:
         if type(inp.attn_bias) not in BwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
-        uses_attn_bias = isinstance(inp.attn_bias, torch.Tensor)
-        causal = isinstance(inp.attn_bias, LowerTriangularMask)
+
+        causal = isinstance(
+            inp.attn_bias, (LowerTriangularMask, BlockDiagonalCausalMask)
+        )
         dtype = inp.query.dtype
 
         rng_seed = rng_offset = 0
@@ -241,7 +285,7 @@ class BwOp(AttentionBwOpBase):
             inp.query,
             inp.key,
             inp.value,
-            inp.attn_bias if uses_attn_bias else None,
+            _get_tensor_bias(inp.attn_bias),
             ctx.get_padded_lse(32, force_pad_inf=force_pad_inf),
             ctx.out.to(dtype),
             dropout_p=inp.p,

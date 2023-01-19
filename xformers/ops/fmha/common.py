@@ -11,71 +11,28 @@ import torch
 
 from ..._cpp_lib import _built_with_cuda
 from ..common import BaseOperator
-from .tensor_with_seqlen import TensorWithSeqLen
+from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
 
 
-class AttentionMask:
-    """Base class for custom masks that can be applied \
-        in :attr:`xformers.ops.memory_efficient_attention`.
-
-    When using an :attr:`xformers.ops.AttentionMask`
-    instead of a :attr:`torch.Tensor`, the mask matrix does
-    not need to be materialized, and can be
-    hardcoded into some kernels for better performance.
-
-    See also :attr:`xformers.ops.LowerTriangularMask`
-    """
-
-    def to_tensor(self) -> torch.Tensor:
-        """Materializes the mask tensor
-
-        Returns:
-            torch.Tensor
-        """
-        raise NotImplementedError()
-
-
-class LowerTriangularMask(AttentionMask):
-    """A lower triangular mask that can be used for causal attention"""
-
-    def __init__(self, *tensor_args, **tensor_kwargs) -> None:
-        """Creates a Lower triangular mask.
-        It is not requires to specify any parameter, as they are only \
-            used when calling :attr:`LowerTriangularMask.to_tensor`
-
-        The mask will not be materialized by default, and hence does not use \
-            any additional memory, but acts as an option for the MHA kernel.
-        """
-        self._tensor: Optional[torch.Tensor] = None
-        self._tensor_kwargs = tensor_kwargs
-        self._tensor_args = tensor_args
-
-    def to_tensor(self) -> torch.Tensor:
-        """Materializes the mask tensor
-
-        Returns:
-            torch.Tensor
-        """
-        if self._tensor is None:
-            # Work around for "triu_tril_cuda_template" not implemented for 'BFloat16'
-            dtype = self._tensor_kwargs.pop("dtype", torch.float)
-            create_as = dtype if dtype is not torch.bfloat16 else torch.float32
-            self._tensor = torch.full(  # type: ignore
-                *self._tensor_args,
-                **self._tensor_kwargs,
-                dtype=create_as,
-                fill_value=float("-inf"),
-            )
-            self._tensor = torch.triu(self._tensor, diagonal=1).to(dtype)  # type: ignore
-        return self._tensor
+def _is_bias_type_supported_in_BMK(attn_bias_type: Any) -> bool:
+    # NoneType
+    if isinstance(None, attn_bias_type):
+        return True
+    if attn_bias_type in [LowerTriangularMask, torch.Tensor]:
+        return True
+    return False
 
 
 @dataclass
 class Inputs:
+    """
+    Stores inputs to the `memory_efficient_attention` operators
+    """
+
     query: torch.Tensor
     key: torch.Tensor
     value: torch.Tensor
-    attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None
     p: float = 0.0
     scale: Optional[float] = None
 
@@ -119,18 +76,20 @@ class Inputs:
                 f"  key.dtype  : {self.key.dtype}\n"
                 f"  value.dtype: {self.value.dtype}"
             )
-        has_seqlen = any(isinstance(x, TensorWithSeqLen) for x in qkv)
-        if has_seqlen:
-            if not all(isinstance(x, TensorWithSeqLen) for x in qkv):
-                raise ValueError(
-                    f"One of Query/Key/Value has sequence length information, but not all of them\n"
-                    f"  type(query): {type(self.query)}\n"
-                    f"  type(key)  : {type(self.key)}\n"
-                    f"  type(value): {type(self.value)}"
-                )
+        # Biases with tensors attached are meant to be in BMHK format
+        # This would require to permute biases/gradients which can be expensive,
+        # so let's just forbid it - BMK is a legacy format anyway
+        if self.query.ndim == 3 and not _is_bias_type_supported_in_BMK(
+            type(self.attn_bias)
+        ):
+            raise ValueError(
+                f"Please provide inputs in BMHK format rather "
+                f"than BMK when using bias type `{type(self.attn_bias).__name__}`"
+            )
+        if isinstance(self.attn_bias, BlockDiagonalMask):
             if any(x.shape[0] != 1 for x in qkv):
                 raise ValueError(
-                    f"Expected batch_size=1 when using sequence length information\n"
+                    f"Expected batch_size=1 when using block-diagonal bias\n"
                     f"  query.shape: {self.query.shape}\n"
                     f"  key.shape  : {self.key.shape}\n"
                     f"  value.shape: {self.value.shape}"
@@ -191,7 +150,6 @@ class AttentionOpBase(BaseOperator):
     SUPPORTS_DROPOUT: bool
     SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
-    SUPPORTS_TENSOR_WITH_SEQLEN: bool = False
     NAME: str
     OPERATOR_CATEGORY = "memory_efficient_attention"
 
@@ -211,12 +169,6 @@ class AttentionOpBase(BaseOperator):
         reasons = []
         device_type = d.query.device.type
         dtype = d.query.dtype
-        if not cls.SUPPORTS_TENSOR_WITH_SEQLEN and (
-            isinstance(d.query, TensorWithSeqLen)
-            or isinstance(d.key, TensorWithSeqLen)
-            or isinstance(d.value, TensorWithSeqLen)
-        ):
-            reasons.append("tensors with custom seqlen are not supported")
         if device_type not in cls.SUPPORTED_DEVICES:
             reasons.append(f"device={device_type} (supported: {cls.SUPPORTED_DEVICES})")
         if device_type == "cuda" and not _built_with_cuda:
@@ -322,7 +274,7 @@ class AttentionOpDispatch:
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        attn_bias: Optional[Union[torch.Tensor, AttentionMask]] = None,
+        attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
         p: float = 0.0,
         scale: Optional[float] = None,
     ) -> "AttentionOpDispatch":

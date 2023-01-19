@@ -3,11 +3,12 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Mapping, Optional, Set, Tuple
+from typing import Any, List, Mapping, Optional, Set, Tuple, Union
 
 import torch
 
 from ..common import get_xformers_operator, register_operator
+from .attn_bias import AttentionBias
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -25,6 +26,18 @@ def _bmhk2bmk_contiguous(tensor) -> torch.Tensor:
         .view([tensor.shape[0] * tensor.shape[2], tensor.shape[1], tensor.shape[3]])
         .contiguous()
     )
+
+
+def _get_tensor_bias_bmk(
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
+) -> Optional[torch.Tensor]:
+    if not isinstance(attn_bias, torch.Tensor):
+        assert attn_bias is None
+        return None
+    # BMK -> BMHK
+    if attn_bias.ndim == 4:
+        attn_bias = attn_bias.reshape([-1, *attn_bias.shape[2:]])
+    return attn_bias
 
 
 @register_operator
@@ -82,7 +95,7 @@ class FwOp(AttentionFwOpBase):
             key=key,
             value=value,
             compute_logsumexp=needs_gradient,
-            attn_bias=inp.attn_bias,
+            attn_bias=_get_tensor_bias_bmk(inp.attn_bias),
             p=inp.p,
         )
         out = bmk2bmhk(out, num_heads)
@@ -151,7 +164,7 @@ class BwOp(AttentionBwOpBase):
             # LSE: BHM -> (BH)M
             ctx.lse.reshape([-1, ctx.lse.shape[-1]]),
             out,
-            inp.attn_bias,
+            _get_tensor_bias_bmk(inp.attn_bias),
             inp.p,
             rng_seed,
             rng_offset,
