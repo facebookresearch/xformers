@@ -141,6 +141,12 @@ class FwOp(AttentionFwOpBase):
         check_lastdim_alignment_stride1(reasons, "value", d.value, matmul_alignment_mn)
 
         if isinstance(d.attn_bias, torch.Tensor):
+            if d.attn_bias.ndim == 4 and not (
+                d.query.ndim == 4
+                and d.attn_bias.shape[0] == d.query.shape[0]
+                and d.attn_bias.shape[1] == d.query.shape[1]
+            ):
+                reasons.append("mismatched query dims for 4D bias")
             bits_per_scalar = torch.finfo(d.attn_bias.dtype).bits
             # restriction comes from each thread loading bias 128 bits at a time
             if d.attn_bias.shape[-1] % (128 // bits_per_scalar) != 0:
@@ -208,6 +214,19 @@ class BwOp(AttentionBwOpBase):
 
         if isinstance(d.attn_bias, torch.Tensor):
             bits_per_scalar = torch.finfo(d.attn_bias.dtype).bits
+
+            if d.attn_bias.ndim == 2 and d.attn_bias.requires_grad:
+                reasons.append(
+                    "learnable biases that also require broadcasting not currently supported"
+                )
+
+            if d.attn_bias.ndim == 4 and not (
+                d.query.ndim == 4
+                and d.attn_bias.shape[0] == d.query.shape[0]
+                and d.attn_bias.shape[1] == d.query.shape[1]
+            ):
+                reasons.append("mismatched query dims for 4D bias")
+
             # restriction comes from each thread loading bias 128 bits at a time
             if d.attn_bias.shape[-1] % (128 // bits_per_scalar) != 0:
                 reasons.append("bias tensor not aligned for 128 bit loads")

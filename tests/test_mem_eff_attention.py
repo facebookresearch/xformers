@@ -5,6 +5,7 @@
 
 import random
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Sequence, Tuple, Type, TypeVar
 
 import pytest
@@ -40,6 +41,13 @@ ALL_BW_OPS: Sequence[Type[fmha.common.AttentionBwOpBase]] = [
     fmha.triton.BwOp,
     fmha.small_k.BwOp,
 ]
+
+
+class BiasFmt(Enum):
+    MN = 1  # (n_queries, n_keys)
+    BMN = 2  # (batch_sz * n_heads, n_queries, n_keys)
+    BHMN = 3  # (batch_sz, n_heads, n_queries, n_keys)
+
 
 T = TypeVar(
     "T", Type[fmha.common.AttentionFwOpBase], Type[fmha.common.AttentionBwOpBase]
@@ -197,7 +205,14 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
     if attn_bias is not None:
         if isinstance(attn_bias, xformers.ops.AttentionMask):
             attn_bias = attn_bias.to_tensor()
-        if attn_bias.shape[0] != attn.shape[0]:
+        elif attn_bias.ndim == 4:
+            attn_bias = attn_bias.reshape(
+                attn_bias.shape[0] * attn_bias.shape[1],
+                attn_bias.shape[2],
+                attn_bias.shape[3],
+            )
+
+        if attn_bias.shape[0] != attn.shape[0] and attn_bias.ndim != 2:
             attn_bias = bmk2bmhk(attn_bias, k.shape[2])
         attn = attn + attn_bias.float()
     attn = attn.softmax(-1)
@@ -220,15 +235,43 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
 
 
 def create_attn_bias(
-    bias_type, batch_size: int, q_len: int, kv_len: int, device, dtype
+    bias_type,
+    batch_size: int,
+    n_heads: int,
+    q_len: int,
+    kv_len: int,
+    bias_fmt: BiasFmt,
+    device,
+    dtype,
 ):
     if bias_type is None:
         return None
     if bias_type is torch.Tensor:
-        attn_bias = torch.randn((batch_size, 1, kv_len), device=device, dtype=dtype) * 3
-        return attn_bias.expand(batch_size, q_len, kv_len)
+        if bias_fmt == BiasFmt.MN:
+            attn_bias = torch.randn((1, kv_len), device=device, dtype=dtype) * 3
+            return attn_bias.expand(q_len, kv_len)
+        elif bias_fmt == BiasFmt.BMN:
+            attn_bias = (
+                torch.randn(
+                    (batch_size * n_heads, 1, kv_len), device=device, dtype=dtype
+                )
+                * 3
+            )
+            return attn_bias.expand(batch_size * n_heads, q_len, kv_len)
+        elif bias_fmt == BiasFmt.BHMN:
+            attn_bias = (
+                torch.randn(
+                    (batch_size, n_heads, 1, kv_len), device=device, dtype=dtype
+                )
+                * 3
+            )
+            return attn_bias.expand((batch_size, n_heads, q_len, kv_len))
+        else:
+            assert False, f"Unsupported bias_fmt: {bias_fmt}"
     if bias_type is xformers.ops.LowerTriangularMask:
-        return bias_type([batch_size, q_len, kv_len], dtype=dtype, device=device)
+        return bias_type(
+            [batch_size * n_heads, q_len, kv_len], dtype=dtype, device=device
+        )
     assert False, f"Unsupported bias type: {bias_type}"
 
 
@@ -245,6 +288,7 @@ def create_tensors(
     *,
     attn_bias_type=None,
     fmt: str = "BMK",
+    bias_fmt=BiasFmt.BMN,
 ):
     torch.manual_seed(B * q_len + kv_len * k + kv)
     scale = 3
@@ -262,9 +306,11 @@ def create_tensors(
     if attn_bias_type is not None:
         attn_bias = create_attn_bias(
             attn_bias_type,
-            batch_size=B * h,
+            batch_size=B,
+            n_heads=h,
             q_len=q_len,
             kv_len=kv_len,
+            bias_fmt=bias_fmt,
             dtype=dtype,
             device=device,
         )
@@ -295,7 +341,14 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("packed", [False, True])
 @pytest.mark.parametrize(
-    "attn_bias_type", [None, xformers.ops.LowerTriangularMask, torch.Tensor]
+    "attn_bias_cfg",
+    [
+        (None, None),
+        (xformers.ops.LowerTriangularMask, None),
+        (torch.Tensor, BiasFmt.MN),
+        (torch.Tensor, BiasFmt.BMN),
+        (torch.Tensor, BiasFmt.BHMN),
+    ],
 )
 @pytest.mark.parametrize(
     "op_device_dtype_B_Mq_Mkv_H_K_Kv",
@@ -304,10 +357,11 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
 )
 def test_forward(
     op_device_dtype_B_Mq_Mkv_H_K_Kv,
-    attn_bias_type,
+    attn_bias_cfg,
     packed,
     fmt,
 ):
+    attn_bias_type, attn_bias_fmt = attn_bias_cfg
     (
         op,
         device,
@@ -324,7 +378,10 @@ def test_forward(
             f"packed incompatible with `k ({k}) != kv ({kv})` or `q_len ({q_len}) != kv_len ({kv_len})`"
         )
     query, key, value, attn_bias = create_tensors(
-        *op_device_dtype_B_Mq_Mkv_H_K_Kv, attn_bias_type=attn_bias_type, fmt="BMHK"
+        *op_device_dtype_B_Mq_Mkv_H_K_Kv,
+        attn_bias_type=attn_bias_type,
+        fmt="BMHK",
+        bias_fmt=attn_bias_fmt,
     )
 
     if packed:
@@ -337,6 +394,10 @@ def test_forward(
             # bm3hk -> 3 x bmhk
             query, key, value = xformers.ops.unbind(c, 2)
         assert not query.is_contiguous()
+
+    inputs = fmha.Inputs(query, key, value, attn_bias)
+    if not op.supports(inputs):
+        pytest.skip("inputs not supported")
 
     out = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op
@@ -418,9 +479,11 @@ class CuSeqlenInputs:
             if attn_bias_type is not None:
                 attn_bias = create_attn_bias(
                     attn_bias_type,
-                    batch_size=num_heads,
+                    batch_size=1,
+                    n_heads=num_heads,
                     q_len=q_len,
                     kv_len=kv_len,
+                    bias_fmt=BiasFmt.BMN,
                     dtype=dtype,
                     device=device,
                 )
@@ -616,12 +679,16 @@ def test_logsumexp(op_device_dtype_B_Mq_Mkv_H_K_Kv):
 
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize(
-    "attn_bias_cfg",  # (type(bias), bias.requires_grad)
+    "attn_bias_cfg",  # (type(bias), bias.requires_grad, bias_fmt)
     [
-        (None, False),
-        (xformers.ops.LowerTriangularMask, False),
-        (torch.Tensor, True),
-        (torch.Tensor, False),
+        (None, False, None),
+        (xformers.ops.LowerTriangularMask, False, None),
+        (torch.Tensor, True, BiasFmt.MN),
+        (torch.Tensor, False, BiasFmt.MN),
+        (torch.Tensor, True, BiasFmt.BMN),
+        (torch.Tensor, False, BiasFmt.BMN),
+        (torch.Tensor, True, BiasFmt.BHMN),
+        (torch.Tensor, False, BiasFmt.BHMN),
     ],
 )
 @pytest.mark.parametrize("grad_out_contiguous", [False, True])
@@ -636,7 +703,7 @@ def test_backward(
     attn_bias_cfg,
     fmt,
 ):
-    attn_bias_type, attn_bias_requires_grad = attn_bias_cfg
+    attn_bias_type, attn_bias_requires_grad, bias_fmt = attn_bias_cfg
     (
         op_bw,
         device,
@@ -652,6 +719,7 @@ def test_backward(
         *op_device_dtype_B_Mq_Mkv_H_K_Kv,
         attn_bias_type=attn_bias_type,
         fmt=fmt,
+        bias_fmt=bias_fmt,
     )
     op_fw = (
         sample_random_supported_fw(
