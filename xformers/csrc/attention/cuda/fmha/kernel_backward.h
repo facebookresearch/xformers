@@ -208,7 +208,7 @@ struct AttentionBackwardKernel {
     int32_t q_strideM;
     int32_t k_strideM;
     int32_t v_strideM;
-    int32_t bias_strideM;
+    int32_t bias_strideM = 0;
     int32_t gO_strideM;
     int32_t gB_strideM;
     int8_t gQKV_strideM_multiplier; // 3 for packed, 1 otherwise
@@ -238,12 +238,12 @@ struct AttentionBackwardKernel {
     int32_t q_strideH;
     int32_t k_strideH;
     int32_t v_strideH;
-    int32_t bias_strideH;
+    int32_t bias_strideH = 0;
     int64_t o_strideB;
     int64_t q_strideB;
     int64_t k_strideB;
     int64_t v_strideB;
-    int64_t bias_strideB;
+    int64_t bias_strideB = 0;
     int64_t lse_strideM;
     int32_t num_batches;
 
@@ -1016,6 +1016,7 @@ struct AttentionBackwardKernel {
     CHECK_ALIGNED_PTR(p.value_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.output_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.grad_output_ptr, kMinimumAlignment);
+    CHECK_ALIGNED_PTR(p.bias_ptr, kMinimumAlignment);
     XFORMERS_CHECK(p.lse_strideM % 8 == 0, "LSE is not correctly aligned");
     XFORMERS_CHECK(
         p.q_strideH % kMinimumAlignment == 0, "query is not correctly aligned");
@@ -1023,6 +1024,15 @@ struct AttentionBackwardKernel {
         p.k_strideH % kMinimumAlignment == 0, "key is not correctly aligned");
     XFORMERS_CHECK(
         p.v_strideH % kMinimumAlignment == 0, "value is not correctly aligned");
+    XFORMERS_CHECK(
+        p.bias_strideB % kMinimumAlignment == 0,
+        "attn_bias is not correctly aligned");
+    XFORMERS_CHECK(
+        p.bias_strideH % kMinimumAlignment == 0,
+        "attn_bias is not correctly aligned");
+    XFORMERS_CHECK(
+        p.bias_strideM % kMinimumAlignment == 0,
+        "attn_bias is not correctly aligned");
     return true;
   }
 

@@ -1216,3 +1216,20 @@ def test_unsupported_stride_alignment(op: Type[fmha.AttentionFwOpBase]):
     except ValueError:
         q = q.contiguous()
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
+
+
+@sm75_or_better_only
+def test_unsupported_dropout_combine_flash_cutlass() -> None:
+    q = torch.empty(
+        [1, 4, 1, 16], device="cuda", dtype=torch.float16, requires_grad=True
+    )
+    with pytest.raises(ValueError):
+        out = fmha.memory_efficient_attention(
+            q, q, q, p=0.1, op=(fmha.cutlass.FwOp, fmha.flash.BwOp)
+        )
+        out.backward(out)
+    with pytest.raises(ValueError):
+        out = fmha.memory_efficient_attention(
+            q, q, q, p=0.1, op=(fmha.flash.FwOp, fmha.cutlass.BwOp)
+        )
+        out.backward(out)

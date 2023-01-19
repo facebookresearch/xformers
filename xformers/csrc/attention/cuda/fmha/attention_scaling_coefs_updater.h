@@ -49,7 +49,8 @@ struct RegisterOps {
       int8_t thread_id,
       int8_t warp_id,
       int16_t max_col,
-      typename T::TensorCoord const& tile_offset) {
+      typename T::TensorCoord const& tile_offset,
+      float scaling) {
     // Convert to `accum_t` (rather than double)
     constexpr float kLog2e = 1.4426950408889634074; // log_2(e) = M_LOG2E
     if (!kIsFirst) {
@@ -77,10 +78,10 @@ struct RegisterOps {
           [&](int accum_m) {
             // Having 4x atomicMax seems faster than reduce within warp
             // first...
-            atomicMaxFloat(&mi[accum_m], max);
+            atomicMaxFloat(&mi[accum_m], max * scaling);
           });
     }
-    frag = cutlass::multiplies<typename T::Fragment>()(kLog2e, frag);
+    frag = cutlass::multiplies<typename T::Fragment>()(scaling * kLog2e, frag);
 
     // Make sure we all share the update values for `mi`
     __syncthreads();

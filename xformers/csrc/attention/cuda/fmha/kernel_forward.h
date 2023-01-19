@@ -1,9 +1,5 @@
 #ifdef HAS_PYTORCH
-#include <ATen/ATen.h>
-#include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAGeneratorImpl.h>
-#include <c10/cuda/CUDAGuard.h>
-#include <torch/library.h>
 #include <ATen/cuda/CUDAGraphsUtils.cuh>
 #endif
 
@@ -126,28 +122,30 @@ struct AttentionKernel {
     int32_t q_strideM;
     int32_t k_strideM;
     int32_t v_strideM;
-    int32_t bias_strideM;
+    int32_t bias_strideM = 0;
 
     // Everything below is only used in `advance_to_block`
     // and shouldn't use registers
     int32_t q_strideH;
     int32_t k_strideH;
     int32_t v_strideH;
-    int32_t bias_strideH;
+    int32_t bias_strideH = 0;
 
     int64_t q_strideB;
     int64_t k_strideB;
     int64_t v_strideB;
-    int32_t bias_strideB;
+    int32_t bias_strideB = 0;
 
     int32_t num_batches;
     int32_t num_heads;
 
     // dropout
     bool use_dropout;
-    at::PhiloxCudaState rng_engine_inputs;
     unsigned long long dropout_batch_head_rng_offset;
     float dropout_prob;
+#ifdef HAS_PYTORCH
+    at::PhiloxCudaState rng_engine_inputs;
+#endif
 
     CUTLASS_HOST_DEVICE int32_t o_strideM() const {
       return head_dim_value * num_heads;
@@ -466,6 +464,7 @@ struct AttentionKernel {
     CHECK_ALIGNED_PTR(p.query_ptr, kAlignmentQ);
     CHECK_ALIGNED_PTR(p.key_ptr, kAlignmentK);
     CHECK_ALIGNED_PTR(p.value_ptr, kAlignmentV);
+    CHECK_ALIGNED_PTR(p.attn_bias_ptr, kAlignmentQ);
     XFORMERS_CHECK(
         p.q_strideM % kAlignmentQ == 0, "query is not correctly aligned");
     XFORMERS_CHECK(
@@ -478,6 +477,15 @@ struct AttentionKernel {
         p.k_strideH % kAlignmentK == 0, "key is not correctly aligned");
     XFORMERS_CHECK(
         p.v_strideH % kAlignmentV == 0, "value is not correctly aligned");
+    XFORMERS_CHECK(
+        p.bias_strideB % kAlignmentQ == 0,
+        "attn_bias is not correctly aligned");
+    XFORMERS_CHECK(
+        p.bias_strideH % kAlignmentQ == 0,
+        "attn_bias is not correctly aligned");
+    XFORMERS_CHECK(
+        p.bias_strideM % kAlignmentQ == 0,
+        "attn_bias is not correctly aligned");
     return true;
   }
 
@@ -527,6 +535,7 @@ struct AttentionKernel {
               {0, col});
         };
 
+#ifdef HAS_PYTORCH
     curandStatePhilox4_32_10_t curand_state_init;
     if (p.use_dropout) {
       const auto seeds = at::cuda::philox::unpack(p.rng_engine_inputs);
@@ -545,6 +554,7 @@ struct AttentionKernel {
           std::get<1>(seeds) + p.dropout_batch_head_rng_offset,
           &curand_state_init);
     }
+#endif
 
     // Iterate through keys
     for (int32_t iter_key_start = 0; iter_key_start < p.num_keys;
@@ -713,7 +723,8 @@ struct AttentionKernel {
                                 thread_id(),
                                 warp_id(),
                                 p.num_keys - iter_key_start,
-                                iteratorC_tile_offset);
+                                iteratorC_tile_offset,
+                                1.0f);
                           }));
                     }));
 
@@ -729,6 +740,7 @@ struct AttentionKernel {
 
       __syncthreads();
 
+#ifdef HAS_PYTORCH
       // apply dropout (if applicable) after we've written Pij to smem.
       // dropout is applied by multiplying each element of Pij by:
       // - 0 with probability dropout_p
@@ -789,6 +801,7 @@ struct AttentionKernel {
         }
         __syncthreads(); // p.use_dropout should have same value kernel-wide
       }
+#endif
 
       //
       // MATMUL: Attn . V

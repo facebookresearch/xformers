@@ -72,9 +72,6 @@ class _fMHA(torch.autograd.Function):
         ctx.op_fw = op_fw
         ctx.op_bw = op_bw
         ctx.p = inp.p
-        # used for cutlass backward with dropout
-        ctx.rng_seed = op_ctx.rng_seed
-        ctx.rng_offset = op_ctx.rng_offset
 
         ctx.scale = inp.scale
         ctx.attn_bias_ctx = attn_bias_ctx
@@ -108,9 +105,6 @@ class _fMHA(torch.autograd.Function):
             lse=lse,
             out=out,
             rng_state=rng_state,
-            # rng_seed and rng_offset used for cutlass implementation
-            rng_seed=ctx.rng_seed,
-            rng_offset=ctx.rng_offset,
         )
         grads = _memory_efficient_attention_backward(
             ctx=op_ctx, inp=inp, grad=grad, op=ctx.op_bw
@@ -268,7 +262,7 @@ def memory_efficient_attention_backward(
     scale: Optional[float] = None,
     *,
     op: Optional[Type[AttentionBwOpBase]] = None,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Computes the gradient of the attention.
     Returns a tuple (dq, dk, dv, db)
@@ -288,7 +282,7 @@ def memory_efficient_attention_backward(
         grad,
         op=op,
     )
-    return (gradients.dq, gradients.dk, gradients.dv, gradients.db)
+    return (gradients.dq, gradients.dk, gradients.dv)
 
 
 def _memory_efficient_attention(

@@ -124,13 +124,15 @@ class FwOp(AttentionFwOpBase):
             ctx = Context(
                 out=out,
                 lse=lse,
-                rng_seed=rng_seed,
-                rng_offset=rng_offset,
                 # cutlass forward is only compatible with cutlass backward if
                 # dropout is used (because of the way RNG states are passed and the
                 # way random numbers are generated during backward)
                 op_bw=BwOp if inp.p != 0 else None,
             )
+            if inp.p != 0:
+                ctx.rng_state = torch.tensor(
+                    [rng_seed, rng_offset], dtype=torch.int64, device="cpu"
+                )
         return out, ctx
 
     @classmethod
@@ -222,6 +224,17 @@ class BwOp(AttentionBwOpBase):
         causal = isinstance(inp.attn_bias, LowerTriangularMask)
         dtype = inp.query.dtype
 
+        rng_seed = rng_offset = 0
+        if inp.p != 0.0:
+            if (
+                ctx.rng_state is None
+                or ctx.rng_state.dtype != torch.int64
+                or ctx.rng_state.device.type != "cpu"
+                or ctx.rng_state.shape != (2,)
+            ):
+                raise NotImplementedError(f"Invalid rng_state: {ctx.rng_state}")
+            rng_seed, rng_offset = ctx.rng_state.tolist()
+
         force_pad_inf = torch.cuda.get_device_capability(inp.query.device) == (7, 5)
         (grad_q, grad_k, grad_v, grad_bias) = cls.OPERATOR(
             grad.to(dtype),
@@ -236,8 +249,8 @@ class BwOp(AttentionBwOpBase):
             # in function signature so just pass 0
             # seed and offset could be None if a different FW op other than cutlass
             # was used.
-            rng_seed=ctx.rng_seed if inp.p != 0 else 0,
-            rng_offset=ctx.rng_offset if inp.p != 0 else 0,
+            rng_seed=rng_seed,
+            rng_offset=rng_offset,
             causal=causal,
             scale=inp.scale,
         )

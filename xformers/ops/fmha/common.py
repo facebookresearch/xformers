@@ -145,10 +145,6 @@ class Context:
     out: torch.Tensor
     op_bw: Optional[Type["AttentionBwOpBase"]] = None
     rng_state: Optional[torch.Tensor] = None
-    # used for cutlass backward with dropout
-    rng_seed: Optional[int] = None
-    # used for cutlass backward with dropout
-    rng_offset: Optional[int] = None
 
     def get_padded_lse(self, pad_to: int, force_pad_inf: bool = False) -> torch.Tensor:
         pad_amount = (pad_to - (self.lse.shape[2] % pad_to)) % pad_to
