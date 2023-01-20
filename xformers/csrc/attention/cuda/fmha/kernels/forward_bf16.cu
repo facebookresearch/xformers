@@ -1,6 +1,5 @@
 // This file is auto-generated. See "generate_kernels.sh"
-#ifndef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
-#include "../kernel_forward.h"
+#include "forward.h"
 INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM50(
     cutlass::bfloat16_t,
     false,
@@ -73,4 +72,3 @@ INSTANTIATE_ATTENTION_KERNEL_FORWARD_SM80(
     64,
     64,
     true);
-#endif

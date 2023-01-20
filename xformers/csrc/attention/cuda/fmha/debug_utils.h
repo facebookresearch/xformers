@@ -163,7 +163,7 @@ constexpr __string_view __get_type_name() {
       int(ps.n()),                              \
       int(ps.k()))
 
-template <typename Iterator, typename LaneOffsetT, typename AccumT>
+template <typename LambdaIterator, typename LaneOffsetT, typename AccumT>
 CUTLASS_DEVICE void print_warp_accum(
     AccumT accum,
     LaneOffsetT lane_offset,
@@ -179,7 +179,7 @@ CUTLASS_DEVICE void print_warp_accum(
         }
         __syncthreads();
       }
-      Iterator::iterateRows(
+      LambdaIterator::iterateRows(
           lane_offset,
           [&](int accum_m) {},
           [&](int accum_m, int accum_n, int idx) {

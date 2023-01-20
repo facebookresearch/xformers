@@ -1448,10 +1448,10 @@ at::Tensor _dropout_mask(at::Tensor output, double p) {
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::efficient_attention"),
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_small_k"),
       TORCH_FN(attention));
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::efficient_attention_backward"),
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_backward_small_k"),
       TORCH_FN(attention_backward));
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::_temp_dropout"), TORCH_FN(_dropout_mask));

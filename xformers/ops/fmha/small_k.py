@@ -52,7 +52,7 @@ class FwOp(AttentionFwOpBase):
         This operator is deprecated and should not be used in new code
     """
 
-    OPERATOR = get_xformers_operator("efficient_attention")
+    OPERATOR = get_xformers_operator("efficient_attention_forward_small_k")
     SUPPORTED_DEVICES = {"cuda", "cpu"}
     SUPPORTED_DTYPES = {torch.float}
     SUPPORTED_MAX_K: float = 32
@@ -113,7 +113,7 @@ class FwOp(AttentionFwOpBase):
 
 @register_operator
 class BwOp(AttentionBwOpBase):
-    OPERATOR = get_xformers_operator("efficient_attention_backward")
+    OPERATOR = get_xformers_operator("efficient_attention_backward_small_k")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K

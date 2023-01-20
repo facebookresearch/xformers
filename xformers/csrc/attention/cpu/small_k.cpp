@@ -355,9 +355,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
 
 TORCH_LIBRARY_IMPL(xformers, CPU, m) {
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::efficient_attention"),
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_small_k"),
       TORCH_FN(attention));
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::efficient_attention_backward"),
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_backward_small_k"),
       TORCH_FN(attention_backward));
 }

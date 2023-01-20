@@ -1,6 +1,6 @@
 #!/bin/bash
 set -ex
-rm -f *.cu
+rm -f forward_*.cu backward_*.cu
 IFS=","
 
 # BACKWARD
@@ -23,15 +23,11 @@ for enable_dropout in "false" "true"; do
                 echo $FNAME
                 cat <<EOF > $FNAME
 // This file is auto-generated. See "generate_kernels.sh"
-#ifndef XFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD
-#include "../kernel_backward.h"
+#include "backward.h"
 EOF
                 for sm in 50 70 75 80; do
                     echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned, $enable_dropout$maxk_code);" >> $FNAME
                 done;
-                cat <<EOF >> $FNAME
-#endif
-EOF
             done;
         done;
     done;
@@ -52,16 +48,12 @@ for aligned in "false" "true"; do
         echo $FNAME
         cat <<EOF > $FNAME
 // This file is auto-generated. See "generate_kernels.sh"
-#ifndef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
-#include "../kernel_forward.h"
+#include "forward.h"
 EOF
         for sm in 50 70 75 80; do
             echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned, 32, 128, true);" >> $FNAME
             echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned, 32, 128, false);" >> $FNAME
             echo "INSTANTIATE_ATTENTION_KERNEL_${kernel}_SM${sm}($dtype, $aligned, 64, 64, true);" >> $FNAME
         done;
-            cat <<EOF >> $FNAME
-#endif
-EOF
     done;
 done

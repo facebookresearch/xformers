@@ -7,10 +7,12 @@
 #include <cuda_fp16.h>
 #include <curand_kernel.h>
 
+#ifdef HAS_PYTORCH
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAGeneratorImpl.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <ATen/cuda/CUDAGraphsUtils.cuh>
+#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/thread/linear_combination.h"
@@ -42,12 +44,13 @@
 #include "cutlass/platform/platform.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
 #include "cutlass/transform/threadblock/vector_iterator.h"
-#include "epilogue_pipelined.h"
+#include "epilogue/epilogue_pipelined.h"
 #include "iterators/epilogue_predicated_tile_iterator.h"
 
-#include "find_default_mma.h"
 #include "gemm/custom_mma.h"
-#include "mma_from_smem.h"
+#include "gemm/find_default_mma.h"
+#include "gemm/mma_accum_lambda_iterator.h"
+#include "gemm/mma_from_smem.h"
 #include "transform/tile_smem_loader.h"
 
 #include <inttypes.h>
@@ -213,8 +216,10 @@ struct AttentionBackwardKernel {
     int32_t gB_strideM;
     int8_t gQKV_strideM_multiplier; // 3 for packed, 1 otherwise
 
+#ifdef HAS_PYTORCH
     // dropout
     at::PhiloxCudaState rng_engine_inputs;
+#endif
     // RNG sequence offset based on batch_id and head_id
     unsigned long long dropout_batch_head_rng_offset;
     float dropout_prob;
@@ -480,10 +485,10 @@ struct AttentionBackwardKernel {
         scalar_t,
         WarpShape,
         ThreadblockShape>;
-    using ScalingCoefsUpdater = typename DefaultAttentionScalingCoefsUpdater<
+    using AccumLambdaIterator = typename DefaultMmaAccumLambdaIterator<
         typename Mma::Operator::IteratorC,
         accum_t,
-        kWarpSize>::Updater;
+        kWarpSize>::Iterator;
     using AccumulatorSharedStorage = typename B2bGemm::AccumulatorSharedStorage;
   };
 
@@ -1065,6 +1070,7 @@ struct AttentionBackwardKernel {
     OutputFragments output_frags;
 
     curandStatePhilox4_32_10_t rng_state_init;
+#ifdef HAS_PYTORCH
     if (kApplyDropout) {
       auto seeds = at::cuda::philox::unpack(p.rng_engine_inputs);
       // each element of the attention matrix P with shape
@@ -1081,6 +1087,7 @@ struct AttentionBackwardKernel {
           std::get<1>(seeds) + p.dropout_batch_head_rng_offset,
           &rng_state_init);
     }
+#endif
 
     int32_t key_start = 0;
     int32_t key_end = p.num_keys / kBlockSizeJ * kBlockSizeJ;
@@ -1307,9 +1314,9 @@ struct AttentionBackwardKernel {
         MatmulQK::BiasLoader::load(bias_iter, smem_tile_iter);
 
         // Pij += Bij, where Pij is in register fragment and Bij is in shmem
-        auto lane_offset = MatmulQK::ScalingCoefsUpdater::get_lane_offset(
+        auto lane_offset = MatmulQK::AccumLambdaIterator::get_lane_offset(
             lane_id, warp_id, output_tile_coords);
-        MatmulQK::ScalingCoefsUpdater::iterateRows(
+        MatmulQK::AccumLambdaIterator::iterateRows(
             lane_offset,
             [&](int accum_n) {},
             [&](int accum_m, int accum_n, int idx) {
@@ -1325,9 +1332,9 @@ struct AttentionBackwardKernel {
 
       // Apply mask
       if (p.causal) {
-        auto lane_offset = MatmulQK::ScalingCoefsUpdater::get_lane_offset(
+        auto lane_offset = MatmulQK::AccumLambdaIterator::get_lane_offset(
             lane_id, warp_id, output_tile_coords);
-        MatmulQK::ScalingCoefsUpdater::iterateRows(
+        MatmulQK::AccumLambdaIterator::iterateRows(
             lane_offset,
             [&](int accum_m) {},
             [&](int accum_m, int accum_n, int idx) {
@@ -1545,11 +1552,11 @@ struct AttentionBackwardKernel {
       // attn_shared_storage  [smem] <- tmp.T
       // tmp_shared_storage [smem] <- tmp
       {
-        using RegistersIter = typename DefaultAttentionScalingCoefsUpdater<
+        using LambdaIterator = typename DefaultMmaAccumLambdaIterator<
             typename Mma::Operator::IteratorC,
             typename MatmulDOIVJ::ElementAccum,
-            kWarpSize>::Updater;
-        auto lane_offset = RegistersIter::get_lane_offset(
+            kWarpSize>::Iterator;
+        auto lane_offset = LambdaIterator::get_lane_offset(
             lane_id, warp_id, output_tile_coords);
 
         // if dropout was used, compute dPij = dPij_dropped * Zij
@@ -1558,7 +1565,7 @@ struct AttentionBackwardKernel {
         if (kApplyDropout) {
           const auto zij = shared_storage.zij().accum_ref();
 
-          RegistersIter::iterateRows(
+          LambdaIterator::iterateRows(
               lane_offset,
               [&](int accum_m) {},
               [&](int accum_m, int accum_n, int idx) {
@@ -1577,7 +1584,7 @@ struct AttentionBackwardKernel {
         auto attn_T = shared_storage.attn_shared_storage().accum_ref();
         accum_t current_di;
         typename Mma::FragmentC fragment_attn, fragment_di;
-        RegistersIter::iterateRows(
+        LambdaIterator::iterateRows(
             lane_offset,
             [&](int accum_m) { current_di = shared_storage.di()[accum_m]; },
             [&](int accum_m, int accum_n, int idx) {
@@ -1628,7 +1635,7 @@ struct AttentionBackwardKernel {
         if (!MatmulGradK::DefaultMmaFromSmem::kIsTransposedA) {
           auto tmpT = shared_storage.tmpT_shared_storage().accum_ref();
           // attn <- attn_T.T
-          RegistersIter::iterateRows(
+          LambdaIterator::iterateRows(
               lane_offset,
               [&](int accum_m) {},
               [&](int accum_m, int accum_n, int idx) {
@@ -2076,67 +2083,11 @@ struct AttentionBackwardKernel {
 
 template <typename AK>
 __global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)
+    attention_kernel_backward_batched_impl(typename AK::Params p) {
+  p.advance_to_block();
+  AK::attention_kernel(p);
+}
+
+template <typename AK>
+__global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)
     attention_kernel_backward_batched(typename AK::Params params);
-
-#define _ATTENTION_KERNEL_BACKWARD_BEGIN(...)                 \
-  template <>                                                 \
-  __global__ void __launch_bounds__(                          \
-      __VA_ARGS__::kNumThreads, __VA_ARGS__::kMinBlocksPerSm) \
-      attention_kernel_backward_batched<__VA_ARGS__>(         \
-          typename __VA_ARGS__::Params p) {                   \
-    using Kernel = __VA_ARGS__;
-#define _ATTENTION_KERNEL_BACKWARD_END() }
-
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD(ARCH, ...)             \
-  _ATTENTION_KERNEL_BACKWARD_BEGIN(                                  \
-      AttentionBackwardKernel<cutlass::arch::Sm##ARCH, __VA_ARGS__>) \
-  p.advance_to_block();                                              \
-  Kernel::kernel(p);                                                 \
-  _ATTENTION_KERNEL_BACKWARD_END();
-
-#ifdef __CUDA_ARCH__
-#define __CUDA_ARCH_OR_ZERO__ __CUDA_ARCH__
-#else
-#define __CUDA_ARCH_OR_ZERO__ 0
-#endif
-
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_DISABLED(ARCH, ...)                \
-  _ATTENTION_KERNEL_BACKWARD_BEGIN(                                              \
-      AttentionBackwardKernel<cutlass::arch::Sm##ARCH, __VA_ARGS__>)             \
-  printf(                                                                        \
-      "FATAL: this function is for sm%d, but was built with __CUDA_ARCH__=%d\n", \
-      int(ARCH),                                                                 \
-      int(__CUDA_ARCH_OR_ZERO__));                                               \
-  _ATTENTION_KERNEL_BACKWARD_END();
-
-// All kernels are disabled by default
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM50(...) \
-  INSTANTIATE_ATTENTION_KERNEL_BACKWARD_DISABLED(50, __VA_ARGS__)
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM70(...) \
-  INSTANTIATE_ATTENTION_KERNEL_BACKWARD_DISABLED(70, __VA_ARGS__)
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM75(...) \
-  INSTANTIATE_ATTENTION_KERNEL_BACKWARD_DISABLED(75, __VA_ARGS__)
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM80(...) \
-  INSTANTIATE_ATTENTION_KERNEL_BACKWARD_DISABLED(80, __VA_ARGS__)
-
-// Enable the right one based on __CUDA_ARCH__
-#ifndef __CUDA_ARCH__
-#elif __CUDA_ARCH__ < 500
-#error "Need cuda arch at least 5.0"
-#elif __CUDA_ARCH__ < 700
-#undef INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM50
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM50(...) \
-  INSTANTIATE_ATTENTION_KERNEL_BACKWARD(50, __VA_ARGS__)
-#elif __CUDA_ARCH__ < 750
-#undef INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM70
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM70(...) \
-  INSTANTIATE_ATTENTION_KERNEL_BACKWARD(70, __VA_ARGS__)
-#elif __CUDA_ARCH__ < 800
-#undef INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM75
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM75(...) \
-  INSTANTIATE_ATTENTION_KERNEL_BACKWARD(75, __VA_ARGS__)
-#elif __CUDA_ARCH__ >= 800
-#undef INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM80
-#define INSTANTIATE_ATTENTION_KERNEL_BACKWARD_SM80(...) \
-  INSTANTIATE_ATTENTION_KERNEL_BACKWARD(80, __VA_ARGS__)
-#endif

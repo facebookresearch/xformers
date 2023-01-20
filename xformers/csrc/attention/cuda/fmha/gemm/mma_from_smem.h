@@ -52,17 +52,17 @@
 #include "cutlass/platform/platform.h"
 #include "cutlass/transform/threadblock/vector_iterator.h"
 
-#include "attention_scaling_coefs_updater.h"
+#include "../epilogue/epilogue_thread_apply_logsumexp.h"
+#include "../gemm/mma_accum_lambda_iterator.h"
+#include "../gemm_kernel_utils.h"
+#include "../iterators/make_residual_last.h"
+#include "../iterators/transpose_warp_iterator.h"
+#include "../iterators/warp_iterator_from_smem.h"
 #include "cutlass/epilogue/threadblock/epilogue_smem_accumulator.h"
 #include "cutlass/gemm/threadblock/mma_base.h"
 #include "cutlass/gemm/threadblock/mma_multistage.h"
 #include "cutlass/gemm/threadblock/mma_pipelined.h"
 #include "cutlass/gemm/warp/mma_tensor_op_tile_access_iterator.h"
-#include "epilogue_thread_apply_logsumexp.h"
-#include "gemm_kernel_utils.h"
-#include "iterators/make_residual_last.h"
-#include "iterators/transpose_warp_iterator.h"
-#include "iterators/warp_iterator_from_smem.h"
 
 namespace cutlass {
 namespace gemm {
@@ -1879,18 +1879,17 @@ struct B2bGemm<
     // NOTE: accum is attn.T
     // TODO: Optimize for each architecture
     static constexpr int WarpSize = 32;
-    using RegistersIter = typename DefaultAttentionScalingCoefsUpdater<
-        IteratorC,
-        accum_t,
-        WarpSize>::Updater;
+    using AccumLambdaIterator =
+        typename DefaultMmaAccumLambdaIterator<IteratorC, accum_t, WarpSize>::
+            Iterator;
     auto lane_offset =
-        RegistersIter::get_lane_offset(lane_id, warp_id, tile_coords);
+        AccumLambdaIterator::get_lane_offset(lane_id, warp_id, tile_coords);
 
     cutlass::Array<lse_scalar_t, IteratorC::Fragment::kElements> lse_prefetched;
     lse_prefetched.clear();
     int rowIdx = 0;
     int colIdx = 0;
-    RegistersIter::iterateRows(
+    AccumLambdaIterator::iterateRows(
         lane_offset,
         [&](int accum_m) {
           ++rowIdx;
@@ -2019,18 +2018,17 @@ struct B2bGemm<
     // NOTE: accum is attn.T
     // TODO: Optimize for each architecture
     static constexpr int WarpSize = 32;
-    using RegistersIter = typename DefaultAttentionScalingCoefsUpdater<
-        IteratorC,
-        accum_t,
-        WarpSize>::Updater;
+    using AccumLambdaIterator =
+        typename DefaultMmaAccumLambdaIterator<IteratorC, accum_t, WarpSize>::
+            Iterator;
     auto lane_offset =
-        RegistersIter::get_lane_offset(lane_id, warp_id, tile_coords);
+        AccumLambdaIterator::get_lane_offset(lane_id, warp_id, tile_coords);
 
     cutlass::Array<lse_scalar_t, IteratorC::Fragment::kElements> lse_prefetched;
     lse_prefetched.clear();
     int rowIdx = 0;
     int colIdx = 0;
-    RegistersIter::iterateRows(
+    AccumLambdaIterator::iterateRows(
         lane_offset,
         [&](int accum_m) {
           ++rowIdx;
