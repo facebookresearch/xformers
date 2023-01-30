@@ -98,14 +98,13 @@ class ScaledDotProduct(Attention):
 
         # Handle a possibly deferred causal mask handling
         mask = self.mask
-        if self.causal:
-            if self.mask is None:
-                mask = AttentionMask.make_causal(
-                    seq_len=q.shape[-2],
-                    to_seq_len=q.shape[-2],
-                    device=q.device,
-                    dtype=q.dtype,
-                )
+        if self.causal and self.mask is None:
+            mask = AttentionMask.make_causal(
+                seq_len=q.shape[-2],
+                to_seq_len=q.shape[-2],
+                device=q.device,
+                dtype=q.dtype,
+            )
 
         # Merge the optional causal mask and the user-provided mask
         if mask is not None:
