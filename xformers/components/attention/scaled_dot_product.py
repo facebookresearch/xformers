@@ -97,6 +97,7 @@ class ScaledDotProduct(Attention):
             )
 
         # Handle a possibly deferred causal mask handling
+        mask = self.mask
         if self.causal:
             if self.mask is None:
                 mask = AttentionMask.make_causal(
@@ -105,8 +106,6 @@ class ScaledDotProduct(Attention):
                     device=q.device,
                     dtype=q.dtype,
                 )
-            else:
-                mask = self.mask
 
         # Merge the optional causal mask and the user-provided mask
         if mask is not None:
