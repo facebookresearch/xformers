@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added dropout support to CUTLASS FlashAttention
 
 
-## [0.0.16] - 2023-01-12
+## [0.0.16] - 2023-01-31
 ### Fixed
 - Updated triton dependency [facebookresearch/xformers#418]
 - Stripe lineinfo from binaries, reducing the binary size [facebookresearch/xformers#549]

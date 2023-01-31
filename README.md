@@ -28,13 +28,27 @@ xFormers is:
 
 ## Installing xFormers
 
-* **(RECOMMENDED) Using binaries**: We provide binaries for Linux and recent PyTorch versions. After you have [installed pytorch in conda](https://pytorch.org/get-started/locally/), install xFormers with conda:
+* **(RECOMMENDED, linux) Install latest stable with conda**: Requires [PyTorch 1.12.1 or 1.13.1 installed with conda](https://pytorch.org/get-started/locally/)
 
 ```bash
-conda install xformers -c xformers/label/dev
+conda install xformers
 ```
 
-* **From source**: Alternatively, if no binaries are available (for instance for windows), you can also install from source:
+* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 1.13.1](https://pytorch.org/get-started/locally/)
+
+```bash
+pip install -U xformers
+```
+
+* **Development binaries**:
+
+```bash
+# Use either conda or pip, same requirements as for the stable version above
+conda install xformers -c xformers/label/dev
+pip install --pre -U xformers
+```
+
+* **Install from source**: If you want to use with another version of PyTorch for instance (including nightly-releases)
 
 ```bash
 # (Optional) Makes the build much faster
@@ -44,10 +58,8 @@ pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=
 # (this can take dozens of minutes)
 ```
 
-* **pip wheels**: There is no updated package available on pip, please install from conda or from source
 
-
-## Results
+## Benchmarks
 
 **Memory-efficient MHA**
 ![Benchmarks for ViTS](./docs/plots/mha/mha_vit.png)
