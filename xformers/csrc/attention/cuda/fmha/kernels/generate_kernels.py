@@ -120,6 +120,8 @@ class FwdKernel:
             # Remove some kernels we don't use
             if dtype == "bf16" and sm < 80:
                 continue
+            if not aligned and sm >= 80:
+                continue
             for q, k, single_value_iter in [
                 (32, 128, True),
                 (32, 128, False),
@@ -210,6 +212,8 @@ class BwdKernel:
             [32, 64, 128, 2**16],
         ):
             if dtype == "bf16" and sm < 80:
+                continue
+            if not aligned and sm >= 80:
                 continue
             kernels.append(
                 cls(
