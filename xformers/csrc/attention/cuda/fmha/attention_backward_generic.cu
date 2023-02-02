@@ -10,9 +10,9 @@
 #include <torch/library.h>
 #include "ATen/ops/empty_like.h"
 
+#include "autogen/cutlassB.h"
 #include "gemm_kernel_utils.h"
 #include "kernel_backward.h"
-#include "kernels/cutlassB.h"
 #include "pytorch_utils.h"
 
 namespace {

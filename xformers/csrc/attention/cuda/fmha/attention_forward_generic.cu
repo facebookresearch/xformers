@@ -12,8 +12,8 @@
 #include <torch/library.h>
 #include <ATen/cuda/CUDAGraphsUtils.cuh>
 
+#include "autogen/cutlassF.h"
 #include "kernel_forward.h"
-#include "kernels/cutlassF.h"
 #include "pytorch_utils.h"
 
 namespace {
