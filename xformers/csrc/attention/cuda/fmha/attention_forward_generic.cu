@@ -165,7 +165,13 @@ efficient_attention_forward_cutlass(
     rng_engine_inputs = gen->philox_cuda_state(B * num_heads * M * N);
   }
 
+  cudaDeviceProp* p = at::cuda::getDeviceProperties(query.device().index());
+  const int computeCapability = p->major * 10 + p->minor;
+
   bool kernel_launched = false;
+  const auto maxShmem =
+      getMaximumSharedMemoryPerBlockKb(computeCapability) * 1024;
+
   auto launchKernel = [&](auto _k, auto kernel_fn) {
     using Kernel = decltype(_k);
     using scalar_t = typename Kernel::scalar_t;
@@ -189,6 +195,11 @@ efficient_attention_forward_cutlass(
     if ((query.stride(2) % Kernel::kAlignmentQ) ||
         (key.stride(2) % Kernel::kAlignmentK) ||
         (value.stride(2) % Kernel::kAlignmentV)) {
+      return;
+    }
+    // Uses too much shmem
+    size_t smem_bytes = sizeof(typename Kernel::SharedStorage);
+    if (smem_bytes > maxShmem) {
       return;
     }
     kernel_launched = true;
@@ -274,7 +285,6 @@ efficient_attention_forward_cutlass(
       p.dropout_prob = dropout_p;
     }
 
-    size_t smem_bytes = sizeof(typename Kernel::SharedStorage);
     if (smem_bytes > 0xc000) {
       auto err = cudaFuncSetAttribute(
           kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
@@ -290,9 +300,6 @@ efficient_attention_forward_cutlass(
   };
 
   // Dispatch to the right kernel
-  cudaDeviceProp* p = at::cuda::getDeviceProperties(query.device().index());
-  const int computeCapability = p->major * 10 + p->minor;
-
   DISPATCH_TYPES(query, ([&]() {
                    dispatch_cutlassF<scalar_t>(launchKernel, computeCapability);
                  }));

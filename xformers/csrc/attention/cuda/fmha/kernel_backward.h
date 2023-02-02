@@ -161,6 +161,11 @@ template <
     bool kIsAligned_,
     // use dropout if enabled
     bool kApplyDropout_,
+    // when doing a GEMM, preload the next one (uses more shmem)
+    bool kPreloadMmas_,
+    // block dimensions
+    int kBlockSizeI_,
+    int kBlockSizeJ_,
     // upperbound on `max(value.shape[-1], query.shape[-1])`
     int kMaxK_ = std::numeric_limits<int>::max()>
 struct AttentionBackwardKernel {
@@ -172,6 +177,9 @@ struct AttentionBackwardKernel {
   using ArchTag = ArchTag_;
   static constexpr bool kIsAligned = kIsAligned_;
   static constexpr bool kApplyDropout = kApplyDropout_;
+  static constexpr bool kPreloadMmas = kPreloadMmas_;
+  static constexpr int kBlockSizeI = kBlockSizeI_;
+  static constexpr int kBlockSizeJ = kBlockSizeJ_;
   static constexpr int kMaxK = kMaxK_;
 
   struct Params {
@@ -374,29 +382,22 @@ struct AttentionBackwardKernel {
     }
   };
 
-  // Block I
-  static constexpr bool kSupports64x128 =
-      ArchTag::kMinComputeCapability >= 80 ||
-      (ArchTag::kMinComputeCapability >= 70 &&
-       cutlass::sizeof_bits<scalar_t>::value <= 16);
   static constexpr int64_t kWarpSize = 32;
-  static constexpr int64_t kBlockSizeI =
-      kSupports64x128 && kMaxK > 64 ? 128 : 64;
 
   // If this is true, we store and accumulate dK/dV in RF
   // rather than going back to gmem everytime
   static constexpr bool kIsHalf = cutlass::sizeof_bits<scalar_t>::value <= 16;
   static constexpr bool kOutputInRF = kIsHalf && kMaxK <= kBlockSizeI;
-  static constexpr bool kPreloadMmas =
-      kIsHalf && ArchTag::kMinComputeCapability >= 80 && kOutputInRF;
+  static_assert(
+      !kPreloadMmas ||
+          (kIsHalf && ArchTag::kMinComputeCapability >= 80 && kOutputInRF),
+      "preload MMA not supported");
   static constexpr bool kPrologueQK = kPreloadMmas;
   static constexpr bool kPrologueGV = kPreloadMmas;
   static constexpr bool kPrologueDOV = kPreloadMmas;
   static constexpr bool kPrologueGQ = kPreloadMmas;
   static constexpr bool kPrologueGK = kPreloadMmas;
 
-  // Block J
-  static constexpr int64_t kBlockSizeJ = kPreloadMmas && kMaxK > 64 ? 128 : 64;
   static constexpr int64_t kNumWarpsPerBlock =
       (kBlockSizeI * kBlockSizeJ) / (32 * 32);
 

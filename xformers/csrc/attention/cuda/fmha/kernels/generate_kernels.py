@@ -149,6 +149,9 @@ class BwdKernel:
     dtype: str
     aligned: bool
     apply_dropout: bool
+    preload_mmas: bool
+    block_i: int
+    block_j: int
     max_k: int
 
     def __post_init__(self) -> None:
@@ -162,6 +165,8 @@ class BwdKernel:
             1 if self.apply_dropout else 0,
             # Then take the smallest maxK
             self.max_k,
+            # .. and the highest block_i
+            -self.block_i,
         )
 
     @property
@@ -171,7 +176,10 @@ class BwdKernel:
     @property
     def name(self) -> str:
         dropout_suffix = "_dropout" if self.apply_dropout else ""
-        return f"fmha_cutlassB_{self.dtype}_{self._aligned_suffix}_k{self.max_k}{dropout_suffix}_sm{self.sm}"
+        return (
+            f"fmha_cutlassB_{self.dtype}_{self._aligned_suffix}"
+            f"_{self.block_i}x{self.block_j}_k{self.max_k}{dropout_suffix}_sm{self.sm}"
+        )
 
     @property
     def cpp_class(self) -> str:
@@ -181,6 +189,9 @@ class BwdKernel:
                 DTYPES[self.dtype],
                 "true" if self.aligned else "false",
                 "true" if self.apply_dropout else "false",
+                "true" if self.preload_mmas else "false",
+                str(self.block_i),
+                str(self.block_j),
                 str(self.max_k),
             ]
         )
@@ -215,6 +226,15 @@ class BwdKernel:
                 continue
             if not aligned and sm >= 80:
                 continue
+            is_half = dtype in ["bf16", "f16"]
+
+            bi = 64
+            if sm >= 80 or (sm >= 70 and is_half):
+                if max_k > 64:
+                    bi = 128
+            output_in_rf = is_half and max_k <= bi
+            preload_mmas = is_half and sm >= 80 and output_in_rf
+            bj = 128 if (preload_mmas and max_k > 64) else 64
             kernels.append(
                 cls(
                     aligned=aligned,
@@ -222,6 +242,9 @@ class BwdKernel:
                     sm=sm,
                     sm_max=sm_max,
                     apply_dropout=apply_dropout,
+                    preload_mmas=preload_mmas,
+                    block_i=bi,
+                    block_j=bj,
                     max_k=max_k,
                 )
             )

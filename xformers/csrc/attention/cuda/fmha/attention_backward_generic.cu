@@ -118,8 +118,13 @@ mem_efficient_attention_backward_cutlass(
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
   at::PhiloxCudaState rng_engine_inputs(rng_seed, rng_offset);
 
+  cudaDeviceProp* p = at::cuda::getDeviceProperties(query.device().index());
+  const int computeCapability = p->major * 10 + p->minor;
+
   bool kernel_launched = false;
   const auto maxK = std::max(query.size(3), value.size(3));
+  const auto maxShmem =
+      getMaximumSharedMemoryPerBlockKb(computeCapability) * 1024;
 
   auto launchKernel = [&](auto _k, auto kernel_fn) {
     using Kernel = decltype(_k);
@@ -133,6 +138,7 @@ mem_efficient_attention_backward_cutlass(
     if (Kernel::kMaxK < maxK) {
       return;
     }
+    // Dropout must be supported if we need it
     if (use_dropout && !Kernel::kApplyDropout) {
       return;
     }
@@ -142,9 +148,13 @@ mem_efficient_attention_backward_cutlass(
         (value.stride(2) % Kernel::kMinimumAlignment)) {
       return;
     }
+    // Uses too much shmem
+    size_t smem_bytes = sizeof(typename Kernel::SharedStorage);
+    if (smem_bytes > maxShmem) {
+      return;
+    }
 
     kernel_launched = true;
-    size_t smem_bytes = sizeof(typename Kernel::SharedStorage);
 
     // TODO: Fuse this into a kernel?
     // This is a bottleneck for smaller sequences (M <= 128)
@@ -288,9 +298,6 @@ mem_efficient_attention_backward_cutlass(
 
     kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
   };
-
-  cudaDeviceProp* p = at::cuda::getDeviceProperties(query.device().index());
-  const int computeCapability = p->major * 10 + p->minor;
 
   DISPATCH_TYPES(query, ([&]() {
                    dispatch_cutlassB<scalar_t>(launchKernel, computeCapability);
