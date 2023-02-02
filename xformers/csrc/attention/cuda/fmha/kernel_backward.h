@@ -160,9 +160,9 @@ template <
     // run optimized kernel because memory accesses will be aligned
     bool kIsAligned_,
     // use dropout if enabled
-    bool kApplyDropout,
+    bool kApplyDropout_,
     // upperbound on `max(value.shape[-1], query.shape[-1])`
-    int kMaxK = std::numeric_limits<int>::max()>
+    int kMaxK_ = std::numeric_limits<int>::max()>
 struct AttentionBackwardKernel {
   using scalar_t = scalar_t_;
   using output_t = scalar_t;
@@ -171,6 +171,8 @@ struct AttentionBackwardKernel {
   using accum_t = float;
   using ArchTag = ArchTag_;
   static constexpr bool kIsAligned = kIsAligned_;
+  static constexpr bool kApplyDropout = kApplyDropout_;
+  static constexpr int kMaxK = kMaxK_;
 
   struct Params {
     // Input tensors
@@ -263,7 +265,7 @@ struct AttentionBackwardKernel {
     int64_t gV_strideH;
     int64_t gB_strideH;
 
-    CUTLASS_DEVICE void advance_to_block() {
+    CUTLASS_DEVICE bool advance_to_block() {
       int64_t batch_id = blockIdx.z;
       int32_t head_id = blockIdx.y;
 
@@ -325,6 +327,8 @@ struct AttentionBackwardKernel {
       } else {
         workspace = nullptr;
       }
+
+      return true;
     }
 
     __host__ dim3 getBlocksGrid() const {
@@ -1041,7 +1045,7 @@ struct AttentionBackwardKernel {
     return true;
   }
 
-  static CUTLASS_DEVICE void kernel(Params const& p) {
+  static CUTLASS_DEVICE void attention_kernel(Params const& p) {
     extern __shared__ char smem_buffer[];
     SharedStorage& shared_storage = *((SharedStorage*)smem_buffer);
 
@@ -2084,7 +2088,9 @@ struct AttentionBackwardKernel {
 template <typename AK>
 __global__ void __launch_bounds__(AK::kNumThreads, AK::kMinBlocksPerSm)
     attention_kernel_backward_batched_impl(typename AK::Params p) {
-  p.advance_to_block();
+  if (!p.advance_to_block()) {
+    return;
+  }
   AK::attention_kernel(p);
 }
 

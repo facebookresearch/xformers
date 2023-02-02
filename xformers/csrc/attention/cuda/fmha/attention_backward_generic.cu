@@ -12,65 +12,8 @@
 
 #include "gemm_kernel_utils.h"
 #include "kernel_backward.h"
+#include "kernels/cutlassB.h"
 #include "pytorch_utils.h"
-
-#define DISPATCH_MAXK(func)                                   \
-  {                                                           \
-    const auto maxK = std::max(query.size(3), value.size(3)); \
-    if (maxK <= 64) {                                         \
-      constexpr int kMaxK = 64;                               \
-      func();                                                 \
-    } else if (maxK <= 128) {                                 \
-      constexpr int kMaxK = 128;                              \
-      func();                                                 \
-    } else {                                                  \
-      constexpr int kMaxK = std::numeric_limits<int>::max();  \
-      func();                                                 \
-    }                                                         \
-  }
-
-#define DISPATCH_KERNEL(QUERY, KEY, VALUE, USE_DROPOUT, FUNC)                 \
-  {                                                                           \
-    cudaDeviceProp* properties =                                              \
-        at::cuda::getDeviceProperties(QUERY.device().index());                \
-    const int computeCapability = properties->major * 10 + properties->minor; \
-    DISPATCH_MAXK(([&] {                                                      \
-      DISPATCH_TYPES(                                                         \
-          QUERY, ([&]() {                                                     \
-            DISPATCH_BOOL(                                                    \
-                USE_DROPOUT, kApplyDropout, ([&]() {                          \
-                  DISPATCH_ARCHTAG(                                           \
-                      computeCapability, ([&]() {                             \
-                        using AlignedAK = AttentionBackwardKernel<            \
-                            ArchTag,                                          \
-                            scalar_t,                                         \
-                            true,                                             \
-                            kApplyDropout,                                    \
-                            kMaxK>;                                           \
-                        bool isAligned =                                      \
-                            (QUERY.stride(2) %                                \
-                                     AlignedAK::kOptimalAlignement ==         \
-                                 0 &&                                         \
-                             KEY.stride(2) % AlignedAK::kOptimalAlignement == \
-                                 0 &&                                         \
-                             VALUE.stride(2) %                                \
-                                     AlignedAK::kOptimalAlignement ==         \
-                                 0);                                          \
-                        DISPATCH_BOOL(isAligned, kIsAligned, ([&]() {         \
-                                        using Kernel =                        \
-                                            AttentionBackwardKernel<          \
-                                                ArchTag,                      \
-                                                scalar_t,                     \
-                                                kIsAligned,                   \
-                                                kApplyDropout,                \
-                                                kMaxK>;                       \
-                                        FUNC();                               \
-                                      }))                                     \
-                      }))                                                     \
-                }))                                                           \
-          }))                                                                 \
-    }));                                                                      \
-  }
 
 namespace {
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor>
@@ -175,11 +118,32 @@ mem_efficient_attention_backward_cutlass(
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
   at::PhiloxCudaState rng_engine_inputs(rng_seed, rng_offset);
 
-  auto launchKernel = [&](auto _k, int computeCapability) {
+  bool kernel_launched = false;
+  const auto maxK = std::max(query.size(3), value.size(3));
+
+  auto launchKernel = [&](auto _k, auto kernel_fn) {
     using Kernel = decltype(_k);
     using scalar_t = typename Kernel::scalar_t;
     (void)_k;
 
+    if (kernel_launched) {
+      return;
+    }
+    // Check if this kernel is compatible
+    if (Kernel::kMaxK < maxK) {
+      return;
+    }
+    if (use_dropout && !Kernel::kApplyDropout) {
+      return;
+    }
+    // Alignment
+    if ((query.stride(2) % Kernel::kMinimumAlignment) ||
+        (key.stride(2) % Kernel::kMinimumAlignment) ||
+        (value.stride(2) % Kernel::kMinimumAlignment)) {
+      return;
+    }
+
+    kernel_launched = true;
     size_t smem_bytes = sizeof(typename Kernel::SharedStorage);
 
     // TODO: Fuse this into a kernel?
@@ -290,14 +254,16 @@ mem_efficient_attention_backward_cutlass(
     }
     Kernel::check_supported(p);
 
-    constexpr auto kernel_fn = attention_kernel_backward_batched<Kernel>;
-
     if (smem_bytes > 0xc000) {
-      TORCH_INTERNAL_ASSERT(
-          computeCapability >= 70,
-          "This kernel requires too much shared memory on this machine!");
-      AT_CUDA_CHECK(cudaFuncSetAttribute(
-          kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes));
+      // https://docs.nvidia.com/cuda/cuda-c-programming-guide/#features-and-technical-specifications-technical-specifications-per-compute-capability
+      auto err = cudaFuncSetAttribute(
+          kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
+      XFORMERS_CHECK(
+          err != cudaErrorInvalidValue,
+          "This GPU does not have enough shared-memory (kernel requires ",
+          smem_bytes / 1024,
+          " kb)");
+      AT_CUDA_CHECK(err);
     }
 
     // second syntax resulted in the error below on windows
@@ -323,13 +289,17 @@ mem_efficient_attention_backward_cutlass(
     kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
   };
 
-  DISPATCH_KERNEL(query, key, value, use_dropout, ([&] {
-                    launchKernel(Kernel{}, computeCapability);
-                  }));
+  cudaDeviceProp* p = at::cuda::getDeviceProperties(query.device().index());
+  const int computeCapability = p->major * 10 + p->minor;
+
+  DISPATCH_TYPES(query, ([&]() {
+                   dispatch_cutlassB<scalar_t>(launchKernel, computeCapability);
+                 }));
+  TORCH_CHECK(kernel_launched, "cutlassB: no kernel found to launch!");
   AT_CUDA_CHECK(cudaGetLastError());
   return std::make_tuple(grad_q, grad_k, grad_v, grad_bias);
 #endif
-} // namespace
+}
 
 } // namespace
 

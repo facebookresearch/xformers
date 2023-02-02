@@ -13,68 +13,8 @@
 #include <ATen/cuda/CUDAGraphsUtils.cuh>
 
 #include "kernel_forward.h"
+#include "kernels/cutlassF.h"
 #include "pytorch_utils.h"
-
-#define DISPATCH_BLOCKSIZE(VALUE_HEAD_DIM, FN)        \
-  {                                                   \
-    if (VALUE_HEAD_DIM <= 64) {                       \
-      constexpr bool kIs64x64 = true;                 \
-      constexpr bool kSingleValueIteration = true;    \
-      FN();                                           \
-    } else {                                          \
-      constexpr bool kIs64x64 = false;                \
-      if (VALUE_HEAD_DIM <= 128) {                    \
-        constexpr bool kSingleValueIteration = true;  \
-        FN();                                         \
-      } else {                                        \
-        constexpr bool kSingleValueIteration = false; \
-        FN();                                         \
-      }                                               \
-    }                                                 \
-  }
-
-#define DISPATCH_KERNEL(QUERY, KEY, VALUE, FUNC)                              \
-  {                                                                           \
-    cudaDeviceProp* properties =                                              \
-        at::cuda::getDeviceProperties(QUERY.device().index());                \
-    const int computeCapability = properties->major * 10 + properties->minor; \
-    DISPATCH_BLOCKSIZE(                                                       \
-        VALUE.size(-1), ([&]() {                                              \
-          static constexpr int64_t kQueriesPerBlock = kIs64x64 ? 64 : 32;     \
-          static constexpr int64_t kKeysPerBlock = kIs64x64 ? 64 : 128;       \
-          DISPATCH_TYPES(                                                     \
-              QUERY, ([&]() {                                                 \
-                DISPATCH_ARCHTAG(                                             \
-                    computeCapability, ([&]() {                               \
-                      using AlignedAK = AttentionKernel<                      \
-                          scalar_t,                                           \
-                          ArchTag,                                            \
-                          true,                                               \
-                          kQueriesPerBlock,                                   \
-                          kKeysPerBlock,                                      \
-                          kSingleValueIteration>;                             \
-                      /* Run a more efficient kernel (with `isAligned=True`)  \
-                      if memory is correctly aligned*/                        \
-                      bool isAligned =                                        \
-                          (QUERY.stride(2) % AlignedAK::kAlignmentQ == 0 &&   \
-                           KEY.stride(2) % AlignedAK::kAlignmentK == 0 &&     \
-                           VALUE.stride(2) % AlignedAK::kAlignmentV == 0);    \
-                      /* TODO: Should we warn or log somewhere when we use a  \
-                      less efficient kernel due to wrong alignment? */        \
-                      DISPATCH_BOOL(isAligned, kIsAligned, ([&]() {           \
-                                      using Kernel = AttentionKernel<         \
-                                          scalar_t,                           \
-                                          ArchTag,                            \
-                                          kIsAligned,                         \
-                                          kQueriesPerBlock,                   \
-                                          kKeysPerBlock,                      \
-                                          kSingleValueIteration>;             \
-                                      FUNC();                                 \
-                                    }))                                       \
-                    }))                                                       \
-              }));                                                            \
-        }));                                                                  \
-  }
 
 namespace {
 template <typename scalar_t>
@@ -225,10 +165,33 @@ efficient_attention_forward_cutlass(
     rng_engine_inputs = gen->philox_cuda_state(B * num_heads * M * N);
   }
 
-  auto launchKernel = [&](auto _k, int computeCapability) {
+  bool kernel_launched = false;
+  auto launchKernel = [&](auto _k, auto kernel_fn) {
     using Kernel = decltype(_k);
     using scalar_t = typename Kernel::scalar_t;
     (void)_k;
+
+    if (kernel_launched) {
+      return;
+    }
+    // Check if this kernel is compatible
+    if (!Kernel::kSupportsDropout && use_dropout) {
+      return;
+    }
+    if (!Kernel::kSupportsBias && bias.has_value()) {
+      return;
+    }
+    if (Kernel::kSingleValueIteration &&
+        Kernel::kKeysPerBlock < value.size(3)) {
+      return;
+    }
+    // Alignment
+    if ((query.stride(2) % Kernel::kAlignmentQ) ||
+        (key.stride(2) % Kernel::kAlignmentK) ||
+        (value.stride(2) % Kernel::kAlignmentV)) {
+      return;
+    }
+    kernel_launched = true;
 
     res = at::empty(
         {B, M, num_heads, Kv},
@@ -311,23 +274,29 @@ efficient_attention_forward_cutlass(
       p.dropout_prob = dropout_p;
     }
 
-    constexpr auto kernel_fn = attention_kernel_batched<Kernel>;
     size_t smem_bytes = sizeof(typename Kernel::SharedStorage);
     if (smem_bytes > 0xc000) {
-      TORCH_INTERNAL_ASSERT(
-          computeCapability >= 70,
-          "This kernel requires too much shared memory on this machine!");
-      AT_CUDA_CHECK(cudaFuncSetAttribute(
-          kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes));
+      auto err = cudaFuncSetAttribute(
+          kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
+      XFORMERS_CHECK(
+          err != cudaErrorInvalidValue,
+          "This GPU does not have enough shared-memory (kernel requires ",
+          smem_bytes / 1024,
+          " kb)");
+      AT_CUDA_CHECK(err);
     }
     Kernel::check_supported(p);
     kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
   };
-  // Dispatch to the right kernel
-  DISPATCH_KERNEL(query, key, value, ([&]() {
-                    launchKernel(Kernel{}, computeCapability);
-                  }));
 
+  // Dispatch to the right kernel
+  cudaDeviceProp* p = at::cuda::getDeviceProperties(query.device().index());
+  const int computeCapability = p->major * 10 + p->minor;
+
+  DISPATCH_TYPES(query, ([&]() {
+                   dispatch_cutlassF<scalar_t>(launchKernel, computeCapability);
+                 }));
+  TORCH_CHECK(kernel_launched, "cutlassF: no kernel found to launch!");
   AT_CUDA_CHECK(cudaGetLastError());
 
   // uint64_t -> int64_t bitwise casting as PyTorch don't support uint64_t

@@ -1,3 +1,5 @@
+#pragma once
+
 #ifdef HAS_PYTORCH
 #include <ATen/cuda/CUDAGeneratorImpl.h>
 #include <ATen/cuda/CUDAGraphsUtils.cuh>
@@ -67,12 +69,12 @@ template <
     // If Q/K/V are correctly aligned in memory and we can run a fast kernel
     bool isAligned_,
     int kQueriesPerBlock,
-    int kKeysPerBlock,
-    bool kSingleValueIteration, // = `value.shape[-1] <= kKeysPerBlock`
+    int kKeysPerBlock_,
+    bool kSingleValueIteration_, // = `value.shape[-1] <= kKeysPerBlock`
     // This is quite slower on V100 for some reason
     // Set to false if you know at compile-time you will never need dropout
-    bool kSupportsDropout = true,
-    bool kSupportsBias = true>
+    bool kSupportsDropout_ = true,
+    bool kSupportsBias_ = true>
 struct AttentionKernel {
   using scalar_t = scalar_t_;
   using accum_t = float;
@@ -82,7 +84,11 @@ struct AttentionKernel {
   // Using `accum_t` improves perf on f16 at the cost of
   // numerical errors
   using output_accum_t = accum_t;
+  static constexpr bool kSupportsDropout = kSupportsDropout_;
+  static constexpr bool kSupportsBias = kSupportsBias_;
+  static constexpr int kKeysPerBlock = kKeysPerBlock_;
   static constexpr bool kIsAligned = isAligned_;
+  static constexpr bool kSingleValueIteration = kSingleValueIteration_;
   static constexpr int32_t kAlignLSE = 32; // block size of backward
   static constexpr bool kPreloadV = ArchTag::kMinComputeCapability >= 80 &&
       cutlass::sizeof_bits<scalar_t>::value == 16;

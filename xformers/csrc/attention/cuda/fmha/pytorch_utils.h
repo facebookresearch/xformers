@@ -1,3 +1,5 @@
+#pragma once
+
 #include <ATen/core/TensorBody.h>
 #include <c10/util/Exception.h>
 
