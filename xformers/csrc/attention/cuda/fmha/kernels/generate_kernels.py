@@ -228,26 +228,30 @@ class BwdKernel:
                 continue
             is_half = dtype in ["bf16", "f16"]
 
-            bi = 64
+            bi_values = [64]
+            # Some architectures have more shmem and can use 128
+            # We still need fallback to 64 for GPUs with less shmem
+            # (Sm75, Sm86 ...)
             if sm >= 80 or (sm >= 70 and is_half):
                 if max_k > 64:
-                    bi = 128
-            output_in_rf = is_half and max_k <= bi
-            preload_mmas = is_half and sm >= 80 and output_in_rf
-            bj = 128 if (preload_mmas and max_k > 64) else 64
-            kernels.append(
-                cls(
-                    aligned=aligned,
-                    dtype=dtype,
-                    sm=sm,
-                    sm_max=sm_max,
-                    apply_dropout=apply_dropout,
-                    preload_mmas=preload_mmas,
-                    block_i=bi,
-                    block_j=bj,
-                    max_k=max_k,
+                    bi_values.append(128)
+            for bi in bi_values:
+                output_in_rf = is_half and max_k <= bi
+                preload_mmas = is_half and sm >= 80 and output_in_rf
+                bj = 128 if (preload_mmas and max_k > 64) else 64
+                kernels.append(
+                    cls(
+                        aligned=aligned,
+                        dtype=dtype,
+                        sm=sm,
+                        sm_max=sm_max,
+                        apply_dropout=apply_dropout,
+                        preload_mmas=preload_mmas,
+                        block_i=bi,
+                        block_j=bj,
+                        max_k=max_k,
+                    )
                 )
-            )
         return kernels
 
 

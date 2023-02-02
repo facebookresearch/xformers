@@ -241,21 +241,6 @@ class BwOp(AttentionBwOpBase):
                     f"(shape: {tuple(attn_bias_tensor.shape)}"
                     f"/ expected: {expected_bias_shape})"
                 )
-        if d.device.type == "cuda":
-            cap = torch.cuda.get_device_capability(d.device)
-            sm = cap[0] * 10 + cap[1]
-            # Sm86 does not have enough shared-memory
-            # See https://github.com/facebookresearch/xformers/issues/517
-            if (
-                sm >= 80
-                and sm != 80
-                and d.query.dtype is torch.float
-                and max(d.query.shape[-1], d.key.shape[-1]) > 64
-            ):
-                reasons.append(
-                    f"Sm{sm} does not have enough shared-memory to run this kernel"
-                    " - see https://github.com/facebookresearch/xformers/issues/517"
-                )
         return reasons
 
     @classmethod
