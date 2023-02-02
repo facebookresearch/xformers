@@ -830,9 +830,9 @@ struct AttentionBackwardKernel {
     };
     static void print_size() {
       // Field size
-#define FSZ(f) int((sizeof(((SharedStorage*)0)->f)))
+#define FSZ(f) int((sizeof(((SharedStoragePrologue*)0)->f)))
 
-      printf("Total smem: %d bytes\n", int(sizeof(SharedStorage)));
+      printf("Total smem: %d bytes\n", int(sizeof(SharedStoragePrologue)));
       printf("  persistent: %db\n", FSZ(persistent));
       printf("    mm_qk_k: %db\n", FSZ(persistent.mm_qk_k));
       printf("  p1: %db\n", FSZ(p1));
@@ -968,8 +968,8 @@ struct AttentionBackwardKernel {
       } p6;
     };
     static void print_size() {
-#define FIELD_SIZEOF(f) int((sizeof(((SharedStorage*)0)->f)))
-      printf("Total smem: %d bytes\n", int(sizeof(SharedStorage)));
+#define FIELD_SIZEOF(f) int((sizeof(((SharedStorageNoPrologue*)0)->f)))
+      printf("Total smem: %d bytes\n", int(sizeof(SharedStorageNoPrologue)));
       printf("  persistent: %db\n", FIELD_SIZEOF(persistent));
       printf("  p1: %db\n", FIELD_SIZEOF(p1));
       printf("  p2: %db\n", FIELD_SIZEOF(p2));

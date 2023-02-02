@@ -12,7 +12,7 @@ import collections
 import itertools
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Tuple, TypeVar
+from typing import Dict, List, Optional, Tuple, TypeVar
 
 DTYPES = {
     "f32": "float",
@@ -49,13 +49,13 @@ class FwdKernel:
     sort_index: Tuple[int, ...] = field(init=False, repr=False)
     aligned: bool
     dtype: str
-    sm: int
-    sm_max: int
+    sm_range: Tuple[int, int]
     q: int
     k: int
     single_value_iter: bool
     supports_dropout: bool = True
     supports_bias: bool = True
+    dispatch_cond: Optional[str] = None
 
     def __post_init__(self) -> None:
         # Set kernel selection priority
@@ -79,14 +79,14 @@ class FwdKernel:
     @property
     def name(self) -> str:
         acc = "rf" if self.single_value_iter else "gmem"
-        return f"fmha_cutlassF_{self.dtype}_{self._aligned_suffix}_{self.q}x{self.k}_{acc}_sm{self.sm}"
+        return f"fmha_cutlassF_{self.dtype}_{self._aligned_suffix}_{self.q}x{self.k}_{acc}_sm{self.sm_range[0]}"
 
     @property
     def cpp_class(self) -> str:
         template_args = ", ".join(
             [
                 DTYPES[self.dtype],
-                f"cutlass::arch::Sm{self.sm}",
+                f"cutlass::arch::Sm{self.sm_range[0]}",
                 "true" if self.aligned else "false",
                 str(self.q),
                 str(self.k),
@@ -107,8 +107,8 @@ class FwdKernel:
         return KERNEL_IMPL_TEMPLATE.format(
             CPP_CLASS=self.cpp_class,
             NAME=self.name,
-            SM=self.sm,
-            SM_MAX=self.sm_max,
+            SM=self.sm_range[0],
+            SM_MAX=self.sm_range[1],
         )
 
     @classmethod
@@ -131,8 +131,7 @@ class FwdKernel:
                     cls(
                         aligned=aligned,
                         dtype=dtype,
-                        sm=sm,
-                        sm_max=sm_max,
+                        sm_range=(sm, sm_max),
                         q=q,
                         k=k,
                         single_value_iter=single_value_iter,
@@ -144,8 +143,7 @@ class FwdKernel:
 @dataclass(order=True)
 class BwdKernel:
     sort_index: Tuple[int, ...] = field(init=False, repr=False)
-    sm: int
-    sm_max: int
+    sm_range: Tuple[int, int]
     dtype: str
     aligned: bool
     apply_dropout: bool
@@ -153,6 +151,7 @@ class BwdKernel:
     block_i: int
     block_j: int
     max_k: int
+    dispatch_cond: Optional[str] = None
 
     def __post_init__(self) -> None:
         # Set kernel selection priority
@@ -178,14 +177,14 @@ class BwdKernel:
         dropout_suffix = "_dropout" if self.apply_dropout else ""
         return (
             f"fmha_cutlassB_{self.dtype}_{self._aligned_suffix}"
-            f"_{self.block_i}x{self.block_j}_k{self.max_k}{dropout_suffix}_sm{self.sm}"
+            f"_{self.block_i}x{self.block_j}_k{self.max_k}{dropout_suffix}_sm{self.sm_range[0]}"
         )
 
     @property
     def cpp_class(self) -> str:
         template_args = ", ".join(
             [
-                f"cutlass::arch::Sm{self.sm}",
+                f"cutlass::arch::Sm{self.sm_range[0]}",
                 DTYPES[self.dtype],
                 "true" if self.aligned else "false",
                 "true" if self.apply_dropout else "false",
@@ -208,8 +207,8 @@ class BwdKernel:
         return KERNEL_IMPL_TEMPLATE.format(
             CPP_CLASS=self.cpp_class,
             NAME=self.name,
-            SM=self.sm,
-            SM_MAX=self.sm_max,
+            SM=self.sm_range[0],
+            SM_MAX=self.sm_range[1],
         )
 
     @classmethod
@@ -243,8 +242,7 @@ class BwdKernel:
                     cls(
                         aligned=aligned,
                         dtype=dtype,
-                        sm=sm,
-                        sm_max=sm_max,
+                        sm_range=(sm, sm_max),
                         apply_dropout=apply_dropout,
                         preload_mmas=preload_mmas,
                         block_i=bi,
@@ -252,6 +250,24 @@ class BwdKernel:
                         max_k=max_k,
                     )
                 )
+        # Add some specialized kernels for stable diffusion BW (K=80)
+        # This is the only kernel that can keep the outputs on RF on
+        # Sm86/Sm89, so it's much faster than the 64x64 one
+        for dtype in ["f16", "bf16"]:
+            kernels.append(
+                cls(
+                    aligned=True,
+                    dtype=dtype,
+                    sm_range=(80, 90),
+                    apply_dropout=False,
+                    preload_mmas=True,
+                    block_i=128,
+                    block_j=64,
+                    max_k=96,
+                    # Sm80 has a faster kernel for this case
+                    dispatch_cond="cc == 86 || cc == 89",
+                )
+            )
         return kernels
 
 
@@ -278,7 +294,7 @@ def write_decl_impl(
     # Declaration of kernel functions
     for k in kernels:
         implfile_to_kernels[k.impl_group].append(k)
-        cat_to_kernels[(k.dtype, k.sm, k.sm_max)].append(k)
+        cat_to_kernels[(k.dtype, k.sm_range[0], k.sm_range[1])].append(k)
 
     for (cat_dt, cat_sm, cat_sm_max), kernels in cat_to_kernels.items():
         declarations += f"// ======== {cat_dt} / sm{cat_sm} ========\n"
@@ -287,16 +303,17 @@ def write_decl_impl(
         )
         dispatch_category_fn = f"dispatch_{family_name}_{cat_dt}_sm{cat_sm}"
         declarations += (
-            f"\n\ntemplate <typename T> void {dispatch_category_fn}(T cb) {{\n"
+            f"\n\ntemplate <typename T> void {dispatch_category_fn}(T cb, int cc) {{\n"
         )
-        declarations += "\n".join(
-            f"    cb({k.cpp_class}(), {k.name});" for k in kernels
-        )
-        declarations += "\n}\n"
-        declarations += "\n"
+        for k in kernels:
+            _call = f"cb({k.cpp_class}(), {k.name});\n"
+            if k.dispatch_cond is not None:
+                _call = f"if ({k.dispatch_cond}) {_call}"
+            declarations += f"    {_call}"
+        declarations += "}\n\n"
         dispatch_all += f"""
     if (std::is_same<DT, {DTYPES[cat_dt]}>::value && {cat_sm} <= cc && cc < {cat_sm_max}) {{
-        {dispatch_category_fn}(cb);
+        {dispatch_category_fn}(cb, cc);
     }}"""
 
     declarations += f"""
