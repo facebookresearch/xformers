@@ -204,6 +204,64 @@ def test_kqv_ordering(
     assert torch.allclose(res_false[0, :, :], res_false[1, :, :])
 
 
+@pytest.mark.parametrize("heads", [1, 4])
+@pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
+@pytest.mark.parametrize("device", DEVICES)
+def test_different_seqlen(
+    attention_name: str,
+    heads: int,
+    device: torch.device,
+):
+    multi_head = _get_multihead(attention_name, 0.0, 0.0, False, heads, device)
+
+    # Check kqv are not flipped
+    # this will not catch all issues, but would catch a V being misplaced
+    # make k and q complimentary, so that QKt is all zero and attention is uniform
+
+    q = torch.cat(
+        (
+            torch.rand((1, MODEL // 2), device=device),
+            torch.zeros((1, MODEL // 2), device=device),
+        ),
+        dim=1,
+    ).expand((BATCH, SEQ, MODEL))
+
+    k = torch.cat(
+        (
+            torch.zeros((1, MODEL // 2), device=device),
+            torch.rand((1, MODEL // 2), device=device),
+        ),
+        dim=1,
+    ).expand((BATCH, SEQ, MODEL))
+    v = torch.rand(BATCH, SEQ, MODEL, device=device)
+
+    # Normal call
+    res = multi_head(query=q, key=k, value=v)
+
+    # Changing sequence length by dividing by two to simulate differing sequence length
+    q2 = torch.cat(
+        (
+            torch.rand((1, MODEL // 2), device=device),
+            torch.zeros((1, MODEL // 2), device=device),
+        ),
+        dim=1,
+    ).expand((BATCH, SEQ // 2, MODEL))
+
+    k2 = torch.cat(
+        (
+            torch.zeros((1, MODEL // 2), device=device),
+            torch.rand((1, MODEL // 2), device=device),
+        ),
+        dim=1,
+    ).expand((BATCH, SEQ // 2, MODEL))
+
+    v2 = torch.rand(BATCH, SEQ // 2, MODEL, device=device)
+
+    res2 = multi_head(query=q2, key=k2, value=v2)
+
+    assert res.shape != res2.shape
+
+
 @pytest.mark.parametrize("proj_bias", [False, True])
 @pytest.mark.parametrize("same_sizes", [False, True])
 @pytest.mark.parametrize("same_settings", [False, True])
