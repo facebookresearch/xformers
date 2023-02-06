@@ -60,6 +60,7 @@ def masked_matmul(a, b, mask=None):
 
 
 __all__ = [
+    "memory_efficient_attention",
     "AttentionBias",
     "AttentionMask",
     "AttentionOp",
@@ -71,7 +72,6 @@ __all__ = [
     "MemoryEfficientAttentionFlashAttentionOp",
     "MemoryEfficientAttentionOp",
     "MemoryEfficientAttentionTritonFwdFlashBwOp",
-    "memory_efficient_attention",
     "memory_efficient_attention_backward",
     "memory_efficient_attention_forward",
     "memory_efficient_attention_forward_requires_grad",

@@ -113,6 +113,8 @@ class FwOp(AttentionFwOpBase):
 
 @register_operator
 class BwOp(AttentionBwOpBase):
+    __doc__ = FwOp.__doc__
+
     OPERATOR = get_xformers_operator("efficient_attention_backward_small_k")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES

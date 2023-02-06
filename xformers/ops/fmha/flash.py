@@ -184,11 +184,6 @@ class FwOp(AttentionFwOpBase):
     """Operator that computes memory-efficient attention using \
         `Flash-Attention <https://github.com/HazyResearch/flash-attention>`_ \
         implementation.
-
-
-    This is a wrapper to make FlashAttention compatible with xformers's API
-    Most of this code was taken from:
-    https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attn_interface.py
     """
 
     OPERATOR = get_operator("xformers_flash", "flash_fwd")
@@ -261,6 +256,8 @@ class FwOp(AttentionFwOpBase):
 
 @register_operator
 class BwOp(AttentionBwOpBase):
+    __doc__ = FwOp.__doc__
+
     OPERATOR = get_operator("xformers_flash", "flash_bwd")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     CUDA_MINIMUM_COMPUTE_CAPABILITY = FwOp.CUDA_MINIMUM_COMPUTE_CAPABILITY

@@ -52,6 +52,12 @@ def _prepare_inputs(inp: Inputs) -> Inputs:
 
 @register_operator
 class FwOp(AttentionFwOpBase):
+    """Operator that computes memory-efficient attention using \
+        `Tri Dao's <https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attn_triton.py>`_ \
+        implementation, based on
+        `Phil Tillet's code <https://github.com/openai/triton/blob/master/python/tutorials/06-fused-attention.py>`_
+    """
+
     OPERATOR = triton_flash_forward
     SUPPORTED_DEVICES = {"cuda"}
     CUDA_MINIMUM_COMPUTE_CAPABILITY = (8, 0)
@@ -101,6 +107,8 @@ class FwOp(AttentionFwOpBase):
 
 @register_operator
 class BwOp(AttentionBwOpBase):
+    __doc__ = FwOp.__doc__
+
     OPERATOR = triton_flash_backward
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     CUDA_MINIMUM_COMPUTE_CAPABILITY = FwOp.CUDA_MINIMUM_COMPUTE_CAPABILITY

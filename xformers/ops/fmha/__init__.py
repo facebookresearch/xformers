@@ -176,17 +176,18 @@ def memory_efficient_attention(
 
     Raises:
         NotImplementedError: if there is no operator available to compute the MHA
+        ValueError: if inputs are invalid
 
     :parameter query: Tensor of shape ``[B, Mq, H, K]``
     :parameter key: Tensor of shape ``[B, Mkv, H, K]``
     :parameter value: Tensor of shape ``[B, Mkv, H, Kv]``
     :parameter attn_bias: Bias to apply to the attention matrix - defaults to no masking. \
-        For causal attention, use :attr:`xformers.ops.LowerTriangularMask`. \
-        This can also be a :attr:`torch.Tensor` for an arbitrary mask.
+        For common biases implemented efficiently in xFormers, see :attr:`xformers.ops.fmha.attn_bias.AttentionBias`. \
+        This can also be a :attr:`torch.Tensor` for an arbitrary mask (slower).
     :parameter p: Dropout probability. Disabled if set to ``0.0``
-    :parameter scale: The scale to query_state weights. If set to ``None``, the default \
+    :parameter scale: Scaling factor for ``Q @ K.transpose()``. If set to ``None``, the default \
         scale (q.shape[-1]**-0.5) will be used.
-    :parameter op: The operator to use - see :attr:`xformers.ops.AttentionOpBase`. \
+    :parameter op: The operators to use - see :attr:`xformers.ops.AttentionOpBase`. \
         If set to ``None`` (recommended), xFormers \
         will dispatch to the best available operator, depending on the inputs \
         and options.

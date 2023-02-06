@@ -6,10 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## TBD
 ### Fixed
+- fMHA: Fixed BW pass on Sm86/Sm89 GPUs when `K > 64` (RTX 3090, RTX 4090, A6000, ..) [facebookresearch/xformers#631]
+
 ### Added
-- Added tensor attn bias support to CUTLASS FlashAttention
-- Added tensor attn bias grad support to CUTLASS FlashAttention
-- Added dropout support to CUTLASS FlashAttention
+- fMHA/CUTLASS: Added tensor attn bias support [facebookresearch/xformers#587] - contribution from [@jfc4050](https://github.com/jfc4050)
+- fMHA/CUTLASS: Added tensor attn bias grad support [facebookresearch/xformers#587] - contribution from [@jfc4050](https://github.com/jfc4050)
+- fMHA/CUTLASS: Added dropout support [facebookresearch/xformers#587] - contribution from [@jfc4050](https://github.com/jfc4050)
+- fMHA: Added support for varying sequence lengths [facebookresearch/xformers#500]
 
 
 ## [0.0.16] - 2023-01-31

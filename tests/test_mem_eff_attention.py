@@ -1311,3 +1311,32 @@ def test_attn_bias_from_seqlens() -> None:
     out = bias.split(torch.randn([1, 3 + 5 + 1, 16]))
     assert len(out) == 3
     assert tuple(out[0].shape) == (1, 3, 16)
+
+
+@cuda_only
+def test_attn_bias_blockdiag_doc() -> None:
+    """IMPORTANT:
+    This is the example in the doc for `BlockDiagonalMask`.
+    If this example needs to be updated, please also update the doc
+    """
+    import torch
+
+    from xformers.ops import fmha
+
+    K = 16
+    dtype = torch.float16
+    device = "cuda"
+    list_x = [
+        torch.randn([1, 3, 1, K], dtype=dtype, device=device),
+        torch.randn([1, 6, 1, K], dtype=dtype, device=device),
+        torch.randn([1, 2, 1, K], dtype=dtype, device=device),
+    ]
+    attn_bias, x = fmha.BlockDiagonalMask.from_tensor_list(list_x)
+
+    linear = torch.nn.Linear(K, K * 3).to(device=device, dtype=dtype)  # type: ignore
+
+    q, k, v = linear(x).reshape([1, -1, 1, 3, K]).unbind(-2)
+    out = fmha.memory_efficient_attention(q, k, v, attn_bias=attn_bias)
+    list_out = attn_bias.split(out)
+    print(list_out[0].shape)  # [1, 3, 1, K]
+    assert tuple(list_out[0].shape) == (1, 3, 1, K)

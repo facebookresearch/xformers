@@ -132,13 +132,14 @@ class AttentionOpBase(BaseOperator):
 
     See:
 
-    - :attr:`xformers.ops.MemoryEfficientAttentionOp`
-
-    - :attr:`xformers.ops.MemoryEfficientAttentionCutlassOp`
-
-    - :attr:`xformers.ops.MemoryEfficientAttentionFlashAttentionOp`
-
-    - :attr:`xformers.ops.MemoryEfficientAttentionCutlassFwdFlashBwOp`
+    - :attr:`xformers.ops.fmha.cutlass.FwOp`
+    - :attr:`xformers.ops.fmha.cutlass.BwOp`
+    - :attr:`xformers.ops.fmha.flash.FwOp`
+    - :attr:`xformers.ops.fmha.flash.BwOp`
+    - :attr:`xformers.ops.fmha.triton.FwOp`
+    - :attr:`xformers.ops.fmha.triton.BwOp`
+    - :attr:`xformers.ops.fmha.small_k.FwOp`
+    - :attr:`xformers.ops.fmha.small_k.BwOp`
     """
 
     OPERATOR: Any

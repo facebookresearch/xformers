@@ -129,7 +129,40 @@ class _SeqLenInfo:
 
 @dataclass
 class BlockDiagonalMask(AttentionBias):
-    """A block-diagonal mask - can be used to handle batch elements with different sequence length"""
+    """
+    A block-diagonal mask that can be passed as ``attn_bias``
+    argument to :attr:`xformers.ops.memory_efficient_attention`.
+
+    .. figure:: /_static/block_diag_bias.png
+
+        This bias can be used to handle a batch of sequences of
+        different lengths, via :attr:`BlockDiagonalMask.from_tensor_list`
+
+    :Example:
+
+    .. code-block:: python
+
+        import torch
+        from xformers.ops import fmha
+
+        K = 16
+        dtype = torch.float16
+        device = "cuda"
+        list_x = [
+            torch.randn([1, 3, 1, K], dtype=dtype, device=device),
+            torch.randn([1, 6, 1, K], dtype=dtype, device=device),
+            torch.randn([1, 2, 1, K], dtype=dtype, device=device),
+        ]
+        attn_bias, x = fmha.BlockDiagonalMask.from_tensor_list(list_x)
+        linear = torch.nn.Linear(K, K * 3).to(device=device, dtype=dtype)
+
+        q, k, v = linear(x).reshape([1, -1, 1, 3, K]).unbind(-2)
+        out = fmha.memory_efficient_attention(q, k, v, attn_bias=attn_bias)
+        list_out = attn_bias.split(out)
+        print(list_out[0].shape)  # [1, 3, 1, K]
+        assert tuple(list_out[0].shape) == (1, 3, 1, K)
+
+    """
 
     q_seqinfo: _SeqLenInfo
     k_seqinfo: _SeqLenInfo
@@ -153,6 +186,7 @@ class BlockDiagonalMask(AttentionBias):
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
+        """Materialize the attention bias - for debugging & testing"""
         assert shape[-1] == self.k_seqinfo.cu_seqlen_py[-1]
         assert shape[-2] == self.q_seqinfo.cu_seqlen_py[-1]
         mask = torch.empty(shape[-2:], dtype=dtype, device=device)
@@ -178,6 +212,15 @@ class BlockDiagonalMask(AttentionBias):
         q_seqlen: Sequence[int],
         kv_seqlen: Optional[Sequence[int]] = None,
     ) -> "BlockDiagonalMask":
+        """Creates a :attr:`BlockDiagonalMask` from a list of tensors lengths for query and key/value.
+
+        Args:
+            q_seqlen (Sequence[int]): List of sequence lengths for query tensors
+            kv_seqlen (Sequence[int], optional): List of sequence lengths for key/value. Defaults to ``q_seqlen``.
+
+        Returns:
+            BlockDiagonalMask
+        """
         assert kv_seqlen is None or len(q_seqlen) == len(kv_seqlen)
         q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
         if kv_seqlen is None or q_seqlen == kv_seqlen:
@@ -191,6 +234,23 @@ class BlockDiagonalMask(AttentionBias):
         cls,
         tensors: Sequence[torch.Tensor],
     ) -> Tuple["BlockDiagonalMask", torch.Tensor]:
+        """Creates a :attr:`BlockDiagonalMask` from a list of tensors, and returns the tensors
+        concatenated on the sequence length dimension
+
+        .. figure:: /_static/block_diag_cat_split.png
+
+            See also :attr:`BlockDiagonalMask.split` to split the returned
+            :attr:`torch.Tensor` back to a list of tensors of varying sequence length
+
+        Args:
+            tensors (Sequence[torch.Tensor]): A list of tensors of shape ``[B, M_i, *]``.
+                All tensors should have the same dimension and the same batch size ``B``, but
+                they can have different sequence length ``M``.
+
+        Returns:
+            Tuple[BlockDiagonalMask, torch.Tensor]: The corresponding bias for the attention
+            along with `tensors` concatenated on the sequence length dimension, with shape ``[1, sum_i{M_i}, *]``
+        """
         batch_sizes = [tensor.shape[0] for tensor in tensors]
         seqlens = []
         for x in tensors:
@@ -236,6 +296,14 @@ class BlockDiagonalMask(AttentionBias):
         return self.k_seqinfo.split(tensor, self._batch_sizes)
 
     def split(self, tensor: torch.Tensor) -> Sequence[torch.Tensor]:
+        """The inverse operation of :attr:`BlockDiagonalCausalMask.from_tensor_list`
+
+        Args:
+            tensor (torch.Tensor): Tensor of tokens of shape ``[1, sum_i{M_i}, *]``
+
+        Returns:
+            Sequence[torch.Tensor]: A list of tokens with possibly different sequence lengths
+        """
         assert self.q_seqinfo is self.k_seqinfo
         return self.q_seqinfo.split(tensor, self._batch_sizes)
 
