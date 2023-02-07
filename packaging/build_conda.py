@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import compute_wheel_version
 
@@ -24,7 +24,7 @@ PYTORCH_TO_CUDA_VERSIONS = {
 }
 
 
-def conda_docker_image_for_cuda(cuda_version):
+def conda_docker_image_for_cuda(cuda_version: str) -> str:
     """
     Given a cuda version, return a docker image we could
     build in.
@@ -43,7 +43,7 @@ def conda_docker_image_for_cuda(cuda_version):
     raise ValueError(f"Unknown cuda version {cuda_version}")
 
 
-def version_constraint(version):
+def version_constraint(version: str) -> str:
     """
     Given version "11.3" returns " >=11.3,<11.4"
     """
@@ -70,6 +70,7 @@ class Build:
     python_version: str
     pytorch_version: str
     cuda_version: str
+    use_pytorch_nightly: bool
 
     conda_always_copy: bool = True
     conda_debug: bool = False
@@ -89,7 +90,7 @@ class Build:
         dev_version = compute_wheel_version.get_dev_version()
         return f"{dev_version}+git.{git_hash}"
 
-    def _set_env_for_build(self):
+    def _set_env_for_build(self) -> None:
         if "CUDA_HOME" not in os.environ:
             if "FAIR_ENV_CLUSTER" in os.environ:
                 cuda_home = "/public/apps/cuda/" + self.cuda_version
@@ -111,7 +112,9 @@ class Build:
         os.environ["XFORMERS_BUILD_TYPE"] = "Release"
         os.environ["XFORMERS_PACKAGE_FROM"] = "conda"
         cuda_constraint = version_constraint(self.cuda_version)
-        pytorch_version_tuple = tuple(int(v) for v in self.pytorch_version.split("."))
+        pytorch_version_tuple = tuple(
+            int(v) for v in self.pytorch_version.split(".")[:2]
+        )
         if pytorch_version_tuple < (1, 13):
             os.environ["CONDA_CUDA_CONSTRAINT"] = f"cudatoolkit{cuda_constraint}"
         else:
@@ -121,12 +124,12 @@ class Build:
         if self.conda_always_copy:
             os.environ["CONDA_ALWAYS_COPY"] = "true"
 
-    def _get_build_args(self):
+    def _get_build_args(self) -> List[str]:
         args = [
             "conda",
             "build",
             "-c",
-            "pytorch",
+            ("pytorch-nightly" if self.use_pytorch_nightly else "pytorch"),
             "-c",
             "nvidia",
             "--no-anaconda-upload",
@@ -146,7 +149,7 @@ class Build:
                 args += ["--user", "xformers", "--label", "dev"]
         return args + ["packaging/xformers"]
 
-    def do_build(self):
+    def do_build(self) -> None:
         self._set_env_for_build()
         if self.upload:
             subprocess.check_call(
@@ -156,8 +159,12 @@ class Build:
         print(args)
         subprocess.check_call(args)
 
-    def move_artifacts_to_store(self):
-        """run after a build to move artifacts elsewhere"""
+    def move_artifacts_to_store(self) -> None:
+        """
+        Run after a build to move the built package, and, if using nightly, the
+        used PyTorch package, to a location where they will be recognized
+        as build artifacts.
+        """
         print("moving artifacts")
         assert not self.build_inside_tree
         artifacts = Path("packages")
@@ -165,6 +172,10 @@ class Build:
         for filename in Path("../build/linux-64").resolve().glob("*.tar.bz2"):
             print("moving", filename, "to", artifacts)
             shutil.move(filename, artifacts)
+        if self.use_pytorch_nightly:
+            for filename in Path("/opt/conda/pkgs").glob("pytorch-[12].*.tar.bz2"):
+                print("moving", filename, "to", artifacts)
+                shutil.move(filename, artifacts)
 
     def build_in_docker(self) -> None:
         filesystem = subprocess.check_output("stat -f -c %T .", shell=True).strip()
@@ -185,6 +196,8 @@ class Build:
             "--python",
             self.python_version,
         ]
+        if self.use_pytorch_nightly:
+            self_args.append("--use-pytorch-nightly")
         args += self_args
         print(args)
         subprocess.check_call(args)
@@ -219,6 +232,16 @@ if __name__ == "__main__":
         action="store_true",
         help="upload to xformers anaconda if FACEBOOKRESEARCH, else position artifact to store",
     )
+    parser.add_argument(
+        "--store",
+        action="store_true",
+        help="position artifact to store",
+    )
+    parser.add_argument(
+        "--use-pytorch-nightly",
+        action="store_true",
+        help="-c pytorch-nightly",
+    )
     args = parser.parse_args()
 
     facebookresearch = os.getenv("CIRCLE_PROJECT_USERNAME", "") == "facebookresearch"
@@ -228,6 +251,7 @@ if __name__ == "__main__":
         pytorch_version=args.pytorch,
         cuda_version=args.cuda,
         build_inside_tree=args.build_inside_tree,
+        use_pytorch_nightly=args.use_pytorch_nightly,
         upload=args.upload or (facebookresearch and args.upload_or_store),
     )
 
@@ -235,7 +259,7 @@ if __name__ == "__main__":
         pkg.build_in_docker()
     else:
         pkg.do_build()
-        if args.upload_or_store and not facebookresearch:
+        if args.store or (args.upload_or_store and not facebookresearch):
             pkg.move_artifacts_to_store()
 
 
