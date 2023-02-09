@@ -186,7 +186,9 @@ void gemm_fused_operand_sum_(
       a.options().dtype(at::ScalarType::Byte));
   cutlass::Status status = gemm_op.can_implement(arguments);
   TORCH_CHECK(
-      status == cutlass::Status::kSuccess, "not supported by this kernel");
+      status == cutlass::Status::kSuccess,
+      "`gemm_fused_operand_sum` does not support this input: ",
+      cutlass::cutlassGetStatusString(status));
   status = gemm_op.initialize(arguments, (uint8_t*)workspace.data_ptr());
   TORCH_CHECK(status == cutlass::Status::kSuccess, "kernel initialize failed");
   status = gemm_op(stream);

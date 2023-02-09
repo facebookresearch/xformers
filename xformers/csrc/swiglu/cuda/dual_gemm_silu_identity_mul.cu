@@ -144,7 +144,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
       x.options().dtype(at::ScalarType::Byte));
   cutlass::Status status = dual_gemm.can_implement(arguments);
   TORCH_CHECK(
-      status == cutlass::Status::kSuccess, "not supported by this kernel");
+      status == cutlass::Status::kSuccess,
+      "`dual_gemm_silu_identity_mul` does not support this input: ",
+      cutlass::cutlassGetStatusString(status));
   status = dual_gemm.initialize(arguments, (uint8_t*)workspace.data_ptr());
   TORCH_CHECK(status == cutlass::Status::kSuccess, "kernel initialize failed");
   status = dual_gemm(stream);
