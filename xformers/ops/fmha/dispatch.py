@@ -8,12 +8,15 @@ import textwrap
 from typing import List, Type, TypeVar
 
 from . import cutlass, flash, small_k, triton
+from .attn_bias import BlockDiagonalMask
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 
 def _is_cutlass_fwd_faster_than_flash(inp: Inputs) -> bool:
     # Very small batch sizes - if batch size specified
     batch_size, q_len, num_heads, k = inp.query.shape
+    if isinstance(inp.attn_bias, BlockDiagonalMask):
+        batch_size *= len(inp.attn_bias.k_seqinfo.cu_seqlen_py)
     if batch_size > 0:
         threads_flash = batch_size * num_heads
         threads_cutlass = threads_flash * (q_len // 64)
