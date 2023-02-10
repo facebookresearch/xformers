@@ -66,7 +66,7 @@ def write_version_file(version: str):
 
 
 def symlink_package(name: str, path: Path, is_building_wheel: bool) -> None:
-    cwd = Path(__file__).parent
+    cwd = Path(__file__).resolve().parent
     path_from = cwd / path
     path_to = os.path.join(cwd, *name.split("."))
 
