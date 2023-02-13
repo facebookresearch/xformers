@@ -12,6 +12,7 @@ from ..common import get_xformers_operator, register_operator
 from .attn_bias import (
     AttentionBias,
     BlockDiagonalCausalMask,
+    BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalMask,
     LowerTriangularMask,
     LowerTriangularMaskWithTensorBias,
@@ -55,13 +56,16 @@ def _get_seqlen_info(
     inp: Inputs,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], int]:
     attn_bias = inp.attn_bias
-    if isinstance(attn_bias, BlockDiagonalMask):
-        attn_bias.k_seqinfo.cu_seqlen = attn_bias.k_seqinfo.cu_seqlen.to(
-            inp.query.device, non_blocking=True
-        )
-        attn_bias.q_seqinfo.cu_seqlen = attn_bias.q_seqinfo.cu_seqlen.to(
-            inp.query.device, non_blocking=True
-        )
+    if isinstance(
+        attn_bias, (BlockDiagonalMask, BlockDiagonalCausalWithOffsetPaddedKeysMask)
+    ):
+        if (
+            isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
+            and attn_bias.causal_diagonal is not None
+        ):
+            attn_bias.causal_diagonal = attn_bias.causal_diagonal.to(inp.query.device)
+        attn_bias.k_seqinfo.to(inp.query.device)
+        attn_bias.q_seqinfo.to(inp.query.device)
         cu_seqlen_k = attn_bias.k_seqinfo.cu_seqlen
         cu_seqlen_q = attn_bias.q_seqinfo.cu_seqlen
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
@@ -112,6 +116,7 @@ class FwOp(AttentionFwOpBase):
         LowerTriangularMaskWithTensorBias,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
+        BlockDiagonalCausalWithOffsetPaddedKeysMask,
     }
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
@@ -131,7 +136,12 @@ class FwOp(AttentionFwOpBase):
         if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
         causal = isinstance(
-            inp.attn_bias, (LowerTriangularMask, BlockDiagonalCausalMask)
+            inp.attn_bias,
+            (
+                LowerTriangularMask,
+                BlockDiagonalCausalMask,
+                BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            ),
         )
         cu_seqlen_k, cu_seqlen_q, max_seqlen_q = _get_seqlen_info(inp)
         out, lse, rng_seed, rng_offset = cls.OPERATOR(
@@ -139,13 +149,19 @@ class FwOp(AttentionFwOpBase):
             key=inp.key,
             value=inp.value,
             attn_bias=_get_tensor_bias(inp.attn_bias),
-            cu_seqlens_q=cu_seqlen_q,
-            cu_seqlens_k=cu_seqlen_k,
+            seqstart_q=cu_seqlen_q,
+            seqstart_k=cu_seqlen_k,
             max_seqlen_q=max_seqlen_q,
             dropout_p=inp.p,
             compute_logsumexp=needs_gradient,
             causal=causal,
             scale=inp.scale,
+            causal_diagonal=inp.attn_bias.causal_diagonal
+            if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
+            else None,
+            seqlen_k=inp.attn_bias.k_seqinfo.seqlen
+            if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
+            else None,
         )
         ctx: Optional[Context] = None
         if needs_gradient:
@@ -251,7 +267,8 @@ class BwOp(AttentionBwOpBase):
             raise NotImplementedError("Unsupported attn_bias type")
 
         causal = isinstance(
-            inp.attn_bias, (LowerTriangularMask, BlockDiagonalCausalMask)
+            inp.attn_bias,
+            (LowerTriangularMask, BlockDiagonalCausalMask),
         )
         dtype = inp.query.dtype
 

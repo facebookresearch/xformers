@@ -183,7 +183,8 @@ CUTLASS_DEVICE void print_warp_accum(
           lane_offset,
           [&](int accum_m) {},
           [&](int accum_m, int accum_n, int idx) {
-            if (row == accum_m && col == accum_n) {
+            if (row == accum_m && col == accum_n &&
+                (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0)) {
               printf(" %6.1f", float(accum[idx]));
             }
           },

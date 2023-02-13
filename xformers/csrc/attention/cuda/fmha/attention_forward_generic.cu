@@ -81,16 +81,18 @@ efficient_attention_forward_cutlass(
     const c10::optional<at::Tensor>& bias, // [b, num_heads, seqlen, seqlen]
     // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
     // position of the first query token for batch $b
-    const c10::optional<at::Tensor>& cu_seqlens_q,
-    // (Mode 1MHK only) [b+1]: cu_seqlens_k[b] contains the
+    const c10::optional<at::Tensor>& seqstart_q,
+    // (Mode 1MHK only) [b+1]: cu_seqlen_k[b] contains the
     // position of the first key token for batch $b
-    const c10::optional<at::Tensor>& cu_seqlens_k,
+    const c10::optional<at::Tensor>& seqstart_k,
     // (Mode 1MHK only) Maximum sequence length across batches
     const c10::optional<int64_t> max_seqlen_q_,
     double dropout_p, // attention matrix dropout probability
     bool compute_logsumexp,
     bool causal,
-    c10::optional<double> scale) {
+    c10::optional<double> scale,
+    const c10::optional<at::Tensor>& causal_diagonal,
+    const c10::optional<at::Tensor>& seqlen_k) {
 #ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
   TORCH_CHECK(
       false,
@@ -118,14 +120,14 @@ efficient_attention_forward_cutlass(
   TORCH_CHECK(query.size(3) == key.size(3));
 
   int64_t max_seqlen_q, max_seqlen_k;
-  TORCH_CHECK(cu_seqlens_q.has_value() == cu_seqlens_k.has_value());
-  if (cu_seqlens_q.has_value()) {
-    TORCH_CHECK(cu_seqlens_q->scalar_type() == at::ScalarType::Int);
-    TORCH_CHECK(cu_seqlens_k->scalar_type() == at::ScalarType::Int);
-    TORCH_CHECK(cu_seqlens_q->dim() == 1 && cu_seqlens_k->dim() == 1);
-    CHECK_NOSPARSE_CONTIGUOUS_CUDA((*cu_seqlens_q));
-    CHECK_NOSPARSE_CONTIGUOUS_CUDA((*cu_seqlens_k));
-    TORCH_CHECK(cu_seqlens_q->size(0) == cu_seqlens_k->size(0));
+  TORCH_CHECK(seqstart_q.has_value() == seqstart_k.has_value());
+  if (seqstart_q.has_value()) {
+    TORCH_CHECK(seqstart_q->scalar_type() == at::ScalarType::Int);
+    TORCH_CHECK(seqstart_k->scalar_type() == at::ScalarType::Int);
+    TORCH_CHECK(seqstart_q->dim() == 1 && seqstart_k->dim() == 1);
+    CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqstart_q));
+    CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqstart_k));
+    TORCH_CHECK(seqstart_q->size(0) == seqstart_k->size(0));
     TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
     TORCH_CHECK(max_seqlen_q_.has_value());
     max_seqlen_q = *max_seqlen_q_;
@@ -213,7 +215,7 @@ efficient_attention_forward_cutlass(
     // not a good number for loading during backward
     constexpr decltype(M) kAlignLSE = Kernel::kAlignLSE;
     logsumexp = at::empty(
-        {cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B,
+        {seqstart_q.has_value() ? seqstart_q->size(0) - 1 : B,
          num_heads,
          compute_logsumexp ? ceil_div(max_seqlen_q, kAlignLSE) * kAlignLSE : 0},
         query.options().dtype(at::ScalarType::Float));
@@ -238,9 +240,9 @@ efficient_attention_forward_cutlass(
     }
     p.output_ptr = (typename Kernel::output_t*)res.data_ptr();
 
-    if (cu_seqlens_q.has_value()) {
-      p.cu_seqlens_q_ptr = (int32_t*)cu_seqlens_q->data_ptr();
-      p.cu_seqlens_k_ptr = (int32_t*)cu_seqlens_k->data_ptr();
+    if (seqstart_q.has_value()) {
+      p.seqstart_q_ptr = (int32_t*)seqstart_q->data_ptr();
+      p.seqstart_k_ptr = (int32_t*)seqstart_k->data_ptr();
     }
 
     p.num_heads = num_heads;
@@ -248,8 +250,22 @@ efficient_attention_forward_cutlass(
     p.head_dim_value = value.size(3);
     p.num_queries = max_seqlen_q;
     p.num_keys = max_seqlen_k;
-    p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
+    p.num_batches = seqstart_q.has_value() ? seqstart_q->size(0) - 1 : B;
     p.causal = causal;
+    p.causal_diagonal_ptr = nullptr;
+    if (causal_diagonal.has_value()) {
+      CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(causal_diagonal.value());
+      TORCH_CHECK(causal_diagonal->scalar_type() == at::ScalarType::Int);
+      p.causal_diagonal_ptr = (int32_t*)causal_diagonal->data_ptr();
+    }
+
+    p.seqlen_k_ptr = nullptr;
+    if (seqlen_k.has_value()) {
+      CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(seqlen_k.value());
+      TORCH_CHECK(seqlen_k->scalar_type() == at::ScalarType::Int);
+      p.seqlen_k_ptr = (int32_t*)seqlen_k->data_ptr();
+    }
+
     if (scale.has_value()) {
       p.scale = float(*scale);
     } else {
@@ -265,6 +281,7 @@ efficient_attention_forward_cutlass(
     ASSIGN_CHECK_OVERFLOW(p.q_strideH, query.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.k_strideH, key.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.v_strideH, value.stride(2));
+    ASSIGN_CHECK_OVERFLOW(p.o_strideM, res.stride(1));
 
     if (bias.has_value()) {
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));

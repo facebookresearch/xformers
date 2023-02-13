@@ -104,6 +104,7 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
             shapes.append((max(1, B // H), Mq, Mkv, H, K, K))
     # Some strides don't fit on an uint16
     shapes.append((1, 128, 128, 300, 128, 128))
+    shapes.append((13, 1, 67, 200, 8, 8))
     # TODO: Some strides don't fit on an uint32
     # Crashes on Flash, Errors on Cutlass
     # shapes.append((1, 1, 64000, 300, 128, 128))
@@ -154,7 +155,8 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                         shape = (B, Mq, Mkv, H, K, Kv)
                     combination.append((op, device, dtype, bias_type, *shape))
                     ids.append(
-                        f"{op.NAME}-{device}-{str(dtype)}-{bias_type.__name__}-{'-'.join([str(s) for s in shape])}"
+                        f"{op.NAME}-{device}-{str(dtype)}-{bias_type.__name__}"
+                        f"-{'-'.join([str(s) for s in shape])}"
                     )
                     has_one = True
             if has_one:
@@ -243,7 +245,6 @@ def _rand_seqlens(
 ) -> Tuple[Sequence[int], Sequence[int]]:
     q_len *= bs
     kv_len *= bs
-
     seqlens_q: List[int] = []
     seqlens_k: List[int] = []
 
@@ -255,6 +256,21 @@ def _rand_seqlens(
     seqlens_q[-1] = q_len - sum(seqlens_q[:-1])
     seqlens_k[-1] = kv_len - sum(seqlens_k[:-1])
     return seqlens_q, seqlens_k
+
+
+def _rand_seqlens_padded_k(
+    bs: int, q_len: int, kv_len: int
+) -> Tuple[Sequence[int], Sequence[int]]:
+    # we need qk_seqlens to be of len bsz. k_seqlens must be <= kv_len
+    # no constraints on q_seqlens, but they must still sum to total_len
+    k_seqlens = [random.randint(1, kv_len - 1) for _ in range(bs)]
+    q_len *= bs
+    q_idx = {0, q_len}
+    while len(q_idx) < bs + 1:
+        q_idx.add(random.randint(1, q_len - 1))
+    s = sorted(q_idx)
+    q_seqlens = [e - b for b, e in zip(s[:-1], s[1:])]
+    return q_seqlens, k_seqlens
 
 
 def create_attn_bias(
@@ -306,6 +322,21 @@ def create_attn_bias(
         if bias_type is fmha.attn_bias.BlockDiagonalCausalMask:
             block_diag = block_diag.make_causal()
         return block_diag
+    if bias_type == fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask:
+        assert fmt == "BMHK"
+        q, k = _rand_seqlens_padded_k(batch_size, q_len, kv_len)
+        g_block_diag = (
+            fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+                q_seqlen=q,
+                kv_padding=kv_len,
+                kv_seqlen=k,
+                causal_diagonal=torch.tensor(
+                    [random.randint(0, kk) for kk in k], dtype=torch.int32
+                ),
+            )
+        )
+        return g_block_diag
+
     assert False, f"Unsupported bias type: {bias_type}"
 
 
@@ -365,7 +396,13 @@ def create_tensors(
             requires_grad=attn_bias_requires_grad,
             fmt=fmt,
         )
-        if isinstance(attn_bias, fmha.attn_bias.BlockDiagonalMask):
+        if isinstance(
+            attn_bias,
+            (
+                fmha.attn_bias.BlockDiagonalMask,
+                fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            ),
+        ):
             query, key, value = [
                 x.reshape([1, -1, *x.shape[2:]]) for x in [query, key, value]
             ]
@@ -420,6 +457,7 @@ def test_forward(
         )
     if fmt == "BMK" and not fmha.common._is_bias_type_supported_in_BMK(bias_type):
         pytest.skip("BMK incompatible with this bias")
+
     query, key, value, attn_bias = create_tensors(
         *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, fmt="BMHK" if packed else fmt
     )
@@ -452,7 +490,6 @@ def test_forward(
     ).float()
     ref = ref_attention(query, key, value, attn_bias)
     assert out.shape == ref.shape, out.shape
-
     assert_allclose(
         out,
         ref,
@@ -485,7 +522,7 @@ def _block_diag_reshape_lse(
     """LSE can be padded, let's remove the padding"""
     parts = []
     for slice, start, end in zip(
-        lse.unbind(0), q_seqinfo.cu_seqlen_py, q_seqinfo.cu_seqlen_py[1:]
+        lse.unbind(0), q_seqinfo.cu_seqlen.tolist(), q_seqinfo.cu_seqlen.tolist()[1:]
     ):
         parts.append(slice[:, : end - start])
     return torch.cat(parts, dim=1).unsqueeze(1)
@@ -1304,6 +1341,71 @@ def test_attn_bias_blockdiag_crossattn_causal() -> None:
     assert len(list_k) == len(list_k2)
     for k1, k2 in zip(list_k, list_k2):
         assert_allclose(k1, k2)
+
+
+@cuda_only
+def test_attn_bias_padded() -> None:
+    bsize, n_heads, d, padding = 8, 3, 8, 32
+
+    # Q / KV have different seqlen
+    k = torch.randn((bsize, padding, n_heads, d)).cuda().half()
+    k_seqlen = [5, 8, 7, 1, 9, 3, 12, 32]
+    other = bsize - 1
+    v = torch.randn((bsize, padding, n_heads, d)).cuda().half()
+    n_q_first = 4
+    q = [
+        torch.randn((1, n_q_first, n_heads, d)).cuda().half(),
+        torch.randn((1, other, n_heads, d)).cuda().half(),
+    ]
+    q_cat = torch.cat([x.view(1, -1, n_heads, d) for x in q], dim=1)
+    causal_diagonal = torch.tensor(
+        [0] + [i - 1 for i in k_seqlen[1:]], dtype=torch.int32
+    ).cuda()
+
+    q_seqlen = [n_q_first] + [1] * other
+
+    attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+        q_seqlen=q_seqlen,
+        kv_seqlen=k_seqlen,
+        causal_diagonal=causal_diagonal,
+        kv_padding=padding,
+    )
+
+    v = v.view(1, -1, n_heads, d)
+    k = k.view(1, -1, n_heads, d)
+
+    scores = (q_cat.transpose(1, 2) @ k.transpose(1, 2).transpose(2, 3)).float()
+    assert not scores.isnan().any()
+    mask = torch.full_like(scores, -float("inf"))
+    for i, (slen, spos, qlen) in enumerate(
+        zip(k_seqlen, causal_diagonal.tolist(), q_seqlen)
+    ):
+        kseq_start = i * padding
+        qstart = sum(q_seqlen[:i])
+        mask[:, :, qstart : qstart + qlen, kseq_start : kseq_start + slen] = torch.triu(
+            mask[:, :, qstart : qstart + qlen, kseq_start : kseq_start + slen].float(),
+            diagonal=spos + 1,
+        ).float()
+
+    scores += mask
+    assert not scores.isnan().any()
+    # 1,3,10,8 @ 1,3,8,256 -> 1,3,10,256
+    scores = torch.nn.functional.softmax(scores, -1).half()
+    # torch.Size([1, 3, 3, 32]) @ torch.Size([1, 3, 32, 8])
+    output = scores @ v.transpose(1, 2)  # 1,3,10,256 @ 1,3,256, 8 -> 1,3,10,8
+    output = output.transpose(1, 2).contiguous()
+
+    fmha_output = fmha.memory_efficient_attention_forward(
+        q_cat, k, v, attn_bias, scale=1.0
+    )
+
+    # assert torch.allclose(output, fmha_output)
+    assert_allclose(
+        output,
+        fmha_output,
+        atol=fmha.cutlass.FwOp.ERROR_ATOL[torch.float16],
+        rtol=fmha.cutlass.FwOp.ERROR_RTOL[torch.float16],
+    )
 
 
 def test_attn_bias_from_seqlens() -> None:

@@ -113,8 +113,12 @@ struct AttentionKernel {
     scalar_t* key_ptr; // [num_keys, num_heads, head_dim]
     scalar_t* value_ptr; // [num_keys, num_heads, head_dim_value]
     scalar_t* attn_bias_ptr = nullptr; // [num_heads, num_queries, num_keys]
-    int32_t* cu_seqlens_q_ptr = nullptr;
-    int32_t* cu_seqlens_k_ptr = nullptr;
+    int32_t* seqstart_q_ptr = nullptr;
+    int32_t* seqstart_k_ptr = nullptr;
+
+    int32_t* causal_diagonal_ptr = nullptr;
+    int32_t* seqlen_k_ptr = nullptr;
+    uint32_t causal_diagonal_offset = 0;
 
     // Output tensors
     output_t* output_ptr; // [num_queries, num_heads, head_dim_value]
@@ -137,6 +141,8 @@ struct AttentionKernel {
     int32_t k_strideM;
     int32_t v_strideM;
     int32_t bias_strideM = 0;
+
+    int32_t o_strideM = 0;
 
     // Everything below is only used in `advance_to_block`
     // and shouldn't use registers
@@ -161,9 +167,6 @@ struct AttentionKernel {
     at::PhiloxCudaState rng_engine_inputs;
 #endif
 
-    CUTLASS_HOST_DEVICE int32_t o_strideM() const {
-      return head_dim_value * num_heads;
-    }
     // Moves pointers to what we should process
     // Returns "false" if there is no work to do
     CUTLASS_DEVICE bool advance_to_block() {
@@ -175,16 +178,25 @@ struct AttentionKernel {
 
       int64_t q_start, k_start;
       // Advance to current batch - in case of different sequence lengths
-      if (cu_seqlens_q_ptr != nullptr) {
-        assert(cu_seqlens_k_ptr != nullptr);
-        cu_seqlens_q_ptr += batch_id;
-        cu_seqlens_k_ptr += batch_id;
-        q_start = cu_seqlens_q_ptr[0];
-        k_start = cu_seqlens_k_ptr[0];
-        int64_t q_next_start = cu_seqlens_q_ptr[1];
-        int64_t k_next_start = cu_seqlens_k_ptr[1];
+      if (seqstart_q_ptr != nullptr) {
+        assert(seqstart_k_ptr != nullptr);
+        seqstart_q_ptr += batch_id;
+
+        q_start = seqstart_q_ptr[0];
+        int64_t q_next_start = seqstart_q_ptr[1];
+        int64_t k_end;
+        seqstart_k_ptr += batch_id;
+
+        if (seqlen_k_ptr) {
+          k_start = seqstart_k_ptr[0];
+          k_end = k_start + seqlen_k_ptr[batch_id];
+        } else {
+          k_start = seqstart_k_ptr[0];
+          k_end = seqstart_k_ptr[1];
+        }
+
         num_queries = q_next_start - q_start;
-        num_keys = k_next_start - k_start;
+        num_keys = k_end - k_start;
 
         if (query_start >= num_queries) {
           return false;
@@ -193,9 +205,10 @@ struct AttentionKernel {
         query_ptr += batch_id * q_strideB;
         key_ptr += batch_id * k_strideB;
         value_ptr += batch_id * v_strideB;
-        output_ptr += int64_t(batch_id * num_queries) * o_strideM();
+        output_ptr += int64_t(batch_id * num_queries) * o_strideM;
         if (output_accum_ptr != nullptr) {
-          output_accum_ptr += int64_t(batch_id * num_queries) * o_strideM();
+          output_accum_ptr +=
+              int64_t(batch_id * num_queries) * (head_dim_value * num_heads);
         }
         q_start = 0;
         k_start = 0;
@@ -204,20 +217,23 @@ struct AttentionKernel {
       // Advance to the current batch / head / query_start
       query_ptr += (q_start + query_start) * q_strideM + head_id * q_strideH;
       key_ptr += k_start * k_strideM + head_id * k_strideH;
+
       value_ptr += k_start * v_strideM + head_id * v_strideH;
-      output_ptr += int64_t(q_start + query_start) * o_strideM() +
-          head_id * head_dim_value;
+      output_ptr +=
+          int64_t(q_start + query_start) * o_strideM + head_id * head_dim_value;
 
       if (kSupportsBias && attn_bias_ptr != nullptr) {
         attn_bias_ptr += (batch_id * bias_strideB) + (head_id * bias_strideH);
       }
       if (output_accum_ptr != nullptr) {
-        output_accum_ptr += int64_t(q_start + query_start) * o_strideM() +
+        output_accum_ptr +=
+            int64_t(q_start + query_start) * (head_dim_value * num_heads) +
             head_id * head_dim_value;
       } else {
         // Accumulate directly in the destination buffer (eg for f32)
         output_accum_ptr = (accum_t*)output_ptr;
       }
+
       if (logsumexp_ptr != nullptr) {
         // lse[batch_id, head_id, query_start]
         logsumexp_ptr +=
@@ -230,12 +246,37 @@ struct AttentionKernel {
             head_id * num_queries * num_keys;
       }
 
+      if (causal_diagonal_ptr) {
+        causal_diagonal_offset = causal_diagonal_ptr[batch_id];
+      }
+
       num_queries -= query_start;
       if (causal) {
+        // the bottom row of the current block is query_start + kQueriesPerBlock
+        // the last active key is then query_start + causal_diagonal_offset +
+        // kQueriesPerBlock so num_keys is the min between actual num_keys and
+        // this to avoid extra computations
         num_keys = cutlass::fast_min(
-            int32_t(query_start + kQueriesPerBlock), num_keys);
+            int32_t(query_start + causal_diagonal_offset + kQueriesPerBlock),
+            num_keys);
       }
       num_batches = 0; // no longer used after
+
+      // If num_queries == 1, and there is only one key head we're wasting
+      // 15/16th of tensor core compute In that case :
+      //  - we only launch kernels for head_id % kQueriesPerBlock == 0
+      //  - we iterate over heads instead of queries (strideM = strideH)
+      if (num_queries == 1 && k_strideH == 0) {
+        if (head_id % kQueriesPerBlock != 0)
+          return false;
+        q_strideM = q_strideH;
+        num_queries = num_heads;
+        num_heads = 1; // unused but here for intent
+        // remove causal since n_query = 1
+        // otherwise, offset would change with head !
+        causal = false;
+        o_strideM = head_dim_value;
+      }
 
       // Make sure the compiler knows these variables are the same on all
       // the threads of the warp.
@@ -250,8 +291,10 @@ struct AttentionKernel {
       logsumexp_ptr = warp_uniform(logsumexp_ptr);
       num_queries = warp_uniform(num_queries);
       num_keys = warp_uniform(num_keys);
+      num_heads = warp_uniform(num_heads);
       head_dim = warp_uniform(head_dim);
       head_dim_value = warp_uniform(head_dim_value);
+      o_strideM = warp_uniform(o_strideM);
       return true;
     }
 
@@ -261,6 +304,7 @@ struct AttentionKernel {
           num_heads,
           num_batches);
     }
+
     __host__ dim3 getThreadsGrid() const {
       return dim3(kWarpSize, kNumWarpsPerBlock, 1);
     }
@@ -535,7 +579,7 @@ struct AttentionKernel {
     auto createOutputIter = [&](int col) -> typename MM1::OutputTileIterator {
       using OutputTileIterator = typename MM1::OutputTileIterator;
       return OutputTileIterator(
-          typename OutputTileIterator::Params{(int32_t)p.o_strideM()},
+          typename OutputTileIterator::Params{(int32_t)p.o_strideM},
           p.output_ptr,
           typename OutputTileIterator::TensorCoord{
               p.num_queries, p.head_dim_value},
@@ -547,7 +591,8 @@ struct AttentionKernel {
         typename MM1::OutputTileIteratorAccum {
           using OutputTileIteratorAccum = typename MM1::OutputTileIteratorAccum;
           return OutputTileIteratorAccum(
-              typename OutputTileIteratorAccum::Params{(int32_t)p.o_strideM()},
+              typename OutputTileIteratorAccum::Params{
+                  (int32_t)(p.head_dim_value * p.num_heads)},
               p.output_accum_ptr,
               typename OutputTileIteratorAccum::TensorCoord{
                   p.num_queries, p.head_dim_value},
@@ -706,7 +751,15 @@ struct AttentionKernel {
       }
 
       // Mask out last if causal
-      if (p.causal && p.num_keys - iter_key_start <= kKeysPerBlock) {
+      // This is only needed if upper-right corner of current query / key block
+      // intersects the mask Coordinates of upper-right corner of current block
+      // is y=query_start x=min(iter_key_start + kKeysPerBlock, num_keys)) The
+      // first masked element is x = y + offset -> query_start + offset There is
+      // intersection (and we need to mask) if min(iter_key_start +
+      // kKeysPerBlock, num_keys)) >= query_start + offset
+      if (p.causal &&
+          cutlass::fast_min(iter_key_start + kKeysPerBlock, p.num_keys) >=
+              (query_start + p.causal_diagonal_offset)) {
         auto query_start = blockIdx.x * kQueriesPerBlock;
         auto lane_offset = MM0::AccumLambdaIterator::get_lane_offset(
             lane_id(), warp_id(), iteratorC_tile_offset);
@@ -714,7 +767,11 @@ struct AttentionKernel {
         MM0::AccumLambdaIterator::iterateRows(
             lane_offset,
             [&](int accum_m) {
-              last_col = query_start + accum_m - iter_key_start;
+              // last absolute col is (last absolute query + offset)
+              // last local col is (last absolute query + offset -
+              // iter_key_start)
+              last_col = query_start + accum_m + p.causal_diagonal_offset -
+                  iter_key_start;
             },
             [&](int accum_m, int accum_n, int idx) {
               if (accum_n > last_col) {

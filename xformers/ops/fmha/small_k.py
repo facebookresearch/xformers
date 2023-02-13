@@ -71,6 +71,8 @@ class FwOp(AttentionFwOpBase):
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(FwOp, cls).not_supported_reasons(d)
+        if isinstance(d.attn_bias, torch.Tensor) and d.attn_bias.stride(1) != 0:
+            reasons.append("bias with non-zero stride not supported")
         buffer_size = 8
         k = d.query.shape[-1]
         for pack in [1, 2, 4]:
@@ -131,6 +133,8 @@ class BwOp(AttentionBwOpBase):
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(BwOp, cls).not_supported_reasons(d)
+        if isinstance(d.attn_bias, torch.Tensor) and d.attn_bias.stride(1) != 0:
+            reasons.append("bias with non-zero stride not supported")
         buffer_size = 8
         k = d.query.shape[-1]
         for pack in [1, 2, 4]:

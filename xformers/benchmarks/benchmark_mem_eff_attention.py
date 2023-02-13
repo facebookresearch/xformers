@@ -40,13 +40,17 @@ def create_attn_bias(
         )
         return attn_bias.expand(batch_size * num_heads, q_len, kv_len)
     if bias_type is xformers.ops.LowerTriangularMask:
-        return bias_type([1, q_len, kv_len], dtype=dtype, device=device)
+        return bias_type()
     assert False, f"Unsupported bias type: {bias_type}"
 
 
 def ref_attention_bmk(q, k, v, attn_bias=None, p=0.0):
     if isinstance(attn_bias, xformers.ops.AttentionMask):
-        attn_bias = attn_bias.to_tensor().to(q.dtype)
+        attn_bias = (
+            attn_bias.materialize((q.shape[0], 1, q.shape[1], k.shape[1]))
+            .to(q)
+            .squeeze()
+        )
     q = q * (1.0 / q.shape[-1] ** 0.5)
     if attn_bias is None:
         attn = q @ k.transpose(-2, -1)
