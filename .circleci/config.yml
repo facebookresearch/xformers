@@ -332,6 +332,10 @@ jobs:
         type: string
       cu_version:
         type: string
+      also_pytorch_nightly:
+        description: whether to also do a build with pytorch nightly if internal
+        type: boolean
+        default: false
 
     docker:
       - image: << parameters.dockerimage >>
@@ -348,6 +352,19 @@ jobs:
       - run: git submodule update --init --recursive
       - run: printenv
       - run: python -m pip install packaging
+      - when:
+          condition:
+            and:
+              - << parameters.also_pytorch_nightly >>
+              - matches:
+                  pattern: ".*fairinternal.*"
+                  value: << pipeline.project.git_url >>
+          steps:
+            - run:
+                name: conda build for py3_9 with pytorch nightly
+                no_output_timeout: 20m
+                command: |
+                  python packaging/build_conda.py --cuda << parameters.cu_version >> --python 3.9 --pytorch 2.0.0 --use-pytorch-nightly --store
       - run:
           name: conda build for py3_9
           no_output_timeout: 20m
@@ -540,6 +557,7 @@ workflows:
           dockerimage: pytorch/conda-builder:cuda117
           cu_version: "11.7"
           pytorch_version: "1.13.1"
+          also_pytorch_nightly: true
           filters:
             branches:
               only:
