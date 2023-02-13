@@ -239,6 +239,7 @@
 <span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBias</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalMask</span><span class="p">,</span>
     <span class="n">LowerTriangularMask</span><span class="p">,</span>
     <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">,</span>
@@ -282,13 +283,16 @@
     <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="nb">int</span><span class="p">]:</span>
     <span class="n">attn_bias</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">):</span>
-        <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span><span class="o">.</span><span class="n">to</span><span class="p">(</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span>
-        <span class="p">)</span>
-        <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span><span class="o">.</span><span class="n">to</span><span class="p">(</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span>
-        <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+        <span class="n">attn_bias</span><span class="p">,</span> <span class="p">(</span><span class="n">BlockDiagonalMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">)</span>
+    <span class="p">):</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">causal_diagonal</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">):</span>
+            <span class="n">attn_bias</span><span class="o">.</span><span class="n">causal_diagonal</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">causal_diagonal</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">cu_seqlen_k</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span>
         <span class="n">cu_seqlen_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span>
         <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span>
@@ -339,6 +343,7 @@
         <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">,</span>
         <span class="n">BlockDiagonalMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+        <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
     <span class="p">}</span>
     <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="kc">True</span>
@@ -358,7 +363,12 @@
         <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Unsupported attn_bias type&quot;</span><span class="p">)</span>
         <span class="n">causal</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="p">(</span><span class="n">LowerTriangularMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">)</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
+            <span class="p">(</span>
+                <span class="n">LowerTriangularMask</span><span class="p">,</span>
+                <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+                <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+            <span class="p">),</span>
         <span class="p">)</span>
         <span class="n">cu_seqlen_k</span><span class="p">,</span> <span class="n">cu_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">_get_seqlen_info</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
         <span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">rng_seed</span><span class="p">,</span> <span class="n">rng_offset</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span><span class="p">(</span>
@@ -366,13 +376,19 @@
             <span class="n">key</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
             <span class="n">value</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
             <span class="n">attn_bias</span><span class="o">=</span><span class="n">_get_tensor_bias</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
-            <span class="n">cu_seqlens_q</span><span class="o">=</span><span class="n">cu_seqlen_q</span><span class="p">,</span>
-            <span class="n">cu_seqlens_k</span><span class="o">=</span><span class="n">cu_seqlen_k</span><span class="p">,</span>
+            <span class="n">seqstart_q</span><span class="o">=</span><span class="n">cu_seqlen_q</span><span class="p">,</span>
+            <span class="n">seqstart_k</span><span class="o">=</span><span class="n">cu_seqlen_k</span><span class="p">,</span>
             <span class="n">max_seqlen_q</span><span class="o">=</span><span class="n">max_seqlen_q</span><span class="p">,</span>
             <span class="n">dropout_p</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
             <span class="n">compute_logsumexp</span><span class="o">=</span><span class="n">needs_gradient</span><span class="p">,</span>
             <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">,</span>
             <span class="n">scale</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">scale</span><span class="p">,</span>
+            <span class="n">causal_diagonal</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">causal_diagonal</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">)</span>
+            <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">seqlen_k</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqlen</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">)</span>
+            <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">ctx</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">needs_gradient</span><span class="p">:</span>
@@ -478,7 +494,8 @@
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Unsupported attn_bias type&quot;</span><span class="p">)</span>
 
         <span class="n">causal</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="p">(</span><span class="n">LowerTriangularMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">)</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
+            <span class="p">(</span><span class="n">LowerTriangularMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">),</span>
         <span class="p">)</span>
         <span class="n">dtype</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">dtype</span>
 
