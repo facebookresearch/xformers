@@ -899,6 +899,9 @@ def test_dropout_backward_cutlass(q_len, kv_len, batch_size, k_len, p):
 def test_memory_efficient_attention_full_block_masked(
     device, q_len, kv_len, batch_size, k_len
 ):
+    op_fw = fmha.small_k.FwOp
+    op_bw = fmha.small_k.BwOp
+
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
@@ -909,10 +912,14 @@ def test_memory_efficient_attention_full_block_masked(
     attn_bias[:2, :4] = 0
     attn_bias = attn_bias.flatten()[None, None, :].expand(1, q_len, -1)
 
-    out = xformers.ops.memory_efficient_attention(query, key, value, attn_bias)
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, attn_bias, op=(op_fw, op_bw)
+    )
     ref = ref_attention(query, key, value, attn_bias)
 
-    assert_allclose(out, ref, atol=2e-4)
+    assert_allclose(
+        out, ref, atol=op_fw.ERROR_ATOL[query.dtype], rtol=op_fw.ERROR_RTOL[query.dtype]
+    )
 
     query.requires_grad_(True)
     key.requires_grad_(True)
@@ -934,13 +941,11 @@ def test_memory_efficient_attention_full_block_masked(
     ref = ref_attention(query, key, value, attn_bias)
     ref.backward(grad_out)
 
-    # there is some extra precision loss in the CPU implementation due to an
-    # extra accumulation step in grad_q, which is not present in the CUDA
-    # implementation
-    atol = 5e-4 if device == "cuda" else 6e-4
-    assert_allclose(grad_q, query.grad, "grad_q", atol=atol)
-    assert_allclose(grad_k, key.grad, "grad_k", atol=atol)
-    assert_allclose(grad_v, value.grad, "grad_v", atol=atol)
+    atol = op_bw.ERROR_ATOL[query.dtype]
+    rtol = op_bw.ERROR_RTOL[query.dtype]
+    assert_allclose(grad_q, query.grad, "grad_q", atol=atol, rtol=rtol)
+    assert_allclose(grad_k, key.grad, "grad_k", atol=atol, rtol=rtol)
+    assert_allclose(grad_v, value.grad, "grad_v", atol=atol, rtol=rtol)
 
 
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])

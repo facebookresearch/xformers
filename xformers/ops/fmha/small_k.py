@@ -125,6 +125,10 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
+
+    # there is some extra precision loss in the CPU implementation due to an
+    # extra accumulation step in grad_q, which is not present in the CUDA
+    # implementation
     ERROR_ATOL: Mapping[torch.dtype, float] = {
         torch.float: 4e-3,
     }
