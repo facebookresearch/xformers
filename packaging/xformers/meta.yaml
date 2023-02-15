@@ -31,6 +31,8 @@ build:
     - GIT_TAG
     - MAX_JOBS
     - TORCH_CUDA_ARCH_LIST
+    - XFORMERS_BUILD_TYPE
+    - XFORMERS_PACKAGE_FROM
 
 about:
   home: https://github.com/facebookresearch/xformers

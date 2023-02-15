@@ -91,6 +91,10 @@ class Build:
         return f"{dev_version}+git.{git_hash}"
 
     def _set_env_for_build(self) -> None:
+        """
+        NOTE: Variables set here won't be visible in `setup.py`
+        UNLESS they are also specified in meta.yaml
+        """
         if "CUDA_HOME" not in os.environ:
             if "FAIR_ENV_CLUSTER" in os.environ:
                 cuda_home = "/public/apps/cuda/" + self.cuda_version
