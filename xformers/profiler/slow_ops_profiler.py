@@ -16,6 +16,7 @@ import torch.utils.hooks
 from torch.utils._python_dispatch import TorchDispatchMode
 from torch.utils._pytree import tree_map
 
+from ..ops.common import FUNC_TO_XFORMERS_OPERATOR
 from .profiler import _Profiler
 
 
@@ -342,9 +343,17 @@ class DetectSlowOpsProfiler(TorchDispatchMode):
         out = func(*args, **kwargs)
         op.ev_end.record()
 
+        # Prevent functions called by flop counting ops to be recorded
         self.temp_disabled = True
-        compute_flops = flop_mapping.get(func_packet, guess_flops_unknown_op)
-        flop_count = compute_flops(args, out if isinstance(out, tuple) else (out,))
+        flop_count = -1
+        compute_flops = None
+        if func_packet in FUNC_TO_XFORMERS_OPERATOR:
+            flop_count = FUNC_TO_XFORMERS_OPERATOR[func_packet].operator_flop(
+                *args, **kwargs
+            )
+        if flop_count == -1:
+            compute_flops = flop_mapping.get(func_packet, guess_flops_unknown_op)
+            flop_count = compute_flops(args, out if isinstance(out, tuple) else (out,))
 
         compute_io = io_mapping.get(func_packet, operation_memory_rw_bytes)
         op.io_bytes = compute_io(args, out if isinstance(out, tuple) else (out,))

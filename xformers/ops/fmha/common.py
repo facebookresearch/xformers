@@ -220,6 +220,49 @@ class AttentionFwOpBase(AttentionOpBase):
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         raise NotImplementedError()
 
+    @classmethod
+    def attn_operator_flop(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        causal: bool = False,
+        cu_seqlen_k: Optional[torch.Tensor] = None,
+        cu_seqlen_q: Optional[torch.Tensor] = None,
+    ) -> int:
+        """
+        Computes total flops for the attention
+        Assumes inputs in format BMHK
+        """
+        assert query.ndim == 4
+
+        if cu_seqlen_q is not None:
+            cu_seqlen_q_py = cu_seqlen_q.tolist()
+        else:
+            cu_seqlen_q_py = [0, query.shape[1]]
+        if cu_seqlen_k is not None:
+            cu_seqlen_k_py = cu_seqlen_k.tolist()
+        else:
+            cu_seqlen_k_py = [0, key.shape[1]]
+
+        total_flop = 0
+        for q_start, q_end, k_start, k_end in zip(
+            cu_seqlen_q_py, cu_seqlen_q_py[1:], cu_seqlen_k_py, cu_seqlen_k_py[1:]
+        ):
+            num_q = q_end - q_start
+            num_kv = k_end - k_start
+            # (M,K) @ (K,N) GEMM needs M*N*K*2 flop
+            # Q @ K.transpose
+            total_flop += num_q * num_kv * query.shape[-1] * 2
+            # (ignore softmax)
+            # attn @ V
+            total_flop += num_q * key.shape[-1] * num_kv * 2
+        # Multiply by num_heads and batches
+        total_flop = total_flop * value.shape[2] * value.shape[0]
+        if causal:
+            total_flop //= 2
+        return total_flop
+
 
 class AttentionBwOpBase(AttentionOpBase):
     ERROR_ATOL: Mapping[torch.dtype, float] = {
@@ -250,6 +293,56 @@ class AttentionBwOpBase(AttentionOpBase):
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:
         raise NotImplementedError()
+
+    @classmethod
+    def attn_operator_flop(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        causal: bool = False,
+        cu_seqlen_k: Optional[torch.Tensor] = None,
+        cu_seqlen_q: Optional[torch.Tensor] = None,
+    ) -> int:
+        """
+        Computes total flops for the attention
+        Assumes inputs in format BMHK
+        """
+        assert query.ndim == 4
+
+        if cu_seqlen_q is not None:
+            cu_seqlen_q_py = cu_seqlen_q.tolist()
+        else:
+            cu_seqlen_q_py = [0, query.shape[1]]
+        if cu_seqlen_k is not None:
+            cu_seqlen_k_py = cu_seqlen_k.tolist()
+        else:
+            cu_seqlen_k_py = [0, key.shape[1]]
+
+        total_flop = 0
+        for q_start, q_end, k_start, k_end in zip(
+            cu_seqlen_q_py, cu_seqlen_q_py[1:], cu_seqlen_k_py, cu_seqlen_k_py[1:]
+        ):
+            num_q = q_end - q_start
+            num_kv = k_end - k_start
+            Kqk = query.shape[-1]
+            Kv = value.shape[-1]
+            # (M,K) @ (K,N) GEMM needs M*N*K*2 flop
+            # att = Q @ K.transpose
+            total_flop += num_q * num_kv * Kqk * 2
+            # att @ dO
+            total_flop += num_kv * num_q * Kv * 2
+            # dov = dO @ V
+            total_flop += num_q * Kv * num_kv * 2
+            # dov @ K
+            total_flop += num_q * Kqk * num_kv * 2
+            # dov @ Q
+            total_flop += num_q * Kqk * num_kv * 2
+        # Multiply by num_heads and batches
+        total_flop = total_flop * value.shape[2] * value.shape[0]
+        if causal:
+            total_flop //= 2
+        return total_flop
 
 
 AttentionOp = Tuple[

@@ -10,8 +10,37 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .common import get_xformers_operator
+from .common import BaseOperator, get_xformers_operator, register_operator
 from .unbind import stack_or_none, unbind
+
+
+@register_operator
+class DualGemmSiluOp(BaseOperator):
+    OPERATOR = get_xformers_operator("dual_gemm_silu_identity_mul")
+    OPERATOR_CATEGORY = "swiglu"
+    NAME = "dual_gemm_silu"
+
+    @classmethod
+    # type: ignore
+    def operator_flop(
+        cls, x: torch.Tensor, w1: torch.Tensor, b1, w2: torch.Tensor, b2
+    ) -> int:
+        """NOTE: we neglect the impact of biases / pointwises"""
+        M, N, K = x.shape[0], w1.shape[0], w1.shape[1]
+        return M * N * K * 2 * 2
+
+
+@register_operator
+class GemmFusedSumOp(BaseOperator):
+    OPERATOR = get_xformers_operator("gemm_fused_operand_sum")
+    OPERATOR_CATEGORY = "swiglu"
+    NAME = "gemm_fused_operand_sum"
+
+    @classmethod
+    # type: ignore
+    def operator_flop(cls, a: torch.Tensor, b: torch.Tensor, out1, out2) -> int:
+        M, N, K = a.shape[0], b.shape[0], a.shape[1]
+        return M * N * K * 2
 
 
 class _SwiGLUDecomposedFunc(torch.autograd.Function):
@@ -76,7 +105,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
     @classmethod
     @torch.cuda.amp.custom_fwd
     def forward(cls, ctx, x, w1, b1, w2, b2, w3, b3):
-        x1, x2, x4 = torch.ops.xformers.dual_gemm_silu_identity_mul(x, w1, b1, w2, b2)
+        x1, x2, x4 = DualGemmSiluOp.OPERATOR(x, w1, b1, w2, b2)
 
         x5 = F.linear(x4, w3, b3)
         ctx.save_for_backward(x, w1, w2, w3, x1, x2)
@@ -91,7 +120,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
             return (dy.transpose(-2, -1) @ x), None
         db = torch.empty([dy.shape[1]], dtype=dy.dtype, device=dy.device)
         dw = torch.empty([dy.shape[1], x.shape[1]], dtype=dy.dtype, device=dy.device)
-        torch.ops.xformers.gemm_fused_operand_sum(dy.transpose(-2, -1), x, dw, db)
+        GemmFusedSumOp.OPERATOR(dy.transpose(-2, -1), x, dw, db)
         return dw, db
 
     @classmethod

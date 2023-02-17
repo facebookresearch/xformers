@@ -188,6 +188,25 @@ class FwOp(AttentionFwOpBase):
         _check_bias_alignment(reasons, d.attn_bias)
         return reasons
 
+    @classmethod
+    # type: ignore
+    def operator_flop(
+        cls,
+        q,
+        k,
+        v,
+        b,
+        cu_seqlen_q,
+        cu_seqlen_k,
+        max_seqlen_q_,
+        compute_lse,
+        causal,
+        *a,
+    ) -> int:
+        return cls.attn_operator_flop(
+            q, k, v, causal=causal, cu_seqlen_k=cu_seqlen_k, cu_seqlen_q=cu_seqlen_q
+        )
+
 
 @register_operator
 class BwOp(AttentionBwOpBase):
@@ -311,3 +330,10 @@ class BwOp(AttentionBwOpBase):
             grad_bias = None
 
         return Gradients(dq=grad_q, dk=grad_k, dv=grad_v, db=grad_bias)
+
+    @classmethod
+    # type: ignore
+    def operator_flop(
+        cls, dO, q, k, v, b, lse, out, dpt, rng0, rng1, causal, scale
+    ) -> int:
+        return cls.attn_operator_flop(q, k, v, causal=causal)

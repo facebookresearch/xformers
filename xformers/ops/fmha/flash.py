@@ -253,6 +253,31 @@ class FwOp(AttentionFwOpBase):
             ctx.rng_state = rng_state
         return (out, ctx)
 
+    @classmethod
+    # type: ignore
+    def operator_flop(
+        cls,
+        query,
+        key,
+        value,
+        cu_seq_lens_q,
+        cu_seq_lens_k,
+        max_seq_len_q,
+        max_seq_len_k,
+        p,
+        softmax_scale,
+        causal,
+        return_softmax,
+    ) -> int:
+        return cls.attn_operator_flop(
+            query.unsqueeze(0),
+            key.unsqueeze(0),
+            value.unsqueeze(0),
+            causal=causal,
+            cu_seqlen_k=cu_seq_lens_k,
+            cu_seqlen_q=cu_seq_lens_q,
+        )
+
 
 @register_operator
 class BwOp(AttentionBwOpBase):
@@ -365,3 +390,33 @@ class BwOp(AttentionBwOpBase):
         grads.dk = grads.dk.reshape(dk_shape)
         grads.dv = grads.dv.reshape(dv_shape)
         return grads
+
+    @classmethod
+    # type: ignore
+    def operator_flop(
+        cls,
+        grad,
+        query,
+        key,
+        value,
+        out,
+        lse,
+        dq,
+        dk,
+        dv,
+        cu_seq_lens_q,
+        cu_seq_lens_k,
+        max_seq_len_q,
+        max_seq_len_k,
+        p,
+        softmax_scale,
+        causal,
+    ) -> int:
+        return cls.attn_operator_flop(
+            query.unsqueeze(0),
+            key.unsqueeze(0),
+            value.unsqueeze(0),
+            causal=causal,
+            cu_seqlen_k=cu_seq_lens_k,
+            cu_seqlen_q=cu_seq_lens_q,
+        )
