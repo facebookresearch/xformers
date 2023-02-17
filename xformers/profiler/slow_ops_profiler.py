@@ -70,53 +70,35 @@ def prod(x):
     return res
 
 
-def matmul_flop(inputs: List[Any], outputs: List[Any]) -> float:
-    """
-    Count flops for matmul.
-    """
-    # Inputs should be a list of length 2.
-    # Inputs contains the shapes of two matrices.
-    input_shapes = [get_shape(v) for v in inputs]
-    assert len(input_shapes) == 2, input_shapes
-    assert input_shapes[0][-1] == input_shapes[1][-2], input_shapes
-    flop = prod(input_shapes[0]) * input_shapes[-1][-1]
-    return flop
+class GemmOpComputeFlops:
+    def _get_mnk(self, inputs: List[Any]) -> Tuple[int, int, int]:
+        return (prod(inputs[0].shape[:-1]), inputs[1].shape[1], inputs[0].shape[-1])
+
+    def __call__(self, inputs: List[Any], outputs: List[Any]) -> float:
+        return 2 * prod(self._get_mnk(inputs))
+
+    def op_suffix(self, inputs: List[Any]) -> str:
+        m, n, k = self._get_mnk(inputs)
+        return f"_{m}x{n}x{k}"
 
 
-def addmm_flop(inputs: List[Any], outputs: List[Any]) -> float:
-    """
-    Count flops for fully connected layers.
-    """
-    # Count flop for nn.Linear
-    # inputs is a list of length 3.
-    input_shapes = [get_shape(v) for v in inputs[1:3]]
-    # input_shapes[0]: [batch size, input feature dimension]
-    # input_shapes[1]: [batch size, output feature dimension]
-    assert len(input_shapes[0]) == 2, input_shapes[0]
-    assert len(input_shapes[1]) == 2, input_shapes[1]
-    batch_size, input_dim = input_shapes[0]
-    output_dim = input_shapes[1][1]
-    flops = batch_size * input_dim * output_dim
-    return flops
+class GemmOpComputeFlopsLinear(GemmOpComputeFlops):
+    def _get_mnk(self, inputs: List[Any]) -> Tuple[int, int, int]:
+        return (prod(inputs[0].shape[:-1]), inputs[1].shape[0], inputs[0].shape[-1])
 
 
-def bmm_flop(inputs: List[Any], outputs: List[Any]) -> float:
-    """
-    Count flops for the bmm operation.
-    """
-    # Inputs should be a list of length 2.
-    # Inputs contains the shapes of two tensor.
-    assert len(inputs) == 2, len(inputs)
-    input_shapes = [get_shape(v) for v in inputs]
-    n, c, t = input_shapes[0]
-    d = input_shapes[-1][-1]
-    flop = n * c * t * d
-    return flop
+class GemmOpComputeFlopsMv(GemmOpComputeFlops):
+    def _get_mnk(self, inputs: List[Any]) -> Tuple[int, int, int]:
+        return (prod(inputs[0].shape[:-1]), 1, inputs[0].shape[-1])
 
 
-def linear_flop(inputs: List[Any], outputs: List[Any]) -> float:
-    inp, w = inputs
-    return prod(inp.shape[:-1]) * prod(w.shape) * 2
+class GemmOpComputeFlopsBmm(GemmOpComputeFlops):
+    def _get_mnk(self, inputs: List[Any]) -> Tuple[int, int, int]:
+        a, b = inputs[0], inputs[1]
+        assert a.ndim == 3
+        assert b.ndim == 3
+        bs = max(inputs[0].shape[0], inputs[1].shape[0])
+        return (bs * a.shape[1], b.shape[-1], b.shape[-2])
 
 
 def conv_flop_count(
@@ -273,15 +255,17 @@ NO_FLOPS_OPS = [
     aten.masked_fill,
     aten.masked_fill_,
 ]
+
 flop_mapping = {
-    aten.mm: matmul_flop,
-    aten.matmul: matmul_flop,
-    aten.addmm: addmm_flop,
-    aten.bmm: bmm_flop,
+    aten.mv: GemmOpComputeFlopsMv(),  # mat-vec
+    aten.mm: GemmOpComputeFlops(),
+    aten.matmul: GemmOpComputeFlops(),
+    aten.addmm: GemmOpComputeFlops(),
+    aten.bmm: GemmOpComputeFlopsBmm(),
+    aten.linear: GemmOpComputeFlopsLinear(),
     aten.convolution: conv_flop,
     aten._convolution: conv_flop,
     aten.convolution_backward: conv_backward_flop,
-    aten.linear: linear_flop,
     # Operations with 0 flop
     **{op: no_flop for op in NO_FLOPS_OPS},
     **{op: no_flop for op in NO_FLOPS_NO_IO_OPS},
@@ -307,6 +291,7 @@ class _OpInfo:
     io_bytes: int = 0
     is_exact_flop: bool = True
     op_name: str = ""
+    op_suffix: str = ""
     stacktrace: Tuple[str, ...] = field(default_factory=tuple)
     ev_start: torch.cuda.Event = field(
         default_factory=lambda: torch.cuda.Event(enable_timing=True)
@@ -326,6 +311,7 @@ class _OpInfoAggregated:
     total_io_bytes: int = 0
     total_time_ms: float = 0.0
     num: int = 0
+    stacktraces: List[Tuple[str, ...]] = field(default_factory=list)
 
     def add(self, op: _OpInfo) -> None:
         self.total_flop_count += op.flop_count
@@ -333,6 +319,7 @@ class _OpInfoAggregated:
         self.total_io_bytes += op.io_bytes
         self.num += 1
         self.is_exact_flop = op.is_exact_flop
+        self.stacktraces.append(op.stacktrace)
 
     def as_dict(self, **kwargs) -> Dict[str, Any]:
         # Values for A100
@@ -382,6 +369,7 @@ class DetectSlowOpsProfiler(DispatcherWithoutBrokenFuncs):
         out = func(*args, **kwargs)
         op.ev_end.record()
 
+        op.op_name = func_packet.__name__
         # Prevent functions called by flop counting ops to be recorded
         self.temp_disabled = True
         flop_count = -1
@@ -393,13 +381,14 @@ class DetectSlowOpsProfiler(DispatcherWithoutBrokenFuncs):
         if flop_count == -1:
             compute_flops = flop_mapping.get(func_packet, guess_flops_unknown_op)
             flop_count = compute_flops(args, out if isinstance(out, tuple) else (out,))
+            if isinstance(compute_flops, GemmOpComputeFlops):
+                op.op_name += compute_flops.op_suffix(args)
 
         compute_io = io_mapping.get(func_packet, operation_memory_rw_bytes)
         op.io_bytes = compute_io(args, out if isinstance(out, tuple) else (out,))
         self.temp_disabled = False
 
         op.stacktrace = tuple(self.main_profiler.parents)
-        op.op_name = func_packet.__name__
         op.flop_count = flop_count
         op.is_exact_flop = compute_flops is not guess_flops_unknown_op
         self.trace.append(op)
@@ -445,8 +434,22 @@ class DetectSlowOpsProfiler(DispatcherWithoutBrokenFuncs):
                 )
             )
         for op_name, agg_info in per_op_data.items():
+            # Find the most common path
+            paths_count: Dict[Tuple[str, ...], int] = defaultdict(int)
+            agg_info.stacktraces.sort()  # In case of a draw, let's always return the same
+            for p in agg_info.stacktraces:
+                paths_count[p] += 1
+            maxp = agg_info.stacktraces[0]
+            for p, count in paths_count.items():
+                if count > paths_count[maxp]:
+                    maxp = p
             all_data.append(
-                agg_info.as_dict(agg="opname", path="", name="", op=op_name)
+                agg_info.as_dict(
+                    agg="opname",
+                    path=f"{'.'.join(maxp)} (x{paths_count[maxp]})",
+                    name="",
+                    op=op_name,
+                )
             )
 
         filename = os.path.join(
