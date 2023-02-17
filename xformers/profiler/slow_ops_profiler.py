@@ -3,7 +3,9 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import itertools
 import json
+import math
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -18,6 +20,7 @@ from torch.utils._python_dispatch import TorchDispatchMode, _pop_mode_temporaril
 from torch.utils._pytree import tree_map
 
 from ..ops.common import FUNC_TO_XFORMERS_OPERATOR
+from .device_limits import get_device_limits
 from .profiler import _Profiler
 
 
@@ -300,6 +303,25 @@ class _OpInfo:
         default_factory=lambda: torch.cuda.Event(enable_timing=True)
     )
 
+    # Hardware limits for this operation (inf if unknown)
+    hardware_tflops_limit: float = math.inf
+    hardware_membw_limit: float = math.inf
+
+    @property
+    def time_membound_ms(self) -> float:
+        assert self.time_ms > 0.0
+        if self.io_bytes == 0:
+            return 0.0
+        return min(self.time_ms, 1000 * self.io_bytes / self.hardware_membw_limit)
+
+    @property
+    def time_computebound_ms(self) -> float:
+        assert self.time_ms > 0.0
+        tflop = self.flop_count / (1024**4)
+        if tflop == 0.0:
+            return 0.0
+        return min(self.time_ms, 1000 * tflop / self.hardware_tflops_limit)
+
     def finalize(self) -> None:
         self.time_ms = self.ev_start.elapsed_time(self.ev_end)
 
@@ -310,6 +332,8 @@ class _OpInfoAggregated:
     total_flop_count: float = 0.0
     total_io_bytes: int = 0
     total_time_ms: float = 0.0
+    total_time_membound_ms: float = 0.0
+    total_time_computebound_ms: float = 0.0
     num: int = 0
     stacktraces: List[Tuple[str, ...]] = field(default_factory=list)
 
@@ -317,20 +341,16 @@ class _OpInfoAggregated:
         self.total_flop_count += op.flop_count
         self.total_time_ms += op.time_ms
         self.total_io_bytes += op.io_bytes
+        self.total_time_membound_ms += op.time_membound_ms
+        self.total_time_computebound_ms += op.time_computebound_ms
         self.num += 1
         self.is_exact_flop = op.is_exact_flop
         self.stacktraces.append(op.stacktrace)
 
     def as_dict(self, **kwargs) -> Dict[str, Any]:
-        # Values for A100
-        MEM_BANDWIDTH = 1.5 * (1024**4)  # Bytes/s
-        GPU_TFLOPS = 300  # TFlops/s
-
-        mem_bound = min(
-            1, self.total_io_bytes / (self.total_time_ms / 1000) / MEM_BANDWIDTH
-        )
+        mem_bound = min(1, self.total_time_membound_ms / self.total_time_ms)
         tflops = self.total_flop_count / (self.total_time_ms / 1000) / (1024**4)
-        compute_bound = min(1, tflops / GPU_TFLOPS)
+        compute_bound = min(1, self.total_time_computebound_ms / self.total_time_ms)
         return {
             "is_exact_flop": self.is_exact_flop,
             "total_flop_count": self.total_flop_count,
@@ -346,13 +366,32 @@ class _OpInfoAggregated:
 
 class DetectSlowOpsProfiler(DispatcherWithoutBrokenFuncs):
     """
-    Taken from https://fb.workplace.com/groups/pytorch.dev/permalink/1054537595124720/
+    Inspired from https://fb.workplace.com/groups/pytorch.dev/permalink/1054537595124720/
     """
 
     def __init__(self, main_profiler: _Profiler) -> None:
         self.main_profiler = main_profiler
         self.trace: List[_OpInfo] = []
         self.temp_disabled = False
+
+    def _hardware_tflops_membw_limit(
+        self, args: Tuple[Any, ...], outputs: Tuple[Any, ...]
+    ) -> Tuple[float, float]:
+        device = None
+        dtypes: List[torch.dtype] = []
+        for a in itertools.chain(outputs, args):
+            if isinstance(a, torch.Tensor):
+                if device is None:
+                    device = a.device
+                dtypes.append(a.dtype)
+        limits = get_device_limits(device)
+        dtypes = [dt for dt in dtypes if dt in limits.gemm_tflops]
+        if not dtypes or device is None:
+            return (math.inf, math.inf)
+        dtype = dtypes[0]
+        if torch.is_autocast_enabled() and dtype is torch.float32:
+            dtype = torch.get_autocast_gpu_dtype()
+        return limits.gemm_tflops[dtype], limits.gmem_bandwidth
 
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         if kwargs is None:
@@ -369,6 +408,12 @@ class DetectSlowOpsProfiler(DispatcherWithoutBrokenFuncs):
         out = func(*args, **kwargs)
         op.ev_end.record()
 
+        (
+            op.hardware_tflops_limit,
+            op.hardware_membw_limit,
+        ) = self._hardware_tflops_membw_limit(
+            args, out if isinstance(out, tuple) else (out,)
+        )
         op.op_name = func_packet.__name__
         # Prevent functions called by flop counting ops to be recorded
         self.temp_disabled = True
