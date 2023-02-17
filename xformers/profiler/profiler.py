@@ -108,11 +108,6 @@ class MemSnapshotsProfiler:
     """
 
     def __init__(self, main_profiler: "_Profiler") -> None:
-        if not self._has_trace_plot:
-            logger.warning(
-                "MemSnapshotsProfiler is not available with your Pytorch version."
-            )
-
         self.main_profiler = main_profiler
         self.enabled = False
 
@@ -137,15 +132,20 @@ class MemSnapshotsProfiler:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if not self._has_trace_plot:
+            self.main_profiler.summary.append(
+                ("MemTrace", "(not available with your Pytorch version)")
+            )
             return
         assert self.enabled
         snapshot = torch.cuda.memory._snapshot()
         # Dump to disk
-        filename = os.path.join(
-            self.main_profiler.output_dir,
-            f"{self.main_profiler.worker_name}_memory_trace_plot.html",
+        filename = os.path.abspath(
+            os.path.join(
+                self.main_profiler.output_dir,
+                f"{self.main_profiler.worker_name}_memory_trace_plot.html",
+            )
         )
-        print(f"Writting to {filename}")
+        self.main_profiler.summary.append(("MemTrace", filename))
         with open(filename, "w+") as fd:
             fd.write(
                 torch.cuda._memory_viz.trace_plot(
@@ -189,6 +189,7 @@ class _Profiler:
             key=lambda x: x.iter_begin,
         )
         self.last_step = self.profilers[-1].iter_end if self.profilers else 0
+        self.summary: List[Tuple[str, str]] = []
 
     def check_schedule(self, schedule: Sequence[Tuple[Any, int, int]]) -> None:
         if len(schedule) == 0:
@@ -344,11 +345,13 @@ class _Profiler:
         self.done_steps += 1
 
         if self.done_steps <= self.last_step:
-            logger.debug(f"Profiler step {self.done_steps}")
             self.parents = ["Global"]
             self.update_profilers_on_step()
         if self.done_steps == self.last_step:
-            logger.debug(
-                "Last step of the profiler schedule was reached, no steps"
-                " will be logged from now on."
-            )
+            logger.info("xFormers profiler done - summary:\n%s", self.format_summary())
+
+    def format_summary(self) -> str:
+        pad_titles = max(len(title) for title, value in self.summary)
+        return "\n".join(
+            [f"  {title.ljust(pad_titles)}: {value}" for title, value in self.summary]
+        )

@@ -452,9 +452,12 @@ class DetectSlowOpsProfiler(DispatcherWithoutBrokenFuncs):
                 )
             )
 
-        filename = os.path.join(
-            self.main_profiler.output_dir, f"{self.main_profiler.worker_name}_ops.json"
+        filename = os.path.abspath(
+            os.path.join(
+                self.main_profiler.output_dir,
+                f"{self.main_profiler.worker_name}_ops.json",
+            )
         )
-        print(os.path.abspath(filename))
+        self.main_profiler.summary.append(("OpsSummary", filename))
         with open(filename, "w+") as f:
             json.dump(all_data, f)
