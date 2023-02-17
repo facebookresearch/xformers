@@ -146,28 +146,27 @@ class _SeqLenInfo:
 
 
 @dataclass
-class _PaddedSeqLenInfo:
-    info: _SeqLenInfo
+class _PaddedSeqLenInfo(_SeqLenInfo):
     seqlen: torch.Tensor
 
     def to(self, device: torch.device) -> None:
         if self.seqlen is not None:
             self.seqlen = self.seqlen.to(device, non_blocking=True)
-        self.info.to(device)
-
-    @property
-    def cu_seqlen(self) -> torch.Tensor:
-        return self.info.cu_seqlen
+        super().to(device)
 
     def intervals(self) -> Iterable[Tuple[int, int]]:
-        if self.seqlen is None:
-            yield from self.info.intervals()
-        else:
-            for (start, _), length in zip(self.info.intervals(), self.seqlen):
-                yield start, start + length
+        assert self.seqlen is not None
+        for (start, _), length in zip(super().intervals(), self.seqlen):
+            yield start, start + length
 
     @classmethod
-    def from_seqlens(
+    def from_seqlens(cls, seqlens: Union[Iterable[int], torch.Tensor]) -> "_SeqLenInfo":
+        raise RuntimeError(
+            "Use either `_SeqLenInfo.from_seqlens` or `_PaddedSeqLenInfo.from_seqlens_padded`"
+        )
+
+    @classmethod
+    def from_seqlens_padded(
         cls, seqlens: Union[Iterable[int], torch.Tensor], padding: int
     ) -> "_PaddedSeqLenInfo":
         """
@@ -187,9 +186,14 @@ class _PaddedSeqLenInfo:
             * padding
         )
         return cls(
-            info=_SeqLenInfo(cu_seqlen=cu_seqlen),
+            cu_seqlen=cu_seqlen,
             seqlen=t_seqlens,
         )
+
+    def split(
+        self, x: torch.Tensor, batch_sizes: Optional[Sequence[int]] = None
+    ) -> List[torch.Tensor]:
+        raise NotImplementedError("_PaddedSeqLenInfo.split")
 
 
 @dataclass
@@ -432,8 +436,8 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
         """Materialize the attention bias - for debugging & testing"""
-        assert shape[-1] == self.k_seqinfo.info.cu_seqlen[-1]
-        assert shape[-2] == self.q_seqinfo.cu_seqlen[-1]
+        assert shape[-1] == self.k_seqinfo.cu_seqlen_py[-1]
+        assert shape[-2] == self.q_seqinfo.cu_seqlen_py[-1]
         mask = torch.empty(shape[-2:], dtype=dtype, device=device)
         mask.fill_(-math.inf)
         for i, ((q_start, q_end), (k_start, k_end)) in enumerate(
@@ -478,7 +482,7 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
             kv_seqlen,
         )
         q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
-        k_seqinfo = _PaddedSeqLenInfo.from_seqlens(kv_seqlen, kv_padding)
+        k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(kv_seqlen, kv_padding)
         return cls(
             q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo, causal_diagonal=causal_diagonal
         )
