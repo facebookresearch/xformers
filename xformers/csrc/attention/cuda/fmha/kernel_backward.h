@@ -1172,15 +1172,16 @@ struct AttentionBackwardKernel {
       }
       if (kOutputInRF) {
         writeFragsToGmem<true>(shared_storage, output_frags, p, key_start);
+      } else if (getQueryStart(p, key_start) >= p.num_queries) {
+        zfillGradKV<true>(p, key_start);
       }
       __syncthreads();
     }
     // Last (partial) key
     if (key_start != p.num_keys) {
       output_frags.clear();
-      for (int32_t query_start = getQueryStart(p, key_start);
-           query_start < p.num_queries;
-           query_start += kBlockSizeI) {
+      int32_t query_start = getQueryStart(p, key_start);
+      for (; query_start < p.num_queries; query_start += kBlockSizeI) {
         processBlockIJ<false>(
             shared_storage,
             output_frags,
@@ -1191,6 +1192,8 @@ struct AttentionBackwardKernel {
       }
       if (kOutputInRF) {
         writeFragsToGmem<false>(shared_storage, output_frags, p, key_start);
+      } else if (getQueryStart(p, key_start) >= p.num_queries) {
+        zfillGradKV<false>(p, key_start);
       }
     }
   }
@@ -1206,6 +1209,37 @@ struct AttentionBackwardKernel {
         di_rf = p.delta_ptr[query_start + thread_id];
       }
       di[thread_id] = di_rf;
+    }
+  }
+
+  template <bool skipBoundsChecks>
+  static CUTLASS_DEVICE void zfillGradKV(Params const& p, int32_t key_start) {
+    constexpr int kThreadsPerKey = 8;
+    constexpr int kParallelKeys = kNumThreads / kThreadsPerKey;
+    static_assert(kBlockSizeJ % kParallelKeys == 0, "");
+    // This function is not really optimized, but should rarely be used
+    // It's only used when some keys are "useless" and don't attend to
+    // any query, due to causal masking
+
+    int lane_id = get_lane_id();
+    int thread_id = get_thread_id();
+    int k_shift = lane_id % kThreadsPerKey;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int j = 0; j < kBlockSizeJ; j += kParallelKeys) {
+      int key = key_start + j + (thread_id / kThreadsPerKey);
+      if (!skipBoundsChecks && key >= p.num_keys) {
+        continue;
+      }
+      auto gv_ptr = p.grad_value_ptr + key * p.gV_strideM();
+      auto gk_ptr = p.grad_key_ptr + key * p.gK_strideM();
+
+      for (int k = k_shift; k < p.head_dim_value; k += kThreadsPerKey) {
+        gv_ptr[k] = scalar_t(0);
+      }
+      for (int k = k_shift; k < p.head_dim; k += kThreadsPerKey) {
+        gk_ptr[k] = scalar_t(0);
+      }
     }
   }
 

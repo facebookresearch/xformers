@@ -124,14 +124,14 @@ mem_efficient_attention_backward_cutlass(
     // output of a linear layer that is chunked.
     // Creating the gradients with the right layout saves us
     // a `torch.cat` call in the backward pass
-    at::Tensor chunk = at::zeros({B, M, 3, nH, K}, query.options());
+    at::Tensor chunk = at::empty({B, M, 3, nH, K}, query.options());
     grad_q = chunk.select(2, 0);
     grad_k = chunk.select(2, 1);
     grad_v = chunk.select(2, 2);
   } else {
-    grad_q = at::zeros(query.sizes(), query.options());
-    grad_k = at::zeros(key.sizes(), key.options());
-    grad_v = at::zeros(value.sizes(), value.options());
+    grad_q = at::empty(query.sizes(), query.options());
+    grad_k = at::empty(key.sizes(), key.options());
+    grad_v = at::empty(value.sizes(), value.options());
   }
   if (bias_requires_grad) {
     grad_bias = at::empty(bias->sizes(), bias->options());
