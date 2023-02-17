@@ -256,8 +256,14 @@ class BlockDiagonalMask(AttentionBias):
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
         """Materialize the attention bias - for debugging & testing"""
-        assert shape[-1] == self.k_seqinfo.cu_seqlen[-1]
-        assert shape[-2] == self.q_seqinfo.cu_seqlen[-1]
+        assert shape[-1] == self.k_seqinfo.cu_seqlen_py[-1], (
+            shape[-1],
+            self.k_seqinfo.cu_seqlen_py[-1],
+        )
+        assert shape[-2] == self.q_seqinfo.cu_seqlen_py[-1], (
+            shape[-2],
+            self.q_seqinfo.cu_seqlen_py[-1],
+        )
         mask = torch.empty(shape[-2:], dtype=dtype, device=device)
         mask.fill_(-math.inf)
         for i, ((q_start, q_end), (k_start, k_end)) in enumerate(

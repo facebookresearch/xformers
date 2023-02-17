@@ -191,7 +191,9 @@ struct AttentionBackwardKernel {
     lse_scalar_t* logsumexp_ptr; // [nH, Mq]
     scalar_t* output_ptr; // [Mq, nH, Kv]
     scalar_t* grad_output_ptr; // [Mq, nH, Kv]
-    accum_t* delta_ptr; // [Mq, nH]
+    accum_t* delta_ptr; // [nH, Mq]
+    int32_t* cu_seqlens_q_ptr = nullptr;
+    int32_t* cu_seqlens_k_ptr = nullptr;
 
     // Output tensors
     output_t* grad_query_ptr; //  [Mq, nH, K]
@@ -259,7 +261,10 @@ struct AttentionBackwardKernel {
     int64_t k_strideB;
     int64_t v_strideB;
     int64_t bias_strideB = 0;
-    int64_t lse_strideM;
+    int64_t lse_strideB;
+    int64_t lse_strideH;
+    int64_t delta_strideB;
+    int64_t delta_strideH;
     int32_t num_batches;
 
     int64_t gO_strideB;
@@ -277,16 +282,64 @@ struct AttentionBackwardKernel {
       int64_t batch_id = blockIdx.z;
       int32_t head_id = blockIdx.y;
 
+      if (kNeedsAccumGradQ || kNeedsAccumGradK || kNeedsAccumGradV) {
+        assert(workspace_size() == 0 || workspace != nullptr);
+
+        workspace += (batch_id * num_heads + head_id) * workspace_strideBH();
+        workspace = warp_uniform(workspace);
+        workspace_gv = workspace + workspace_elements_gk();
+        workspace_gq = workspace_gv + workspace_elements_gv();
+      } else {
+        workspace = nullptr;
+      }
+
+      // Advance pointers that depend on the total concatenated
+      // number of queries, as `num_queries` is modified in the block
+      // below
+      dropout_batch_head_rng_offset =
+          batch_id * (num_heads * num_queries * num_keys) +
+          head_id * (num_queries * num_keys);
+      logsumexp_ptr += batch_id * lse_strideB + head_id * lse_strideH;
+
+      if (cu_seqlens_q_ptr != nullptr) {
+        assert(cu_seqlens_k_ptr != nullptr);
+        cu_seqlens_q_ptr += batch_id;
+        cu_seqlens_k_ptr += batch_id;
+        int32_t q_start = cu_seqlens_q_ptr[0];
+        int32_t k_start = cu_seqlens_k_ptr[0];
+        int64_t q_next_start = cu_seqlens_q_ptr[1];
+        int64_t k_next_start = cu_seqlens_k_ptr[1];
+        assert(q_next_start - q_start <= num_queries);
+        assert(k_next_start - k_start <= num_keys);
+        num_queries = q_next_start - q_start;
+        num_keys = k_next_start - k_start;
+
+        // Jump manually
+        batch_id = 0;
+
+        query_ptr += q_start * q_strideM;
+        key_ptr += k_start * k_strideM;
+        value_ptr += k_start * v_strideM;
+        assert(bias_ptr == nullptr);
+        assert(grad_bias_ptr == nullptr);
+        output_ptr += q_start * o_strideM();
+        grad_output_ptr += q_start * gO_strideM;
+        delta_ptr += q_start;
+
+        grad_query_ptr += q_start * gQ_strideM();
+        grad_key_ptr += k_start * gK_strideM();
+        grad_value_ptr += k_start * gV_strideM();
+      }
+
       query_ptr += batch_id * q_strideB + head_id * q_strideH;
       key_ptr += batch_id * k_strideB + head_id * k_strideH;
       value_ptr += batch_id * v_strideB + head_id * v_strideH;
-      logsumexp_ptr += (batch_id * num_heads + head_id) * lse_strideM;
       if (bias_ptr != nullptr) {
         bias_ptr += batch_id * bias_strideB + head_id * bias_strideH;
       }
       output_ptr += batch_id * o_strideB + head_id * o_strideH;
       grad_output_ptr += batch_id * gO_strideB + head_id * gO_strideH;
-      delta_ptr += (batch_id * num_heads + head_id) * num_queries;
+      delta_ptr += batch_id * delta_strideB + head_id * delta_strideH;
 
       grad_query_ptr += batch_id * gQ_strideB + head_id * gQ_strideH;
       grad_key_ptr += batch_id * gK_strideB + head_id * gK_strideH;
@@ -294,10 +347,6 @@ struct AttentionBackwardKernel {
       if (grad_bias_ptr != nullptr) {
         grad_bias_ptr += batch_id * gB_strideB + head_id * gB_strideH;
       }
-
-      dropout_batch_head_rng_offset =
-          batch_id * (num_heads * num_queries * num_keys) +
-          head_id * (num_queries * num_keys);
 
       head_dim = warp_uniform(head_dim);
       head_dim_value = warp_uniform(head_dim_value);
@@ -325,17 +374,14 @@ struct AttentionBackwardKernel {
       grad_value_ptr = warp_uniform(grad_value_ptr);
       grad_bias_ptr = warp_uniform(grad_bias_ptr);
 
-      if (kNeedsAccumGradQ || kNeedsAccumGradK || kNeedsAccumGradV) {
-        assert(workspace_size() == 0 || workspace != nullptr);
-
-        workspace += (batch_id * num_heads + head_id) * workspace_strideBH();
-        workspace = warp_uniform(workspace);
-        workspace_gv = workspace + workspace_elements_gk();
-        workspace_gq = workspace_gv + workspace_elements_gv();
-      } else {
-        workspace = nullptr;
-      }
-
+#if 0
+      PRINT_T0("[b:%d h:%d] dp[0]:%f Q:%f K:%f V:%f LSE:%f",
+        int(blockIdx.z), int(blockIdx.y),
+        float(delta_ptr[0]),
+        float(query_ptr[0]), float(key_ptr[0]), float(value_ptr[0]),
+        float(logsumexp_ptr[0])
+      )
+#endif
       return true;
     }
 
@@ -1027,7 +1073,8 @@ struct AttentionBackwardKernel {
     CHECK_ALIGNED_PTR(p.output_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.grad_output_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.bias_ptr, kMinimumAlignment);
-    XFORMERS_CHECK(p.lse_strideM % 8 == 0, "LSE is not correctly aligned");
+    XFORMERS_CHECK(p.lse_strideH % 8 == 0, "LSE is not correctly aligned");
+    XFORMERS_CHECK(p.lse_strideB % 8 == 0, "LSE is not correctly aligned");
     XFORMERS_CHECK(
         p.q_strideH % kMinimumAlignment == 0, "query is not correctly aligned");
     XFORMERS_CHECK(
@@ -1043,6 +1090,9 @@ struct AttentionBackwardKernel {
     XFORMERS_CHECK(
         p.bias_strideM % kMinimumAlignment == 0,
         "attn_bias is not correctly aligned");
+    XFORMERS_CHECK(
+        !(p.cu_seqlens_q_ptr && p.bias_ptr),
+        "CuSeqlen + bias not implemented yet");
     return true;
   }
 
@@ -1358,6 +1408,7 @@ struct AttentionBackwardKernel {
       if (kPrologueDOV) {
         prologueDOV();
       }
+
       MatmulQK::B2bGemm::accumApplyLSEToSmem(
           shared_storage.attn_shared_storage(),
           accum,

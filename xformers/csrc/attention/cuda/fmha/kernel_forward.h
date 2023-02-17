@@ -176,6 +176,12 @@ struct AttentionKernel {
 
       auto lse_dim = ceil_div((int32_t)num_queries, kAlignLSE) * kAlignLSE;
 
+      if (kSupportsDropout) {
+        dropout_batch_head_rng_offset =
+            batch_id * num_heads * num_queries * num_keys +
+            head_id * num_queries * num_keys;
+      }
+
       int64_t q_start, k_start;
       // Advance to current batch - in case of different sequence lengths
       if (seqstart_q_ptr != nullptr) {
@@ -238,12 +244,6 @@ struct AttentionKernel {
         // lse[batch_id, head_id, query_start]
         logsumexp_ptr +=
             batch_id * lse_dim * num_heads + head_id * lse_dim + query_start;
-      }
-
-      if (kSupportsDropout) {
-        dropout_batch_head_rng_offset =
-            batch_id * num_heads * num_queries * num_keys +
-            head_id * num_queries * num_keys;
       }
 
       if (causal_diagonal_ptr) {

@@ -19,9 +19,14 @@
 #if 1
 #define PRINT_WARP_ID 0
 #define PRINT_LANE_ID 0
-#define PRINT_T0_L0(msg, ...)                                         \
+#define PRINT_B0_T0(msg, ...)                                         \
   if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&        \
       threadIdx.x == PRINT_LANE_ID && threadIdx.y == PRINT_WARP_ID && \
+      threadIdx.z == 0) {                                             \
+    printf(msg "\n", ##__VA_ARGS__);                                  \
+  }
+#define PRINT_T0(msg, ...)                                            \
+  if (threadIdx.x == PRINT_LANE_ID && threadIdx.y == PRINT_WARP_ID && \
       threadIdx.z == 0) {                                             \
     printf(msg "\n", ##__VA_ARGS__);                                  \
   }
@@ -53,7 +58,7 @@
     }                                                                         \
   }
 #else
-#define PRINT_T0_L0
+#define PRINT_B0_T0
 #define PRINT_TX_LX
 #endif
 

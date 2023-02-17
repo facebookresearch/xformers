@@ -54,7 +54,7 @@ def _minimum_gemm_alignment(inp: Inputs) -> int:
 
 def _get_seqlen_info(
     inp: Inputs,
-) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], int]:
+) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], int, int]:
     attn_bias = inp.attn_bias
     if isinstance(
         attn_bias, (BlockDiagonalMask, BlockDiagonalCausalWithOffsetPaddedKeysMask)
@@ -69,12 +69,14 @@ def _get_seqlen_info(
         cu_seqlen_k = attn_bias.k_seqinfo.cu_seqlen
         cu_seqlen_q = attn_bias.q_seqinfo.cu_seqlen
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
+        max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
     else:
         cu_seqlen_k = None
         cu_seqlen_q = None
         max_seqlen_q = -1
+        max_seqlen_k = -1
 
-    return cu_seqlen_k, cu_seqlen_q, max_seqlen_q
+    return cu_seqlen_k, cu_seqlen_q, max_seqlen_q, max_seqlen_k
 
 
 def _get_tensor_bias(
@@ -143,7 +145,7 @@ class FwOp(AttentionFwOpBase):
                 BlockDiagonalCausalWithOffsetPaddedKeysMask,
             ),
         )
-        cu_seqlen_k, cu_seqlen_q, max_seqlen_q = _get_seqlen_info(inp)
+        cu_seqlen_k, cu_seqlen_q, max_seqlen_q, _ = _get_seqlen_info(inp)
         out, lse, rng_seed, rng_offset = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
@@ -222,6 +224,8 @@ class BwOp(AttentionBwOpBase):
         LowerTriangularMask,
         # TODO: Fix handling of gradient through the fMHA autograd function
         # LowerTriangularMaskWithTensorBias,
+        BlockDiagonalMask,
+        BlockDiagonalCausalMask,
     }
     SUPPORTS_ATTN_BIAS_GRAD = True
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
@@ -289,6 +293,7 @@ class BwOp(AttentionBwOpBase):
             inp.attn_bias,
             (LowerTriangularMask, BlockDiagonalCausalMask),
         )
+        cu_seqlen_k, cu_seqlen_q, max_seqlen_q, max_seqlen_k = _get_seqlen_info(inp)
         dtype = inp.query.dtype
 
         rng_seed = rng_offset = 0
@@ -309,8 +314,12 @@ class BwOp(AttentionBwOpBase):
             inp.key,
             inp.value,
             _get_tensor_bias(inp.attn_bias),
-            ctx.get_padded_lse(32, force_pad_inf=force_pad_inf),
-            ctx.out.to(dtype),
+            cu_seqlens_q=cu_seqlen_q,
+            cu_seqlens_k=cu_seqlen_k,
+            max_seqlen_q=max_seqlen_q,
+            max_seqlen_k=max_seqlen_k,
+            logsumexp=ctx.get_padded_lse(32, force_pad_inf=force_pad_inf),
+            output=ctx.out.to(dtype),
             dropout_p=inp.p,
             # if not using dropout, seed and offset are irrelevant but still expected
             # in function signature so just pass 0
