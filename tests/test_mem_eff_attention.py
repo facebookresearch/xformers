@@ -241,7 +241,7 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
 
 
 def _rand_seqlens(
-    bs: int, q_len: int, kv_len: int
+    r: random.Random, bs: int, q_len: int, kv_len: int
 ) -> Tuple[Sequence[int], Sequence[int]]:
     q_len *= bs
     kv_len *= bs
@@ -251,23 +251,23 @@ def _rand_seqlens(
     step_q = [max(1, q_len // 10), max(2, q_len // 2)]
     step_k = [max(1, kv_len // 10), max(2, kv_len // 2)]
     while sum(seqlens_q) < q_len and sum(seqlens_k) < kv_len:
-        seqlens_q.append(random.randrange(*step_q))
-        seqlens_k.append(random.randrange(*step_k))
+        seqlens_q.append(r.randrange(*step_q))
+        seqlens_k.append(r.randrange(*step_k))
     seqlens_q[-1] = q_len - sum(seqlens_q[:-1])
     seqlens_k[-1] = kv_len - sum(seqlens_k[:-1])
     return seqlens_q, seqlens_k
 
 
 def _rand_seqlens_padded_k(
-    bs: int, q_len: int, kv_len: int
+    r: random.Random, bs: int, q_len: int, kv_len: int
 ) -> Tuple[Sequence[int], Sequence[int]]:
     # we need qk_seqlens to be of len bsz. k_seqlens must be <= kv_len
     # no constraints on q_seqlens, but they must still sum to total_len
-    k_seqlens = [random.randint(1, kv_len - 1) for _ in range(bs)]
+    k_seqlens = [r.randint(1, kv_len - 1) for _ in range(bs)]
     q_len *= bs
     q_idx = {0, q_len}
     while len(q_idx) < bs + 1:
-        q_idx.add(random.randint(1, q_len - 1))
+        q_idx.add(r.randint(1, q_len - 1))
     s = sorted(q_idx)
     q_seqlens = [e - b for b, e in zip(s[:-1], s[1:])]
     return q_seqlens, k_seqlens
@@ -286,6 +286,7 @@ def create_attn_bias(
 ):
     if bias_type is None or isinstance(None, bias_type):
         return None
+    r = random.Random("-".join(map(str, [batch_size, q_len, kv_len, dtype, fmt])))
     if bias_type is torch.Tensor:
         if fmt == "BMK":
             batch_size *= num_heads
@@ -317,21 +318,21 @@ def create_attn_bias(
         # This bias is not supported in BMK format
         assert fmt == "BMHK"
         block_diag = fmha.attn_bias.BlockDiagonalMask.from_seqlens(
-            *_rand_seqlens(batch_size, q_len, kv_len)
+            *_rand_seqlens(r, batch_size, q_len, kv_len)
         )
         if bias_type is fmha.attn_bias.BlockDiagonalCausalMask:
             block_diag = block_diag.make_causal()
         return block_diag
     if bias_type == fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask:
         assert fmt == "BMHK"
-        q, k = _rand_seqlens_padded_k(batch_size, q_len, kv_len)
+        q, k = _rand_seqlens_padded_k(r, batch_size, q_len, kv_len)
         g_block_diag = (
             fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
                 q_seqlen=q,
                 kv_padding=kv_len,
                 kv_seqlen=k,
                 causal_diagonal=torch.tensor(
-                    [random.randint(0, kk) for kk in k], dtype=torch.int32
+                    [r.randint(0, kk) for kk in k], dtype=torch.int32
                 ),
             )
         )

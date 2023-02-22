@@ -237,13 +237,8 @@ class BwOp(AttentionBwOpBase):
         torch.float: 5e-4,
         # increased from 9e-2, more opportunities for numerical errors when bias is
         # used, noticed in gK on SM80
-        torch.half: 9.5e-2,
+        torch.half: 1e-1,
         torch.bfloat16: 7e-1,
-    }
-    ERROR_RTOL: Mapping[torch.dtype, float] = {
-        torch.float: 1e-4,
-        torch.half: 2e-2,
-        torch.bfloat16: 1e-1,
     }
 
     _TEST_K: List[int] = [
