@@ -454,8 +454,8 @@
         <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">causal</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="n">cu_seqlen_k</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">cu_seqlen_q</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">seqstart_k</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">seqstart_q</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Computes total flops for the attention</span>
@@ -463,18 +463,18 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">assert</span> <span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">4</span>
 
-        <span class="k">if</span> <span class="n">cu_seqlen_q</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">cu_seqlen_q_py</span> <span class="o">=</span> <span class="n">cu_seqlen_q</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">seqstart_q</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">seqstart_q_py</span> <span class="o">=</span> <span class="n">seqstart_q</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">cu_seqlen_q_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
-        <span class="k">if</span> <span class="n">cu_seqlen_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">cu_seqlen_k_py</span> <span class="o">=</span> <span class="n">cu_seqlen_k</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">seqstart_q_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
+        <span class="k">if</span> <span class="n">seqstart_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">seqstart_k_py</span> <span class="o">=</span> <span class="n">seqstart_k</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">cu_seqlen_k_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
+            <span class="n">seqstart_k_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
 
         <span class="n">total_flop</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="k">for</span> <span class="n">q_start</span><span class="p">,</span> <span class="n">q_end</span><span class="p">,</span> <span class="n">k_start</span><span class="p">,</span> <span class="n">k_end</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
-            <span class="n">cu_seqlen_q_py</span><span class="p">,</span> <span class="n">cu_seqlen_q_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">cu_seqlen_k_py</span><span class="p">,</span> <span class="n">cu_seqlen_k_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+            <span class="n">seqstart_q_py</span><span class="p">,</span> <span class="n">seqstart_q_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">seqstart_k_py</span><span class="p">,</span> <span class="n">seqstart_k_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
         <span class="p">):</span>
             <span class="n">num_q</span> <span class="o">=</span> <span class="n">q_end</span> <span class="o">-</span> <span class="n">q_start</span>
             <span class="n">num_kv</span> <span class="o">=</span> <span class="n">k_end</span> <span class="o">-</span> <span class="n">k_start</span>
@@ -528,8 +528,8 @@
         <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">causal</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="n">cu_seqlen_k</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">cu_seqlen_q</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">seqstart_k</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">seqstart_q</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Computes total flops for the attention</span>
@@ -537,18 +537,18 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">assert</span> <span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">4</span>
 
-        <span class="k">if</span> <span class="n">cu_seqlen_q</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">cu_seqlen_q_py</span> <span class="o">=</span> <span class="n">cu_seqlen_q</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">seqstart_q</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">seqstart_q_py</span> <span class="o">=</span> <span class="n">seqstart_q</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">cu_seqlen_q_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
-        <span class="k">if</span> <span class="n">cu_seqlen_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">cu_seqlen_k_py</span> <span class="o">=</span> <span class="n">cu_seqlen_k</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">seqstart_q_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
+        <span class="k">if</span> <span class="n">seqstart_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">seqstart_k_py</span> <span class="o">=</span> <span class="n">seqstart_k</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">cu_seqlen_k_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
+            <span class="n">seqstart_k_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
 
         <span class="n">total_flop</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="k">for</span> <span class="n">q_start</span><span class="p">,</span> <span class="n">q_end</span><span class="p">,</span> <span class="n">k_start</span><span class="p">,</span> <span class="n">k_end</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
-            <span class="n">cu_seqlen_q_py</span><span class="p">,</span> <span class="n">cu_seqlen_q_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">cu_seqlen_k_py</span><span class="p">,</span> <span class="n">cu_seqlen_k_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+            <span class="n">seqstart_q_py</span><span class="p">,</span> <span class="n">seqstart_q_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">seqstart_k_py</span><span class="p">,</span> <span class="n">seqstart_k_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
         <span class="p">):</span>
             <span class="n">num_q</span> <span class="o">=</span> <span class="n">q_end</span> <span class="o">-</span> <span class="n">q_start</span>
             <span class="n">num_kv</span> <span class="o">=</span> <span class="n">k_end</span> <span class="o">-</span> <span class="n">k_start</span>

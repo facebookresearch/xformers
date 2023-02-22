@@ -293,17 +293,17 @@
             <span class="n">attn_bias</span><span class="o">.</span><span class="n">causal_diagonal</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">causal_diagonal</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">cu_seqlen_k</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span>
-        <span class="n">cu_seqlen_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span>
+        <span class="n">seqstart_k</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart</span>
+        <span class="n">seqstart_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart</span>
         <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span>
         <span class="n">max_seqlen_k</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">cu_seqlen_k</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="n">cu_seqlen_q</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">seqstart_k</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">seqstart_q</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
         <span class="n">max_seqlen_k</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
 
-    <span class="k">return</span> <span class="n">cu_seqlen_k</span><span class="p">,</span> <span class="n">cu_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_k</span>
+    <span class="k">return</span> <span class="n">seqstart_k</span><span class="p">,</span> <span class="n">seqstart_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_k</span>
 
 
 <span class="k">def</span> <span class="nf">_get_tensor_bias</span><span class="p">(</span>
@@ -372,14 +372,14 @@
                 <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
             <span class="p">),</span>
         <span class="p">)</span>
-        <span class="n">cu_seqlen_k</span><span class="p">,</span> <span class="n">cu_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_get_seqlen_info</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+        <span class="n">seqstart_k</span><span class="p">,</span> <span class="n">seqstart_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_get_seqlen_info</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
         <span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">rng_seed</span><span class="p">,</span> <span class="n">rng_offset</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span><span class="p">(</span>
             <span class="n">query</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span>
             <span class="n">key</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
             <span class="n">value</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
             <span class="n">attn_bias</span><span class="o">=</span><span class="n">_get_tensor_bias</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
-            <span class="n">seqstart_q</span><span class="o">=</span><span class="n">cu_seqlen_q</span><span class="p">,</span>
-            <span class="n">seqstart_k</span><span class="o">=</span><span class="n">cu_seqlen_k</span><span class="p">,</span>
+            <span class="n">seqstart_q</span><span class="o">=</span><span class="n">seqstart_q</span><span class="p">,</span>
+            <span class="n">seqstart_k</span><span class="o">=</span><span class="n">seqstart_k</span><span class="p">,</span>
             <span class="n">max_seqlen_q</span><span class="o">=</span><span class="n">max_seqlen_q</span><span class="p">,</span>
             <span class="n">dropout_p</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
             <span class="n">compute_logsumexp</span><span class="o">=</span><span class="n">needs_gradient</span><span class="p">,</span>
@@ -425,15 +425,15 @@
         <span class="n">k</span><span class="p">,</span>
         <span class="n">v</span><span class="p">,</span>
         <span class="n">b</span><span class="p">,</span>
-        <span class="n">cu_seqlen_q</span><span class="p">,</span>
-        <span class="n">cu_seqlen_k</span><span class="p">,</span>
+        <span class="n">seqstart_q</span><span class="p">,</span>
+        <span class="n">seqstart_k</span><span class="p">,</span>
         <span class="n">max_seqlen_q_</span><span class="p">,</span>
         <span class="n">compute_lse</span><span class="p">,</span>
         <span class="n">causal</span><span class="p">,</span>
         <span class="o">*</span><span class="n">a</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">attn_operator_flop</span><span class="p">(</span>
-            <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">,</span> <span class="n">cu_seqlen_k</span><span class="o">=</span><span class="n">cu_seqlen_k</span><span class="p">,</span> <span class="n">cu_seqlen_q</span><span class="o">=</span><span class="n">cu_seqlen_q</span>
+            <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">,</span> <span class="n">seqstart_k</span><span class="o">=</span><span class="n">seqstart_k</span><span class="p">,</span> <span class="n">seqstart_q</span><span class="o">=</span><span class="n">seqstart_q</span>
         <span class="p">)</span></div>
 
 
@@ -464,13 +464,8 @@
         <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">5e-4</span><span class="p">,</span>
         <span class="c1"># increased from 9e-2, more opportunities for numerical errors when bias is</span>
         <span class="c1"># used, noticed in gK on SM80</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">9.5e-2</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">1e-1</span><span class="p">,</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">7e-1</span><span class="p">,</span>
-    <span class="p">}</span>
-    <span class="n">ERROR_RTOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">1e-4</span><span class="p">,</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">2e-2</span><span class="p">,</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">1e-1</span><span class="p">,</span>
     <span class="p">}</span>
 
     <span class="n">_TEST_K</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
@@ -520,7 +515,7 @@
             <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
             <span class="p">(</span><span class="n">LowerTriangularMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">),</span>
         <span class="p">)</span>
-        <span class="n">cu_seqlen_k</span><span class="p">,</span> <span class="n">cu_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_k</span> <span class="o">=</span> <span class="n">_get_seqlen_info</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+        <span class="n">seqstart_k</span><span class="p">,</span> <span class="n">seqstart_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_k</span> <span class="o">=</span> <span class="n">_get_seqlen_info</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
         <span class="n">dtype</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">dtype</span>
 
         <span class="n">rng_seed</span> <span class="o">=</span> <span class="n">rng_offset</span> <span class="o">=</span> <span class="mi">0</span>
@@ -541,8 +536,8 @@
             <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
             <span class="n">_get_tensor_bias</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
-            <span class="n">cu_seqlens_q</span><span class="o">=</span><span class="n">cu_seqlen_q</span><span class="p">,</span>
-            <span class="n">cu_seqlens_k</span><span class="o">=</span><span class="n">cu_seqlen_k</span><span class="p">,</span>
+            <span class="n">cu_seqlens_q</span><span class="o">=</span><span class="n">seqstart_q</span><span class="p">,</span>
+            <span class="n">cu_seqlens_k</span><span class="o">=</span><span class="n">seqstart_k</span><span class="p">,</span>
             <span class="n">max_seqlen_q</span><span class="o">=</span><span class="n">max_seqlen_q</span><span class="p">,</span>
             <span class="n">max_seqlen_k</span><span class="o">=</span><span class="n">max_seqlen_k</span><span class="p">,</span>
             <span class="n">logsumexp</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">get_padded_lse</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="n">force_pad_inf</span><span class="o">=</span><span class="n">force_pad_inf</span><span class="p">),</span>
@@ -570,9 +565,27 @@
     <span class="nd">@classmethod</span>
     <span class="c1"># type: ignore</span>
     <span class="k">def</span> <span class="nf">operator_flop</span><span class="p">(</span>
-        <span class="bp">cls</span><span class="p">,</span> <span class="n">dO</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">dpt</span><span class="p">,</span> <span class="n">rng0</span><span class="p">,</span> <span class="n">rng1</span><span class="p">,</span> <span class="n">causal</span><span class="p">,</span> <span class="n">scale</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">dO</span><span class="p">,</span>
+        <span class="n">q</span><span class="p">,</span>
+        <span class="n">k</span><span class="p">,</span>
+        <span class="n">v</span><span class="p">,</span>
+        <span class="n">b</span><span class="p">,</span>
+        <span class="n">cu_seqlens_q</span><span class="p">,</span>
+        <span class="n">cu_seqlens_k</span><span class="p">,</span>
+        <span class="n">max_seqlen_q</span><span class="p">,</span>
+        <span class="n">max_seqlen_k</span><span class="p">,</span>
+        <span class="n">logsumexp</span><span class="p">,</span>
+        <span class="n">output</span><span class="p">,</span>
+        <span class="n">dropout_p</span><span class="p">,</span>
+        <span class="n">rng_seed</span><span class="p">,</span>
+        <span class="n">rng_offset</span><span class="p">,</span>
+        <span class="n">causal</span><span class="p">,</span>
+        <span class="n">scale</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">attn_operator_flop</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">attn_operator_flop</span><span class="p">(</span>
+            <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">seqstart_q</span><span class="o">=</span><span class="n">cu_seqlens_q</span><span class="p">,</span> <span class="n">seqstart_k</span><span class="o">=</span><span class="n">cu_seqlens_k</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="n">causal</span>
+        <span class="p">)</span></div>
 </pre></div>
 
               </article>

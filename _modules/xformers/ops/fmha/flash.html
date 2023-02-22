@@ -362,15 +362,15 @@
 
     <span class="n">attn_bias</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">):</span>
-        <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span><span class="o">.</span><span class="n">to</span><span class="p">(</span>
+        <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart</span><span class="o">.</span><span class="n">to</span><span class="p">(</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span>
         <span class="p">)</span>
-        <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span><span class="o">.</span><span class="n">to</span><span class="p">(</span>
+        <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart</span><span class="o">.</span><span class="n">to</span><span class="p">(</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span>
         <span class="p">)</span>
 
-        <span class="n">cu_seqlen_k</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span>
-        <span class="n">cu_seqlen_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">cu_seqlen</span>
+        <span class="n">cu_seqlen_k</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart</span>
+        <span class="n">cu_seqlen_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart</span>
         <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span>
         <span class="n">max_seqlen_k</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span>
     <span class="k">else</span><span class="p">:</span>
@@ -501,8 +501,8 @@
             <span class="n">key</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
             <span class="n">value</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
             <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">,</span>
-            <span class="n">cu_seqlen_k</span><span class="o">=</span><span class="n">cu_seq_lens_k</span><span class="p">,</span>
-            <span class="n">cu_seqlen_q</span><span class="o">=</span><span class="n">cu_seq_lens_q</span><span class="p">,</span>
+            <span class="n">seqstart_k</span><span class="o">=</span><span class="n">cu_seq_lens_k</span><span class="p">,</span>
+            <span class="n">seqstart_q</span><span class="o">=</span><span class="n">cu_seq_lens_q</span><span class="p">,</span>
         <span class="p">)</span></div>
 
 
@@ -644,8 +644,8 @@
             <span class="n">key</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
             <span class="n">value</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
             <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">,</span>
-            <span class="n">cu_seqlen_k</span><span class="o">=</span><span class="n">cu_seq_lens_k</span><span class="p">,</span>
-            <span class="n">cu_seqlen_q</span><span class="o">=</span><span class="n">cu_seq_lens_q</span><span class="p">,</span>
+            <span class="n">seqstart_k</span><span class="o">=</span><span class="n">cu_seq_lens_k</span><span class="p">,</span>
+            <span class="n">seqstart_q</span><span class="o">=</span><span class="n">cu_seq_lens_q</span><span class="p">,</span>
         <span class="p">)</span></div>
 </pre></div>
 
