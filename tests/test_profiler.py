@@ -13,6 +13,15 @@ from xformers.profiler.slow_ops_profiler import GemmOpComputeFlops, flop_mapping
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 
 
+# Not using the PyTorch profiler, as it causes segfaults
+# in the CI ~30% of the time
+TEST_SCHEDULE = tuple(
+    x
+    for x in xformers.profiler.api.DEFAULT_SCHEDULE
+    if x[0] is not xformers.profiler.PyTorchProfiler
+)
+
+
 class GEMMShapeDispatcher(TorchDispatchMode):
     def __init__(self) -> None:
         super().__init__()
@@ -64,7 +73,9 @@ def test_gemm_flops() -> None:
 @cuda_only
 def test_profiler_dispatcher_stream_workaround() -> None:
     x = torch.zeros([10, 10], device="cuda")
-    with xformers.profiler.profile("test_profiler_dispatcher_stream_workaround"):
+    with xformers.profiler.profile(
+        "test_profiler_dispatcher_stream_workaround", schedule=TEST_SCHEDULE
+    ):
         for _ in range(20):
             x.record_stream(torch.cuda.Stream())  # type: ignore
             xformers.profiler.step()
@@ -73,14 +84,16 @@ def test_profiler_dispatcher_stream_workaround() -> None:
 @pytest.mark.parametrize(
     "device_bs_mm",
     [("cpu", 512, 1)]
-    + [
-        # GPU bound
-        ("cuda", 4096, 8),
-        # CPU bound on GPU
-        ("cuda", 1, 1),
-    ]
-    if torch.cuda.is_available()
-    else [],
+    + (
+        [
+            # GPU bound
+            ("cuda", 4096, 8),
+            # CPU bound on GPU
+            ("cuda", 1, 1),
+        ]
+        if torch.cuda.is_available()
+        else []
+    ),
 )
 def test_profiler_overhead(device_bs_mm) -> None:
     PROFILER_MAX_STEPS_OVERHEAD = 30
@@ -105,7 +118,9 @@ def test_profiler_overhead(device_bs_mm) -> None:
         one_step()
 
     # Run with profiler
-    with xformers.profiler.profile("test_profiler_overhead", module=model):
+    with xformers.profiler.profile(
+        "test_profiler_overhead", module=model, schedule=TEST_SCHEDULE
+    ):
         for _ in range(PROFILER_MAX_STEPS_OVERHEAD):
             one_step()
 
