@@ -522,9 +522,7 @@ def _block_diag_reshape_lse(
 ) -> torch.Tensor:
     """LSE can be padded, let's remove the padding"""
     parts = []
-    for slice, start, end in zip(
-        lse.unbind(0), q_seqinfo.cu_seqlen.tolist(), q_seqinfo.cu_seqlen.tolist()[1:]
-    ):
+    for slice, (start, end) in zip(lse.unbind(0), q_seqinfo.intervals()):
         parts.append(slice[:, : end - start])
     return torch.cat(parts, dim=1).unsqueeze(1)
 

@@ -5,7 +5,7 @@
 
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence, Tuple, Union
 
 import torch
@@ -84,59 +84,46 @@ class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
 
 @dataclass
 class _SeqLenInfo:
-    cu_seqlen: torch.Tensor
-    max_seqlen: int = field(init=False)
-    cu_seqlen_py: List[int] = field(init=False)
-
-    def __post_init__(self):
-        self.cu_seqlen_py = self.cu_seqlen.tolist()
-        self.max_seqlen = max(self.cu_seqlen_py)
+    seqstart: torch.Tensor
+    max_seqlen: int
+    seqstart_py: List[int]
 
     def to(self, device: torch.device) -> None:
-        self.cu_seqlen = self.cu_seqlen.to(device, non_blocking=True)
+        self.seqstart = self.seqstart.to(device, non_blocking=True)
 
     def intervals(self) -> Iterable[Tuple[int, int]]:
-        yield from zip(self.cu_seqlen.tolist(), self.cu_seqlen.tolist()[1:])
+        yield from zip(self.seqstart_py, self.seqstart_py[1:])
 
     @classmethod
-    def from_seqlens(cls, seqlens: Union[Iterable[int], torch.Tensor]) -> "_SeqLenInfo":
+    def from_seqlens(cls, seqlens: Iterable[int]) -> "_SeqLenInfo":
         """
         Input tensors are assumed to be in shape [B, M, *]
-        If padding is not None, seqstart = padding * torch.arange(batch_size)
         """
-        t_seqlens = (
-            seqlens
-            if isinstance(seqlens, torch.Tensor)
-            else torch.tensor(seqlens, dtype=torch.int32)
-        )
-        cu_seqlen = torch.cumsum(
-            torch.cat(
-                [
-                    torch.zeros(1, dtype=torch.int32, device=t_seqlens.device),
-                    t_seqlens.int(),
-                ],
-                dim=0,
-            ),
-            dim=0,
-        )
-        return cls(cu_seqlen=cu_seqlen.int())
+        assert not isinstance(seqlens, torch.Tensor)
+        seqstart_py = [0]
+        max_seqlen = -1
+        for seqlen in seqlens:
+            max_seqlen = max(max_seqlen, seqlen)
+            seqstart_py.append(seqstart_py[len(seqstart_py) - 1] + seqlen)
+        seqstart = torch.tensor(seqstart_py, dtype=torch.int32)
+        return cls(max_seqlen=max_seqlen, seqstart=seqstart, seqstart_py=seqstart_py)
 
     def split(
         self, x: torch.Tensor, batch_sizes: Optional[Sequence[int]] = None
     ) -> List[torch.Tensor]:
-        if self.cu_seqlen_py[-1] != x.shape[1] or x.shape[0] != 1:
+        if self.seqstart_py[-1] != x.shape[1] or x.shape[0] != 1:
             raise ValueError(
                 f"Invalid `torch.Tensor` of shape {x.shape}, expected format "
-                f"(B, M, *) with B=1 and M={self.cu_seqlen_py[-1]}\n"
-                f" cu_seqlen: {self.cu_seqlen_py}"
+                f"(B, M, *) with B=1 and M={self.seqstart_py[-1]}\n"
+                f" seqstart: {self.seqstart_py}"
             )
         if batch_sizes is None:
-            batch_sizes = [1] * (len(self.cu_seqlen_py) - 1)
+            batch_sizes = [1] * (len(self.seqstart_py) - 1)
         split_chunks = []
         it = 0
         for batch_size in batch_sizes:
             split_chunks.append(
-                self.cu_seqlen_py[it + batch_size] - self.cu_seqlen_py[it]
+                self.seqstart_py[it + batch_size] - self.seqstart_py[it]
             )
             it += batch_size
         return [
@@ -148,46 +135,45 @@ class _SeqLenInfo:
 @dataclass
 class _PaddedSeqLenInfo(_SeqLenInfo):
     seqlen: torch.Tensor
+    seqlen_py: Sequence[int]
+    # From parent: seqstart[i] contains the start position
+    # of the i-th sequence
+    # seqstart: torch.Tensor
+
+    def __post_init__(self) -> None:
+        assert len(self.seqstart_py) == len(self.seqlen_py) + 1
 
     def to(self, device: torch.device) -> None:
-        if self.seqlen is not None:
-            self.seqlen = self.seqlen.to(device, non_blocking=True)
+        self.seqlen = self.seqlen.to(device, non_blocking=True)
         super().to(device)
 
     def intervals(self) -> Iterable[Tuple[int, int]]:
-        assert self.seqlen is not None
-        for (start, _), length in zip(super().intervals(), self.seqlen):
+        for (start, _), length in zip(super().intervals(), self.seqlen_py):
             yield start, start + length
 
     @classmethod
-    def from_seqlens(cls, seqlens: Union[Iterable[int], torch.Tensor]) -> "_SeqLenInfo":
+    def from_seqlens(cls, seqlens: Iterable[int]) -> "_SeqLenInfo":
         raise RuntimeError(
             "Use either `_SeqLenInfo.from_seqlens` or `_PaddedSeqLenInfo.from_seqlens_padded`"
         )
 
     @classmethod
     def from_seqlens_padded(
-        cls, seqlens: Union[Iterable[int], torch.Tensor], padding: int
+        cls, seqlens: Sequence[int], padding: int
     ) -> "_PaddedSeqLenInfo":
         """
         Input tensors are assumed to be in shape [B, M, *]
         seqstart = padding * torch.arange(batch_size)
         """
-        t_seqlens = (
-            seqlens
-            if isinstance(seqlens, torch.Tensor)
-            else torch.tensor(seqlens, dtype=torch.int32)
-        )
-        cu_seqlen = (
-            # + 1 because expected to be same shape as cu_seqlen_k
-            torch.arange(
-                t_seqlens.shape[0] + 1, dtype=torch.int32, device=t_seqlens.device
-            )
-            * padding
-        )
+        assert not isinstance(seqlens, torch.Tensor)
+        assert all(seqlen <= padding for seqlen in seqlens)
+        seqstart_py = list(range(0, len(seqlens) * padding + 1, padding))
         return cls(
-            cu_seqlen=cu_seqlen,
-            seqlen=t_seqlens,
+            seqlen=torch.tensor(seqlens, dtype=torch.int32),
+            seqlen_py=seqlens,
+            max_seqlen=max(seqlens),
+            seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
+            seqstart_py=seqstart_py,
         )
 
     def split(
@@ -256,13 +242,13 @@ class BlockDiagonalMask(AttentionBias):
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
         """Materialize the attention bias - for debugging & testing"""
-        assert shape[-1] == self.k_seqinfo.cu_seqlen_py[-1], (
+        assert shape[-1] == self.k_seqinfo.seqstart_py[-1], (
             shape[-1],
-            self.k_seqinfo.cu_seqlen_py[-1],
+            self.k_seqinfo.seqstart_py[-1],
         )
-        assert shape[-2] == self.q_seqinfo.cu_seqlen_py[-1], (
+        assert shape[-2] == self.q_seqinfo.seqstart_py[-1], (
             shape[-2],
-            self.q_seqinfo.cu_seqlen_py[-1],
+            self.q_seqinfo.seqstart_py[-1],
         )
         mask = torch.empty(shape[-2:], dtype=dtype, device=device)
         mask.fill_(-math.inf)
@@ -284,8 +270,8 @@ class BlockDiagonalMask(AttentionBias):
     @classmethod
     def from_seqlens(
         cls,
-        q_seqlen: Union[Sequence[int], torch.Tensor],
-        kv_seqlen: Optional[Union[Sequence[int], torch.Tensor]] = None,
+        q_seqlen: Sequence[int],
+        kv_seqlen: Optional[Sequence[int]] = None,
     ) -> "BlockDiagonalMask":
         """Creates a :attr:`BlockDiagonalMask` from a list of tensors lengths for query and key/value.
 
@@ -442,8 +428,8 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
         """Materialize the attention bias - for debugging & testing"""
-        assert shape[-1] == self.k_seqinfo.cu_seqlen_py[-1]
-        assert shape[-2] == self.q_seqinfo.cu_seqlen_py[-1]
+        assert shape[-1] == self.k_seqinfo.seqstart_py[-1]
+        assert shape[-2] == self.q_seqinfo.seqstart_py[-1]
         mask = torch.empty(shape[-2:], dtype=dtype, device=device)
         mask.fill_(-math.inf)
         for i, ((q_start, q_end), (k_start, k_end)) in enumerate(
@@ -467,19 +453,18 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
     @classmethod
     def from_seqlens(
         cls,
-        q_seqlen: Union[Sequence[int], torch.Tensor],
+        q_seqlen: Sequence[int],
         kv_padding: int,
-        kv_seqlen: Union[Sequence[int], torch.Tensor],
+        kv_seqlen: Sequence[int],
         causal_diagonal: Optional[torch.Tensor] = None,
     ) -> "BlockDiagonalCausalWithOffsetPaddedKeysMask":
         """Creates a :attr:`BlockDiagonalCausalWithOffsetPaddedKeysMask` from a list of tensors lengths for query and key/value.
 
         Args:
-            q_seqlen (Union[Sequence[int], torch.Tensor]): List or tensor of sequence lengths for query tensors
-            kv_seqlen (Union[Sequence[int], torch.Tensor], optional): List or tensor of sequence lengths for key/value.
-            Defaults to ``q_seqlen``.
+            q_seqlen (Sequence[int]): List or tensor of sequence lengths for query tensors
+            kv_padding (int): Padding for k/v - also an upperbound on each individual key length
+            kv_seqlen (Sequence[int]): List or tensor of sequence lengths for key/value.
             causal_diagonal (torch.Tensor, optional): tensor of sequence positions for causal masking
-            padding (int, optional): offset for start positions in kv
         Returns:
             BlockDiagonalCausalWithOffsetPaddedKeysMask
         """

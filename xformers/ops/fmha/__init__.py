@@ -353,7 +353,7 @@ def _memory_efficient_attention_backward(
         )
         or (
             isinstance(inp.attn_bias, BlockDiagonalMask)
-            and ctx.lse.shape[0] != inp.attn_bias.q_seqinfo.cu_seqlen.shape[0] - 1
+            and ctx.lse.shape[0] != inp.attn_bias.q_seqinfo.seqstart.shape[0] - 1
         )
         # Dim 1
         or ctx.lse.shape[1] != inp.query.shape[2]

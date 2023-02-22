@@ -135,15 +135,15 @@ def _convert_input_format(
 
     attn_bias = inp.attn_bias
     if isinstance(attn_bias, BlockDiagonalMask):
-        attn_bias.k_seqinfo.cu_seqlen = attn_bias.k_seqinfo.cu_seqlen.to(
+        attn_bias.k_seqinfo.seqstart = attn_bias.k_seqinfo.seqstart.to(
             inp.query.device, non_blocking=True
         )
-        attn_bias.q_seqinfo.cu_seqlen = attn_bias.q_seqinfo.cu_seqlen.to(
+        attn_bias.q_seqinfo.seqstart = attn_bias.q_seqinfo.seqstart.to(
             inp.query.device, non_blocking=True
         )
 
-        cu_seqlen_k = attn_bias.k_seqinfo.cu_seqlen
-        cu_seqlen_q = attn_bias.q_seqinfo.cu_seqlen
+        cu_seqlen_k = attn_bias.k_seqinfo.seqstart
+        cu_seqlen_q = attn_bias.q_seqinfo.seqstart
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
         max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
     else:
@@ -274,8 +274,8 @@ class FwOp(AttentionFwOpBase):
             key.unsqueeze(0),
             value.unsqueeze(0),
             causal=causal,
-            cu_seqlen_k=cu_seq_lens_k,
-            cu_seqlen_q=cu_seq_lens_q,
+            seqstart_k=cu_seq_lens_k,
+            seqstart_q=cu_seq_lens_q,
         )
 
 
@@ -417,6 +417,6 @@ class BwOp(AttentionBwOpBase):
             key.unsqueeze(0),
             value.unsqueeze(0),
             causal=causal,
-            cu_seqlen_k=cu_seq_lens_k,
-            cu_seqlen_q=cu_seq_lens_q,
+            seqstart_k=cu_seq_lens_k,
+            seqstart_q=cu_seq_lens_q,
         )

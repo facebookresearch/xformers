@@ -227,8 +227,8 @@ class AttentionFwOpBase(AttentionOpBase):
         key: torch.Tensor,
         value: torch.Tensor,
         causal: bool = False,
-        cu_seqlen_k: Optional[torch.Tensor] = None,
-        cu_seqlen_q: Optional[torch.Tensor] = None,
+        seqstart_k: Optional[torch.Tensor] = None,
+        seqstart_q: Optional[torch.Tensor] = None,
     ) -> int:
         """
         Computes total flops for the attention
@@ -236,18 +236,18 @@ class AttentionFwOpBase(AttentionOpBase):
         """
         assert query.ndim == 4
 
-        if cu_seqlen_q is not None:
-            cu_seqlen_q_py = cu_seqlen_q.tolist()
+        if seqstart_q is not None:
+            seqstart_q_py = seqstart_q.tolist()
         else:
-            cu_seqlen_q_py = [0, query.shape[1]]
-        if cu_seqlen_k is not None:
-            cu_seqlen_k_py = cu_seqlen_k.tolist()
+            seqstart_q_py = [0, query.shape[1]]
+        if seqstart_k is not None:
+            seqstart_k_py = seqstart_k.tolist()
         else:
-            cu_seqlen_k_py = [0, key.shape[1]]
+            seqstart_k_py = [0, key.shape[1]]
 
         total_flop = 0
         for q_start, q_end, k_start, k_end in zip(
-            cu_seqlen_q_py, cu_seqlen_q_py[1:], cu_seqlen_k_py, cu_seqlen_k_py[1:]
+            seqstart_q_py, seqstart_q_py[1:], seqstart_k_py, seqstart_k_py[1:]
         ):
             num_q = q_end - q_start
             num_kv = k_end - k_start
@@ -301,8 +301,8 @@ class AttentionBwOpBase(AttentionOpBase):
         key: torch.Tensor,
         value: torch.Tensor,
         causal: bool = False,
-        cu_seqlen_k: Optional[torch.Tensor] = None,
-        cu_seqlen_q: Optional[torch.Tensor] = None,
+        seqstart_k: Optional[torch.Tensor] = None,
+        seqstart_q: Optional[torch.Tensor] = None,
     ) -> int:
         """
         Computes total flops for the attention
@@ -310,18 +310,18 @@ class AttentionBwOpBase(AttentionOpBase):
         """
         assert query.ndim == 4
 
-        if cu_seqlen_q is not None:
-            cu_seqlen_q_py = cu_seqlen_q.tolist()
+        if seqstart_q is not None:
+            seqstart_q_py = seqstart_q.tolist()
         else:
-            cu_seqlen_q_py = [0, query.shape[1]]
-        if cu_seqlen_k is not None:
-            cu_seqlen_k_py = cu_seqlen_k.tolist()
+            seqstart_q_py = [0, query.shape[1]]
+        if seqstart_k is not None:
+            seqstart_k_py = seqstart_k.tolist()
         else:
-            cu_seqlen_k_py = [0, key.shape[1]]
+            seqstart_k_py = [0, key.shape[1]]
 
         total_flop = 0
         for q_start, q_end, k_start, k_end in zip(
-            cu_seqlen_q_py, cu_seqlen_q_py[1:], cu_seqlen_k_py, cu_seqlen_k_py[1:]
+            seqstart_q_py, seqstart_q_py[1:], seqstart_k_py, seqstart_k_py[1:]
         ):
             num_q = q_end - q_start
             num_kv = k_end - k_start

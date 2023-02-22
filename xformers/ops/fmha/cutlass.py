@@ -66,17 +66,17 @@ def _get_seqlen_info(
             attn_bias.causal_diagonal = attn_bias.causal_diagonal.to(inp.query.device)
         attn_bias.k_seqinfo.to(inp.query.device)
         attn_bias.q_seqinfo.to(inp.query.device)
-        cu_seqlen_k = attn_bias.k_seqinfo.cu_seqlen
-        cu_seqlen_q = attn_bias.q_seqinfo.cu_seqlen
+        seqstart_k = attn_bias.k_seqinfo.seqstart
+        seqstart_q = attn_bias.q_seqinfo.seqstart
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
         max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
     else:
-        cu_seqlen_k = None
-        cu_seqlen_q = None
+        seqstart_k = None
+        seqstart_q = None
         max_seqlen_q = -1
         max_seqlen_k = -1
 
-    return cu_seqlen_k, cu_seqlen_q, max_seqlen_q, max_seqlen_k
+    return seqstart_k, seqstart_q, max_seqlen_q, max_seqlen_k
 
 
 def _get_tensor_bias(
@@ -145,14 +145,14 @@ class FwOp(AttentionFwOpBase):
                 BlockDiagonalCausalWithOffsetPaddedKeysMask,
             ),
         )
-        cu_seqlen_k, cu_seqlen_q, max_seqlen_q, _ = _get_seqlen_info(inp)
+        seqstart_k, seqstart_q, max_seqlen_q, _ = _get_seqlen_info(inp)
         out, lse, rng_seed, rng_offset = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
             value=inp.value,
             attn_bias=_get_tensor_bias(inp.attn_bias),
-            seqstart_q=cu_seqlen_q,
-            seqstart_k=cu_seqlen_k,
+            seqstart_q=seqstart_q,
+            seqstart_k=seqstart_k,
             max_seqlen_q=max_seqlen_q,
             dropout_p=inp.p,
             compute_logsumexp=needs_gradient,
@@ -198,15 +198,15 @@ class FwOp(AttentionFwOpBase):
         k,
         v,
         b,
-        cu_seqlen_q,
-        cu_seqlen_k,
+        seqstart_q,
+        seqstart_k,
         max_seqlen_q_,
         compute_lse,
         causal,
         *a,
     ) -> int:
         return cls.attn_operator_flop(
-            q, k, v, causal=causal, cu_seqlen_k=cu_seqlen_k, cu_seqlen_q=cu_seqlen_q
+            q, k, v, causal=causal, seqstart_k=seqstart_k, seqstart_q=seqstart_q
         )
 
 
@@ -288,7 +288,7 @@ class BwOp(AttentionBwOpBase):
             inp.attn_bias,
             (LowerTriangularMask, BlockDiagonalCausalMask),
         )
-        cu_seqlen_k, cu_seqlen_q, max_seqlen_q, max_seqlen_k = _get_seqlen_info(inp)
+        seqstart_k, seqstart_q, max_seqlen_q, max_seqlen_k = _get_seqlen_info(inp)
         dtype = inp.query.dtype
 
         rng_seed = rng_offset = 0
@@ -309,8 +309,8 @@ class BwOp(AttentionBwOpBase):
             inp.key,
             inp.value,
             _get_tensor_bias(inp.attn_bias),
-            cu_seqlens_q=cu_seqlen_q,
-            cu_seqlens_k=cu_seqlen_k,
+            cu_seqlens_q=seqstart_q,
+            cu_seqlens_k=seqstart_k,
             max_seqlen_q=max_seqlen_q,
             max_seqlen_k=max_seqlen_k,
             logsumexp=ctx.get_padded_lse(32, force_pad_inf=force_pad_inf),
@@ -338,6 +338,24 @@ class BwOp(AttentionBwOpBase):
     @classmethod
     # type: ignore
     def operator_flop(
-        cls, dO, q, k, v, b, lse, out, dpt, rng0, rng1, causal, scale
+        cls,
+        dO,
+        q,
+        k,
+        v,
+        b,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        max_seqlen_q,
+        max_seqlen_k,
+        logsumexp,
+        output,
+        dropout_p,
+        rng_seed,
+        rng_offset,
+        causal,
+        scale,
     ) -> int:
-        return cls.attn_operator_flop(q, k, v, causal=causal)
+        return cls.attn_operator_flop(
+            q, k, v, seqstart_q=cu_seqlens_q, seqstart_k=cu_seqlens_k, causal=causal
+        )
