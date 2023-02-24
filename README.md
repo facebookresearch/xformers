@@ -22,7 +22,7 @@
 ## xFormers - Toolbox to Accelerate Research on Transformers
 
 xFormers is:
-- **Customizable building blocks**: Independant/customizable building blocks that can be used without boilerplate code. The components are domain-agnostic and xFormers is used by researchers in vision, NLP and more.
+- **Customizable building blocks**: Independent/customizable building blocks that can be used without boilerplate code. The components are domain-agnostic and xFormers is used by researchers in vision, NLP and more.
 - **Research first**: xFormers contains bleeding-edge components, that are not yet available in mainstream libraries like pytorch.
 - **Built with efficiency in mind**: Because speed of iteration matters, components are as fast and memory-efficient as possible. xFormers contains its own CUDA kernels, but dispatches to other libraries when relevant.
 
