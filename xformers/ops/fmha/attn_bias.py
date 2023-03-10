@@ -376,6 +376,14 @@ class BlockDiagonalMask(AttentionBias):
             _batch_sizes=self._batch_sizes,
         )
 
+    def make_causal_from_bottomright(self) -> "BlockDiagonalCausalFromBottomRightMask":
+        """Makes each block causal with a possible non-causal prefix"""
+        return BlockDiagonalCausalFromBottomRightMask(
+            q_seqinfo=self.q_seqinfo,
+            k_seqinfo=self.k_seqinfo,
+            _batch_sizes=self._batch_sizes,
+        )
+
 
 @dataclass
 class BlockDiagonalCausalMask(BlockDiagonalMask):
@@ -392,6 +400,47 @@ class BlockDiagonalCausalMask(BlockDiagonalMask):
             dtype=dtype,
             device=device,
         )
+
+
+@dataclass
+class BlockDiagonalCausalFromBottomRightMask(BlockDiagonalMask):
+    """
+    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`, except that each block is causal.
+    This mask allows for a non-causal prefix
+    NOTE: Each block should have `num_keys >= num_queries` otherwise the forward pass is not
+    defined (softmax of vector of `-inf` in the attention)
+    """
+
+    def __post_init__(self) -> None:
+        for i, ((q_start, q_end), (k_start, k_end)) in enumerate(
+            zip(
+                self.q_seqinfo.intervals(),
+                self.k_seqinfo.intervals(),
+            )
+        ):
+            num_queries = q_end - q_start
+            num_keys = k_end - k_start
+            if num_keys < num_queries:
+                raise ValueError(
+                    f"Block #{i} has num_keys={num_keys} and num_queries={num_queries}."
+                    " Expected `num_keys >= num_queries`"
+                )
+
+    def _create_block_mask(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
+        tensor = torch.full(  # type: ignore
+            shape,
+            dtype=create_as,
+            fill_value=float("-inf"),
+            device=device,
+        )
+        num_queries, num_keys = shape[-2:]
+        return torch.triu(tensor, diagonal=num_keys - num_queries + 1).to(dtype)  # type: ignore
 
 
 @dataclass

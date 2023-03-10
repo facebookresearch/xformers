@@ -89,7 +89,7 @@ efficient_attention_forward_cutlass(
     const c10::optional<int64_t> max_seqlen_q_,
     double dropout_p, // attention matrix dropout probability
     bool compute_logsumexp,
-    bool causal,
+    int64_t custom_mask_type,
     c10::optional<double> scale,
     const c10::optional<at::Tensor>& causal_diagonal,
     const c10::optional<at::Tensor>& seqlen_k) {
@@ -251,7 +251,7 @@ efficient_attention_forward_cutlass(
     p.num_queries = max_seqlen_q;
     p.num_keys = max_seqlen_k;
     p.num_batches = seqstart_q.has_value() ? seqstart_q->size(0) - 1 : B;
-    p.causal = causal;
+    p.custom_mask_type = custom_mask_type;
     p.causal_diagonal_ptr = nullptr;
     if (causal_diagonal.has_value()) {
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(causal_diagonal.value());

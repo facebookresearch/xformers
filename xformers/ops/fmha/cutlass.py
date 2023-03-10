@@ -9,6 +9,7 @@ from typing import Any, List, Mapping, Optional, Set, Tuple, Union
 import torch
 
 from ..common import get_xformers_operator, register_operator
+from . import attn_bias
 from .attn_bias import (
     AttentionBias,
     BlockDiagonalCausalMask,
@@ -100,6 +101,21 @@ def _check_bias_alignment(
         )
 
 
+def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int:
+    if isinstance(
+        bias,
+        (
+            LowerTriangularMask,
+            BlockDiagonalCausalMask,
+            BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        ),
+    ):
+        return 1
+    if isinstance(bias, attn_bias.BlockDiagonalCausalFromBottomRightMask):
+        return 2
+    return 0
+
+
 @register_operator
 class FwOp(AttentionFwOpBase):
     """xFormers' MHA kernel based on CUTLASS.
@@ -119,6 +135,7 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        attn_bias.BlockDiagonalCausalFromBottomRightMask,
     }
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
@@ -137,14 +154,6 @@ class FwOp(AttentionFwOpBase):
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
-        causal = isinstance(
-            inp.attn_bias,
-            (
-                LowerTriangularMask,
-                BlockDiagonalCausalMask,
-                BlockDiagonalCausalWithOffsetPaddedKeysMask,
-            ),
-        )
         seqstart_k, seqstart_q, max_seqlen_q, _ = _get_seqlen_info(inp)
         out, lse, rng_seed, rng_offset = cls.OPERATOR(
             query=inp.query,
@@ -156,7 +165,7 @@ class FwOp(AttentionFwOpBase):
             max_seqlen_q=max_seqlen_q,
             dropout_p=inp.p,
             compute_logsumexp=needs_gradient,
-            causal=causal,
+            custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
             causal_diagonal=inp.attn_bias.causal_diagonal
             if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
@@ -202,11 +211,16 @@ class FwOp(AttentionFwOpBase):
         seqstart_k,
         max_seqlen_q_,
         compute_lse,
-        causal,
+        custom_mask_type,
         *a,
     ) -> int:
         return cls.attn_operator_flop(
-            q, k, v, causal=causal, seqstart_k=seqstart_k, seqstart_q=seqstart_q
+            q,
+            k,
+            v,
+            causal=custom_mask_type > 0,
+            seqstart_k=seqstart_k,
+            seqstart_q=seqstart_q,
         )
 
 
