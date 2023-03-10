@@ -317,7 +317,7 @@ class _OpInfo:
     @property
     def time_computebound_ms(self) -> float:
         assert self.time_ms > 0.0
-        tflop = self.flop_count / (1024**4)
+        tflop = self.flop_count / (1000**4)
         if tflop == 0.0:
             return 0.0
         return min(self.time_ms, 1000 * tflop / self.hardware_tflops_limit)
@@ -349,7 +349,7 @@ class _OpInfoAggregated:
 
     def as_dict(self, **kwargs) -> Dict[str, Any]:
         mem_bound = min(1, self.total_time_membound_ms / self.total_time_ms)
-        tflops = self.total_flop_count / (self.total_time_ms / 1000) / (1024**4)
+        tflops = self.total_flop_count / (self.total_time_ms / 1000) / (1000**4)
         compute_bound = min(1, self.total_time_computebound_ms / self.total_time_ms)
         return {
             "is_exact_flop": self.is_exact_flop,
