@@ -39,7 +39,7 @@ class GemmFusedSumOp(BaseOperator):
     @classmethod
     # type: ignore
     def operator_flop(cls, a: torch.Tensor, b: torch.Tensor, out1, out2) -> int:
-        M, N, K = a.shape[0], b.shape[0], a.shape[1]
+        M, N, K = a.shape[0], b.shape[1], a.shape[1]
         return M * N * K * 2
 
 

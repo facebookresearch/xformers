@@ -104,6 +104,16 @@ class GemmOpComputeFlopsBmm(GemmOpComputeFlops):
         return (bs * a.shape[1], b.shape[-1], b.shape[-2])
 
 
+class GemmOpComputeFlopsAddmm(GemmOpComputeFlops):
+    def _get_mnk(self, inputs: List[Any]) -> Tuple[int, int, int]:
+        return super()._get_mnk(inputs[1:])
+
+
+class GemmOpComputeFlopsAddbmm(GemmOpComputeFlopsBmm):
+    def _get_mnk(self, inputs: List[Any]) -> Tuple[int, int, int]:
+        return super()._get_mnk(inputs[1:])
+
+
 def conv_flop_count(
     x_shape: List[int],
     w_shape: List[int],
@@ -263,8 +273,9 @@ flop_mapping = {
     aten.mv: GemmOpComputeFlopsMv(),  # mat-vec
     aten.mm: GemmOpComputeFlops(),
     aten.matmul: GemmOpComputeFlops(),
-    aten.addmm: GemmOpComputeFlops(),
+    aten.addmm: GemmOpComputeFlopsAddmm(),
     aten.bmm: GemmOpComputeFlopsBmm(),
+    aten.addbmm: GemmOpComputeFlopsAddbmm(),
     aten.linear: GemmOpComputeFlopsLinear(),
     aten.convolution: conv_flop,
     aten._convolution: conv_flop,

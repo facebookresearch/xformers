@@ -52,6 +52,9 @@ def test_gemm_flops() -> None:
     with GEMMShapeDispatcher() as disp:
         torch.nn.functional.linear(a, b.transpose(0, 1))
         assert disp.mnk == (M, N, K)
+    with GEMMShapeDispatcher() as disp:
+        torch.addmm(torch.empty([1, 1]), a, b)
+        assert disp.mnk == (M, N, K)
 
     B = 3
     ba = torch.empty([B, M, K])
@@ -67,6 +70,9 @@ def test_gemm_flops() -> None:
         assert disp.mnk == (B * M, N, K)
     with GEMMShapeDispatcher() as disp:
         ba @ bb[0]
+        assert disp.mnk == (B * M, N, K)
+    with GEMMShapeDispatcher() as disp:
+        torch.addbmm(torch.empty([1, 1]), ba, bb)
         assert disp.mnk == (B * M, N, K)
 
 
