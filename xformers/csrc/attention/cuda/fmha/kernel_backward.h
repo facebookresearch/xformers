@@ -169,6 +169,12 @@ template <
     // upperbound on `max(value.shape[-1], query.shape[-1])`
     int kMaxK_ = std::numeric_limits<int>::max()>
 struct AttentionBackwardKernel {
+  enum CustomMaskType {
+    NoCustomMask = 0,
+    CausalFromTopLeft = 1,
+    CausalFromBottomRight = 2,
+    NumCustomMaskTypes,
+  };
   using scalar_t = scalar_t_;
   using output_t = scalar_t;
   using output_accum_t = float;
@@ -218,7 +224,7 @@ struct AttentionBackwardKernel {
     int32_t num_queries;
     int32_t num_keys;
     int32_t num_heads;
-    bool causal;
+    uint8_t custom_mask_type;
 
     int32_t q_strideM;
     int32_t k_strideM;
@@ -373,6 +379,7 @@ struct AttentionBackwardKernel {
       grad_key_ptr = warp_uniform(grad_key_ptr);
       grad_value_ptr = warp_uniform(grad_value_ptr);
       grad_bias_ptr = warp_uniform(grad_bias_ptr);
+      custom_mask_type = warp_uniform(custom_mask_type);
 
 #if 0
       PRINT_T0("[b:%d h:%d] dp[0]:%f Q:%f K:%f V:%f LSE:%f",
@@ -1093,6 +1100,7 @@ struct AttentionBackwardKernel {
     XFORMERS_CHECK(
         !(p.cu_seqlens_q_ptr && p.bias_ptr),
         "CuSeqlen + bias not implemented yet");
+    XFORMERS_CHECK(p.custom_mask_type < NumCustomMaskTypes);
     return true;
   }
 
@@ -1257,8 +1265,7 @@ struct AttentionBackwardKernel {
     int8_t warp_id = warp_uniform(threadIdx.y);
     int8_t lane_id = threadIdx.x;
 
-    bool isFirstQuery =
-        query_start == 0 || (p.causal && query_start <= key_start);
+    bool isFirstQuery = (query_start == getQueryStart(p, key_start));
     int32_t next_query, next_key;
     incrIteration(p, query_start, key_start, next_query, next_key);
     bool isLastQuery = next_key != key_start;
@@ -1420,15 +1427,22 @@ struct AttentionBackwardKernel {
       }
 
       // Apply mask
-      if (p.causal) {
+      if (p.custom_mask_type == CausalFromTopLeft ||
+          p.custom_mask_type == CausalFromBottomRight) {
         auto lane_offset = MatmulQK::AccumLambdaIterator::get_lane_offset(
             lane_id, warp_id, output_tile_coords);
+        int shift = query_start - key_start;
+        if (p.custom_mask_type == CausalFromBottomRight) {
+          shift += p.num_keys - p.num_queries;
+        }
+        // current_key = key_start + accum_m
+        // current_query = query_start + accum_n
+        // mask if: `current_key > current_query`
         MatmulQK::AccumLambdaIterator::iterateRows(
             lane_offset,
             [&](int accum_m) {},
             [&](int accum_m, int accum_n, int idx) {
-              // (don't forget we are transposed!)
-              if (accum_m > accum_n + query_start - key_start) {
+              if (accum_m > accum_n + shift) {
                 accum[idx] = -std::numeric_limits<accum_t>::infinity();
               }
             },
@@ -1806,8 +1820,7 @@ struct AttentionBackwardKernel {
       // Output results
       int32_t next_query, next_key;
       incrIteration(p, p.num_queries, key_start, next_query, next_key);
-      bool isLast =
-          (p.causal && next_query > query_start) || next_key >= p.num_keys;
+      bool isLast = next_query > query_start || next_key >= p.num_keys;
       if (kNeedsAccumGradQ && !isLast) {
         gmem_tile.store(accum, thread_id);
       } else {
@@ -1928,8 +1941,12 @@ struct AttentionBackwardKernel {
 
   static CUTLASS_DEVICE int32_t
   getQueryStart(Params const& p, int32_t key_start) {
-    if (p.causal) {
+    if (p.custom_mask_type == CausalFromTopLeft) {
       return (key_start / kBlockSizeI) * kBlockSizeI;
+    } else if (p.custom_mask_type == CausalFromBottomRight) {
+      int first_query =
+          cutlass::fast_max(0, key_start - p.num_keys - p.num_queries);
+      return (first_query / kBlockSizeI) * kBlockSizeI;
     }
     return 0;
   };

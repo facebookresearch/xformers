@@ -37,7 +37,7 @@ mem_efficient_attention_backward_cutlass(
     double dropout_p, // dropout probability
     int64_t rng_seed, // seed using for generating random numbers for dropout
     int64_t rng_offset, // offset into random number sequence
-    bool causal,
+    int64_t custom_mask_type,
     const c10::optional<double> scale) {
 #ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD
   TORCH_CHECK(
@@ -207,7 +207,7 @@ mem_efficient_attention_backward_cutlass(
     p.num_keys = max_seqlen_k;
     p.num_batches = cu_seqlens_q.has_value() ? cu_seqlens_q->size(0) - 1 : B;
     p.num_heads = nH;
-    p.causal = causal;
+    p.custom_mask_type = custom_mask_type;
     if (scale.has_value()) {
       p.scale = float(*scale);
     } else {

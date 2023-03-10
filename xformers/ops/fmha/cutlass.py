@@ -240,6 +240,7 @@ class BwOp(AttentionBwOpBase):
         # LowerTriangularMaskWithTensorBias,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
+        attn_bias.BlockDiagonalCausalFromBottomRightMask,
     }
     SUPPORTS_ATTN_BIAS_GRAD = True
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
@@ -298,10 +299,6 @@ class BwOp(AttentionBwOpBase):
         if type(inp.attn_bias) not in BwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
 
-        causal = isinstance(
-            inp.attn_bias,
-            (LowerTriangularMask, BlockDiagonalCausalMask),
-        )
         seqstart_k, seqstart_q, max_seqlen_q, max_seqlen_k = _get_seqlen_info(inp)
         dtype = inp.query.dtype
 
@@ -336,7 +333,7 @@ class BwOp(AttentionBwOpBase):
             # was used.
             rng_seed=rng_seed,
             rng_offset=rng_offset,
-            causal=causal,
+            custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
         )
 
@@ -367,9 +364,14 @@ class BwOp(AttentionBwOpBase):
         dropout_p,
         rng_seed,
         rng_offset,
-        causal,
+        custom_mask_type,
         scale,
     ) -> int:
         return cls.attn_operator_flop(
-            q, k, v, seqstart_q=cu_seqlens_q, seqstart_k=cu_seqlens_k, causal=causal
+            q,
+            k,
+            v,
+            seqstart_q=cu_seqlens_q,
+            seqstart_k=cu_seqlens_k,
+            causal=custom_mask_type > 0,
         )
