@@ -17,7 +17,6 @@ import torch.cuda.nvtx
 import torch.nn as nn
 import torch.profiler
 import torch.utils.hooks
-from torch.utils._pytree import tree_map
 
 logger = logging.getLogger(__name__)
 
@@ -267,9 +266,6 @@ class _Profiler:
         class PopState(torch.autograd.Function):
             @staticmethod
             def forward(ctx, *args):
-                args = tree_map(
-                    lambda x: x.clone() if isinstance(x, torch.Tensor) else x, args
-                )
                 if len(args) == 1:
                     return args[0]
                 return args
@@ -291,9 +287,6 @@ class _Profiler:
         class PushState(torch.autograd.Function):
             @staticmethod
             def forward(ctx, *args):
-                args = tree_map(
-                    lambda x: x.clone() if isinstance(x, torch.Tensor) else x, args
-                )
                 if len(args) == 1:
                     return args[0]
                 return args
