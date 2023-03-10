@@ -144,7 +144,7 @@ struct GmemTile {
 
 template <typename scalar_t, typename Arch>
 constexpr int getWarpsPerSm() {
-  bool is_half = !std::is_same<scalar_t, float>::value;
+  bool is_half = !cutlass::platform::is_same<scalar_t, float>::value;
   if (Arch::kMinComputeCapability >= 80) {
     return is_half ? 12 : 8;
   }
@@ -167,7 +167,7 @@ template <
     int kBlockSizeI_,
     int kBlockSizeJ_,
     // upperbound on `max(value.shape[-1], query.shape[-1])`
-    int kMaxK_ = std::numeric_limits<int>::max()>
+    int kMaxK_ = (int)cutlass::platform::numeric_limits<uint32_t>::max()>
 struct AttentionBackwardKernel {
   enum CustomMaskType {
     NoCustomMask = 0,
@@ -212,19 +212,19 @@ struct AttentionBackwardKernel {
       output_accum_t* workspace = nullptr; // [Mq, Kq] + [Mkv, Kq] + [Mkv, Kv]
       output_accum_t* workspace_gk;
     };
-    output_accum_t* workspace_gv;
-    output_accum_t* workspace_gq;
+    output_accum_t* workspace_gv; // (will be calculated by the kernel)
+    output_accum_t* workspace_gq; // (will be calculated by the kernel)
 
     // Scale
     accum_t scale;
 
     // Dimensions/strides
-    int32_t head_dim;
-    int32_t head_dim_value;
-    int32_t num_queries;
-    int32_t num_keys;
-    int32_t num_heads;
-    uint8_t custom_mask_type;
+    int32_t head_dim = -1;
+    int32_t head_dim_value = -1;
+    int32_t num_queries = -1;
+    int32_t num_keys = -1;
+    int32_t num_heads = -1;
+    uint8_t custom_mask_type = NoCustomMask;
 
     int32_t q_strideM;
     int32_t k_strideM;
@@ -232,7 +232,7 @@ struct AttentionBackwardKernel {
     int32_t bias_strideM = 0;
     int32_t gO_strideM;
     int32_t gB_strideM;
-    int8_t gQKV_strideM_multiplier; // 3 for packed, 1 otherwise
+    int8_t gQKV_strideM_multiplier = 1; // 3 for packed, 1 otherwise
 
 #ifdef HAS_PYTORCH
     // dropout
@@ -240,7 +240,7 @@ struct AttentionBackwardKernel {
 #endif
     // RNG sequence offset based on batch_id and head_id
     unsigned long long dropout_batch_head_rng_offset;
-    float dropout_prob;
+    float dropout_prob = 0.0f;
 
     CUTLASS_HOST_DEVICE int32_t o_strideM() const {
       return head_dim_value * num_heads;
@@ -465,11 +465,11 @@ struct AttentionBackwardKernel {
       kIsHalf && (kOutputInRF || ArchTag::kMinComputeCapability != 70);
 
   static constexpr bool kNeedsAccumGradQ =
-      !std::is_same<output_accum_t, output_t>::value;
-  static constexpr bool kNeedsAccumGradK =
-      !kOutputInRF && !std::is_same<output_accum_t, output_t>::value;
-  static constexpr bool kNeedsAccumGradV =
-      !kOutputInRF && !std::is_same<output_accum_t, output_t>::value;
+      !cutlass::platform::is_same<output_accum_t, output_t>::value;
+  static constexpr bool kNeedsAccumGradK = !kOutputInRF &&
+      !cutlass::platform::is_same<output_accum_t, output_t>::value;
+  static constexpr bool kNeedsAccumGradV = !kOutputInRF &&
+      !cutlass::platform::is_same<output_accum_t, output_t>::value;
 
   // Launch bounds
   static constexpr int64_t kNumThreads = kWarpSize * kNumWarpsPerBlock;
@@ -486,8 +486,9 @@ struct AttentionBackwardKernel {
           scalar_t, // ElementC
           accum_t // ElementAccumulator
           >;
-  static constexpr auto kOptimalAlignement =
-      std::max(DefaultConfig::kAlignmentA, DefaultConfig::kAlignmentB);
+  static constexpr auto kOptimalAlignement = cutlass::platform::max(
+      DefaultConfig::kAlignmentA,
+      DefaultConfig::kAlignmentB);
   static constexpr auto kMinimumAlignment = GemmType::kMinimumAlignment;
 
   struct MatmulQK {
@@ -610,7 +611,7 @@ struct AttentionBackwardKernel {
     using OutputTileIterator =
         typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
             typename DefaultEpilogue::OutputTileIterator>::Iterator;
-    using AccumTileGmem = GmemTile<typename Mma::FragmentC, kNumThreads>;
+    using AccumTileGmem = GmemTile<typename Mma::FragmentC, (int)kNumThreads>;
   };
 
   struct MatmulDOIVJ {
@@ -720,7 +721,7 @@ struct AttentionBackwardKernel {
     using OutputTileIterator =
         typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
             typename DefaultEpilogue::OutputTileIterator>::Iterator;
-    using AccumTileGmem = GmemTile<typename Mma::FragmentC, kNumThreads>;
+    using AccumTileGmem = GmemTile<typename Mma::FragmentC, (int)kNumThreads>;
   };
   struct MatmulGradK {
     // grad_k <- tmp.transpose(-2, -1) @ q_i
@@ -775,7 +776,7 @@ struct AttentionBackwardKernel {
     using OutputTileIterator =
         typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
             typename DefaultEpilogue::OutputTileIterator>::Iterator;
-    using AccumTileGmem = GmemTile<typename Mma::FragmentC, kNumThreads>;
+    using AccumTileGmem = GmemTile<typename Mma::FragmentC, (int)kNumThreads>;
   };
 
   // shared storage for keeping Zij matrix. not needed if we aren't using
@@ -798,8 +799,6 @@ struct AttentionBackwardKernel {
           typename MatmulQK::AccumulatorSharedStorage::Layout,
           typename cutlass::MatrixShape<0, 0>>>::type;
 
-  // See https://fburl.com/gsheet/l5bltspl
-  // for an illustration of how smem is used
   struct SharedStoragePrologue {
     struct {
       cutlass::Array<accum_t, kBlockSizeI> di; // (do_i * o_i).sum(-1)
@@ -1058,7 +1057,7 @@ struct AttentionBackwardKernel {
     FIELD(p6, gradV_epilogue_final)
   };
 
-  using SharedStorage = typename std::conditional<
+  using SharedStorage = typename cutlass::platform::conditional<
       kPreloadMmas,
       SharedStoragePrologue,
       SharedStorageNoPrologue>::type;
@@ -1100,7 +1099,24 @@ struct AttentionBackwardKernel {
     XFORMERS_CHECK(
         !(p.cu_seqlens_q_ptr && p.bias_ptr),
         "CuSeqlen + bias not implemented yet");
-    XFORMERS_CHECK(p.custom_mask_type < NumCustomMaskTypes);
+    XFORMERS_CHECK(
+        p.custom_mask_type < NumCustomMaskTypes,
+        "Invalid value for `custom_mask_type`");
+    XFORMERS_CHECK(
+        p.dropout_prob <= 1.0f && p.dropout_prob >= 0.0f,
+        "Invalid value for `dropout_prob`");
+    XFORMERS_CHECK(
+        kApplyDropout || p.dropout_prob == 0.0f,
+        "Set `kApplyDropout`=True to support `dropout_prob > 0`");
+    XFORMERS_CHECK(p.head_dim > 0, "Invalid value for `head_dim`");
+    XFORMERS_CHECK(p.head_dim_value > 0, "Invalid value for `head_dim_value`");
+    XFORMERS_CHECK(p.num_queries > 0, "Invalid value for `num_queries`");
+    XFORMERS_CHECK(p.num_keys > 0, "Invalid value for `num_keys`");
+    XFORMERS_CHECK(p.num_heads > 0, "Invalid value for `num_heads`");
+    XFORMERS_CHECK(p.num_batches > 0, "Invalid value for `num_batches`");
+    XFORMERS_CHECK(p.head_dim <= kMaxK, "kMaxK: Expected `head_dim < kMaxK`");
+    XFORMERS_CHECK(
+        p.head_dim_value <= kMaxK, "kMaxK: Expected `head_dim_value < kMaxK`");
     return true;
   }
 
@@ -1274,11 +1290,12 @@ struct AttentionBackwardKernel {
 
     int32_t num_queries_in_block = skipBoundsChecks
         ? MatmulQK::Mma::Shape::kN
-        : std::min(
+        : cutlass::fast_min(
               (int32_t)MatmulQK::Mma::Shape::kN, p.num_queries - query_start);
     int32_t num_keys_in_block = skipBoundsChecks
         ? MatmulQK::Mma::Shape::kM
-        : std::min((int32_t)MatmulQK::Mma::Shape::kM, p.num_keys - key_start);
+        : cutlass::fast_min(
+              (int32_t)MatmulQK::Mma::Shape::kM, p.num_keys - key_start);
 
     auto prologueGradV = [&](int col) {
       typename MatmulGradV::Mma::IteratorB iterator_dO(
@@ -1443,7 +1460,8 @@ struct AttentionBackwardKernel {
             [&](int accum_m) {},
             [&](int accum_m, int accum_n, int idx) {
               if (accum_m > accum_n + shift) {
-                accum[idx] = -std::numeric_limits<accum_t>::infinity();
+                accum[idx] =
+                    -cutlass::platform::numeric_limits<accum_t>::infinity();
               }
             },
             [&](int accum_m) {});
@@ -2009,7 +2027,8 @@ struct AttentionBackwardKernel {
       int32_t key_start) {
     int32_t num_keys_in_block = skipBoundsChecks
         ? MatmulQK::Mma::Shape::kM
-        : std::min((int32_t)MatmulQK::Mma::Shape::kM, p.num_keys - key_start);
+        : cutlass::fast_min(
+              (int32_t)MatmulQK::Mma::Shape::kM, p.num_keys - key_start);
     typename MatmulGradV::OutputTileIterator outputV_it(
         typename MatmulGradV::OutputTileIterator::Params{p.gV_strideM()},
         p.grad_value_ptr + key_start * p.gV_strideM(),

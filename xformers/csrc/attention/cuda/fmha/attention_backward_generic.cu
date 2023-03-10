@@ -145,8 +145,7 @@ mem_efficient_attention_backward_cutlass(
 
   bool kernel_launched = false;
   const auto maxK = std::max(query.size(3), value.size(3));
-  const auto maxShmem =
-      getMaximumSharedMemoryPerBlockKb(computeCapability) * 1024;
+  const auto maxShmem = p->sharedMemPerBlockOptin;
 
   auto launchKernel = [&](auto _k, auto kernel_fn) {
     using Kernel = decltype(_k);

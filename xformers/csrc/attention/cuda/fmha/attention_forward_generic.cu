@@ -171,8 +171,7 @@ efficient_attention_forward_cutlass(
   const int computeCapability = p->major * 10 + p->minor;
 
   bool kernel_launched = false;
-  const auto maxShmem =
-      getMaximumSharedMemoryPerBlockKb(computeCapability) * 1024;
+  const auto maxShmem = p->sharedMemPerBlockOptin;
 
   auto launchKernel = [&](auto _k, auto kernel_fn) {
     using Kernel = decltype(_k);

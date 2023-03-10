@@ -278,7 +278,7 @@ struct AttentionKernel {
       // 15/16th of tensor core compute In that case :
       //  - we only launch kernels for head_id % kQueriesPerBlock == 0
       //  - we iterate over heads instead of queries (strideM = strideH)
-      if (num_queries == 1 && k_strideH == 0) {
+      if (num_queries == 1 && k_strideH == 0 && v_strideH == 0) {
         if (head_id % kQueriesPerBlock != 0)
           return false;
         q_strideM = q_strideH;
@@ -564,8 +564,11 @@ struct AttentionKernel {
     XFORMERS_CHECK(
         p.v_strideH % kAlignmentV == 0, "value is not correctly aligned");
     XFORMERS_CHECK(
-        p.causal_diagonal_ptr == nullptr || p.custom_mask_type != NoCustomMask);
-    XFORMERS_CHECK(p.custom_mask_type < NumCustomMaskTypes);
+        p.causal_diagonal_ptr == nullptr || p.custom_mask_type != NoCustomMask,
+        "`causal_diagonal_ptr` is only useful when `custom_mask_type` is causal");
+    XFORMERS_CHECK(
+        p.custom_mask_type < NumCustomMaskTypes,
+        "invalid value for `custom_mask_type`");
     return true;
   }
 
@@ -578,7 +581,6 @@ struct AttentionKernel {
     SharedStorage& shared_storage = *((SharedStorage*)smem_buffer);
     auto& m_prime = shared_storage.m_prime;
     auto& s_prime = shared_storage.s_prime;
-    auto& si = shared_storage.after_mm0.si;
     auto& mi = shared_storage.mi;
     const uint32_t query_start = blockIdx.x * kQueriesPerBlock;
 
@@ -807,8 +809,7 @@ struct AttentionKernel {
                             iterative_softmax<
                                 typename MM0::Mma::Operator::IteratorC,
                                 kFullColumns,
-                                kIsFirst,
-                                kKeepOutputInRF>(
+                                kIsFirst>(
                                 accum_o,
                                 accum,
                                 mi,
@@ -1072,8 +1073,7 @@ struct AttentionKernel {
   template <
       typename WarpIteratorC,
       bool kFullColumns,
-      bool kIsFirst,
-      bool kKeepOutputInRF>
+      bool kIsFirst>
   CUTLASS_DEVICE static void iterative_softmax(
       typename WarpIteratorC::Fragment& frag_o, // output so far
       typename WarpIteratorC::Fragment& frag,
