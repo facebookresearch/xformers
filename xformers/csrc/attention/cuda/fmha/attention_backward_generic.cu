@@ -133,7 +133,13 @@ mem_efficient_attention_backward_cutlass(
     grad_v = at::empty(value.sizes(), value.options());
   }
   if (bias_requires_grad) {
-    grad_bias = at::empty(bias->sizes(), bias->options());
+    // force alignment for the last dim
+    std::vector<int64_t> sz = bias->sizes().vec();
+    int64_t lastDim = sz[sz.size() - 1];
+    int64_t alignTo = 16;
+    sz[sz.size() - 1] = alignTo * ((lastDim + alignTo - 1) / alignTo);
+    grad_bias = at::empty(sz, bias->options())
+                    .slice(/*dim=*/-1, /*start=*/0, /*end=*/lastDim);
   }
   at::Tensor workspace;
 
@@ -251,6 +257,9 @@ mem_efficient_attention_backward_cutlass(
 
     if (bias.has_value()) {
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
+      TORCH_CHECK(
+          bias->scalar_type() == CutlassToAtenDtype<scalar_t>::atScalarType(),
+          "invalid dtype for bias - should match query's dtype");
 
       p.bias_ptr = (scalar_t*)bias->data_ptr();
 

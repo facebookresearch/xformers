@@ -37,3 +37,33 @@ inline at::Tensor get_bias_4d_view(
       TORCH_CHECK(false, "bias can only have ndims in {2, 3, 4}");
   }
 }
+
+template <typename scalar_t>
+struct CutlassToAtenDtype;
+
+template <>
+struct CutlassToAtenDtype<cutlass::half_t> {
+  using scalar_t = cutlass::half_t;
+
+  static constexpr __host__ at::ScalarType atScalarType() {
+    return at::ScalarType::Half;
+  }
+};
+
+template <>
+struct CutlassToAtenDtype<cutlass::bfloat16_t> {
+  using scalar_t = cutlass::bfloat16_t;
+
+  static constexpr __host__ at::ScalarType atScalarType() {
+    return at::ScalarType::BFloat16;
+  }
+};
+
+template <>
+struct CutlassToAtenDtype<float> {
+  using scalar_t = float;
+
+  static constexpr __host__ at::ScalarType atScalarType() {
+    return at::ScalarType::Float;
+  }
+};

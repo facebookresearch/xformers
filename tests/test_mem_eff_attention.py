@@ -305,6 +305,7 @@ def create_attn_bias(
     dtype,
     requires_grad: bool,
     fmt: str,
+    op: Type[AttentionOpBase],
 ):
     if bias_type is None or isinstance(None, bias_type):
         return None
@@ -313,11 +314,31 @@ def create_attn_bias(
         if fmt == "BMK":
             batch_size *= num_heads
             num_heads = 1
-        attn_bias = (
-            torch.randn((batch_size, num_heads, 1, kv_len), device=device, dtype=dtype)
-            * 3
-        )
-        attn_bias = attn_bias.expand(batch_size, num_heads, q_len, kv_len)
+        # `small_k` only supports an expanded 1d bias
+        if op in [fmha.small_k.FwOp, fmha.small_k.BwOp]:
+            attn_bias = (
+                torch.randn(
+                    (batch_size, num_heads, 1, kv_len), device=device, dtype=dtype
+                )
+                * 3
+            )
+            attn_bias = attn_bias.expand(batch_size, num_heads, q_len, kv_len)
+        else:
+            align_to = 8
+            attn_bias = (
+                torch.randn(
+                    (
+                        batch_size,
+                        num_heads,
+                        q_len,
+                        align_to * ((kv_len + align_to - 1) // align_to),
+                    ),
+                    device=device,
+                    dtype=dtype,
+                )
+                * 3
+            )[:, :, :, :kv_len]
+
         if requires_grad:
             attn_bias.requires_grad_(True)
         return attn_bias
@@ -428,6 +449,7 @@ def create_tensors(
             device=device,
             requires_grad=attn_bias_requires_grad,
             fmt=fmt,
+            op=op,
         )
         if isinstance(
             attn_bias,
@@ -512,6 +534,7 @@ def test_forward(
                 dtype=dtype,
                 requires_grad=False,
                 fmt=fmt,
+                op=op,
             )
         else:
             # bm3hk -> 3 x bmhk
@@ -1527,3 +1550,84 @@ def test_attn_bias_blockdiag_doc() -> None:
     list_out = attn_bias.split(out)
     print(list_out[0].shape)  # [1, 3, 1, K]
     assert tuple(list_out[0].shape) == (1, 3, 1, K)
+
+
+@cuda_only
+class TestAttnBias:
+    @staticmethod
+    def create_tensors(
+        dtype,
+        B: int = 2,
+        Mq: int = 32,
+        Mkv: int = 32,
+        H: int = 3,
+        K: int = 16,
+        Kv: int = 16,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        return (
+            torch.randn([B, Mq, H, K], device="cuda", dtype=dtype) * 3,
+            torch.randn([B, Mkv, H, K], device="cuda", dtype=dtype) * 3,
+            torch.randn([B, Mkv, H, Kv], device="cuda", dtype=dtype) * 3,
+            torch.randn([B, H, Mq, Mkv], device="cuda", dtype=dtype) * 3,
+        )
+
+    @staticmethod
+    def pad_bias(bias: torch.Tensor) -> torch.Tensor:
+        align_to = 16
+        if (bias.shape[-1] % align_to) == 0:
+            return bias
+        pad_count = align_to - (bias.shape[-1] % align_to)
+        return torch.nn.functional.pad(bias, [0, pad_count])[:, :, :, : bias.shape[-1]]
+
+    def test_f16_biasf32(self) -> None:
+        q, k, v, bias = self.create_tensors(torch.float16)
+        fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
+        bias = bias.to(torch.float32)
+        with pytest.raises((ValueError, RuntimeError)):
+            fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
+
+    def test_f32_biasf16(self) -> None:
+        q, k, v, bias = self.create_tensors(torch.float32)
+        fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
+        bias = bias.to(torch.float16)
+        with pytest.raises((ValueError, RuntimeError)):
+            fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
+
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+    def test_wrong_alignment(self, dtype) -> None:
+        op = fmha.cutlass.FwOp
+        q, k, v, bias = self.create_tensors(dtype, Mq=7, Mkv=5)
+        try:
+            fmha.memory_efficient_attention(q, k, v, attn_bias=bias, op=(op, None))
+            return
+        except (ValueError, RuntimeError):
+            pass
+        # This case is not supported, likely due to padding issues
+        # Let's make sure it works with padding
+        assert bias.ndim == 4, bias.shape
+        bias_padded = self.pad_bias(bias)
+        out = fmha.memory_efficient_attention(
+            q, k, v, attn_bias=bias_padded, op=(op, None)
+        ).float()
+        ref_out = ref_attention_bmhk(q, k, v, bias)
+        assert_allclose(
+            out, ref_out, atol=op.ERROR_ATOL[dtype], rtol=op.ERROR_RTOL[dtype]
+        )
+
+    def test_permuted_attn_bias(self) -> None:
+        op = fmha.cutlass.FwOp
+        dtype = torch.float16
+        q, k, v, bias = self.create_tensors(dtype, Mq=7, Mkv=7)
+        bias = bias.transpose(-1, -2)  # now `stride(-1) != 1`
+        # Either it works, or it raises an exception
+        # but we should never get a CUDA error
+        try:
+            out = fmha.memory_efficient_attention(
+                q, k, v, attn_bias=bias, op=(op, None)
+            ).float()
+            ref_out = ref_attention_bmhk(q, k, v, bias)
+            assert_allclose(
+                out, ref_out, atol=op.ERROR_ATOL[dtype], rtol=op.ERROR_RTOL[dtype]
+            )
+        except (ValueError, RuntimeError):
+            pass
