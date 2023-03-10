@@ -601,6 +601,14 @@
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="p">,</span>
             <span class="n">_batch_sizes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="BlockDiagonalMask.make_causal_from_bottomright"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask.make_causal_from_bottomright">[docs]</a>    <span class="k">def</span> <span class="nf">make_causal_from_bottomright</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalFromBottomRightMask&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Makes each block causal with a possible non-causal prefix&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">(</span>
+            <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
+            <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="p">,</span>
+            <span class="n">_batch_sizes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">,</span>
         <span class="p">)</span></div></div>
 
 
@@ -619,6 +627,47 @@
             <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
             <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
         <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BlockDiagonalCausalFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalFromBottomRightMask">[docs]</a><span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">BlockDiagonalCausalFromBottomRightMask</span><span class="p">(</span><span class="n">BlockDiagonalMask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`, except that each block is causal.</span>
+<span class="sd">    This mask allows for a non-causal prefix</span>
+<span class="sd">    NOTE: Each block should have `num_keys &gt;= num_queries` otherwise the forward pass is not</span>
+<span class="sd">    defined (softmax of vector of `-inf` in the attention)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">((</span><span class="n">q_start</span><span class="p">,</span> <span class="n">q_end</span><span class="p">),</span> <span class="p">(</span><span class="n">k_start</span><span class="p">,</span> <span class="n">k_end</span><span class="p">))</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span>
+            <span class="nb">zip</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span>
+            <span class="p">)</span>
+        <span class="p">):</span>
+            <span class="n">num_queries</span> <span class="o">=</span> <span class="n">q_end</span> <span class="o">-</span> <span class="n">q_start</span>
+            <span class="n">num_keys</span> <span class="o">=</span> <span class="n">k_end</span> <span class="o">-</span> <span class="n">k_start</span>
+            <span class="k">if</span> <span class="n">num_keys</span> <span class="o">&lt;</span> <span class="n">num_queries</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Block #</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2"> has num_keys=</span><span class="si">{</span><span class="n">num_keys</span><span class="si">}</span><span class="s2"> and num_queries=</span><span class="si">{</span><span class="n">num_queries</span><span class="si">}</span><span class="s2">.&quot;</span>
+                    <span class="s2">&quot; Expected `num_keys &gt;= num_queries`&quot;</span>
+                <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="n">create_as</span> <span class="o">=</span> <span class="n">dtype</span> <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span> <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span>
+        <span class="n">tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span>  <span class="c1"># type: ignore</span>
+            <span class="n">shape</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">create_as</span><span class="p">,</span>
+            <span class="n">fill_value</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="s2">&quot;-inf&quot;</span><span class="p">),</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">num_queries</span><span class="p">,</span> <span class="n">num_keys</span> <span class="o">=</span> <span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:]</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="n">diagonal</span><span class="o">=</span><span class="n">num_keys</span> <span class="o">-</span> <span class="n">num_queries</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>  <span class="c1"># type: ignore</span></div>
 
 
 <div class="viewcode-block" id="BlockDiagonalCausalWithOffsetPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalWithOffsetPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
