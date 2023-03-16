@@ -17,6 +17,7 @@ import xformers.ops
 import xformers.ops.fmha as fmha
 
 CHECK_CORRECTNESS = True
+COMPARE_WITH_EAGER = True
 torch.backends.cuda.matmul.allow_tf32 = False
 
 
@@ -234,21 +235,22 @@ def benchmark_forward(shape, num_threads: int, attn_bias_cfg, dropout_p, dtype):
         sub_label=sub_label,
         num_threads=num_threads,
     )
-    yield benchmark.Timer(
-        stmt="fn(q, k, v, attn_bias, p)",
-        globals={
-            "q": q,
-            "k": k,
-            "v": v,
-            "attn_bias": inp.attn_bias,
-            "p": dropout_p,
-            "fn": ref_attention,
-        },
-        label=f"attention (attn_bias={attn_bias_type})",
-        description="eager",
-        sub_label=sub_label,
-        num_threads=num_threads,
-    )
+    if COMPARE_WITH_EAGER:
+        yield benchmark.Timer(
+            stmt="fn(q, k, v, attn_bias, p)",
+            globals={
+                "q": q,
+                "k": k,
+                "v": v,
+                "attn_bias": inp.attn_bias,
+                "p": dropout_p,
+                "fn": ref_attention,
+            },
+            label=f"attention (attn_bias={attn_bias_type})",
+            description="eager",
+            sub_label=sub_label,
+            num_threads=num_threads,
+        )
 
 
 def benchmark_backward(shape, num_threads: int, attn_bias_cfg, dropout_p, dtype):
