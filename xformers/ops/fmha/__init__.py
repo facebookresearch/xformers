@@ -211,7 +211,9 @@ def memory_efficient_attention_forward(
     *,
     op: Optional[Type[AttentionFwOpBase]] = None,
 ) -> torch.Tensor:
-    """Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later"""
+    """
+    Calculates the forward pass of :attr:`xformers.ops.memory_efficient_attention`.
+    """
     return _memory_efficient_attention_forward(
         Inputs(
             query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
@@ -232,8 +234,8 @@ def memory_efficient_attention_forward_requires_grad(
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later.
-    See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments
-    See :attr:`xformers.ops.memory_efficient_backward` for running the backward pass
+    See :attr:`xformers.ops.memory_efficient_attention` for an explanation of the arguments
+    See :attr:`xformers.ops.memory_efficient_attention_backward` for running the backward pass
     """
     if p != 0.0:
         raise NotImplementedError(
@@ -264,8 +266,8 @@ def memory_efficient_attention_backward(
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Computes the gradient of the attention.
-    Returns a tuple (dq, dk, dv, db)
-    See :attr:`xformers.ops.memory_efficient` for an explanation of the arguments.
+    Returns a tuple (dq, dk, dv)
+    See :attr:`xformers.ops.memory_efficient_attention` for an explanation of the arguments.
     `lse` is the tensor returned by :attr:`xformers.ops.memory_efficient_attention_forward_requires_grad`
     """
     if p != 0.0:
