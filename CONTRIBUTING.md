@@ -51,23 +51,27 @@ In your editor, install the [editorconfig](https://editorconfig.org/) extension
 which should ensure that you are following the same standards as us.
 
 Two options to make sure that the code is formatted and linted properly:
-* either you run black, mypy and isort before opening up your PR.
+
+- either you run black, mypy and isort before opening up your PR.
 
 ```bash
 black .
 isort . --profile black
-flake8 --config .flake8
+flake8 --config setup.cfg
 mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ --exclude stubs/ .
 ```
 
-* or you can just install [pre-commit](https://pre-commit.com/), which will make sure that all of the above is run automatically anytime you commit 
-in that case, you would need to 
+- or you can just install [pre-commit](https://pre-commit.com/), which will make sure that all of the above is run automatically anytime you commit
+  in that case, you would need to
+
 ```bash
-pip install pre-commit 
+pip install pre-commit
 ```
+
 then (in the xformers repository, just once)
+
 ```bash
-pre-commit install 
+pre-commit install
 ```
 
 After these steps each of your commits will run the same linting and formatting routines as the xformers continuous integration, which greatly helps getting your PRs all green !
@@ -90,13 +94,13 @@ pytest
 
 or
 
-``` bash
+```bash
 python -m pytest
 ```
 
 ### Check test coverage
 
-``` bash
+```bash
 python -m pytest --cov-report term --cov=template  tests
 ```
 
@@ -105,7 +109,7 @@ python -m pytest --cov-report term --cov=template  tests
 From your PR page, you can expand on the CircleCI results. For GPU test, you should see
 what CI has run, like:
 
-``` bash
+```bash
 ...
 ----- generated xml file: /home/circleci/template/test-results/junit.xml ------
 ================== 217 passed, 2 xfailed in 218.74s (0:03:38) ==================
@@ -118,7 +122,7 @@ test was the same or not.
 ## Commit Guidelines
 
 We follow the same guidelines as AngularJS. Each commit message consists of a **header**,
-a **body** and a **footer**.  The header has a special format that includes a **type**,
+a **body** and a **footer**. The header has a special format that includes a **type**,
 and a **subject**:
 
 ```bash
@@ -136,18 +140,18 @@ to read on github as well as in various git tools.
 
 Must be one of the following:
 
-* **feat**: A new feature
-* **fix**: A bug fix
-* **cleanup**: Changes that do not affect the meaning of the code (white-space, formatting, missing
+- **feat**: A new feature
+- **fix**: A bug fix
+- **cleanup**: Changes that do not affect the meaning of the code (white-space, formatting, missing
   semi-colons, dead code removal etc.)
-* **refactor**: A code change that neither fixes a bug or adds a feature
-* **perf**: A code change that improves performance
-* **test**: Adding missing tests or fixing them
-* **chore**: Changes to the build process or auxiliary tools and libraries such as documentation
-generation
-* **docs**: Documentation only changes
+- **refactor**: A code change that neither fixes a bug or adds a feature
+- **perf**: A code change that improves performance
+- **test**: Adding missing tests or fixing them
+- **chore**: Changes to the build process or auxiliary tools and libraries such as documentation
+  generation
+- **docs**: Documentation only changes
 
 ## License
 
-By contributing to *xFormers*, you agree that your contributions will be licensed
+By contributing to _xFormers_, you agree that your contributions will be licensed
 under the LICENSE file in the root directory of this source tree.
