@@ -43,15 +43,6 @@ def conda_docker_image_for_cuda(cuda_version: str) -> str:
     raise ValueError(f"Unknown cuda version {cuda_version}")
 
 
-def version_constraint(version: str) -> str:
-    """
-    Given version "11.3" returns " >=11.3,<11.4"
-    """
-    last_part = version.rindex(".") + 1
-    upper = version[:last_part] + str(1 + int(version[last_part:]))
-    return f" >={version},<{upper}"
-
-
 @dataclass
 class Build:
     """
@@ -69,8 +60,9 @@ class Build:
 
     python_version: str
     pytorch_version: str
+    pytorch_channel: str
     cuda_version: str
-    use_pytorch_nightly: bool
+    cuda_dep_runtime: str
 
     conda_always_copy: bool = True
     conda_debug: bool = False
@@ -95,16 +87,6 @@ class Build:
         NOTE: Variables set here won't be visible in `setup.py`
         UNLESS they are also specified in meta.yaml
         """
-        if "CUDA_HOME" not in os.environ:
-            if "FAIR_ENV_CLUSTER" in os.environ:
-                cuda_home = "/public/apps/cuda/" + self.cuda_version
-            else:
-                # E.g. inside docker
-                cuda_home = "/usr/local/cuda-" + self.cuda_version
-            assert Path(cuda_home).is_dir
-            os.environ["CUDA_HOME"] = cuda_home
-
-        os.environ["TORCH_CUDA_ARCH_LIST"] = "5.0+PTX 6.0 6.1 7.0 7.5 8.0 8.6"
         os.environ["BUILD_VERSION"] = self._get_build_version()
         tag = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
@@ -113,17 +95,26 @@ class Build:
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
         os.environ["CU_VERSION"] = self.cuda_version
         os.environ["SOURCE_ROOT_DIR"] = str(SOURCE_ROOT_DIR)
-        os.environ["XFORMERS_BUILD_TYPE"] = "Release"
-        os.environ["XFORMERS_PACKAGE_FROM"] = "conda"
-        cuda_constraint = version_constraint(self.cuda_version)
+
+        # At build time, the same major/minor (otherwise we might get a CPU pytorch ...)
+        cuda_constraint_build = "=" + ".".join(self.cuda_version.split(".")[:2])
         pytorch_version_tuple = tuple(
             int(v) for v in self.pytorch_version.split(".")[:2]
         )
         if pytorch_version_tuple < (1, 13):
-            os.environ["CONDA_CUDA_CONSTRAINT"] = f"cudatoolkit{cuda_constraint}"
+            os.environ[
+                "CONDA_CUDA_CONSTRAINT_BUILD"
+            ] = f"cudatoolkit{cuda_constraint_build}"
+            os.environ[
+                "CONDA_CUDA_CONSTRAINT_RUN"
+            ] = f"cudatoolkit{self.cuda_dep_runtime}"
         else:
-            os.environ["CONDA_CUDA_CONSTRAINT"] = f"pytorch-cuda{cuda_constraint}"
-        os.environ["FORCE_CUDA"] = "1"
+            os.environ[
+                "CONDA_CUDA_CONSTRAINT_BUILD"
+            ] = f"pytorch-cuda{cuda_constraint_build}"
+            os.environ[
+                "CONDA_CUDA_CONSTRAINT_RUN"
+            ] = f"pytorch-cuda{self.cuda_dep_runtime}"
 
         if self.conda_always_copy:
             os.environ["CONDA_ALWAYS_COPY"] = "true"
@@ -133,12 +124,12 @@ class Build:
             "conda",
             "build",
             "-c",
-            ("pytorch-nightly" if self.use_pytorch_nightly else "pytorch"),
+            self.pytorch_channel,
             "-c",
             "nvidia",
-            "--no-anaconda-upload",
             "--python",
             self.python_version,
+            "--no-anaconda-upload",
         ]
         if self.conda_debug:
             args += ["--debug"]
@@ -163,7 +154,7 @@ class Build:
         print(args)
         subprocess.check_call(args)
 
-    def move_artifacts_to_store(self) -> None:
+    def move_artifacts_to_store(self, store_pytorch_package: bool) -> None:
         """
         Run after a build to move the built package, and, if using nightly, the
         used PyTorch package, to a location where they will be recognized
@@ -176,35 +167,10 @@ class Build:
         for filename in Path("../build/linux-64").resolve().glob("*.tar.bz2"):
             print("moving", filename, "to", artifacts)
             shutil.move(filename, artifacts)
-        if self.use_pytorch_nightly:
+        if store_pytorch_package:
             for filename in Path("/opt/conda/pkgs").glob("pytorch-[12].*.tar.bz2"):
                 print("moving", filename, "to", artifacts)
                 shutil.move(filename, artifacts)
-
-    def build_in_docker(self) -> None:
-        filesystem = subprocess.check_output("stat -f -c %T .", shell=True).strip()
-        if filesystem in (b"nfs", b"tmpfs"):
-            raise ValueError(
-                "Cannot run docker here. "
-                + "Please work on a local filesystem, e.g. /raid."
-            )
-        image = conda_docker_image_for_cuda(self.cuda_version)
-        args = ["sudo", "docker", "run", "-it", "--rm", "-w", "/m"]
-        args += ["-v", f"{str(SOURCE_ROOT_DIR)}:/m", image]
-        args += ["python3", str(THIS_PATH.relative_to(SOURCE_ROOT_DIR))]
-        self_args = [
-            "--cuda",
-            self.cuda_version,
-            "--pytorch",
-            self.pytorch_version,
-            "--python",
-            self.python_version,
-        ]
-        if self.use_pytorch_nightly:
-            self_args.append("--use-pytorch-nightly")
-        args += self_args
-        print(args)
-        subprocess.check_call(args)
 
 
 if __name__ == "__main__":
@@ -213,13 +179,13 @@ if __name__ == "__main__":
         "--python", metavar="3.X", required=True, help="python version e.g. 3.10"
     )
     parser.add_argument(
+        "--cuda-dep-runtime", metavar="1X.Y", required=True, help="eg '>=11.7,<11.9"
+    )
+    parser.add_argument(
         "--cuda", metavar="1X.Y", required=True, help="cuda version e.g. 11.3"
     )
     parser.add_argument(
         "--pytorch", metavar="1.Y.Z", required=True, help="PyTorch version e.g. 1.11.0"
-    )
-    parser.add_argument(
-        "--docker", action="store_true", help="Call this script inside docker."
     )
     parser.add_argument(
         "--build-inside-tree",
@@ -232,39 +198,32 @@ if __name__ == "__main__":
         help="whether to upload to xformers anaconda",
     )
     parser.add_argument(
-        "--upload-or-store",
-        action="store_true",
-        help="upload to xformers anaconda if FACEBOOKRESEARCH, else position artifact to store",
-    )
-    parser.add_argument(
         "--store",
         action="store_true",
         help="position artifact to store",
     )
     parser.add_argument(
-        "--use-pytorch-nightly",
+        "--store-pytorch-package",
         action="store_true",
-        help="-c pytorch-nightly",
+        help="position artifact to store",
+    )
+    parser.add_argument(
+        "--pytorch-channel", default="pytorch", help="Use 'pytorch-nightly' for nightly"
     )
     args = parser.parse_args()
 
-    facebookresearch = os.getenv("CIRCLE_PROJECT_USERNAME", "") == "facebookresearch"
-
     pkg = Build(
+        pytorch_channel=args.pytorch_channel,
         python_version=args.python,
         pytorch_version=args.pytorch,
         cuda_version=args.cuda,
         build_inside_tree=args.build_inside_tree,
-        use_pytorch_nightly=args.use_pytorch_nightly,
-        upload=args.upload or (facebookresearch and args.upload_or_store),
+        upload=args.upload,
+        cuda_dep_runtime=args.cuda_dep_runtime,
     )
 
-    if args.docker:
-        pkg.build_in_docker()
-    else:
-        pkg.do_build()
-        if args.store or (args.upload_or_store and not facebookresearch):
-            pkg.move_artifacts_to_store()
+    pkg.do_build()
+    pkg.move_artifacts_to_store(store_pytorch_package=args.store_pytorch_package)
 
 
 # python packaging/conda/build_conda.py  --cuda 11.6 --python 3.10 --pytorch 1.12.1

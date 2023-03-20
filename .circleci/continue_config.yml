@@ -1,0 +1,404 @@
+# Python CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-python/ for more details
+#
+# Adopted from
+# https://github.com/facebookresearch/detectron2/blob/master/.circleci/config.yml
+
+version: 2.1
+
+parameters:
+  run-tests:
+    type: boolean
+    default: false
+
+# -------------------------------------------------------------------------------------
+# Environments to run the jobs in
+# -------------------------------------------------------------------------------------
+cpu_py38: &cpu_py38
+  docker:
+    - image: cimg/python:3.8
+  resource_class: large
+  environment:
+    # We're a bit short on RAM
+    MAX_JOBS: "4"
+
+gpu_cu114: &gpu_cu114
+  environment:
+    CUDA_VERSION: "11.4"
+    CUDA_HOME: /usr/local/cuda-11.4
+  machine:
+    image: ubuntu-2004-cuda-11.4:202110-01
+    resource_class: gpu.nvidia.medium
+  working_directory: ~/xformers
+
+
+binary_common: &binary_common
+  parameters:
+    pytorch_version:
+      description: "PyTorch version to build against"
+      type: string
+      default: "1.10.0"
+    python_version:
+      description: "Python version to build against (e.g., 3.7)"
+      type: string
+      default: "3.8"
+    cu_version:
+      description: "CUDA version to build against, in CU format (e.g., cpu or cu100)"
+      type: string
+      default: "cu102"
+    wheel_docker_image:
+      description: "Wheel only: what docker image to use"
+      type: string
+      default: "pytorch/manylinux-cuda102"
+  environment:
+      CU_VERSION: << parameters.cu_version >>
+      PYTHON_VERSION: << parameters.python_version >>
+      PYTORCH_VERSION: << parameters.pytorch_version >>
+      XFORMERS_VERSION_SUFFIX: ""
+
+# -------------------------------------------------------------------------------------
+# Re-usable commands
+# -------------------------------------------------------------------------------------
+setup_conda: &setup_conda
+  - run:
+      name: Setup Conda
+      working_directory: ~/
+      command: |
+        cd /home/circleci
+        echo 'export MINICONDA=$HOME/miniconda' >>  $BASH_ENV
+        echo 'export PATH="$MINICONDA/bin:$PATH"' >>  $BASH_ENV
+        echo 'export CONDA_PYTHON=/home/circleci/venv/bin/python'  >>  $BASH_ENV
+        source $BASH_ENV
+
+        # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
+        if [ -f /home/circleci/venv/check_version.py ]; then $CONDA_PYTHON /home/circleci/venv/check_version.py torch gt 1.11 && exit 0; fi
+
+        hash -r
+        wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+        bash miniconda.sh -b -f -p $MINICONDA
+        conda config --set always_yes yes
+        conda update conda
+        conda info -a
+        conda create -p /home/circleci/venv python=3.8.0 pip  # pip is required here, else the system pip will be used
+
+
+install_dep: &install_dep
+  - run:
+      name: Install Dependencies with torch nightly
+      no_output_timeout: 30m
+      command: |
+        source $BASH_ENV
+
+        # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
+        if [ -f /home/circleci/venv/check_version.py ]; then $CONDA_PYTHON /home/circleci/venv/check_version.py torch gt 1.11 && exit 0; fi
+
+        # start installing
+        source activate /home/circleci/venv
+
+        # for faster builds
+        conda install ninja
+        echo "Ninja version $(ninja --version)"
+
+        conda install pytorch=1.13 torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia -q
+        $CONDA_PYTHON -m pip install -r requirements-benchmark.txt --progress-bar off
+
+        # Mark install as complete
+        touch /home/circleci/miniconda/.finished
+
+install_dep_exp: &install_dep_exp
+  - run:
+      name: Install Dependencies for experimental tests
+      no_output_timeout: 30m
+      command: |
+        source $BASH_ENV
+        # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
+        if [ -f /home/circleci/venv/check_version.py ]; then $CONDA_PYTHON  /home/circleci/venv/check_version.py torch gt 1.11 && exit 0; fi
+        # start installing
+        source activate /home/circleci/venv
+        conda install pytorch=1.13 torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia -q
+        $CONDA_PYTHON -m pip install -r experimental/requirements.txt --progress-bar off
+
+install_repo: &install_repo
+  - run:
+      name: Install Repository
+      no_output_timeout: 30m
+      command: |
+        source $BASH_ENV
+        source activate /home/circleci/venv
+        git submodule update --init --recursive
+        $CONDA_PYTHON -m pip install -v -e .
+
+        # Test import.
+        $CONDA_PYTHON -c 'import sys; sys.path = sys.path[1:]; import xformers'
+        ls xformers
+        $CONDA_PYTHON -m xformers.info
+
+install_experimental_repo: &install_experimental_repo
+  - run:
+      name: Install Repository
+      no_output_timeout: 30m
+      command: |
+        git submodule update --init --recursive
+        source $BASH_ENV
+
+        cd experimental
+        $CONDA_PYTHON -m pip install -v -e .
+
+run_coverage: &run_coverage
+  - run:
+      name: Run Unit Tests With Coverage
+      when: always
+      command: |
+        source $BASH_ENV
+        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --cov-report=xml --cov=./ tests
+        #Uploading test coverage for Python code
+        bash <(curl -s https://codecov.io/bash) -f coverage.xml -cF Python
+
+run_unittests: &run_unittests
+  - run:
+      name: Run Unit Tests
+      when: always
+      command: |
+        source $BASH_ENV
+        $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose tests
+
+run_experimental_unittests: &run_experimental_unittests
+  - run:
+      name: Run Unit Tests
+      when: always
+      command: |
+        source $BASH_ENV
+        CUDA_LAUNCH_BLOCKING=1 $CONDA_PYTHON -m pytest experimental/tests
+
+run_benchmarks: &run_benchmarks
+  - run:
+      name: Run Benchmarks
+      when: always
+      command: |
+        source $BASH_ENV
+        $CONDA_PYTHON xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 128 -bs 16 -heads 4
+
+run_pytorch_benchmark: &run_pytorch_benchmark
+  - run:
+      name: Run Pytorch benchmark
+      when: always
+      command: |
+        source $BASH_ENV
+        $CONDA_PYTHON xformers/benchmarks/benchmark_pytorch_transformer.py
+
+run_doc_build: &run_doc_build
+   - run:
+      name: Testing doc build
+      when: always
+      command: |
+        source $BASH_ENV
+        cd docs
+        python3 -m ensurepip
+        python3 -m pip install -r requirements.txt
+        make help
+        make singlehtml | tee make.out
+        ! tail make.out | grep -q warning
+
+commands:
+    setup_pyenv:
+      parameters:
+        version:
+          type: string
+      steps:
+        - run:
+            name: Setup pyenv
+            command: |
+              git clone -b master https://github.com/pyenv/pyenv-update.git $(pyenv root)/plugins/pyenv-update
+              cd $(pyenv root); git checkout master; cd /home/circleci
+              pyenv update
+              # figure out the latest python3version given a subversion, like 3.8
+              LATEST_PY_VERSION=$(pyenv install --list | sed 's/^  //' | grep -E '^[0-9].[0-9].[0-9]' | grep <<parameters.version>> | tail -1)
+              pyenv install -f $LATEST_PY_VERSION
+              pyenv global $LATEST_PY_VERSION
+
+    check_torch: &check_torch
+      parameters:
+        major:
+          type: integer
+        minor:
+          type: integer
+
+      steps:
+        - run:
+            name: Check the installed PyTorch version
+            command: |
+              source $BASH_ENV
+              which python
+
+              $CONDA_PYTHON -c 'import torch; print("Torch version:", torch.__version__)'
+              $CONDA_PYTHON -c 'import torch; assert torch.__version__ > ( <<parameters.major>>,  <<parameters.minor>>), "wrong torch version"'
+              $CONDA_PYTHON -m torch.utils.collect_env
+              wget -O ~/venv/check_version.py https://raw.githubusercontent.com/min-xu-ai/check_verion/main/check_version.py
+
+    run_gpu_ci: &run_gpu_ci
+      parameters:
+        arch:
+          type: string
+      steps:
+        - checkout
+
+        - run: nvidia-smi
+        - run:
+            name: Setup env variables
+            command: |
+              echo 'export TORCH_CUDA_ARCH_LIST="<<parameters.arch>>"' >>  $BASH_ENV
+              echo 'export FORCE_CUDA=1' >>  $BASH_ENV
+              echo 'export XFORMERS_ENABLE_DEBUG_ASSERTIONS=1' >>  $BASH_ENV
+
+        # Cache the venv directory that contains dependencies
+        - restore_cache:
+            keys:
+              - cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
+
+        - <<: *setup_conda
+        - <<: *install_dep
+
+        - check_torch:
+            major: 1
+            minor: 11
+
+        - save_cache:
+            paths:
+              - ~/miniconda
+              - ~/venv
+
+            key: cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt"}}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml"}}
+
+        - <<: *install_repo
+        - <<: *run_coverage
+        - <<: *run_benchmarks
+        - <<: *run_pytorch_benchmark
+
+        - store_test_results:
+            path: test-results
+
+# -------------------------------------------------------------------------------------
+# Jobs to run
+# -------------------------------------------------------------------------------------
+
+jobs:
+  skip_circleci_tests:
+    machine:
+      image: ubuntu-2004:202010-01
+    steps:
+      - run: echo "No job to run"
+  cpu_tests_py38:
+    <<: *cpu_py38
+
+    working_directory: ~/xformers
+
+    steps:
+      - checkout
+
+      # Cache the venv directory that contains dependencies
+      - restore_cache:
+          keys:
+            - cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
+
+      - <<: *setup_conda
+
+      - <<: *install_dep
+
+      - check_torch:
+          major: 1
+          minor: 11
+
+      - save_cache:
+          paths:
+            - ~/miniconda
+            - ~/venv
+
+          key: cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
+
+      - <<: *install_repo
+      - <<: *run_unittests
+      - <<: *run_doc_build
+
+      - store_test_results:
+          path: test-results
+
+  gpu_tests_cu114_sm75_T4:
+    <<: *gpu_cu114
+    machine:
+      image: ubuntu-2004-cuda-11.4:202110-01
+      resource_class: gpu.nvidia.medium  # T4
+
+    steps:
+      - run_gpu_ci:
+          arch: "7.5"
+
+  gpu_tests_cu114_sm70_V100:
+    <<: *gpu_cu114
+    machine:
+      image: ubuntu-2004-cuda-11.4:202110-01
+      resource_class: gpu.nvidia.large  # V100
+
+    steps:
+      - run_gpu_ci:
+          arch: "7.0"
+
+  gpu_tests_cu114_sm61_P4:
+    <<: *gpu_cu114
+    machine:
+      image: ubuntu-2004-cuda-11.4:202110-01
+      resource_class: gpu.nvidia.small  # P4
+
+    steps:
+      - run_gpu_ci:
+          arch: "6.1"
+
+  gpu_experimental_tests:
+    <<: *gpu_cu114
+
+    working_directory: ~/xformers
+
+    steps:
+      - checkout
+
+      - run: nvidia-smi
+
+      # Cache the venv directory that contains dependencies
+      - restore_cache:
+          keys:
+            - cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
+
+      - <<: *setup_conda
+      - <<: *install_dep_exp
+
+      - check_torch:
+          major: 1
+          minor: 11
+
+      - save_cache:
+          paths:
+            - ~/miniconda
+            - ~/venv
+
+          key: cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
+
+      - <<: *install_experimental_repo
+      - <<: *run_experimental_unittests
+
+workflows:
+  version: 2
+  build:
+    when: << pipeline.parameters.run-tests >>
+    jobs:
+      - cpu_tests_py38
+      - gpu_tests_cu114_sm61_P4
+      - gpu_tests_cu114_sm70_V100
+      - gpu_tests_cu114_sm75_T4
+      # - gpu_experimental_tests
+  # Prevents marking the CI as failed when no jobs run
+  # https://github.com/CircleCI-Public/circleci-cli/issues/577
+  report_noop:
+    when:
+      not: << pipeline.parameters.run-tests >>
+    jobs:
+      - skip_circleci_tests

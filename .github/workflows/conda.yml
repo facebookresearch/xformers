@@ -1,0 +1,118 @@
+name: conda
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "packaging/**"
+      - ".github/workflows/build_conda.yml"
+      - "setup.py"
+      - "requirements*.txt"
+  push:
+    branches:
+      - main
+    tags:
+      - "v[0-9]+*"
+
+# this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
+# https://github.com/actions/runner/issues/1182
+
+env:
+  # you need at least cuda 5.0 for some of the stuff compiled here.
+  TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0 8.6"
+  MAX_JOBS: 1 # avoids OOMs
+  XFORMERS_BUILD_TYPE: "Release"
+  XFORMERS_PACKAGE_FROM: "conda-${{ github.ref_name }}"
+  CUDA_HOME: /usr/share/miniconda/
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+        python:
+          - "3.9"
+          - "3.10"
+        config:
+          - torch_version: "2.1.0"
+            torch_channel: "pytorch-nightly"
+            cuda_version: "11.8.0"
+            cuda_dep_runtime: ">=11.7,<11.9"
+
+          - torch_version: "2.0.0"
+            torch_channel: "pytorch"
+            cuda_version: "11.8.0"
+            cuda_dep_runtime: ">=11.7,<11.9"
+
+          - torch_version: "1.13.1"
+            torch_channel: "pytorch"
+            cuda_version: "11.7.1"
+            cuda_dep_runtime: ">=11.6,<11.8"
+
+          - torch_version: "1.12.1"
+            torch_channel: "pytorch"
+            cuda_version: "11.6.2"
+            cuda_dep_runtime: ">=11.3,<11.7"
+
+    name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}-cu${{ matrix.config.cuda_version }}
+    runs-on: ${{ matrix.os }}
+
+    # This would be the proper solution (and would avoid installing conda/...)
+    # but unfortunately we don't have enough disk space to go through the entire
+    # process then.
+    # container:
+    #   image: pytorch/conda-builder:cuda116
+    env:
+      # alias for the current python version
+      PY: /usr/share/miniconda/bin/python
+
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Recursive checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          path: "."
+          fetch-depth: 0 # for tags
+      - name: Setup env with cuda ${{ matrix.config.cuda_version }}
+        run: |
+          conda install -c "nvidia/label/cuda-${{ matrix.config.cuda_version }}" cuda-nvcc cuda-libraries-dev conda-build
+          $CUDA_HOME/bin/nvcc -V
+      - name: Free up some disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android  # 11GB
+          sudo rm -rf /usr/local/lib/node_modules  # 1GB
+          df -h
+      - name: Define version
+        run: |
+          set -Eeuo pipefail
+          git config --global --add safe.directory "*"
+          $PY -m pip install packaging
+          version=`$PY packaging/compute_wheel_version.py`
+          echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}
+          cat ${GITHUB_ENV}
+      - name: Build & store/upload
+        env:
+          # NOTE: Ternary operator: ${{ cond && 'trueVal' || 'falseVal' }}
+          STORE_OR_UPLOAD: ${{ (github.repository == 'facebookresearch/xformers' && github.event_name != 'pull_request' && matrix.config.torch_channel == 'pytorch') && '--upload' || '--store' }}
+          STORE_PT_PACKAGE: ${{ matrix.config.torch_channel != 'pytorch' && '--store-pytorch-package' || '' }}
+          ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+        run: |
+          $PY packaging/build_conda.py \
+          --cuda ${{ matrix.config.cuda_version }} \
+          --python ${{ matrix.python }} \
+          --pytorch ${{ matrix.config.torch_version }} \
+          --pytorch-channel ${{ matrix.config.torch_channel }} \
+          --cuda-dep-runtime "${{ matrix.config.cuda_dep_runtime }}" \
+          $STORE_OR_UPLOAD $STORE_PT_PACKAGE
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
+          path: packages
+# Note: it might be helpful to have additional steps that test if the built wheels actually work
