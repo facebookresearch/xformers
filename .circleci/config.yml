@@ -182,16 +182,6 @@ run_pytorch_benchmark: &run_pytorch_benchmark
         source $BASH_ENV
         $CONDA_PYTHON xformers/benchmarks/benchmark_pytorch_transformer.py
 
-run_vit_benchmark: &run_vit_benchmark
-  - run:
-      name: Run ViT Timm benchmark
-      when: always
-      command: |
-        source $BASH_ENV
-        $CONDA_PYTHON xformers/benchmarks/benchmark_vit_timm.py
-        $CONDA_PYTHON xformers/benchmarks/benchmark_vit_timm.py --timm
-
-
 run_doc_build: &run_doc_build
    - run:
       name: Testing doc build
@@ -279,7 +269,6 @@ commands:
         - <<: *run_coverage
         - <<: *run_benchmarks
         - <<: *run_pytorch_benchmark
-        - <<: *run_vit_benchmark
 
         - store_test_results:
             path: test-results
