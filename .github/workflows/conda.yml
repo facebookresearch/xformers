@@ -5,7 +5,7 @@ on:
   pull_request:
     paths:
       - "packaging/**"
-      - ".github/workflows/build_conda.yml"
+      - ".github/workflows/conda.yml"
       - "setup.py"
       - "requirements*.txt"
   push:
@@ -73,6 +73,8 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Setup anaconda client
+        run: conda install anaconda-client
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
