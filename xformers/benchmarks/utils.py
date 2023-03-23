@@ -339,6 +339,7 @@ def benchmark_main_helper(
         type=str,
         help="Compare to previously stored benchmarks (coma separated)",
     )
+    parser.add_argument("--omit-baselines", action="store_true")
     args = parser.parse_args()
 
     if args.fn is not None and args.fn != benchmark_fn.__name__:
@@ -412,8 +413,6 @@ def benchmark_main_helper(
                 is_optimized = (
                     benchmark_object._task_spec.description not in BASELINE_DESCRIPTIONS
                 )
-                if benchmark_object is None:
-                    continue
                 metadata = {}
                 if is_optimized:
                     metadata[META_ALGORITHM] = benchmark_object._task_spec.description
@@ -421,9 +420,13 @@ def benchmark_main_helper(
                         benchmark_object._task_spec, description=optimized_label
                     )
                 elif (
-                    benchmark_object._task_spec.sub_label,
-                    benchmark_object._task_spec.num_threads,
-                ) in skip_vanilla_tasks:
+                    args.omit_baselines
+                    or (
+                        benchmark_object._task_spec.sub_label,
+                        benchmark_object._task_spec.num_threads,
+                    )
+                    in skip_vanilla_tasks
+                ):
                     continue
 
                 memory = math.inf
