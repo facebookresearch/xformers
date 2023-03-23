@@ -20,18 +20,15 @@ on:
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
   TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0 8.6"
-  MAX_JOBS: 1 # avoids OOMs
+  MAX_JOBS: 2  # Avoids OOMs
   XFORMERS_BUILD_TYPE: "Release"
   XFORMERS_PACKAGE_FROM: "conda-${{ github.ref_name }}"
-  CUDA_HOME: /usr/share/miniconda/
 
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-22.04
         python:
           - "3.9"
           - "3.10"
@@ -40,56 +37,60 @@ jobs:
             torch_channel: "pytorch-nightly"
             cuda_version: "11.8.0"
             cuda_dep_runtime: ">=11.7,<11.9"
+            conda_builder_tag: cuda118
 
           - torch_version: "2.0.0"
             torch_channel: "pytorch"
             cuda_version: "11.8.0"
             cuda_dep_runtime: ">=11.7,<11.9"
+            conda_builder_tag: cuda118
 
           - torch_version: "1.13.1"
             torch_channel: "pytorch"
             cuda_version: "11.7.1"
             cuda_dep_runtime: ">=11.6,<11.8"
+            conda_builder_tag: cuda117
 
           - torch_version: "1.12.1"
             torch_channel: "pytorch"
             cuda_version: "11.6.2"
             cuda_dep_runtime: ">=11.3,<11.7"
+            conda_builder_tag: cuda116
 
-    name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}-cu${{ matrix.config.cuda_version }}
-    runs-on: ${{ matrix.os }}
+    name: py${{ matrix.python }}-torch${{ matrix.config.torch_version }}-cu${{ matrix.config.cuda_version }}
+    runs-on: 4-core-ubuntu  # 16GB RAM, 4 vCPUs
 
-    # This would be the proper solution (and would avoid installing conda/...)
-    # but unfortunately we don't have enough disk space to go through the entire
-    # process then.
-    # container:
-    #   image: pytorch/conda-builder:cuda116
+    container:
+      image: pytorch/conda-builder:${{ matrix.config.conda_builder_tag }}
     env:
       # alias for the current python version
-      PY: /usr/share/miniconda/bin/python
+      PY: /opt/conda/bin/python
 
     timeout-minutes: 360
     defaults:
       run:
         shell: bash
     steps:
-      - name: Setup anaconda client
-        run: conda install anaconda-client
+      - name: System info
+        run: |
+          ldd --version
+          $PY --version
+          echo "Memory and swap:"
+          free -h
+          echo
+          swapon --show
+      - name: Free up disk space
+        run: |
+          df -h /
+          sudo rm -rf /__t/Python /__t/CodeQL /__t/go /__t/Python /__t/PyPy /__t/node
+          sudo rm -rf /opt/conda/pkgs
+          df -h /
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
           submodules: recursive
           path: "."
           fetch-depth: 0 # for tags
-      - name: Setup env with cuda ${{ matrix.config.cuda_version }}
-        run: |
-          conda install -c "nvidia/label/cuda-${{ matrix.config.cuda_version }}" cuda-nvcc cuda-libraries-dev conda-build
-          $CUDA_HOME/bin/nvcc -V
-      - name: Free up some disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android  # 11GB
-          sudo rm -rf /usr/local/lib/node_modules  # 1GB
-          df -h
       - name: Define version
         run: |
           set -Eeuo pipefail
@@ -105,6 +106,7 @@ jobs:
           STORE_PT_PACKAGE: ${{ matrix.config.torch_channel != 'pytorch' && '--store-pytorch-package' || '' }}
           ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
         run: |
+          df -h
           $PY packaging/build_conda.py \
           --cuda ${{ matrix.config.cuda_version }} \
           --python ${{ matrix.python }} \
@@ -115,6 +117,6 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
+          name: linux-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
           path: packages
 # Note: it might be helpful to have additional steps that test if the built wheels actually work
