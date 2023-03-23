@@ -13,13 +13,27 @@ import torch
 
 class AttentionBias:
     """Base class for a custom bias that can be applied \
-        in :attr:`xformers.ops.memory_efficient_attention`.
+        as the attn_bias argument in
+        :attr:`xformers.ops.memory_efficient_attention`.
+
+    That function has the ability to add a tensor, the
+    attention bias, to the QK^T matrix before it is used
+    in the softmax part of the attention calculation.
+    The attention bias tensor with shape
+    (B or 1, n_queries, number of keys)
+    can be given as the attn_bias input.
+    The most common use case is for an attention bias is
+    to contain only zeros and negative infinities, which forms
+    a mask so that some queries only attend to some keys.
+
+    Children of this class define alternative things which can
+    be used as the attn_bias input to define an attention bias which
+    forms such a mask, for some common cases.
 
     When using an :attr:`xformers.ops.AttentionBias`
     instead of a :attr:`torch.Tensor`, the mask matrix does
     not need to be materialized, and can be
     hardcoded into some kernels for better performance.
-
 
     See:
 
@@ -46,7 +60,12 @@ class AttentionBias:
 
 
 class LowerTriangularMask(AttentionBias):
-    """A lower-triangular (aka causal) mask"""
+    """
+    A lower-triangular (aka causal) mask
+
+    A query Q cannot attend to a key which is farther from the
+    initial key than Q is from the initial query.
+    """
 
     def materialize(
         self,
@@ -84,6 +103,17 @@ class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
 
 @dataclass
 class _SeqLenInfo:
+    """
+    (Internal) Represents the division of a dimension into blocks.
+
+    For example, to represents a dimension of length 7 divided into
+    three blocks of lengths 2, 3 and 2, use `from_seqlength([2, 3, 2])`.
+    The members will be:
+        max_seqlen: 3
+        seqstart_py: [0, 2, 5, 7]
+        seqstart: torch.IntTensor([0, 2, 5, 7])
+    """
+
     seqstart: torch.Tensor
     max_seqlen: int
     seqstart_py: List[int]
@@ -134,6 +164,38 @@ class _SeqLenInfo:
 
 @dataclass
 class _PaddedSeqLenInfo(_SeqLenInfo):
+    """
+    (Internal)  Represents the division of a dimension into blocks which are
+    padded out to the same total length.
+
+    For example, to represent a dimension of length 12 with space for
+    three blocks of length 4, but where the occupied lengths are
+    2, 3 and 2, use `from_seqlens_padded([2, 3, 2], 4)`.
+
+    The layout along the dimension is
+
+     0 ─►  block 0
+           block 0
+           <space>
+           <space>
+     4 ─►  block 1
+           block 1
+           block 1
+           <space>
+     8 ─►  block 2
+           block 2
+           <space>
+           <space>
+    12 ─►
+
+    The members will be:
+        max_seqlen: 3
+        seqstart_py: [0, 4, 8, 12]
+        seqstart: torch.IntTensor([0, 4, 8, 12])
+        seqlen_py: [2, 3, 2]
+        seqlen: torch.IntTensor([2, 3, 2])
+    """
+
     seqlen: torch.Tensor
     seqlen_py: Sequence[int]
     # From parent: seqstart[i] contains the start position
@@ -187,6 +249,9 @@ class BlockDiagonalMask(AttentionBias):
     """
     A block-diagonal mask that can be passed as ``attn_bias``
     argument to :attr:`xformers.ops.memory_efficient_attention`.
+
+    Queries and Keys are each divided into the same number of blocks.
+    Queries in block i only attend to keys in block i.
 
     .. figure:: /_static/block_diag_bias.png
 
@@ -278,7 +343,7 @@ class BlockDiagonalMask(AttentionBias):
         Args:
             q_seqlen (Union[Sequence[int], torch.Tensor]): List or tensor of sequence lengths for query tensors
             kv_seqlen (Union[Sequence[int], torch.Tensor], optional): List or tensor of sequence lengths for key/value.
-            Defaults to ``q_seqlen``.
+                    (Defaults to ``q_seqlen``.)
         Returns:
             BlockDiagonalMask
         """
@@ -387,7 +452,14 @@ class BlockDiagonalMask(AttentionBias):
 
 @dataclass
 class BlockDiagonalCausalMask(BlockDiagonalMask):
-    """Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`, except that each block is causal"""
+    """
+    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`, except that each block is causal.
+
+    Queries and Keys are each divided into the same number of blocks.
+    A query Q in block i cannot attend to a key which is not in block i,
+    nor one which is farther from the initial key in block i than Q
+    is from the initial query in block i.
+    """
 
     def _create_block_mask(
         self,
@@ -409,6 +481,11 @@ class BlockDiagonalCausalFromBottomRightMask(BlockDiagonalMask):
     This mask allows for a non-causal prefix
     NOTE: Each block should have `num_keys >= num_queries` otherwise the forward pass is not
     defined (softmax of vector of `-inf` in the attention)
+
+    Queries and keys are each divided into the same number of blocks.
+    A query Q in block i cannot attend to a key which is not in block i,
+    nor one which nearer the final key in block i than Q is to the
+    final query in block i.
     """
 
     def __post_init__(self) -> None:
@@ -448,6 +525,20 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
     """
     Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`,
     except an offset on causality is allowed for each block and we support padding for k/v
+
+    The keys and values are divided into blocks which are padded out to
+    the same total length.
+    For example, if there is space for 12 keys, for three blocks of
+    max length 4, but we only want to use the first 2, 3 and 2
+    of each block, use `kv_padding=4` and `kv_seqlens=[2, 3, 2]`.
+    The queries are divided into blocks, without padding, of lengths given by
+    q_seqlen.
+
+    A query Q in block i cannot attend to a key which is not in block i,
+    nor one which is not in use (i.e. in the padded area),
+    nor one whose distance from the initial key in block i
+    exceeds the distance of Q from the initial query in block i by
+    more than causal_diagonal[i] (which defaults to 0).
     """
 
     q_seqinfo: _SeqLenInfo
