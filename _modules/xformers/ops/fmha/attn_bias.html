@@ -240,13 +240,27 @@
 
 <div class="viewcode-block" id="AttentionBias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.AttentionBias">[docs]</a><span class="k">class</span> <span class="nc">AttentionBias</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for a custom bias that can be applied \</span>
-<span class="sd">        in :attr:`xformers.ops.memory_efficient_attention`.</span>
+<span class="sd">        as the attn_bias argument in</span>
+<span class="sd">        :attr:`xformers.ops.memory_efficient_attention`.</span>
+
+<span class="sd">    That function has the ability to add a tensor, the</span>
+<span class="sd">    attention bias, to the QK^T matrix before it is used</span>
+<span class="sd">    in the softmax part of the attention calculation.</span>
+<span class="sd">    The attention bias tensor with shape</span>
+<span class="sd">    (B or 1, n_queries, number of keys)</span>
+<span class="sd">    can be given as the attn_bias input.</span>
+<span class="sd">    The most common use case is for an attention bias is</span>
+<span class="sd">    to contain only zeros and negative infinities, which forms</span>
+<span class="sd">    a mask so that some queries only attend to some keys.</span>
+
+<span class="sd">    Children of this class define alternative things which can</span>
+<span class="sd">    be used as the attn_bias input to define an attention bias which</span>
+<span class="sd">    forms such a mask, for some common cases.</span>
 
 <span class="sd">    When using an :attr:`xformers.ops.AttentionBias`</span>
 <span class="sd">    instead of a :attr:`torch.Tensor`, the mask matrix does</span>
 <span class="sd">    not need to be materialized, and can be</span>
 <span class="sd">    hardcoded into some kernels for better performance.</span>
-
 
 <span class="sd">    See:</span>
 
@@ -273,7 +287,12 @@
 
 
 <div class="viewcode-block" id="LowerTriangularMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.LowerTriangularMask">[docs]</a><span class="k">class</span> <span class="nc">LowerTriangularMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A lower-triangular (aka causal) mask&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A lower-triangular (aka causal) mask</span>
+
+<span class="sd">    A query Q cannot attend to a key which is farther from the</span>
+<span class="sd">    initial key than Q is from the initial query.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -311,6 +330,17 @@
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">_SeqLenInfo</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    (Internal) Represents the division of a dimension into blocks.</span>
+
+<span class="sd">    For example, to represents a dimension of length 7 divided into</span>
+<span class="sd">    three blocks of lengths 2, 3 and 2, use `from_seqlength([2, 3, 2])`.</span>
+<span class="sd">    The members will be:</span>
+<span class="sd">        max_seqlen: 3</span>
+<span class="sd">        seqstart_py: [0, 2, 5, 7]</span>
+<span class="sd">        seqstart: torch.IntTensor([0, 2, 5, 7])</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
     <span class="n">seqstart</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="n">max_seqlen</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">seqstart_py</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
@@ -361,6 +391,38 @@
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">_PaddedSeqLenInfo</span><span class="p">(</span><span class="n">_SeqLenInfo</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    (Internal)  Represents the division of a dimension into blocks which are</span>
+<span class="sd">    padded out to the same total length.</span>
+
+<span class="sd">    For example, to represent a dimension of length 12 with space for</span>
+<span class="sd">    three blocks of length 4, but where the occupied lengths are</span>
+<span class="sd">    2, 3 and 2, use `from_seqlens_padded([2, 3, 2], 4)`.</span>
+
+<span class="sd">    The layout along the dimension is</span>
+
+<span class="sd">     0 ─►  block 0</span>
+<span class="sd">           block 0</span>
+<span class="sd">           &lt;space&gt;</span>
+<span class="sd">           &lt;space&gt;</span>
+<span class="sd">     4 ─►  block 1</span>
+<span class="sd">           block 1</span>
+<span class="sd">           block 1</span>
+<span class="sd">           &lt;space&gt;</span>
+<span class="sd">     8 ─►  block 2</span>
+<span class="sd">           block 2</span>
+<span class="sd">           &lt;space&gt;</span>
+<span class="sd">           &lt;space&gt;</span>
+<span class="sd">    12 ─►</span>
+
+<span class="sd">    The members will be:</span>
+<span class="sd">        max_seqlen: 3</span>
+<span class="sd">        seqstart_py: [0, 4, 8, 12]</span>
+<span class="sd">        seqstart: torch.IntTensor([0, 4, 8, 12])</span>
+<span class="sd">        seqlen_py: [2, 3, 2]</span>
+<span class="sd">        seqlen: torch.IntTensor([2, 3, 2])</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
     <span class="n">seqlen</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="n">seqlen_py</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
     <span class="c1"># From parent: seqstart[i] contains the start position</span>
@@ -414,6 +476,9 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A block-diagonal mask that can be passed as ``attn_bias``</span>
 <span class="sd">    argument to :attr:`xformers.ops.memory_efficient_attention`.</span>
+
+<span class="sd">    Queries and Keys are each divided into the same number of blocks.</span>
+<span class="sd">    Queries in block i only attend to keys in block i.</span>
 
 <span class="sd">    .. figure:: /_static/block_diag_bias.png</span>
 
@@ -505,7 +570,7 @@
 <span class="sd">        Args:</span>
 <span class="sd">            q_seqlen (Union[Sequence[int], torch.Tensor]): List or tensor of sequence lengths for query tensors</span>
 <span class="sd">            kv_seqlen (Union[Sequence[int], torch.Tensor], optional): List or tensor of sequence lengths for key/value.</span>
-<span class="sd">            Defaults to ``q_seqlen``.</span>
+<span class="sd">                    (Defaults to ``q_seqlen``.)</span>
 <span class="sd">        Returns:</span>
 <span class="sd">            BlockDiagonalMask</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -614,7 +679,14 @@
 
 <div class="viewcode-block" id="BlockDiagonalCausalMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalCausalMask</span><span class="p">(</span><span class="n">BlockDiagonalMask</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`, except that each block is causal&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`, except that each block is causal.</span>
+
+<span class="sd">    Queries and Keys are each divided into the same number of blocks.</span>
+<span class="sd">    A query Q in block i cannot attend to a key which is not in block i,</span>
+<span class="sd">    nor one which is farther from the initial key in block i than Q</span>
+<span class="sd">    is from the initial query in block i.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -636,6 +708,11 @@
 <span class="sd">    This mask allows for a non-causal prefix</span>
 <span class="sd">    NOTE: Each block should have `num_keys &gt;= num_queries` otherwise the forward pass is not</span>
 <span class="sd">    defined (softmax of vector of `-inf` in the attention)</span>
+
+<span class="sd">    Queries and keys are each divided into the same number of blocks.</span>
+<span class="sd">    A query Q in block i cannot attend to a key which is not in block i,</span>
+<span class="sd">    nor one which nearer the final key in block i than Q is to the</span>
+<span class="sd">    final query in block i.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -675,6 +752,20 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`,</span>
 <span class="sd">    except an offset on causality is allowed for each block and we support padding for k/v</span>
+
+<span class="sd">    The keys and values are divided into blocks which are padded out to</span>
+<span class="sd">    the same total length.</span>
+<span class="sd">    For example, if there is space for 12 keys, for three blocks of</span>
+<span class="sd">    max length 4, but we only want to use the first 2, 3 and 2</span>
+<span class="sd">    of each block, use `kv_padding=4` and `kv_seqlens=[2, 3, 2]`.</span>
+<span class="sd">    The queries are divided into blocks, without padding, of lengths given by</span>
+<span class="sd">    q_seqlen.</span>
+
+<span class="sd">    A query Q in block i cannot attend to a key which is not in block i,</span>
+<span class="sd">    nor one which is not in use (i.e. in the padded area),</span>
+<span class="sd">    nor one whose distance from the initial key in block i</span>
+<span class="sd">    exceeds the distance of Q from the initial query in block i by</span>
+<span class="sd">    more than causal_diagonal[i] (which defaults to 0).</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">q_seqinfo</span><span class="p">:</span> <span class="n">_SeqLenInfo</span>
