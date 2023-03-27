@@ -137,6 +137,11 @@ class MemSnapshotsProfiler:
             return
         assert self.enabled
         snapshot = torch.cuda.memory._snapshot()
+        torch.cuda.memory._record_memory_history(False)
+        # No data was recorded - avoids a `ValueError` in `trace_plot`
+        if all(len(t) == 0 for t in snapshot["device_traces"]):
+            self.main_profiler.summary.append(("MemTrace", "(no allocation recorded)"))
+            return
         # Dump to disk
         filename = os.path.abspath(
             os.path.join(
@@ -151,7 +156,6 @@ class MemSnapshotsProfiler:
                     snapshot, device=None, plot_segments=False
                 )
             )
-        torch.cuda.memory._record_memory_history(False)
 
     def step(self) -> None:
         pass
@@ -341,10 +345,12 @@ class _Profiler:
             self.parents = ["Global"]
             self.update_profilers_on_step()
         if self.done_steps == self.last_step:
-            logger.info("xFormers profiler done - summary:\n%s", self.format_summary())
+            logger.info("xFormers profiler done. %s", self.format_summary())
 
     def format_summary(self) -> str:
+        if len(self.summary) == 0:
+            return ""
         pad_titles = max(len(title) for title, value in self.summary)
-        return "\n".join(
+        return "summary:\n" + "\n".join(
             [f"  {title.ljust(pad_titles)}: {value}" for title, value in self.summary]
         )
