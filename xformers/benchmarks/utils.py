@@ -6,11 +6,11 @@
 import argparse
 import contextlib
 import copy
+import csv
 import glob
 import logging
 import math
 import os
-import pickle
 import tempfile
 from collections import defaultdict, namedtuple
 from dataclasses import replace
@@ -215,7 +215,76 @@ def temp_files_ctx(num: int) -> Generator:
 
 
 META_ALGORITHM = "algorithm"
-META_IS_REFERENCE = "is_ref"
+BASELINE_DESCRIPTIONS = ["eager", "vanilla", "pytorch"]
+
+
+# Serialize/unserialize to CSV
+# We could use pkl, but resort to CSV for readability
+def _benchmark_results_from_csv(filename: str) -> List[Tuple[Dict[str, Any], Any]]:
+    parts = os.path.basename(filename).split(".")
+    env = ""
+    description = ""
+    if len(parts) == 3:
+        env = parts[1]
+        description = parts[0]
+
+    data = []
+    with open(filename, "r") as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            if description != "" and row["description"] not in BASELINE_DESCRIPTIONS:
+                row["description"] = description
+            task_spec = benchmark.utils.common.TaskSpec(
+                stmt="",
+                setup="",
+                global_setup="",
+                label=row["label"],
+                sub_label=row["sub_label"],
+                description=row["description"],
+                env=env,
+                num_threads=int(row["num_threads"]),
+            )
+            measurement = benchmark.utils.common.Measurement(
+                number_per_run=1,
+                raw_times=[float(row["runtime_us"]) / (1000.0 * 1000)],
+                task_spec=task_spec,
+            )
+            measurement.mem_use = float(row["mem_use_mb"])  # type: ignore
+            data.append(
+                (
+                    {
+                        META_ALGORITHM: row["algorithm"]
+                        if row["algorithm"] != ""
+                        else None,
+                    },
+                    measurement,
+                )
+            )
+    return data
+
+
+def _benchmark_results_to_csv(
+    filename: str, results: List[Tuple[Dict[str, Any], Any]]
+) -> None:
+    data = [
+        {
+            "sub_label": r.task_spec.sub_label,
+            "label": r.task_spec.label,
+            "num_threads": r.task_spec.num_threads,
+            "algorithm": metadata.get(META_ALGORITHM, ""),
+            "description": r.task_spec.description
+            if r.task_spec.description in BASELINE_DESCRIPTIONS
+            else "",
+            "runtime_us": int(1000 * 1000 * r.mean),
+            "mem_use_mb": r.mem_use,
+        }
+        for metadata, r in results
+    ]
+    with open(filename, "w+", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=list(data[0].keys()))
+        writer.writeheader()
+        for d in data:
+            writer.writerow(d)
 
 
 def _finalize_results(results: List[Tuple[Dict[str, Any], Any]]) -> List[Any]:
@@ -253,9 +322,6 @@ def _finalize_results(results: List[Tuple[Dict[str, Any], Any]]) -> List[Any]:
             r.task_spec = replace(r.task_spec, description=description)
             display_results.append(r)
     return display_results
-
-
-BASELINE_DESCRIPTIONS = ["eager", "vanilla"]
 
 
 def _render_bar_plot(results: List[Any], store_results_folder: str) -> None:
@@ -359,9 +425,14 @@ def benchmark_main_helper(
             torch.cuda.get_device_name(torch.cuda.current_device())
             .replace(" ", "_")
             .replace("-", "_")
+            .replace(".", "_")
         )
     except RuntimeError:  # No GPU
         env = "cpu"
+    assert (
+        "." not in optimized_label
+    ), f"label=`{optimized_label}` should not contain dots"
+    assert "." not in env, f"env=`{env}` should not contain dots"
 
     os.makedirs(store_results_folder, exist_ok=True)
 
@@ -370,27 +441,15 @@ def benchmark_main_helper(
     if args.compare is not None:
         for name in args.compare.split(","):
             for filename in glob.glob(
-                os.path.join(store_results_folder, f"{name}.*.pkl")
+                os.path.join(store_results_folder, f"{name}.*.csv")
             ):
-                with open(filename, "rb") as fd:
-                    for row in pickle.load(fd):
-                        if isinstance(row, tuple):
-                            metadata, r = row
-                        else:
-                            # Backward compatibility
-                            metadata, r = {}, row
-                        spec = r.task_spec
-                        if r.task_spec.description not in BASELINE_DESCRIPTIONS:
-                            # (in case the file was renamed)
-                            r.task_spec = replace(r.task_spec, description=name)
-                        elif spec.env == env:
-                            if SKIP_VANILLA_TASKS_IF_ALREADY_DONE:
-                                skip_vanilla_tasks.add(
-                                    (spec.sub_label, spec.num_threads)
-                                )
-                            else:
-                                continue
-                        results_compare_to.append((metadata, r))
+                loaded = _benchmark_results_from_csv(filename)
+                for m, r in loaded:
+                    if r.task_spec.env == SKIP_VANILLA_TASKS_IF_ALREADY_DONE:
+                        skip_vanilla_tasks.add(
+                            (r.task_spec.sub_label, r.task_spec.num_threads)
+                        )
+                results_compare_to += loaded
 
     pbar = tqdm.tqdm(cases, leave=False)
     for case in pbar:
@@ -483,8 +542,7 @@ def benchmark_main_helper(
     # Save runs to a file
     if args.label is not None:
         write_to_path = os.path.join(
-            store_results_folder, f"{optimized_label}.{env}.pkl"
+            store_results_folder, f"{optimized_label}.{env}.csv"
         )
-        with open(write_to_path, "wb+") as fd:
-            pickle.dump(results, fd)
+        _benchmark_results_to_csv(write_to_path, results)
         print(f"Saved results to {write_to_path}")
