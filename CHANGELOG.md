@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## TBD
 ### Fixed
+### Added
+
+## [0.0.17] - 2023-03-28
+### Fixed
 - fMHA: Fixed BW pass on Sm86/Sm89 GPUs when `K > 64` (RTX 3090, RTX 4090, A6000, ..) [facebookresearch/xformers#631]
 
 ### Added
