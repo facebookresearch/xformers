@@ -1,0 +1,44 @@
+name: Install env + build
+
+runs:
+  using: composite
+  steps:
+    - name: Conda setup
+      shell: bash
+      run: |
+        conda config --set channel_priority strict
+        CONDA_INSTALL_CMD="conda create -p ./c_env python=${{ matrix.python }} pip ninja pytorch=${{ matrix.pytorch }} ccache pytorch-cuda=${{ matrix.cuda }} -c pytorch -c nvidia -q -y"
+        # Retry if failed after removing downloaded packages cache
+        $CONDA_INSTALL_CMD || (rm -rf $HOME/.conda/pkgs && rm -rf ./c_env && $CONDA_INSTALL_CMD)
+        ./c_env/bin/python -m pip install -r requirements-benchmark.txt --progress-bar off
+    - name: Setup ccache
+      shell: bash
+      run: |
+        source activate ./c_env
+        echo "#!/bin/bash" > ./c_env/bin/nvcc-ccache
+        echo "ccache ${CUDA_HOME}/bin/nvcc \"\$@\"" >> ./c_env/bin/nvcc-ccache
+        cat ./c_env/bin/nvcc-ccache
+        chmod +x ./c_env/bin/nvcc-ccache
+        which nvcc
+        echo "CCACHE_DIR=$HOME/.ccache" >> ${GITHUB_ENV}
+    - name: ccache stats
+      shell: bash
+      run: |
+        source activate ./c_env
+        ccache -s
+    - name: Build
+      shell: bash
+      run: |
+        source activate ./c_env
+        PYTORCH_NVCC="$(pwd)/c_env/bin/nvcc-ccache" TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python -m pip install -v -e .
+        python -m xformers.info
+    - name: xformers.info
+      shell: bash
+      run: |
+        source activate ./c_env
+        python -m xformers.info
+    - name: ccache stats
+      shell: bash
+      run: |
+        source activate ./c_env
+        ccache -s

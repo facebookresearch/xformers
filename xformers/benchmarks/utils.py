@@ -384,7 +384,12 @@ def _render_bar_plot(results: List[Any], store_results_folder: str) -> None:
 
 
 def benchmark_main_helper(
-    benchmark_fn, cases: List[Dict[str, Any]], *, min_run_time: int = 2
+    benchmark_fn,
+    cases: List[Dict[str, Any]],
+    *,
+    min_run_time: int = 2,
+    atol_s: float = 30e-6,
+    rtol: float = 0.05,
 ) -> None:
     """
     Helper function to run benchmarks.
@@ -400,12 +405,22 @@ def benchmark_main_helper(
         "--label", default=None, type=str, help="Store results to a file"
     )
     parser.add_argument(
+        "--fail_if_regression",
+        action="store_true",
+        help="Enabled in CI to check against performance regressions",
+    )
+    parser.add_argument(
         "--compare",
         default=None,
         type=str,
         help="Compare to previously stored benchmarks (coma separated)",
     )
     parser.add_argument("--omit-baselines", action="store_true")
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Skip intermediate results and progress bar",
+    )
     args = parser.parse_args()
 
     if args.fn is not None and args.fn != benchmark_fn.__name__:
@@ -416,7 +431,13 @@ def benchmark_main_helper(
     results = []
 
     store_results_folder = os.path.expanduser(
-        os.path.join("~", ".cache", "xformers", "benchmarks", benchmark_fn.__name__)
+        os.path.join(
+            os.environ.get(
+                "XFORMERS_BENCHMARKS_CACHE",
+                os.path.join("~", ".cache", "xformers", "benchmarks"),
+            ),
+            benchmark_fn.__name__,
+        )
     )
     optimized_label = "optimized" if args.label is None else args.label
 
@@ -440,8 +461,9 @@ def benchmark_main_helper(
     skip_vanilla_tasks = set()
     if args.compare is not None:
         for name in args.compare.split(","):
+            name_with_env = name if "." in name else f"{name}.*.csv"
             for filename in glob.glob(
-                os.path.join(store_results_folder, f"{name}.*.csv")
+                os.path.join(store_results_folder, f"{name_with_env}.csv")
             ):
                 loaded = _benchmark_results_from_csv(filename)
                 for m, r in loaded:
@@ -451,10 +473,14 @@ def benchmark_main_helper(
                         )
                 results_compare_to += loaded
 
-    pbar = tqdm.tqdm(cases, leave=False)
-    for case in pbar:
-        # pbar.set_description(str(case))
-        pbar.write(f"====== {str(case)} ======")
+    if not args.quiet:
+        pbar = tqdm.tqdm(cases, leave=False)
+        cases = pbar
+    for case in cases:
+        if args.quiet:
+            print(str(case))
+        else:
+            pbar.write(f"====== {str(case)} ======")
         try:
             benchmarks_generator = benchmark_fn(**case)
         except NotImplementedError:
@@ -463,7 +489,8 @@ def benchmark_main_helper(
         except RuntimeError as e:
             if "CUDA out of memory" not in str(e):
                 raise
-            pbar.write("Skipped (OOM)")
+            if not args.quiet:
+                pbar.write("Skipped (OOM)")
             continue
 
         name = None
@@ -507,16 +534,19 @@ def benchmark_main_helper(
                 except RuntimeError as e:
                     if "CUDA out of memory" not in str(e):
                         raise
-                    pbar.write("Skipped (OOM)")
+                    if not args.quiet:
+                        pbar.write("Skipped (OOM)")
                 finally:
                     del benchmark_object
-                pbar.write(f"{name}: memory used: {memory} MB")
+                if not args.quiet:
+                    pbar.write(f"{name}: memory used: {memory} MB")
         except RuntimeError as e:
             if "CUDA out of memory" not in str(e):
                 raise
-            pbar.write("Skipped (OOM)")
+            if not args.quiet:
+                pbar.write("Skipped (OOM)")
         # Display results for benchmarks we just calculated
-        if name is not None:
+        if name is not None and not args.quiet:
 
             def matches_current(r):
                 return (
@@ -546,3 +576,63 @@ def benchmark_main_helper(
         )
         _benchmark_results_to_csv(write_to_path, results)
         print(f"Saved results to {write_to_path}")
+
+    if args.fail_if_regression:
+        _fail_if_regressions(
+            results, reference=results_compare_to, atol_s=atol_s, rtol=rtol
+        )
+
+
+def _fail_if_regressions(
+    results: List[Any], reference: List[Any], atol_s: float, rtol: float
+) -> None:
+    def get_measurement_id(r):
+        return (
+            r[0].get("algorithm", ""),
+            r[1].task_spec.label,
+            r[1].task_spec.sub_label,
+            r[1].task_spec.env,
+        )
+
+    id_to_result = {}
+    for r in results:
+        id_to_result[get_measurement_id(r)] = r[1]
+
+    num_better = 0
+    num_worse = 0
+    num_nochange = 0
+    num_unk = 0
+    reference_set = set()
+    for ref in reference:
+        if ref[1].task_spec.description in BASELINE_DESCRIPTIONS:
+            continue
+        benchmark_id = get_measurement_id(ref)
+        if benchmark_id in reference_set:
+            raise ValueError(f"Duplicate benchmark in reference for {benchmark_id}")
+        reference_set.add(benchmark_id)
+        if benchmark_id not in id_to_result:
+            num_unk += 1
+            continue
+        res = id_to_result[benchmark_id]
+        # If significative change
+        if abs(ref[1].mean - res.mean) - rtol * ref[1].mean > atol_s:
+            is_now_better = res.mean < ref[1].mean
+            if is_now_better:
+                num_better += 1
+            else:
+                num_worse += 1
+            cmp = "IMPROVED" if is_now_better else "REGRESS "
+            print(cmp, benchmark_id, f"ref={ref[1].mean}", f"now={res.mean}")
+        else:
+            num_nochange += 1
+
+    print("Regression test summary:")
+    print(f"  Better   : {num_better}")
+    print(f"  No change: {num_nochange}")
+    print(f"  Worse    : {num_worse}")
+    if num_unk > 0:
+        print(f"  (no ref) : {num_unk}")
+    if num_worse > 1:
+        raise RuntimeError("At least one benchmark regressed!")
+    if num_nochange == 0:
+        raise RuntimeError("No reference found")
