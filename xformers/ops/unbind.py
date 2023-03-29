@@ -42,7 +42,7 @@ def get_stack_strides(
         if storage_data_ptr is None:
             storage_data_ptr = tensors[0].storage().data_ptr()
         # Actual storage check
-        if x.storage().data_ptr() != tensors[0].storage().data_ptr():
+        if x.storage().data_ptr() != storage_data_ptr:
             return None
     return tuple(final_stride)
 
