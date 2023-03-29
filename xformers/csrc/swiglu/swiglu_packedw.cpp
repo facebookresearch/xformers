@@ -80,7 +80,8 @@ class SwiGLUPackedWeights
       const at::Tensor& w1w2,
       const c10::optional<at::Tensor>& b1b2,
       const at::Tensor w3,
-      const c10::optional<at::Tensor>& b3) {
+      const c10::optional<at::Tensor>& b3,
+      bool requires_grad) {
     at::AutoDispatchBelowADInplaceOrView g;
     auto w1 = w1w2[0];
     auto w2 = w1w2[1];
@@ -94,9 +95,11 @@ class SwiGLUPackedWeights
     auto x5 = torch::nn::functional::linear(
         x4, w3, b3.has_value() ? b3.value() : at::Tensor());
 
-    ctx->save_for_backward({x, w1w2, w3, x1, x2});
-    ctx->saved_data["has_b1b2"] = b1b2.has_value();
-    ctx->saved_data["has_b3"] = b3.has_value();
+    if (requires_grad) {
+      ctx->save_for_backward({x, w1w2, w3, x1, x2});
+      ctx->saved_data["has_b1b2"] = b1b2.has_value();
+      ctx->saved_data["has_b3"] = b3.has_value();
+    }
     return x5;
   }
 
@@ -176,8 +179,9 @@ at::Tensor swiglu_packedw_autograd(
     const at::Tensor& w1w2,
     const c10::optional<at::Tensor> b1b2,
     const at::Tensor w3,
-    const c10::optional<at::Tensor> b3) {
-  return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
+    const c10::optional<at::Tensor> b3,
+    bool requires_grad) {
+  return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3, requires_grad);
 }
 
 at::Tensor swiglu_packedw_autocast(
@@ -185,7 +189,8 @@ at::Tensor swiglu_packedw_autocast(
     const at::Tensor& w1w2,
     const c10::optional<at::Tensor> b1b2,
     const at::Tensor w3,
-    const c10::optional<at::Tensor> b3) {
+    const c10::optional<at::Tensor> b3,
+    bool requires_grad) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
   auto exec_type = at::autocast::get_autocast_gpu_dtype();
   return SwiGLUPackedWeights::apply(
@@ -193,13 +198,29 @@ at::Tensor swiglu_packedw_autocast(
       at::autocast::cached_cast(exec_type, w1w2),
       at::autocast::cached_cast(exec_type, b1b2),
       at::autocast::cached_cast(exec_type, w3),
-      at::autocast::cached_cast(exec_type, b3));
+      at::autocast::cached_cast(exec_type, b3),
+      requires_grad);
+}
+
+at::Tensor swiglu_packedw_cuda(
+    const at::Tensor& x,
+    const at::Tensor& w1w2,
+    const c10::optional<at::Tensor> b1b2,
+    const at::Tensor w3,
+    const c10::optional<at::Tensor> b3,
+    bool requires_grad) {
+  if (requires_grad) {
+    return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3, requires_grad);
+  } else {
+    return SwiGLUPackedWeights::forward(
+        /* ctx */ nullptr, x, w1w2, b1b2, w3, b3, requires_grad);
+  }
 }
 } // namespace
 
 TORCH_LIBRARY(xformers, m) {
   m.def(
-      "swiglu_packedw(Tensor x, Tensor w1w2, Tensor? b1b2, Tensor w3, Tensor? b3) -> Tensor");
+      "swiglu_packedw(Tensor x, Tensor w1w2, Tensor? b1b2, Tensor w3, Tensor? b3, bool requires_grad=True) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(xformers, Autograd, m) {
@@ -208,4 +229,8 @@ TORCH_LIBRARY_IMPL(xformers, Autograd, m) {
 
 TORCH_LIBRARY_IMPL(xformers, Autocast, m) {
   m.impl("swiglu_packedw", swiglu_packedw_autocast);
+}
+
+TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
+  m.impl("swiglu_packedw", swiglu_packedw_cuda);
 }

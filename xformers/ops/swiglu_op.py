@@ -66,7 +66,7 @@ class _SwiGLUDecomposedFunc(torch.autograd.Function):
 
     # 952us
     @classmethod
-    def forward(cls, ctx, x, w1, b1, w2, b2, w3, b3):
+    def forward(cls, ctx, x, w1, b1, w2, b2, w3, b3, requires_grad):
         x1 = x @ w1.transpose(-2, -1) + b1  # 275us
         x2 = x @ w2.transpose(-2, -1) + b2  # 275us
         x3 = F.silu(x1)  # 62us
@@ -104,7 +104,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
 
     @classmethod
     @torch.cuda.amp.custom_fwd
-    def forward(cls, ctx, x, w1, b1, w2, b2, w3, b3):
+    def forward(cls, ctx, x, w1, b1, w2, b2, w3, b3, requires_grad):
         x1, x2, x4 = DualGemmSiluOp.OPERATOR(x, w1, b1, w2, b2)
 
         x5 = F.linear(x4, w3, b3)
@@ -214,6 +214,7 @@ def _eager_functional_swiglu(
     b2: torch.Tensor,
     w3: torch.Tensor,
     b3: torch.Tensor,
+    requires_grad: bool,
 ) -> torch.Tensor:
     x1 = F.linear(x, w1, b1)
     x2 = F.linear(x, w2, b2)
@@ -320,6 +321,7 @@ def swiglu(
     b3: Optional[torch.Tensor],
     *,
     op: SwiGLUOp = None,
+    requires_grad: bool = True,
 ) -> torch.Tensor:
     """
     Computes a SwiGLU block given the weights/bias of the 3
@@ -372,7 +374,7 @@ def swiglu(
         op = SwiGLUOpDispatch.from_arguments(x, w1, b1, w2, b2, w3, b3).op
 
     if not op.PACKED_WEIGHTS:
-        return op(x, w1, b1, w2, b2, w3, b3).reshape([*batch_shape, -1])
+        return op(x, w1, b1, w2, b2, w3, b3, requires_grad).reshape([*batch_shape, -1])
     w1w2 = stack_or_none((w1, w2), dim=0)
     if b1 is not None and b2 is not None:
         b1b2: Optional[torch.Tensor] = stack_or_none((b1, b2), dim=0)
@@ -384,7 +386,7 @@ def swiglu(
 
     if w1w2 is None:
         raise NotImplementedError("w1/w2 needs to be properly packed")
-    return op(x, w1w2, b1b2, w3, b3).reshape([*batch_shape, -1])
+    return op(x, w1w2, b1b2, w3, b3, requires_grad).reshape([*batch_shape, -1])
 
 
 class SwiGLU(nn.Module):
