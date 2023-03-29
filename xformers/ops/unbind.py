@@ -30,16 +30,19 @@ def get_stack_strides(
             i -= 1
         final_stride.append(tensors[0].stride(i))
 
-    for i, x in enumerate(tensors):
+    storage_data_ptr: Optional[int] = None
+    for i, x in enumerate(tensors[1:]):
         # Sanity checks
         if x.shape != tensors[0].shape:
-            return None
-        # Actual storage check
-        if x.storage().data_ptr() != tensors[0].storage().data_ptr():
             return None
         if x.stride() != tensors[0].stride():
             return None
         if x.storage_offset() != tensors[0].storage_offset() + i * final_stride[dim]:
+            return None
+        if storage_data_ptr is None:
+            storage_data_ptr = tensors[0].storage().data_ptr()
+        # Actual storage check
+        if x.storage().data_ptr() != tensors[0].storage().data_ptr():
             return None
     return tuple(final_stride)
 
