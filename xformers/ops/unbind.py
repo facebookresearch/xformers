@@ -37,7 +37,10 @@ def get_stack_strides(
             return None
         if x.stride() != tensors[0].stride():
             return None
-        if x.storage_offset() != tensors[0].storage_offset() + (i + 1) * final_stride[dim]:
+        if (
+            x.storage_offset()
+            != tensors[0].storage_offset() + (i + 1) * final_stride[dim]
+        ):
             return None
         if storage_data_ptr is None:
             storage_data_ptr = tensors[0].storage().data_ptr()
