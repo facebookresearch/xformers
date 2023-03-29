@@ -80,8 +80,7 @@ class SwiGLUPackedWeights
       const at::Tensor& w1w2,
       const c10::optional<at::Tensor>& b1b2,
       const at::Tensor w3,
-      const c10::optional<at::Tensor>& b3,
-      bool requires_grad) {
+      const c10::optional<at::Tensor>& b3) {
     at::AutoDispatchBelowADInplaceOrView g;
     auto w1 = w1w2[0];
     auto w2 = w1w2[1];
@@ -95,7 +94,7 @@ class SwiGLUPackedWeights
     auto x5 = torch::nn::functional::linear(
         x4, w3, b3.has_value() ? b3.value() : at::Tensor());
 
-    if (requires_grad) {
+    if (ctx != nullptr) {
       ctx->save_for_backward({x, w1w2, w3, x1, x2});
       ctx->saved_data["has_b1b2"] = b1b2.has_value();
       ctx->saved_data["has_b3"] = b3.has_value();
@@ -181,7 +180,7 @@ at::Tensor swiglu_packedw_autograd(
     const at::Tensor w3,
     const c10::optional<at::Tensor> b3,
     bool requires_grad) {
-  return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3, requires_grad);
+  return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
 }
 
 at::Tensor swiglu_packedw_autocast(
@@ -198,8 +197,7 @@ at::Tensor swiglu_packedw_autocast(
       at::autocast::cached_cast(exec_type, w1w2),
       at::autocast::cached_cast(exec_type, b1b2),
       at::autocast::cached_cast(exec_type, w3),
-      at::autocast::cached_cast(exec_type, b3),
-      requires_grad);
+      at::autocast::cached_cast(exec_type, b3));
 }
 
 at::Tensor swiglu_packedw_cuda(
@@ -210,10 +208,10 @@ at::Tensor swiglu_packedw_cuda(
     const c10::optional<at::Tensor> b3,
     bool requires_grad) {
   if (requires_grad) {
-    return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3, requires_grad);
+    return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
   } else {
     return SwiGLUPackedWeights::forward(
-        /* ctx */ nullptr, x, w1w2, b1b2, w3, b3, requires_grad);
+        /* ctx */ nullptr, x, w1w2, b1b2, w3, b3);
   }
 }
 } // namespace
