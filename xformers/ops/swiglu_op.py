@@ -177,7 +177,7 @@ class SwiGLUOp:
             return False
         return all(c(op) for c in self.constraints)
 
-    def __call__(self, *args: Optional[torch.Tensor]) -> torch.Tensor:
+    def __call__(self, *args) -> torch.Tensor:
         pass
 
     def __str__(self) -> str:
