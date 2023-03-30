@@ -605,7 +605,7 @@ def _fail_if_regressions(
 ) -> None:
     def get_measurement_id(r):
         return (
-            r[0].get("algorithm", ""),
+            r[0].get(META_ALGORITHM, ""),
             r[1].task_spec.label,
             r[1].task_spec.sub_label,
             r[1].task_spec.env,
