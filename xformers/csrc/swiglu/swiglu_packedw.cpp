@@ -178,8 +178,7 @@ at::Tensor swiglu_packedw_autograd(
     const at::Tensor& w1w2,
     const c10::optional<at::Tensor> b1b2,
     const at::Tensor w3,
-    const c10::optional<at::Tensor> b3,
-    bool requires_grad) {
+    const c10::optional<at::Tensor> b3) {
   return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
 }
 
@@ -188,8 +187,7 @@ at::Tensor swiglu_packedw_autocast(
     const at::Tensor& w1w2,
     const c10::optional<at::Tensor> b1b2,
     const at::Tensor w3,
-    const c10::optional<at::Tensor> b3,
-    bool requires_grad) {
+    const c10::optional<at::Tensor> b3) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
   auto exec_type = at::autocast::get_autocast_gpu_dtype();
   return SwiGLUPackedWeights::apply(
@@ -205,9 +203,8 @@ at::Tensor swiglu_packedw_cuda(
     const at::Tensor& w1w2,
     const c10::optional<at::Tensor> b1b2,
     const at::Tensor w3,
-    const c10::optional<at::Tensor> b3,
-    bool requires_grad) {
-  if (requires_grad) {
+    const c10::optional<at::Tensor> b3) {
+  if (x.requires_grad()) {
     return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
   } else {
     return SwiGLUPackedWeights::forward(
@@ -218,7 +215,7 @@ at::Tensor swiglu_packedw_cuda(
 
 TORCH_LIBRARY(xformers, m) {
   m.def(
-      "swiglu_packedw(Tensor x, Tensor w1w2, Tensor? b1b2, Tensor w3, Tensor? b3, bool requires_grad=True) -> Tensor");
+      "swiglu_packedw(Tensor x, Tensor w1w2, Tensor? b1b2, Tensor w3, Tensor? b3) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(xformers, Autograd, m) {
