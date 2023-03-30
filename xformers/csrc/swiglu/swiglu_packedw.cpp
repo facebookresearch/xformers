@@ -94,9 +94,11 @@ class SwiGLUPackedWeights
     auto x5 = torch::nn::functional::linear(
         x4, w3, b3.has_value() ? b3.value() : at::Tensor());
 
-    ctx->save_for_backward({x, w1w2, w3, x1, x2});
-    ctx->saved_data["has_b1b2"] = b1b2.has_value();
-    ctx->saved_data["has_b3"] = b3.has_value();
+    if (ctx != nullptr) {
+      ctx->save_for_backward({x, w1w2, w3, x1, x2});
+      ctx->saved_data["has_b1b2"] = b1b2.has_value();
+      ctx->saved_data["has_b3"] = b3.has_value();
+    }
     return x5;
   }
 
@@ -195,6 +197,20 @@ at::Tensor swiglu_packedw_autocast(
       at::autocast::cached_cast(exec_type, w3),
       at::autocast::cached_cast(exec_type, b3));
 }
+
+at::Tensor swiglu_packedw_cuda(
+    const at::Tensor& x,
+    const at::Tensor& w1w2,
+    const c10::optional<at::Tensor> b1b2,
+    const at::Tensor w3,
+    const c10::optional<at::Tensor> b3) {
+  if (x.requires_grad()) {
+    return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
+  } else {
+    return SwiGLUPackedWeights::forward(
+        /* ctx */ nullptr, x, w1w2, b1b2, w3, b3);
+  }
+}
 } // namespace
 
 TORCH_LIBRARY(xformers, m) {
@@ -208,4 +224,8 @@ TORCH_LIBRARY_IMPL(xformers, Autograd, m) {
 
 TORCH_LIBRARY_IMPL(xformers, Autocast, m) {
   m.impl("swiglu_packedw", swiglu_packedw_autocast);
+}
+
+TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
+  m.impl("swiglu_packedw", swiglu_packedw_cuda);
 }
