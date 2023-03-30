@@ -325,6 +325,8 @@ def _finalize_results(results: List[Tuple[Dict[str, Any], Any]]) -> List[Any]:
 
 
 def _render_bar_plot(results: List[Any], store_results_folder: str) -> None:
+    if not results:
+        return
     runtime: Dict[str, Dict[str, float]] = defaultdict(dict)
     memory_usage: Dict[str, Dict[str, float]] = defaultdict(dict)
     all_descriptions: List[str] = []
@@ -383,19 +385,11 @@ def _render_bar_plot(results: List[Any], store_results_folder: str) -> None:
         print(f"Saved plot: {filename_full}")
 
 
-def benchmark_main_helper(
-    benchmark_fn,
-    cases: List[Dict[str, Any]],
-    *,
-    min_run_time: int = 2,
-    atol_s: float = 30e-6,
-    rtol: float = 0.05,
-) -> None:
+def benchmark_main_helper(benchmark_fn, cases: List[Dict[str, Any]], **kwargs) -> None:
     """
     Helper function to run benchmarks.
     Supports loading previous results for comparison, and saving current results to file.
     """
-    SKIP_VANILLA_TASKS_IF_ALREADY_DONE = True
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -426,7 +420,32 @@ def benchmark_main_helper(
     if args.fn is not None and args.fn != benchmark_fn.__name__:
         print(f'Skipping benchmark "{benchmark_fn.__name__}"')
         return
+    benchmark_run_and_compare(
+        benchmark_fn=benchmark_fn,
+        cases=cases,
+        optimized_label="optimized" if args.label is None else args.label,
+        fail_if_regression=args.fail_if_regression,
+        compare=args.compare.split(",") if args.compare is not None else [],
+        quiet=args.quiet,
+        omit_baselines=args.omit_baselines,
+        **kwargs,
+    )
 
+
+def benchmark_run_and_compare(
+    benchmark_fn,
+    cases: List[Dict[str, Any]],
+    compare: List[str],
+    omit_baselines: bool = False,
+    fail_if_regression: bool = False,
+    quiet: bool = False,
+    optimized_label: str = "optimized",
+    *,
+    min_run_time: int = 2,
+    atol_s: float = 30e-6,
+    rtol: float = 0.05,
+) -> None:
+    SKIP_VANILLA_TASKS_IF_ALREADY_DONE = True
     results_compare_to = []
     results = []
 
@@ -439,7 +458,6 @@ def benchmark_main_helper(
             benchmark_fn.__name__,
         )
     )
-    optimized_label = "optimized" if args.label is None else args.label
 
     try:
         env = (
@@ -448,7 +466,7 @@ def benchmark_main_helper(
             .replace("-", "_")
             .replace(".", "_")
         )
-    except RuntimeError:  # No GPU
+    except (RuntimeError, AssertionError):  # No GPU
         env = "cpu"
     assert (
         "." not in optimized_label
@@ -459,25 +477,24 @@ def benchmark_main_helper(
 
     # Load runs that we want to compare to
     skip_vanilla_tasks = set()
-    if args.compare is not None:
-        for name in args.compare.split(","):
-            name_with_env = name if "." in name else f"{name}.*.csv"
-            for filename in glob.glob(
-                os.path.join(store_results_folder, f"{name_with_env}.csv")
-            ):
-                loaded = _benchmark_results_from_csv(filename)
-                for m, r in loaded:
-                    if r.task_spec.env == SKIP_VANILLA_TASKS_IF_ALREADY_DONE:
-                        skip_vanilla_tasks.add(
-                            (r.task_spec.sub_label, r.task_spec.num_threads)
-                        )
-                results_compare_to += loaded
+    for cmp_name in compare:
+        name_with_env = cmp_name if "." in cmp_name else f"{cmp_name}.*"
+        for filename in glob.glob(
+            os.path.join(store_results_folder, f"{name_with_env}.csv")
+        ):
+            loaded = _benchmark_results_from_csv(filename)
+            for m, r in loaded:
+                if r.task_spec.env == env and SKIP_VANILLA_TASKS_IF_ALREADY_DONE:
+                    skip_vanilla_tasks.add(
+                        (r.task_spec.sub_label, r.task_spec.num_threads)
+                    )
+            results_compare_to += loaded
 
-    if not args.quiet:
+    if not quiet:
         pbar = tqdm.tqdm(cases, leave=False)
         cases = pbar
     for case in cases:
-        if args.quiet:
+        if quiet:
             print(str(case))
         else:
             pbar.write(f"====== {str(case)} ======")
@@ -489,7 +506,7 @@ def benchmark_main_helper(
         except RuntimeError as e:
             if "CUDA out of memory" not in str(e):
                 raise
-            if not args.quiet:
+            if not quiet:
                 pbar.write("Skipped (OOM)")
             continue
 
@@ -506,7 +523,7 @@ def benchmark_main_helper(
                         benchmark_object._task_spec, description=optimized_label
                     )
                 elif (
-                    args.omit_baselines
+                    omit_baselines
                     or (
                         benchmark_object._task_spec.sub_label,
                         benchmark_object._task_spec.num_threads,
@@ -534,19 +551,19 @@ def benchmark_main_helper(
                 except RuntimeError as e:
                     if "CUDA out of memory" not in str(e):
                         raise
-                    if not args.quiet:
+                    if not quiet:
                         pbar.write("Skipped (OOM)")
                 finally:
                     del benchmark_object
-                if not args.quiet:
+                if not quiet:
                     pbar.write(f"{name}: memory used: {memory} MB")
         except RuntimeError as e:
             if "CUDA out of memory" not in str(e):
                 raise
-            if not args.quiet:
+            if not quiet:
                 pbar.write("Skipped (OOM)")
         # Display results for benchmarks we just calculated
-        if name is not None and not args.quiet:
+        if name is not None and not quiet:
 
             def matches_current(r):
                 return (
@@ -570,14 +587,14 @@ def benchmark_main_helper(
     _render_bar_plot(results_for_print, store_results_folder)
 
     # Save runs to a file
-    if args.label is not None:
+    if results and optimized_label is not None:
         write_to_path = os.path.join(
             store_results_folder, f"{optimized_label}.{env}.csv"
         )
         _benchmark_results_to_csv(write_to_path, results)
         print(f"Saved results to {write_to_path}")
 
-    if args.fail_if_regression:
+    if fail_if_regression:
         _fail_if_regressions(
             results, reference=results_compare_to, atol_s=atol_s, rtol=rtol
         )
