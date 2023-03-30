@@ -199,6 +199,10 @@ class AttentionOpBase(BaseOperator):
             or torch.cuda.get_device_capability(d.query.device)[0] < 8
         ):
             reasons.append("bf16 is only supported on A100+ GPUs")
+        if not cls.is_available():
+            reasons.append(
+                "Operator wasn't built - see `python -m xformers.info` for more info"
+            )
         return reasons
 
 
@@ -278,17 +282,18 @@ class AttentionBwOpBase(AttentionOpBase):
     SUPPORTS_ATTN_BIAS_GRAD = False
 
     @classmethod
-    def supports(cls, d: Inputs) -> bool:
-        if not super(AttentionBwOpBase, cls).supports(d):
-            return False
+    def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        reasons = super(AttentionBwOpBase, cls).not_supported_reasons(d)
         if (
             isinstance(d.attn_bias, torch.Tensor)
             and d.attn_bias.requires_grad
             and not cls.SUPPORTS_ATTN_BIAS_GRAD
         ):
-            return False
+            reasons.append(
+                "Computing the bias gradient is not supported (attn_bias.requires_grad = True)"
+            )
 
-        return True
+        return reasons
 
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:

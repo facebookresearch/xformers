@@ -22,7 +22,8 @@ from .ops.common import OPERATORS_REGISTRY
 def get_features_status() -> Dict[str, str]:
     features = {}
     for op in OPERATORS_REGISTRY:
-        features[f"{op.OPERATOR_CATEGORY}.{op.NAME}"] = op.info()
+        status_str = "available" if op.is_available() else "unavailable"
+        features[f"{op.OPERATOR_CATEGORY}.{op.NAME}"] = status_str
     for k, v in ops.swiglu_op._info().items():
         features[f"swiglu.{k}"] = v
     features["is_triton_available"] = str(_is_triton_available())
