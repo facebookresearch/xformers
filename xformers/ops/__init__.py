@@ -22,6 +22,7 @@ from .fmha import (
     memory_efficient_attention_forward,
     memory_efficient_attention_forward_requires_grad,
 )
+from .indexing import index_select_cat, scaled_index_add
 from .swiglu_op import (
     SwiGLU,
     SwiGLUEagerOp,
@@ -87,4 +88,6 @@ __all__ = [
     "stack_or_none",
     "get_stack_strides",
     "masked_matmul",
+    "scaled_index_add",
+    "index_select_cat",
 ]
