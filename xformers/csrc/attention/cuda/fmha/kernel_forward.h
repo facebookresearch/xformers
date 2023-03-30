@@ -484,6 +484,7 @@ struct AttentionKernel {
     cutlass::Array<accum_t, kQueriesPerBlock> m_prime;
     cutlass::Array<accum_t, kQueriesPerBlock> s_prime;
     cutlass::Array<accum_t, kQueriesPerBlock> mi;
+    cutlass::Array<accum_t, kQueriesPerBlock> out_rescale;
   };
 
   struct SharedStorageEpilogueAtEnd : ScalingCoefs {
@@ -588,11 +589,13 @@ struct AttentionKernel {
     auto& m_prime = shared_storage.m_prime;
     auto& s_prime = shared_storage.s_prime;
     auto& mi = shared_storage.mi;
+    auto& out_rescale = shared_storage.out_rescale;
     const uint32_t query_start = blockIdx.x * kQueriesPerBlock;
 
     static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize, "");
     if (thread_id() < kQueriesPerBlock) {
       s_prime[thread_id()] = accum_t(0);
+      out_rescale[thread_id()] = accum_t(1.0);
       m_prime[thread_id()] =
           -cutlass::platform::numeric_limits<accum_t>::infinity();
       mi[thread_id()] = -cutlass::platform::numeric_limits<accum_t>::infinity();
@@ -708,7 +711,7 @@ struct AttentionKernel {
           thread_id(),
           tb_offset_B);
 
-      auto my_warp_id = warp_id();
+      auto my_warp_id = warp_uniform(warp_id());
       auto my_lane_id = lane_id();
 
       // Construct thread-scoped matrix multiply
@@ -762,7 +765,7 @@ struct AttentionKernel {
 
         // Pij += Bij, Pij is in register fragment and Bij is in shared memory
         auto lane_offset = MM0::AccumLambdaIterator::get_lane_offset(
-            lane_id(), warp_id(), iteratorC_tile_offset);
+            my_lane_id, my_warp_id, iteratorC_tile_offset);
         MM0::AccumLambdaIterator::iterateRows(
             lane_offset,
             [&](int accum_m) {},
@@ -786,7 +789,7 @@ struct AttentionKernel {
               (query_start + p.causal_diagonal_offset)) {
         auto query_start = blockIdx.x * kQueriesPerBlock;
         auto lane_offset = MM0::AccumLambdaIterator::get_lane_offset(
-            lane_id(), warp_id(), iteratorC_tile_offset);
+            my_lane_id, my_warp_id, iteratorC_tile_offset);
         int32_t last_col;
         MM0::AccumLambdaIterator::iterateRows(
             lane_offset,
@@ -805,30 +808,22 @@ struct AttentionKernel {
             },
             [&](int accum_m) {});
       }
-      DISPATCH_BOOL(iter_key_start == 0, kIsFirst, ([&] {
-                      DISPATCH_BOOL(
-                          p.num_keys - iter_key_start >= kKeysPerBlock,
-                          kFullColumns,
-                          ([&] {
-                            // Update `mi` from accum stored in registers
-                            // Also does accum[i] <- exp(accum[i] - mi)
-                            iterative_softmax<
-                                typename MM0::Mma::Operator::IteratorC,
-                                kFullColumns,
-                                kIsFirst>(
-                                accum_o,
-                                accum,
-                                mi,
-                                m_prime,
-                                s_prime,
-                                lane_id(),
-                                thread_id(),
-                                warp_id(),
-                                p.num_keys - iter_key_start,
-                                iteratorC_tile_offset,
-                                kSupportsBias ? 1.0f : p.scale);
-                          }));
-                    }));
+      // Update `mi` from accum stored in registers
+      // Also does accum[i] <- exp(accum[i] - mi)
+      iterative_softmax<typename MM0::Mma::Operator::IteratorC>(
+          accum_o,
+          accum,
+          mi,
+          m_prime,
+          s_prime,
+          out_rescale,
+          my_lane_id,
+          thread_id(),
+          my_warp_id,
+          p.num_keys - iter_key_start,
+          iter_key_start == 0,
+          iteratorC_tile_offset,
+          kSupportsBias ? 1.0f : p.scale);
 
       // Output results to shared-memory
       int warp_idx_mn_0 = my_warp_id %
@@ -936,8 +931,8 @@ struct AttentionKernel {
             shared_storage.after_mm0.mm1.mm,
             shared_storage.after_mm0.si,
             (int)thread_id(),
-            (int)warp_id(),
-            (int)lane_id(),
+            (int)my_warp_id,
+            (int)my_lane_id,
             (int)problem_size_1_k);
         mma_pv.set_prologue_done(kPreloadV);
         if (!kKeepOutputInRF) {
@@ -1002,12 +997,12 @@ struct AttentionKernel {
                           decltype(createOutputIter),
                           decltype(createOutputAccumIter)>::
                           apply(createOutputIter, createOutputAccumIter, col);
-                      EpilogueOutputOp rescale(s_prime, m_prime);
+                      EpilogueOutputOp rescale(s_prime, out_rescale);
                       Epilogue epilogue(
                           shared_storage.epilogue_shared_storage(),
                           thread_id(),
-                          warp_id(),
-                          lane_id());
+                          my_warp_id,
+                          my_lane_id);
                       epilogue(rescale, dest_iter, accum_o, source_iter);
                     }));
               }));
@@ -1051,7 +1046,7 @@ struct AttentionKernel {
               typename MM1::OutputTileIteratorAccum // source tile
               >;
       auto dest_iter = createOutputIter(0);
-      EpilogueOutputOp rescale(s_prime, m_prime);
+      EpilogueOutputOp rescale(s_prime, out_rescale);
       Epilogue epilogue(
           shared_storage.epilogue_shared_storage(),
           thread_id(),
@@ -1066,8 +1061,9 @@ struct AttentionKernel {
     static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize, "");
     if (p.logsumexp_ptr && thread_id() < kQueriesPerBlock) {
       auto lse_dim = ceil_div((int32_t)p.num_queries, kAlignLSE) * kAlignLSE;
+      constexpr float kLog2e = 1.4426950408889634074; // log_2(e) = M_LOG2E
       if (thread_id() < p.num_queries) {
-        p.logsumexp_ptr[thread_id()] = accum_t(mi[thread_id()]) +
+        p.logsumexp_ptr[thread_id()] = accum_t(mi[thread_id()] / kLog2e) +
             cutlass::fast_log(accum_t(s_prime[thread_id()]));
       } else if (thread_id() < lse_dim) {
         p.logsumexp_ptr[thread_id()] =
@@ -1076,20 +1072,19 @@ struct AttentionKernel {
     }
   }
 
-  template <
-      typename WarpIteratorC,
-      bool kFullColumns,
-      bool kIsFirst>
+  template <typename WarpIteratorC>
   CUTLASS_DEVICE static void iterative_softmax(
       typename WarpIteratorC::Fragment& frag_o, // output so far
       typename WarpIteratorC::Fragment& frag,
       cutlass::Array<accum_t, kQueriesPerBlock>& mi,
       cutlass::Array<accum_t, kQueriesPerBlock>& m_prime,
       cutlass::Array<accum_t, kQueriesPerBlock>& s_prime,
+      cutlass::Array<accum_t, kQueriesPerBlock>& out_rescale,
       int8_t lane_id,
       int8_t thread_id,
       int8_t warp_id,
       int16_t max_col,
+      bool is_first,
       typename WarpIteratorC::TensorCoord const& tile_offset,
       float scaling) {
     /* Iterates on the accumulator and corresponding position on result matrix
@@ -1110,12 +1105,11 @@ struct AttentionKernel {
         kWarpSize>::Iterator;
     // Convert to `accum_t` (rather than double)
     constexpr float kLog2e = 1.4426950408889634074; // log_2(e) = M_LOG2E
-    if (!kIsFirst) {
-      if (thread_id < kQueriesPerBlock) {
-        m_prime[thread_id] = mi[thread_id];
-      }
-      __syncthreads();
-    }
+
+    static_assert(kQueriesPerBlock % kNumWarpsPerBlock == 0, "");
+    static constexpr int kLinesPerWarp = kQueriesPerBlock / kNumWarpsPerBlock;
+
+    frag = cutlass::multiplies<Fragment>()(scaling * kLog2e, frag);
 
     auto lane_offset =
         LambdaIterator::get_lane_offset(lane_id, warp_id, tile_offset);
@@ -1129,46 +1123,48 @@ struct AttentionKernel {
             max = -cutlass::platform::numeric_limits<accum_t>::infinity();
           },
           [&](int accum_m, int accum_n, int idx) {
-            if (kFullColumns || accum_n < max_col) {
+            if (accum_n < max_col) {
               max = cutlass::fast_max(max, frag[idx]);
             }
           },
           [&](int accum_m) {
             // Having 4x atomicMax seems faster than reduce within warp
             // first...
-            atomicMaxFloat(&mi[accum_m], max * scaling);
+            atomicMaxFloat(&mi[accum_m], max);
           });
     }
-    frag = cutlass::multiplies<Fragment>()(scaling * kLog2e, frag);
 
     // Make sure we all share the update values for `mi`
     __syncthreads();
 
-    if (thread_id < kQueriesPerBlock) {
-      auto m_prime_exp = exp2f(kLog2e * (m_prime[thread_id] - mi[thread_id]));
-      m_prime[thread_id] = m_prime_exp;
-      s_prime[thread_id] *= m_prime_exp;
+    // Doing this `exp` is quite expensive. Let's
+    // split it across the warps
+    if (lane_id < kLinesPerWarp) {
+      int id = warp_id * kLinesPerWarp + lane_id;
+      auto m_prime_exp = exp2f(m_prime[id] - mi[id]);
+      out_rescale[id] = m_prime_exp;
+      s_prime[id] *= m_prime_exp;
     }
     __syncthreads(); // Update output fragments
-    if (kKeepOutputInRF && !kIsFirst) {
-      accum_t mp;
+    if (kKeepOutputInRF && !is_first) {
+      accum_t line_rescale;
       LambdaIterator::iterateRows(
           lane_offset,
-          [&](int accum_m) { mp = m_prime[accum_m]; },
-          [&](int accum_m, int accum_n, int idx) { frag_o[idx] *= mp; },
+          [&](int accum_m) { line_rescale = out_rescale[accum_m]; },
+          [&](int accum_m, int accum_n, int idx) {
+            frag_o[idx] = frag_o[idx] * line_rescale;
+          },
           [&](int accum_m) {});
-      __syncthreads();
     }
     // Update accum_m, accum_n, ...
     {
       accum_t mi_row, total_row;
       LambdaIterator::iterateRows(
           lane_offset,
-          [&](int accum_m) { mi_row = kLog2e * mi[accum_m]; },
+          [&](int accum_m) { mi_row = mi[accum_m]; },
           [&](int accum_m, int accum_n, int idx) {
-            frag[idx] = (kFullColumns || accum_n < max_col)
-                ? exp2f(frag[idx] - mi_row)
-                : accum_t(0.0);
+            frag[idx] =
+                (accum_n < max_col) ? exp2f(frag[idx] - mi_row) : accum_t(0.0);
           },
           [&](int accum_m) {});
       LambdaIterator::iterateRows(
@@ -1183,6 +1179,11 @@ struct AttentionKernel {
               atomicAdd(&s_prime[accum_m], total_row);
             }
           });
+    }
+    __syncthreads();
+    if (lane_id < kLinesPerWarp) {
+      int id = warp_id * kLinesPerWarp + lane_id;
+      m_prime[id] = mi[id];
     }
   }
 

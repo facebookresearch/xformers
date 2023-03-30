@@ -56,6 +56,7 @@ template <
     Operand Operand_,
     /// Data type of A elements
     typename Element_,
+    typename InstructionShape_,
     bool kTranspose = false>
 class WarpIteratorFromSmem {
  public:
@@ -78,7 +79,7 @@ class WarpIteratorFromSmem {
   using Layout = cutlass::layout::RowMajor;
 
   /// Shape of one matrix product operation (concept: MatrixShape)
-  using InstructionShape = cutlass::MatrixShape<16, 8>;
+  using InstructionShape = InstructionShape_;
 
   /// Delta between *MMA operations (in units of *MMA operations, concept:
   /// MatrixShape)
@@ -156,9 +157,10 @@ class WarpIteratorFromSmem {
     int ldsm_vec_num = (lane_id >> 3);
     if (kOperand == Operand::kA) {
       origin_ = MatrixCoord(lane_id % 8, 0);
-      static_assert(
-          InstructionCount::kRow * kAccessesInner * kTilesPerInstruction == 4,
-          "");
+      // static_assert(
+      //     InstructionCount::kRow * kAccessesInner * kTilesPerInstruction ==
+      //     4,
+      //     "");
       CUTLASS_PRAGMA_UNROLL
       for (int inst_m_idx = 0; inst_m_idx < InstructionCount::kRow;
            ++inst_m_idx) {

@@ -1263,10 +1263,10 @@ template <
 struct DefaultWarpIteratorAFromSharedMemory {};
 
 // TensorOp - Ampere half
-template <typename RegularWarpIterator, typename Policy>
+template <typename RegularWarpIterator, typename Policy, int kInstrK>
 struct DefaultWarpIteratorAFromSharedMemory<
     cutlass::gemm::GemmShape<32, 32, 32>,
-    cutlass::gemm::GemmShape<16, 8, 8>,
+    cutlass::gemm::GemmShape<16, 8, kInstrK>,
     RegularWarpIterator,
     Policy,
     typename platform::enable_if<(
@@ -1275,10 +1275,12 @@ struct DefaultWarpIteratorAFromSharedMemory<
   static constexpr auto kWarpSize = 32;
   using OpDelta = typename Policy::Operator::Policy::OpDelta;
   using WarpShape = cutlass::MatrixShape<32, 32>;
+  using InstructionShape = cutlass::gemm::GemmShape<16, 8, kInstrK>;
 
   using WarpIterator = cutlass::gemm::warp::WarpIteratorFromSmem<
       cutlass::gemm::Operand::kA,
-      typename RegularWarpIterator::Element>;
+      typename RegularWarpIterator::Element,
+      cutlass::MatrixShape<InstructionShape::kM, InstructionShape::kK>>;
 };
 
 // TensorOp - Ampere f32
