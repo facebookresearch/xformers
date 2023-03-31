@@ -7,9 +7,11 @@ runs:
       shell: bash
       run: |
         conda config --set channel_priority strict
-        CONDA_INSTALL_CMD="conda create -p ./c_env python=${{ matrix.python }} pip ninja pytorch=${{ matrix.pytorch }} torchvision ccache pytorch-cuda=${{ matrix.cuda }} -c pytorch -c nvidia -q -y"
+        CONDA_INSTALL_CMD="conda create -p ./c_env python=${{ matrix.python }} zlib pip ninja pytorch=${{ matrix.pytorch }} torchvision ccache pytorch-cuda=${{ matrix.cuda }} -c pytorch -c nvidia -q -y"
         # Retry if failed after removing downloaded packages cache
         $CONDA_INSTALL_CMD || (rm -rf $HOME/.conda/pkgs && rm -rf ./c_env && $CONDA_INSTALL_CMD)
+        ./c_env/bin/python -m pip install cmake
+        export LIBRARY_PATH="$LIBRARY_PATH:$(pwd)/c_env/lib"
         ./c_env/bin/python -m pip install -r requirements-benchmark.txt --progress-bar off
     - name: Setup ccache
       shell: bash

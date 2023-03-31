@@ -1253,7 +1253,9 @@ def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
     )
     try:
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
-    except ValueError:
+    except ValueError as e:
+        if "Only work on pre-MLIR triton for now" in str(e):
+            pytest.skip("Only work on pre-MLIR triton for now")
         q = q.contiguous()
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
 
@@ -1266,7 +1268,9 @@ def test_unsupported_stride_alignment(op: Type[fmha.AttentionFwOpBase]):
     q = torch.empty([1, 2, 2, 33], device="cuda", dtype=torch.float16)[:, :, :, :32]
     try:
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
-    except ValueError:
+    except ValueError as e:
+        if "Only work on pre-MLIR triton for now" in str(e):
+            pytest.skip("Only work on pre-MLIR triton for now")
         q = q.contiguous()
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
 

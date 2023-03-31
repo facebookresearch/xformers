@@ -107,7 +107,7 @@ def k_dropout_fw(
     keep_mask = r > p
 
     # prune and normalize in one go
-    keep = tl.reshape(keep_mask, x.shape)
+    keep = tl.view(keep_mask, x.shape)
     output = tl.where(keep, (x * p_scale).to(x.dtype), 0.)
 
     tl.store(y_ptrs, output, mask=block_mask)  # output
@@ -196,7 +196,7 @@ def k_dropout_bw(
     rand_offsets = tl.arange(0, SIZE_RAND_BLOCK)
     seed_int = tl.load(SEEDS + col_id)
     r = tl.rand(seed_int, rand_offsets)
-    r = tl.reshape(r, grad_out.shape)
+    r = tl.view(r, grad_out.shape)
     output = tl.where(r > p, (grad_out * p_scale).to(grad_out.dtype), 0.)
 
     # write-back

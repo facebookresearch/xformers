@@ -3,8 +3,6 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
-
 import pytest
 import torch
 
@@ -38,6 +36,13 @@ if _triton_available:
 
         logging.warning(f"Triton is not available: {e}. Some tests will be skipped")
         _triton_available = False
+
+
+def mask_tensor(x, mask, block, value=0):
+    ret = x.clone()
+    for h, i, j in zip(*(mask == 0).nonzero(as_tuple=True)):
+        ret[:, h, i * block : (i + 1) * block, j * block : (j + 1) * block] = value
+    return ret
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
@@ -82,16 +87,16 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
     rc = triton.testing.catch_oor(lambda: op(ra, rb), pytest)
 
     # torch result
-    ta = triton.testing.mask_tensor(a, layout, BLOCK) if MODE == "dsd" else a
-    tb = triton.testing.mask_tensor(b, layout, BLOCK) if MODE == "dds" else b
+    ta = mask_tensor(a, layout, BLOCK) if MODE == "dsd" else a
+    tb = mask_tensor(b, layout, BLOCK) if MODE == "dds" else b
     ta = ta.transpose(2, 3) if TRANS_A else ta
     tb = tb.transpose(2, 3) if TRANS_B else tb
     tc = torch.matmul(ta, tb)
-    tc = triton.testing.mask_tensor(tc, layout, BLOCK) if MODE == "sdd" else tc
+    tc = mask_tensor(tc, layout, BLOCK) if MODE == "sdd" else tc
     tc = block_sparsify_tensor(tc, layout, BLOCK) if MODE == "sdd" else tc
 
     # compare
-    triton.testing.assert_almost_equal(rc, tc)
+    torch.testing.assert_close(rc, tc)
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
@@ -114,13 +119,14 @@ def test_softmax(BLOCK, WIDTH, DTYPE):
     ty = op(tx, scale=scale)
 
     # torch result
-    rx = triton.testing.mask_tensor(x, layout, BLOCK, value=float("-inf"))
+    rx = mask_tensor(x, layout, BLOCK, value=float("-inf"))
+    rx = rx[:, :, : (M // BLOCK) * BLOCK, : (M // BLOCK) * BLOCK]
 
     ry = torch.softmax(rx * scale, -1)
     ry = block_sparsify_tensor(ry, layout, BLOCK)
 
     # compare
-    triton.testing.assert_almost_equal(ry, ty)
+    torch.testing.assert_close(ry, ty)
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
@@ -150,9 +156,7 @@ def test_attention_fwd_bwd(
 
     # Triton:
     n_blocks = n_ctx // block
-    layout = torch.tril(
-        torch.ones([n_heads, n_blocks, n_blocks], dtype=torch.long), diagonal=-1
-    )
+    layout = torch.ones([n_heads, n_blocks, n_blocks], dtype=torch.long)
     query, key, value = [x.clone() for x in qkvs]
     query.retain_grad()
     key.retain_grad()
@@ -172,7 +176,7 @@ def test_attention_fwd_bwd(
 
         # Torch version:
         torch_q, torch_k, torch_v = [x.clone() for x in qkvs]
-        torch_q = torch_q / math.sqrt(head_dim)
+        torch_q = torch_q * scale
         torch_q.retain_grad()
         torch_k.retain_grad()
         torch_v.retain_grad()
@@ -186,15 +190,15 @@ def test_attention_fwd_bwd(
         torch_grads = [torch_q.grad, torch_k.grad, torch_v.grad]
 
         # comparison
-        triton.testing.assert_almost_equal(
-            loss, torch_loss, err_msg=f"Triton loss {loss} and torch loss {torch_loss}"
+        torch.testing.assert_close(
+            loss, torch_loss, msg=f"Triton loss {loss} and torch loss {torch_loss}"
         )
 
         for g1, g2 in zip(grads, torch_grads):
-            triton.testing.assert_almost_equal(
+            torch.testing.assert_close(
                 torch.norm(g1),
                 torch.norm(g2),
-                err_msg=f"Triton grad {torch.norm(g1).item()} and torch grad {torch.norm(g2).item()}",
+                msg=f"Triton grad {torch.norm(g1).item()} and torch grad {torch.norm(g2).item()}",
             )
 
 
@@ -248,4 +252,4 @@ def test_blocksparse_attention_parity(dtype):
     ).to(device=torch.device("cuda"), dtype=dtype)
     r_blocksparse = multi_head_blocksparse(inputs, inputs, inputs)
 
-    triton.testing.assert_almost_equal(r_sdp, r_blocksparse)
+    torch.testing.assert_close(r_sdp, r_blocksparse, atol=5e-5, rtol=6e-3)

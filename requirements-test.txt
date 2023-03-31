@@ -28,5 +28,8 @@ fairscale >= 0.4.5
 scipy
 
 # Dependency for fused layers, optional
-triton==2.0.0.dev20221105
+cmake
+#triton==2.0.0.dev20221105
+#git+https://github.com/openai/triton.git#subdirectory=python&egg=triton
+git+https://github.com/fmassa/triton.git@max_jobs#subdirectory=python&egg=triton
 networkx

@@ -86,6 +86,11 @@ class FwOp(AttentionFwOpBase):
             # Fails on 7.5 with illegal memory access
             if torch.cuda.get_device_capability(d.device) != (8, 0):
                 reasons.append("requires A100 GPU")
+        if _is_triton_available():
+            import triton
+
+            if triton.__version__ > "2.0.0":
+                reasons.append("Only work on pre-MLIR triton for now")
         return reasons
 
     @classmethod
@@ -131,6 +136,11 @@ class BwOp(AttentionBwOpBase):
         if d.device.type == "cuda":
             if torch.cuda.get_device_capability(d.device) != (8, 0):
                 reasons.append("requires A100 GPU")
+        if _is_triton_available():
+            import triton
+
+            if triton.__version__ > "2.0.0":
+                reasons.append("Only work on pre-MLIR triton for now")
         return reasons
 
     @classmethod

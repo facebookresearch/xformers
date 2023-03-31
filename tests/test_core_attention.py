@@ -19,6 +19,9 @@ _is_blocksparse_available = (
     _is_triton_available() and not gpu_capabilities_older_than_70()
 )
 
+if _is_blocksparse_available:
+    import triton.testing
+
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
@@ -148,11 +151,14 @@ def test_switch_blocksparse(device, data_type):
     # Mask with causal flag
     m_att_mask = AttentionMask.make_causal(s, s, device, dtype=a.dtype)
 
+    def kernel():
+        return scaled_dot_product_attention(a, a, a, m_att_mask)
+
     # Check that a switch to blocksparse is only triggered by causal flag
     with torch.cuda.amp.autocast():
         r_custom = scaled_dot_product_attention(a, a, a, m_custom)
         r_sparse = scaled_dot_product_attention(a, a, a, m_sparse)
-        r_att_mask = scaled_dot_product_attention(a, a, a, m_att_mask)
+        r_att_mask = triton.testing.catch_oor(kernel, pytest)
 
     expected_device = torch.float32
     assert r_sparse.dtype == expected_device
@@ -176,9 +182,12 @@ def test_switch_blocksparse_dims(device):
     # Mask with causal flag
     m = AttentionMask.make_causal(s, s, device, dtype=a.dtype)
 
+    def kernel():
+        return scaled_dot_product_attention(a, a, a, m)
+
     # Check that passing qkv with shape (B, nh, S, hs) is properly handled
     with torch.cuda.amp.autocast():
-        r = scaled_dot_product_attention(a, a, a, m)
+        r = triton.testing.catch_oor(kernel, pytest)
 
     expected_device = torch.float32
     assert r.dtype == expected_device
@@ -199,9 +208,15 @@ def test_switch_blocksparse_dropout(device, training, drop_prob):
     dropout = nn.Dropout(drop_prob)
     dropout.train(training).cuda()
 
+    def kernel1():
+        return scaled_dot_product_attention(a, a, a, m)
+
+    def kernel2():
+        return scaled_dot_product_attention(a, a, a, m, dropout)
+
     with torch.cuda.amp.autocast():
-        r = scaled_dot_product_attention(a, a, a, m)
-        r_drop = scaled_dot_product_attention(a, a, a, m, dropout)
+        r = triton.testing.catch_oor(kernel1, pytest)
+        r_drop = triton.testing.catch_oor(kernel2, pytest)
 
     # Check for dropout when applicable
     if dropout.p and dropout.training:
