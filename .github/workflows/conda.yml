@@ -102,19 +102,26 @@ jobs:
       - name: Build & store/upload
         env:
           # NOTE: Ternary operator: ${{ cond && 'trueVal' || 'falseVal' }}
-          STORE_OR_UPLOAD: ${{ (github.repository == 'facebookresearch/xformers' && github.event_name != 'pull_request' && matrix.config.torch_channel == 'pytorch') && '--upload' || '--store' }}
           STORE_PT_PACKAGE: ${{ matrix.config.torch_channel != 'pytorch' && '--store-pytorch-package' || '' }}
           ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
         run: |
-          df -h
           $PY packaging/build_conda.py \
           --cuda ${{ matrix.config.cuda_version }} \
           --python ${{ matrix.python }} \
           --pytorch ${{ matrix.config.torch_version }} \
           --pytorch-channel ${{ matrix.config.torch_channel }} \
           --cuda-dep-runtime "${{ matrix.config.cuda_dep_runtime }}" \
-          $STORE_OR_UPLOAD $STORE_PT_PACKAGE
-
+          --store $STORE_PT_PACKAGE
+      - name: Upload
+        if: github.repository == 'facebookresearch/xformers' && github.event_name != 'pull_request' && matrix.config.torch_channel == 'pytorch'
+        run: |
+          # This might fail, let's retry it multiple times
+          for i in {1..20}
+          do 
+              [[ $i != 1 ]] && sleep 15
+              echo "Attempt $i"
+              anaconda upload -u xformers packages/* && break
+          done
       - uses: actions/upload-artifact@v3
         with:
           name: linux-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
