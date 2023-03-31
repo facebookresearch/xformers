@@ -313,6 +313,11 @@
             <span class="c1"># Fails on 7.5 with illegal memory access</span>
             <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
                 <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;requires A100 GPU&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">_is_triton_available</span><span class="p">():</span>
+            <span class="kn">import</span> <span class="nn">triton</span>
+
+            <span class="k">if</span> <span class="n">triton</span><span class="o">.</span><span class="n">__version__</span> <span class="o">&gt;</span> <span class="s2">&quot;2.0.0&quot;</span><span class="p">:</span>
+                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;Only work on pre-MLIR triton for now&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
@@ -358,6 +363,11 @@
         <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
                 <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;requires A100 GPU&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">_is_triton_available</span><span class="p">():</span>
+            <span class="kn">import</span> <span class="nn">triton</span>
+
+            <span class="k">if</span> <span class="n">triton</span><span class="o">.</span><span class="n">__version__</span> <span class="o">&gt;</span> <span class="s2">&quot;2.0.0&quot;</span><span class="p">:</span>
+                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;Only work on pre-MLIR triton for now&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
