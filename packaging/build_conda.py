@@ -54,7 +54,6 @@ class Build:
         conda_debug: get added information about package search
         conda_dirty: see intermediate files after build
         build_inside_tree: output in build/ not ../build
-        upload: whether to upload to xformers on anaconda
         is_release: whether this is an official versioned release
     """
 
@@ -68,7 +67,6 @@ class Build:
     conda_debug: bool = False
     conda_dirty: bool = False
     build_inside_tree: bool = False
-    upload: bool = False
     tagged_version: Optional[str] = field(
         default_factory=compute_wheel_version.get_tagged_version
     )
@@ -137,19 +135,10 @@ class Build:
             args += ["--dirty"]
         if not self.build_inside_tree:
             args += ["--croot", "../build"]
-        if self.upload:
-            if self.tagged_version is not None:
-                args += ["--user", "xformers"]
-            else:
-                args += ["--user", "xformers", "--label", "dev"]
         return args + ["packaging/xformers"]
 
     def do_build(self) -> None:
         self._set_env_for_build()
-        if self.upload:
-            subprocess.check_call(
-                ["conda", "config", "--set", "anaconda_upload", "yes"]
-            )
         args = self._get_build_args()
         print(args)
         subprocess.check_call(args)
@@ -193,11 +182,6 @@ if __name__ == "__main__":
         help="Build in build/ instead of ../build/",
     )
     parser.add_argument(
-        "--upload",
-        action="store_true",
-        help="whether to upload to xformers anaconda",
-    )
-    parser.add_argument(
         "--store",
         action="store_true",
         help="position artifact to store",
@@ -218,7 +202,6 @@ if __name__ == "__main__":
         pytorch_version=args.pytorch,
         cuda_version=args.cuda,
         build_inside_tree=args.build_inside_tree,
-        upload=args.upload,
         cuda_dep_runtime=args.cuda_dep_runtime,
     )
 

@@ -79,6 +79,12 @@ jobs:
           free -h
           echo
           swapon --show
+      - name: Set tag = 'dev'
+        run: echo "XFORMERS_CONDA_TAG='dev'" >> $GITHUB_ENV
+      - name: Set tag = 'main'
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "XFORMERS_CONDA_TAG='main'" >> $GITHUB_ENV
+      - run: echo "${XFORMERS_CONDA_TAG}"
       - name: Free up disk space
         run: |
           df -h /
@@ -121,7 +127,7 @@ jobs:
           do 
               [[ $i != 1 ]] && sleep 15
               echo "Attempt $i"
-              anaconda upload -u xformers packages/* && break
+              anaconda upload --user xformers --label ${XFORMERS_CONDA_TAG} packages/* && break
           done
       - uses: actions/upload-artifact@v3
         with:
