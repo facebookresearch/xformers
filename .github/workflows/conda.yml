@@ -103,7 +103,6 @@ jobs:
         env:
           # NOTE: Ternary operator: ${{ cond && 'trueVal' || 'falseVal' }}
           STORE_PT_PACKAGE: ${{ matrix.config.torch_channel != 'pytorch' && '--store-pytorch-package' || '' }}
-          ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
         run: |
           $PY packaging/build_conda.py \
           --cuda ${{ matrix.config.cuda_version }} \
@@ -114,6 +113,8 @@ jobs:
           --store $STORE_PT_PACKAGE
       - name: Upload
         if: github.repository == 'facebookresearch/xformers' && github.event_name != 'pull_request' && matrix.config.torch_channel == 'pytorch'
+        env:
+          ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
         run: |
           # This might fail, let's retry it multiple times
           for i in {1..20}
