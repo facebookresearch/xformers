@@ -80,10 +80,10 @@ jobs:
           echo
           swapon --show
       - name: Set tag = 'dev'
-        run: echo "XFORMERS_CONDA_TAG='dev'" >> $GITHUB_ENV
+        run: echo "XFORMERS_CONDA_TAG=dev" >> $GITHUB_ENV
       - name: Set tag = 'main'
         if: startsWith(github.ref, 'refs/tags/v')
-        run: echo "XFORMERS_CONDA_TAG='main'" >> $GITHUB_ENV
+        run: echo "XFORMERS_CONDA_TAG=main" >> $GITHUB_ENV
       - run: echo "${XFORMERS_CONDA_TAG}"
       - name: Free up disk space
         run: |
@@ -130,6 +130,7 @@ jobs:
               anaconda upload --user xformers --label ${XFORMERS_CONDA_TAG} packages/* && break
           done
       - uses: actions/upload-artifact@v3
+        if: success() || failure()
         with:
           name: linux-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
           path: packages
