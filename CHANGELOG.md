@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 ### Added
 
+## [0.0.18] - 2023-03-31
+### Added
+- Added `xformers.ops.index_select_cat` and `xformers.ops.scaled_index_add` - those are experimental functions that only work with a few shapes, and can be used to write efficient stochastic depth in transformer architectures for instance
+
+### Fixed
+- fMHA: `memory_efficient_attention` now accepts `torch.Tensor` as attention bias for any seqlen, although there are still requirements on the alignment of the bias tensor (see facebookresearch/xformers#683)
+
 ## [0.0.17] - 2023-03-28
 ### Fixed
 - fMHA: Fixed BW pass on Sm86/Sm89 GPUs when `K > 64` (RTX 3090, RTX 4090, A6000, ..) [facebookresearch/xformers#631]
