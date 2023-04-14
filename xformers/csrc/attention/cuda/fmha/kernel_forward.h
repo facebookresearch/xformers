@@ -1100,7 +1100,7 @@ struct AttentionKernel {
       int8_t lane_id,
       int8_t thread_id,
       int8_t warp_id,
-      int16_t max_col,
+      int max_col,
       bool is_first,
       typename WarpIteratorC::TensorCoord const& tile_offset,
       float scaling) {

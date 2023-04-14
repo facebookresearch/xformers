@@ -51,8 +51,11 @@ def _filter_unsupported_ops(ops: Sequence[T]) -> Sequence[T]:
     return [
         op
         for op in ops
-        if "cpu" in op.SUPPORTED_DEVICES
-        or op.CUDA_MINIMUM_COMPUTE_CAPABILITY <= compute_capability
+        if (
+            "cpu" in op.SUPPORTED_DEVICES
+            or op.CUDA_MINIMUM_COMPUTE_CAPABILITY <= compute_capability
+        )
+        and op.is_available()
     ]
 
 
@@ -102,12 +105,6 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
         # Some number of heads
         for H in [3, 5, 12]:
             shapes.append((max(1, B // H), Mq, Mkv, H, K, K))
-    # Some strides don't fit on an uint16
-    shapes.append((1, 128, 128, 300, 128, 128))
-    shapes.append((13, 1, 67, 200, 8, 8))
-    # TODO: Some strides don't fit on an uint32
-    # Crashes on Flash, Errors on Cutlass
-    # shapes.append((1, 1, 64000, 300, 128, 128))
     # Add some random shapes
     if op in [
         fmha.cutlass.FwOp,
@@ -169,6 +166,27 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                 op_count += 1
             if op_count > max_shapes_per_op:
                 break
+        # Some specific shapes for which we want to run without any mask
+        bias_type = type(None)
+        for shape in (
+            # Some strides/dims don't fit on an uint16
+            (1, 128, 128, 300, 128, 128),
+            (13, 1, 67, 200, 8, 8),
+            (1, 1 + 2**16, 4, 1, 8, 8),
+            (1, 4, 1 + 2**16, 1, 8, 8),
+            # TODO: Some strides don't fit on an uint32
+            # Crashes on Flash, Errors on Cutlass
+            # (1, 1, 64000, 300, 128, 128)
+        ):
+            for device in _devices:
+                if device not in op.SUPPORTED_DEVICES:
+                    continue
+                for dtype in op.SUPPORTED_DTYPES:
+                    combination.append((op, device, dtype, bias_type, *shape))
+                    ids.append(
+                        f"{op.NAME}-{device}-{str(dtype)}-{bias_type.__name__}"
+                        f"-{'-'.join([str(s) for s in shape])}"
+                    )
     return {
         "argvalues": combination,
         "ids": ids,
@@ -867,6 +885,9 @@ def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed):
 
 
 def _test_dropout_backward(q_len, kv_len, batch_size, k_len, p, op, dtype):
+    if not op.is_available():
+        pytest.skip()
+
     scale = 3
     device = "cuda"
     query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
