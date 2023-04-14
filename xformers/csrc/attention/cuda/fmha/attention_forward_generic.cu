@@ -135,8 +135,8 @@ efficient_attention_forward_cutlass(
     if (!Kernel::kSupportsBias && bias.has_value()) {
       return;
     }
-    if (Kernel::kSingleValueIteration &&
-        Kernel::kKeysPerBlock < value.size(3)) {
+
+    if (value.size(3) > Kernel::kMaxK || key.size(3) > Kernel::kMaxK) {
       return;
     }
     // Alignment
@@ -290,7 +290,7 @@ bool has_cutlassF_kernel_for(
     at::ScalarType dtype,
     int64_t cc,
     int64_t maxShmem,
-    int64_t value_k) {
+    int64_t dim_k) {
   bool found = false;
 
   auto callback = [&](auto kernelCls, auto kernelFn) {
@@ -299,7 +299,7 @@ bool has_cutlassF_kernel_for(
     if (found) {
       return;
     }
-    if (Kernel::kSingleValueIteration && Kernel::kKeysPerBlock < value_k) {
+    if (dim_k > Kernel::kMaxK) {
       return;
     }
     size_t smem_bytes = sizeof(typename Kernel::SharedStorage);

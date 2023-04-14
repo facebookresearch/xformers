@@ -52,7 +52,7 @@ class FwdKernel:
     sm_range: Tuple[int, int]
     q: int
     k: int
-    single_value_iter: bool
+    max_k: int
     supports_dropout: bool = True
     supports_bias: bool = True
     dispatch_cond: Optional[str] = None
@@ -65,7 +65,7 @@ class FwdKernel:
             # First select aligned kernel
             0 if self.aligned else 1,
             # Then keep output in RF
-            0 if self.single_value_iter else 1,
+            self.max_k,
             self.k,
             # Prefer kernels without dropout/bias if available
             1 if self.supports_dropout else 0,
@@ -78,7 +78,7 @@ class FwdKernel:
 
     @property
     def name(self) -> str:
-        acc = "rf" if self.single_value_iter else "gmem"
+        acc = "rf" if self.max_k <= self.k else "gmem"
         return f"fmha_cutlassF_{self.dtype}_{self._aligned_suffix}_{self.q}x{self.k}_{acc}_sm{self.sm_range[0]}"
 
     @property
@@ -90,7 +90,7 @@ class FwdKernel:
                 "true" if self.aligned else "false",
                 str(self.q),
                 str(self.k),
-                "true" if self.single_value_iter else "false",
+                str(self.max_k),
                 "true" if self.supports_dropout else "false",
                 "true" if self.supports_bias else "false",
             ]
@@ -122,10 +122,10 @@ class FwdKernel:
                 continue
             if not aligned and sm >= 80:
                 continue
-            for q, k, single_value_iter in [
-                (32, 128, True),
-                (32, 128, False),
-                (64, 64, True),
+            for q, k, max_k in [
+                (64, 64, 64),
+                (32, 128, 128),
+                (32, 128, 2**16),
             ]:
                 kernels.append(
                     cls(
@@ -134,7 +134,7 @@ class FwdKernel:
                         sm_range=(sm, sm_max),
                         q=q,
                         k=k,
-                        single_value_iter=single_value_iter,
+                        max_k=max_k,
                     )
                 )
         return kernels

@@ -35,6 +35,7 @@
 #include "debug_utils.h"
 #include "epilogue/epilogue_pipelined.h"
 #include "epilogue/epilogue_rescale_output.h"
+#include "gemm/custom_mma.h"
 #include "gemm/find_default_mma.h"
 #include "gemm/mma_from_smem.h"
 #include "gemm_kernel_utils.h"
@@ -70,7 +71,8 @@ template <
     bool isAligned_,
     int kQueriesPerBlock_,
     int kKeysPerBlock_,
-    bool kSingleValueIteration_, // = `value.shape[-1] <= kKeysPerBlock`
+    // upperbound on `max(value.shape[-1], query.shape[-1])`
+    int kMaxK_ = (int)cutlass::platform::numeric_limits<uint32_t>::max(),
     // This is quite slower on V100 for some reason
     // Set to false if you know at compile-time you will never need dropout
     bool kSupportsDropout_ = true,
@@ -95,11 +97,13 @@ struct AttentionKernel {
   static constexpr bool kSupportsBias = kSupportsBias_;
   static constexpr int kKeysPerBlock = kKeysPerBlock_;
   static constexpr int kQueriesPerBlock = kQueriesPerBlock_;
+  static constexpr int kMaxK = kMaxK_;
   static constexpr bool kIsAligned = isAligned_;
-  static constexpr bool kSingleValueIteration = kSingleValueIteration_;
+  static constexpr bool kSingleValueIteration = kMaxK <= kKeysPerBlock;
   static constexpr int32_t kAlignLSE = 32; // block size of backward
-  static constexpr bool kPreloadV = ArchTag::kMinComputeCapability >= 80 &&
-      cutlass::sizeof_bits<scalar_t>::value == 16;
+  static constexpr bool kIsHalf = cutlass::sizeof_bits<scalar_t>::value == 16;
+  static constexpr bool kPreloadV =
+      ArchTag::kMinComputeCapability >= 80 && kIsHalf;
   static constexpr bool kKeepOutputInRF = kSingleValueIteration;
   static constexpr bool kNeedsOutputAccumulatorBuffer = !kKeepOutputInRF &&
       !cutlass::platform::is_same<output_accum_t, output_t>::value;
@@ -365,14 +369,19 @@ struct AttentionKernel {
         ThreadblockShape, // ThreadblockShape
         WarpShape, // WarpShape
         typename GemmType::InstructionShape, // InstructionShape
-        DefaultConfig::kStages, // Should use `DefaultConfig::kStages`, but that
-                                // uses too much smem
+        ArchTag::kMinComputeCapability >= 80 && kIsHalf
+            ? 4
+            : DefaultConfig::kStages,
         typename GemmType::Operator // Operator
         >::DefaultMma;
     using MmaCore = typename DefaultMma::MmaCore;
     using IteratorA = typename DefaultMma::IteratorA;
     using IteratorB = typename DefaultMma::IteratorB;
-    using Mma = typename DefaultMma::ThreadblockMma;
+    using DefaultThreadblockMma = typename DefaultMma::ThreadblockMma;
+    using Mma = typename cutlass::platform::conditional<
+        kSingleValueIteration,
+        typename MakeCustomMma<DefaultThreadblockMma, kMaxK>::Mma,
+        DefaultThreadblockMma>::type;
     using AccumLambdaIterator = typename DefaultMmaAccumLambdaIterator<
         typename Mma::Operator::IteratorC,
         accum_t,
@@ -445,7 +454,9 @@ struct AttentionKernel {
         typename GemmType::InstructionShape,
         typename DefaultConfig::EpilogueOutputOp,
         void, // ThreadblockSwizzle - not used
-        DefaultConfig::kStages,
+        ArchTag::kMinComputeCapability >= 80 && kIsHalf
+            ? 4
+            : DefaultConfig::kStages,
         false, // SplitKSerial
         typename GemmType::Operator>;
 
