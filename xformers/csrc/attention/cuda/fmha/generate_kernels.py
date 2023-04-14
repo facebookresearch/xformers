@@ -124,7 +124,8 @@ class FwdKernel:
                 continue
             for q, k, max_k in [
                 (64, 64, 64),
-                (32, 128, 128),
+                # We get better perf with 64x128 on A100
+                (64 if sm > 75 else 32, 128, 128),
                 (32, 128, 2**16),
             ]:
                 kernels.append(
