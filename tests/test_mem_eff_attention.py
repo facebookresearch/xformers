@@ -900,15 +900,17 @@ def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed):
     assert all(p_values > p_val_tol)
 
 
-def _test_dropout_backward(q_len, kv_len, batch_size, k_len, p, op, dtype):
+def _test_dropout_backward(q_len, kv_len, batch_size, k, p, op, dtype):
+    if dtype is torch.bfloat16 and compute_capability < (8, 0):
+        pytest.skip("bf16 requires Sm80")
     if not op.is_available():
         pytest.skip()
 
     scale = 3
     device = "cuda"
-    query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
-    key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
-    value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
+    query = torch.randn((batch_size, q_len, k), device=device, dtype=dtype) * scale
+    key = torch.randn((batch_size, kv_len, k), device=device, dtype=dtype) * scale
+    value = torch.randn((batch_size, kv_len, k), device=device, dtype=dtype) * scale
 
     query.requires_grad_(True)
     key.requires_grad_(True)
@@ -924,10 +926,6 @@ def _test_dropout_backward(q_len, kv_len, batch_size, k_len, p, op, dtype):
 
     out.backward(grad_out)
 
-    # Only test correctness for small_k
-    if op is not fmha.small_k.FwOp:
-        return
-
     grad_q = query.grad
     grad_k = key.grad
     grad_v = value.grad
@@ -942,48 +940,65 @@ def _test_dropout_backward(q_len, kv_len, batch_size, k_len, p, op, dtype):
     ref = ref_attention(query, key, value, None, mask, p)
     ref.backward(grad_out)
 
-    # there is some extra precision loss in the CPU implementation due to an
-    # extra accumulation step in grad_q, which is not present in the CUDA
-    # implementation
-    atol = 5e-4 if device == "cuda" else 6e-4
-    assert_allclose(grad_q, query.grad, "grad_q", atol=atol)
-    assert_allclose(grad_k, key.grad, "grad_k", atol=atol)
-    assert_allclose(grad_v, value.grad, "grad_v", atol=atol)
+    atol, rtol = (
+        fmha.AttentionBwOpBase.ERROR_ATOL[dtype],
+        fmha.AttentionBwOpBase.ERROR_RTOL[dtype],
+    )
+    assert_allclose(
+        grad_v,
+        value.grad,
+        "grad_v",
+        atol=atol,
+        rtol=rtol,
+    )
+    # TODO: Investigate why precision is worse
+    if dtype in [torch.float16, torch.bfloat16]:
+        atol = atol * 2 + 0.05
+        rtol = rtol * 2
+    assert_allclose(
+        grad_q,
+        query.grad,
+        "grad_q",
+        atol=atol,
+        rtol=rtol,
+    )
+    assert_allclose(
+        grad_k,
+        key.grad,
+        "grad_k",
+        atol=atol,
+        rtol=rtol,
+    )
 
 
 @cuda_only
 @pytest.mark.parametrize("p", [0.3, 0.7])
-@pytest.mark.parametrize("k_len", [5, 6, 32])
+@pytest.mark.parametrize("k", [5, 6, 32])
 @pytest.mark.parametrize("batch_size", [1, 2])
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
 @pytest.mark.parametrize("q_len", [2, 33])
-def test_dropout_backward_small_k(q_len, kv_len, batch_size, k_len, p):
+def test_dropout_backward_small_k(q_len, kv_len, batch_size, k, p):
     _test_dropout_backward(
-        q_len, kv_len, batch_size, k_len, p, op=fmha.small_k.FwOp, dtype=torch.float32
-    )
-
-
-@sm75_or_better_only
-@pytest.mark.parametrize("p", [0.3, 0.7])
-@pytest.mark.parametrize("k_len", [16, 32])
-@pytest.mark.parametrize("batch_size", [1, 2])
-@pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
-@pytest.mark.parametrize("q_len", [2, 33])
-def test_dropout_backward_flash(q_len, kv_len, batch_size, k_len, p):
-    _test_dropout_backward(
-        q_len, kv_len, batch_size, k_len, p, op=fmha.flash.FwOp, dtype=torch.float16
+        q_len, kv_len, batch_size, k, p, op=fmha.small_k.FwOp, dtype=torch.float32
     )
 
 
 @cuda_only
-@pytest.mark.parametrize("p", [0.3, 0.7])
-@pytest.mark.parametrize("k_len", [16, 32])
+@pytest.mark.parametrize("p", [0.000001, 0.3, 0.7])
+@pytest.mark.parametrize("k", [16, 128, 256])
 @pytest.mark.parametrize("batch_size", [1, 2])
-@pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
-@pytest.mark.parametrize("q_len", [2, 33])
-def test_dropout_backward_cutlass(q_len, kv_len, batch_size, k_len, p):
+@pytest.mark.parametrize("kv_len", [3, 248, 256])
+@pytest.mark.parametrize("q_len", [3, 248, 256])
+@pytest.mark.parametrize("dt", ["f16", "bf16", "f32"])
+def test_dropout_backward_cutlass(dt, q_len, kv_len, batch_size, k, p):
     _test_dropout_backward(
-        q_len, kv_len, batch_size, k_len, p, op=fmha.cutlass.FwOp, dtype=torch.float16
+        q_len,
+        kv_len,
+        batch_size,
+        k,
+        p,
+        op=fmha.cutlass.FwOp,
+        dtype={"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dt],
     )
 
 

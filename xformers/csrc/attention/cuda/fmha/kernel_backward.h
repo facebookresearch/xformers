@@ -40,6 +40,7 @@
 #include "cutlass/gemm/threadblock/default_mma_core_sm70.h"
 #include "cutlass/gemm/threadblock/default_mma_core_sm75.h"
 #include "cutlass/gemm/threadblock/default_mma_core_sm80.h"
+#include "cutlass/integer_subbyte.h"
 #include "cutlass/matrix_shape.h"
 #include "cutlass/platform/platform.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
@@ -662,6 +663,10 @@ struct AttentionBackwardKernel {
         typename GemmType::Operator,
         cutlass::gemm::SharedMemoryClearOption::kNone>;
     using Mma = typename MakeCustomMma<typename DefaultGemm::Mma, kMaxK>::Mma;
+    using AccumLambdaIterator = typename DefaultMmaAccumLambdaIterator<
+        typename Mma::Operator::IteratorC,
+        ElementAccum,
+        kWarpSize>::Iterator;
 
     // epilogue used to write bias gradient, which is just the output of this
     // matmul with some operations applied to the fragment
@@ -817,12 +822,7 @@ struct AttentionBackwardKernel {
           // 10. write to fragment
           typename MatmulQK::AccumulatorSharedStorage attn_shared_storage;
         };
-        // 5. store Zij. it is needed:
-        // - to compute Pij_dropped = Pij * Zij on the fly as fragments of Pij
-        // are loaded for the computation of dVj.
-        // - to compute dPij = (dOi @ Vj.T) * Zij
-        // 6. used in dVj += (Pij.T * Zij) @ dOi
-        // 9. used in dPij = dPij_dropped * Zij
+        // 5. store Zij. it is needed in dVj += (Pij.T * Zij) @ dOi
         ZijSharedStorage zij;
 
         union {
@@ -956,11 +956,9 @@ struct AttentionBackwardKernel {
           // - in next step where it is used in dSij = Pij * (dPij - Di)
           typename MatmulQK::AccumulatorSharedStorage attn_shared_storage;
         };
-        // 3. store Zij. it is needed:
-        // - in this step, where it is used to compute Pij_dropped = Pij * Zij
-        // on the
-        //   fly as fragments of Pij are loaded for the computation of dVj.
-        // - later to compute dPij = (dOi @ Vj.T) * Zij
+        // 3. store Zij. it is needed in this step, where it is used
+        // to compute Pij_dropped = Pij * Zij on the fly as fragments of Pij are
+        // loaded for the computation of dVj.
         ZijSharedStorage zij;
 
         union {
@@ -977,8 +975,6 @@ struct AttentionBackwardKernel {
           struct {
             // (from p2) - Pij for computing dSij = Pij * (dPij - Di)
             typename MatmulQK::AccumulatorSharedStorage attn_shared_storage;
-            // (from p2) - Zij for computing dPij = dPij_dropped * Zij
-            ZijSharedStorage zij;
             // matmul to compute dOiVj
             typename MatmulDOIVJ::Mma::SharedStorage mm_doivj;
           };
@@ -1309,6 +1305,12 @@ struct AttentionBackwardKernel {
       int32_t query_start,
       int32_t key_start,
       const curandStatePhilox4_32_10_t& curand_state_init) {
+    cutlass::Array<cutlass::uint1b_t, MatmulDOIVJ::Mma::FragmentC::kElements>
+        dropout_keep_mask_doivj;
+    dropout_keep_mask_doivj.fill(1);
+    const float dropout_scale =
+        kApplyDropout ? 1.0 / (1.0 - p.dropout_prob) : 1.0f;
+
     cutlass::MatrixCoord no_offset{0, 0};
     accum_t scale = p.scale;
     int16_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
@@ -1518,6 +1520,10 @@ struct AttentionBackwardKernel {
           warp_id,
           lane_id,
           output_tile_coords);
+#if 0
+      auto accum_ref_attnT = shared_storage.attn_shared_storage().accum_ref();
+      PRINT_TENSOR4x4_T0_L0("attn_T", accum_ref_attnT);
+#endif
 
       // if we are using dropout, compute Zij, writing it to shared memory.
       // each element of Zij is:
@@ -1533,9 +1539,11 @@ struct AttentionBackwardKernel {
         // number sequence. for Z, the end of a row and the beginning of the
         // next have adjacent offsets, but for Zij (tile of global matrix), this
         // is not necessarily the case.
-        const int num_threads = blockDim.x * blockDim.y * blockDim.z;
+        // We must fill the entire `zij` shmem with values (even out of bounds
+        // on the K-dimension) otherwise we can get NaNs during the GEMM
+        const int kQueriesPerBlock = kBlockSizeI;
         const int threads_per_row = cutlass::fast_min(
-            num_threads / num_queries_in_block, num_keys_in_block);
+            int32_t(kNumThreads / kQueriesPerBlock), num_keys_in_block);
         const int elts_per_thread = cutlass::round_nearest(
             cutlass::ceil_div(num_keys_in_block, threads_per_row), 4);
 
@@ -1543,19 +1551,17 @@ struct AttentionBackwardKernel {
         const int thread_start_j =
             (thread_id % threads_per_row) * elts_per_thread;
 
-        if (thread_i < num_queries_in_block &&
-            thread_start_j < num_keys_in_block) {
+        if (thread_i < kQueriesPerBlock && thread_start_j < num_keys_in_block) {
           curandStatePhilox4_32_10_t curand_state = curand_state_init;
           skipahead(
               (query_start + thread_i) * p.num_keys +
                   (key_start + thread_start_j),
               &curand_state);
-          const float dropout_scale = 1.0 / (1.0 - p.dropout_prob);
 
           // generate elements of Zij, 4 elements at a time
           for (int zij_start_col_idx = thread_start_j; zij_start_col_idx <
-               cutlass::fast_min(thread_start_j + elts_per_thread,
-                                 num_keys_in_block);
+               cutlass::fast_min<int32_t>(thread_start_j + elts_per_thread,
+                                          num_keys_in_block);
                zij_start_col_idx += 4) {
             const float4 rand_uniform_quad = curand_uniform4(&curand_state);
 
@@ -1563,13 +1569,38 @@ struct AttentionBackwardKernel {
             for (int quad_idx = 0; quad_idx < 4; ++quad_idx) {
               // we'll write Zij transposed since attention is also transposed
               // during the matmul to compute dV.
-              zij.at({zij_start_col_idx + quad_idx, thread_i}) =
-                  static_cast<scalar_t>(
-                      dropout_scale *
-                      ((&rand_uniform_quad.x)[quad_idx] > p.dropout_prob));
+              zij.at({zij_start_col_idx + quad_idx /*k*/, thread_i /*q*/}) =
+                  (&rand_uniform_quad.x)[quad_idx] > p.dropout_prob
+                  ? scalar_t(dropout_scale)
+                  : scalar_t(0);
             }
           }
         }
+        __syncthreads();
+#if 0
+        PRINT_TENSOR4x4_T0_L0("zij", zij);
+        PRINT_TENSOR4x4_T0_L0_START("zij", zij, kBlockSizeJ - 4, kBlockSizeI - 4);
+#endif
+
+        // Save mask for later DOIVJ matmul
+
+        int warp_idx_mn_0 = warp_id %
+            (MatmulDOIVJ::Mma::Base::WarpCount::kM *
+             MatmulDOIVJ::Mma::Base::WarpCount::kN);
+        auto output_tile_coords_doivj = cutlass::MatrixCoord{
+            warp_idx_mn_0 % MatmulDOIVJ::Mma::Base::WarpCount::kM,
+            warp_idx_mn_0 / MatmulDOIVJ::Mma::Base::WarpCount::kM};
+        auto lane_offset = MatmulDOIVJ::AccumLambdaIterator::get_lane_offset(
+            lane_id, warp_id, output_tile_coords_doivj);
+        MatmulDOIVJ::AccumLambdaIterator::iterateRows(
+            lane_offset,
+            [&](int accum_m) {},
+            [&](int accum_m /*q*/, int accum_n /*k*/, int idx) {
+              if (zij.at({accum_n, accum_m}) == scalar_t(0)) {
+                dropout_keep_mask_doivj[idx] = cutlass::uint1b_t(0);
+              }
+            },
+            [&](int accum_m) {});
       }
       __syncthreads();
     }
@@ -1708,36 +1739,30 @@ struct AttentionBackwardKernel {
       // attn_shared_storage  [smem] <- tmp.T
       // tmp_shared_storage [smem] <- tmp
       {
-        using LambdaIterator = typename DefaultMmaAccumLambdaIterator<
-            typename Mma::Operator::IteratorC,
-            typename MatmulDOIVJ::ElementAccum,
-            kWarpSize>::Iterator;
+        using LambdaIterator = typename MatmulDOIVJ::AccumLambdaIterator;
         auto lane_offset = LambdaIterator::get_lane_offset(
             lane_id, warp_id, output_tile_coords);
-
         // if dropout was used, compute dPij = dPij_dropped * Zij
-        // Zij was written to shared memory earlier, and the elementwise
-        // multiplication occurs on a fragment of dPij_dropped
         if (kApplyDropout) {
-          const auto zij = shared_storage.zij().accum_ref();
-
           LambdaIterator::iterateRows(
               lane_offset,
               [&](int accum_m) {},
               [&](int accum_m, int accum_n, int idx) {
-                const int global_query_idx = query_start + accum_m;
-                const int global_key_idx = key_start + accum_n;
-
-                if (skipBoundsChecks ||
-                    (global_query_idx < p.num_queries &&
-                     global_key_idx < p.num_keys)) {
-                  accum[idx] *= zij.at({accum_n, accum_m});
+                if (dropout_keep_mask_doivj[idx].get()) {
+                  accum[idx] *= dropout_scale;
+                } else {
+                  accum[idx] = 0;
                 }
               },
               [&](int accum_m) {});
         }
 
         auto attn_T = shared_storage.attn_shared_storage().accum_ref();
+#if 0
+        PRINT_B0_T0("doivj_dropped");
+        print_warp_accum<LambdaIterator>(accum, lane_offset, 4, 4);
+        PRINT_TENSOR4x4_T0_L0("attn_T", attn_T)
+#endif
         accum_t current_di;
         typename Mma::FragmentC fragment_attn, fragment_di;
         LambdaIterator::iterateRows(
@@ -1786,6 +1811,11 @@ struct AttentionBackwardKernel {
         }
 
         accum = accum * scale;
+
+#if 0
+        PRINT_B0_T0("(doivj - di) * attn * scale");
+        print_warp_accum<LambdaIterator>(accum, lane_offset, 4, 4);
+#endif
 
         __syncthreads();
         if (!MatmulGradK::DefaultMmaFromSmem::kIsTransposedA) {
