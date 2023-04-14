@@ -1156,11 +1156,27 @@ struct AttentionKernel {
 
     // Doing this `exp` is quite expensive. Let's
     // split it across the warps
+    bool restore_mi_to_minus_inf = false;
     if (lane_id < kLinesPerWarp) {
       int id = warp_id * kLinesPerWarp + lane_id;
-      auto m_prime_exp = exp2f(m_prime[id] - mi[id]);
-      out_rescale[id] = m_prime_exp;
-      s_prime[id] *= m_prime_exp;
+      auto m_prime_id = m_prime[id];
+      auto mi_id = mi[id];
+      bool changed = m_prime_id < mi_id; // `false` if both are -inf
+      if (changed) {
+        auto m_prime_exp = exp2f(m_prime_id - mi_id);
+        out_rescale[id] = m_prime_exp;
+        s_prime[id] *= m_prime_exp;
+      } else {
+        // Only when bias is enabled, it's possible that all the first values
+        // of attention are masked to `-inf`. In that case we want to avoid
+        // `nan = exp2f(-inf - (-inf))` so we temporarily set `mi` to 0
+        if (kSupportsBias &&
+            mi_id == -cutlass::platform::numeric_limits<accum_t>::infinity()) {
+          restore_mi_to_minus_inf = true;
+          mi[id] = 0.0f;
+        }
+        out_rescale[id] = 1.0f;
+      }
     }
     __syncthreads(); // Update output fragments
     if (kKeepOutputInRF && !is_first) {
@@ -1204,8 +1220,13 @@ struct AttentionKernel {
     __syncthreads();
     if (lane_id < kLinesPerWarp) {
       int id = warp_id * kLinesPerWarp + lane_id;
-      m_prime[id] = mi[id];
       accum_t total_row = s_prime[id];
+      if (restore_mi_to_minus_inf) {
+        // Restore `mi`, see above when we set `restore_mi_to_minus_inf=true`
+        mi[id] = -cutlass::platform::numeric_limits<accum_t>::infinity();
+      } else {
+        m_prime[id] = mi[id];
+      }
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < MM0::MmaCore::WarpCount::kN; ++i) {
         total_row += addition_storage[id + kQueriesPerBlock * i];

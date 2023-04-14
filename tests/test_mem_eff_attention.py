@@ -313,6 +313,22 @@ def _rand_seqlens_padded_k(
     return q_seqlens, k_seqlens
 
 
+def _create_aligned_bias(B: int, H: int, Mq: int, Mkv: int, **kwargs) -> torch.Tensor:
+    align_to = 8
+    return (
+        torch.randn(
+            (
+                B,
+                H,
+                Mq,
+                align_to * ((Mkv + align_to - 1) // align_to),
+            ),
+            **kwargs,
+        )
+        * 3
+    )[:, :, :, :Mkv]
+
+
 def create_attn_bias(
     bias_type,
     batch_size: int,
@@ -342,20 +358,17 @@ def create_attn_bias(
             )
             attn_bias = attn_bias.expand(batch_size, num_heads, q_len, kv_len)
         else:
-            align_to = 8
-            attn_bias = (
-                torch.randn(
-                    (
-                        batch_size,
-                        num_heads,
-                        q_len,
-                        align_to * ((kv_len + align_to - 1) // align_to),
-                    ),
-                    device=device,
-                    dtype=dtype,
-                )
-                * 3
-            )[:, :, :, :kv_len]
+            attn_bias = _create_aligned_bias(
+                batch_size,
+                num_heads,
+                q_len,
+                kv_len,
+                device=device,
+                dtype=dtype,
+            )
+
+            # make sure it also works if the first columns are partially masked out
+            attn_bias[0, 0, q_len - 1 :, : num_heads - 2] = -math.inf
 
         if requires_grad:
             attn_bias.requires_grad_(True)
@@ -363,11 +376,13 @@ def create_attn_bias(
     if bias_type is fmha.attn_bias.LowerTriangularMask:
         return fmha.attn_bias.LowerTriangularMask()
     if bias_type is fmha.attn_bias.LowerTriangularMaskWithTensorBias:
-        attn_bias = (
-            torch.randn(
-                (batch_size, num_heads, q_len, kv_len), device=device, dtype=dtype
-            )
-            * 3
+        attn_bias = _create_aligned_bias(
+            batch_size,
+            num_heads,
+            q_len,
+            kv_len,
+            device=device,
+            dtype=dtype,
         )
         if requires_grad:
             attn_bias.requires_grad_(True)
@@ -562,6 +577,7 @@ def test_forward(
     out = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op
     )
+    assert not out.isnan().any(), "Output has NaNs"
     out2 = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op
     )
