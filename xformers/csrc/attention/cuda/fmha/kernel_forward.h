@@ -46,7 +46,7 @@ using namespace gemm_kernel_utils;
 
 namespace {
 template <typename scalar_t, typename Arch>
-constexpr int getWarpsPerSm() {
+constexpr int getWarpsPerSmFw() {
   return (
       Arch::kMinComputeCapability >= 80 &&
               !cutlass::platform::is_same<scalar_t, float>::value
@@ -68,7 +68,7 @@ template <
     typename ArchTag,
     // If Q/K/V are correctly aligned in memory and we can run a fast kernel
     bool isAligned_,
-    int kQueriesPerBlock,
+    int kQueriesPerBlock_,
     int kKeysPerBlock_,
     bool kSingleValueIteration_, // = `value.shape[-1] <= kKeysPerBlock`
     // This is quite slower on V100 for some reason
@@ -94,6 +94,7 @@ struct AttentionKernel {
   static constexpr bool kSupportsDropout = kSupportsDropout_;
   static constexpr bool kSupportsBias = kSupportsBias_;
   static constexpr int kKeysPerBlock = kKeysPerBlock_;
+  static constexpr int kQueriesPerBlock = kQueriesPerBlock_;
   static constexpr bool kIsAligned = isAligned_;
   static constexpr bool kSingleValueIteration = kSingleValueIteration_;
   static constexpr int32_t kAlignLSE = 32; // block size of backward
@@ -112,7 +113,7 @@ struct AttentionKernel {
   // Launch bounds
   static constexpr int kNumThreads = kWarpSize * kNumWarpsPerBlock;
   static constexpr int kMinBlocksPerSm =
-      getWarpsPerSm<scalar_t, ArchTag>() / kNumWarpsPerBlock;
+      getWarpsPerSmFw<scalar_t, ArchTag>() / kNumWarpsPerBlock;
 
   struct Params {
     // Input tensors

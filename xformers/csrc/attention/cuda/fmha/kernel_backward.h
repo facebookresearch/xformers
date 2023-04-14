@@ -143,7 +143,7 @@ struct GmemTile {
 };
 
 template <typename scalar_t, typename Arch>
-constexpr int getWarpsPerSm() {
+constexpr int getWarpsPerSmBw() {
   bool is_half = !cutlass::platform::is_same<scalar_t, float>::value;
   if (Arch::kMinComputeCapability >= 80) {
     return is_half ? 12 : 8;
@@ -474,7 +474,7 @@ struct AttentionBackwardKernel {
   // Launch bounds
   static constexpr int64_t kNumThreads = kWarpSize * kNumWarpsPerBlock;
   static constexpr int64_t kMinBlocksPerSm =
-      getWarpsPerSm<scalar_t, ArchTag>() / kNumWarpsPerBlock;
+      getWarpsPerSmBw<scalar_t, ArchTag>() / kNumWarpsPerBlock;
 
   using GemmType = DefaultGemmType<ArchTag, scalar_t>;
   using DefaultConfig =

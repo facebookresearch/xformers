@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cutlass/cutlass.h>
 #include "cutlass/aligned_buffer.h"
 #include "cutlass/array.h"

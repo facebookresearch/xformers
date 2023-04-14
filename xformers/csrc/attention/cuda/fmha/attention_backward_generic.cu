@@ -345,10 +345,50 @@ mem_efficient_attention_backward_cutlass(
 #endif
 }
 
+bool has_cutlassB_kernel_for(
+    at::ScalarType dtype,
+    int64_t cc,
+    int64_t maxShmem,
+    int64_t maxK) {
+  bool found = false;
+
+  auto callback = [&](auto kernelCls, auto kernelFn) {
+    using Kernel = decltype(kernelCls);
+
+    if (found) {
+      return;
+    }
+    if (Kernel::kMaxK < maxK) {
+      return;
+    }
+    size_t smem_bytes = sizeof(typename Kernel::SharedStorage);
+    if (smem_bytes > maxShmem) {
+      return;
+    }
+    found = true;
+  };
+  if (dtype == at::ScalarType::Float) {
+    dispatch_cutlassB<float>(callback, cc);
+  } else if (dtype == at::ScalarType::Half) {
+    dispatch_cutlassB<cutlass::half_t>(callback, cc);
+  } else {
+    TORCH_CHECK(dtype == at::ScalarType::BFloat16, "Valid data type");
+    dispatch_cutlassB<cutlass::bfloat16_t>(callback, cc);
+  }
+  return found;
+}
 } // namespace
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::efficient_attention_backward_cutlass"),
       TORCH_FN(mem_efficient_attention_backward_cutlass));
+}
+
+TORCH_LIBRARY_FRAGMENT(xformers, m) {
+  m.def(TORCH_SELECTIVE_SCHEMA(
+      "xformers::_has_cutlassB_kernel_for(ScalarType dtype, int cc, int maxShmem, int maxK) -> bool"));
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::_has_cutlassB_kernel_for"),
+      TORCH_FN(has_cutlassB_kernel_for));
 }

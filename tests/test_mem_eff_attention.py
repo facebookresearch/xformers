@@ -1640,3 +1640,38 @@ class TestAttnBias:
             )
         except (ValueError, RuntimeError):
             pass
+
+
+SM_AND_SHMEM_KBYTES = [
+    # https://docs.nvidia.com/cuda/cuda-c-programming-guide/#features-and-technical-specifications-technical-specifications-per-compute-capability
+    (50, 64),
+    (60, 64),
+    (70, 96),
+    (75, 64),
+    (80, 163),
+    (86, 99),
+    (89, 99),
+    # (90, 227),
+]
+
+
+@cuda_only
+@pytest.mark.parametrize("dtype_str", ["f32", "f16", "bf16"])
+@pytest.mark.parametrize(
+    "sm_shmem",
+    SM_AND_SHMEM_KBYTES,
+    ids=[f"cc{sm}_shmem{shmem}kb" for sm, shmem in SM_AND_SHMEM_KBYTES],
+)
+def test_has_kernel_for(sm_shmem: Tuple[int, int], dtype_str: str) -> None:
+    dtype = {"f32": torch.float, "f16": torch.half, "bf16": torch.bfloat16}[dtype_str]
+    sm, shmem_kbytes = sm_shmem
+    if sm < 80 and dtype_str == "bf16":
+        return
+
+    for k in [16, 32, 64, 128, 256]:
+        assert torch.ops.xformers._has_cutlassF_kernel_for(
+            dtype, sm, shmem_kbytes * 1024, k
+        ), f"k={k}"
+        assert torch.ops.xformers._has_cutlassB_kernel_for(
+            dtype, sm, shmem_kbytes * 1024, k
+        ), f"k={k}"
