@@ -543,11 +543,16 @@ def test_forward(
 
     out = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op
-    ).float()
+    )
+    out2 = xformers.ops.memory_efficient_attention_forward(
+        query, key, value, attn_bias, op=op
+    )
+    assert torch.allclose(out, out2, atol=0.0, rtol=0.0), "Non-deterministic behavior"
+
     ref = ref_attention(query, key, value, attn_bias)
     assert out.shape == ref.shape, out.shape
     assert_allclose(
-        out,
+        out.float(),
         ref,
         atol=op.ERROR_ATOL[dtype],
         rtol=op.ERROR_RTOL.get(dtype, 1e-5),

@@ -485,6 +485,8 @@ struct AttentionKernel {
     cutlass::Array<accum_t, kQueriesPerBlock> s_prime;
     cutlass::Array<accum_t, kQueriesPerBlock> mi;
     cutlass::Array<accum_t, kQueriesPerBlock> out_rescale;
+    cutlass::Array<accum_t, kQueriesPerBlock * MM0::MmaCore::WarpCount::kN>
+        addition_storage;
   };
 
   struct SharedStorageEpilogueAtEnd : ScalingCoefs {
@@ -817,6 +819,7 @@ struct AttentionKernel {
           m_prime,
           s_prime,
           out_rescale,
+          shared_storage.addition_storage,
           my_lane_id,
           thread_id(),
           my_warp_id,
@@ -1080,6 +1083,8 @@ struct AttentionKernel {
       cutlass::Array<accum_t, kQueriesPerBlock>& m_prime,
       cutlass::Array<accum_t, kQueriesPerBlock>& s_prime,
       cutlass::Array<accum_t, kQueriesPerBlock>& out_rescale,
+      cutlass::Array<accum_t, kQueriesPerBlock * MM0::MmaCore::WarpCount::kN>&
+          addition_storage,
       int8_t lane_id,
       int8_t thread_id,
       int8_t warp_id,
@@ -1176,7 +1181,11 @@ struct AttentionKernel {
                     lane_id, total_row, [](accum_t a, accum_t b) {
                       return a + b;
                     })) {
-              atomicAdd(&s_prime[accum_m], total_row);
+              // NOTE: we could atomically add `total_row` to `s_prime`, but
+              // it's faster (and deterministic) to avoid atomics here
+              addition_storage
+                  [accum_m + kQueriesPerBlock * tile_offset.column()] =
+                      total_row;
             }
           });
     }
@@ -1184,6 +1193,12 @@ struct AttentionKernel {
     if (lane_id < kLinesPerWarp) {
       int id = warp_id * kLinesPerWarp + lane_id;
       m_prime[id] = mi[id];
+      accum_t total_row = s_prime[id];
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < MM0::MmaCore::WarpCount::kN; ++i) {
+        total_row += addition_storage[id + kQueriesPerBlock * i];
+      }
+      s_prime[id] = total_row;
     }
   }
 

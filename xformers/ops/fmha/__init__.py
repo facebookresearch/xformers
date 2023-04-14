@@ -170,10 +170,6 @@ def memory_efficient_attention(
 
         NVIDIA GPUs with compute capability above 6.0 (P100+), datatype ``f16``, ``bf16`` and ``f32``.
 
-    :Note:
-
-        This operator may be nondeterministic.
-
     Raises:
         NotImplementedError: if there is no operator available to compute the MHA
         ValueError: if inputs are invalid
