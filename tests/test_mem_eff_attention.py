@@ -1069,10 +1069,6 @@ def test_cuda_streams(
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
     if device != "cuda":
         pytest.skip("Not CUDA")
-    # Needs to be big enough so kernels take some time
-    # as we are trying to do a race-condition here
-    q_len = 1024
-    kv_len = 1024
     bias_type = None
     opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = [
         op,
@@ -1088,22 +1084,25 @@ def test_cuda_streams(
     ]
     s_hipri = torch.cuda.Stream(priority=-1)
     s_lopri = torch.cuda.Stream(priority=0)
+    query, key, value, attn_bias = create_tensors(
+        *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, fmt="BMHK"
+    )
+    torch.cuda.synchronize()
     with torch.cuda.stream(s_lopri):
-        query, key, value, attn_bias = create_tensors(
-            *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, fmt="BMHK"
-        )
-        # Queue a lot of kernels
-        for i in range(20):
-            query = query.relu()
-        query = query * 2
+        torch.cuda._sleep(100_000_000)  # wait 100m cycles
+        query *= 2
     s_hipri.wait_stream(s_lopri)
     with torch.cuda.stream(s_hipri):
+        # If the kernel is scheduled in the main stream
+        # `query * 2` has not been executed yet
         out = xformers.ops.memory_efficient_attention(query, key, value, op=(op, None))
-        # This will run in hi-pri AFTER the kernel if it
-        # runs on the correct stream
-        out = out / 2
+    # Test that `s_lopri` is still sleeping
+    # and that `query *= 2` has not been executed yet
+    query2_main_stream = query * 2
     torch.cuda.synchronize()
-    ref = ref_attention(query, key, value) / 2
+    assert torch.allclose(query2_main_stream, query), "Need to increase sleep time"
+
+    ref = ref_attention(query, key, value)
     assert out.shape == ref.shape, out.shape
 
     assert_allclose(
