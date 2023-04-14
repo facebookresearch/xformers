@@ -6,6 +6,8 @@
 import pytest
 import torch
 
+import xformers
+
 try:
     import timm
     from timm.models.vision_transformer import VisionTransformer
@@ -18,6 +20,7 @@ from xformers.helpers.timm_sparse_attention import TimmSparseAttention
 _device_list = ["cpu", "cuda:0"] if torch.cuda.is_available() else ["cpu"]
 
 
+@pytest.mark.skipif(not xformers._is_triton_available(), reason="requires triton")
 @pytest.mark.skipif(timm is None, reason="requires timm")
 @pytest.mark.parametrize("device", _device_list)
 def test_timm_sparse_attention(device):

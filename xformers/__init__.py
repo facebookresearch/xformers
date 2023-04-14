@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import os
 
 import torch
 
@@ -39,6 +40,8 @@ def compute_once(func):
 @compute_once
 def _is_triton_available():
     if not torch.cuda.is_available():
+        return False
+    if os.environ.get("XFORMERS_FORCE_DISABLE_TRITON", "0") == "1":
         return False
     try:
         from xformers.triton.softmax import softmax as triton_softmax  # noqa

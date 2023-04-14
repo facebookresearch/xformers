@@ -9,11 +9,13 @@ import pytest
 import torch
 from torch.cuda.amp.autocast_mode import autocast
 
+import xformers
+
 try:
     from xformers.triton import log_softmax as triton_log_softmax
     from xformers.triton import softmax as triton_softmax
 
-    _triton_available = True
+    _triton_available = xformers._is_triton_available()
 except ImportError as e:
     logging.warning(
         f"Triton is not available, some optimizations will not be tested.\n{e}"

@@ -7,6 +7,8 @@
 import pytest
 import torch
 
+import xformers
+
 SHAPES = [
     (384, 128),
     (8 * 384, 128),
@@ -22,7 +24,7 @@ SHAPES = [
 ]
 
 
-_triton_available = torch.cuda.is_available()
+_triton_available = xformers._is_triton_available()
 if _triton_available:
     try:
         import triton

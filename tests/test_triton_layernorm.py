@@ -10,11 +10,13 @@ import pytest
 import torch
 from torch.cuda.amp.autocast_mode import autocast
 
+import xformers
+
 try:
     from xformers.triton import FusedLayerNorm
     from xformers.triton.utils import gpu_capabilities_older_than_70
 
-    _triton_available = True
+    _triton_available = xformers._is_triton_available()
 except ImportError:
     logging.warning("Triton is not available, some optimizations will not be tested.")
     _triton_available = False

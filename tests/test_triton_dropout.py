@@ -10,10 +10,11 @@ import pytest
 import torch
 from torch.cuda.amp.autocast_mode import autocast
 
+import xformers
 from xformers.components import Activation, build_activation
 
 _gpu_available = torch.cuda.is_available()
-_triton_available = True
+_triton_available = xformers._is_triton_available()
 
 if _triton_available:
     try:
@@ -23,6 +24,7 @@ if _triton_available:
         from xformers.triton.dropout import FusedDropoutBias
         from xformers.triton.utils import gpu_capabilities_older_than_70
 
+        _triton_available = True
     except ImportError:
         logging.warning(
             "Triton is not available, some optimizations will not be tested."

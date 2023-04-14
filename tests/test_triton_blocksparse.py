@@ -6,6 +6,7 @@
 import pytest
 import torch
 
+import xformers
 from xformers.components import MultiHeadDispatch
 from xformers.components.attention import build_attention
 from xformers.components.attention.attention_patterns import block_sparsify_tensor
@@ -17,7 +18,7 @@ from xformers.triton.utils import get_current_cuda_device
 # Initially copied here folowing a fork from the matmul kernel
 
 
-_triton_available = torch.cuda.is_available()
+_triton_available = xformers._is_triton_available()
 _matmul_types = []
 
 if _triton_available:
