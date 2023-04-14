@@ -42,12 +42,12 @@ jobs:
       - name: Setup Runner
         uses: ./.github/actions/setup-windows-runner
         with:
-          cuda: "11.7.1"
-          python: "3.7"
+          cuda: "11.6.2"
+          python: "3.8"
 
       - name: Install build dependencies
         run: |
-          $PY -m pip install wheel setuptools ninja torch==1.13 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu117
+          $PY -m pip install wheel setuptools ninja torch==2.0.0 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu117
           git config --global --add safe.directory "*"
           $PY -c "import torch; print('torch', torch.__version__)"
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"

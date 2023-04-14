@@ -59,6 +59,13 @@ def print_info():
     else:
         features["build.info"] = "none"
 
+    try:
+        features["build.nvcc_version"] = ".".join(
+            str(v) for v in torch.ops.xformers._nvcc_build_version()
+        )
+    except (RuntimeError, AttributeError):
+        pass
+
     if _is_opensource:
         features["source.privacy"] = "open source"
     else:

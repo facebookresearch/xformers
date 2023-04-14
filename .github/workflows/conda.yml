@@ -33,23 +33,25 @@ jobs:
           - "3.9"
           - "3.10"
         config:
+          # NOTE: Always build with nvcc 11.6.2 (`conda_builder_tag`)
+          # See https://github.com/facebookresearch/xformers/issues/712
           - torch_version: "2.1.0"
             torch_channel: "pytorch-nightly"
             cuda_version: "11.8.0"
             cuda_dep_runtime: ">=11.7,<11.9"
-            conda_builder_tag: cuda118
+            conda_builder_tag: cuda116
 
           - torch_version: "2.0.0"
             torch_channel: "pytorch"
             cuda_version: "11.8.0"
             cuda_dep_runtime: ">=11.7,<11.9"
-            conda_builder_tag: cuda118
+            conda_builder_tag: cuda116
 
           - torch_version: "1.13.1"
             torch_channel: "pytorch"
             cuda_version: "11.7.1"
             cuda_dep_runtime: ">=11.6,<11.8"
-            conda_builder_tag: cuda117
+            conda_builder_tag: cuda116
 
           - torch_version: "1.12.1"
             torch_channel: "pytorch"
