@@ -227,6 +227,10 @@ def get_extensions():
             "-U__CUDA_NO_HALF_CONVERSIONS__",
             "--extended-lambda",
             "-D_ENABLE_EXTENDED_ALIGNED_STORAGE",
+            # Workaround for a regression with nvcc > 11.6
+            # See https://github.com/facebookresearch/xformers/issues/712
+            "--ptxas-options=-O2",
+            "--ptxas-options=-allow-expensive-optimizations=true",
         ] + get_extra_nvcc_flags_for_build_type()
         if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
             nvcc_flags.append("-DNDEBUG")
