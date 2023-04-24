@@ -264,9 +264,8 @@ class NoOpWarpIteratorScale {
   // in pipelined+multistage MMA implementations we keep an array of fragments.
   // if we aren't using scaling we don't want to waste registers on fragments
   // of scale elements, so ideally this would be sized 0.
-  // using size 1 is kind of a hack to get around arrays of zero-sized objects
-  // not being allowed. the compiler is probably smart enough to wipe it out
-  // anyways.
+  // Since arrays of zero-sized objects are not allowed, using size as 1.
+  // The compiler will most likely wipe it out anyways.
   using Fragment = cutlass::Array<char, 1>;
 
   CUTLASS_HOST_DEVICE
@@ -600,7 +599,8 @@ class MmaPipelinedFromSharedMemory : public MmaBaseFromSharedMemory<
     iterator_B.clear_mask(gemm_k_iterations <= 1);
 
     // Issue loads during the first warp-level matrix multiply-add *AFTER*
-    // issuing shared memory loads (which have the tighest latency requirement).
+    // issuing shared memory loads (which have the tightest latency
+    // requirement).
 
     //
     // Mainloop
@@ -1272,7 +1272,6 @@ struct DefaultWarpIteratorAFromSharedMemory<
     typename platform::enable_if<(
         sizeof_bits<typename RegularWarpIterator::Element>::value == 16 &&
         Policy::Operator::Policy::OpDelta::kRow == 1)>::type> {
-  static constexpr auto kWarpSize = 32;
   using OpDelta = typename Policy::Operator::Policy::OpDelta;
   using WarpShape = cutlass::MatrixShape<32, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, kInstrK>;
@@ -1404,9 +1403,6 @@ struct DefaultMmaFromSharedMemory<
     AccumulatorSharedStorage_,
     kScaleOperandA,
     kTransposeA> {
-  static constexpr int kWarpSize = 32;
-  using SmemAccumulatorLayout = cutlass::layout::RowMajor;
-
   using RegularMma = MmaPipelined<
       Shape_,
       IteratorA_,
@@ -1498,8 +1494,6 @@ struct DefaultMmaFromSharedMemory<
     AccumulatorSharedStorage_,
     kScaleOperandA,
     kTransposeA> {
-  static constexpr int kWarpSize = 32;
-
   using RegularMma = MmaMultistage<
       Shape_,
       IteratorA_,
@@ -1753,27 +1747,17 @@ struct B2bGemm<
   using FragmentC = IteratorC::Fragment;
   using lse_scalar_t = float;
 
-  using SmemAccumulatorLayout = cutlass::layout::RowMajor;
-  using SmemIteratorD0 = cutlass::epilogue::warp::TileIteratorVoltaTensorOp<
-      WarpShape,
-      cutlass::gemm::GemmShape<32, 32, 4>,
-      scalar_t,
-      SmemAccumulatorLayout>;
-
-  // // Storage in shared-memory for Q.Kt
+  // Storage in shared-memory for Q.Kt
+  using SmemAccumulatorLayout =
+      cutlass::layout::RowMajorVoltaTensorOpMultiplicandCrosswise<16, 32>;
   using AccumulatorSharedStorage =
       cutlass::gemm::threadblock::AccumulatorSharedStorage<
           ThreadblockShape,
           scalar_t,
-          cutlass::layout::RowMajorVoltaTensorOpMultiplicandCrosswise<
-              16,
-              32>, // typename SmemIteratorD0::TensorLayout,
+          SmemAccumulatorLayout,
           cutlass::MatrixShape<0, 0> // Padding
           >;
-
-  using OutputLayout =
-      cutlass::layout::RowMajorVoltaTensorOpMultiplicandCrosswise<16, 32>;
-  using TensorRef = cutlass::TensorRef<scalar_t, OutputLayout>;
+  using TensorRef = cutlass::TensorRef<scalar_t, SmemAccumulatorLayout>;
   using Policy = typename IteratorC::Policy;
   using Element = accum_t;
   // Those are MmaVoltaTensorOpAccumulatorTileIterator private fields
