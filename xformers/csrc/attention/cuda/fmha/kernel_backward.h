@@ -1599,7 +1599,9 @@ struct AttentionBackwardKernel {
     //
     // grad_v[j_start:j_end] += attn_T @ do_i
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim_value);
+    constexpr bool kSingleIterationGradV =
+        kMaxK <= MatmulGradV::ThreadblockShape::kN;
+    for (int col = 0; col < (kSingleIterationGradV ? 1 : p.head_dim_value);
          col += MatmulGradV::ThreadblockShape::kN) {
       using Mma = typename MatmulGradV::Mma;
       using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
@@ -1658,7 +1660,7 @@ struct AttentionBackwardKernel {
           iterator_B,
           output_frags.gradV);
       __syncthreads();
-      if (kPrologueGV &&
+      if (kPrologueGV && !kSingleIterationGradV &&
           col + MatmulGradV::ThreadblockShape::kN < p.head_dim_value) {
         prologueGradV(col + MatmulGradV::ThreadblockShape::kN);
       }
@@ -1832,7 +1834,11 @@ struct AttentionBackwardKernel {
     //
     // grad_q[i_start:i_end] += tmp @ k_j
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < p.head_dim;
+    // Skip the loop & associated branches if we know at compile time the number
+    // of iterations
+    constexpr bool kSingleIterationGradQ =
+        kMaxK <= MatmulGradQ::ThreadblockShape::kN;
+    for (int col = 0; col < (kSingleIterationGradQ ? 1 : p.head_dim);
          col += MatmulGradQ::ThreadblockShape::kN) {
       using Mma = typename MatmulGradQ::Mma;
       using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
@@ -1883,7 +1889,8 @@ struct AttentionBackwardKernel {
       mma.set_prologue_done(kPrologueGQ);
       mma(gemm_k_iterations, accum, iterator_B, accum);
       __syncthreads();
-      bool isLastColumn = col + MatmulGradQ::ThreadblockShape::kN >= p.head_dim;
+      bool isLastColumn = kSingleIterationGradQ ||
+          (col + MatmulGradQ::ThreadblockShape::kN >= p.head_dim);
       if (kPrologueGQ && !isLastColumn) {
         prologueGradQ(col + MatmulGradQ::ThreadblockShape::kN);
       }
@@ -1913,7 +1920,9 @@ struct AttentionBackwardKernel {
     //
     // grad_k[i_start:i_end] += tmp.transpose(-2, -1) @ q_i
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim);
+    constexpr bool kSingleIterationGradK =
+        kMaxK <= MatmulGradK::ThreadblockShape::kN;
+    for (int col = 0; col < (kSingleIterationGradK ? 1 : p.head_dim);
          col += MatmulGradK::ThreadblockShape::kN) {
       using Mma = typename MatmulGradK::Mma;
       using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
@@ -1980,7 +1989,8 @@ struct AttentionBackwardKernel {
           iterator_B,
           output_frags.gradK);
       __syncthreads();
-      bool isLastColumn = col + MatmulGradK::ThreadblockShape::kN >= p.head_dim;
+      bool isLastColumn = kSingleIterationGradK ||
+          col + MatmulGradK::ThreadblockShape::kN >= p.head_dim;
       if (kPrologueGK && !isLastColumn) {
         prologueGradK(col + MatmulGradK::ThreadblockShape::kN);
       }
