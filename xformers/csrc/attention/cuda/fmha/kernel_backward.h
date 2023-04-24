@@ -601,14 +601,23 @@ struct AttentionBackwardKernel {
     //   same time.
     // if no dropout:
     //   for computing dVj += Pij.T @ dOi
+    using WarpIteratorA = typename cutlass::gemm::threadblock::
+        DefaultWarpIteratorAFromSharedMemory<
+            typename DefaultGemm::Mma::Operator::Shape, // WarpShape
+            typename DefaultGemm::Mma::Operator::
+                InstructionShape, // InstructionShape
+            typename DefaultGemm::Mma::Operator::
+                IteratorA, // RegularWarpIterator
+            typename DefaultGemm::Mma::Policy // Policy
+            >::WarpIterator;
     using DefaultMmaFromSmem =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
-            typename MatmulQK::AccumulatorSharedStorage,
+            MatmulQK::AccumulatorSharedStorage::Shape::kN,
+            WarpIteratorA,
             kApplyDropout>; // kScaleOperandA
 
     using Mma = typename DefaultMmaFromSmem::Mma;
-    using WarpIteratorA = typename DefaultMmaFromSmem::WarpIteratorA;
     using IteratorB = typename Mma::IteratorB;
     using WarpCount = typename Mma::WarpCount;
 
@@ -681,8 +690,8 @@ struct AttentionBackwardKernel {
     // Epilogue to store to shared-memory in a format that we can use later for
     // the second matmul
     using B2bGemm = typename cutlass::gemm::threadblock::B2bGemm<
-        typename Mma::Operator::IteratorC,
-        typename Mma::Operator,
+        typename DefaultGemm::Mma::Operator::IteratorC,
+        typename DefaultGemm::Mma::Operator,
         scalar_t,
         WarpShape,
         ThreadblockShape>;
@@ -717,10 +726,17 @@ struct AttentionBackwardKernel {
         false, // SplitKSerial
         typename GemmType::Operator>;
 
+    using WarpIteratorA = typename cutlass::gemm::threadblock::
+        DefaultWarpIteratorAFromSharedMemory<
+            typename DefaultGemm::Mma::Operator::Shape,
+            typename DefaultGemm::Mma::Operator::InstructionShape,
+            typename DefaultGemm::Mma::Operator::IteratorA,
+            typename DefaultGemm::Mma::Policy>::WarpIterator;
     using DefaultMmaFromSmem =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
-            typename MatmulDOIVJ::AccumulatorSharedStorage,
+            MatmulDOIVJ::AccumulatorSharedStorage::Shape::kN,
+            WarpIteratorA,
             false>; // kScaleOperandA
     using Mma = typename DefaultMmaFromSmem::Mma;
     using IteratorB = typename Mma::IteratorB;
@@ -762,15 +778,23 @@ struct AttentionBackwardKernel {
         false, // SplitKSerial
         typename GemmType::Operator>;
 
+    using WarpIteratorA = typename cutlass::gemm::threadblock::
+        DefaultWarpIteratorAFromSharedMemory<
+            typename DefaultGemm::Mma::Operator::Shape,
+            typename DefaultGemm::Mma::Operator::InstructionShape,
+            typename DefaultGemm::Mma::Operator::IteratorA,
+            typename DefaultGemm::Mma::Policy>::WarpIterator;
     using DefaultMmaFromSmemN =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
-            typename MatmulQK::AccumulatorSharedStorage,
+            MatmulQK::AccumulatorSharedStorage::Shape::kN, // kMaxK
+            WarpIteratorA,
             false>; // kScaleOperandA
     using DefaultMmaFromSmemT =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
-            typename MatmulDOIVJ::AccumulatorSharedStorage,
+            MatmulDOIVJ::AccumulatorSharedStorage::Shape::kM, // kMaxK
+            WarpIteratorA,
             false, // kScaleOperandA
             kPreload>; // kTransposeA
     using DefaultMmaFromSmem = typename cutlass::platform::conditional<
@@ -1619,14 +1643,15 @@ struct AttentionBackwardKernel {
       // if dropout: dVj += (Pij.T * Zij) @ dOi
       // otherwise:  dVj += Pij.T @ dOi
       Mma mma(
-          shared_storage.mm_gradV(),
-          // operand A: Pij
-          typename MatmulGradV::WarpIteratorA(
-              shared_storage.attn_shared_storage().accum_ref(), lane_id),
-          // if we're using dropout, operand A is Pij_dropped = Pij * Zij
-          // which is computed on the fly as fragments of Pij are loaded in
-          typename Mma::WarpIteratorAScale(
-              shared_storage.zij().accum_ref(), lane_id),
+          // operand A: Pij.T
+          shared_storage.attn_shared_storage().accum_ref(),
+          // operand A_scale Zij.T:
+          // if we're using dropout, operand A is Pij_dropped.T = Pij.T * Zij.T
+          // which is computed on the fly as fragments of Pij.T are loaded in
+          shared_storage.zij().accum_ref(),
+          // operand B: dOi - which was loaded into shared memory previously
+          // when we computed dVj
+          shared_storage.mm_gradV().operand_B_ref(),
           thread_id,
           warp_id,
           lane_id);
@@ -1852,12 +1877,13 @@ struct AttentionBackwardKernel {
 
       auto a = shared_storage.tmp_shared_storage().accum_ref();
       Mma mma(
-          shared_storage.mm_gradQ(),
-          shared_storage.tmp_shared_storage(),
+          // operand A: dSij
+          shared_storage.tmp_shared_storage().accum_ref(),
+          // operand B: Kj
+          shared_storage.mm_gradQ().operand_B_ref(),
           thread_id,
           warp_id,
-          lane_id,
-          problem_size.k());
+          lane_id);
 
       typename Mma::FragmentC accum;
 
@@ -1953,12 +1979,13 @@ struct AttentionBackwardKernel {
           decltype(getTmp),
           decltype(getTmpT)>::apply(getTmp, getTmpT, 0);
       Mma mma(
-          shared_storage.mm_gradK(),
-          opA,
+          // operand A: dSij.T
+          opA.accum_ref(),
+          // operand B: Qi
+          shared_storage.mm_gradK().operand_B_ref(),
           thread_id,
           warp_id,
-          lane_id,
-          problem_size.k());
+          lane_id);
 
       int storage_id = col / MatmulGradK::ThreadblockShape::kN;
       AccumTileGmem gmem_tile{

@@ -121,9 +121,9 @@ struct AttentionKernel {
 
   struct Params {
     // Input tensors
-    scalar_t* query_ptr; // [num_queries, num_heads, head_dim]
-    scalar_t* key_ptr; // [num_keys, num_heads, head_dim]
-    scalar_t* value_ptr; // [num_keys, num_heads, head_dim_value]
+    scalar_t* query_ptr = nullptr; // [num_queries, num_heads, head_dim]
+    scalar_t* key_ptr = nullptr; // [num_keys, num_heads, head_dim]
+    scalar_t* value_ptr = nullptr; // [num_keys, num_heads, head_dim_value]
     scalar_t* attn_bias_ptr = nullptr; // [num_heads, num_queries, num_keys]
     int32_t* seqstart_q_ptr = nullptr;
     int32_t* seqstart_k_ptr = nullptr;
@@ -133,10 +133,11 @@ struct AttentionKernel {
     uint32_t causal_diagonal_offset = 0;
 
     // Output tensors
-    output_t* output_ptr; // [num_queries, num_heads, head_dim_value]
-    output_accum_t*
-        output_accum_ptr; // [num_queries, num_heads, head_dim_value]
-    lse_scalar_t* logsumexp_ptr; // [num_heads, num_queries] - can be null
+    output_t* output_ptr = nullptr; // [num_queries, num_heads, head_dim_value]
+    // [num_queries, num_heads, head_dim_value]
+    output_accum_t* output_accum_ptr = nullptr;
+    // [num_heads, num_queries] - can be null
+    lse_scalar_t* logsumexp_ptr = nullptr;
 
     // Scale
     accum_t scale;
@@ -460,10 +461,17 @@ struct AttentionKernel {
         false, // SplitKSerial
         typename GemmType::Operator>;
 
+    using WarpIteratorA = typename cutlass::gemm::threadblock::
+        DefaultWarpIteratorAFromSharedMemory<
+            typename DefaultGemm::Mma::Policy::Operator::Shape, // WarpShape
+            typename DefaultGemm::Mma::Policy::Operator::InstructionShape,
+            typename DefaultGemm::Mma::Policy::Operator::IteratorA,
+            typename DefaultGemm::Mma::Policy>::WarpIterator;
     using DefaultMmaFromSmem =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
-            typename MM0::AccumulatorSharedStorage,
+            MM0::AccumulatorSharedStorage::Shape::kN, // kMaxK
+            WarpIteratorA,
             false>; // kScaleOperandA
     using Mma = typename DefaultMmaFromSmem::Mma;
     using IteratorB = typename Mma::IteratorB;
@@ -481,10 +489,6 @@ struct AttentionKernel {
         typename cutlass::epilogue::threadblock::PredicatedTileIterator<
             typename DefaultEpilogue::OutputTileIterator::ThreadMap,
             output_accum_t>;
-
-    struct SharedStorageMM1 {
-      typename Mma::SharedStorage mm;
-    };
   };
 
   static constexpr int64_t kAlignmentQ = MM0::kAlignmentA;
@@ -508,7 +512,7 @@ struct AttentionKernel {
         typename MM0::BiasLoader::SmemTile bias;
         typename MM0::AccumulatorSharedStorage si;
       };
-      typename MM1::SharedStorageMM1 mm1;
+      typename MM1::Mma::SharedStorage mm1;
     };
 
     union {
@@ -530,7 +534,7 @@ struct AttentionKernel {
         typename MM0::BiasLoader::SmemTile bias;
         typename MM0::AccumulatorSharedStorage si;
       };
-      typename MM1::SharedStorageMM1 mm1;
+      typename MM1::Mma::SharedStorage mm1;
       typename MM1::DefaultEpilogue::SharedStorage epilogue;
     };
 
@@ -681,7 +685,7 @@ struct AttentionKernel {
             thread_id(),
             cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
         MM1::Mma::prologue(
-            shared_storage.after_mm0.mm1.mm,
+            shared_storage.after_mm0.mm1,
             iterator_V,
             thread_id(),
             problem_size_1_k);
@@ -943,12 +947,14 @@ struct AttentionKernel {
             thread_id(),
             cutlass::MatrixCoord{0, blockN * MM1::Mma::Shape::kN});
         typename MM1::Mma mma_pv(
-            shared_storage.after_mm0.mm1.mm,
-            shared_storage.after_mm0.si,
+            // operand A: Pij_dropped in shared memory
+            shared_storage.after_mm0.si.accum_ref(),
+            // operand B: shared memory staging area for Vj, which is loaded
+            // from global memory
+            shared_storage.after_mm0.mm1.operand_B_ref(),
             (int)thread_id(),
             (int)my_warp_id,
-            (int)my_lane_id,
-            (int)problem_size_1_k);
+            (int)my_lane_id);
         mma_pv.set_prologue_done(kPreloadV);
         if (!kKeepOutputInRF) {
           accum_o.clear();
