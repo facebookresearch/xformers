@@ -168,7 +168,11 @@ template <
     int kBlockSizeI_,
     int kBlockSizeJ_,
     // upperbound on `max(value.shape[-1], query.shape[-1])`
-    int kMaxK_ = (int)cutlass::platform::numeric_limits<uint32_t>::max()>
+    int kMaxK_ = (int)cutlass::platform::numeric_limits<uint32_t>::max(),
+    // assumes that `cu_seqlen` is None, and
+    // (1) `num_queries % kBlockSizeI == 0`
+    // (2) `num_keys % kBlockSizeJ == 0`
+    bool kKeysQueriesAlignedToBlockSize_ = false>
 struct AttentionBackwardKernel {
   enum CustomMaskType {
     NoCustomMask = 0,
@@ -188,6 +192,8 @@ struct AttentionBackwardKernel {
   static constexpr int kBlockSizeI = kBlockSizeI_;
   static constexpr int kBlockSizeJ = kBlockSizeJ_;
   static constexpr int kMaxK = kMaxK_;
+  static constexpr bool kKeysQueriesAlignedToBlockSize =
+      kKeysQueriesAlignedToBlockSize_;
 
   struct Params {
     // Input tensors
@@ -1147,6 +1153,20 @@ struct AttentionBackwardKernel {
     XFORMERS_CHECK(p.head_dim <= kMaxK, "kMaxK: Expected `head_dim < kMaxK`");
     XFORMERS_CHECK(
         p.head_dim_value <= kMaxK, "kMaxK: Expected `head_dim_value < kMaxK`");
+    if (kKeysQueriesAlignedToBlockSize) {
+      XFORMERS_CHECK(
+          p.cu_seqlens_k_ptr == nullptr,
+          "This kernel does not support cu_seqlen");
+      XFORMERS_CHECK(
+          p.cu_seqlens_q_ptr == nullptr,
+          "This kernel does not support cu_seqlen");
+      XFORMERS_CHECK(
+          p.num_queries % kBlockSizeI == 0,
+          "kKeysQueriesAlignedToBlockSize condition not respected");
+      XFORMERS_CHECK(
+          p.num_keys % kBlockSizeJ == 0,
+          "kKeysQueriesAlignedToBlockSize condition not respected");
+    }
     return true;
   }
 
@@ -1199,44 +1219,11 @@ struct AttentionBackwardKernel {
 #endif
 
     int32_t key_start = 0;
-    int32_t key_end = p.num_keys / kBlockSizeJ * kBlockSizeJ;
-    for (; key_start < key_end; key_start += kBlockSizeJ) {
-      output_frags.clear();
-      int32_t query_start = getQueryStart(p, key_start);
-      int32_t query_end = query_start +
-          (p.num_queries - query_start) / kBlockSizeI * kBlockSizeI;
-      for (; query_start < query_end; query_start += kBlockSizeI) {
-        processBlockIJ<true>(
-            shared_storage,
-            output_frags,
-            p,
-            query_start,
-            key_start,
-            rng_state_init);
-      }
-      // last (partial) query
-      if (query_start < p.num_queries) {
-        processBlockIJ<false>(
-            shared_storage,
-            output_frags,
-            p,
-            query_start,
-            key_start,
-            rng_state_init);
-      }
-      if (kOutputInRF) {
-        writeFragsToGmem<true>(shared_storage, output_frags, p, key_start);
-      } else if (getQueryStart(p, key_start) >= p.num_queries) {
-        zfillGradKV<true>(p, key_start);
-      }
-      __syncthreads();
-    }
-    // Last (partial) key
-    if (key_start != p.num_keys) {
+    for (; key_start < p.num_keys; key_start += kBlockSizeJ) {
       output_frags.clear();
       int32_t query_start = getQueryStart(p, key_start);
       for (; query_start < p.num_queries; query_start += kBlockSizeI) {
-        processBlockIJ<false>(
+        processBlockIJ<kKeysQueriesAlignedToBlockSize>(
             shared_storage,
             output_frags,
             p,
@@ -1245,10 +1232,12 @@ struct AttentionBackwardKernel {
             rng_state_init);
       }
       if (kOutputInRF) {
-        writeFragsToGmem<false>(shared_storage, output_frags, p, key_start);
+        writeFragsToGmem<kKeysQueriesAlignedToBlockSize>(
+            shared_storage, output_frags, p, key_start);
       } else if (getQueryStart(p, key_start) >= p.num_queries) {
-        zfillGradKV<false>(p, key_start);
+        zfillGradKV<kKeysQueriesAlignedToBlockSize>(p, key_start);
       }
+      __syncthreads();
     }
   }
 

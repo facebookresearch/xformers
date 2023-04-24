@@ -153,6 +153,7 @@ class BwdKernel:
     block_j: int
     max_k: int
     dispatch_cond: Optional[str] = None
+    keys_queries_aligned_to_blocksizes: bool = False
 
     def __post_init__(self) -> None:
         # Set kernel selection priority
@@ -167,6 +168,8 @@ class BwdKernel:
             self.max_k,
             # .. and the highest block_i
             -self.block_i,
+            # and finally avoid bounds-checks if possible
+            0 if self.keys_queries_aligned_to_blocksizes else 1,
         )
 
     @property
@@ -176,9 +179,12 @@ class BwdKernel:
     @property
     def name(self) -> str:
         dropout_suffix = "_dropout" if self.apply_dropout else ""
+        seqlen_aligned_suffix = (
+            "_seqaligned" if self.keys_queries_aligned_to_blocksizes else ""
+        )
         return (
             f"fmha_cutlassB_{self.dtype}_{self._aligned_suffix}"
-            f"_{self.block_i}x{self.block_j}_k{self.max_k}{dropout_suffix}_sm{self.sm_range[0]}"
+            f"_{self.block_i}x{self.block_j}_k{self.max_k}{dropout_suffix}{seqlen_aligned_suffix}_sm{self.sm_range[0]}"
         )
 
     @property
@@ -195,6 +201,8 @@ class BwdKernel:
                 str(self.max_k),
             ]
         )
+        if self.keys_queries_aligned_to_blocksizes:
+            template_args += ", true"
         return f"AttentionBackwardKernel<{template_args}>"
 
     @property
@@ -249,6 +257,24 @@ class BwdKernel:
                         block_i=bi,
                         block_j=bj,
                         max_k=max_k,
+                    )
+                )
+                # A few specialized kernels that are faster
+                if apply_dropout or max_k > 128 or not is_half or not aligned:
+                    continue
+                if sm not in [70, 80]:
+                    continue
+                kernels.append(
+                    cls(
+                        aligned=aligned,
+                        dtype=dtype,
+                        sm_range=(sm, sm_max),
+                        apply_dropout=apply_dropout,
+                        preload_mmas=preload_mmas,
+                        block_i=bi,
+                        block_j=bj,
+                        max_k=max_k,
+                        keys_queries_aligned_to_blocksizes=True,
                     )
                 )
         # Add some specialized kernels for stable diffusion BW (K=80)

@@ -169,6 +169,11 @@ mem_efficient_attention_backward_cutlass(
     if (use_dropout && !Kernel::kApplyDropout) {
       return;
     }
+    if (Kernel::kKeysQueriesAlignedToBlockSize &&
+        (cu_seqlens_q.has_value() || M % Kernel::kBlockSizeI ||
+         N % Kernel::kBlockSizeJ)) {
+      return;
+    }
     // Alignment
     if ((query.stride(2) % Kernel::kMinimumAlignment) ||
         (key.stride(2) % Kernel::kMinimumAlignment) ||
