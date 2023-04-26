@@ -304,7 +304,14 @@ T = TypeVar("T", FwdKernel, BwdKernel)
 def write_decl_impl(
     kernels: List[T], family_name: str, impl_file: str, disable_def: str
 ) -> None:
-    cpp_file_header = """// This file is auto-generated. See "generate_kernels.py"
+    cpp_file_header = """/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+// This file is auto-generated. See "generate_kernels.py"
 """
 
     kernels.sort()

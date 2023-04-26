@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 /*! \file
     \brief Cutlass provides helper template functions to figure out the right
    datastructures to instanciate to run a GEMM with various parameters (see
