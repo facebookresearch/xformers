@@ -13,6 +13,12 @@ from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 
 def _is_cutlass_fwd_faster_than_flash(inp: Inputs) -> bool:
+    # For dropout, we can't mix & match kernels
+    # Unfortunately, the dropout implementation in CUTLASS
+    # backward is pretty slow for the BW, so disable it here
+    if inp.p > 0.0:
+        return False
+
     # Very small batch sizes - if batch size specified
     batch_size, q_len, num_heads, k = inp.query.shape
     if isinstance(inp.attn_bias, BlockDiagonalMask):
@@ -23,7 +29,7 @@ def _is_cutlass_fwd_faster_than_flash(inp: Inputs) -> bool:
         if threads_flash < 60 and (threads_cutlass // 2) >= threads_flash:
             return True
     # Large values of K
-    return max(k, inp.key.shape[-1]) == 128
+    return max(k, inp.key.shape[-1]) > 64
 
 
 def _is_triton_fwd_fastest(inp: Inputs) -> bool:
