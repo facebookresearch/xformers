@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 ### Added
 
+## [0.0.19] - 2023-04-28
+### Added
+- Display `nvcc` version used to compile `xformers` in `python -m xformers.info`
+
+### Fixed
+- Fixed performance regression with `nvcc>11.6` (facebookresearch/xformers#712)
+- fMHA/cutlass: Fixed `nan` in the output when using a `torch.Tensor` with `-inf` prefixes as `attn_bias` (facebookresearch/xformers#722)
+- fMHA/cutlass: Fixed `nan` in the output when the sequence length is larger than `2 ** 15` (facebookresearch/xformers#719)
+- fMHA/cutlass: Significative performance improvements (up to 2x) for both the forward pass and backward pass
+- fMHA/cutlass: The kernel are now deterministic
+- fMHA/cutlass: Fixed backward pass correctness when using dropout (facebookresearch/xformers#724)
+
 ## [0.0.18] - 2023-03-31
 ### Added
 - Added `xformers.ops.index_select_cat` and `xformers.ops.scaled_index_add` - those are experimental functions that only work with a few shapes, and can be used to write efficient stochastic depth in transformer architectures for instance
