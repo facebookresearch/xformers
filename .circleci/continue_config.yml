@@ -127,7 +127,7 @@ install_repo: &install_repo
         source $BASH_ENV
         source activate /home/circleci/venv
         git submodule update --init --recursive
-        $CONDA_PYTHON -m pip install -v -e --no-build-isolation .
+        $CONDA_PYTHON -m pip install --no-build-isolation -v -e .
 
         # Test import.
         $CONDA_PYTHON -c 'import sys; sys.path = sys.path[1:]; import xformers'
@@ -143,7 +143,7 @@ install_experimental_repo: &install_experimental_repo
         source $BASH_ENV
 
         cd experimental
-        $CONDA_PYTHON -m pip install -v -e --no-build-isolation .
+        $CONDA_PYTHON -m pip install --no-build-isolation -v -e .
 
 run_coverage: &run_coverage
   - run:
