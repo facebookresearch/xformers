@@ -1,0 +1,2 @@
+[build-system]
+requires = ["setuptools", "torch>=1.12", "wheel"]
