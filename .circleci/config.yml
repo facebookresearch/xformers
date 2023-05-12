@@ -31,3 +31,5 @@ workflows:
             branches:
               ignore:
                 - gh-pages
+                - /gh\/.+\/base/
+                - /gh\/.+\/orig/
