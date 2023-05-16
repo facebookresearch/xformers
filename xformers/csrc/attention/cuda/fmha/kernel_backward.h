@@ -1810,7 +1810,7 @@ struct AttentionBackwardKernel {
         PRINT_TENSOR4x4_T0_L0("attn_T", attn_T)
 #endif
         accum_t current_di;
-        typename Mma::FragmentC fragment_attn, fragment_di;
+        // dSij = (dPij - Di) * Pij
         LambdaIterator::iterateRows(
             lane_offset,
             [&](int accum_m) { current_di = shared_storage.di()[accum_m]; },
@@ -1820,17 +1820,15 @@ struct AttentionBackwardKernel {
               if (skipBoundsChecks ||
                   (accum_m < num_queries_in_block &&
                    accum_n < num_keys_in_block)) {
-                fragment_attn[idx] = attn_T.at({accum_n, accum_m});
+                accum_t attn = attn_T.at({accum_n, accum_m});
+                accum[idx] = (accum[idx] - current_di) * attn;
               } else {
-                fragment_attn[idx] = 0;
+                accum[idx] = 0;
               }
-              fragment_di[idx] = current_di;
             },
             [&](int accum_m) {
 
             });
-        // dSij = (dPij - Di) * Pij
-        accum = (accum - fragment_di) * fragment_attn;
 
         // store bias gradient tile dBij to global memory,
         // where dBij = dSij = Pij * (dPij - Di)
