@@ -21,6 +21,8 @@ jobs:
       - name: Run pre-script
         if: ${{ inputs.pre-script }}
         run: ${{ inputs.pre-script }}
+      # Triton is too slow to install, and beside it's not needed
+      - run: sed -i '/triton/d' requirements-test.txt
       - name: Install deps
         run: pip install -r requirements-test.txt
       - name: isort
