@@ -106,7 +106,9 @@ def get_cuda_version(cuda_dir) -> int:
 def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     # Figure out default archs to target
     DEFAULT_ARCHS_LIST = ""
-    if cuda_version > 1100:
+    if cuda_version >= 1108:
+        DEFAULT_ARCHS_LIST = "7.5;8.0;8.6;9.0"
+    elif cuda_version > 1100:
         DEFAULT_ARCHS_LIST = "7.5;8.0;8.6"
     elif cuda_version == 1100:
         DEFAULT_ARCHS_LIST = "7.5;8.0"

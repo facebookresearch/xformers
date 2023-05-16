@@ -31,7 +31,7 @@ try:
         "Tensor cu_seqlens_q, Tensor cu_seqlens_k, "
         "int max_seqlen_q, int max_seqlen_k, "
         "float p, float softmax_scale, "
-        "bool is_causal, bool return_softmax) -> (Tensor, Tensor)"
+        "bool is_causal, bool return_softmax) -> (Tensor, Tensor, Tensor)"
     )
 
     _flash_lib.define(
@@ -39,7 +39,7 @@ try:
         "Tensor out, Tensor softmax_lse_, Tensor dq, Tensor dk, Tensor dv, "
         "Tensor cu_seqlens_q, Tensor cu_seqlens_k, "
         "int max_seqlen_q, int max_seqlen_k, "
-        "float p, float softmax_scale, bool is_causal) -> Tensor"
+        "float p, float softmax_scale, bool is_causal, Tensor rng_state) -> Tensor"
     )
 
     def _flash_fwd(
@@ -56,7 +56,7 @@ try:
         return_softmax,
     ):
         out = query.new_empty(query.shape[0], query.shape[1], value.shape[2])
-        lse = _C_flashattention.fwd(
+        lse, rng_state = _C_flashattention.fwd(
             query,
             key,
             value,
@@ -72,8 +72,8 @@ try:
             return_softmax,
             0,
             None,
-        )[0]
-        return out, lse
+        )
+        return out, lse, rng_state
 
     def _flash_bwd(
         grad,
@@ -92,6 +92,7 @@ try:
         p,
         softmax_scale,
         causal,
+        rng_state,
     ):
         _C_flashattention.bwd(
             grad,
@@ -113,6 +114,7 @@ try:
             causal,
             0,
             None,
+            rng_state,
         )
         return dq
 
@@ -231,8 +233,7 @@ class FwOp(AttentionFwOpBase):
             cu_seqlens_k,
             max_seqlen_k,
         ) = _convert_input_format(inp)
-        rng_state = torch.cuda.get_rng_state() if inp.p != 0.0 else None
-        out, softmax_lse = cls.OPERATOR(
+        out, softmax_lse, rng_state = cls.OPERATOR(
             inp.query,
             inp.key,
             inp.value,
@@ -305,10 +306,10 @@ class BwOp(AttentionBwOpBase):
             device_capability = torch.cuda.get_device_capability(d.device)
             if device_capability < (7, 5):
                 reasons.append("requires a GPU with compute capability > 7.5")
-            is_sm80 = device_capability[0] == 8 and device_capability[1] == 0
-            if max(d.key.shape[-1], d.query.shape[-1]) > 64 and not is_sm80:
+            is_sm80_or_sm90 = device_capability in [(8, 0), (9, 0)]
+            if max(d.key.shape[-1], d.query.shape[-1]) > 64 and not is_sm80_or_sm90:
                 reasons.append(
-                    "requires a GPU with compute capability == 8.0 for 'query.shape[-1] > 64'"
+                    "requires a GPU with compute capability 8.0 (A100) or 9.0 (H100) for 'query.shape[-1] > 64'"
                 )
         return reasons
 
@@ -361,11 +362,6 @@ class BwOp(AttentionBwOpBase):
             )
 
         assert grad.dtype in cls.SUPPORTED_DTYPES
-        cur_rng_state = None
-        if inp.p != 0.0:
-            assert ctx.rng_state is not None
-            cur_rng_state = torch.cuda.get_rng_state()
-            torch.cuda.set_rng_state(ctx.rng_state)
         cls.OPERATOR(
             grad.reshape(kernel_out_shape).contiguous(),
             inp.query,
@@ -383,9 +379,8 @@ class BwOp(AttentionBwOpBase):
             inp.p,
             softmax_scale,
             isinstance(inp.attn_bias, (LowerTriangularMask, BlockDiagonalCausalMask)),
+            ctx.rng_state,
         )
-        if cur_rng_state is not None:
-            torch.cuda.set_rng_state(cur_rng_state)
         grads.dq = grads.dq.reshape(dq_shape)
         grads.dk = grads.dk.reshape(dk_shape)
         grads.dv = grads.dv.reshape(dv_shape)
