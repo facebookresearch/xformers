@@ -204,33 +204,32 @@ struct AttentionBackwardKernel {
 
   struct Params {
     // Input tensors
-    scalar_t* query_ptr; // [Mq, nH, K]
-    scalar_t* key_ptr; // [Mk, nH, K]
-    scalar_t* value_ptr; // [Mk, nH, Kv]
+    scalar_t* query_ptr = nullptr; // [Mq, nH, K]
+    scalar_t* key_ptr = nullptr; // [Mk, nH, K]
+    scalar_t* value_ptr = nullptr; // [Mk, nH, Kv]
     scalar_t* bias_ptr = nullptr;
-    lse_scalar_t* logsumexp_ptr; // [nH, Mq]
-    scalar_t* output_ptr; // [Mq, nH, Kv]
-    scalar_t* grad_output_ptr; // [Mq, nH, Kv]
-    accum_t* delta_ptr; // [nH, Mq]
+    lse_scalar_t* logsumexp_ptr = nullptr; // [nH, Mq]
+    scalar_t* output_ptr = nullptr; // [Mq, nH, Kv]
+    scalar_t* grad_output_ptr = nullptr; // [Mq, nH, Kv]
+    accum_t* delta_ptr = nullptr; // [nH, Mq]
     int32_t* cu_seqlens_q_ptr = nullptr;
     int32_t* cu_seqlens_k_ptr = nullptr;
 
     // Output tensors
-    output_t* grad_query_ptr; //  [Mq, nH, K]
-    output_t* grad_key_ptr; //    [Mk, nH, K]
-    output_t* grad_value_ptr; //  [Mk, nH, Kv]
+    output_t* grad_query_ptr = nullptr; //  [Mq, nH, K]
+    output_t* grad_key_ptr = nullptr; //    [Mk, nH, K]
+    output_t* grad_value_ptr = nullptr; //  [Mk, nH, Kv]
     output_t* grad_bias_ptr = nullptr;
 
     // Accumulators
-    union {
-      output_accum_t* workspace = nullptr; // [Mq, Kq] + [Mkv, Kq] + [Mkv, Kv]
-      output_accum_t* workspace_gk;
-    };
-    output_accum_t* workspace_gv; // (will be calculated by the kernel)
-    output_accum_t* workspace_gq; // (will be calculated by the kernel)
+    output_accum_t* workspace = nullptr; // [Mq, Kq] + [Mkv, Kq] + [Mkv, Kv]
+    output_accum_t* workspace_gv =
+        nullptr; // (will be calculated by the kernel)
+    output_accum_t* workspace_gq =
+        nullptr; // (will be calculated by the kernel)
 
     // Scale
-    accum_t scale;
+    accum_t scale = 1.0f;
 
     // Dimensions/strides
     int32_t head_dim = -1;
@@ -240,20 +239,20 @@ struct AttentionBackwardKernel {
     int32_t num_heads = -1;
     uint8_t custom_mask_type = NoCustomMask;
 
-    int32_t q_strideM;
-    int32_t k_strideM;
-    int32_t v_strideM;
+    int32_t q_strideM = -1;
+    int32_t k_strideM = -1;
+    int32_t v_strideM = -1;
     int32_t bias_strideM = 0;
-    int32_t gO_strideM;
-    int32_t gB_strideM;
+    int32_t gO_strideM = -1;
+    int32_t gB_strideM = -1;
     int8_t gQKV_strideM_multiplier = 1; // 3 for packed, 1 otherwise
 
 #ifdef HAS_PYTORCH
     // dropout
-    at::PhiloxCudaState rng_engine_inputs;
+    at::PhiloxCudaState rng_engine_inputs = {0, 0};
 #endif
     // RNG sequence offset based on batch_id and head_id
-    unsigned long long dropout_batch_head_rng_offset;
+    unsigned long long dropout_batch_head_rng_offset = 0;
     float dropout_prob = 0.0f;
 
     CUTLASS_HOST_DEVICE int32_t o_strideM() const {
@@ -271,21 +270,21 @@ struct AttentionBackwardKernel {
 
     // Everything below is only used in `advance_to_block`
     // and shouldn't use registers
-    int64_t o_strideH;
-    int32_t q_strideH;
-    int32_t k_strideH;
-    int32_t v_strideH;
+    int64_t o_strideH = -1;
+    int32_t q_strideH = -1;
+    int32_t k_strideH = -1;
+    int32_t v_strideH = -1;
     int32_t bias_strideH = 0;
-    int64_t o_strideB;
-    int64_t q_strideB;
-    int64_t k_strideB;
-    int64_t v_strideB;
+    int64_t o_strideB = -1;
+    int64_t q_strideB = -1;
+    int64_t k_strideB = -1;
+    int64_t v_strideB = -1;
     int64_t bias_strideB = 0;
-    int64_t lse_strideB;
-    int64_t lse_strideH;
-    int64_t delta_strideB;
-    int64_t delta_strideH;
-    int32_t num_batches;
+    int64_t lse_strideB = -1;
+    int64_t lse_strideH = -1;
+    int64_t delta_strideB = -1;
+    int64_t delta_strideH = -1;
+    int32_t num_batches = -1;
 
     int64_t gO_strideB = 0;
     int64_t gQ_strideB = 0;
@@ -2040,7 +2039,7 @@ struct AttentionBackwardKernel {
 
       int storage_id = col / MatmulGradK::ThreadblockShape::kN;
       AccumTileGmem gmem_tile{
-          p.workspace_gk + storage_id * AccumTileGmem::kElementsStored};
+          p.workspace + storage_id * AccumTileGmem::kElementsStored};
       if (!kOutputInRF) {
         if (isFirstQuery || !kNeedsAccumGradK) {
           output_frags.gradK.clear();
