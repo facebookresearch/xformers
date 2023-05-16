@@ -579,6 +579,7 @@
             <span class="n">rng_offset</span><span class="o">=</span><span class="n">rng_offset</span><span class="p">,</span>
             <span class="n">custom_mask_type</span><span class="o">=</span><span class="n">_custom_mask_type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
             <span class="n">scale</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">scale</span><span class="p">,</span>
+            <span class="n">num_splits_key</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>  <span class="c1"># Let C++ determine it</span>
         <span class="p">)</span>
 
         <span class="c1"># c++/CUDA implementation returns an uninitialized tensor if bias doesn&#39;t</span>

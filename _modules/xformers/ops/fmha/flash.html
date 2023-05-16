@@ -258,7 +258,7 @@
         <span class="s2">&quot;Tensor cu_seqlens_q, Tensor cu_seqlens_k, &quot;</span>
         <span class="s2">&quot;int max_seqlen_q, int max_seqlen_k, &quot;</span>
         <span class="s2">&quot;float p, float softmax_scale, &quot;</span>
-        <span class="s2">&quot;bool is_causal, bool return_softmax) -&gt; (Tensor, Tensor)&quot;</span>
+        <span class="s2">&quot;bool is_causal, bool return_softmax) -&gt; (Tensor, Tensor, Tensor)&quot;</span>
     <span class="p">)</span>
 
     <span class="n">_flash_lib</span><span class="o">.</span><span class="n">define</span><span class="p">(</span>
@@ -266,7 +266,7 @@
         <span class="s2">&quot;Tensor out, Tensor softmax_lse_, Tensor dq, Tensor dk, Tensor dv, &quot;</span>
         <span class="s2">&quot;Tensor cu_seqlens_q, Tensor cu_seqlens_k, &quot;</span>
         <span class="s2">&quot;int max_seqlen_q, int max_seqlen_k, &quot;</span>
-        <span class="s2">&quot;float p, float softmax_scale, bool is_causal) -&gt; Tensor&quot;</span>
+        <span class="s2">&quot;float p, float softmax_scale, bool is_causal, Tensor rng_state) -&gt; Tensor&quot;</span>
     <span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_flash_fwd</span><span class="p">(</span>
@@ -283,7 +283,7 @@
         <span class="n">return_softmax</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="n">out</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">new_empty</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
-        <span class="n">lse</span> <span class="o">=</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">fwd</span><span class="p">(</span>
+        <span class="n">lse</span><span class="p">,</span> <span class="n">rng_state</span> <span class="o">=</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">fwd</span><span class="p">(</span>
             <span class="n">query</span><span class="p">,</span>
             <span class="n">key</span><span class="p">,</span>
             <span class="n">value</span><span class="p">,</span>
@@ -299,8 +299,8 @@
             <span class="n">return_softmax</span><span class="p">,</span>
             <span class="mi">0</span><span class="p">,</span>
             <span class="kc">None</span><span class="p">,</span>
-        <span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">lse</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">rng_state</span>
 
     <span class="k">def</span> <span class="nf">_flash_bwd</span><span class="p">(</span>
         <span class="n">grad</span><span class="p">,</span>
@@ -319,6 +319,7 @@
         <span class="n">p</span><span class="p">,</span>
         <span class="n">softmax_scale</span><span class="p">,</span>
         <span class="n">causal</span><span class="p">,</span>
+        <span class="n">rng_state</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">bwd</span><span class="p">(</span>
             <span class="n">grad</span><span class="p">,</span>
@@ -340,6 +341,7 @@
             <span class="n">causal</span><span class="p">,</span>
             <span class="mi">0</span><span class="p">,</span>
             <span class="kc">None</span><span class="p">,</span>
+            <span class="n">rng_state</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">dq</span>
 
@@ -458,8 +460,7 @@
             <span class="n">cu_seqlens_k</span><span class="p">,</span>
             <span class="n">max_seqlen_k</span><span class="p">,</span>
         <span class="p">)</span> <span class="o">=</span> <span class="n">_convert_input_format</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
-        <span class="n">rng_state</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_rng_state</span><span class="p">()</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span> <span class="k">else</span> <span class="kc">None</span>
-        <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span><span class="p">(</span>
+        <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">rng_state</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span><span class="p">(</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
@@ -532,10 +533,10 @@
             <span class="n">device_capability</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">device_capability</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="mi">5</span><span class="p">):</span>
                 <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;requires a GPU with compute capability &gt; 7.5&quot;</span><span class="p">)</span>
-            <span class="n">is_sm80</span> <span class="o">=</span> <span class="n">device_capability</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">8</span> <span class="ow">and</span> <span class="n">device_capability</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span>
-            <span class="k">if</span> <span class="nb">max</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="o">&gt;</span> <span class="mi">64</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_sm80</span><span class="p">:</span>
+            <span class="n">is_sm80_or_sm90</span> <span class="o">=</span> <span class="n">device_capability</span> <span class="ow">in</span> <span class="p">[(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">9</span><span class="p">,</span> <span class="mi">0</span><span class="p">)]</span>
+            <span class="k">if</span> <span class="nb">max</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="o">&gt;</span> <span class="mi">64</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_sm80_or_sm90</span><span class="p">:</span>
                 <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                    <span class="s2">&quot;requires a GPU with compute capability == 8.0 for &#39;query.shape[-1] &gt; 64&#39;&quot;</span>
+                    <span class="s2">&quot;requires a GPU with compute capability 8.0 (A100) or 9.0 (H100) for &#39;query.shape[-1] &gt; 64&#39;&quot;</span>
                 <span class="p">)</span>
         <span class="k">return</span> <span class="n">reasons</span>
 
@@ -588,11 +589,6 @@
             <span class="p">)</span>
 
         <span class="k">assert</span> <span class="n">grad</span><span class="o">.</span><span class="n">dtype</span> <span class="ow">in</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span>
-        <span class="n">cur_rng_state</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="n">cur_rng_state</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_rng_state</span><span class="p">()</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">set_rng_state</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="p">)</span>
         <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span><span class="p">(</span>
             <span class="n">grad</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">kernel_out_shape</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span>
@@ -610,9 +606,8 @@
             <span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
             <span class="n">softmax_scale</span><span class="p">,</span>
             <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="p">(</span><span class="n">LowerTriangularMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">)),</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="k">if</span> <span class="n">cur_rng_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">set_rng_state</span><span class="p">(</span><span class="n">cur_rng_state</span><span class="p">)</span>
         <span class="n">grads</span><span class="o">.</span><span class="n">dq</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">dq_shape</span><span class="p">)</span>
         <span class="n">grads</span><span class="o">.</span><span class="n">dk</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">dk</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">dk_shape</span><span class="p">)</span>
         <span class="n">grads</span><span class="o">.</span><span class="n">dv</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">dv</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">dv_shape</span><span class="p">)</span>
