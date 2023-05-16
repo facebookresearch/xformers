@@ -8,7 +8,6 @@ import textwrap
 from typing import List, Type, TypeVar
 
 from . import cutlass, flash, small_k, triton
-from .attn_bias import BlockDiagonalMask
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 
@@ -19,17 +18,8 @@ def _is_cutlass_fwd_faster_than_flash(inp: Inputs) -> bool:
     if inp.p > 0.0:
         return False
 
-    # Very small batch sizes - if batch size specified
-    batch_size, q_len, num_heads, k = inp.query.shape
-    if isinstance(inp.attn_bias, BlockDiagonalMask):
-        batch_size *= len(inp.attn_bias.k_seqinfo.seqstart_py) - 1
-    if batch_size > 0:
-        threads_flash = batch_size * num_heads
-        threads_cutlass = threads_flash * (q_len // 64)
-        if threads_flash < 60 and (threads_cutlass // 2) >= threads_flash:
-            return True
     # Large values of K
-    return max(k, inp.key.shape[-1]) > 64
+    return max(inp.query.shape[-1], inp.value.shape[-1]) > 64
 
 
 def _is_triton_fwd_fastest(inp: Inputs) -> bool:
@@ -106,6 +96,11 @@ def _dispatch_fw(inp: Inputs) -> Type[AttentionFwOpBase]:
     )
 
 
+def _is_cutlassB_faster_than_flash(inp: Inputs) -> bool:
+    embed_dim = max(inp.query.shape[-1], inp.value.shape[-1])
+    return embed_dim > 64 and inp.attn_bias is None and inp.p == 0.0
+
+
 def _dispatch_bw(inp: Inputs) -> Type[AttentionBwOpBase]:
     priority_list_ops: List[Type[AttentionBwOpBase]] = [
         flash.BwOp,
@@ -115,6 +110,9 @@ def _dispatch_bw(inp: Inputs) -> Type[AttentionBwOpBase]:
         # Deprecated
         small_k.BwOp,
     ]
+    if _is_cutlassB_faster_than_flash(inp):
+        priority_list_ops.remove(cutlass.BwOp)
+        priority_list_ops.insert(0, cutlass.BwOp)
     return _run_priority_list(
         "memory_efficient_attention_backward", priority_list_ops, inp
     )
