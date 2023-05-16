@@ -1513,11 +1513,7 @@ struct AttentionBackwardKernel {
             [&](int accum_n) {},
             [&](int accum_m, int accum_n, int idx) {
               // remember we are transposed
-              if (skipBoundsChecks ||
-                  (accum_n < num_queries_in_block &&
-                   accum_m < num_keys_in_block)) {
-                accum[idx] += bias_tensor_ref.at({accum_n, accum_m});
-              }
+              accum[idx] += bias_tensor_ref.at({accum_n, accum_m});
             },
             [&](int accum_n) {});
       }
