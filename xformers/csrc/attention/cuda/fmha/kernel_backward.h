@@ -148,6 +148,49 @@ struct GmemTile {
           sub_fragment, gmem_ptr, true);
     }
   }
+
+  CUTLASS_DEVICE void storeAtomicAdd(
+      FragmentType const& fragment,
+      int thread_id) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < kNumIters; ++i) {
+      float* gmem_ptr = ptr + thread_id * AccessType::kElements + i * kStride;
+      CUTLASS_PRAGMA_UNROLL
+      for (int j = 0; j < AccessType::kElements; ++j) {
+        float val = fragment[i * AccessType::kElements + j];
+        float* ptr = gmem_ptr + j;
+        atomicAdd(ptr, val);
+      }
+    }
+  }
+};
+
+struct AtomicLock {
+  CUTLASS_DEVICE static void acquire(
+      int32_t* lock,
+      int set_val,
+      int thread_id) {
+    if (thread_id == 0) {
+      while (atomicCAS(lock, 0 /*cmp*/, set_val /*setval*/) != set_val) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+        __nanosleep(40);
+#endif
+      }
+    }
+    __syncthreads();
+  }
+  CUTLASS_DEVICE static void release(int32_t* lock, int thread_id) {
+    if (thread_id == 0) {
+      int status = 0;
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+      asm volatile("st.global.release.gpu.b32 [%0], %1;\n"
+                   :
+                   : "l"(lock), "r"(status));
+#else
+      asm volatile("st.global.cg.b32 [%0], %1;\n" : : "l"(lock), "r"(status));
+#endif
+    }
+  }
 };
 
 template <typename scalar_t, typename Arch>
@@ -202,255 +245,6 @@ struct AttentionBackwardKernel {
   static constexpr bool kKeysQueriesAlignedToBlockSize =
       kKeysQueriesAlignedToBlockSize_;
 
-  struct Params {
-    // Input tensors
-    scalar_t* query_ptr = nullptr; // [Mq, nH, K]
-    scalar_t* key_ptr = nullptr; // [Mk, nH, K]
-    scalar_t* value_ptr = nullptr; // [Mk, nH, Kv]
-    scalar_t* bias_ptr = nullptr;
-    lse_scalar_t* logsumexp_ptr = nullptr; // [nH, Mq]
-    scalar_t* output_ptr = nullptr; // [Mq, nH, Kv]
-    scalar_t* grad_output_ptr = nullptr; // [Mq, nH, Kv]
-    accum_t* delta_ptr = nullptr; // [nH, Mq]
-    int32_t* cu_seqlens_q_ptr = nullptr;
-    int32_t* cu_seqlens_k_ptr = nullptr;
-
-    // Output tensors
-    output_t* grad_query_ptr = nullptr; //  [Mq, nH, K]
-    output_t* grad_key_ptr = nullptr; //    [Mk, nH, K]
-    output_t* grad_value_ptr = nullptr; //  [Mk, nH, Kv]
-    output_t* grad_bias_ptr = nullptr;
-
-    // Accumulators
-    output_accum_t* workspace = nullptr; // [Mq, Kq] + [Mkv, Kq] + [Mkv, Kv]
-    output_accum_t* workspace_gv =
-        nullptr; // (will be calculated by the kernel)
-    output_accum_t* workspace_gq =
-        nullptr; // (will be calculated by the kernel)
-
-    // Scale
-    accum_t scale = 1.0f;
-
-    // Dimensions/strides
-    int32_t head_dim = -1;
-    int32_t head_dim_value = -1;
-    int32_t num_queries = -1;
-    int32_t num_keys = -1;
-    int32_t num_heads = -1;
-    uint8_t custom_mask_type = NoCustomMask;
-
-    int32_t q_strideM = -1;
-    int32_t k_strideM = -1;
-    int32_t v_strideM = -1;
-    int32_t bias_strideM = 0;
-    int32_t gO_strideM = -1;
-    int32_t gB_strideM = -1;
-    int8_t gQKV_strideM_multiplier = 1; // 3 for packed, 1 otherwise
-
-#ifdef HAS_PYTORCH
-    // dropout
-    at::PhiloxCudaState rng_engine_inputs = {0, 0};
-#endif
-    // RNG sequence offset based on batch_id and head_id
-    unsigned long long dropout_batch_head_rng_offset = 0;
-    float dropout_prob = 0.0f;
-
-    CUTLASS_HOST_DEVICE int32_t o_strideM() const {
-      return head_dim_value * num_heads;
-    }
-    CUTLASS_HOST_DEVICE int32_t gQ_strideM() const {
-      return gQKV_strideM_multiplier * num_heads * head_dim;
-    }
-    CUTLASS_HOST_DEVICE int32_t gK_strideM() const {
-      return gQKV_strideM_multiplier * num_heads * head_dim;
-    }
-    CUTLASS_HOST_DEVICE int32_t gV_strideM() const {
-      return gQKV_strideM_multiplier * num_heads * head_dim_value;
-    }
-
-    // Everything below is only used in `advance_to_block`
-    // and shouldn't use registers
-    int64_t o_strideH = -1;
-    int32_t q_strideH = -1;
-    int32_t k_strideH = -1;
-    int32_t v_strideH = -1;
-    int32_t bias_strideH = 0;
-    int64_t o_strideB = -1;
-    int64_t q_strideB = -1;
-    int64_t k_strideB = -1;
-    int64_t v_strideB = -1;
-    int64_t bias_strideB = 0;
-    int64_t lse_strideB = -1;
-    int64_t lse_strideH = -1;
-    int64_t delta_strideB = -1;
-    int64_t delta_strideH = -1;
-    int32_t num_batches = -1;
-
-    int64_t gO_strideB = 0;
-    int64_t gQ_strideB = 0;
-    int64_t gK_strideB = 0;
-    int64_t gV_strideB = 0;
-    int64_t gB_strideB = 0;
-    int64_t gO_strideH = 0;
-    int64_t gQ_strideH = 0;
-    int64_t gK_strideH = 0;
-    int64_t gV_strideH = 0;
-    int64_t gB_strideH = 0;
-
-    CUTLASS_DEVICE bool advance_to_block() {
-      int64_t batch_id = blockIdx.z;
-      int32_t head_id = blockIdx.y;
-
-      if (kNeedsAccumGradQ || kNeedsAccumGradK || kNeedsAccumGradV) {
-        assert(workspace_size() == 0 || workspace != nullptr);
-
-        workspace += (batch_id * num_heads + head_id) * workspace_strideBH();
-        workspace = warp_uniform(workspace);
-        workspace_gv = workspace + workspace_elements_gk();
-        workspace_gq = workspace_gv + workspace_elements_gv();
-      } else {
-        workspace = nullptr;
-      }
-
-      // Advance pointers that depend on the total concatenated
-      // number of queries, as `num_queries` is modified in the block
-      // below
-      dropout_batch_head_rng_offset =
-          batch_id * (num_heads * num_queries * num_keys) +
-          head_id * (num_queries * num_keys);
-      logsumexp_ptr += batch_id * lse_strideB + head_id * lse_strideH;
-
-      if (cu_seqlens_q_ptr != nullptr) {
-        assert(cu_seqlens_k_ptr != nullptr);
-        cu_seqlens_q_ptr += batch_id;
-        cu_seqlens_k_ptr += batch_id;
-        int32_t q_start = cu_seqlens_q_ptr[0];
-        int32_t k_start = cu_seqlens_k_ptr[0];
-        int64_t q_next_start = cu_seqlens_q_ptr[1];
-        int64_t k_next_start = cu_seqlens_k_ptr[1];
-        assert(q_next_start - q_start <= num_queries);
-        assert(k_next_start - k_start <= num_keys);
-        num_queries = q_next_start - q_start;
-        num_keys = k_next_start - k_start;
-
-        // Jump manually
-        batch_id = 0;
-
-        query_ptr += q_start * q_strideM;
-        key_ptr += k_start * k_strideM;
-        value_ptr += k_start * v_strideM;
-        assert(bias_ptr == nullptr);
-        assert(grad_bias_ptr == nullptr);
-        output_ptr += q_start * o_strideM();
-        grad_output_ptr += q_start * gO_strideM;
-        delta_ptr += q_start;
-
-        grad_query_ptr += q_start * gQ_strideM();
-        grad_key_ptr += k_start * gK_strideM();
-        grad_value_ptr += k_start * gV_strideM();
-      }
-
-      query_ptr += batch_id * q_strideB + head_id * q_strideH;
-      key_ptr += batch_id * k_strideB + head_id * k_strideH;
-      value_ptr += batch_id * v_strideB + head_id * v_strideH;
-      if (bias_ptr != nullptr) {
-        bias_ptr += batch_id * bias_strideB + head_id * bias_strideH;
-      }
-      output_ptr += batch_id * o_strideB + head_id * o_strideH;
-      grad_output_ptr += batch_id * gO_strideB + head_id * gO_strideH;
-      delta_ptr += batch_id * delta_strideB + head_id * delta_strideH;
-
-      grad_query_ptr += batch_id * gQ_strideB + head_id * gQ_strideH;
-      grad_key_ptr += batch_id * gK_strideB + head_id * gK_strideH;
-      grad_value_ptr += batch_id * gV_strideB + head_id * gV_strideH;
-      if (grad_bias_ptr != nullptr) {
-        grad_bias_ptr += batch_id * gB_strideB + head_id * gB_strideH;
-      }
-
-      scale = warp_uniform(scale);
-      head_dim = warp_uniform(head_dim);
-      head_dim_value = warp_uniform(head_dim_value);
-      num_queries = warp_uniform(num_queries);
-      num_keys = warp_uniform(num_keys);
-      num_heads = warp_uniform(num_heads);
-      custom_mask_type = warp_uniform(custom_mask_type);
-
-      q_strideM = warp_uniform(q_strideM);
-      k_strideM = warp_uniform(k_strideM);
-      v_strideM = warp_uniform(v_strideM);
-      bias_strideM = warp_uniform(bias_strideM);
-      gO_strideM = warp_uniform(gO_strideM);
-      gB_strideM = warp_uniform(gB_strideM);
-      gQKV_strideM_multiplier = warp_uniform(gQKV_strideM_multiplier);
-
-      query_ptr = warp_uniform(query_ptr);
-      key_ptr = warp_uniform(key_ptr);
-      value_ptr = warp_uniform(value_ptr);
-      bias_ptr = warp_uniform(bias_ptr);
-      logsumexp_ptr = warp_uniform(logsumexp_ptr);
-      output_ptr = warp_uniform(output_ptr);
-      grad_output_ptr = warp_uniform(grad_output_ptr);
-      delta_ptr = warp_uniform(delta_ptr);
-
-      grad_query_ptr = warp_uniform(grad_query_ptr);
-      grad_key_ptr = warp_uniform(grad_key_ptr);
-      grad_value_ptr = warp_uniform(grad_value_ptr);
-      grad_bias_ptr = warp_uniform(grad_bias_ptr);
-
-#if 0
-      PRINT_T0("[b:%d h:%d] dp[0]:%f Q:%f K:%f V:%f LSE:%f",
-        int(blockIdx.z), int(blockIdx.y),
-        float(delta_ptr[0]),
-        float(query_ptr[0]), float(key_ptr[0]), float(value_ptr[0]),
-        float(logsumexp_ptr[0])
-      )
-#endif
-      return true;
-    }
-
-    __host__ dim3 getBlocksGrid() const {
-      return dim3(1, num_heads, num_batches);
-    }
-    __host__ dim3 getThreadsGrid() const {
-      return dim3(kWarpSize * kNumWarpsPerBlock, 1, 1);
-    }
-    CUTLASS_HOST_DEVICE int64_t workspace_elements_gk() const {
-      if (!kNeedsAccumGradK) {
-        return 0;
-      }
-      return align_up(num_keys, (int32_t)kBlockSizeJ) *
-          align_up(head_dim, (int32_t)kBlockSizeI);
-    }
-    CUTLASS_HOST_DEVICE int64_t workspace_elements_gv() const {
-      if (!kNeedsAccumGradV) {
-        return 0;
-      }
-      return align_up(num_keys, (int32_t)kBlockSizeJ) *
-          align_up(head_dim_value, (int32_t)kBlockSizeI);
-    }
-    CUTLASS_HOST_DEVICE int64_t workspace_elements_gq() const {
-      if (!kNeedsAccumGradQ) {
-        return 0;
-      }
-      if (num_keys <= kBlockSizeJ) {
-        return 0;
-      }
-      return align_up(num_queries, (int32_t)kBlockSizeI) *
-          align_up(head_dim, (int32_t)kBlockSizeJ);
-    }
-    CUTLASS_HOST_DEVICE int64_t workspace_strideBH() const {
-      // Aligned on 128bits
-      return align_up(
-          workspace_elements_gk() + workspace_elements_gv() +
-              workspace_elements_gq(),
-          int64_t(4));
-    }
-    CUTLASS_HOST_DEVICE int64_t workspace_size() const {
-      // Returns size of buffer we need to run this kernel
-      return num_batches * num_heads * workspace_strideBH() * sizeof(float);
-    }
-  };
-
   static constexpr int64_t kWarpSize = 32;
 
   // If this is true, we store and accumulate dK/dV in RF
@@ -479,13 +273,6 @@ struct AttentionBackwardKernel {
   // (B, Mq, Mkv, K) = (1, 1, 1, 136) for instance
   static constexpr bool kKernelComputesDelta =
       kIsHalf && (kOutputInRF || ArchTag::kMinComputeCapability != 70);
-
-  static constexpr bool kNeedsAccumGradQ =
-      !cutlass::platform::is_same<output_accum_t, output_t>::value;
-  static constexpr bool kNeedsAccumGradK = !kOutputInRF &&
-      !cutlass::platform::is_same<output_accum_t, output_t>::value;
-  static constexpr bool kNeedsAccumGradV = !kOutputInRF &&
-      !cutlass::platform::is_same<output_accum_t, output_t>::value;
 
   // Launch bounds
   static constexpr int64_t kNumThreads = kWarpSize * kNumWarpsPerBlock;
@@ -821,6 +608,288 @@ struct AttentionBackwardKernel {
         typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
             typename DefaultEpilogue::OutputTileIterator>::Iterator;
     using AccumTileGmem = GmemTile<typename Mma::FragmentC, (int)kNumThreads>;
+  };
+
+  static constexpr bool kEnableSplitKeys = true;
+
+  static constexpr bool kNeedsAccumGradQ = kEnableSplitKeys ||
+      !cutlass::platform::is_same<output_accum_t, output_t>::value;
+  static constexpr bool kNeedsAccumGradK = !kOutputInRF &&
+      !cutlass::platform::is_same<output_accum_t, output_t>::value;
+  static constexpr bool kNeedsAccumGradV = !kOutputInRF &&
+      !cutlass::platform::is_same<output_accum_t, output_t>::value;
+
+  struct GradQTempStorage {
+    int32_t lock;
+    int32_t counter;
+    int32_t pad[2]; // pad to 128bits
+    output_accum_t buffer[MatmulGradQ::AccumTileGmem::kElementsStored];
+  };
+
+  struct Params {
+    // Input tensors
+    scalar_t* query_ptr = nullptr; // [Mq, nH, K]
+    scalar_t* key_ptr = nullptr; // [Mk, nH, K]
+    scalar_t* value_ptr = nullptr; // [Mk, nH, Kv]
+    scalar_t* bias_ptr = nullptr;
+    lse_scalar_t* logsumexp_ptr = nullptr; // [nH, Mq]
+    scalar_t* output_ptr = nullptr; // [Mq, nH, Kv]
+    scalar_t* grad_output_ptr = nullptr; // [Mq, nH, Kv]
+    accum_t* delta_ptr = nullptr; // [nH, Mq]
+    int32_t* cu_seqlens_q_ptr = nullptr;
+    int32_t* cu_seqlens_k_ptr = nullptr;
+
+    // Output tensors
+    output_t* grad_query_ptr = nullptr; //  [Mq, nH, K]
+    output_t* grad_key_ptr = nullptr; //    [Mk, nH, K]
+    output_t* grad_value_ptr = nullptr; //  [Mk, nH, Kv]
+    output_t* grad_bias_ptr = nullptr;
+
+    // Accumulators
+    output_accum_t* workspace = nullptr; // [Mq, Kq] + [Mkv, Kq] + [Mkv, Kv]
+    output_accum_t* workspace_gv =
+        nullptr; // (will be calculated by the kernel)
+    GradQTempStorage* workspace_gq =
+        nullptr; // (will be calculated by the kernel)
+
+    // Scale
+    accum_t scale = 1.0f;
+
+    // Dimensions/strides
+    int32_t head_dim = -1;
+    int32_t head_dim_value = -1;
+    int32_t num_queries = -1;
+    int32_t num_keys = -1;
+    int32_t num_heads = -1;
+    uint8_t custom_mask_type = NoCustomMask;
+
+    int32_t q_strideM = -1;
+    int32_t k_strideM = -1;
+    int32_t v_strideM = -1;
+    int32_t bias_strideM = 0;
+    int32_t gO_strideM = -1;
+    int32_t gB_strideM = -1;
+    int8_t gQKV_strideM_multiplier = 1; // 3 for packed, 1 otherwise
+
+#ifdef HAS_PYTORCH
+    // dropout
+    at::PhiloxCudaState rng_engine_inputs = {0, 0};
+#endif
+    // RNG sequence offset based on batch_id and head_id
+    unsigned long long dropout_batch_head_rng_offset = 0;
+    float dropout_prob = 0.0f;
+
+    CUTLASS_HOST_DEVICE int32_t o_strideM() const {
+      return head_dim_value * num_heads;
+    }
+    CUTLASS_HOST_DEVICE int32_t gQ_strideM() const {
+      return gQKV_strideM_multiplier * num_heads * head_dim;
+    }
+    CUTLASS_HOST_DEVICE int32_t gK_strideM() const {
+      return gQKV_strideM_multiplier * num_heads * head_dim;
+    }
+    CUTLASS_HOST_DEVICE int32_t gV_strideM() const {
+      return gQKV_strideM_multiplier * num_heads * head_dim_value;
+    }
+
+    // Everything below is only used in `advance_to_block`
+    // and shouldn't use registers
+    int64_t o_strideH = -1;
+    int32_t q_strideH = -1;
+    int32_t k_strideH = -1;
+    int32_t v_strideH = -1;
+    int32_t bias_strideH = 0;
+    int64_t o_strideB = -1;
+    int64_t q_strideB = -1;
+    int64_t k_strideB = -1;
+    int64_t v_strideB = -1;
+    int64_t bias_strideB = 0;
+    int64_t lse_strideB = -1;
+    int64_t lse_strideH = -1;
+    int64_t delta_strideB = -1;
+    int64_t delta_strideH = -1;
+    int32_t num_batches = -1;
+    int16_t num_splits_key = 1; // We use `gridDim.x` inside kernel
+
+    int64_t gO_strideB = 0;
+    int64_t gQ_strideB = 0;
+    int64_t gK_strideB = 0;
+    int64_t gV_strideB = 0;
+    int64_t gB_strideB = 0;
+    int64_t gO_strideH = 0;
+    int64_t gQ_strideH = 0;
+    int64_t gK_strideH = 0;
+    int64_t gV_strideH = 0;
+    int64_t gB_strideH = 0;
+
+    CUTLASS_DEVICE int16_t num_splits_key_device() const {
+      return kEnableSplitKeys ? gridDim.x : 1;
+    }
+    CUTLASS_DEVICE int16_t split_key_device() const {
+      return kEnableSplitKeys ? blockIdx.x : 0;
+    }
+
+    CUTLASS_DEVICE bool advance_to_block() {
+      int64_t batch_id = blockIdx.z;
+      int32_t head_id = blockIdx.y;
+
+      if (kNeedsAccumGradQ || kNeedsAccumGradK || kNeedsAccumGradV) {
+        assert(workspace_size() == 0 || workspace != nullptr);
+
+        workspace += (batch_id * num_heads + head_id) * workspace_strideBH();
+        workspace = warp_uniform(workspace);
+        workspace_gv = workspace + workspace_elements_gk();
+        workspace_gq =
+            (GradQTempStorage*)(workspace_gv + workspace_elements_gv());
+        if (kEnableSplitKeys) {
+          workspace_gv += workspace_elements_gv() * split_key_device() /
+              num_splits_key_device();
+          workspace += workspace_elements_gk() * split_key_device() /
+              num_splits_key_device();
+        }
+      } else {
+        workspace = nullptr;
+      }
+
+      // Advance pointers that depend on the total concatenated
+      // number of queries, as `num_queries` is modified in the block
+      // below
+      dropout_batch_head_rng_offset =
+          batch_id * (num_heads * num_queries * num_keys) +
+          head_id * (num_queries * num_keys);
+      logsumexp_ptr += batch_id * lse_strideB + head_id * lse_strideH;
+
+      if (cu_seqlens_q_ptr != nullptr) {
+        assert(cu_seqlens_k_ptr != nullptr);
+        cu_seqlens_q_ptr += batch_id;
+        cu_seqlens_k_ptr += batch_id;
+        int32_t q_start = cu_seqlens_q_ptr[0];
+        int32_t k_start = cu_seqlens_k_ptr[0];
+        int64_t q_next_start = cu_seqlens_q_ptr[1];
+        int64_t k_next_start = cu_seqlens_k_ptr[1];
+        assert(q_next_start - q_start <= num_queries);
+        assert(k_next_start - k_start <= num_keys);
+        num_queries = q_next_start - q_start;
+        num_keys = k_next_start - k_start;
+
+        // Jump manually
+        batch_id = 0;
+
+        query_ptr += q_start * q_strideM;
+        key_ptr += k_start * k_strideM;
+        value_ptr += k_start * v_strideM;
+        assert(bias_ptr == nullptr);
+        assert(grad_bias_ptr == nullptr);
+        output_ptr += q_start * o_strideM();
+        grad_output_ptr += q_start * gO_strideM;
+        delta_ptr += q_start;
+
+        grad_query_ptr += q_start * gQ_strideM();
+        grad_key_ptr += k_start * gK_strideM();
+        grad_value_ptr += k_start * gV_strideM();
+      }
+
+      query_ptr += batch_id * q_strideB + head_id * q_strideH;
+      key_ptr += batch_id * k_strideB + head_id * k_strideH;
+      value_ptr += batch_id * v_strideB + head_id * v_strideH;
+      if (bias_ptr != nullptr) {
+        bias_ptr += batch_id * bias_strideB + head_id * bias_strideH;
+      }
+      output_ptr += batch_id * o_strideB + head_id * o_strideH;
+      grad_output_ptr += batch_id * gO_strideB + head_id * gO_strideH;
+      delta_ptr += batch_id * delta_strideB + head_id * delta_strideH;
+
+      grad_query_ptr += batch_id * gQ_strideB + head_id * gQ_strideH;
+      grad_key_ptr += batch_id * gK_strideB + head_id * gK_strideH;
+      grad_value_ptr += batch_id * gV_strideB + head_id * gV_strideH;
+      if (grad_bias_ptr != nullptr) {
+        grad_bias_ptr += batch_id * gB_strideB + head_id * gB_strideH;
+      }
+
+      scale = warp_uniform(scale);
+      head_dim = warp_uniform(head_dim);
+      head_dim_value = warp_uniform(head_dim_value);
+      num_queries = warp_uniform(num_queries);
+      num_keys = warp_uniform(num_keys);
+      num_heads = warp_uniform(num_heads);
+      custom_mask_type = warp_uniform(custom_mask_type);
+
+      q_strideM = warp_uniform(q_strideM);
+      k_strideM = warp_uniform(k_strideM);
+      v_strideM = warp_uniform(v_strideM);
+      bias_strideM = warp_uniform(bias_strideM);
+      gO_strideM = warp_uniform(gO_strideM);
+      gB_strideM = warp_uniform(gB_strideM);
+      gQKV_strideM_multiplier = warp_uniform(gQKV_strideM_multiplier);
+
+      query_ptr = warp_uniform(query_ptr);
+      key_ptr = warp_uniform(key_ptr);
+      value_ptr = warp_uniform(value_ptr);
+      bias_ptr = warp_uniform(bias_ptr);
+      logsumexp_ptr = warp_uniform(logsumexp_ptr);
+      output_ptr = warp_uniform(output_ptr);
+      grad_output_ptr = warp_uniform(grad_output_ptr);
+      delta_ptr = warp_uniform(delta_ptr);
+
+      grad_query_ptr = warp_uniform(grad_query_ptr);
+      grad_key_ptr = warp_uniform(grad_key_ptr);
+      grad_value_ptr = warp_uniform(grad_value_ptr);
+      grad_bias_ptr = warp_uniform(grad_bias_ptr);
+
+#if 0
+      PRINT_T0("[b:%d h:%d] dp[0]:%f Q:%f K:%f V:%f LSE:%f",
+        int(blockIdx.z), int(blockIdx.y),
+        float(delta_ptr[0]),
+        float(query_ptr[0]), float(key_ptr[0]), float(value_ptr[0]),
+        float(logsumexp_ptr[0])
+      )
+#endif
+      return true;
+    }
+
+    __host__ dim3 getBlocksGrid() const {
+      return dim3(num_splits_key, num_heads, num_batches);
+    }
+    __host__ dim3 getThreadsGrid() const {
+      return dim3(kWarpSize * kNumWarpsPerBlock, 1, 1);
+    }
+    CUTLASS_HOST_DEVICE int64_t workspace_elements_gk() const {
+      if (!kNeedsAccumGradK) {
+        return 0;
+      }
+      return num_splits_key * align_up(num_keys, (int32_t)kBlockSizeJ) *
+          align_up(head_dim, (int32_t)kBlockSizeI);
+    }
+    CUTLASS_HOST_DEVICE int64_t workspace_elements_gv() const {
+      if (!kNeedsAccumGradV) {
+        return 0;
+      }
+      return num_splits_key * align_up(num_keys, (int32_t)kBlockSizeJ) *
+          align_up(head_dim_value, (int32_t)kBlockSizeI);
+    }
+    CUTLASS_HOST_DEVICE int64_t workspace_elements_gq() const {
+      if (!kNeedsAccumGradQ) {
+        return 0;
+      }
+      int num_blocks = ceil_div(num_queries, kBlockSizeI);
+      int num_cols = ceil_div(head_dim, MatmulGradQ::ThreadblockShape::kN);
+      return num_blocks * num_cols * sizeof(GradQTempStorage) /
+          sizeof(output_accum_t);
+    }
+    CUTLASS_HOST_DEVICE int64_t workspace_strideBH() const {
+      // Aligned on 128bits
+      return align_up(
+          workspace_elements_gk() + workspace_elements_gv() +
+              workspace_elements_gq(),
+          int64_t(4));
+    }
+    CUTLASS_HOST_DEVICE int64_t workspace_size() const {
+      // Returns size of buffer we need to run this kernel
+      return num_batches * num_heads * workspace_strideBH() * sizeof(float);
+    }
+    CUTLASS_HOST_DEVICE bool should_zero_workspace() const {
+      return num_splits_key > 1;
+    }
   };
 
   // shared storage for keeping Zij matrix. not needed if we aren't using
@@ -1202,6 +1271,16 @@ struct AttentionBackwardKernel {
           p.num_keys % kBlockSizeJ == 0,
           "kKeysQueriesAlignedToBlockSize condition not respected");
     }
+    XFORMERS_CHECK(
+        kEnableSplitKeys || p.num_splits_key == 1, "SplitKeys is disabled");
+    XFORMERS_CHECK(
+        p.num_splits_key > 0, "Invalid `num_splits_key` (expected >0)");
+    XFORMERS_CHECK(
+        p.num_splits_key <= cutlass::ceil_div(p.num_keys, kBlockSizeJ),
+        "Invalid `num_splits_key` (",
+        p.num_splits_key,
+        ") - too large for `num_keys` = ",
+        p.num_keys);
     return true;
   }
 
@@ -1213,8 +1292,14 @@ struct AttentionBackwardKernel {
     uint8_t warp_id = warp_uniform(thread_id / 32);
     uint8_t lane_id = thread_id % 32;
 
+    int32_t key_start = p.split_key_device() * kBlockSizeJ;
+    if (key_start >= p.num_keys) {
+      return;
+    }
     if (kPrologueQK) {
-      prologueQkNextIteration<true>(shared_storage, p, 0, 0, warp_id, lane_id);
+      int32_t query_start = getQueryStart(p, key_start);
+      prologueQkNextIteration<true>(
+          shared_storage, p, query_start, key_start, warp_id, lane_id);
     }
 
     // Computes (dO*out).sum(-1) and writes it to `p.delta_ptr`
@@ -1256,12 +1341,15 @@ struct AttentionBackwardKernel {
           &rng_state_init);
     }
 #endif
-
-    int32_t key_start = 0;
-    for (; key_start < p.num_keys; key_start += kBlockSizeJ) {
+    CUTLASS_PRAGMA_UNROLL
+    for (; key_start < p.num_keys;
+         key_start += p.num_splits_key_device() * kBlockSizeJ) {
       output_frags.clear();
-      int32_t query_start = getQueryStart(p, key_start);
-      for (; query_start < p.num_queries; query_start += kBlockSizeI) {
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int32_t query_start_shifted = getQueryStart(p, key_start);
+           query_start_shifted < getQueryStartShift(p) + getQueryEnd(p);
+           query_start_shifted += kBlockSizeI) {
         // This line here
         // vvvvvvvvvvvvvv
         warp_id = warp_uniform(warp_id);
@@ -1271,6 +1359,12 @@ struct AttentionBackwardKernel {
         // re-compute indices, offsets etc... and not keep them
         // from the previous iteration, which prevents MASSIVE
         // register spilling.
+
+        int32_t query_start = query_start_shifted;
+        if (query_start >= p.num_queries) {
+          query_start = query_start % getQueryEnd(p);
+        }
+
         processBlockIJ<kKeysQueriesAlignedToBlockSize>(
             shared_storage,
             output_frags,
@@ -1927,15 +2021,26 @@ struct AttentionBackwardKernel {
 
       typename Mma::FragmentC accum;
 
-      bool isFirst = key_start == 0;
       int col_id = col / MatmulGradQ::ThreadblockShape::kN;
       int num_cols = kSingleIterationGradQ
           ? 1
           : ceil_div(p.head_dim, MatmulGradQ::ThreadblockShape::kN);
       int storage_id = (col_id + query_start / kBlockSizeI * num_cols);
-      AccumTileGmem gmem_tile{
-          p.workspace_gq + storage_id * AccumTileGmem::kElementsStored};
-      if (isFirst || !kNeedsAccumGradQ) {
+
+      if (p.num_splits_key_device() > 1) {
+        AtomicLock::acquire(
+            &p.workspace_gq[storage_id].lock,
+            p.split_key_device() + 1,
+            thread_id);
+        // Make sure we can see other block's output
+        __threadfence();
+      }
+
+      AccumTileGmem gmem_tile{&p.workspace_gq[storage_id].buffer[0]};
+      if (!kNeedsAccumGradQ ||
+          (p.num_splits_key_device() == 1 && key_start == 0)) {
+        // if we know we are the first to access it, we know it's only zeros.
+        // Avoids a load from gmem (and gmem init as well)
         accum.clear();
       } else {
         gmem_tile.load(accum, thread_id);
@@ -1955,24 +2060,51 @@ struct AttentionBackwardKernel {
         prologueGradQ(col + MatmulGradQ::ThreadblockShape::kN);
       }
 
+      bool isLast = [&]() {
+        int32_t next_key = key_start + p.num_splits_key_device() * kBlockSizeJ;
+        if (p.num_keys <= next_key) {
+          return true;
+        }
+        if (query_start < getSmallestQueryForKey(p, next_key)) {
+          return true;
+        }
+        return false;
+      }();
       // Output results
-      int32_t next_query, next_key;
-      incrIteration(p, p.num_queries, key_start, next_query, next_key);
-      bool isLast = next_query > query_start || next_key >= p.num_keys;
+      if (p.num_splits_key_device() > 1) {
+        int32_t numAddsSoFar = -1;
+        if (isLast && thread_id == 0) {
+          numAddsSoFar = atomicAdd(&p.workspace_gq[storage_id].counter, 1) +
+              1; // `atomicAdd` returns the old value
+        }
+        isLast = __syncthreads_or(
+            numAddsSoFar == getNumParallelBlocksForQuery(p, query_start));
+        assert(numAddsSoFar <= getNumParallelBlocksForQuery(p, query_start));
+      }
       if (kNeedsAccumGradQ && !isLast) {
         gmem_tile.store(accum, thread_id);
+        if (p.num_splits_key_device() > 1) {
+          // Make sure everyone wrote before we release the lock
+          __threadfence();
+          __syncthreads();
+          AtomicLock::release(&p.workspace_gq[storage_id].lock, thread_id);
+        }
       } else {
+        // NOTE: We're not releasing the lock because no one is expected
+        // to come after us (we're the last one to write)
         typename MatmulGradQ::OutputTileIterator output_it(
             typename MatmulGradQ::OutputTileIterator::Params{p.gQ_strideM()},
             p.grad_query_ptr + query_start * p.gQ_strideM() + col,
             {problem_size.m(), problem_size.n()},
             thread_id);
+        bool storage_contains_zeros = kNeedsAccumGradQ || key_start == 0 ||
+            (p.num_splits_key_device() > 1);
         accumulateInGmem<MatmulGradQ>(
             isLastColumn ? shared_storage.gradQ_epilogue_lastIter()
                          : shared_storage.gradQ_epilogue(),
             accum,
             output_it,
-            isFirst || kNeedsAccumGradQ,
+            storage_contains_zeros,
             warp_id,
             lane_id);
       }
@@ -2088,18 +2220,54 @@ struct AttentionBackwardKernel {
     }
   }
 
+  static CUTLASS_DEVICE int32_t getQueryStartShift(Params const& p) {
+    if (p.custom_mask_type == NoCustomMask && p.num_splits_key_device() > 1) {
+      return (p.split_key_device() * kBlockSizeI) % getQueryEnd(p);
+    }
+    return 0;
+  }
+
+  // Iteration order logic
   static CUTLASS_DEVICE int32_t
   getQueryStart(Params const& p, int32_t key_start) {
+    return getSmallestQueryForKey(p, key_start) + getQueryStartShift(p);
+  };
+  static CUTLASS_DEVICE int32_t getQueryEnd(Params const& p) {
+    return align_up(p.num_queries, kBlockSizeI);
+  };
+
+  static CUTLASS_DEVICE int32_t
+  getSmallestQueryForKey(Params const& p, int32_t key_start) {
     if (p.custom_mask_type == CausalFromTopLeft) {
       return (key_start / kBlockSizeI) * kBlockSizeI;
     } else if (p.custom_mask_type == CausalFromBottomRight) {
       int first_query =
-          cutlass::fast_max(0, key_start - p.num_keys - p.num_queries);
+          cutlass::fast_max(0, key_start - p.num_keys + p.num_queries);
       return (first_query / kBlockSizeI) * kBlockSizeI;
     }
     return 0;
   };
 
+  // Returns how many kernel blocks will write to a given block in `grad_query`
+  // This is usually equal to the number of key splits, but can be different
+  // for instance in the causal case, or varying seqlen
+  static CUTLASS_DEVICE int32_t
+  getNumParallelBlocksForQuery(Params const& p, int32_t query_start) {
+    int16_t num_key_blocks = ceil_div(p.num_keys, kBlockSizeJ);
+    if (p.custom_mask_type == CausalFromTopLeft) {
+      int32_t last_key_for_block = query_start + kBlockSizeI - 1;
+      last_key_for_block = cutlass::fast_min(last_key_for_block, p.num_keys);
+      num_key_blocks = ceil_div(last_key_for_block, kBlockSizeJ);
+    } else if (p.custom_mask_type == CausalFromBottomRight) {
+      int32_t last_key_for_block =
+          query_start + (kBlockSizeI - 1) + (1 + p.num_keys - p.num_queries);
+      last_key_for_block = cutlass::fast_min(last_key_for_block, p.num_keys);
+      num_key_blocks = ceil_div(last_key_for_block, kBlockSizeJ);
+    }
+    return cutlass::fast_min(p.num_splits_key_device(), num_key_blocks);
+  };
+
+  // Returns the next block to process
   static CUTLASS_DEVICE void incrIteration(
       Params const& p,
       int32_t query_start,
@@ -2108,10 +2276,26 @@ struct AttentionBackwardKernel {
       int32_t& next_key) {
     next_query = query_start + kBlockSizeI;
     next_key = key_start;
-    if (next_query >= p.num_queries) {
-      next_key = key_start + kBlockSizeJ;
-      next_query = getQueryStart(p, next_key);
+    auto query_shift = getQueryStartShift(p);
+    // Wrap around
+    if (query_shift) {
+      if (next_query >= p.num_queries) {
+        next_query = getSmallestQueryForKey(p, key_start);
+        return;
+      } else if (query_start < query_shift && query_shift <= next_query) {
+        // jump to next key
+      } else {
+        return;
+      }
+    } else {
+      if (next_query < p.num_queries) {
+        return;
+      }
+      // jump to next key
     }
+    // Next key
+    next_key = key_start + p.num_splits_key_device() * kBlockSizeJ;
+    next_query = getQueryStart(p, next_key);
   }
 
   template <bool kForceReloadK>

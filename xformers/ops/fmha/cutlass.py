@@ -352,6 +352,7 @@ class BwOp(AttentionBwOpBase):
             rng_offset=rng_offset,
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
+            num_splits_key=-1,  # Let C++ determine it
         )
 
         # c++/CUDA implementation returns an uninitialized tensor if bias doesn't

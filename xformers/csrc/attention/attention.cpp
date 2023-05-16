@@ -28,7 +28,7 @@ TORCH_LIBRARY_FRAGMENT(xformers, m) {
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_backward_small_k(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor logsumexp, Tensor output, Tensor? attn_bias, float p, int rng_seed, int rng_offset) -> (Tensor, Tensor, Tensor)"));
   m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::efficient_attention_backward_cutlass(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor? bias, Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, int max_seqlen_q, int max_seqlen_k, Tensor logsumexp, Tensor output, float dropout_p, int rng_seed, int rng_offset, int custom_mask_type, float? scale) -> (Tensor, Tensor, Tensor, Tensor)"));
+      "xformers::efficient_attention_backward_cutlass(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor? bias, Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, int max_seqlen_q, int max_seqlen_k, Tensor logsumexp, Tensor output, float dropout_p, int rng_seed, int rng_offset, int custom_mask_type, float? scale, int num_splits_key) -> (Tensor, Tensor, Tensor, Tensor)"));
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::_temp_dropout(Tensor out, float p) -> Tensor"));
   m.def(TORCH_SELECTIVE_SCHEMA(
