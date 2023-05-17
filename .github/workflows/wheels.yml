@@ -25,35 +25,47 @@ jobs:
           - "3.8"
           - "3.9"
           - "3.10"
-        config:
-          - torch_version: "2.0.0"
-            cuda_short_version: "118"
-            publish: true
-
-          - torch_version: "1.13.1"
-            cuda_short_version: "117"
-            publish: false
-
-          - torch_version: "1.12.1"
-            cuda_short_version: "116"
-            publish: false
+          - "3.11"
+        torch_version:
+          - "2.0.1"
+          - "1.13.1"
+          - "1.12.1"
+        exclude:
+          # py311 only works with PyTorch >= 2.0
+          - python: "3.11"
+            torch_version: "1.12.1"
+          - python: "3.11"
+            torch_version: "1.13.1"
         include:
           - sdist: false
-          # publish source distribution only from this runner
+            enabled: true
+            publish: false
+            cuda_short_version: "CUDA_VERSION_NOT_SET"
+          # Publish only for latest pytorch
+          - torch_version: "2.0.1"
+            publish: true
+          # Publish source distribution only from this runner
           - os: ubuntu-22.04
             python: "3.10"
-            torch_version: "2.0.0"
+            publish: true
             sdist: true
+          # Set corresponding CUDA version
+          - torch_version: "2.0.1"
+            cuda_short_version: "118"
+          - torch_version: "1.13.1"
+            cuda_short_version: "117"
+          - torch_version: "1.12.1"
+            cuda_short_version: "116"
 
     uses: ./.github/workflows/wheels_reusable.yml
     if: github.repository == 'facebookresearch/xformers' || github.event_name == 'pull_request'
     with:
       os: ${{ matrix.os }}
       python: ${{ matrix.python }}
-      torch_version: ${{ matrix.config.torch_version }}
-      cuda_short_version: ${{ matrix.config.cuda_short_version }}
-      publish: ${{ matrix.config.publish == true && github.event_name != 'pull_request'}}
-      sdist: ${{ matrix.config.sdist == true }}
+      torch_version: ${{ matrix.torch_version }}
+      cuda_short_version: ${{ matrix.cuda_short_version }}
+      publish: ${{ matrix.publish == true && github.event_name != 'pull_request'}}
+      sdist: ${{ matrix.sdist == true }}
       twine_username: __token__
     secrets:
       twine_password: ${{ secrets.PYPI_TOKEN }}

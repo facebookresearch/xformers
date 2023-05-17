@@ -41,7 +41,7 @@ jobs:
             cuda_dep_runtime: ">=11.7,<11.9"
             conda_builder_tag: cuda116
 
-          - torch_version: "2.0.0"
+          - torch_version: "2.0.1"
             torch_channel: "pytorch"
             cuda_version: "11.8.0"
             cuda_dep_runtime: ">=11.7,<11.9"
@@ -126,7 +126,7 @@ jobs:
         run: |
           # This might fail, let's retry it multiple times
           for i in {1..20}
-          do 
+          do
               [[ $i != 1 ]] && sleep 15
               echo "Attempt $i"
               anaconda upload --user xformers --label ${XFORMERS_CONDA_TAG} packages/* && break
