@@ -46,6 +46,8 @@ mem_efficient_attention_backward_cutlass(
     int64_t rng_offset, // offset into random number sequence
     int64_t custom_mask_type,
     const c10::optional<double> scale,
+    // how many parallel blocks across the keys dimension. Use `-1` to
+    // determine automatically
     int64_t num_splits_key) {
 #ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD
   TORCH_CHECK(
@@ -328,6 +330,12 @@ mem_efficient_attention_backward_cutlass(
       }
     }
     if (!Kernel::kEnableSplitKeys || p.num_splits_key < 1) {
+      p.num_splits_key = 1;
+    }
+    if (at::globalContext().deterministicAlgorithms()) {
+      XFORMERS_CHECK(
+          num_splits_key <= 1,
+          "Using `num_splits_key > 1` makes the algorithm non-deterministic, and pytorch's deterministic mode is enabled");
       p.num_splits_key = 1;
     }
     int64_t size_bytes = p.workspace_size();
