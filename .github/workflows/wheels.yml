@@ -47,7 +47,7 @@ jobs:
           # Publish source distribution only from this runner
           - os: ubuntu-22.04
             python: "3.10"
-            publish: true
+            torch_version: "2.0.1"
             sdist: true
           # Set corresponding CUDA version
           - torch_version: "2.0.1"
