@@ -4,13 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## TBD
+## [0.0.21] - TBD
+### Fixed
+### Added
+
+## [0.0.20] - 2023-05-23
 ### Improved
 - fMHA/cutlass (backward): Massive performance improvements when `batch_size * num_heads` is low (10x+)
 - fMHA/cutlass: Further performance improvements for both the forward & backward kernels
 - fMHA (backward): Now dispatching to cutlass when `embed_dim>64`
 - fMHA: Updated Flash-Attention to `v1.0.5`
-### Fixed
 ### Added
 - fMHA now runs on H100 (support is experimental)
 
