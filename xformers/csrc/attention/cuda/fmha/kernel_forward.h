@@ -154,6 +154,7 @@ struct AttentionKernel {
     int32_t head_dim_value;
     int32_t num_queries;
     int32_t num_keys;
+    int32_t num_keys_absolute;
 
     uint8_t custom_mask_type = NoCustomMask;
 
@@ -273,6 +274,9 @@ struct AttentionKernel {
       if (custom_mask_type == CausalFromBottomRight) {
         causal_diagonal_offset += num_keys - num_queries;
       }
+      // We use num_keys_absolute to index into the rng_state
+      // We need this index to match between forward and backwards
+      num_keys_absolute = num_keys;
       if (custom_mask_type == CausalFromTopLeft ||
           custom_mask_type == CausalFromBottomRight) {
         // the bottom row of the current block is query_start + kQueriesPerBlock
@@ -900,7 +904,7 @@ struct AttentionKernel {
           curandStatePhilox4_32_10_t curand_state = curand_state_init;
           skipahead(
               static_cast<unsigned long long>(
-                  (query_start + thread_i) * p.num_keys +
+                  (query_start + thread_i) * p.num_keys_absolute +
                   (iter_key_start + thread_start_j)),
               &curand_state);
           const float dropout_scale = 1.0 / (1.0 - p.dropout_prob);
