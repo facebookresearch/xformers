@@ -847,21 +847,20 @@ def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
 
 
 @cuda_only
+@pytest.mark.parametrize("attn_bias", [None, fmha.attn_bias.LowerTriangularMask()])
 @pytest.mark.parametrize("seed", [42, 124])
 @pytest.mark.parametrize("p", [0.3, 0.7])
 @pytest.mark.parametrize("k_len", [32])
 @pytest.mark.parametrize("batch_size", [1, 2])
-@pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
+@pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 65])
 @pytest.mark.parametrize("q_len", [2, 33])
 @pytest.mark.parametrize("op", ALL_FW_OPS, ids=list(map(lambda t: t.NAME, ALL_FW_OPS)))
-def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed):
+def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
     device = "cuda"
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
     value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
-
-    attn_bias = None
 
     inputs_for_support_check = fmha.Inputs(query, key, value, attn_bias, p, None)
     if not op.supports(inputs_for_support_check):
