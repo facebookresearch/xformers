@@ -24,6 +24,8 @@ If your current machine does not expose enough RAM and the example reports an `O
 
 This is an hommage to [minGPT](https://github.com/karpathy/minGPT), in particular the training over Shakespeare dialogs of an autoregressive model. The default configuration is that of a standard Transformer, but you can change parts as you see fit. You can get to reasonable results within an hour or so on a single GPU.
 
+An additional implementation in ``chargpt_components.py`` directly uses the underlying xFormers components without using the xFormers transformer.
+
 ## Vision models
 
 You can find a couple of very small examples, of models being trained on the CIFAR10 dataset. They can be modified to training on something like ImageNet with minimal changes, but running them out of the box requires a bit more work in that case.

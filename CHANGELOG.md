@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.21] - TBD
 ### Fixed
 ### Added
+- An additional minGPT-like example using xformers components directly
 
 ## [0.0.20] - 2023-05-23
 ### Improved
