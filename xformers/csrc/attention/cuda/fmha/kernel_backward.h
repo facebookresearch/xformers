@@ -2206,6 +2206,7 @@ struct AttentionBackwardKernel {
               isFirstQuery || kNeedsAccumGradK,
               warp_id,
               lane_id);
+          __syncthreads();
         }
       }
     }
