@@ -67,6 +67,10 @@ class LowerTriangularMask(AttentionBias):
     initial key than Q is from the initial query.
     """
 
+    def __init__(self, *tensor_args, **tensor_kwargs) -> None:
+        # NOTE: Unused arguments, we keep them for backward compatibility
+        super().__init__()
+
     def materialize(
         self,
         shape: Tuple[int, ...],
