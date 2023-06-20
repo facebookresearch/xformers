@@ -9,7 +9,7 @@ from typing import Any, List, Optional, Set, Tuple
 
 import torch
 
-from ..common import get_operator, register_operator
+from ..common import _get_storage_base, get_operator, register_operator
 from .attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
@@ -336,8 +336,8 @@ class BwOp(AttentionBwOpBase):
         if (
             inp.query.shape[0] == inp.key.shape[0]
             and inp.query.shape[2] == inp.value.shape[2]
-            and inp.query.storage().data_ptr() == inp.key.storage().data_ptr()
-            and inp.query.storage().data_ptr() == inp.value.storage().data_ptr()
+            and _get_storage_base(inp.query) == _get_storage_base(inp.key)
+            and _get_storage_base(inp.query) == _get_storage_base(inp.value)
         ):
             # Create one big contiguous chunk
             # This is because q, k and v usually come from a single

@@ -7,6 +7,8 @@ from typing import List, Optional, Sequence, Tuple, Union
 
 import torch
 
+from .common import _get_storage_base
+
 
 def get_stack_strides(
     tensors: Sequence[torch.Tensor], dim: int
@@ -43,9 +45,9 @@ def get_stack_strides(
         ):
             return None
         if storage_data_ptr is None:
-            storage_data_ptr = tensors[0].storage().data_ptr()
+            storage_data_ptr = _get_storage_base(tensors[0])
         # Actual storage check
-        if x.storage().data_ptr() != storage_data_ptr:
+        if _get_storage_base(x) != storage_data_ptr:
             return None
     return tuple(final_stride)
 

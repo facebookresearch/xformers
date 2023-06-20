@@ -9,6 +9,7 @@ import pytest
 import torch
 
 import xformers.ops
+from xformers.ops.common import _get_storage_base
 
 
 @pytest.mark.parametrize("contiguous", [True, False])
@@ -86,7 +87,7 @@ def test_unbind_get_stack_strides(dim: int, contiguous: bool):
                 == reference.stride()
             )
             assert torch.allclose(stacked, torch.stack(tensors2[s], cat_dim))
-            assert stacked.storage().data_ptr() == tensors[0].storage().data_ptr()
+            assert _get_storage_base(stacked) == _get_storage_base(tensors[0])
 
         # tensors
         test_slice(slice(None))
