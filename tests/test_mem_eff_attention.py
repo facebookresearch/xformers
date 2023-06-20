@@ -9,7 +9,7 @@ from typing import List, Optional, Sequence, Tuple, Type, TypeVar
 
 import pytest
 import torch
-from scipy.stats import binom_test
+from scipy.stats import binomtest
 from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
@@ -896,7 +896,7 @@ def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
         mask = _get_drop_mask(op, batch_size, q_len, kv_len, p, device)
         masks.append(mask.clone().cpu())
     masks = torch.stack(masks, dim=0)
-    p_value = binom_test(masks.sum(), masks.numel(), p=keep_prob)
+    p_value = binomtest(int(masks.sum()), masks.numel(), p=keep_prob).pvalue
     assert p_value > p_val_tol, p_value
     masks = masks.sum(0).flatten()
     p_values = _vec_binom_test(masks, num_trials, p=keep_prob)
