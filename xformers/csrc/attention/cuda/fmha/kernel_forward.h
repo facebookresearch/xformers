@@ -309,6 +309,7 @@ struct AttentionKernel {
 
       // Make sure the compiler knows these variables are the same on all
       // the threads of the warp.
+      // Only worth doing if they could have been modified above.
       query_ptr = warp_uniform(query_ptr);
       key_ptr = warp_uniform(key_ptr);
       value_ptr = warp_uniform(value_ptr);
@@ -321,8 +322,6 @@ struct AttentionKernel {
       num_queries = warp_uniform(num_queries);
       num_keys = warp_uniform(num_keys);
       num_heads = warp_uniform(num_heads);
-      head_dim = warp_uniform(head_dim);
-      head_dim_value = warp_uniform(head_dim_value);
       o_strideM = warp_uniform(o_strideM);
       custom_mask_type = warp_uniform(custom_mask_type);
       return true;
