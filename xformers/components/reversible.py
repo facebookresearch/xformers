@@ -9,6 +9,7 @@ from typing import List
 import torch
 import torch.nn as nn
 from torch.autograd.function import Function
+from torch.cuda.amp import custom_bwd, custom_fwd
 from torch.utils.checkpoint import get_device_states, set_device_states
 
 from xformers.components import RequiresWrappedInputs
@@ -71,6 +72,7 @@ class ReversibleBlock(nn.Module):
         self.g = Deterministic(g)
         self.split_dim = split_dim
 
+    @custom_fwd
     def forward(self, x: torch.Tensor, f_args={}, g_args={}):
         x1, x2 = torch.chunk(x, 2, dim=-1)
         y1, y2 = None, None
@@ -81,6 +83,7 @@ class ReversibleBlock(nn.Module):
 
         return torch.cat([y1, y2], dim=self.split_dim)
 
+    @custom_bwd
     def backward_pass(
         self, y: torch.Tensor, dy: torch.Tensor, f_args={}, g_args={}
     ):  # pragma: no cover  # this is covered, but called directly from C++
