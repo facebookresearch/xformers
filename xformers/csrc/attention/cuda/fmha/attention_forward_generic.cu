@@ -47,7 +47,6 @@ efficient_attention_forward_cutlass(
     bool compute_logsumexp,
     int64_t custom_mask_type,
     c10::optional<double> scale,
-    const c10::optional<at::Tensor>& causal_diagonal,
     const c10::optional<at::Tensor>& seqlen_k) {
 #ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
   TORCH_CHECK(
@@ -206,12 +205,6 @@ efficient_attention_forward_cutlass(
     p.num_keys = max_seqlen_k;
     p.num_batches = seqstart_q.has_value() ? seqstart_q->size(0) - 1 : B;
     p.custom_mask_type = custom_mask_type;
-    p.causal_diagonal_ptr = nullptr;
-    if (causal_diagonal.has_value()) {
-      CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(causal_diagonal.value());
-      TORCH_CHECK(causal_diagonal->scalar_type() == at::ScalarType::Int);
-      p.causal_diagonal_ptr = (int32_t*)causal_diagonal->data_ptr();
-    }
 
     p.seqlen_k_ptr = nullptr;
     if (seqlen_k.has_value()) {

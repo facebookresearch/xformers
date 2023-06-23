@@ -135,7 +135,6 @@ struct AttentionKernel {
     int32_t* seqstart_q_ptr = nullptr;
     int32_t* seqstart_k_ptr = nullptr;
 
-    int32_t* causal_diagonal_ptr = nullptr;
     int32_t* seqlen_k_ptr = nullptr;
     uint32_t causal_diagonal_offset = 0;
 
@@ -268,11 +267,8 @@ struct AttentionKernel {
       }
 
       // Custom masking
-      if (causal_diagonal_ptr) {
-        causal_diagonal_offset = causal_diagonal_ptr[batch_id];
-      }
       if (custom_mask_type == CausalFromBottomRight) {
-        causal_diagonal_offset += num_keys - num_queries;
+        causal_diagonal_offset = num_keys - num_queries;
       }
       // We use num_keys_absolute to index into the rng_state
       // We need this index to match between forward and backwards
@@ -598,9 +594,6 @@ struct AttentionKernel {
     XFORMERS_CHECK(
         p.num_heads <= 1 || p.v_strideH % kAlignmentV == 0,
         "value is not correctly aligned (strideH)");
-    XFORMERS_CHECK(
-        p.causal_diagonal_ptr == nullptr || p.custom_mask_type != NoCustomMask,
-        "`causal_diagonal_ptr` is only useful when `custom_mask_type` is causal");
     XFORMERS_CHECK(
         p.custom_mask_type < NumCustomMaskTypes,
         "invalid value for `custom_mask_type`");

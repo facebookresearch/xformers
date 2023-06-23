@@ -275,6 +275,11 @@ def _rand_seqlens(
     kv_len: int,
     more_keys_than_queries_per_block: bool,
 ) -> Tuple[Sequence[int], Sequence[int]]:
+    """
+    Generates lists of lengths of query blocks and corresponding key blocks.
+    The total number of queries will be bs * q_len and the
+    total number of keys will be bs * kv_len.
+    """
     if more_keys_than_queries_per_block:
         assert kv_len >= q_len
     q_len *= bs
@@ -302,18 +307,50 @@ def _rand_seqlens(
     return seqlens_q, seqlens_k
 
 
+def _rand_partition(r: random.Random, total: int, n: int) -> List[int]:
+    # returns list of n nonnegative integers summing to total
+    idx = {0, total}
+    while len(idx) < n + 1:
+        idx.add(r.randint(1, total - 1))
+    s = sorted(idx)
+    return [e - b for b, e in zip(s[:-1], s[1:])]
+
+
+def _rand_maxed_partition(
+    r: random.Random, total: int, n: int, mx: int, positive: bool = True
+) -> List[int]:
+    # returns list of n nonnegative integers less than mx summing to total
+    # NB: This is unfortunately biased towards evenly-split bins.
+    # If `positive`, outputs are positive
+    if positive:
+        total -= n
+        mx -= 1
+    idxs = r.sample(range(n * mx), total)
+    y = torch.zeros(n, mx, dtype=torch.int32)
+    y.flatten()[idxs] = 1
+    z = y.sum(1)
+    if positive:
+        z += 1
+    return z.tolist()
+
+
 def _rand_seqlens_padded_k(
     r: random.Random, bs: int, q_len: int, kv_len: int
 ) -> Tuple[Sequence[int], Sequence[int]]:
-    # we need qk_seqlens to be of len bsz. k_seqlens must be <= kv_len
-    # no constraints on q_seqlens, but they must still sum to total_len
-    k_seqlens = [r.randint(1, kv_len - 1) for _ in range(bs)]
-    q_len *= bs
-    q_idx = {0, q_len}
-    while len(q_idx) < bs + 1:
-        q_idx.add(r.randint(1, q_len - 1))
-    s = sorted(q_idx)
-    q_seqlens = [e - b for b, e in zip(s[:-1], s[1:])]
+    # This is for BlockDiagonalCausalWithOffsetPaddedKeysMask.
+    # we need q_seqlens and k_seqlens to be of len bsz.
+    # For each "batch element" there must be more keys than queries
+    # because this bias type is "bottom right" and so any extra queries
+    # will attend to nothing and have undefined result.
+    # In addition every element of k_seqlens must be <= kv_len
+    if q_len > kv_len:
+        pytest.skip("q too long")
+    if q_len == kv_len:
+        # all key slots are needed so we cannot have padding
+        q_seqlens = k_seqlens = [kv_len] * bs
+    else:
+        q_seqlens = _rand_maxed_partition(r, q_len * bs, bs, kv_len)
+        k_seqlens = [r.randint(i, kv_len) for i in q_seqlens]
     return q_seqlens, k_seqlens
 
 
@@ -421,9 +458,6 @@ def create_attn_bias(
                 q_seqlen=q,
                 kv_padding=kv_len,
                 kv_seqlen=k,
-                causal_diagonal=torch.tensor(
-                    [r.randint(0, kk) for kk in k], dtype=torch.int32
-                ),
             )
         )
         return g_block_diag
@@ -581,11 +615,14 @@ def test_forward(
     out = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op
     )
-    assert not out.isnan().any(), "Output has NaNs"
+    assert not out.isnan().any(), ("Output has NaNs", attn_bias)
     out2 = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op
     )
-    assert torch.allclose(out, out2, atol=0.0, rtol=0.0), "Non-deterministic behavior"
+    assert torch.allclose(out, out2, atol=0.0, rtol=0.0), (
+        "Non-deterministic behavior",
+        attn_bias,
+    )
 
     ref = ref_attention(query, key, value, attn_bias)
     assert out.shape == ref.shape, out.shape
@@ -1532,16 +1569,15 @@ def test_attn_bias_padded() -> None:
         torch.randn((1, other, n_heads, d)).cuda().half(),
     ]
     q_cat = torch.cat([x.view(1, -1, n_heads, d) for x in q], dim=1)
-    causal_diagonal = torch.tensor(
-        [0] + [i - 1 for i in k_seqlen[1:]], dtype=torch.int32
-    ).cuda()
+    # causal_diagonal = torch.tensor(
+    #     [0] + [i - 1 for i in k_seqlen[1:]], dtype=torch.int32
+    # ).cuda()
 
     q_seqlen = [n_q_first] + [1] * other
 
     attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
         q_seqlen=q_seqlen,
         kv_seqlen=k_seqlen,
-        causal_diagonal=causal_diagonal,
         kv_padding=padding,
     )
 
@@ -1551,14 +1587,12 @@ def test_attn_bias_padded() -> None:
     scores = (q_cat.transpose(1, 2) @ k.transpose(1, 2).transpose(2, 3)).float()
     assert not scores.isnan().any()
     mask = torch.full_like(scores, -float("inf"))
-    for i, (slen, spos, qlen) in enumerate(
-        zip(k_seqlen, causal_diagonal.tolist(), q_seqlen)
-    ):
+    for i, (slen, qlen) in enumerate(zip(k_seqlen, q_seqlen)):
         kseq_start = i * padding
         qstart = sum(q_seqlen[:i])
         mask[:, :, qstart : qstart + qlen, kseq_start : kseq_start + slen] = torch.triu(
             mask[:, :, qstart : qstart + qlen, kseq_start : kseq_start + slen].float(),
-            diagonal=spos + 1,
+            diagonal=1 + slen - qlen,
         ).float()
 
     scores += mask

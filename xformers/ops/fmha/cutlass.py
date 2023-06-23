@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from enum import Enum
 from typing import Any, List, Mapping, Optional, Set, Tuple, Union
 
 import torch
@@ -60,11 +61,6 @@ def _get_seqlen_info(
     if isinstance(
         attn_bias, (BlockDiagonalMask, BlockDiagonalCausalWithOffsetPaddedKeysMask)
     ):
-        if (
-            isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
-            and attn_bias.causal_diagonal is not None
-        ):
-            attn_bias.causal_diagonal = attn_bias.causal_diagonal.to(inp.query.device)
         attn_bias.k_seqinfo.to(inp.query.device)
         attn_bias.q_seqinfo.to(inp.query.device)
         seqstart_k = attn_bias.k_seqinfo.seqstart
@@ -118,19 +114,34 @@ Example: use `attn_bias = torch.zeros([1, 1, 5, 8])[:,:,:,:5]` instead of `torch
             )
 
 
+class _CustomMaskType(int, Enum):
+    """
+    (Matches CustomMaskType in C++.)
+    """
+
+    NoCustomMask = 0
+    CausalFromTopLeft = 1
+    CausalFromBottomRight = 2
+
+
 def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int:
     if isinstance(
         bias,
         (
             LowerTriangularMask,
             BlockDiagonalCausalMask,
+        ),
+    ):
+        return int(_CustomMaskType.CausalFromTopLeft)
+    if isinstance(
+        bias,
+        (
+            attn_bias.BlockDiagonalCausalFromBottomRightMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
         ),
     ):
-        return 1
-    if isinstance(bias, attn_bias.BlockDiagonalCausalFromBottomRightMask):
-        return 2
-    return 0
+        return int(_CustomMaskType.CausalFromBottomRight)
+    return int(_CustomMaskType.NoCustomMask)
 
 
 @register_operator
@@ -184,9 +195,6 @@ class FwOp(AttentionFwOpBase):
             compute_logsumexp=needs_gradient,
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
-            causal_diagonal=inp.attn_bias.causal_diagonal
-            if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
-            else None,
             seqlen_k=inp.attn_bias.k_seqinfo.seqlen
             if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
             else None,

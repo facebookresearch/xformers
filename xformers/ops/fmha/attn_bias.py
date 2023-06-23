@@ -6,7 +6,7 @@
 
 import math
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Iterable, List, Optional, Sequence, Tuple, Union
 
 import torch
 
@@ -540,19 +540,17 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
 
     A query Q in block i cannot attend to a key which is not in block i,
     nor one which is not in use (i.e. in the padded area),
-    nor one whose distance from the initial key in block i
-    exceeds the distance of Q from the initial query in block i by
-    more than causal_diagonal[i] (which defaults to 0).
+    nor one which is nearer to the final key in block i
+    than Q is to the final query in block i.
     """
 
     q_seqinfo: _SeqLenInfo
     k_seqinfo: _PaddedSeqLenInfo
-    causal_diagonal: Optional[torch.Tensor] = None
+    causal_diagonal: Any = None  # unused. Exists for BC only.
 
     def _create_block_mask(
         self,
         shape: Tuple[int, ...],
-        offset: int = 0,
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
@@ -563,7 +561,8 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
             fill_value=float("-inf"),
             device=device,
         )
-        return torch.triu(tensor, diagonal=1 + offset).to(dtype)  # type: ignore
+        num_queries, num_keys = shape[-2:]
+        return torch.triu(tensor, diagonal=1 + num_keys - num_queries).to(dtype)  # type: ignore
 
     def materialize(
         self,
@@ -572,8 +571,10 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
         """Materialize the attention bias - for debugging & testing"""
-        assert shape[-1] == self.k_seqinfo.seqstart_py[-1]
-        assert shape[-2] == self.q_seqinfo.seqstart_py[-1]
+        if shape[-1] != self.k_seqinfo.seqstart_py[-1]:
+            raise ValueError("k shapes wrong")
+        if shape[-2] != self.q_seqinfo.seqstart_py[-1]:
+            raise ValueError("q shapes wrong")
         mask = torch.empty(shape[-2:], dtype=dtype, device=device)
         mask.fill_(-math.inf)
         for i, ((q_start, q_end), (k_start, k_end)) in enumerate(
@@ -584,9 +585,6 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         ):
             mask[q_start:q_end, k_start:k_end] = self._create_block_mask(
                 (q_end - q_start, k_end - k_start),
-                offset=0
-                if self.causal_diagonal is None
-                else int(self.causal_diagonal[i].item()),
                 dtype=dtype,
                 device=device,
             )
@@ -600,7 +598,7 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         q_seqlen: Sequence[int],
         kv_padding: int,
         kv_seqlen: Sequence[int],
-        causal_diagonal: Optional[torch.Tensor] = None,
+        causal_diagonal: Any = None,
     ) -> "BlockDiagonalCausalWithOffsetPaddedKeysMask":
         """Creates a :attr:`BlockDiagonalCausalWithOffsetPaddedKeysMask` from a list of tensors lengths for query and key/value.
 
@@ -608,7 +606,7 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
             q_seqlen (Sequence[int]): List or tensor of sequence lengths for query tensors
             kv_padding (int): Padding for k/v - also an upperbound on each individual key length
             kv_seqlen (Sequence[int]): List or tensor of sequence lengths for key/value.
-            causal_diagonal (torch.Tensor, optional): tensor of sequence positions for causal masking
+            causal_diagonal: unused, for BC only
         Returns:
             BlockDiagonalCausalWithOffsetPaddedKeysMask
         """
@@ -618,6 +616,4 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         )
         q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
         k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(kv_seqlen, kv_padding)
-        return cls(
-            q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo, causal_diagonal=causal_diagonal
-        )
+        return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo)
