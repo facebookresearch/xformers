@@ -231,6 +231,7 @@
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
 
+<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
@@ -287,11 +288,6 @@
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
         <span class="n">attn_bias</span><span class="p">,</span> <span class="p">(</span><span class="n">BlockDiagonalMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">)</span>
     <span class="p">):</span>
-        <span class="k">if</span> <span class="p">(</span>
-            <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">)</span>
-            <span class="ow">and</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">causal_diagonal</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="p">):</span>
-            <span class="n">attn_bias</span><span class="o">.</span><span class="n">causal_diagonal</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">causal_diagonal</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">seqstart_k</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart</span>
@@ -345,19 +341,34 @@
             <span class="p">)</span>
 
 
+<span class="k">class</span> <span class="nc">_CustomMaskType</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    (Matches CustomMaskType in C++.)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">NoCustomMask</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">CausalFromTopLeft</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">CausalFromBottomRight</span> <span class="o">=</span> <span class="mi">2</span>
+
+
 <span class="k">def</span> <span class="nf">_custom_mask_type</span><span class="p">(</span><span class="n">bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
         <span class="n">bias</span><span class="p">,</span>
         <span class="p">(</span>
             <span class="n">LowerTriangularMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">_CustomMaskType</span><span class="o">.</span><span class="n">CausalFromTopLeft</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+        <span class="n">bias</span><span class="p">,</span>
+        <span class="p">(</span>
+            <span class="n">attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
         <span class="p">),</span>
     <span class="p">):</span>
-        <span class="k">return</span> <span class="mi">1</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bias</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">):</span>
-        <span class="k">return</span> <span class="mi">2</span>
-    <span class="k">return</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">_CustomMaskType</span><span class="o">.</span><span class="n">CausalFromBottomRight</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">_CustomMaskType</span><span class="o">.</span><span class="n">NoCustomMask</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="FwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.cutlass.FwOp">[docs]</a><span class="nd">@register_operator</span>
@@ -411,9 +422,6 @@
             <span class="n">compute_logsumexp</span><span class="o">=</span><span class="n">needs_gradient</span><span class="p">,</span>
             <span class="n">custom_mask_type</span><span class="o">=</span><span class="n">_custom_mask_type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
             <span class="n">scale</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">scale</span><span class="p">,</span>
-            <span class="n">causal_diagonal</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">causal_diagonal</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">)</span>
-            <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">seqlen_k</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqlen</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">)</span>
             <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
