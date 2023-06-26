@@ -101,6 +101,8 @@ install_dep: &install_dep
         echo "Ninja version $(ninja --version)"
 
         conda install pytorch=1.13 torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia -q
+
+        $CONDA_PYTHON -m pip install cmake
         $CONDA_PYTHON -m pip install -r requirements-benchmark.txt --progress-bar off
 
         # Mark install as complete

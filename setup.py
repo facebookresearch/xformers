@@ -123,7 +123,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     for arch in archs_list.replace(" ", ";").split(";"):
         assert len(arch) >= 3, f"Invalid sm version: {arch}"
 
-        arch_arr = arch.split('.')
+        arch_arr = arch.split(".")
         num = 10 * int(arch_arr[0]) + int(arch_arr[1].partition("+")[0])
         # Need at least 7.5
         if num < 75:
