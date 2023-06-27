@@ -69,6 +69,21 @@ static CUTLASS_DEVICE float atomicMaxFloat(float* addr, float value) {
 }
 } // namespace
 
+// If ToBatchHookType_ is supplied other than this default (which is
+// never the case in the xformers library) then the user is
+// defining the logic which each block uses to find its data to work on,
+// with the advance_to_batch function with the following signature.
+// It should return false if there is no work to do for this block.
+// In general this will not work with saving for backward due to fixed layout
+// for logsumexp and incompatible rngs for dropout, so is likely only useful for
+// custom inference.
+struct DefaultToBatchHook {
+  template <typename Params>
+  CUTLASS_DEVICE static bool advance_to_batch(Params& p) {
+    return true;
+  }
+};
+
 template <
     // The datatype of Q/K/V
     typename scalar_t_,
@@ -83,7 +98,8 @@ template <
     // This is quite slower on V100 for some reason
     // Set to false if you know at compile-time you will never need dropout
     bool kSupportsDropout_ = true,
-    bool kSupportsBias_ = true>
+    bool kSupportsBias_ = true,
+    typename ToBatchHookType_ = DefaultToBatchHook>
 struct AttentionKernel {
   enum CustomMaskType {
     NoCustomMask = 0,
@@ -204,7 +220,15 @@ struct AttentionKernel {
 
       int64_t q_start, k_start;
       // Advance to current batch - in case of different sequence lengths
-      if (seqstart_q_ptr != nullptr) {
+      constexpr bool useToBatchHook_ =
+          !cutlass::platform::is_same<ToBatchHookType_, DefaultToBatchHook>::
+              value;
+      if (useToBatchHook_) {
+        // Call out to a custom implementation.
+        if (!ToBatchHookType_::advance_to_batch(*this)) {
+          return false;
+        }
+      } else if (seqstart_q_ptr != nullptr) {
         assert(seqstart_k_ptr != nullptr);
         seqstart_q_ptr += batch_id;
 
