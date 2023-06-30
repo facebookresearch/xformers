@@ -79,7 +79,10 @@ static CUTLASS_DEVICE float atomicMaxFloat(float* addr, float value) {
 // custom inference.
 struct DefaultToBatchHook {
   template <typename Params>
-  CUTLASS_DEVICE static bool advance_to_batch(Params& p) {
+  CUTLASS_DEVICE static bool advance_to_batch(
+      Params&,
+      int64_t& /* q_start */,
+      int64_t& /* k_start */) {
     return true;
   }
 };
@@ -218,14 +221,14 @@ struct AttentionKernel {
             head_id * num_queries * num_keys;
       }
 
-      int64_t q_start, k_start;
+      int64_t q_start = 0, k_start = 0;
       // Advance to current batch - in case of different sequence lengths
-      constexpr bool useToBatchHook_ =
+      constexpr bool kUseToBatchHook =
           !cutlass::platform::is_same<ToBatchHookType_, DefaultToBatchHook>::
               value;
-      if (useToBatchHook_) {
+      if (kUseToBatchHook) {
         // Call out to a custom implementation.
-        if (!ToBatchHookType_::advance_to_batch(*this)) {
+        if (!ToBatchHookType_::advance_to_batch(*this, q_start, k_start)) {
           return false;
         }
       } else if (seqstart_q_ptr != nullptr) {
