@@ -159,6 +159,11 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                             is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask
                         ):
                             Mq, Mkv = min(Mkv, Mq), max(Mkv, Mq) + 2
+                        elif (
+                            bias_type
+                            is fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask
+                        ):
+                            Mq, Mkv = min(Mkv, Mq), max(Mkv, Mq)
                         shape = (B, Mq, Mkv, H, K, Kv)
                     combination.append((op, device, dtype, bias_type, *shape))
                     ids.append(
@@ -344,7 +349,7 @@ def _rand_seqlens_padded_k(
     # will attend to nothing and have undefined result.
     # In addition every element of k_seqlens must be <= kv_len
     if q_len > kv_len:
-        pytest.skip("q too long")
+        raise ValueError("need more keys than values")
     if q_len == kv_len:
         # all key slots are needed so we cannot have padding
         q_seqlens = k_seqlens = [kv_len] * bs
