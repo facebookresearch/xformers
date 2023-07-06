@@ -779,6 +779,8 @@ struct AttentionKernel {
 
       if (kPreloadV) {
         prologueV(0);
+      } else {
+        MM1::Mma::drain_cp_asyncs();
       }
 
       typename MM0::Mma::Operator::IteratorC::TensorCoord
@@ -997,6 +999,7 @@ struct AttentionKernel {
         }
 
         if (!kKeepOutputInRF) {
+          MM1::Mma::drain_cp_asyncs();
           DISPATCH_BOOL(
               iter_key_start == 0, kIsFirst, ([&] {
                 DISPATCH_BOOL(
@@ -1103,6 +1106,7 @@ struct AttentionKernel {
           thread_id(),
           warp_id(),
           lane_id());
+      MM1::Mma::drain_cp_asyncs();
       epilogue(rescale, dest_iter, accum_o);
     }
 
