@@ -3,18 +3,24 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Optional
+
 import numpy as np
 import torch
 
 
 def assert_allclose(
-    out: torch.Tensor,
-    ref: torch.Tensor,
+    out: Optional[torch.Tensor],
+    ref: Optional[torch.Tensor],
     msg: str = "failed",
     atol: float = 1e-8,
     rtol: float = 1e-5,
 ) -> None:
+    assert out is not None, f"{msg}: output Tensor is None"
+    assert ref is not None, f"{msg}: reference Tensor is None"
     assert out.shape == ref.shape, f"Shape: {out.shape} (expected: {ref.shape})"
+    if out.numel() == 0:
+        return
     flatten_diff = ((out - ref).abs() - atol - ref.abs() * rtol).flatten()
     max_pos = flatten_diff.argmax()
     max_location = np.unravel_index(int(max_pos), out.shape)
