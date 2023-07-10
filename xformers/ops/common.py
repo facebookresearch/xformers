@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import inspect
 from typing import Any, Dict, List, Type, TypeVar
 
 import torch
@@ -63,3 +64,38 @@ if _GET_TENSOR_STORAGE is None:  # pre-2.0, `untyped_storage` didn't exist
 
 def _get_storage_base(x: torch.Tensor) -> int:
     return _GET_TENSOR_STORAGE(x).data_ptr()  # type: ignore
+
+
+def make_pytorch_cuda_operator(fn: ClsT) -> ClsT:
+    from .. import get_python_lib
+
+    def render_arg_type(annotation) -> str:
+        if annotation is torch.Tensor:
+            return "Tensor"
+        if annotation is bool:
+            return "bool"
+        if annotation is int:
+            return "int"
+        if annotation is List[int]:
+            return "int[]"
+        if annotation is List[torch.Tensor]:
+            return "Tensor[]"
+        assert False, f"Unable to parse annotation: `{annotation}`"
+
+    sign = inspect.signature(fn)  # type: ignore
+    arguments = [
+        f"{render_arg_type(arg.annotation)} {arg.name}"
+        for arg in sign.parameters.values()
+    ]
+    op_name = fn.__name__  # type: ignore
+    definition = f"{op_name}({', '.join(arguments)}) -> {render_arg_type(sign.return_annotation)}"
+
+    xformers_lib = get_python_lib()
+    xformers_lib.define(definition)
+    xformers_lib.impl(op_name, fn, "CUDA")
+    dispatcher_impl = getattr(getattr(torch.ops, xformers_lib.ns), op_name)
+
+    def wrapper(*args, **kwargs):
+        return dispatcher_impl(*args, **kwargs)
+
+    return wrapper  # type: ignore

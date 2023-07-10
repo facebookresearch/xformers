@@ -54,6 +54,11 @@ def _is_triton_available():
         return False
 
 
+@compute_once
+def get_python_lib():
+    return torch.library.Library("xformers_python", "DEF")
+
+
 if _is_functorch_available:
     try:
         from xformers.components.nvfuser import NVFusedBiasActivationDropout  # noqa
