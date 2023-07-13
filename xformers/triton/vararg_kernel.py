@@ -111,6 +111,19 @@ class _VisitorUnrollKernel(ast.NodeTransformer):
         return new_nodes
 
 
+# Hackfix to get access to get source-code for
+# `exec`-created functions - see https://stackoverflow.com/a/69668999
+_getlines_orig = None
+_FILENAME_TO_SRC: Dict[str, str] = {}
+
+
+def _monkey_patched_getlines(filename, module_globals=None):
+    if filename in _FILENAME_TO_SRC:
+        return _FILENAME_TO_SRC[filename]
+    else:
+        return _getlines_orig(filename, module_globals)  # type: ignore
+
+
 @functools.lru_cache(None)
 def unroll_varargs(kernel, N: int):
     """
@@ -119,6 +132,8 @@ def unroll_varargs(kernel, N: int):
     NOTE: Because it's quite costly to call `triton.jit`,
     we cache the returned value with `lru_cache`
     """
+    global _FILENAME_TO_SRC, _getlines_orig
+
     k = triton.JITFunction(kernel.fn)
     parsed = ast.parse(k.src)
     nodeVisitor = _VisitorUnrollKernel(N=N)
@@ -142,20 +157,12 @@ def unroll_varargs(kernel, N: int):
     exec(code, kernel.fn.__globals__, _locals)
     assert len(_locals) == 1, len(_locals)
     fn = next(iter(_locals.values()))
-
-    # Hackfix to get access to get source-code for
-    # `exec`-created functions - see https://stackoverflow.com/a/69668999
-    getlines = linecache.getlines
-
-    def monkey_patch(filename, module_globals=None):
-        if filename == fn_filename:
-            return new_src
-        else:
-            return getlines(filename, module_globals)
-
-    linecache.getlines = monkey_patch
+    # Patch `getlines` only the first time
+    if not _FILENAME_TO_SRC:
+        linecache.getlines = _monkey_patched_getlines
+        _getlines_orig = linecache.getlines
+    _FILENAME_TO_SRC[fn_filename] = new_src
 
     jitted_fn = triton.jit(fn)
     jitted_fn.src = new_src
-    linecache.getlines = getlines
     return jitted_fn
