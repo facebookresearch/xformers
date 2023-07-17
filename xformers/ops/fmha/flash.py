@@ -192,7 +192,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     CUDA_MINIMUM_COMPUTE_CAPABILITY = (7, 5)
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
-    SUPPORTED_MAX_K = 128
+    SUPPORTED_MAX_K = 256
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
         LowerTriangularMask,
@@ -307,7 +307,7 @@ class BwOp(AttentionBwOpBase):
             if device_capability < (7, 5):
                 reasons.append("requires a GPU with compute capability > 7.5")
             is_sm80_or_sm90 = device_capability in [(8, 0), (9, 0)]
-            if max(d.key.shape[-1], d.query.shape[-1]) > 64 and not is_sm80_or_sm90:
+            if max(d.key.shape[-1], d.query.shape[-1]) > 192 and not is_sm80_or_sm90:
                 reasons.append(
                     "requires a GPU with compute capability 8.0 (A100) or 9.0 (H100) for 'query.shape[-1] > 64'"
                 )
