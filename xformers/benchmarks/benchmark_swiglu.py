@@ -11,7 +11,7 @@ from typing import Any
 
 import torch
 from torch.utils import benchmark
-from utils import benchmark_main_helper
+from xformers.benchmarks.utils import benchmark_main_helper
 
 import xformers.ops.swiglu_op as xsw
 

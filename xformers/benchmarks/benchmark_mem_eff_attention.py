@@ -10,7 +10,7 @@ from functools import partial
 
 import torch
 from torch.utils import benchmark
-from utils import benchmark_main_helper
+from xformers.benchmarks.utils import benchmark_main_helper
 
 import xformers.ops
 import xformers.ops.fmha as fmha
