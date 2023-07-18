@@ -425,10 +425,12 @@
 <span class="sd">        seqstart: torch.IntTensor([0, 4, 8, 12])</span>
 <span class="sd">        seqlen_py: [2, 3, 2]</span>
 <span class="sd">        seqlen: torch.IntTensor([2, 3, 2])</span>
+<span class="sd">        padding: 4</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">seqlen</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="n">seqlen_py</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+    <span class="n">padding</span><span class="p">:</span> <span class="nb">int</span>
     <span class="c1"># From parent: seqstart[i] contains the start position</span>
     <span class="c1"># of the i-th sequence</span>
     <span class="c1"># seqstart: torch.Tensor</span>
@@ -467,6 +469,7 @@
             <span class="n">max_seqlen</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="n">seqlens</span><span class="p">),</span>
             <span class="n">seqstart</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seqstart_py</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
             <span class="n">seqstart_py</span><span class="o">=</span><span class="n">seqstart_py</span><span class="p">,</span>
+            <span class="n">padding</span><span class="o">=</span><span class="n">padding</span><span class="p">,</span>
         <span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">split</span><span class="p">(</span>
@@ -827,7 +830,8 @@
         <span class="n">kv_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">causal_diagonal</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalWithOffsetPaddedKeysMask&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a :attr:`BlockDiagonalCausalWithOffsetPaddedKeysMask` from a list of tensors lengths for query and key/value.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a :attr:`BlockDiagonalCausalWithOffsetPaddedKeysMask` from a list of tensor</span>
+<span class="sd">        lengths for query and key/value.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            q_seqlen (Sequence[int]): List or tensor of sequence lengths for query tensors</span>

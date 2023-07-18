@@ -615,7 +615,7 @@
             <span class="n">p</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
             <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="k">return</span> <span class="n">AttentionOpDispatch</span><span class="p">(</span><span class="n">op</span><span class="o">=</span><span class="p">(</span><span class="n">_dispatch_fw</span><span class="p">(</span><span class="n">inp</span><span class="p">),</span> <span class="n">_dispatch_bw</span><span class="p">(</span><span class="n">inp</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="n">AttentionOpDispatch</span><span class="p">(</span><span class="n">op</span><span class="o">=</span><span class="p">(</span><span class="n">_dispatch_fw</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span> <span class="n">_dispatch_bw</span><span class="p">(</span><span class="n">inp</span><span class="p">)))</span>
 
 
 <span class="k">def</span> <span class="nf">bmk2bmhk</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="n">num_heads</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
