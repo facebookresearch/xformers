@@ -26,6 +26,9 @@ if torch.cuda.is_available():
 sm75_or_better_only = pytest.mark.skipif(
     compute_capability < (7, 5), reason="requires sm75+"
 )
+sm80_or_better_only = pytest.mark.skipif(
+    compute_capability < (8, 0), reason="requires sm80+"
+)
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 ALL_FW_OPS: Sequence[Type[fmha.common.AttentionFwOpBase]] = [
@@ -1617,6 +1620,50 @@ def test_attn_bias_padded() -> None:
         output,
         fmha_output,
         atol=fmha.cutlass.FwOp.ERROR_ATOL[torch.float16],
+        rtol=fmha.cutlass.FwOp.ERROR_RTOL[torch.float16],
+    )
+
+
+@sm80_or_better_only
+@pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "")
+@pytest.mark.parametrize("n_heads", [1, 32])
+@pytest.mark.parametrize("bsz", [1, 8])
+@pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
+def test_decoder(multiquery: bool, n_heads: int, bsz: int, dtype: str) -> None:
+    dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
+    torch.manual_seed(1)
+    d, padding = 128, 32
+    k_shape = (1, bsz * padding, n_heads, d)
+    # TODO: support 2 kv heads etc.
+    k = torch.randn(k_shape, dtype=dtype_).cuda()
+    k_seqlen = [5, 8, 7, 1, 9, 3, 12, 32][:bsz]
+    v = torch.randn(k_shape, dtype=dtype_).cuda()
+    q = torch.randn((1, bsz, n_heads, d), dtype=dtype_).cuda()
+    causal_diagonal = torch.tensor(  # TODO: make unnecessary
+        [i - 1 for i in k_seqlen], dtype=torch.int32
+    ).cuda()
+
+    if multiquery:
+        k = k[:, :, :1].expand(k_shape)
+        v = v[:, :, :1].expand(k_shape)
+
+    attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+        q_seqlen=[1] * bsz,
+        kv_seqlen=k_seqlen,
+        causal_diagonal=causal_diagonal,
+        kv_padding=padding,
+    )
+
+    cutlass_output = fmha.memory_efficient_attention_forward(
+        q, k, v, attn_bias, op=fmha.cutlass.FwOp
+    )
+    decoder_output = fmha.memory_efficient_attention_forward(
+        q, k, v, attn_bias, op=fmha.decoder.FwOp
+    )
+    assert_allclose(
+        decoder_output,
+        cutlass_output,
+        atol=fmha.cutlass.FwOp.ERROR_ATOL[torch.float16] * 4,
         rtol=fmha.cutlass.FwOp.ERROR_RTOL[torch.float16],
     )
 

@@ -7,7 +7,7 @@ from typing import Any, Optional, Tuple, Type, Union
 
 import torch
 
-from . import cutlass, flash, small_k, triton
+from . import cutlass, decoder, flash, small_k, triton
 from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
@@ -24,6 +24,7 @@ from .dispatch import _dispatch_bw, _dispatch_fw, _ensure_op_supports_or_raise
 
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
+MemoryEfficientAttentionDecoderOp = (decoder.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionTritonFwdFlashBwOp = (triton.FwOp, flash.BwOp)
 MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
 MemoryEfficientAttentionOp = (small_k.FwOp, small_k.BwOp)
@@ -303,7 +304,7 @@ def _memory_efficient_attention_forward(
     inp.validate_inputs()
     output_shape = inp.normalize_bmhk()
     if op is None:
-        op = _dispatch_fw(inp)
+        op = _dispatch_fw(inp, False)
     else:
         _ensure_op_supports_or_raise(ValueError, "memory_efficient_attention", op, inp)
 
@@ -317,7 +318,7 @@ def _memory_efficient_attention_forward_requires_grad(
     inp.validate_inputs()
     output_shape = inp.normalize_bmhk()
     if op is None:
-        op = _dispatch_fw(inp)
+        op = _dispatch_fw(inp, True)
     else:
         _ensure_op_supports_or_raise(ValueError, "memory_efficient_attention", op, inp)
     out = op.apply(inp, needs_gradient=True)

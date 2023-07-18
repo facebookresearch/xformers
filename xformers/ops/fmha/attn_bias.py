@@ -198,10 +198,12 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
         seqstart: torch.IntTensor([0, 4, 8, 12])
         seqlen_py: [2, 3, 2]
         seqlen: torch.IntTensor([2, 3, 2])
+        padding: 4
     """
 
     seqlen: torch.Tensor
     seqlen_py: Sequence[int]
+    padding: int
     # From parent: seqstart[i] contains the start position
     # of the i-th sequence
     # seqstart: torch.Tensor
@@ -240,6 +242,7 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
             max_seqlen=max(seqlens),
             seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
             seqstart_py=seqstart_py,
+            padding=padding,
         )
 
     def split(
@@ -600,7 +603,8 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         kv_seqlen: Sequence[int],
         causal_diagonal: Any = None,
     ) -> "BlockDiagonalCausalWithOffsetPaddedKeysMask":
-        """Creates a :attr:`BlockDiagonalCausalWithOffsetPaddedKeysMask` from a list of tensors lengths for query and key/value.
+        """Creates a :attr:`BlockDiagonalCausalWithOffsetPaddedKeysMask` from a list of tensor
+        lengths for query and key/value.
 
         Args:
             q_seqlen (Sequence[int]): List or tensor of sequence lengths for query tensors

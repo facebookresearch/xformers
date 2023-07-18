@@ -388,7 +388,7 @@ class AttentionOpDispatch:
             p=p,
             scale=scale,
         )
-        return AttentionOpDispatch(op=(_dispatch_fw(inp), _dispatch_bw(inp)))
+        return AttentionOpDispatch(op=(_dispatch_fw(inp, True), _dispatch_bw(inp)))
 
 
 def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
