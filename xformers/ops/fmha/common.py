@@ -151,6 +151,7 @@ class AttentionOpBase(BaseOperator):
     SUPPORTS_DROPOUT: bool
     SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
+    IS_DETERMINISTIC: bool = True
     NAME: str
     OPERATOR_CATEGORY = "memory_efficient_attention"
 
@@ -162,12 +163,30 @@ class AttentionOpBase(BaseOperator):
         return not cls.not_supported_reasons(d)
 
     @classmethod
+    def shape_not_supported_reasons(
+        cls, Mq: int, Mkv: int, K: int, Kv: int
+    ) -> List[str]:
+        reasons = []
+        if not cls.SUPPORTS_DIFFERENT_VALUE_EMBED and K != Kv:
+            reasons.append("query.shape[-1] != value.shape[-1]")
+        if max(K, Kv) > cls.SUPPORTED_MAX_K:
+            reasons.append(
+                f"max(query.shape[-1] != value.shape[-1]) > {cls.SUPPORTED_MAX_K}"
+            )
+        return reasons
+
+    @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         """
         Returns a list of reasons why this is not supported.
         The kernel can run these inputs only if the returned list is empty
         """
-        reasons = []
+        reasons = cls.shape_not_supported_reasons(
+            Mq=d.query.shape[1],
+            Mkv=d.key.shape[1],
+            K=d.query.shape[-1],
+            Kv=d.query.shape[-1],
+        )
         device_type = d.query.device.type
         dtype = d.query.dtype
         if device_type not in cls.SUPPORTED_DEVICES:
@@ -176,15 +195,6 @@ class AttentionOpBase(BaseOperator):
             reasons.append("xFormers wasn't build with CUDA support")
         if dtype not in cls.SUPPORTED_DTYPES:
             reasons.append(f"dtype={dtype} (supported: {cls.SUPPORTED_DTYPES})")
-        if (
-            not cls.SUPPORTS_DIFFERENT_VALUE_EMBED
-            and d.query.shape[-1] != d.value.shape[-1]
-        ):
-            reasons.append("query.shape[-1] != value.shape[-1]")
-        if max(d.query.shape[-1], d.value.shape[-1]) > cls.SUPPORTED_MAX_K:
-            reasons.append(
-                f"max(query.shape[-1] != value.shape[-1]) > {cls.SUPPORTED_MAX_K}"
-            )
         if type(d.attn_bias) not in cls.SUPPORTED_ATTN_BIAS_TYPES:
             reasons.append(f"attn_bias type is {type(d.attn_bias)}")
         if (d.p != 0.0) and not cls.SUPPORTS_DROPOUT:
@@ -201,7 +211,11 @@ class AttentionOpBase(BaseOperator):
             reasons.append("bf16 is only supported on A100+ GPUs")
         if not cls.is_available():
             reasons.append(
-                "Operator wasn't built - see `python -m xformers.info` for more info"
+                "operator wasn't built - see `python -m xformers.info` for more info"
+            )
+        if not cls.IS_DETERMINISTIC and torch.are_deterministic_algorithms_enabled():
+            reasons.append(
+                "operator is non-deterministic, but `torch.use_deterministic_algorithms` is set"
             )
         return reasons
 

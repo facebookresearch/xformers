@@ -82,7 +82,7 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
     shapes = []
     for B in op._TEST_BATCH_SIZES:
         for Mq in [32, 256]:
-            for Mkv in [32, 64, 256]:
+            for Mkv in [32, 64, 256, 1024]:
                 for K in op._TEST_K:
                     shapes.append((B, Mq, Mkv, 1, K, K))
         Mq = 256
@@ -93,7 +93,7 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
         for M in [2, 3, 15, 31, 32, 34, 68, 72, 90, 132, 136]:
             shapes.append((B, M, Mkv, H, K, K))
             shapes.append((B, Mq, M, H, K, K))
-        for _K in [1, 2, 3, 31, 34, 36, 38, 40, 64, 256 + 2, 256 + 8, 512]:
+        for _K in [1, 2, 3, 31, 34, 36, 38, 40, 64, 80, 160, 256 + 2, 256 + 8, 512]:
             if _K <= op.SUPPORTED_MAX_K:
                 shapes.append((B, Mq, Mkv, H, _K, _K))
         # Different value for K / Kv
@@ -108,6 +108,17 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
         # Some number of heads
         for H in [3, 5, 12]:
             shapes.append((max(1, B // H), Mq, Mkv, H, K, K))
+    # Filter-out not supported shapes
+    shapes = [
+        shape
+        for shape in shapes
+        if len(
+            op.shape_not_supported_reasons(
+                Mq=shape[1], Mkv=shape[2], K=shape[4], Kv=shape[5]
+            )
+        )
+        == 0
+    ]
     # Add some random shapes
     if op in [
         fmha.cutlass.FwOp,
@@ -116,7 +127,8 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
     ]:
         K_CHOICES = [8 * i for i in range(1, 256 // 8)]
         r = random.Random(0)
-        for _ in range(20):
+        found_count = 0
+        while found_count < 20:
             B = r.randint(1, 400)
             Mq = r.randint(1, 500)
             Mkv = r.randint(1, 500)
@@ -126,6 +138,9 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
             Kv = r.choice(K_CHOICES)
             if not op.SUPPORTS_DIFFERENT_VALUE_EMBED:
                 Kv = K
+            if len(op.shape_not_supported_reasons(Mq, Mkv, K, Kv)):
+                continue
+            found_count += 1
             shapes.append((B, Mq, Mkv, H, K, Kv))
     return shapes
 

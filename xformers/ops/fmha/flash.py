@@ -56,7 +56,15 @@ try:
         return_softmax,
     ):
         out = query.new_empty(query.shape[0], query.shape[1], value.shape[2])
-        lse, rng_state = _C_flashattention.fwd(
+        (
+            out,
+            q_padded,
+            k_padded,
+            v_padded,
+            out_padded,
+            softmax_lse,
+            p,
+        ) = _C_flashattention.varlen_fwd(
             query,
             key,
             value,
@@ -70,10 +78,9 @@ try:
             False,
             causal,
             return_softmax,
-            0,
             None,
         )
-        return out, lse, rng_state
+        return out, softmax_lse, None
 
     def _flash_bwd(
         grad,
@@ -94,7 +101,7 @@ try:
         causal,
         rng_state,
     ):
-        _C_flashattention.bwd(
+        _C_flashattention.varlen_bwd(
             grad,
             query,
             key,
@@ -110,11 +117,9 @@ try:
             max_seq_len_k,
             p,
             softmax_scale,
-            False,
+            False,  # zero_tensors
             causal,
-            0,
             None,
-            rng_state,
         )
         return dq
 
@@ -190,9 +195,9 @@ class FwOp(AttentionFwOpBase):
 
     OPERATOR = get_operator("xformers_flash", "flash_fwd")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
-    CUDA_MINIMUM_COMPUTE_CAPABILITY = (7, 5)
+    CUDA_MINIMUM_COMPUTE_CAPABILITY = (8, 0)
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
-    SUPPORTED_MAX_K = 128
+    SUPPORTED_MAX_K = 256
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
         LowerTriangularMask,
@@ -202,16 +207,12 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
-    NAME = "flshattF"
+    NAME = "flshattFv2"
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(FwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
-        if d.device.type == "cuda":
-            device_capability = torch.cuda.get_device_capability(d.device)
-            if device_capability < (7, 5):
-                reasons.append("requires a GPU with compute capability > 7.5")
         return reasons
 
     @classmethod
@@ -293,23 +294,38 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
-    NAME = "flshattB"
+    IS_DETERMINISTIC = False
+    NAME = "flshattBv2"
+
+    MAX_HEADDIM_SM8x = 192
+
+    @classmethod
+    def shape_not_supported_reasons(
+        cls, Mq: int, Mkv: int, K: int, Kv: int
+    ) -> List[str]:
+        reasons = super().shape_not_supported_reasons(Mq, Mkv, K, Kv)
+        if (Mq % 128) or (Mkv % 128):
+            reasons.append(
+                "flashv2 beta: BW is incorrect when seqlen is not aligned on 128 "
+                "(https://github.com/Dao-AILab/flash-attention/issues/334)"
+            )
+        return reasons
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(BwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
         if d.device.type == "cuda":
-            # We know `d.device` is cuda now
-            # d=128 is only supported on A100 for bw
-            # d > 64 is only supported on A100 for bw
+            # Due to limited shared-memory, some GPUs are limited in head dimension
             device_capability = torch.cuda.get_device_capability(d.device)
-            if device_capability < (7, 5):
-                reasons.append("requires a GPU with compute capability > 7.5")
             is_sm80_or_sm90 = device_capability in [(8, 0), (9, 0)]
-            if max(d.key.shape[-1], d.query.shape[-1]) > 64 and not is_sm80_or_sm90:
+            if (
+                max(d.key.shape[-1], d.query.shape[-1]) > cls.MAX_HEADDIM_SM8x
+                and not is_sm80_or_sm90
+            ):
                 reasons.append(
-                    "requires a GPU with compute capability 8.0 (A100) or 9.0 (H100) for 'query.shape[-1] > 64'"
+                    "requires a GPU with compute capability 8.0 "
+                    f"(A100) or 9.0 (H100) for 'query.shape[-1] > {cls.MAX_HEADDIM_SM8x}'"
                 )
         return reasons
 
@@ -324,6 +340,11 @@ class BwOp(AttentionBwOpBase):
             cu_seqlens_k,
             max_seqlen_k,
         ) = _convert_input_format(inp)
+        assert ctx.lse.is_contiguous
+        ctx_lse = ctx.lse
+        assert ctx_lse.shape[2] >= max_seqlen_q
+        if max_seqlen_q != ctx_lse.shape[2]:
+            ctx_lse = ctx_lse[:, :, :max_seqlen_q].contiguous()
         kernel_out_shape = [
             inp.query.shape[0],
             inp.query.shape[1],
@@ -368,7 +389,7 @@ class BwOp(AttentionBwOpBase):
             inp.key,
             inp.value,
             ctx.out.reshape(kernel_out_shape),
-            ctx.lse,
+            ctx_lse,
             grads.dq,
             grads.dk,
             grads.dv,

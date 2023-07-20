@@ -12,7 +12,8 @@ import torch
 from ... import _is_triton_available
 from ..common import register_operator
 
-if TYPE_CHECKING or _is_triton_available():
+# XXX: Disabled for now
+if TYPE_CHECKING or (False and _is_triton_available()):
     from ..._flash_attn.flash_attn_triton import (
         _flash_attn_backward,
         _flash_attn_forward,
@@ -75,6 +76,7 @@ class FwOp(AttentionFwOpBase):
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        return ["Triton implementation is disabled as we update to Flashv2"]
         reasons = super(FwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
         check_lastdim_alignment_stride1(reasons, "key", d.key, 8)
@@ -127,6 +129,7 @@ class BwOp(AttentionBwOpBase):
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
+        return ["Triton implementation is disabled as we update to Flashv2"]
         reasons = super(BwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
         check_lastdim_alignment_stride1(reasons, "key", d.key, 8)

@@ -117,7 +117,11 @@ SHAPES = [
     (8, 2048, 20, 128),
     # LLaMa 70b - mp=8/16
     *sorted(list(itertools.product([1, 2], [2048, 4096, 8192], [4, 8], [128]))),
-    *sorted(list(itertools.product([16], [128, 512, 1024], [16], [16, 32, 64, 128]))),
+    *sorted(
+        list(
+            itertools.product([16], [128, 512, 1024], [16], [16, 32, 64, 128, 160, 256])
+        )
+    ),
 ]
 
 OPS = [
