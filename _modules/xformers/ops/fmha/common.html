@@ -378,6 +378,7 @@
     <span class="n">SUPPORTS_DROPOUT</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">IS_DETERMINISTIC</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">NAME</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">OPERATOR_CATEGORY</span> <span class="o">=</span> <span class="s2">&quot;memory_efficient_attention&quot;</span>
 
@@ -388,13 +389,31 @@
     <span class="k">def</span> <span class="nf">supports</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
         <span class="k">return</span> <span class="ow">not</span> <span class="bp">cls</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
 
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">shape_not_supported_reasons</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span> <span class="n">Mq</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Mkv</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">K</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Kv</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="n">reasons</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="ow">and</span> <span class="n">K</span> <span class="o">!=</span> <span class="n">Kv</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;query.shape[-1] != value.shape[-1]&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">max</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">Kv</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_MAX_K</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;max(query.shape[-1] != value.shape[-1]) &gt; </span><span class="si">{</span><span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_MAX_K</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">reasons</span>
+
 <div class="viewcode-block" id="AttentionOpBase.not_supported_reasons"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.AttentionOpBase.not_supported_reasons">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns a list of reasons why this is not supported.</span>
 <span class="sd">        The kernel can run these inputs only if the returned list is empty</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">reasons</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">reasons</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">shape_not_supported_reasons</span><span class="p">(</span>
+            <span class="n">Mq</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+            <span class="n">Mkv</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+            <span class="n">K</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+            <span class="n">Kv</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+        <span class="p">)</span>
         <span class="n">device_type</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span>
         <span class="n">dtype</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">dtype</span>
         <span class="k">if</span> <span class="n">device_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_DEVICES</span><span class="p">:</span>
@@ -403,15 +422,6 @@
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;xFormers wasn&#39;t build with CUDA support&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">dtype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span><span class="p">:</span>
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;dtype=</span><span class="si">{</span><span class="n">dtype</span><span class="si">}</span><span class="s2"> (supported: </span><span class="si">{</span><span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="p">(</span>
-            <span class="ow">not</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span>
-            <span class="ow">and</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">d</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-        <span class="p">):</span>
-            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;query.shape[-1] != value.shape[-1]&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="nb">max</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">d</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="o">&gt;</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_MAX_K</span><span class="p">:</span>
-            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;max(query.shape[-1] != value.shape[-1]) &gt; </span><span class="si">{</span><span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_MAX_K</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="p">)</span>
         <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span>
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;attn_bias type is </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTS_DROPOUT</span><span class="p">:</span>
@@ -428,7 +438,11 @@
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;bf16 is only supported on A100+ GPUs&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">cls</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                <span class="s2">&quot;Operator wasn&#39;t built - see `python -m xformers.info` for more info&quot;</span>
+                <span class="s2">&quot;operator wasn&#39;t built - see `python -m xformers.info` for more info&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">cls</span><span class="o">.</span><span class="n">IS_DETERMINISTIC</span> <span class="ow">and</span> <span class="n">torch</span><span class="o">.</span><span class="n">are_deterministic_algorithms_enabled</span><span class="p">():</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s2">&quot;operator is non-deterministic, but `torch.use_deterministic_algorithms` is set&quot;</span>
             <span class="p">)</span>
         <span class="k">return</span> <span class="n">reasons</span></div></div>
 
