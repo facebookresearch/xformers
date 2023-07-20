@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-22.04
+          - 4-core-ubuntu
           - windows-2019
         python:
           - "3.8"
@@ -38,14 +38,13 @@ jobs:
             torch_version: "1.13.1"
         include:
           - sdist: false
-            enabled: true
             publish: false
             cuda_short_version: "CUDA_VERSION_NOT_SET"
           # Publish only for latest pytorch
           - torch_version: "2.0.1"
             publish: true
           # Publish source distribution only from this runner
-          - os: ubuntu-22.04
+          - os: 4-core-ubuntu
             python: "3.10"
             torch_version: "2.0.1"
             sdist: true

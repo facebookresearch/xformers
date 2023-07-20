@@ -43,7 +43,7 @@ on:
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
   TORCH_CUDA_ARCH_LIST: ${{ inputs.arch_list }}
-  MAX_JOBS: 1 # will crash otherwise
+  MAX_JOBS: 1
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
@@ -79,6 +79,7 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], "r+") as fp:
             fp.write("CUDA_VERSION=" + full_version + "\n")
             fp.write("CUDA_INSTALL_SCRIPT=" + install_script + "\n")
+
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
