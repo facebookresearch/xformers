@@ -193,6 +193,13 @@ class AttentionOpBase(BaseOperator):
             reasons.append(f"device={device_type} (supported: {cls.SUPPORTED_DEVICES})")
         if device_type == "cuda" and not _built_with_cuda:
             reasons.append("xFormers wasn't build with CUDA support")
+        if device_type == "cuda":
+            device_capability = torch.cuda.get_device_capability(d.device)
+            if device_capability < cls.CUDA_MINIMUM_COMPUTE_CAPABILITY:
+                reasons.append(
+                    f"requires device with capability > {cls.CUDA_MINIMUM_COMPUTE_CAPABILITY} "
+                    f"but your GPU has capability {device_capability} (too old)"
+                )
         if dtype not in cls.SUPPORTED_DTYPES:
             reasons.append(f"dtype={dtype} (supported: {cls.SUPPORTED_DTYPES})")
         if type(d.attn_bias) not in cls.SUPPORTED_ATTN_BIAS_TYPES:
