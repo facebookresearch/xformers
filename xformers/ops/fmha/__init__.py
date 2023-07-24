@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, Optional, Tuple, Type, Union
+from typing import Any, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
@@ -384,6 +384,20 @@ def _memory_efficient_attention_backward(
     return grads
 
 
+ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
+    cutlass.FwOp,
+    flash.FwOp,
+    triton.FwOp,
+    small_k.FwOp,
+]
+
+ALL_BW_OPS: Sequence[Type[AttentionBwOpBase]] = [
+    cutlass.BwOp,
+    flash.BwOp,
+    triton.BwOp,
+    small_k.BwOp,
+]
+
 __all__ = [
     "AttentionBias",
     "AttentionOp",
@@ -397,4 +411,6 @@ __all__ = [
     "MemoryEfficientAttentionOp",
     "TritonFlashAttentionOp",
     "memory_efficient_attention",
+    "ALL_FW_OPS",
+    "ALL_BW_OPS",
 ]

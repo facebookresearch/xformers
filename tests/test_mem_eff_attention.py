@@ -14,6 +14,7 @@ from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
 from xformers.ops import fmha
+from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
 from xformers.ops.fmha.common import AttentionOpBase
 
 from .utils import assert_allclose
@@ -30,20 +31,6 @@ sm80_or_better_only = pytest.mark.skipif(
     compute_capability < (8, 0), reason="requires sm80+"
 )
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
-
-ALL_FW_OPS: Sequence[Type[fmha.common.AttentionFwOpBase]] = [
-    fmha.cutlass.FwOp,
-    fmha.flash.FwOp,
-    fmha.triton.FwOp,
-    fmha.small_k.FwOp,
-]
-
-ALL_BW_OPS: Sequence[Type[fmha.common.AttentionBwOpBase]] = [
-    fmha.cutlass.BwOp,
-    fmha.flash.BwOp,
-    fmha.triton.BwOp,
-    fmha.small_k.BwOp,
-]
 
 T = TypeVar(
     "T", Type[fmha.common.AttentionFwOpBase], Type[fmha.common.AttentionBwOpBase]
@@ -145,6 +132,13 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
     return shapes
 
 
+def make_id(op, device, dtype, bias_type, *shape):
+    return (
+        f"{op.NAME}-{device}-{str(dtype)}-{bias_type.__name__}"
+        f"-{'-'.join([str(s) for s in shape])}"
+    )
+
+
 def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
     ops_list: Sequence[Type[fmha.AttentionOpBase]], max_shapes_per_op: int = 65000
 ):
@@ -210,13 +204,9 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                     continue
                 for dtype in op.SUPPORTED_DTYPES:
                     combination.append((op, device, dtype, bias_type, *shape))
-                    ids.append(
-                        f"{op.NAME}-{device}-{str(dtype)}-{bias_type.__name__}"
-                        f"-{'-'.join([str(s) for s in shape])}"
-                    )
     return {
         "argvalues": combination,
-        "ids": ids,
+        "ids": [make_id(*c) for c in combination],
     }
 
 
@@ -1371,7 +1361,7 @@ def test_unsupported_cpu(op: Type[fmha.AttentionFwOpBase]):
 )
 def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
     q = torch.empty([1, 1, 32, 4], device="cuda", dtype=torch.float16).permute(
-        0, 1, 3, 2
+        0, 3, 1, 2
     )
     try:
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
@@ -1387,7 +1377,7 @@ def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
     "op", ALL_FW_OPS_NO_SMALLK, ids=[op.NAME for op in ALL_FW_OPS_NO_SMALLK]
 )
 def test_unsupported_stride_alignment(op: Type[fmha.AttentionFwOpBase]):
-    q = torch.empty([1, 2, 2, 33], device="cuda", dtype=torch.float16)[:, :, :, :32]
+    q = torch.empty([1, 2, 1, 33], device="cuda", dtype=torch.float16)[:, :, :, :32]
     try:
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
     except ValueError as e:
@@ -1833,3 +1823,6 @@ def test_has_kernel_for(sm_shmem: Tuple[int, int], dtype_str: str) -> None:
         assert torch.ops.xformers._has_cutlassB_kernel_for(
             dtype, sm, shmem_kbytes * 1024, k
         ), f"k={k}"
+
+
+# end of file
