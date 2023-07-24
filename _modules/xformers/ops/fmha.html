@@ -228,7 +228,7 @@
 <span class="c1"># This source code is licensed under the BSD license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
@@ -609,6 +609,20 @@
     <span class="k">return</span> <span class="n">grads</span>
 
 
+<span class="n">ALL_FW_OPS</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">cutlass</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
+    <span class="n">flash</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
+    <span class="n">triton</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
+    <span class="n">small_k</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="n">ALL_BW_OPS</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">cutlass</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
+    <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
+    <span class="n">triton</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
+    <span class="n">small_k</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
+<span class="p">]</span>
+
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;AttentionBias&quot;</span><span class="p">,</span>
     <span class="s2">&quot;AttentionOp&quot;</span><span class="p">,</span>
@@ -622,6 +636,8 @@
     <span class="s2">&quot;MemoryEfficientAttentionOp&quot;</span><span class="p">,</span>
     <span class="s2">&quot;TritonFlashAttentionOp&quot;</span><span class="p">,</span>
     <span class="s2">&quot;memory_efficient_attention&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;ALL_FW_OPS&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;ALL_BW_OPS&quot;</span><span class="p">,</span>
 <span class="p">]</span>
 </pre></div>
 
