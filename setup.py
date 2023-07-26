@@ -191,13 +191,16 @@ def get_extensions():
     extensions_dir = os.path.join("xformers", "csrc")
 
     sources = glob.glob(os.path.join(extensions_dir, "attention", "*.cpp"), recursive=False)
-    sources += glob.glob(os.path.join(extensions_dir, "attention", "autograd", "*.cpp"), recursive=True)
-    sources += glob.glob(os.path.join(extensions_dir, "attention", "cpu", "*.cpp"), recursive=True)
-    sources += glob.glob(os.path.join(extensions_dir, "indexing", "*.cpp"), recursive=True)
-    sources += glob.glob(os.path.join(extensions_dir, "swiglu", "*.cpp"), recursive=True)
+    sources += glob.glob(os.path.join(extensions_dir, "attention", "autograd", "**", "*.cpp"), recursive=True)
+    sources += glob.glob(os.path.join(extensions_dir, "attention", "cpu", "**", "*.cpp"), recursive=True)
+    sources += glob.glob(os.path.join(extensions_dir, "indexing", "**", "*.cpp"), recursive=True)
+    sources += glob.glob(os.path.join(extensions_dir, "swiglu", "**", "*.cpp"), recursive=True)
     
+    ## avoid the temporary .cu file under xformers/csrc/attention/hip_fmha are included
     source_cuda = glob.glob(os.path.join(extensions_dir, "*.cu"), recursive=False)
-    source_cuda += glob.glob(os.path.join(extensions_dir, "attention", "cuda", "*.cu"), recursive=True)
+    source_cuda += glob.glob(os.path.join(extensions_dir, "attention", "cuda", "**", "*.cu"), recursive=True)
+    source_cuda += glob.glob(os.path.join(extensions_dir, "indexing", "**", "*.cu"), recursive=True)
+    source_cuda += glob.glob(os.path.join(extensions_dir, "swiglu", "**", "*.cu"), recursive=True)
     source_hip = glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "*.cpp"), recursive=True) 
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
