@@ -1,0 +1,150 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+#include <cmath>
+#include <mutex>
+
+#include <ATen/Context.h>
+#include <ATen/ScalarOps.h>
+#include <ATen/Tensor.h>
+#include <ATen/core/Generator.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <ATen/cuda/CUDAGeneratorImpl.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <c10/util/Optional.h>
+#include <torch/library.h>
+
+namespace {
+/*
+  There are 2 modes for using this function.
+  (Mode BMHK) With all the heads having the same seqlen
+  (Mode 1MHK) `batch=1` with all tokens across batches concatenated
+*/
+std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
+efficient_attention_forward_hip(
+    const at::Tensor& query, // [b, seqlen, num_heads, K]
+    const at::Tensor& key, // [b, seqlen, num_heads, K]
+    const at::Tensor& value, // [b, seqlen, num_heads, Kv]
+    const c10::optional<at::Tensor>& bias, // [b, num_heads, seqlen, seqlen]
+    // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
+    // position of the first query token for batch $b
+    const c10::optional<at::Tensor>& seqstart_q,
+    // (Mode 1MHK only) [b+1]: cu_seqlen_k[b] contains the
+    // position of the first key token for batch $b
+    const c10::optional<at::Tensor>& seqstart_k,
+    // (Mode 1MHK only) Maximum sequence length across batches
+    const c10::optional<int64_t> max_seqlen_q_,
+    double dropout_p, // attention matrix dropout probability
+    bool compute_logsumexp,
+    int64_t custom_mask_type,
+    c10::optional<double> scale,
+    const c10::optional<at::Tensor>& seqlen_k) {
+#ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
+  TORCH_CHECK(
+      false,
+      "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD");
+#else
+
+  TORCH_CHECK(query.dim() == 4);
+  TORCH_CHECK(key.dim() == 4);
+  TORCH_CHECK(value.dim() == 4);
+
+  // Batch sizes
+  TORCH_CHECK(query.size(0) == key.size(0));
+  TORCH_CHECK(query.size(0) == value.size(0));
+
+  // Sequence length
+  TORCH_CHECK(key.size(1) == value.size(1));
+
+  // Num heads
+  TORCH_CHECK(query.size(2) == key.size(2));
+  TORCH_CHECK(query.size(2) == value.size(2));
+
+  // Embedding per head
+  TORCH_CHECK(query.size(3) == key.size(3));
+
+  int64_t max_seqlen_q, max_seqlen_k;
+  TORCH_CHECK(seqstart_q.has_value() == seqstart_k.has_value());
+  if (seqstart_q.has_value()) {
+    TORCH_CHECK(seqstart_q->scalar_type() == at::ScalarType::Int);
+    TORCH_CHECK(seqstart_k->scalar_type() == at::ScalarType::Int);
+    TORCH_CHECK(seqstart_q->dim() == 1 && seqstart_k->dim() == 1);
+    //CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqstart_q));
+    //CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqstart_k));
+    TORCH_CHECK(seqstart_q->size(0) == seqstart_k->size(0));
+    TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
+    TORCH_CHECK(max_seqlen_q_.has_value());
+    max_seqlen_q = *max_seqlen_q_;
+    max_seqlen_k = 0; // Will be set inside the kernel
+  } else {
+    max_seqlen_q = query.size(1);
+    max_seqlen_k = key.size(1);
+  }
+
+  //CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(query);
+  //CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
+  //CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
+
+  //at::cuda::CUDAGuard device_guard(query.device());
+  //cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+  int64_t num_heads = query.size(-2);
+  int64_t K = query.size(-1);
+  int64_t Kv = value.size(-1);
+
+  at::Tensor res;
+  at::Tensor logsumexp;
+
+  const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
+  at::PhiloxCudaState rng_engine_inputs;
+  if (use_dropout) {
+    at::CUDAGeneratorImpl* gen =
+        at::get_generator_or_default<at::CUDAGeneratorImpl>(
+            c10::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
+
+    std::lock_guard<std::mutex> lock(gen->mutex_);
+    // if using dropout, we produce 1 random number for each element of the
+    // attention tensor
+    rng_engine_inputs = gen->philox_cuda_state(B * num_heads * M * N);
+  }
+
+  // uint64_t -> int64_t bitwise casting as PyTorch don't support uint64_t
+  // so just fake it as a int64_t
+  int64_t seed, offset;
+  if (use_dropout) {
+    std::memcpy(&seed, &rng_engine_inputs.seed_, sizeof(seed));
+    std::memcpy(&offset, &rng_engine_inputs.offset_.val, sizeof(offset));
+  }
+
+  return std::make_tuple(res, logsumexp, seed, offset);
+#endif
+}
+
+// For testing in xFormers
+bool is_ck_fmha_available()
+{
+    std::cout << "ck fmha is really here!" << std::endl;
+    return(true); 
+}; 
+
+} // namespace
+
+TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_hip"),
+      TORCH_FN(efficient_attention_forward_hip));
+}
+
+TORCH_LIBRARY_FRAGMENT(xformers, m) {
+  m.def(TORCH_SELECTIVE_SCHEMA("xformers::is_ck_fmha_available() -> bool"));
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::is_ck_fmha_available"),
+      TORCH_FN(is_ck_fmha_available));
+}
