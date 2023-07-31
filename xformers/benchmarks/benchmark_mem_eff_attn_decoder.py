@@ -69,9 +69,12 @@ KV_SHAPES = [
     (32, 1024, 500),
     (1000, 1024, 2),
     (8000, 8192, 1),
+    (240, 256, 32),
+    (2048, 2 * 1024, 4),
+    (4096 * 2, 8 * 1024, 1),
 ]
 
-N_HEADS = [8, 64]
+N_HEADS = [8, 16, 64]
 
 
 def product_dict(**kwargs):
@@ -95,7 +98,8 @@ def mem_eff_attention_decoder(
     kv_shape, n_heads: int, num_threads: int, multiquery: bool
 ):
     n_keys, padding, B = kv_shape
-    k_seqlen = [n_keys] * B
+    torch.manual_seed(42)
+    k_seqlen = torch.randint(1, n_keys + 1, (B,)).tolist()
     K = 128
 
     q = torch.rand(1, B, n_heads, K, device=device, dtype=torch.bfloat16)
@@ -122,6 +126,10 @@ def mem_eff_attention_decoder(
 
     has_run = False
     for fw_op in OPS:
+        inp = fmha.Inputs(q, k, v, attn_bias=bias)
+        if not fw_op.supports(inp):
+            continue
+
         fn = partial(xformers.ops.memory_efficient_attention_forward, op=fw_op)
 
         yield benchmark.Timer(

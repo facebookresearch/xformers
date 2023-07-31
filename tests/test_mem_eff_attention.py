@@ -1630,18 +1630,22 @@ def test_attn_bias_padded() -> None:
 
 
 @sm80_or_better_only
+@pytest.mark.parametrize("op", [fmha.decoder.FwOp])
 @pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "")
-@pytest.mark.parametrize("n_heads", [1, 32])
+@pytest.mark.parametrize("n_heads", [1, 16, 32])
+@pytest.mark.parametrize("padding", [32, 4096])
 @pytest.mark.parametrize("bsz", [1, 8])
 @pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
-def test_decoder(multiquery: bool, n_heads: int, bsz: int, dtype: str) -> None:
+def test_decoder(
+    op, multiquery: bool, n_heads: int, padding: int, bsz: int, dtype: str
+) -> None:
     dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
     torch.manual_seed(1)
-    d, padding = 128, 32
+    d = 128
     k_shape = (1, bsz * padding, n_heads, d)
     # TODO: support 2 kv heads etc.
     k = torch.randn(k_shape, dtype=dtype_).cuda()
-    k_seqlen = [5, 8, 7, 1, 9, 3, 12, 32][:bsz]
+    k_seqlen = torch.randint(1, padding + 1, (bsz,)).tolist()
     v = torch.randn(k_shape, dtype=dtype_).cuda()
     q = torch.randn((1, bsz, n_heads, d), dtype=dtype_).cuda()
     causal_diagonal = torch.tensor(  # TODO: make unnecessary
@@ -1658,18 +1662,19 @@ def test_decoder(multiquery: bool, n_heads: int, bsz: int, dtype: str) -> None:
         causal_diagonal=causal_diagonal,
         kv_padding=padding,
     )
+    inp = fmha.Inputs(q, k, v, attn_bias=attn_bias)
+    if not op.supports(inp):
+        pytest.skip("not supported")
 
     cutlass_output = fmha.memory_efficient_attention_forward(
         q, k, v, attn_bias, op=fmha.cutlass.FwOp
     )
-    decoder_output = fmha.memory_efficient_attention_forward(
-        q, k, v, attn_bias, op=fmha.decoder.FwOp
-    )
+    decoder_output = fmha.memory_efficient_attention_forward(q, k, v, attn_bias, op=op)
     assert_allclose(
         decoder_output,
         cutlass_output,
-        atol=fmha.cutlass.FwOp.ERROR_ATOL[torch.float16] * 4,
-        rtol=fmha.cutlass.FwOp.ERROR_RTOL[torch.float16],
+        atol=fmha.cutlass.FwOp.ERROR_ATOL[dtype_],
+        rtol=fmha.cutlass.FwOp.ERROR_RTOL[dtype_],
     )
 
 
