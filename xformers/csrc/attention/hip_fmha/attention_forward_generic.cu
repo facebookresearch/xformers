@@ -18,11 +18,11 @@
 #include <c10/util/Optional.h>
 #include <torch/library.h>
 
-#include "ck_fmha_batched_forward.h"
-#include "ck_fmha_batched_infer.h"
-#include "ck_fmha_grouped_forward.h"
-#include "ck_fmha_grouped_infer.h"
 #include "ck_fmha_util.h"
+#include "ck_fmha_batched_infer.h"
+#include "ck_fmha_batched_forward.h"
+#include "ck_fmha_grouped_infer.h"
+#include "ck_fmha_grouped_forward.h"
 
 namespace {
 
@@ -339,7 +339,7 @@ efficient_attention_forward_hip(
   // so just fake it as a int64_t
   int64_t seed, offset;
 
-  DISPATCH_TYPES(query.scalar_type(), [&]() {
+  DISPATCH_TYPES(query.scalar_type(),  [&]() {
     out = at::empty(
         {B, M, num_heads, Kv},
         query.options().dtype(CkToAtenDtype<scalar_t>::atScalarType()));
@@ -361,7 +361,7 @@ efficient_attention_forward_hip(
         BatchedForwardParams batched_forward_params;
 
         set_batched_forward_params(batched_forward_params);
-        batched_forward<scalar_t>(batched_forward_params, stream);
+        batched_forward<scalar_t>(batched_forward_params, stream)
       } else { // input is grouped
         GroupedForwardParams grouped_forward_params;
 
