@@ -12,12 +12,35 @@ import torch
 from ... import _is_triton_available
 from ..common import register_operator
 
-# XXX: Disabled for now
-if TYPE_CHECKING or (False and _is_triton_available()):
-    from ..._flash_attn.flash_attn_triton import (
-        _flash_attn_backward,
-        _flash_attn_forward,
-    )
+if TYPE_CHECKING or _is_triton_available():
+    try:
+        from flash_attn.flash_attn_triton import (
+            _flash_attn_backward,
+            _flash_attn_forward,
+        )
+    except ImportError:
+        import importlib
+        import pathlib
+        import sys
+        import types
+
+        def import_module_from_path(path: str) -> types.ModuleType:
+            """Import a module from the given path, w/o __init__.py"""
+            module_path = pathlib.Path(path).resolve()
+            module_name = module_path.stem  # 'path/x.py' -> 'x'
+            spec = importlib.util.spec_from_file_location(module_name, module_path)
+            assert isinstance(spec, importlib.machinery.ModuleSpec)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            assert isinstance(spec.loader, importlib.abc.Loader)
+            spec.loader.exec_module(module)
+            return module
+
+        flash_attn = import_module_from_path(
+            "third_party/flash-attention/flash_attn/flash_attn_triton.py"
+        )
+        _flash_attn_backward = flash_attn._flash_attn_backward
+        _flash_attn_forward = flash_attn._flash_attn_forward
 
     triton_flash_backward = _flash_attn_backward
     triton_flash_forward = _flash_attn_forward
@@ -76,7 +99,6 @@ class FwOp(AttentionFwOpBase):
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
-        return ["Triton implementation is disabled as we update to Flashv2"]
         reasons = super(FwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
         check_lastdim_alignment_stride1(reasons, "key", d.key, 8)
@@ -129,7 +151,6 @@ class BwOp(AttentionBwOpBase):
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
-        return ["Triton implementation is disabled as we update to Flashv2"]
         reasons = super(BwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
         check_lastdim_alignment_stride1(reasons, "key", d.key, 8)
