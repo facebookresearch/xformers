@@ -248,7 +248,10 @@
 <span class="p">)</span>
 
 <span class="k">try</span><span class="p">:</span>
-    <span class="kn">from</span> <span class="nn">...</span> <span class="kn">import</span> <span class="n">_C_flashattention</span>  <span class="c1"># type: ignore[attr-defined]</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">...</span> <span class="kn">import</span> <span class="n">_C_flashattention</span>  <span class="c1"># type: ignore[attr-defined]</span>
+    <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">flash_attn.flash_attn_interface</span> <span class="kn">import</span> <span class="n">flash_attn_cuda</span> <span class="k">as</span> <span class="n">_C_flashattention</span>
 
     <span class="c1"># create library so that flash-attn goes through the PyTorch Dispatcher</span>
     <span class="n">_flash_lib</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">Library</span><span class="p">(</span><span class="s2">&quot;xformers_flash&quot;</span><span class="p">,</span> <span class="s2">&quot;DEF&quot;</span><span class="p">)</span>
