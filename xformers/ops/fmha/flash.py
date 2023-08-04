@@ -67,6 +67,7 @@ try:
             out_padded,
             softmax_lse,
             p,
+            rng_state,
         ) = _C_flashattention.varlen_fwd(
             query,
             key,
@@ -83,7 +84,7 @@ try:
             return_softmax,
             None,
         )
-        return out, softmax_lse, None
+        return out, softmax_lse, rng_state
 
     def _flash_bwd(
         grad,
@@ -123,6 +124,7 @@ try:
             False,  # zero_tensors
             causal,
             None,
+            rng_state,
         )
         return dq
 
