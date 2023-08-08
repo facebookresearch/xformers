@@ -282,7 +282,6 @@ def get_extensions():
                          Path(this_dir) / 'third_party' / 'composable_kernel' / 'include' / 'ck' / 'tensor_operation' / 'gpu' / 'device',
                          Path(this_dir) / 'third_party' / 'composable_kernel' / 'include' / 'ck' / 'tensor_operation' / 'gpu' / 'device' / 'impl',
                          Path(this_dir) / 'third_party' / 'composable_kernel' / 'include' / 'ck' / 'tensor_operation' / 'gpu' / 'element',
-                         Path(this_dir) / 'third_party' / 'composable_kernel' / 'library' / 'include' / 'ck' / 'libary' / 'utility', 
                        ] 
        generator_flag = []
        cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
