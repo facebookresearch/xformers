@@ -57,8 +57,11 @@ class FwOp(AttentionFwOpBase):
             if d.value.stride(-1) != 1:
                 reasons.append("expect values to have last dim contiguous")
 
+            q_starts = attn_bias.q_seqinfo.seqstart_py
             if attn_bias.q_seqinfo.max_seqlen != 1:
                 reasons.append("decoding expects one query")
+            elif d.query.shape[1] != len(q_starts) - 1:
+                reasons.append("empty lanes not supported yet")
 
             if attn_bias.k_seqinfo.padding > 8192:
                 reasons.append("key padding exceeds 8192")
