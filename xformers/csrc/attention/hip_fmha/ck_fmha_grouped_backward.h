@@ -203,7 +203,7 @@ void grouped_backward_mask_type_dispatched(
     });
   }
 
-  float alpha = 1.0f / std::sqrt(param.K);
+  float alpha = param.scale;
 
   auto op = DeviceOpInstance{};
   auto invoker = op.MakeInvoker();

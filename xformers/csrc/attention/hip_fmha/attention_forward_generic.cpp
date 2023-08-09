@@ -44,7 +44,6 @@ efficient_attention_forward_hip(
     // position of the first key token for batch $b
     const c10::optional<at::Tensor>& seqstart_k,
     // (Mode 1MHK only) Maximum sequence length across batches
-    const c10::optional<int64_t> max_seqlen_q_,
     double dropout_p, // attention matrix dropout probability
     bool compute_logsumexp,
     int64_t custom_mask_type,

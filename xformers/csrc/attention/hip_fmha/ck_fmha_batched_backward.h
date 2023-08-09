@@ -184,7 +184,7 @@ void batched_backward_mask_type_dispatched(
 
   std::vector<ck::index_t> lse_gs_ms_lengths{param.B, param.num_heads, param.M};
 
-  float alpha = 1.f / std::sqrt(param.K);
+  float alpha = param.scale;
 
   auto op = DeviceOpInstance{};
   auto invoker = op.MakeInvoker();

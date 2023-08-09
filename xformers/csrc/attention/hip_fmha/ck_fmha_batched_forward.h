@@ -148,9 +148,6 @@ void batched_forward_mask_type_dispatched(
           MaskingSpec, // MaskingSpecialization
           Deterministic>;
 
-  float p_dropout = 1 - param.dropout_prob;
-  ZDataType p_dropout_in_16bits = ZDataType(std::floor(p_dropout * 65535.0));
-  float rp_dropout = 1.0 / p_dropout;
   float alpha = 1.f / std::sqrt(param.K);
 
   std::vector<ck::index_t> a_gs_ms_ks_lengths{
@@ -195,6 +192,8 @@ void batched_forward_mask_type_dispatched(
       param.randvals_strides[3]};
 
   std::vector<ck::index_t> lse_gs_ms_lengths{param.B, param.num_heads, param.M};
+
+  float alpha = param.scale;
 
   auto a_element_op = AElementOp{};
   auto b0_element_op = B0ElementOp{};

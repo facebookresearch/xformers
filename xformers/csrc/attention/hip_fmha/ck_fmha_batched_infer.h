@@ -172,9 +172,11 @@ void batched_infer_mask_type_dispatched(
       param.out_strides[1],
       param.out_strides[3]};
 
+  float alpha = param.scale;
+
   auto a_element_op = AElementOp{};
   auto b0_element_op = B0ElementOp{};
-  auto acc0_element_op = Acc0ElementOp{1.0f};
+  auto acc0_element_op = Acc0ElementOp{alpha};
   auto b1_element_op = B1ElementOp{};
   auto c_element_op = CElementOp{};
 

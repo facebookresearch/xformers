@@ -210,7 +210,7 @@ void grouped_forward_mask_type_dispatched(
   const uint64_t seed = 1;
   const uint64_t offset = 0;
 
-  float alpha = 1.0f;
+  float alpha = param.scale;
 
   auto a_element_op = AElementOp{};
   auto b0_element_op = B0ElementOp{};
