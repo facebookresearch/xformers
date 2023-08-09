@@ -148,8 +148,6 @@ void batched_forward_mask_type_dispatched(
           MaskingSpec, // MaskingSpecialization
           Deterministic>;
 
-  float alpha = 1.f / std::sqrt(param.K);
-
   std::vector<ck::index_t> a_gs_ms_ks_lengths{
       param.B, param.num_heads, param.M, param.K};
   std::vector<ck::index_t> a_gs_ms_ks_strides{
