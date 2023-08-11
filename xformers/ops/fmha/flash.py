@@ -67,6 +67,7 @@ try:
             out_padded,
             softmax_lse,
             p,
+            rng_state,
         ) = _C_flashattention.varlen_fwd(
             query,
             key,
@@ -83,7 +84,7 @@ try:
             return_softmax,
             None,
         )
-        return out, softmax_lse, None
+        return out, softmax_lse, rng_state
 
     def _flash_bwd(
         grad,
@@ -123,6 +124,7 @@ try:
             False,  # zero_tensors
             causal,
             None,
+            rng_state,
         )
         return dq
 
@@ -301,18 +303,6 @@ class BwOp(AttentionBwOpBase):
     NAME = "flshattBv2"
 
     MAX_HEADDIM_SM8x = 192
-
-    @classmethod
-    def shape_not_supported_reasons(
-        cls, Mq: int, Mkv: int, K: int, Kv: int
-    ) -> List[str]:
-        reasons = super().shape_not_supported_reasons(Mq, Mkv, K, Kv)
-        if (Mq % 128) or (Mkv % 128):
-            reasons.append(
-                "flashv2 beta: BW is incorrect when seqlen is not aligned on 128 "
-                "(https://github.com/Dao-AILab/flash-attention/issues/334)"
-            )
-        return reasons
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:

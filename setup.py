@@ -143,13 +143,13 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
         nvcc_windows_flags = ["-Xcompiler", "/permissive-"]
 
     flash_root = os.path.join(this_dir, "third_party", "flash-attention")
-    if not os.path.exists(flash_root):
+    cutlass_inc = os.path.join(flash_root, "csrc", "cutlass", "include")
+    if not os.path.exists(flash_root) or not os.path.exists(cutlass_inc):
         raise RuntimeError(
             "flashattention submodule not found. Did you forget "
             "to run `git submodule update --init --recursive` ?"
         )
 
-    flash_root = os.path.join(this_dir, "third_party", "flash-attention")
     sources = ["csrc/flash_attn/flash_api.cpp"]
     for f in glob.glob(os.path.join(flash_root, "csrc", "flash_attn", "src", "*.cu")):
         sources.append(str(Path(f).relative_to(flash_root)))
