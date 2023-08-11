@@ -426,6 +426,8 @@ def create_attn_bias(
 
         if requires_grad:
             attn_bias.requires_grad_(True)
+        if fmt == "BMK":
+            attn_bias = attn_bias[:, 0]
         return attn_bias
     if bias_type is fmha.attn_bias.LowerTriangularMask:
         return fmha.attn_bias.LowerTriangularMask()

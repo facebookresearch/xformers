@@ -28,9 +28,9 @@ if TYPE_CHECKING or _is_triton_available():
             """Import a module from the given path, w/o __init__.py"""
             module_path = pathlib.Path(path).resolve()
             module_name = module_path.stem  # 'path/x.py' -> 'x'
-            spec = importlib.util.spec_from_file_location(module_name, module_path)
+            spec = importlib.util.spec_from_file_location(module_name, module_path)  # type: ignore
             assert isinstance(spec, importlib.machinery.ModuleSpec)
-            module = importlib.util.module_from_spec(spec)
+            module = importlib.util.module_from_spec(spec)  # type: ignore
             sys.modules[module_name] = module
             assert isinstance(spec.loader, importlib.abc.Loader)
             spec.loader.exec_module(module)

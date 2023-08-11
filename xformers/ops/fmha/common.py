@@ -11,7 +11,12 @@ import torch
 
 from ..._cpp_lib import _built_with_cuda
 from ..common import BaseOperator
-from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
+from .attn_bias import (
+    AttentionBias,
+    BlockDiagonalMask,
+    LowerTriangularMask,
+    LowerTriangularMaskWithTensorBias,
+)
 
 
 def _is_bias_type_supported_in_BMK(attn_bias_type: Any) -> bool:
@@ -56,6 +61,12 @@ class Inputs:
             self.query = self.query.unsqueeze(2)
             self.key = self.key.unsqueeze(2)
             self.value = self.value.unsqueeze(2)
+            if isinstance(self.attn_bias, torch.Tensor):
+                if self.attn_bias.ndim != 3:
+                    raise ValueError(
+                        f"Expected BMK format for attn_bias, but got {self.attn_bias.shape}"
+                    )
+                self.attn_bias = self.attn_bias.unsqueeze(1)
         return output_shape
 
     def validate_inputs(self) -> None:
@@ -86,6 +97,26 @@ class Inputs:
                 f"Please provide inputs in BMHK format rather "
                 f"than BMK when using bias type `{type(self.attn_bias).__name__}`"
             )
+        attn_bias_t: Optional[torch.Tensor] = None
+        if isinstance(self.attn_bias, torch.Tensor):
+            attn_bias_t = self.attn_bias
+        if isinstance(self.attn_bias, LowerTriangularMaskWithTensorBias):
+            attn_bias_t = self.attn_bias._bias
+        if self.query.ndim == 4 and attn_bias_t is not None:
+            expected_shape = (
+                self.query.shape[0],
+                self.query.shape[2],
+                self.query.shape[1],
+                self.key.shape[1],
+            )
+            if attn_bias_t.shape != expected_shape:
+                raise ValueError(
+                    f"Invalid shape for attention bias: {attn_bias_t.shape} (expected {expected_shape})\n"
+                    f"  query.shape: {self.query.shape}\n"
+                    f"  key.shape  : {self.key.shape}\n"
+                    f"  value.shape: {self.value.shape}"
+                )
+
         if isinstance(self.attn_bias, BlockDiagonalMask):
             if any(x.shape[0] != 1 for x in qkv):
                 raise ValueError(
