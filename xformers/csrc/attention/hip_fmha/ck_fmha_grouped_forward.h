@@ -5,32 +5,47 @@
 
 #include <ck/ck.hpp>
 #include <ck/tensor_operation/gpu/device/gemm_specialization.hpp>
-#include <ck/tensor_operation/gpu/device/impl/device_grouped_mha_fwd_xdl_cshuffle_v1.hpp>
+#include <ck/tensor_operation/gpu/device/impl/device_grouped_mha_fwd_xdl_cshuffle_v2.hpp>
 #include <ck/tensor_operation/gpu/device/tensor_specialization.hpp>
 #include <ck/tensor_operation/gpu/element/element_wise_operation.hpp>
 #include <ck/utility/sequence.hpp>
 
 #include "ck_fmha_util.h"
 
-template <typename scalar_t, int32_t custom_mask_type>
-void grouped_forward_mask_type_dispatched(
+template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
+void grouped_forward_masktype_attnbias_dispatched(
     GroupedForwardParams& param,
     hipStream_t stream);
 
 template <typename scalar_t>
 void grouped_forward(GroupedForwardParams& param, hipStream_t stream) {
-  if (param.custom_mask_type == 0)
-    grouped_forward_mask_type_dispatched<scalar_t, 0>(param, stream);
-  else if (param.custom_mask_type == 1)
-    grouped_forward_mask_type_dispatched<scalar_t, 1>(param, stream);
-  else if (param.custom_mask_type == 2)
-    grouped_forward_mask_type_dispatched<scalar_t, 2>(param, stream);
-  else
+  if (param.custom_mask_type == 0) {
+    if (param.has_attn_bias)
+      grouped_forward_masktype_attnbias_dispatched<scalar_t, 0, true>(
+          param, stream);
+    else
+      grouped_forward_masktype_attnbias_dispatched<scalar_t, 0, false>(
+          param, stream);
+  } else if (param.custom_mask_type == 1) {
+    if (param.has_attn_bias)
+      grouped_forward_masktype_attnbias_dispatched<scalar_t, 1, true>(
+          param, stream);
+    else
+      grouped_forward_masktype_attnbias_dispatched<scalar_t, 1, false>(
+          param, stream);
+  } else if (param.custom_mask_type == 2) {
+    if (param.has_attn_bias)
+      grouped_forward_masktype_attnbias_dispatched<scalar_t, 2, true>(
+          param, stream);
+    else
+      grouped_forward_masktype_attnbias_dispatched<scalar_t, 2, false>(
+          param, stream);
+  } else
     throw std::runtime_error("Invalid custom_mask_type value");
 };
 
-template <typename scalar_t, int32_t custom_mask_type = 0>
-void grouped_forward_mask_type_dispatched(
+template <typename scalar_t, int32_t custom_mask_type = 0, bool has_attn_bias>
+void grouped_forward_masktype_attnbias_dispatched(
     GroupedForwardParams& param,
     hipStream_t stream) {
   using PassThrough = ck::tensor_operation::element_wise::PassThrough;
@@ -44,7 +59,8 @@ void grouped_forward_mask_type_dispatched(
   using CDataType = scalar_t;
   using ZDataType = unsigned short;
   using LSEDataType = F32;
-  using Acc0BiasDataType = ck::Tuple<>;
+  using Acc0BiasDataType = typename std::
+      conditional<has_attn_bias, ck::Tuple<scalar_t>, ck::Tuple<>>::type;
   using Acc1BiasDataType = ck::Tuple<>;
 
   static constexpr ck::index_t NumDimG = 2;
@@ -76,7 +92,7 @@ void grouped_forward_mask_type_dispatched(
   static constexpr bool Deterministic = true;
 
   using DeviceOpInstance = ck::tensor_operation::device::
-      DeviceGroupedMultiheadAttentionForward_Xdl_CShuffle_V1<
+      DeviceGroupedMultiheadAttentionForward_Xdl_CShuffle_V2<
           NumDimG,
           NumDimM,
           NumDimN,
@@ -108,7 +124,7 @@ void grouped_forward_mask_type_dispatched(
           128, // MPerBlock
           128, // NPerBlock
           32, // KPerBlock
-          32, // Gemm1NPerBlock
+          64, // Gemm1NPerBlock
           32, // Gemm1KPerBlock
           8, // AK1
           8, // BK1
@@ -117,7 +133,8 @@ void grouped_forward_mask_type_dispatched(
           32, // NPerXDL
           1, // MXdlPerWave
           4, // NXdlPerWave
-          1, // Gemm1NXdlPerWave
+          2, // Gemm1NXdlPerWave
+          1, // DropoutStep
           S<4, 64, 1>, // ABlockTransfer
           S<1, 0, 2>,
           S<1, 0, 2>,
@@ -132,24 +149,46 @@ void grouped_forward_mask_type_dispatched(
           8,
           8,
           true,
+          1,
           S<16, 16, 1>, // B1BlockTransfer
           S<0, 2, 1>,
           S<0, 2, 1>,
           1,
-          2,
+          4,
           2,
           false,
           1, // CShuffleMXdlPerWavePerShuffle
-          1, // CShuffleNXdlPerWavePerShuffle
+          2, // CShuffleNXdlPerWavePerShuffle
           S<1,
-            64,
+            32,
             1,
-            4>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
+            8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
           8, // CShuffleBlockTransferScalarPerVector_NPerBlock
+          1,
           MaskingSpec, // MaskingSpecialization
           Deterministic>;
 
   std::vector<typename DeviceOpInstance::ProblemDesc> problem_descs;
+
+  auto func_bias_lengths_strides = [&](int G1, int M, int N) {
+    if constexpr (has_attn_bias) {
+      std::vector<ck::index_t> d_gs_ms_ns_lengths{1, G1, M, N};
+      std::vector<ck::index_t> d_gs_ms_ns_strides{
+          0,
+          param.attn_bias_strides[0],
+          param.attn_bias_strides[1],
+          param.attn_bias_strides[2]};
+
+      auto bias_lengths_arr =
+          std::vector<std::vector<ck::index_t>>{d_gs_ms_ns_lengths};
+      auto bias_strides_arr =
+          std::vector<std::vector<ck::index_t>>{d_gs_ms_ns_strides};
+      return std::make_tuple(bias_lengths_arr, bias_strides_arr);
+    } else
+      return std::make_tuple(
+          std::vector<std::vector<ck::index_t>>{},
+          std::vector<std::vector<ck::index_t>>{});
+  };
 
   for (std::size_t i = 0; i < param.num_batches; i++) {
     int M = param.host_seqstart_q[i + 1] - param.host_seqstart_q[i];
@@ -187,6 +226,8 @@ void grouped_forward_mask_type_dispatched(
     std::vector<ck::index_t> lse_gs_ms_lengths{1, G1, M};
     std::vector<ck::index_t> lse_gs_ms_strides{0, param.M, 1};
 
+    auto bias_lengths_strides = func_bias_lengths_strides(G1, M, N);
+
     problem_descs.push_back(
         {a_gs_ms_ks_lengths,
          a_gs_ms_ks_strides,
@@ -200,8 +241,8 @@ void grouped_forward_mask_type_dispatched(
          z_gs_ms_ns_strides,
          lse_gs_ms_lengths,
          lse_gs_ms_strides,
-         {}, // acc0_biases_gs_ms_ns_lengths
-         {}, // acc0_biases_gs_ms_ns_strides
+         std::get<0>(bias_lengths_strides),
+         std::get<1>(bias_lengths_strides),
          {}, // acc1_biases_gs_ms_os_lengths
          {}}); // acc1_biases_gs_ms_os_strides
   }
@@ -228,7 +269,7 @@ void grouped_forward_mask_type_dispatched(
       param.out_ptrs,
       param.randvals_ptrs,
       param.logsumexp_ptrs,
-      {}, // p_acc0_biases
+      std::vector<std::vector<const void*>>{param.attn_bias_ptrs},
       {}, // p_acc1_biases
       problem_descs,
       a_element_op,

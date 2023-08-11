@@ -187,6 +187,7 @@ struct BatchedInferParams {
   int Kv; // embed_dim for Value
 
   float scale;
+  bool has_attn_bias;
 
   // BMHK mode strides
   std::array<int, 4> q_strides;
@@ -206,15 +207,18 @@ struct BatchedInferParams {
 };
 
 struct BatchedForwardParams : public BatchedInferParams {
+  bool use_dropout;
+  bool compute_logsumexp;
+
   float dropout_prob;
   at::PhiloxCudaState rng_engine_inputs;
-
-  // completely contiguous
-  void* logsumexp_ptr;
 
   // BHMN mode strides, completely contiguous
   std::array<int32_t, 4> randvals_strides;
   void* randvals_ptr;
+
+  // completely contiguous
+  void* logsumexp_ptr;
 };
 
 struct GroupedInferParams {
@@ -230,6 +234,7 @@ struct GroupedInferParams {
   std::vector<int> host_seqlen_k;
 
   float scale;
+  bool has_attn_bias;
 
   // MHK mode strides, last-dim contiguous
   std::array<int, 3> q_strides;
@@ -250,15 +255,18 @@ struct GroupedInferParams {
 };
 
 struct GroupedForwardParams : public GroupedInferParams {
+  bool use_dropout;
+  bool compute_logsumexp;
+
   float dropout_prob;
   at::PhiloxCudaState rng_engine_inputs;
-
-  // completely contiguous
-  std::vector<void*> logsumexp_ptrs;
 
   // HMN mode strides, completely contiguous
   std::array<int, 3> randvals_strides;
   std::vector<void*> randvals_ptrs;
+
+  // completely contiguous
+  std::vector<void*> logsumexp_ptrs;
 };
 
 struct BatchedBackwardParams {

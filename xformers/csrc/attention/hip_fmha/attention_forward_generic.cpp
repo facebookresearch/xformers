@@ -19,9 +19,7 @@
 #include <torch/library.h>
 
 #include "ck_fmha_batched_forward.h"
-#include "ck_fmha_batched_infer.h"
 #include "ck_fmha_grouped_forward.h"
-#include "ck_fmha_grouped_infer.h"
 #include "ck_fmha_util.h"
 
 namespace {
@@ -115,7 +113,7 @@ efficient_attention_forward_hip(
     rng_engine_inputs = gen->philox_cuda_state(B * num_heads * M * N);
   }
 
-  auto set_batched_infer_params = [&](BatchedInferParams& p) {
+  auto set_batched_forward_params = [&](BatchedForwardParams& p) {
     p.B = B;
     p.M = M;
     p.N = N;
@@ -156,6 +154,7 @@ efficient_attention_forward_hip(
         static_cast<int>(out.stride(3))};
 
     if (bias.has_value()) {
+      p.has_attn_bias = true;
       p.attn_bias_ptr = bias->data_ptr();
 
       const at::Tensor bias_4d_view =
@@ -166,33 +165,41 @@ efficient_attention_forward_hip(
           static_cast<int>(bias_4d_view.stride(2)),
           static_cast<int>(bias_4d_view.stride(3))};
     } else
-      p.attn_bias_ptr = nullptr;
+      p.has_attn_bias = false;
 
     p.custom_mask_type = custom_mask_type;
+
+    p.use_dropout = use_dropout;
+    p.compute_logsumexp = compute_logsumexp;
+
+    // the following parameters are only used by training forward
+    if (p.use_dropout) {
+      p.dropout_prob = static_cast<float>(dropout_p);
+
+      p.rng_engine_inputs = rng_engine_inputs;
+
+      randvals = at::empty(
+          {B, num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
+      p.randvals_strides = {
+          static_cast<int>(randvals.stride(0)),
+          static_cast<int>(randvals.stride(1)),
+          static_cast<int>(randvals.stride(2)),
+          static_cast<int>(randvals.stride(3))};
+      p.randvals_ptr = randvals.data_ptr();
+    } else {
+      p.dropout_prob = 0.0f;
+      p.randvals_ptr = nullptr;
+    };
+
+    if (p.compute_logsumexp) {
+      logsumexp = at::empty(
+          {B, num_heads, M}, query.options().dtype(at::ScalarType::Float));
+      p.logsumexp_ptr = logsumexp.data_ptr();
+    } else
+      p.logsumexp_ptr = nullptr;
   };
 
-  auto set_batched_forward_params = [&](BatchedForwardParams& p) {
-    set_batched_infer_params(p);
-
-    p.dropout_prob = static_cast<float>(dropout_p);
-
-    p.rng_engine_inputs = rng_engine_inputs;
-
-    randvals = at::empty(
-        {B, num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
-    p.randvals_strides = {
-        static_cast<int>(randvals.stride(0)),
-        static_cast<int>(randvals.stride(1)),
-        static_cast<int>(randvals.stride(2)),
-        static_cast<int>(randvals.stride(3))};
-    p.randvals_ptr = randvals.data_ptr();
-
-    logsumexp = at::empty(
-        {B, num_heads, M}, query.options().dtype(at::ScalarType::Float));
-    p.logsumexp_ptr = logsumexp.data_ptr();
-  };
-
-  auto set_grouped_infer_params = [&](GroupedInferParams& p) {
+  auto set_grouped_forward_params = [&](GroupedForwardParams& p) {
     p.num_batches = seqstart_q->size(0) - 1;
     p.M = M;
     p.N = N;
@@ -288,6 +295,7 @@ efficient_attention_forward_hip(
       out_ptr = out_ptr + tmp_o_stride;
 
       if (bias.has_value()) {
+        p.has_attn_bias = true;
         int32_t tmp_bias_stride = get_size_in_bytes(
             p.host_seqstart_q[i] * p.attn_bias_strides[2] +
                 p.host_seqstart_k[i] * p.attn_bias_strides[3],
@@ -295,42 +303,49 @@ efficient_attention_forward_hip(
 
         p.attn_bias_ptrs.push_back(reinterpret_cast<void*>(attn_bias_ptr));
         attn_bias_ptr = attn_bias_ptr + tmp_bias_stride;
-      };
+      } else
+        p.has_attn_bias = false;
     }
-  };
 
-  auto set_grouped_forward_params = [&](GroupedForwardParams& p) {
-    set_grouped_infer_params(p);
+    p.use_dropout = use_dropout;
+    p.compute_logsumexp = compute_logsumexp;
 
-    p.dropout_prob = static_cast<float>(dropout_p);
-    p.rng_engine_inputs = rng_engine_inputs;
+    // the following parameters are only used by training forward
+    if (p.use_dropout) {
+      p.dropout_prob = static_cast<float>(dropout_p);
+      p.rng_engine_inputs = rng_engine_inputs;
 
-    logsumexp =
-        at::empty({num_heads, M}, query.options().dtype(at::ScalarType::Float));
+      randvals = at::empty(
+          {num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
+      p.randvals_strides = {
+          static_cast<int>(randvals.stride(0)),
+          static_cast<int>(randvals.stride(1)),
+          static_cast<int>(randvals.stride(2))};
+      char* randvals_ptr = reinterpret_cast<char*>(randvals.data_ptr());
 
-    randvals = at::empty(
-        {num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
-    p.randvals_strides = {
-        static_cast<int>(randvals.stride(0)),
-        static_cast<int>(randvals.stride(1)),
-        static_cast<int>(randvals.stride(2))};
+      for (int i = 0; i < p.num_batches; i++) {
+        int32_t tmp_randvals_stride = get_size_in_bytes(
+            p.host_seqstart_q[i] * p.randvals_strides[1] +
+                p.host_seqstart_k[i] * p.randvals_strides[2],
+            randvals.scalar_type());
 
-    char* logsumexp_ptr = reinterpret_cast<char*>(logsumexp.data_ptr());
-    char* randvals_ptr = reinterpret_cast<char*>(randvals.data_ptr());
+        p.randvals_ptrs.push_back(reinterpret_cast<void*>(randvals_ptr));
+        randvals_ptr = randvals_ptr + tmp_randvals_stride;
+      };
+    };
 
-    for (int i = 0; i < p.num_batches; i++) {
-      int32_t tmp_logsumexp_stride =
-          get_size_in_bytes(p.host_seqstart_q[i], logsumexp.scalar_type());
-      int32_t tmp_randvals_stride = get_size_in_bytes(
-          p.host_seqstart_q[i] * p.randvals_strides[1] +
-              p.host_seqstart_k[i] * p.randvals_strides[2],
-          randvals.scalar_type());
+    if (p.compute_logsumexp) {
+      logsumexp = at::empty(
+          {num_heads, M}, query.options().dtype(at::ScalarType::Float));
+      char* logsumexp_ptr = reinterpret_cast<char*>(logsumexp.data_ptr());
 
-      p.logsumexp_ptrs.push_back(reinterpret_cast<void*>(logsumexp_ptr));
-      logsumexp_ptr = logsumexp_ptr + tmp_logsumexp_stride;
+      for (int i = 0; i < p.num_batches; i++) {
+        int32_t tmp_logsumexp_stride =
+            get_size_in_bytes(p.host_seqstart_q[i], logsumexp.scalar_type());
 
-      p.randvals_ptrs.push_back(reinterpret_cast<void*>(randvals_ptr));
-      randvals_ptr = randvals_ptr + tmp_randvals_stride;
+        p.logsumexp_ptrs.push_back(reinterpret_cast<void*>(logsumexp_ptr));
+        logsumexp_ptr = logsumexp_ptr + tmp_logsumexp_stride;
+      };
     };
   };
 
@@ -343,35 +358,21 @@ efficient_attention_forward_hip(
         {B, M, num_heads, Kv},
         query.options().dtype(CkToAtenDtype<scalar_t>::atScalarType()));
 
-    if (!use_dropout && !compute_logsumexp) { // work is inference
-      if (!seqstart_q.has_value()) { // input is batched
-        BatchedInferParams batched_infer_params;
+    if (!seqstart_q.has_value()) { // input is batched
+      BatchedForwardParams batched_forward_params;
 
-        set_batched_infer_params(batched_infer_params);
-        batched_infer<scalar_t>(batched_infer_params, stream);
-      } else { // input is grouped
-        GroupedInferParams grouped_infer_params;
+      set_batched_forward_params(batched_forward_params);
+      batched_forward<scalar_t>(batched_forward_params, stream);
+    } else { // input is grouped
+      GroupedForwardParams grouped_forward_params;
 
-        set_grouped_infer_params(grouped_infer_params);
-        grouped_infer<scalar_t>(grouped_infer_params, stream);
-      }
-    } else { // work is training forward
-      if (!seqstart_q.has_value()) { // input is batched
-        BatchedForwardParams batched_forward_params;
-
-        set_batched_forward_params(batched_forward_params);
-        batched_forward<scalar_t>(batched_forward_params, stream);
-      } else { // input is grouped
-        GroupedForwardParams grouped_forward_params;
-
-        set_grouped_forward_params(grouped_forward_params);
-        grouped_forward<scalar_t>(grouped_forward_params, stream);
-      }
-
-      std::memcpy(&seed, &rng_engine_inputs.seed_, sizeof(seed));
-      std::memcpy(&offset, &rng_engine_inputs.offset_.val, sizeof(offset));
+      set_grouped_forward_params(grouped_forward_params);
+      grouped_forward<scalar_t>(grouped_forward_params, stream);
     }
   });
+
+  std::memcpy(&seed, &rng_engine_inputs.seed_, sizeof(seed));
+  std::memcpy(&offset, &rng_engine_inputs.offset_.val, sizeof(offset));
 
   return std::make_tuple(out, logsumexp, seed, offset);
 #endif

@@ -362,7 +362,7 @@ mem_efficient_attention_backward_hip(
 
   return std::make_tuple(grad_q, grad_k, grad_v, grad_bias);
 #endif
-} // namespace
+}
 
 } // namespace
 
