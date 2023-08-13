@@ -22,7 +22,7 @@
 
 namespace {
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-mem_efficient_attention_backward_hip(
+efficient_attention_backward_ck(
     const at::Tensor& grad_out,
     const at::Tensor& query,
     const at::Tensor& key,
@@ -368,6 +368,6 @@ mem_efficient_attention_backward_hip(
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::efficient_attention_backward_hip"),
-      TORCH_FN(mem_efficient_attention_backward_hip));
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_backward_ck"),
+      TORCH_FN(efficient_attention_backward_ck));
 }

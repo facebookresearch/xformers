@@ -30,7 +30,7 @@ namespace {
   (Mode 1MHK) `batch=1` with all tokens across batches concatenated
 */
 std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
-efficient_attention_forward_hip(
+efficient_attention_forward_ck(
     const at::Tensor& query, // [b, seqlen, num_heads, K]
     const at::Tensor& key, // [b, seqlen, num_heads, K]
     const at::Tensor& value, // [b, seqlen, num_heads, Kv]
@@ -388,8 +388,8 @@ bool is_ck_fmha_available() {
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_hip"),
-      TORCH_FN(efficient_attention_forward_hip));
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_ck"),
+      TORCH_FN(efficient_attention_forward_ck));
 }
 
 TORCH_LIBRARY_FRAGMENT(xformers, m) {
