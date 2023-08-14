@@ -172,7 +172,7 @@ class AttentionOpBase(BaseOperator):
         dtype = d.query.dtype
         if device_type not in cls.SUPPORTED_DEVICES:
             reasons.append(f"device={device_type} (supported: {cls.SUPPORTED_DEVICES})")
-        if device_type == "cuda" and not _built_with_cuda:
+        if device_type == "cuda" and not _built_with_cuda and (torch.version.hip is None):
             reasons.append("xFormers wasn't build with CUDA support")
         if dtype not in cls.SUPPORTED_DTYPES:
             reasons.append(f"dtype={dtype} (supported: {cls.SUPPORTED_DTYPES})")
