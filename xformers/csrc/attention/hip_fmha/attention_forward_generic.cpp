@@ -1,10 +1,3 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
 #include <cmath>
 #include <mutex>
 
@@ -47,12 +40,6 @@ efficient_attention_forward_ck(
     int64_t custom_mask_type,
     c10::optional<double> scale,
     const c10::optional<at::Tensor>& seqlen_k) {
-#ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
-  TORCH_CHECK(
-      false,
-      "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD");
-#else
-
   TORCH_CHECK(query.dim() == 4);
   TORCH_CHECK(key.dim() == 4);
   TORCH_CHECK(value.dim() == 4);
@@ -375,14 +362,7 @@ efficient_attention_forward_ck(
   std::memcpy(&offset, &rng_engine_inputs.offset_.val, sizeof(offset));
 
   return std::make_tuple(out, logsumexp, seed, offset);
-#endif
 }
-
-// For testing in xFormers
-bool is_ck_fmha_available() {
-  std::cout << "ck fmha is really here!" << std::endl;
-  return (true);
-};
 
 } // namespace
 
@@ -390,11 +370,4 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_ck"),
       TORCH_FN(efficient_attention_forward_ck));
-}
-
-TORCH_LIBRARY_FRAGMENT(xformers, m) {
-  m.def(TORCH_SELECTIVE_SCHEMA("xformers::is_ck_fmha_available() -> bool"));
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::is_ck_fmha_available"),
-      TORCH_FN(is_ck_fmha_available));
 }

@@ -185,7 +185,7 @@ void batched_forward_masktype_attnbias_dispatched(
 
   // to be changed to b1_gs_ns_os_lengths
   std::vector<ck::index_t> b1_gs_os_ns_lengths{
-      param.B, param.num_heads, param.N, param.Kv};
+      param.B, param.num_heads, param.Kv, param.N};
   std::vector<ck::index_t> b1_gs_os_ns_strides{
       param.v_strides[0],
       param.v_strides[2],
@@ -210,6 +210,9 @@ void batched_forward_masktype_attnbias_dispatched(
         param.randvals_strides[1],
         param.randvals_strides[2],
         param.randvals_strides[3]};
+  } else {
+    z_gs_ms_ns_lengths = {1, 1, 1, 1};
+    z_gs_ms_ns_strides = {0, 0, 0, 0};
   };
 
   std::vector<ck::index_t> lse_gs_ms_lengths{param.B, param.num_heads, param.M};
@@ -283,7 +286,7 @@ void batched_forward_masktype_attnbias_dispatched(
       acc0_element_op,
       b1_element_op,
       c_element_op,
-      param.dropout_prob, // dropout ratio
+      param.use_dropout ? param.dropout_prob : 0.0f, // dropout ratio
       {seed, offset}); // dropout random seed and offset, offset should be at
                        // least the number of elements on a thread
 
