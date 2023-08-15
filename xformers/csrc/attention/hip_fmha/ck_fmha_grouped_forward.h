@@ -59,9 +59,9 @@ void grouped_forward_masktype_attnbias_dispatched(
   using CDataType = scalar_t;
   using ZDataType = unsigned short;
   using LSEDataType = F32;
-  using Acc0BiasDataType = typename std::
-      conditional<has_attn_bias, ck::Tuple<scalar_t>, ck::Tuple<>>::type;
-  using Acc1BiasDataType = ck::Tuple<>;
+  using Acc0BiasDataType =
+      typename std::conditional<has_attn_bias, scalar_t, void>::type;
+  using Acc1BiasDataType = void;
 
   static constexpr ck::index_t NumDimG = 2;
   static constexpr ck::index_t NumDimM = 1;
@@ -170,26 +170,6 @@ void grouped_forward_masktype_attnbias_dispatched(
 
   std::vector<typename DeviceOpInstance::ProblemDesc> problem_descs;
 
-  auto func_bias_lengths_strides = [&](int G1, int M, int N) {
-    if constexpr (has_attn_bias) {
-      std::vector<ck::index_t> d_gs_ms_ns_lengths{1, G1, M, N};
-      std::vector<ck::index_t> d_gs_ms_ns_strides{
-          0,
-          param.attn_bias_strides[0],
-          param.attn_bias_strides[1],
-          param.attn_bias_strides[2]};
-
-      auto bias_lengths_arr =
-          std::vector<std::vector<ck::index_t>>{d_gs_ms_ns_lengths};
-      auto bias_strides_arr =
-          std::vector<std::vector<ck::index_t>>{d_gs_ms_ns_strides};
-      return std::make_tuple(bias_lengths_arr, bias_strides_arr);
-    } else
-      return std::make_tuple(
-          std::vector<std::vector<ck::index_t>>{},
-          std::vector<std::vector<ck::index_t>>{});
-  };
-
   for (std::size_t i = 0; i < param.num_batches; i++) {
     int M = param.host_seqstart_q[i + 1] - param.host_seqstart_q[i];
     int N = param.host_seqlen_k.empty()
@@ -226,7 +206,21 @@ void grouped_forward_masktype_attnbias_dispatched(
     std::vector<ck::index_t> lse_gs_ms_lengths{1, G1, M};
     std::vector<ck::index_t> lse_gs_ms_strides{0, param.M, 1};
 
-    auto bias_lengths_strides = func_bias_lengths_strides(G1, M, N);
+    std::vector<ck::index_t> d_gs_ms_ns_lengths;
+    std::vector<ck::index_t> d_gs_ms_ns_strides;
+
+    if constexpr (has_attn_bias) {
+      d_gs_ms_ns_lengths = {1, G1, M, N};
+      d_gs_ms_ns_strides = {
+          0,
+          param.attn_bias_strides[0],
+          param.attn_bias_strides[1],
+          param.attn_bias_strides[2]};
+
+    } else {
+      d_gs_ms_ns_lengths = {1, 1, 1, 1};
+      d_gs_ms_ns_strides = {0, 0, 0, 0};
+    };
 
     problem_descs.push_back(
         {a_gs_ms_ks_lengths,
@@ -241,10 +235,10 @@ void grouped_forward_masktype_attnbias_dispatched(
          z_gs_ms_ns_strides,
          lse_gs_ms_lengths,
          lse_gs_ms_strides,
-         std::get<0>(bias_lengths_strides),
-         std::get<1>(bias_lengths_strides),
-         {}, // acc1_biases_gs_ms_os_lengths
-         {}}); // acc1_biases_gs_ms_os_strides
+         d_gs_ms_ns_lengths,
+         d_gs_ms_ns_strides,
+         {}, // acc1_bias_gs_ms_os_lengths
+         {}}); // acc1_bias_gs_ms_os_strides
   }
 
   // TODO, how to initialize seed, offset
@@ -269,7 +263,7 @@ void grouped_forward_masktype_attnbias_dispatched(
       param.out_ptrs,
       param.randvals_ptrs,
       param.logsumexp_ptrs,
-      std::vector<std::vector<const void*>>{param.attn_bias_ptrs},
+      param.attn_bias_ptrs,
       {}, // p_acc1_biases
       problem_descs,
       a_element_op,
@@ -277,7 +271,7 @@ void grouped_forward_masktype_attnbias_dispatched(
       acc0_element_op,
       b1_element_op,
       c_element_op,
-      param.dropout_prob, // dropout ratio
+      param.use_dropout ? param.dropout_prob : 0.0f, // dropout ratio
       {seed, offset});
 
   SimpleDeviceMem workspace(op.GetWorkSpaceSize(arg_ptr.get()));

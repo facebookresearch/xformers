@@ -58,9 +58,9 @@ void batched_forward_masktype_attnbias_dispatched(
   using CDataType = scalar_t;
   using ZDataType = unsigned short;
   using LSEDataType = F32;
-  using Acc0BiasDataType = typename std::
-      conditional<has_attn_bias, ck::Tuple<scalar_t>, ck::Tuple<>>::type;
-  using Acc1BiasDataType = ck::Tuple<>;
+  using Acc0BiasDataType =
+      typename std::conditional<has_attn_bias, scalar_t, void>::type;
+  using Acc1BiasDataType = void;
 
   static constexpr ck::index_t NumDimG = 2;
   static constexpr ck::index_t NumDimM = 1;
@@ -217,28 +217,20 @@ void batched_forward_masktype_attnbias_dispatched(
 
   std::vector<ck::index_t> lse_gs_ms_lengths{param.B, param.num_heads, param.M};
 
-  auto bias_ptr_lengths_strides = [&]() {
-    if constexpr (has_attn_bias) {
-      auto bias_ptr_arr =
-          std::array<void*, 1>{const_cast<void*>(param.attn_bias_ptr)};
-      std::vector<ck::index_t> d_gs_ms_ns_lengths{
-          param.B, param.num_heads, param.M, param.N};
-      std::vector<ck::index_t> d_gs_ms_ns_strides{
-          param.attn_bias_strides[0],
-          param.attn_bias_strides[1],
-          param.attn_bias_strides[2],
-          param.attn_bias_strides[3]};
-      auto bias_lengths_arr =
-          std::array<std::vector<ck::index_t>, 1>{d_gs_ms_ns_lengths};
-      auto bias_strides_arr =
-          std::array<std::vector<ck::index_t>, 1>{d_gs_ms_ns_strides};
-      return std::make_tuple(bias_ptr_arr, bias_lengths_arr, bias_strides_arr);
-    } else
-      return std::make_tuple(
-          std::array<void*, 0>{},
-          std::array<std::vector<ck::index_t>, 0>{},
-          std::array<std::vector<ck::index_t>, 0>{});
-  }();
+  std::vector<ck::index_t> d_gs_ms_ns_lengths;
+  std::vector<ck::index_t> d_gs_ms_ns_strides;
+
+  if constexpr (has_attn_bias) {
+    d_gs_ms_ns_lengths = {param.B, param.num_heads, param.M, param.N};
+    d_gs_ms_ns_strides = {
+        param.attn_bias_strides[0],
+        param.attn_bias_strides[1],
+        param.attn_bias_strides[2],
+        param.attn_bias_strides[3]};
+  } else {
+    d_gs_ms_ns_lengths = {1, 1, 1, 1};
+    d_gs_ms_ns_strides = {0, 0, 0, 0};
+  };
 
   float alpha = param.scale;
 
@@ -262,8 +254,8 @@ void batched_forward_masktype_attnbias_dispatched(
       param.out_ptr,
       param.randvals_ptr,
       param.logsumexp_ptr,
-      std::get<0>(bias_ptr_lengths_strides),
-      {}, // std::array<void*, 1> p_acc1_biases;
+      param.has_attn_bias ? param.attn_bias_ptr : nullptr,
+      {}, // p_acc1_biases;
       a_gs_ms_ks_lengths,
       a_gs_ms_ks_strides,
       b0_gs_ns_ks_lengths,
@@ -275,12 +267,10 @@ void batched_forward_masktype_attnbias_dispatched(
       z_gs_ms_ns_lengths,
       z_gs_ms_ns_strides,
       lse_gs_ms_lengths,
-      std::get<1>(bias_ptr_lengths_strides),
-      std::get<2>(bias_ptr_lengths_strides),
-      {}, // std::array<std::vector<ck::index_t>,
-          // 1>{acc1_biases_gs_ms_os_lengths},
-      {}, // std::array<std::vector<ck::index_t>,
-          // 1>{acc1_biases_gs_ms_os_strides},
+      d_gs_ms_ns_lengths,
+      d_gs_ms_ns_strides,
+      {}, // acc1_biases_gs_ms_os_lengths
+      {}, // acc1_biases_gs_ms_os_strides,
       a_element_op,
       b0_element_op,
       acc0_element_op,
