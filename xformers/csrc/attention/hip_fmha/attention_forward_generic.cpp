@@ -348,11 +348,13 @@ efficient_attention_forward_ck(
     if (!seqstart_q.has_value()) { // input is batched
       BatchedForwardParams batched_forward_params;
 
+      std::cout << " -------- call batched_forward ---------" << std::endl; 
       set_batched_forward_params(batched_forward_params);
       batched_forward<scalar_t>(batched_forward_params, stream);
     } else { // input is grouped
       GroupedForwardParams grouped_forward_params;
 
+      std::cout << " -------- call grouped_forward ---------" << std::endl; 
       set_grouped_forward_params(grouped_forward_params);
       grouped_forward<scalar_t>(grouped_forward_params, stream);
     }

@@ -90,6 +90,11 @@ void batched_forward_masktype_attnbias_dispatched(
       ck::tensor_operation::device::TensorSpecialization::Default;
   static constexpr bool Deterministic = false;
 
+  // Tunables
+  static constexpr ck::index_t ABBlockTransferSrcScalarPerVector = 1;
+  static constexpr ck::index_t B1CShuffleBlockTransferScalarPerVector = 1;
+  static constexpr ck::index_t Acc0BiasTransferSrcScalarPerVector = 1;
+
   using DeviceOpInstance = ck::tensor_operation::device::
       DeviceBatchedMultiheadAttentionForward_Xdl_CShuffle_V2<
           NumDimG,
@@ -138,22 +143,22 @@ void batched_forward_masktype_attnbias_dispatched(
           S<1, 0, 2>,
           S<1, 0, 2>,
           2,
-          8,
+          ABBlockTransferSrcScalarPerVector, // TUNABLE
           8,
           true,
           S<4, 64, 1>, // BBlockTransfer
           S<1, 0, 2>,
           S<1, 0, 2>,
           2,
-          8,
+          ABBlockTransferSrcScalarPerVector, // TUNABLE
           8,
           true,
-          4,
+          Acc0BiasTransferSrcScalarPerVector, // TUNABLE
           S<16, 16, 1>, // B1BlockTransfer
           S<0, 2, 1>,
           S<0, 2, 1>,
           1,
-          4,
+          B1CShuffleBlockTransferScalarPerVector, // TUNABLE
           2,
           false,
           1, // CShuffleMXdlPerWavePerShuffle
@@ -162,7 +167,7 @@ void batched_forward_masktype_attnbias_dispatched(
             32,
             1,
             8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
-          8, // CShuffleBlockTransferScalarPerVector_NPerBlock
+          B1CShuffleBlockTransferScalarPerVector, // TUNABLE
           4,
           MaskingSpec, // MaskingSpecialization
           Deterministic>;
