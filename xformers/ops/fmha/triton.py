@@ -106,10 +106,12 @@ class FwOp(AttentionFwOpBase):
         if cls.OPERATOR is None:
             reasons.append("triton is not available")
         if d.device.type == "cuda":
-            # Has only been tested on 8.0.
+            # Has only been tested on 8.0 / 9.0.
             # Fails on 7.5 with illegal memory access
-            if torch.cuda.get_device_capability(d.device) != (8, 0):
-                reasons.append("requires A100 GPU")
+            if torch.cuda.get_device_capability(d.device) < (8, 0):
+                reasons.append(
+                    "requires GPU with sm80 minimum compute capacity, e.g., A100/H100/L4"
+                )
         if _is_triton_available():
             import triton
 
