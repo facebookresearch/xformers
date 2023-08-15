@@ -333,10 +333,12 @@
         <span class="k">if</span> <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;triton is not available&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
-            <span class="c1"># Has only been tested on 8.0.</span>
+            <span class="c1"># Has only been tested on 8.0 / 9.0.</span>
             <span class="c1"># Fails on 7.5 with illegal memory access</span>
-            <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
-                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;requires A100 GPU&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
+                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="s2">&quot;requires GPU with sm80 minimum compute capacity, e.g., A100/H100/L4&quot;</span>
+                <span class="p">)</span>
         <span class="k">if</span> <span class="n">_is_triton_available</span><span class="p">():</span>
             <span class="kn">import</span> <span class="nn">triton</span>
 
