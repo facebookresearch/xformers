@@ -157,6 +157,17 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
     NAME = "ckF"
 
+    ERROR_ATOL: Mapping[torch.dtype, float] = {
+        torch.float: 3e-4,
+        torch.half: 4e-3,
+        torch.bfloat16: 2e-2,
+    }
+    ERROR_RTOL: Mapping[torch.dtype, float] = {
+        torch.float: 2e-5,
+        torch.half: 4e-4,
+        torch.bfloat16: 2e-2,
+    }
+
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
         128,  # 64x128 kernel

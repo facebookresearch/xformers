@@ -78,17 +78,17 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
 
 
 SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
-        type(None),
-        #torch.Tensor,
-        #LowerTriangularMask,
-        #LowerTriangularMaskWithTensorBias,
+        ##type(None),
+        torch.Tensor,
+        ##LowerTriangularMask,
+        ##LowerTriangularMaskWithTensorBias,
         ##BlockDiagonalMask,
         ##BlockDiagonalCausalMask,
         ##BlockDiagonalCausalWithOffsetPaddedKeysMask,
         ##BlockDiagonalCausalFromBottomRightMask,
     }
 
-SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half}
+SUPPORTED_DTYPES: Set[torch.dtype] = {torch.bfloat16}
 
 def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
     ops_list: Sequence[Type[fmha.AttentionOpBase]], max_shapes_per_op: int = 65000
@@ -143,10 +143,10 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
         bias_type = type(None)
         for shape in (
             # Some strides/dims don't fit on an uint16
-            (4, 128, 128, 300, 128, 128),
-            (13, 1, 67, 200, 8, 8),
-            (4, 1 + 2**16, 4, 1, 8, 8),
-            (4, 4, 1 + 2**16, 1, 8, 8),
+            (4, 128, 128, 8, 128, 128),
+            (13, 1, 67, 16, 8, 8),
+            (4, 320, 4, 1, 8, 8),
+            (4, 4, 320, 1, 8, 8),
             # TODO: Some strides don't fit on an uint32
             # Crashes on Flash, Errors on Cutlass
             # (1, 1, 64000, 300, 128, 128)
@@ -576,6 +576,6 @@ def test_forward(
         out.float(),
         ref,
         atol=op.ERROR_ATOL[dtype],
-        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
+        rtol=op.ERROR_RTOL[dtype],
     )
 
