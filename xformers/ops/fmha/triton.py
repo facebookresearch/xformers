@@ -12,7 +12,10 @@ import torch
 from ... import _is_triton_available
 from ..common import register_operator
 
-if TYPE_CHECKING or _is_triton_available():
+# This implementation needs pre-MLIR triton
+# The BW pass is not stable/well tested
+# And also does not have the latest improvements
+if TYPE_CHECKING or (False and _is_triton_available()):
     try:
         from flash_attn.flash_attn_triton import (
             _flash_attn_backward,
