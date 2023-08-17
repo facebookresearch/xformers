@@ -55,7 +55,11 @@ class Inputs:
                 f"Invalid shape for query: {self.query.shape}. "
                 "Expected shape [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
             )
-        output_shape = (self.query.shape[:-1]) + (self.value.shape[-1],)
+        if self.value.dtype == torch.int32:
+            # Quantized K/V case, in which the last dims of Q and K/V are different
+            output_shape = tuple(self.query.shape)
+        else:
+            output_shape = (self.query.shape[:-1]) + (self.value.shape[-1],)
         # Convert from legacy format
         if self.query.ndim == 3:
             self.query = self.query.unsqueeze(2)
@@ -80,9 +84,12 @@ class Inputs:
             )
         if any(x.device != self.query.device for x in qkv):
             raise ValueError("Query/Key/Value should all be on the same device")
-        if any(x.dtype != self.query.dtype for x in qkv):
+        quantized_dtypes = self.key.dtype == self.value.dtype == torch.int32
+        non_quantized_dtypes = all(x.dtype == self.query.dtype for x in qkv)
+        if not (quantized_dtypes or non_quantized_dtypes):
             raise ValueError(
-                "Query/Key/Value should all have the same dtype\n"
+                "Query/Key/Value should either all have the same dtype, or "
+                "(in the quantized case) Key/Value should have dtype torch.int32\n"
                 f"  query.dtype: {self.query.dtype}\n"
                 f"  key.dtype  : {self.key.dtype}\n"
                 f"  value.dtype: {self.value.dtype}"
@@ -116,7 +123,6 @@ class Inputs:
                     f"  key.shape  : {self.key.shape}\n"
                     f"  value.shape: {self.value.shape}"
                 )
-
         if isinstance(self.attn_bias, BlockDiagonalMask):
             if any(x.shape[0] != 1 for x in qkv):
                 raise ValueError(
