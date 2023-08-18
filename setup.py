@@ -221,6 +221,7 @@ def get_extensions():
     include_dirs = [extensions_dir]
     ext_modules = []
     cuda_version = None
+    flash_version = "0.0.0"
 
     if (
         (torch.cuda.is_available() and ((CUDA_HOME is not None)))
@@ -258,9 +259,15 @@ def get_extensions():
             ]
         extra_compile_args["nvcc"] = nvcc_flags
 
-        ext_modules += get_flash_attention_extensions(
+        flash_extensions = get_flash_attention_extensions(
             cuda_version=cuda_version, extra_compile_args=extra_compile_args
         )
+        if flash_extensions:
+            flash_version = subprocess.check_output(
+                ["git", "describe", "--tags", "--always"],
+                cwd=Path(__file__).parent / "third_party" / "flash-attention",
+            ).decode("ascii")[:-1]
+        ext_modules += flash_extensions
 
         # NOTE: This should not be applied to Flash-Attention
         # see https://github.com/Dao-AILab/flash-attention/issues/359
@@ -286,6 +293,7 @@ def get_extensions():
             "cuda": cuda_version,
             "torch": torch.__version__,
             "python": platform.python_version(),
+            "flash": flash_version,
         },
         "env": {
             k: os.environ.get(k)

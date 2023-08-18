@@ -20,11 +20,19 @@ from .common import (
     check_lastdim_alignment_stride1,
 )
 
+FLASH_VERSION = "0.0.0"
 try:
     try:
         from ... import _C_flashattention  # type: ignore[attr-defined]
+        from ..._cpp_lib import _build_metadata
+
+        if _build_metadata is not None:
+            FLASH_VERSION = _build_metadata.flash_version
     except ImportError:
+        import flash_attn
         from flash_attn.flash_attn_interface import flash_attn_cuda as _C_flashattention
+
+        FLASH_VERSION = flash_attn.__version__
 
     # create library so that flash-attn goes through the PyTorch Dispatcher
     _flash_lib = torch.library.Library("xformers_flash", "DEF")
@@ -212,7 +220,8 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
-    NAME = "flshattFv2"
+    NAME = f"flshattF@{FLASH_VERSION}"
+    VERSION = FLASH_VERSION
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
@@ -300,7 +309,8 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
     IS_DETERMINISTIC = False
-    NAME = "flshattBv2"
+    NAME = f"flshattB@{FLASH_VERSION}"
+    VERSION = FLASH_VERSION
 
     MAX_HEADDIM_SM8x = 192
 
