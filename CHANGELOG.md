@@ -4,9 +4,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.21] - TBD
+## [0.0.22] - TBD
 ### Fixed
 ### Added
+
+## [0.0.21] - 2023-08-18
+### Improved
+- fMHA: Updated [flash-attention](https://github.com/Dao-AILab/flash-attention) to v2, with massive performance improvements for both the forward pass and backward pass. This implementation is now used by default when it's available
+### Bug fixes
+- fMHA/cutlass: Fix potential race condition in the FW/BW passes
+- fMHA/cutlass: Fix `attn_bias` stride overflow for very long sequences (>32k)
+- `LowerTriangularMask` is now backward compatible with older xformers versions
+### Breaking changes
+- `memory_efficient_attention` now expects the `attn_bias` argument to have a head dimension
+- `memory_efficient_attention` no longer broadcasts the batch/head dimensions of `attn_bias`. Please use `.expand` if you need to broadcast the bias
+- Remove `causal_diagonal` argument from `BlockDiagonalCausalWithOffsetPaddedKeysMask`
+### Added
+- Binary wheels on pypi/conda now contain H100 kernels
+- fMHA: Added backend specialized for decoding that does not use TensorCores - useful when not using multiquery
+
+**NOTE**: Binary wheels are now provided only for PyTorch 2 with cuda 11.8. It is still possible to use xFormers with older versions of PyTorch by building from source or using conda.
+
 
 ## [0.0.20] - 2023-05-23
 ### Improved
