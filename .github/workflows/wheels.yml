@@ -28,14 +28,6 @@ jobs:
           - "3.11"
         torch_version:
           - "2.0.1"
-          - "1.13.1"
-          - "1.12.1"
-        exclude:
-          # py311 only works with PyTorch >= 2.0
-          - python: "3.11"
-            torch_version: "1.12.1"
-          - python: "3.11"
-            torch_version: "1.13.1"
         include:
           - sdist: false
             publish: false
@@ -51,10 +43,6 @@ jobs:
           # Set corresponding CUDA version
           - torch_version: "2.0.1"
             cuda_short_version: "118"
-          - torch_version: "1.13.1"
-            cuda_short_version: "117"
-          - torch_version: "1.12.1"
-            cuda_short_version: "116"
 
     uses: ./.github/workflows/wheels_reusable.yml
     if: github.repository == 'facebookresearch/xformers' || github.event_name == 'pull_request'

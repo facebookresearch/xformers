@@ -129,8 +129,11 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
 
         arch_arr = arch.split(".")
         num = 10 * int(arch_arr[0]) + int(arch_arr[1].partition("+")[0])
-        # Need at least 8.0
+        # Need at least Sm80
         if num < 80:
+            continue
+        # Sm90 requires nvcc 11.8+
+        if num >= 90 and cuda_version < 1108:
             continue
         nvcc_archs_flags.append(f"-gencode=arch=compute_{num},code=sm_{num}")
         if arch.endswith("+PTX"):

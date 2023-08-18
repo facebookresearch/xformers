@@ -28,13 +28,13 @@ xFormers is:
 
 ## Installing xFormers
 
-* **(RECOMMENDED, linux) Install latest stable with conda**: Requires [PyTorch 1.12.1, 1.13.1 or 2.0.0 installed with conda](https://pytorch.org/get-started/locally/)
+* **(RECOMMENDED, linux) Install latest stable with conda**: Requires [PyTorch 1.12.1, 1.13.1 or 2.0.1 installed with conda](https://pytorch.org/get-started/locally/)
 
 ```bash
 conda install xformers -c xformers
 ```
 
-* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.0.0](https://pytorch.org/get-started/locally/)
+* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.0.1](https://pytorch.org/get-started/locally/)
 
 ```bash
 pip install -U xformers
