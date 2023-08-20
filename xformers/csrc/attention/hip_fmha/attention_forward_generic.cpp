@@ -218,6 +218,7 @@ efficient_attention_forward_ck(
         static_cast<int>(out.stride(3))};
 
     if (bias.has_value()) {
+      p.has_attn_bias = true;
       const at::Tensor bias_4d_view =
           get_bias_4d_view(*bias, B, num_heads, M, N);
       p.attn_bias_strides = {
@@ -225,7 +226,8 @@ efficient_attention_forward_ck(
           static_cast<int>(bias_4d_view.stride(1)),
           static_cast<int>(bias_4d_view.stride(2)),
           static_cast<int>(bias_4d_view.stride(3))};
-    };
+    } else
+      p.has_attn_bias = false;
 
     p.custom_mask_type = custom_mask_type;
 
@@ -245,6 +247,7 @@ efficient_attention_forward_ck(
         seqstart_k->data_ptr(),
         (p.num_batches + 1) * sizeof(int32_t),
         hipMemcpyDeviceToHost));
+
     if (seqlen_k.has_value())
       FMHA_HIP_CHECK(hipMemcpy(
           p.host_seqlen_k.data(),
@@ -257,41 +260,33 @@ efficient_attention_forward_ck(
     char* v_ptr = reinterpret_cast<char*>(value.data_ptr());
 
     char* out_ptr = reinterpret_cast<char*>(out.data_ptr());
-    char* attn_bias_ptr = reinterpret_cast<char*>(bias->data_ptr());
+    char* attn_bias_ptr =
+        bias.has_value() ? reinterpret_cast<char*>(bias->data_ptr()) : nullptr;
 
     for (int i = 0; i < p.num_batches; i++) {
-      int32_t tmp_q_stride = get_size_in_bytes(
+      int32_t tmp_q_offset = get_size_in_bytes(
           p.host_seqstart_q[i] * p.q_strides[0], query.scalar_type());
-      int32_t tmp_k_stride = get_size_in_bytes(
+      int32_t tmp_k_offset = get_size_in_bytes(
           p.host_seqstart_k[i] * p.k_strides[0], key.scalar_type());
-      int32_t tmp_v_stride = get_size_in_bytes(
+      int32_t tmp_v_offset = get_size_in_bytes(
           p.host_seqstart_k[i] * p.v_strides[0], value.scalar_type());
-      int32_t tmp_o_stride = get_size_in_bytes(
+      int32_t tmp_o_offset = get_size_in_bytes(
           p.host_seqstart_q[i] * p.out_strides[0], out.scalar_type());
 
-      p.q_ptrs.push_back(reinterpret_cast<void*>(q_ptr));
-      q_ptr = q_ptr + tmp_q_stride;
-
-      p.k_ptrs.push_back(reinterpret_cast<void*>(k_ptr));
-      k_ptr = k_ptr + tmp_k_stride;
-
-      p.v_ptrs.push_back(reinterpret_cast<void*>(v_ptr));
-      v_ptr = v_ptr + tmp_k_stride;
-
-      p.out_ptrs.push_back(reinterpret_cast<void*>(out_ptr));
-      out_ptr = out_ptr + tmp_o_stride;
+      p.q_ptrs.push_back(reinterpret_cast<void*>(&q_ptr[tmp_q_offset]));
+      p.k_ptrs.push_back(reinterpret_cast<void*>(&k_ptr[tmp_k_offset]));
+      p.v_ptrs.push_back(reinterpret_cast<void*>(&v_ptr[tmp_v_offset]));
+      p.out_ptrs.push_back(reinterpret_cast<void*>(&out_ptr[tmp_o_offset]));
 
       if (bias.has_value()) {
-        p.has_attn_bias = true;
-        int32_t tmp_bias_stride = get_size_in_bytes(
+        int32_t tmp_bias_offset = get_size_in_bytes(
             p.host_seqstart_q[i] * p.attn_bias_strides[2] +
                 p.host_seqstart_k[i] * p.attn_bias_strides[3],
             bias->scalar_type());
 
-        p.attn_bias_ptrs.push_back(reinterpret_cast<void*>(attn_bias_ptr));
-        attn_bias_ptr = attn_bias_ptr + tmp_bias_stride;
-      } else
-        p.has_attn_bias = false;
+        p.attn_bias_ptrs.push_back(
+            reinterpret_cast<void*>(&attn_bias_ptr[tmp_bias_offset]));
+      };
     }
 
     p.use_dropout = use_dropout;
@@ -319,7 +314,8 @@ efficient_attention_forward_ck(
         p.randvals_ptrs.push_back(reinterpret_cast<void*>(randvals_ptr));
         randvals_ptr = randvals_ptr + tmp_randvals_stride;
       };
-    };
+    } else
+      p.dropout_prob = 0.0f;
 
     if (p.compute_logsumexp) {
       logsumexp = at::empty(
@@ -341,21 +337,20 @@ efficient_attention_forward_ck(
   int64_t seed, offset;
 
   DISPATCH_TYPES(query.scalar_type(), [&]() {
-    out = at::empty(
+    out = at::zeros(
         {B, M, num_heads, Kv},
         query.options().dtype(CkToAtenDtype<scalar_t>::atScalarType()));
 
     if (!seqstart_q.has_value()) { // input is batched
       BatchedForwardParams batched_forward_params;
 
-      std::cout << " -------- call batched_forward ---------" << std::endl; 
       set_batched_forward_params(batched_forward_params);
       batched_forward<scalar_t>(batched_forward_params, stream);
     } else { // input is grouped
       GroupedForwardParams grouped_forward_params;
 
-      std::cout << " -------- call grouped_forward ---------" << std::endl; 
       set_grouped_forward_params(grouped_forward_params);
+      std::cout << " -------- call grouped_forward ---------" << std::endl;
       grouped_forward<scalar_t>(grouped_forward_params, stream);
     }
   });

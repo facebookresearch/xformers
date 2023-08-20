@@ -491,12 +491,13 @@ SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
 '''
 
 @pytest.mark.parametrize("packed", [False, True])
-@pytest.mark.parametrize("fmt", ["BMHK"])
+@pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 def test_forward(fmt, packed):
     op = fmha.ck.FwOp
     device = torch.device("cuda")
     dtype = torch.float16 
-    bias_type = fmha.attn_bias.LowerTriangularMask
+    ##bias_type = fmha.attn_bias.LowerTriangularMask
+    bias_type = fmha.attn_bias.BlockDiagonalCausalMask
     batch_size = 7 
     q_len = 1000
     kv_len = 1000
