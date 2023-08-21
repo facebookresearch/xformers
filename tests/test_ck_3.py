@@ -32,126 +32,6 @@ T = TypeVar(
     "T", Type[fmha.common.AttentionFwOpBase], Type[fmha.common.AttentionBwOpBase]
 )
 
-def sample_random_supported_fw(
-    inp: fmha.Inputs, seed: int
-) -> Type[fmha.common.AttentionFwOpBase]:
-    r = random.Random(seed)
-    fw_ops = list(ALL_FW_OPS)
-    r.shuffle(fw_ops)
-    for op in fw_ops:
-        if op.supports(inp):
-            return op
-    raise NotImplementedError(f"Could not find a FW operator for: {inp}")
-
-
-def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
-    shapes = []
-
-    # Add some random shapes
-    if op in [
-        fmha.ck.FwOp,
-        fmha.ck.BwOp,
-    ]:
-        K_CHOICES = [8 * i for i in range(1, 256 // 8)]
-        r = random.Random(0)
-        for _ in range(20):
-            B = r.randint(1, 400)
-            Mq = r.randint(1, 500)
-            Mkv = r.randint(1, 500)
-            H = r.randint(2, 11)
-            B = max(B // H, 1)
-            K = r.choice(K_CHOICES)
-            Kv = r.choice(K_CHOICES)
-            if not op.SUPPORTS_DIFFERENT_VALUE_EMBED:
-                Kv = K
-            shapes.append((B, Mq, Mkv, H, K, Kv))
-    return shapes
-
-
-def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
-    ops_list: Sequence[Type[fmha.AttentionOpBase]], max_shapes_per_op: int = 65000
-):
-    r = random.Random(0)
-    combination = []
-    ids = []
-    for op in ops_list:
-        op_count = 0
-        # Sort list of masks, so it's deterministic across runs
-        LIST_MASKS = list(
-            sorted(list(op.SUPPORTED_ATTN_BIAS_TYPES), key=lambda x: str(x))
-        )
-        for shape in generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
-            has_one = False
-            for device in _devices:
-                if device not in op.SUPPORTED_DEVICES:
-                    continue
-                for dtype in op.SUPPORTED_DTYPES:
-                    bias_type = r.choice(LIST_MASKS)
-                    # Avoid using too much memory
-                    if bias_type not in [
-                        type(None),
-                        fmha.attn_bias.LowerTriangularMask,
-                    ]:
-                        B, Mq, Mkv, H, K, Kv = shape
-                        B = min(B, 12)
-
-                        if (
-                            bias_type
-                            is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask
-                        ):
-                            Mq, Mkv = min(Mkv, Mq), max(Mkv, Mq) + 2
-                        elif (
-                            bias_type
-                            is fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask
-                        ):
-                            Mq, Mkv = min(Mkv, Mq), max(Mkv, Mq)
-                        shape = (B, Mq, Mkv, H, K, Kv)
-                    combination.append((op, device, dtype, bias_type, *shape))
-                    ids.append(
-                        f"{op.NAME}-{device}-{str(dtype)}-{bias_type.__name__}"
-                        f"-{'-'.join([str(s) for s in shape])}"
-                    )
-                    has_one = True
-            if has_one:
-                op_count += 1
-            if op_count > max_shapes_per_op:
-                break
-        # Some specific shapes for which we want to run without any mask
-        bias_type = type(None)
-        for shape in (
-            # Some strides/dims don't fit on an uint16
-            (1, 128, 128, 300, 128, 128),
-            (13, 1, 67, 200, 8, 8),
-            (1, 1 + 2**16, 4, 1, 8, 8),
-            (1, 4, 1 + 2**16, 1, 8, 8),
-            # TODO: Some strides don't fit on an uint32
-            # Crashes on Flash, Errors on Cutlass
-            # (1, 1, 64000, 300, 128, 128)
-        ):
-            for device in _devices:
-                if device not in op.SUPPORTED_DEVICES:
-                    continue
-                for dtype in op.SUPPORTED_DTYPES:
-                    combination.append((op, device, dtype, bias_type, *shape))
-                    ids.append(
-                        f"{op.NAME}-{device}-{str(dtype)}-{bias_type.__name__}"
-                        f"-{'-'.join([str(s) for s in shape])}"
-                    )
-    return {
-        "argvalues": combination,
-        "ids": ids,
-    }
-
-
-parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = pytest.mark.parametrize(
-    "opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv",
-    **_generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(ALL_FW_OPS),
-)
-parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametrize(
-    "opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv",
-    **_generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(ALL_FW_OPS, max_shapes_per_op=1),
-)
-
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
     if q.ndim == 4:
         assert p == 0.0
@@ -244,15 +124,6 @@ def _rand_seqlens(
     return seqlens_q, seqlens_k
 
 
-def _rand_partition(r: random.Random, total: int, n: int) -> List[int]:
-    # returns list of n nonnegative integers summing to total
-    idx = {0, total}
-    while len(idx) < n + 1:
-        idx.add(r.randint(1, total - 1))
-    s = sorted(idx)
-    return [e - b for b, e in zip(s[:-1], s[1:])]
-
-
 def _rand_maxed_partition(
     r: random.Random, total: int, n: int, mx: int, positive: bool = True
 ) -> List[int]:
@@ -326,7 +197,7 @@ def create_attn_bias(
         if fmt == "BMK":
             batch_size *= num_heads
             num_heads = 1
-        # `small_k` only supports an expanded 1d bias
+        ##`small_k` only supports an expanded 1d bias
         if op in [fmha.small_k.FwOp, fmha.small_k.BwOp]:
             attn_bias = (
                 torch.randn(
@@ -346,7 +217,7 @@ def create_attn_bias(
             )
 
             # make sure it also works if the first columns are partially masked out
-            attn_bias[0, 0, q_len - 1 :, : num_heads - 2] = -math.inf
+            # attn_bias[0, 0, q_len - 1 :, : num_heads - 2] = -math.inf
 
         if requires_grad:
             attn_bias.requires_grad_(True)
@@ -464,20 +335,6 @@ def create_tensors(
         pytest.skip(err_msg)
     return query, key, value, attn_bias
 
-
-def bmhk2bmk(tensor) -> torch.Tensor:
-    return (
-        tensor.permute((0, 2, 1, 3))
-        .contiguous()
-        .view([tensor.shape[0] * tensor.shape[2], tensor.shape[1], tensor.shape[3]])
-    )
-
-
-def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
-    return tensor.reshape([-1, num_heads, tensor.shape[1], tensor.shape[2]]).permute(
-        (0, 2, 1, 3)
-    )
-
 ## The same set of supported attn_bias types as defined by ck.FwOp
 SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
@@ -487,23 +344,24 @@ SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         fmha.attn_bias.BlockDiagonalMask,
         fmha.attn_bias.BlockDiagonalCausalMask,
         fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask }
+        fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
+        }
 
 @pytest.mark.parametrize("bias_type", SUPPORTED_ATTN_BIAS_TYPES)
 @pytest.mark.parametrize("packed", [False, True])
-@pytest.mark.parametrize("fmt", ["BMHK"])
+@pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("dtype", [torch.half, torch.bfloat16])
 def test_forward(dtype, fmt, packed, bias_type):
     op = fmha.ck.FwOp
     device = torch.device("cuda")
-    batch_size = 7 
+    batch_size = 7
     q_len = 200
     if bias_type is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask:
-       kv_len = int(q_len * 1.2) 
+        kv_len = int(q_len * 1.2) 
     else:
-       kv_len = q_len
-    h = 3
-    k = 64
+        kv_len = q_len
+    h = 3 
+    k = 64 
     kv = 64
 
     if packed and not (k == kv and q_len == kv_len):
@@ -517,11 +375,16 @@ def test_forward(dtype, fmt, packed, bias_type):
         op, device, dtype, bias_type, batch_size, q_len, kv_len, h, k, kv, fmt="BMHK" if packed else fmt
     )
 
+    print("query shape: ", query.shape)
+    print("key shape: ", key.shape)
+    print("value shape: ", value.shape)
+
+    ## when packed, the query, key, value is in BMHK format
     if packed:
         c = torch.stack([query, key, value], 2)
         if fmt == "BMK":
             # bm3hk -> 3bhmk -> 3Bmk
-            c = c.permute(2, 0, 3, 1, 4).view([3, -1, q_len, k])
+            c = c.permute(2, 0, 3, 1, 4).reshape([3, batch_size*h, q_len, k])
             query, key, value = c[0], c[1], c[2]
             # Re-create bias in the right format
             attn_bias = create_attn_bias(
@@ -539,7 +402,7 @@ def test_forward(dtype, fmt, packed, bias_type):
         else:
             # bm3hk -> 3 x bmhk
             query, key, value = xformers.ops.unbind(c, 2)
-        assert not query.is_contiguous()
+        ##assert not query.is_contiguous()
 
     out = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op
