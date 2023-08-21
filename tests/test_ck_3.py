@@ -356,6 +356,8 @@ def test_forward(dtype, fmt, packed, bias_type):
     device = torch.device("cuda")
     batch_size = 7
     q_len = 200
+
+    ## BottomRightMask requires generate {m0,m1,...}, {n0,n1,...} where mi <= ni
     if bias_type is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask:
         kv_len = int(q_len * 1.2) 
     else:

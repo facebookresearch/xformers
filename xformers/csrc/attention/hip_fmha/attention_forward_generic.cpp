@@ -58,6 +58,9 @@ efficient_attention_forward_ck(
   // Embedding per head
   TORCH_CHECK(query.size(3) == key.size(3));
 
+  TORCH_CHECK(query.scalar_type() == key.scalar_type());
+  TORCH_CHECK(query.scalar_type() == value.scalar_type());
+
   TORCH_CHECK(seqstart_q.has_value() == seqstart_k.has_value());
   if (seqstart_q.has_value()) {
     TORCH_CHECK(seqstart_q->scalar_type() == at::ScalarType::Int);
@@ -141,6 +144,8 @@ efficient_attention_forward_ck(
         static_cast<int>(out.stride(3))};
 
     if (bias.has_value()) {
+      TORCH_CHECK(bias->scalar_type() == query.scalar_type());
+
       p.has_attn_bias = true;
       p.attn_bias_ptr = bias->data_ptr();
 
@@ -218,6 +223,8 @@ efficient_attention_forward_ck(
         static_cast<int>(out.stride(3))};
 
     if (bias.has_value()) {
+      TORCH_CHECK(bias->scalar_type() == query.scalar_type());
+
       p.has_attn_bias = true;
       const at::Tensor bias_4d_view =
           get_bias_4d_view(*bias, B, num_heads, M, N);
