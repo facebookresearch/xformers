@@ -28,7 +28,7 @@ class FwOp(AttentionFwOpBase):
     OPERATOR = get_xformers_operator("efficient_attention_forward_decoder")
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.bfloat16, torch.half, torch.float32}
-    CUDA_MINIMUM_COMPUTE_CAPABILITY = (8, 0)
+    CUDA_MINIMUM_COMPUTE_CAPABILITY = (7, 0)
     SUPPORTED_MAX_K: float = 128
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {BlockDiagonalCausalWithOffsetPaddedKeysMask}
     SUPPORTS_DROPOUT = False

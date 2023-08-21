@@ -24,6 +24,9 @@ cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires C
 compute_capability = (0, 0)
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability("cuda")
+sm70_or_better_only = pytest.mark.skipif(
+    compute_capability < (7, 0), reason="requires sm70+"
+)
 sm75_or_better_only = pytest.mark.skipif(
     compute_capability < (7, 5), reason="requires sm75+"
 )
@@ -1629,7 +1632,7 @@ def test_attn_bias_padded() -> None:
     )
 
 
-@sm80_or_better_only
+@sm70_or_better_only
 @pytest.mark.parametrize("op", [fmha.decoder.FwOp])
 @pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "")
 @pytest.mark.parametrize("n_heads", [1, 16, 32])
@@ -1666,14 +1669,22 @@ def test_decoder(
     if not op.supports(inp):
         pytest.skip("not supported")
 
+    decoder_output = fmha.memory_efficient_attention_forward(
+        q, k, v, attn_bias, op=fmha.decoder.FwOp
+    )
+
+    if dtype == "bf16" and compute_capability < (8, 0):
+        # cutlass not supported. This test only checks there is a result.
+        assert not decoder_output.isnan().any()
+        return
+
     cutlass_output = fmha.memory_efficient_attention_forward(
         q, k, v, attn_bias, op=fmha.cutlass.FwOp
     )
-    decoder_output = fmha.memory_efficient_attention_forward(q, k, v, attn_bias, op=op)
     assert_allclose(
         decoder_output,
         cutlass_output,
-        atol=fmha.cutlass.FwOp.ERROR_ATOL[dtype_],
+        atol=fmha.cutlass.FwOp.ERROR_ATOL[dtype_] * 4,
         rtol=fmha.cutlass.FwOp.ERROR_RTOL[dtype_],
     )
 

@@ -17,7 +17,7 @@
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
 #include <cuda/atomic>
 #endif
 
@@ -42,7 +42,18 @@ constexpr int32_t kWarpsPerBlock = 32;
 constexpr int32_t D_H = 128;
 constexpr int32_t T_MAX = 8192;
 
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+
+inline __device__ float2 bf1622float2(const __nv_bfloat162 val) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
+  float2 f_val;
+  f_val.x = __low2float(val);
+  f_val.y = __high2float(val);
+  return f_val;
+#else
+  return __bfloat1622float2(val);
+#endif
+}
 
 struct __align__(16) fx4 {
   float x;
@@ -85,15 +96,15 @@ __device__ __forceinline__ float scalar4_dot(
   // acc.x = static_cast<int>(0);
   // acc.y = static_cast<int>(0);
   // TODO: need to be performed in float32?
-  auto a0 = __bfloat1622float2(a.vals[0]);
-  auto a1 = __bfloat1622float2(a.vals[1]);
-  auto b0 = __bfloat1622float2(b.vals[0]);
-  auto b1 = __bfloat1622float2(b.vals[1]);
+  auto a0 = bf1622float2(a.vals[0]);
+  auto a1 = bf1622float2(a.vals[1]);
+  auto b0 = bf1622float2(b.vals[0]);
+  auto b1 = bf1622float2(b.vals[1]);
   return a0.x * b0.x + a0.y * b0.y + a1.x * b1.x + a1.y * b1.y;
 
   // acc = __hfma2(a.vals[0], b.vals[0], acc);
   // acc = __hfma2(a.vals[1], b.vals[1], acc);
-  // auto r = __bfloat1622float2(acc);
+  // auto r = bf1622float2(acc);
   // return r.x + r.y;
 }
 __device__ __forceinline__ float scalar4_dot(
@@ -114,8 +125,8 @@ __device__ __forceinline__ float scalar4_dot(
 // bfx4_scale_acc
 __device__ __forceinline__ fx4
 scalar4_scale_acc(fx4 acc, scalar4<at::BFloat16> a, float b) {
-  auto axy = __bfloat1622float2(a.vals[0]);
-  auto azw = __bfloat1622float2(a.vals[1]);
+  auto axy = bf1622float2(a.vals[0]);
+  auto azw = bf1622float2(a.vals[1]);
   acc.x += axy.x * b;
   acc.y += axy.y * b;
   acc.z += azw.x * b;
@@ -188,7 +199,7 @@ __inline__ __device__ T warpReduceMax(T val) {
   return val;
 }
 
-#endif // defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
+#endif // defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
 
 // TODO: can also fuse RoPe into this kernel. Doesn't seem worth it.
 template <
@@ -203,7 +214,7 @@ __global__ void mqa_attn_kernel(
     at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> O,
     at::PackedTensorAccessor32<int32_t, 1, at::RestrictPtrTraits> seq_positions,
     float qk_scale) {
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
   using whole_int_t = typename scalar4<scalar_t>::whole_int_t;
   static_assert(4 * kThreadsPerWarp == D_H, "");
   static_assert(kWarpsPerBlock <= kThreadsPerWarp, "");
@@ -405,7 +416,7 @@ __global__ void mqa_attn_kernel(
   }
 #else
   printf("FATAL: kernel is for sm80+ only");
-#endif // defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
+#endif // defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
 }
 
 at::Tensor mqa_attn(
