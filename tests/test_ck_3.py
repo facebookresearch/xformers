@@ -5,7 +5,7 @@
 
 import math
 import random
-from typing import List, Optional, Sequence, Tuple, Type, TypeVar
+from typing import List, Optional, Sequence, Tuple, Type, TypeVar, Set, Any
 
 import pytest
 import torch
@@ -478,29 +478,30 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
         (0, 2, 1, 3)
     )
 
-'''
+## The same set of supported attn_bias types as defined by ck.FwOp
 SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
         torch.Tensor,
-        LowerTriangularMask,
-        LowerTriangularMaskWithTensorBias,
-        BlockDiagonalMask,
-        BlockDiagonalCausalMask,
-        BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        attn_bias.BlockDiagonalCausalFromBottomRightMask,
-'''
+        fmha.attn_bias.LowerTriangularMask,
+        fmha.attn_bias.LowerTriangularMaskWithTensorBias,
+        fmha.attn_bias.BlockDiagonalMask,
+        fmha.attn_bias.BlockDiagonalCausalMask,
+        fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask }
 
+@pytest.mark.parametrize("bias_type", SUPPORTED_ATTN_BIAS_TYPES)
 @pytest.mark.parametrize("packed", [False, True])
-@pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
-def test_forward(fmt, packed):
+@pytest.mark.parametrize("fmt", ["BMHK"])
+@pytest.mark.parametrize("dtype", [torch.half, torch.bfloat16])
+def test_forward(dtype, fmt, packed, bias_type):
     op = fmha.ck.FwOp
     device = torch.device("cuda")
-    dtype = torch.float16 
-    ##bias_type = fmha.attn_bias.LowerTriangularMask
-    bias_type = fmha.attn_bias.BlockDiagonalCausalMask
     batch_size = 7 
-    q_len = 1000
-    kv_len = 1000
+    q_len = 200
+    if bias_type is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask:
+       kv_len = int(q_len * 1.2) 
+    else:
+       kv_len = q_len
     h = 3
     k = 64
     kv = 64

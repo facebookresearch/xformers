@@ -184,9 +184,6 @@ void grouped_forward_masktype_attnbias_dispatched(
     int Kv = param.Kv;
     int G1 = param.num_heads;
 
-    std::cout << "M, N, G1, K, Kv: " << M << " " << N << " " << G1 << " " << K
-              << " " << Kv << std::endl;
-
     std::vector<ck::index_t> a_gs_ms_ks_lengths{1, G1, M, K};
     std::vector<ck::index_t> a_gs_ms_ks_strides{
         0, param.q_strides[1], param.q_strides[0], param.q_strides[2]};

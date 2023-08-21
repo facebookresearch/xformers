@@ -79,16 +79,16 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
 
 SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         ##type(None),
-        torch.Tensor,
+        ##torch.Tensor,
         ##LowerTriangularMask,
-        ##LowerTriangularMaskWithTensorBias,
+        LowerTriangularMaskWithTensorBias,
         ##BlockDiagonalMask,
         ##BlockDiagonalCausalMask,
         ##BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        ##BlockDiagonalCausalFromBottomRightMask,
+        #3BlockDiagonalCausalFromBottomRightMask,
     }
 
-SUPPORTED_DTYPES: Set[torch.dtype] = {torch.bfloat16}
+SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half}
 
 def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
     ops_list: Sequence[Type[fmha.AttentionOpBase]], max_shapes_per_op: int = 65000
@@ -502,8 +502,8 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
     )
 
 
-@pytest.mark.parametrize("fmt", ["BMHK"])
-@pytest.mark.parametrize("packed", [False])
+@pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
+@pytest.mark.parametrize("packed", [False, True])
 @parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 def test_forward(
     opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,

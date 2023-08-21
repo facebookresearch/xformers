@@ -350,7 +350,6 @@ efficient_attention_forward_ck(
       GroupedForwardParams grouped_forward_params;
 
       set_grouped_forward_params(grouped_forward_params);
-      std::cout << " -------- call grouped_forward ---------" << std::endl;
       grouped_forward<scalar_t>(grouped_forward_params, stream);
     }
   });
