@@ -17,7 +17,7 @@ VOCAB = 16
 DEVICES = (
     [torch.device("cpu")]
     if not torch.cuda.is_available()
-    else [torch.device("cuda")]  # save a bit on CI, we have seperate cpu and gpu jobs
+    else [torch.device("cuda")]  # save a bit on CI, we have separate cpu and gpu jobs
 )
 
 _test_config_encoder = {

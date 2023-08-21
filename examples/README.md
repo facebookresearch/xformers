@@ -1,4 +1,3 @@
-
 # Examples
 
 You can find in this folder a couple of ready to use examples, which include dataset, training loop and modelling through xFormers.

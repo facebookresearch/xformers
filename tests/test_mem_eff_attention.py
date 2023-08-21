@@ -148,9 +148,7 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
     for op in ops_list:
         op_count = 0
         # Sort list of masks, so it's deterministic across runs
-        LIST_MASKS = list(
-            sorted(list(op.SUPPORTED_ATTN_BIAS_TYPES), key=lambda x: str(x))
-        )
+        LIST_MASKS = list(sorted(op.SUPPORTED_ATTN_BIAS_TYPES, key=lambda x: str(x)))
         for shape in generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
             has_one = False
             for device in _devices:

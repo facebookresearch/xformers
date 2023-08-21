@@ -3,7 +3,7 @@ seq: 1024
 vocab: 64
 
 defaults:
-  - /stack@xformer.stack_configs: 
+  - /stack@xformer.stack_configs:
      - encoder_local
      - encoder_random
      - decoder_nystrom_favor

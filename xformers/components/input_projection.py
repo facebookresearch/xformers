@@ -41,7 +41,7 @@ class InputProjection(nn.Module):
 
         self.out_features = query_proj_params.out_features
 
-        # Each input gets a seperate projection
+        # Each input gets a separate projection
         self.q_proj = nn.Linear(
             query_proj_params.in_features,
             query_proj_params.out_features,
