@@ -144,6 +144,7 @@ efficient_attention_forward_ck(
         static_cast<int>(out.stride(3))};
 
     if (bias.has_value()) {
+      CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
       TORCH_CHECK(bias->scalar_type() == query.scalar_type());
 
       p.has_attn_bias = true;
@@ -241,9 +242,6 @@ efficient_attention_forward_ck(
     p.host_seqstart_q.resize(p.num_batches + 1);
     p.host_seqstart_k.resize(p.num_batches + 1);
 
-    if (seqlen_k.has_value())
-      p.host_seqlen_k.resize(p.num_batches);
-
     FMHA_HIP_CHECK(hipMemcpy(
         p.host_seqstart_q.data(),
         seqstart_q->data_ptr(),
@@ -255,12 +253,20 @@ efficient_attention_forward_ck(
         (p.num_batches + 1) * sizeof(int32_t),
         hipMemcpyDeviceToHost));
 
-    if (seqlen_k.has_value())
+    if (seqlen_k.has_value()) {
+      TORCH_CHECK(seqlen_k->scalar_type() == at::ScalarType::Int);
+      TORCH_CHECK(seqlen_k->dim() == 1);
+      TORCH_CHECK(seqlen_k->size(0) == p.num_batches)
+      CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqlen_k));
+
+      p.host_seqlen_k.resize(p.num_batches);
+
       FMHA_HIP_CHECK(hipMemcpy(
           p.host_seqlen_k.data(),
           seqlen_k->data_ptr(),
           p.num_batches * sizeof(int32_t),
           hipMemcpyDeviceToHost));
+    }
 
     char* q_ptr = reinterpret_cast<char*>(query.data_ptr());
     char* k_ptr = reinterpret_cast<char*>(key.data_ptr());
