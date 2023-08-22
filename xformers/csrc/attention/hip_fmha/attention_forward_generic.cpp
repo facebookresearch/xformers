@@ -11,9 +11,20 @@
 #include <c10/util/Optional.h>
 #include <torch/library.h>
 
-#include "ck_fmha_batched_forward.h"
-#include "ck_fmha_grouped_forward.h"
 #include "ck_fmha_util.h"
+
+extern void batched_forward_fp16(
+    BatchedForwardParams& param,
+    hipStream_t stream);
+extern void batched_forward_bp16(
+    BatchedForwardParams& param,
+    hipStream_t stream);
+extern void grouped_forward_fp16(
+    GroupedForwardParams& param,
+    hipStream_t stream);
+extern void grouped_forward_bp16(
+    GroupedForwardParams& param,
+    hipStream_t stream);
 
 namespace {
 
@@ -358,12 +369,24 @@ efficient_attention_forward_ck(
       BatchedForwardParams batched_forward_params;
 
       set_batched_forward_params(batched_forward_params);
-      batched_forward<scalar_t>(batched_forward_params, stream);
+
+      if constexpr (std::is_same<scalar_t, ck::half_t>::value) {
+        batched_forward_fp16(batched_forward_params, stream);
+      } else if constexpr (std::is_same<scalar_t, ck::bhalf_t>::value) {
+        batched_forward_bp16(batched_forward_params, stream);
+      } else
+        throw std::runtime_error("input data-type is not supported");
     } else { // input is grouped
       GroupedForwardParams grouped_forward_params;
 
       set_grouped_forward_params(grouped_forward_params);
-      grouped_forward<scalar_t>(grouped_forward_params, stream);
+
+      if constexpr (std::is_same<scalar_t, ck::half_t>::value) {
+        grouped_forward_fp16(grouped_forward_params, stream);
+      } else if constexpr (std::is_same<scalar_t, ck::bhalf_t>::value) {
+        grouped_forward_bp16(grouped_forward_params, stream);
+      } else
+        throw std::runtime_error("input data-type is not supported");
     }
   });
 

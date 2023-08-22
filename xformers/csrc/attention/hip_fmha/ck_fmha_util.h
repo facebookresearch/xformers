@@ -11,6 +11,7 @@
 #include <ck/ck.hpp>
 #include <ck/utility/data_type.hpp>
 #include <ck/utility/sequence.hpp>
+#include <ATen/cuda/CUDAGeneratorImpl.h>
 
 // Here flag can be a constant, variable or function call
 #define FMHA_HIP_CHECK(ret_or_call)                                          \
