@@ -366,6 +366,9 @@ def test_forward(dtype, fmt, packed, bias_type):
     k = 64 
     kv = 64
 
+    if kv > 128:
+        pytest.skip("kv > 128 is not supported by CK-FlashAttention-1")
+
     if packed and not (k == kv and q_len == kv_len):
         pytest.skip(
             f"packed incompatible with `k ({k}) != kv ({kv})` or `q_len ({q_len}) != kv_len ({kv_len})`"

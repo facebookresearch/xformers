@@ -501,7 +501,6 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
         (0, 2, 1, 3)
     )
 
-
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("packed", [False, True])
 @parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
@@ -522,6 +521,9 @@ def test_forward(
         k,
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
+
+    if kv > 128:
+        pytest.skip("kv > 128 is not supported by CK-FlashAttention-1")
 
     if packed and not (k == kv and q_len == kv_len):
         pytest.skip(

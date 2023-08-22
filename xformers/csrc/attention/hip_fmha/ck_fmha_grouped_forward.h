@@ -129,7 +129,7 @@ void grouped_forward_masktype_attnbias_dispatched(
           128, // MPerBlock
           128, // NPerBlock
           32, // KPerBlock
-          64, // Gemm1NPerBlock
+          128, // Gemm1NPerBlock
           32, // Gemm1KPerBlock
           8, // AK1
           8, // BK1
@@ -138,7 +138,7 @@ void grouped_forward_masktype_attnbias_dispatched(
           32, // NPerXDL
           1, // MXdlPerWave
           4, // NXdlPerWave
-          2, // Gemm1NXdlPerWave
+          4, // Gemm1NXdlPerWave
           1, // DropoutStep
           S<4, 64, 1>, // ABlockTransfer
           S<1, 0, 2>,
@@ -155,7 +155,7 @@ void grouped_forward_masktype_attnbias_dispatched(
           8,
           true,
           Acc0BiasTransferSrcScalarPerVector,
-          S<16, 16, 1>, // B1BlockTransfer
+          S<8, 32, 1>, // B1BlockTransfer
           S<0, 2, 1>,
           S<0, 2, 1>,
           1,
