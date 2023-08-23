@@ -216,6 +216,8 @@ def create_attn_bias(
                 dtype=dtype,
             )
 
+            # ToDo: need a fix in ck-flashAttn to avoid divided-by-zero when all-(-inf) occurred
+            #       with the data read by one-thread
             # make sure it also works if the first columns are partially masked out
             # attn_bias[0, 0, q_len - 1 :, : num_heads - 2] = -math.inf
 
