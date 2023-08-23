@@ -1,4 +1,6 @@
 #include <ck/ck.hpp>
+#include <stdexcept>
+
 #include "ck_fmha_batched_forward.h"
 
 void batched_forward_fp16(BatchedForwardParams& param, hipStream_t stream) {

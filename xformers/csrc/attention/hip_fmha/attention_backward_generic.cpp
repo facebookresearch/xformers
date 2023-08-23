@@ -9,11 +9,23 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
 
-#include "ck_fmha_batched_backward.h"
-#include "ck_fmha_grouped_backward.h"
 #include "ck_fmha_util.h"
 
+extern void batched_backward_fp16(
+    BatchedBackwardParams& param,
+    hipStream_t stream);
+extern void batched_backward_bp16(
+    BatchedBackwardParams& param,
+    hipStream_t stream);
+extern void grouped_backward_fp16(
+    GroupedBackwardParams& param,
+    hipStream_t stream);
+extern void grouped_backward_bp16(
+    GroupedBackwardParams& param,
+    hipStream_t stream);
+
 namespace {
+
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor>
 efficient_attention_backward_ck(
     const at::Tensor& grad_out,
@@ -344,12 +356,24 @@ efficient_attention_backward_ck(
       BatchedBackwardParams batched_backward_params;
 
       set_batched_backward_params(batched_backward_params);
-      batched_backward<scalar_t>(batched_backward_params, stream);
+
+      if constexpr (std::is_same<scalar_t, ck::half_t>::value) {
+        batched_backward_fp16(batched_backward_params, stream);
+      } else if constexpr (std::is_same<scalar_t, ck::bhalf_t>::value) {
+        batched_backward_bp16(batched_backward_params, stream);
+      } else
+        throw std::runtime_error("input data-type is not supported");
     } else { // input is grouped
       GroupedBackwardParams grouped_backward_params;
 
       set_grouped_backward_params(grouped_backward_params);
-      grouped_backward<scalar_t>(grouped_backward_params, stream);
+
+      if constexpr (std::is_same<scalar_t, ck::half_t>::value) {
+        grouped_backward_fp16(grouped_backward_params, stream);
+      } else if constexpr (std::is_same<scalar_t, ck::bhalf_t>::value) {
+        grouped_backward_bp16(grouped_backward_params, stream);
+      } else
+        throw std::runtime_error("input data-type is not supported");
     }
   });
 

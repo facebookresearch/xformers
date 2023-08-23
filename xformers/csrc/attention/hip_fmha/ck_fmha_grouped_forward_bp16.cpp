@@ -1,4 +1,6 @@
 #include <ck/ck.hpp>
+#include <stdexcept>
+
 #include "ck_fmha_grouped_forward.h"
 
 void grouped_forward_bp16(GroupedForwardParams& param, hipStream_t stream) {

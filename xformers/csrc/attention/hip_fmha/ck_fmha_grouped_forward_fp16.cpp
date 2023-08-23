@@ -1,10 +1,7 @@
 #include <ck/ck.hpp>
-#include "ck_fmha_grouped_forward.h"
+#include <stdexcept>
 
-template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
-void grouped_forward_masktype_attnbias_dispatched(
-    GroupedForwardParams& param,
-    hipStream_t stream);
+#include "ck_fmha_grouped_forward.h"
 
 void grouped_forward_fp16(GroupedForwardParams& param, hipStream_t stream) {
   if (param.custom_mask_type == 0) {
