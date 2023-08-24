@@ -29,17 +29,7 @@ from .common import (
 )
 
 def _minimum_gemm_alignment(inp: Inputs) -> int:
-    if inp.device.type != "cuda":
-        return 1
-    bits_per_scalar = {torch.float: 32, torch.half: 16, torch.bfloat16: 16}[
-        inp.query.dtype
-    ]
-    ## for MI200/MI300 only
-    uses_tensorcores = True 
-    matmul_alignment_mn = 4 
-    if uses_tensorcores:
-        matmul_alignment_mn = max(matmul_alignment_mn, 128 // bits_per_scalar)
-    return matmul_alignment_mn
+    return 1 
 
 
 def _get_seqlen_info(

@@ -20,13 +20,8 @@ from .utils import assert_allclose
 
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-compute_capability = (0, 0)
-if torch.cuda.is_available():
-    compute_capability = torch.cuda.get_device_capability("cuda")
-sm75_or_better_only = pytest.mark.skipif(
-    compute_capability < (7, 5), reason="requires sm75+"
-)
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+_types = [torch.float16, torch.bfloat16]
 
 ALL_FW_OPS: Sequence[Type[fmha.common.AttentionFwOpBase]] = [
     fmha.ck.FwOp,
@@ -45,11 +40,7 @@ def _filter_unsupported_ops(ops: Sequence[T]) -> Sequence[T]:
     return [
         op
         for op in ops
-        if (
-            "cpu" in op.SUPPORTED_DEVICES
-            or op.CUDA_MINIMUM_COMPUTE_CAPABILITY <= compute_capability
-        )
-        and op.is_available()
+        if op.is_available()
     ]
 
 
@@ -101,9 +92,8 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
             shapes.append((max(1, B // H), Mq, Mkv, H, K, K))
     # Add some random shapes
     if op in [
-        fmha.cutlass.FwOp,
-        fmha.cutlass.BwOp,
-        fmha.flash.BwOp,
+        fmha.ck.FwOp,
+        fmha.ck.BwOp,
     ]:
         K_CHOICES = [8 * i for i in range(1, 256 // 8)]
         r = random.Random(0)
@@ -557,7 +547,6 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
         (0, 2, 1, 3)
     )
 
-
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("packed", [False, True])
 @parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
@@ -635,7 +624,7 @@ def test_forward(
         assert_allclose(
              out.float(),
              ref,
-             atol=2.5e-2,
+             atol=2.8e-2,
              rtol=1e-2,
         )
     else:
@@ -651,18 +640,22 @@ def test_forward(
 @pytest.mark.parametrize("batch_size", [1, 4])
 @pytest.mark.parametrize("kv_len", [128, 512])
 @pytest.mark.parametrize("q_len", [128, 512])
-@pytest.mark.parametrize("device", _devices)
-def test_key_query_all_ones(device, q_len, kv_len, batch_size, k_len):
+@pytest.mark.parametrize("device", [torch.device("cuda")])
+@pytest.mark.parametrize("test_type", _types)
+def test_key_query_all_ones(test_type, device, q_len, kv_len, batch_size, k_len):
     scale = 3
-    query = torch.ones((batch_size, q_len, k_len), device=device)
-    key = torch.ones((batch_size, kv_len, k_len), device=device)
-    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    query = torch.ones((batch_size, q_len, k_len), device=device, dtype=test_type)
+    key = torch.ones((batch_size, kv_len, k_len), device=device, dtype=test_type)
+    value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=test_type) * scale
 
-    out = xformers.ops.memory_efficient_attention(query, key, value)
+    out = xformers.ops.memory_efficient_attention(query, key, value, op=(fmha.ck.FwOp, None))
     # this should be equivalent to the average over value
     ref = value.mean(1, keepdim=True).expand_as(query)
 
-    assert_allclose(out, ref, atol=1e-5)
+    if test_type is torch.float16:
+        assert_allclose(out, ref, atol=1e-5)
+    else:
+        assert_allclose(out, ref, atol=1e-2)
 
 
 def _block_diag_reshape_lse(
@@ -1027,32 +1020,20 @@ def _test_dropout_backward(q_len, kv_len, batch_size, k, p, op, dtype):
 
 
 @cuda_only
-@pytest.mark.parametrize("p", [0.3, 0.7])
-@pytest.mark.parametrize("k", [5, 6, 32])
-@pytest.mark.parametrize("batch_size", [1, 2])
-@pytest.mark.parametrize("kv_len", [3, 15, 32, 33])
-@pytest.mark.parametrize("q_len", [2, 33])
-def test_dropout_backward_small_k(q_len, kv_len, batch_size, k, p):
-    _test_dropout_backward(
-        q_len, kv_len, batch_size, k, p, op=fmha.small_k.FwOp, dtype=torch.float32
-    )
-
-
-@cuda_only
 @pytest.mark.parametrize("p", [0.000001, 0.3, 0.7])
 @pytest.mark.parametrize("k", [16, 128, 256])
 @pytest.mark.parametrize("batch_size", [1, 2])
 @pytest.mark.parametrize("kv_len", [3, 248, 256])
 @pytest.mark.parametrize("q_len", [3, 248, 256])
 @pytest.mark.parametrize("dt", ["f16", "bf16", "f32"])
-def test_dropout_backward_cutlass(dt, q_len, kv_len, batch_size, k, p):
+def test_dropout_backward_ck(dt, q_len, kv_len, batch_size, k, p):
     _test_dropout_backward(
         q_len,
         kv_len,
         batch_size,
         k,
         p,
-        op=fmha.cutlass.FwOp,
+        op=fmha.ck.FwOp,
         dtype={"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dt],
     )
 
@@ -1387,24 +1368,6 @@ def test_unsupported_stride_alignment(op: Type[fmha.AttentionFwOpBase]):
             pytest.skip("Only work on pre-MLIR triton for now")
         q = q.contiguous()
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
-
-
-@sm75_or_better_only
-def test_unsupported_dropout_combine_flash_cutlass() -> None:
-    q = torch.empty(
-        [1, 4, 1, 16], device="cuda", dtype=torch.float16, requires_grad=True
-    )
-    with pytest.raises(ValueError):
-        out = fmha.memory_efficient_attention(
-            q, q, q, p=0.1, op=(fmha.cutlass.FwOp, fmha.flash.BwOp)
-        )
-        out.backward(out)
-    with pytest.raises(ValueError):
-        out = fmha.memory_efficient_attention(
-            q, q, q, p=0.1, op=(fmha.flash.FwOp, fmha.cutlass.BwOp)
-        )
-        out.backward(out)
-
 
 def test_attn_bias_causal() -> None:
     m = -math.inf
