@@ -232,12 +232,19 @@
 
 
 <span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">replace</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">zip_longest</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
 <span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">_get_storage_base</span><span class="p">,</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
-<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">,</span> <span class="n">LowerTriangularMask</span>
+<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AttentionBias</span><span class="p">,</span>
+    <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalMask</span><span class="p">,</span>
+    <span class="n">LowerTriangularMask</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBwOpBase</span><span class="p">,</span>
     <span class="n">AttentionFwOpBase</span><span class="p">,</span>
@@ -426,6 +433,39 @@
     <span class="k">return</span> <span class="n">new_inp</span><span class="p">,</span> <span class="n">softmax_scale</span><span class="p">,</span> <span class="n">cu_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">cu_seqlen_k</span><span class="p">,</span> <span class="n">max_seqlen_k</span>
 
 
+<span class="k">def</span> <span class="nf">_is_causal</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span>
+        <span class="n">attn_bias</span><span class="p">,</span>
+        <span class="p">(</span>
+            <span class="n">LowerTriangularMask</span><span class="p">,</span>
+            <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+            <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_check_needs_no_topleft</span><span class="p">(</span><span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">reasons</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="c1"># Flash does not support TopLeft, so only allow causal masks with TopLeft</span>
+    <span class="c1"># if each batch element has equal number of queries and keys.</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">):</span>
+        <span class="c1"># Flash does not support TopLeft, so only allow BlockDiagonalCausalMask</span>
+        <span class="c1"># if each batch element has equal number of queries and keys.</span>
+        <span class="k">for</span> <span class="n">k_start</span><span class="p">,</span> <span class="n">q_start</span> <span class="ow">in</span> <span class="n">zip_longest</span><span class="p">(</span>
+            <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span>
+        <span class="p">):</span>
+            <span class="k">if</span> <span class="n">k_start</span> <span class="o">!=</span> <span class="n">q_start</span><span class="p">:</span>
+                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="s2">&quot;Only support BlockDiagonalCausalMask if equal&quot;</span>
+                    <span class="s2">&quot; numbers of keys and queries&quot;</span>
+                <span class="p">)</span>
+                <span class="k">break</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">LowerTriangularMask</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s2">&quot;Only support LowerTriangularMask if equal number of&quot;</span> <span class="s2">&quot;keys and queries&quot;</span>
+            <span class="p">)</span>
+
+
 <div class="viewcode-block" id="FwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.flash.FwOp">[docs]</a><span class="nd">@register_operator</span>
 <span class="k">class</span> <span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Operator that computes memory-efficient attention using \</span>
@@ -443,6 +483,7 @@
         <span class="n">LowerTriangularMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+        <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
     <span class="p">}</span>
     <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="kc">True</span>
@@ -454,6 +495,7 @@
     <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
         <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">FwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
+        <span class="n">_check_needs_no_topleft</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">reasons</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
@@ -485,7 +527,7 @@
             <span class="n">max_seqlen_k</span><span class="p">,</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
             <span class="n">softmax_scale</span><span class="p">,</span>
-            <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="p">(</span><span class="n">LowerTriangularMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">)),</span>
+            <span class="n">_is_causal</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
             <span class="n">return_softmax</span><span class="p">,</span>
         <span class="p">)</span>
 
@@ -545,6 +587,7 @@
     <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
         <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">BwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
+        <span class="n">_check_needs_no_topleft</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">reasons</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
             <span class="c1"># Due to limited shared-memory, some GPUs are limited in head dimension</span>
             <span class="n">device_capability</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
@@ -629,7 +672,7 @@
             <span class="n">max_seqlen_k</span><span class="p">,</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
             <span class="n">softmax_scale</span><span class="p">,</span>
-            <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="p">(</span><span class="n">LowerTriangularMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">)),</span>
+            <span class="n">_is_causal</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
             <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">grads</span><span class="o">.</span><span class="n">dq</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">dq_shape</span><span class="p">)</span>
