@@ -279,6 +279,7 @@ struct BatchedBackwardParams {
   int Kv; // embed_dim for Value
 
   float scale;
+  bool has_attn_bias; 
 
   // BMHK mode strides, last-dim contiguous
   std::array<int, 4> q_strides;
@@ -331,6 +332,7 @@ struct GroupedBackwardParams {
   std::vector<int> host_seqlen_k;
 
   float scale;
+  bool has_attn_bias; 
 
   // MHK mode strides, last-dim contiguous
   std::array<int, 3> q_strides;

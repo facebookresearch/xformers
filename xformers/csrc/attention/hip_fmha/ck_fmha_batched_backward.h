@@ -11,8 +11,8 @@
 
 #include "ck_fmha_util.h"
 
-template <typename scalar_t, int32_t custom_mask_type = 0>
-void batched_backward_mask_type_dispatched(
+template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
+void batched_backward_masktype_attnbias_dispatched(
     BatchedBackwardParams& param,
     hipStream_t stream) {
   using PassThrough = ck::tensor_operation::element_wise::PassThrough;

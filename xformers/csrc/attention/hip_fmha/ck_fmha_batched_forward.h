@@ -11,7 +11,7 @@
 
 #include "ck_fmha_util.h"
 
-template <typename scalar_t, int32_t custom_mask_type = 0, bool has_attn_bias>
+template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
 void batched_forward_masktype_attnbias_dispatched(
     BatchedForwardParams& param,
     hipStream_t stream) {

@@ -235,6 +235,7 @@ efficient_attention_forward_ck(
         static_cast<int>(out.stride(3))};
 
     if (bias.has_value()) {
+      CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
       TORCH_CHECK(bias->scalar_type() == query.scalar_type());
 
       p.has_attn_bias = true;

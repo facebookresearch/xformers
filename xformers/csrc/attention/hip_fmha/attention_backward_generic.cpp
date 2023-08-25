@@ -165,6 +165,10 @@ efficient_attention_backward_ck(
         static_cast<int>(grad_out.stride(3))};
 
     if (bias.has_value()) {
+      CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
+      TORCH_CHECK(bias->scalar_type() == query.scalar_type());
+
+      p.has_attn_bias = true;
       p.attn_bias_ptr = bias->data_ptr();
 
       const at::Tensor bias_4d_view =
@@ -235,6 +239,10 @@ efficient_attention_backward_ck(
         static_cast<int>(grad_out.stride(3))};
 
     if (bias.has_value()) {
+      CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
+      TORCH_CHECK(bias->scalar_type() == query.scalar_type());
+
+      p.has_attn_bias = true; 
       const at::Tensor bias_4d_view =
           get_bias_4d_view(*bias, B, num_heads, M, N);
       p.attn_bias_strides = {
@@ -242,7 +250,9 @@ efficient_attention_backward_ck(
           static_cast<int>(bias_4d_view.stride(1)),
           static_cast<int>(bias_4d_view.stride(2)),
           static_cast<int>(bias_4d_view.stride(3))};
-    };
+    }
+    else 
+	p.has_attn_bias = false; 
 
     p.dropout_prob = static_cast<float>(dropout_p);
     p.rng_engine_inputs = rng_engine_inputs;
@@ -258,9 +268,6 @@ efficient_attention_backward_ck(
 
     p.host_seqstart_q.resize(p.num_batches + 1);
     p.host_seqstart_k.resize(p.num_batches + 1);
-
-    if (seqlen_k.has_value())
-      p.host_seqlen_k.resize(p.num_batches);
 
     FMHA_HIP_CHECK(hipMemcpy(
         p.host_seqstart_q.data(),
@@ -278,6 +285,21 @@ efficient_attention_backward_ck(
           seqlen_k->data_ptr(),
           p.num_batches * sizeof(int),
           hipMemcpyDeviceToHost));
+
+    if (seqlen_k.has_value()) {
+      TORCH_CHECK(seqlen_k->scalar_type() == at::ScalarType::Int);
+      TORCH_CHECK(seqlen_k->dim() == 1);
+      TORCH_CHECK(seqlen_k->size(0) == p.num_batches)
+      CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqlen_k));
+
+      p.host_seqlen_k.resize(p.num_batches);
+
+      FMHA_HIP_CHECK(hipMemcpy(
+          p.host_seqlen_k.data(),
+          seqlen_k->data_ptr(),
+          p.num_batches * sizeof(int32_t),
+          hipMemcpyDeviceToHost));
+    }
 
     char* q_ptr = reinterpret_cast<char*>(query.data_ptr());
     char* k_ptr = reinterpret_cast<char*>(key.data_ptr());
@@ -312,26 +334,14 @@ efficient_attention_backward_ck(
               p.host_seqstart_k[i] * p.randvals_strides[2],
           randvals.scalar_type());
 
-      p.q_ptrs.push_back(reinterpret_cast<void*>(q_ptr));
-      p.grad_q_ptrs.push_back(reinterpret_cast<void*>(grad_q_ptr));
-
-      q_ptr = q_ptr + tmp_q_stride;
-      grad_q_ptr = grad_q_ptr + tmp_q_stride;
-
-      p.k_ptrs.push_back(reinterpret_cast<void*>(k_ptr));
-      p.grad_k_ptrs.push_back(reinterpret_cast<void*>(grad_k_ptr));
-      k_ptr = k_ptr + tmp_k_stride;
-      grad_k_ptr = grad_k_ptr + tmp_k_stride;
-
-      p.v_ptrs.push_back(reinterpret_cast<void*>(v_ptr));
-      p.grad_v_ptrs.push_back(reinterpret_cast<void*>(grad_v_ptr));
-      v_ptr = v_ptr + tmp_k_stride;
-      grad_v_ptr = grad_v_ptr + tmp_k_stride;
-
-      p.out_ptrs.push_back(reinterpret_cast<void*>(out_ptr));
-      p.grad_out_ptrs.push_back(reinterpret_cast<void*>(grad_out_ptr));
-      out_ptr = out_ptr + tmp_o_stride;
-      grad_out_ptr = grad_out_ptr + tmp_o_stride;
+      p.q_ptrs.push_back(reinterpret_cast<void*>(&q_ptr[tmp_q_stride]));
+      p.grad_q_ptrs.push_back(reinterpret_cast<void*>(&grad_q_ptr[tmp_q_stride]));
+      p.k_ptrs.push_back(reinterpret_cast<void*>(&k_ptr[tmp_k_stride]));
+      p.grad_k_ptrs.push_back(reinterpret_cast<void*>(&grad_k_ptr[tmp_k_stride]));
+      p.v_ptrs.push_back(reinterpret_cast<void*>(&v_ptr[tmp_v_stride]));
+      p.grad_v_ptrs.push_back(reinterpret_cast<void*>(&grad_v_ptr[tmp_v_stride]));
+      p.out_ptrs.push_back(reinterpret_cast<void*>(&out_ptr[tmp_o_stride]));
+      p.grad_out_ptrs.push_back(reinterpret_cast<void*>(&grad_out_ptr[tmp_grad_o_stride]));
 
       if (bias.has_value()) {
         int32_t tmp_bias_stride = get_size_in_bytes(
@@ -339,15 +349,11 @@ efficient_attention_backward_ck(
                 p.host_seqstart_k[i] * p.attn_bias_strides[3],
             bias->scalar_type());
 
-        p.attn_bias_ptrs.push_back(reinterpret_cast<void*>(attn_bias_ptr));
-        attn_bias_ptr = attn_bias_ptr + tmp_bias_stride;
+        p.attn_bias_ptrs.push_back(reinterpret_cast<void*>(&attn_bias_ptr[tmp_bias_stride]));
       };
 
-      p.logsumexp_ptrs.push_back(reinterpret_cast<void*>(logsumexp_ptr));
-      logsumexp_ptr = logsumexp_ptr + tmp_logsumexp_stride;
-
-      p.randvals_ptrs.push_back(reinterpret_cast<void*>(randvals_ptr));
-      randvals_ptr = randvals_ptr + tmp_randvals_stride;
+      p.logsumexp_ptrs.push_back(reinterpret_cast<void*>(&logsumexp_ptr[tmp_logsumexp_stride]));
+      p.randvals_ptrs.push_back(reinterpret_cast<void*>(&randvals_ptr[tmp_randvals_stride]));
     }
   };
 
