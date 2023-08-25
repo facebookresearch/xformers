@@ -1582,7 +1582,7 @@ def test_attn_bias_padded() -> None:
     output = output.transpose(1, 2).contiguous()
 
     fmha_output = fmha.memory_efficient_attention_forward(
-        q_cat, k, v, attn_bias, scale=1.0
+        q_cat, k, v, attn_bias, scale=1.0, op=fmha.ck.FwOp
     )
 
     # assert torch.allclose(output, fmha_output)
@@ -1624,7 +1624,7 @@ def test_attn_bias_blockdiag_doc() -> None:
     linear = torch.nn.Linear(K, K * 3).to(device=device, dtype=dtype)  # type: ignore
 
     q, k, v = linear(x).reshape([1, -1, 1, 3, K]).unbind(-2)
-    out = fmha.memory_efficient_attention(q, k, v, attn_bias=attn_bias)
+    out = fmha.memory_efficient_attention(q, k, v, attn_bias=attn_bias, op=(fmha.ck.FwOp, None))
     list_out = attn_bias.split(out)
     print(list_out[0].shape)  # [1, 3, 1, K]
     assert tuple(list_out[0].shape) == (1, 3, 1, K)
@@ -1659,21 +1659,22 @@ class TestAttnBias:
 
     def test_f16_biasf32(self) -> None:
         q, k, v, bias = self.create_tensors(torch.float16)
-        fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
+        fmha.memory_efficient_attention(q, k, v, attn_bias=bias, op=(fmha.ck.FwOp, None))
         bias = bias.to(torch.float32)
         with pytest.raises((ValueError, RuntimeError)):
-            fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
+            fmha.memory_efficient_attention(q, k, v, attn_bias=bias, op=(fmha.ck.FwOp, None))
 
     def test_f32_biasf16(self) -> None:
+        pytest.skip("float32 is not supported currently by CK-FlashAttention-1")
         q, k, v, bias = self.create_tensors(torch.float32)
         fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
         bias = bias.to(torch.float16)
         with pytest.raises((ValueError, RuntimeError)):
             fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+    @pytest.mark.parametrize("dtype", [torch.float16])
     def test_wrong_alignment(self, dtype) -> None:
-        op = fmha.cutlass.FwOp
+        op = fmha.ck.FwOp
         q, k, v, bias = self.create_tensors(dtype, Mq=7, Mkv=5)
         try:
             fmha.memory_efficient_attention(q, k, v, attn_bias=bias, op=(op, None))
@@ -1693,7 +1694,7 @@ class TestAttnBias:
         )
 
     def test_permuted_attn_bias(self) -> None:
-        op = fmha.cutlass.FwOp
+        op = fmha.ck.FwOp
         dtype = torch.float16
         q, k, v, bias = self.create_tensors(dtype, Mq=7, Mkv=7)
         bias = bias.transpose(-1, -2)  # now `stride(-1) != 1`
@@ -1710,37 +1711,3 @@ class TestAttnBias:
         except (ValueError, RuntimeError):
             pass
 
-
-SM_AND_SHMEM_KBYTES = [
-    # https://docs.nvidia.com/cuda/cuda-c-programming-guide/#features-and-technical-specifications-technical-specifications-per-compute-capability
-    (50, 64),
-    (60, 64),
-    (70, 96),
-    (75, 64),
-    (80, 163),
-    (86, 99),
-    (89, 99),
-    # (90, 227),
-]
-
-
-@cuda_only
-@pytest.mark.parametrize("dtype_str", ["f32", "f16", "bf16"])
-@pytest.mark.parametrize(
-    "sm_shmem",
-    SM_AND_SHMEM_KBYTES,
-    ids=[f"cc{sm}_shmem{shmem}kb" for sm, shmem in SM_AND_SHMEM_KBYTES],
-)
-def test_has_kernel_for(sm_shmem: Tuple[int, int], dtype_str: str) -> None:
-    dtype = {"f32": torch.float, "f16": torch.half, "bf16": torch.bfloat16}[dtype_str]
-    sm, shmem_kbytes = sm_shmem
-    if sm < 80 and dtype_str == "bf16":
-        return
-
-    for k in [16, 32, 64, 128, 256]:
-        assert torch.ops.xformers._has_cutlassF_kernel_for(
-            dtype, sm, shmem_kbytes * 1024, k
-        ), f"k={k}"
-        assert torch.ops.xformers._has_cutlassB_kernel_for(
-            dtype, sm, shmem_kbytes * 1024, k
-        ), f"k={k}"
