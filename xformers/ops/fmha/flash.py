@@ -5,12 +5,19 @@
 
 
 from dataclasses import replace
-from typing import Any, List, Optional, Set, Tuple
+from itertools import zip_longest
+from typing import Any, List, Optional, Set, Tuple, Union
 
 import torch
 
 from ..common import _get_storage_base, get_operator, register_operator
-from .attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask, LowerTriangularMask
+from .attn_bias import (
+    AttentionBias,
+    BlockDiagonalCausalFromBottomRightMask,
+    BlockDiagonalCausalMask,
+    BlockDiagonalMask,
+    LowerTriangularMask,
+)
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -199,6 +206,39 @@ def _convert_input_format(
     return new_inp, softmax_scale, cu_seqlen_q, max_seqlen_q, cu_seqlen_k, max_seqlen_k
 
 
+def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
+    return isinstance(
+        attn_bias,
+        (
+            LowerTriangularMask,
+            BlockDiagonalCausalMask,
+            BlockDiagonalCausalFromBottomRightMask,
+        ),
+    )
+
+
+def _check_needs_no_topleft(d: Inputs, reasons: List[str]) -> None:
+    # Flash does not support TopLeft, so only allow causal masks with TopLeft
+    # if each batch element has equal number of queries and keys.
+    if isinstance(d.attn_bias, BlockDiagonalCausalMask):
+        # Flash does not support TopLeft, so only allow BlockDiagonalCausalMask
+        # if each batch element has equal number of queries and keys.
+        for k_start, q_start in zip_longest(
+            d.attn_bias.k_seqinfo.seqstart_py, d.attn_bias.q_seqinfo.seqstart_py
+        ):
+            if k_start != q_start:
+                reasons.append(
+                    "Only support BlockDiagonalCausalMask if equal"
+                    " numbers of keys and queries"
+                )
+                break
+    elif isinstance(d.attn_bias, LowerTriangularMask):
+        if d.query.shape[1] != d.key.shape[1]:
+            reasons.append(
+                "Only support LowerTriangularMask if equal number of" "keys and queries"
+            )
+
+
 @register_operator
 class FwOp(AttentionFwOpBase):
     """Operator that computes memory-efficient attention using \
@@ -216,6 +256,7 @@ class FwOp(AttentionFwOpBase):
         LowerTriangularMask,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
+        BlockDiagonalCausalFromBottomRightMask,
     }
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
@@ -227,6 +268,7 @@ class FwOp(AttentionFwOpBase):
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(FwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
+        _check_needs_no_topleft(d, reasons)
         return reasons
 
     @classmethod
@@ -258,7 +300,7 @@ class FwOp(AttentionFwOpBase):
             max_seqlen_k,
             inp.p,
             softmax_scale,
-            isinstance(inp.attn_bias, (LowerTriangularMask, BlockDiagonalCausalMask)),
+            _is_causal(inp.attn_bias),
             return_softmax,
         )
 
@@ -318,6 +360,7 @@ class BwOp(AttentionBwOpBase):
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(BwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
+        _check_needs_no_topleft(d, reasons)
         if d.device.type == "cuda":
             # Due to limited shared-memory, some GPUs are limited in head dimension
             device_capability = torch.cuda.get_device_capability(d.device)
@@ -402,7 +445,7 @@ class BwOp(AttentionBwOpBase):
             max_seqlen_k,
             inp.p,
             softmax_scale,
-            isinstance(inp.attn_bias, (LowerTriangularMask, BlockDiagonalCausalMask)),
+            _is_causal(inp.attn_bias),
             ctx.rng_state,
         )
         grads.dq = grads.dq.reshape(dq_shape)
