@@ -118,7 +118,7 @@ def rms_norm_bwd_dx_fused(
 # Backward pass (total DW)
 # fmt: off
 @triton.jit
-def rms_norm_bwd_dwdb(
+def rms_norm_bwd_dw(
     DW, FINAL_DW,
     M, N,
     BLOCK_SIZE_M: tl.constexpr,

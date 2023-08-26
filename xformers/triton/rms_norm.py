@@ -15,7 +15,7 @@ import triton
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 from xformers.triton.k_rms_norm import (
-    rms_norm_bwd_dwdb,
+    rms_norm_bwd_dw,
     rms_norm_bwd_dx_fused,
     rms_norm_fw,
 )
@@ -49,7 +49,7 @@ class _RMSNorm(torch.autograd.Function):
         MAX_FUSED_SIZE = 65536 // x.element_size()
         BLOCK_SIZE_N = min(MAX_FUSED_SIZE, triton.next_power_of_2(N))
         if N > BLOCK_SIZE_N:
-            raise RuntimeError("This layer norm doesn't support feature dim >= 64KB.")
+            raise RuntimeError("This RMS norm doesn't support feature dim >= 64KB.")
 
         if not x_arg.is_contiguous() or not y.is_contiguous():
             global _triton_registered_warnings
@@ -126,13 +126,13 @@ class _RMSNorm(torch.autograd.Function):
         ), "Something is wrong in the backward graph, possibly because of an inplace operation after the rmsnorm"
 
         # enqueue kernel using forward pass heuristics
-        # also compute partial sums for DW and DB
+        # also compute partial sums for DW
         num_warps = min(max(ctx.BLOCK_SIZE_N // 256, 1), 16)
 
         # fmt: off
         rms_norm_bwd_dx_fused[(M,)](
             dx, dy, _dw, x,
-            weight if weight is not None else x,
+            weight,
             rstd,
             locks,
             x.stride(0),
@@ -148,7 +148,7 @@ class _RMSNorm(torch.autograd.Function):
 
         # accumulate partial sums in separate kernel
         # fmt: off
-        rms_norm_bwd_dwdb[grid](
+        rms_norm_bwd_dw[grid](
             _dw, dw,
             GROUP_SIZE_M,
             N,
