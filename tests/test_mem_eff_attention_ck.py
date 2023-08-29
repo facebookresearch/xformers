@@ -9,7 +9,7 @@ from typing import List, Optional, Sequence, Tuple, Type, TypeVar
 
 import pytest
 import torch
-##from scipy.stats import binomtest
+from scipy.stats import binomtest
 from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
@@ -894,7 +894,6 @@ def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
 
 
 ### disable this test due to the un-availability of binomtest
-'''
 @cuda_only
 @pytest.mark.parametrize("attn_bias", [None, fmha.attn_bias.LowerTriangularMask()])
 @pytest.mark.parametrize("seed", [42, 124])
@@ -946,7 +945,6 @@ def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
     masks = masks.sum(0).flatten()
     p_values = _vec_binom_test(masks, num_trials, p=keep_prob)
     assert all(p_values > p_val_tol)
-'''
 
 def _test_dropout_backward(q_len, kv_len, batch_size, k, p, op, dtype):
     if dtype is torch.bfloat16 and compute_capability < (8, 0):
