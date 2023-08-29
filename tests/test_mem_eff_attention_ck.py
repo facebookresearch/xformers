@@ -620,15 +620,7 @@ def test_forward(
 
     ref = ref_attention(query, key, value, attn_bias)
     assert out.shape == ref.shape, out.shape
-    if dtype is torch.bfloat16:
-        assert_allclose(
-             out.float(),
-             ref,
-             atol=2.8e-2,
-             rtol=1e-2,
-        )
-    else:
-        assert_allclose(
+    assert_allclose(
              out.float(),
              ref,
              atol=op.ERROR_ATOL[dtype],
