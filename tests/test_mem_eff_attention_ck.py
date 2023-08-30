@@ -738,8 +738,8 @@ def test_backward(
             fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias),
             seed=q_len * kv + kv_len * k,
         )
-        if op_bw != fmha.cutlass.BwOp
-        else fmha.cutlass.FwOp
+        if op_bw != fmha.ck.BwOp
+        else fmha.ck.FwOp
     )
     qkv = None
 
@@ -773,7 +773,7 @@ def test_backward(
 
     out.backward(grad_out)
 
-    if qkv is None and op_bw == fmha.cutlass.BwOp:
+    if qkv is None and op_bw == fmha.ck.BwOp:
         assert query.stride() == query.grad.stride()
 
     grads = []
@@ -873,7 +873,7 @@ def _vec_binom_test(x, n, p):
 
 
 def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
-    if op == fmha.cutlass.FwOp:
+    if op == fmha.ck.FwOp:
         mask = torch.empty((batch_size, 1, q_len, kv_len), device=device)
         rand_uniform = torch.ops.xformers._cutlass_rand_uniform(p, mask)
         mask = (rand_uniform > p).to(torch.float32)
@@ -1097,11 +1097,11 @@ def test_lowlevel_api_shapes(opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, fmt):
     value.requires_grad_(True)
 
     out, lse = xformers.ops.memory_efficient_attention_forward_requires_grad(
-        query, key, value, attn_bias
+        query, key, value, attn_bias, op=fmha.ck.FwOp
     )
     assert out.ndim == query.ndim
     dq, dk, dv = xformers.ops.memory_efficient_attention_backward(
-        grad_out, out, lse, query, key, value, attn_bias
+        grad_out, out, lse, query, key, value, attn_bias, op=fmha.ck.BwOp
     )
     assert dq.shape == query.shape
     assert dk.shape == key.shape
@@ -1579,8 +1579,8 @@ def test_attn_bias_padded() -> None:
     assert_allclose(
         output,
         fmha_output,
-        atol=fmha.cutlass.FwOp.ERROR_ATOL[torch.float16],
-        rtol=fmha.cutlass.FwOp.ERROR_RTOL[torch.float16],
+        atol=fmha.ck.FwOp.ERROR_ATOL[torch.float16],
+        rtol=fmha.ck.FwOp.ERROR_RTOL[torch.float16],
     )
 
 
