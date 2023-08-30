@@ -199,8 +199,8 @@ def _convert_input_format(
     new_inp = replace(
         inp,
         query=query.reshape([batch * seqlen_q, num_heads, head_dim_q]),
-        key=key.reshape([batch * seqlen_kv, num_heads, head_dim_q]),
-        value=value.reshape([batch * seqlen_kv, num_heads, head_dim_v]),
+        key=key.reshape([batch * seqlen_kv, -1, head_dim_q]),
+        value=value.reshape([batch * seqlen_kv, -1, head_dim_v]),
     )
     softmax_scale = inp.query.shape[-1] ** (-0.5) if inp.scale is None else inp.scale
     return new_inp, softmax_scale, cu_seqlen_q, max_seqlen_q, cu_seqlen_k, max_seqlen_k
