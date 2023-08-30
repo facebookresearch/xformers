@@ -5,11 +5,10 @@
 
 #include <ck/ck.hpp>
 #include <ck/tensor_operation/gpu/device/gemm_specialization.hpp>
-#include <ck/tensor_operation/gpu/device/impl/device_grouped_mha_bwd_xdl_cshuffle_kloop_v1.hpp>
-#include <ck/tensor_operation/gpu/device/impl/device_grouped_mha_bwd_xdl_cshuffle_kloop_v2.hpp>
 #include <ck/tensor_operation/gpu/device/tensor_specialization.hpp>
 #include <ck/tensor_operation/gpu/element/element_wise_operation.hpp>
 #include <ck/utility/sequence.hpp>
+#include "ck/tensor_operation/gpu/device/impl/device_grouped_mha_bwd_xdl_cshuffle_qloop_v2.hpp"
 
 #include "ck_fmha_util.h"
 
@@ -30,8 +29,9 @@ void grouped_backward_masktype_attnbias_dispatched(
   using ShuffleDataType = F32;
   using LSEDataType = F32;
   using ZDataType = unsigned short;
-  using Acc0BiasDataType = ck::Tuple<>;
-  using Acc1BiasDataType = ck::Tuple<>;
+  using Acc0BiasDataType =
+      typename std::conditional<has_attn_bias, scalar_t, void>::type;
+  using Acc1BiasDataType = void;
 
   static constexpr ck::index_t NumDimG = 2;
   static constexpr ck::index_t NumDimM = 1;
@@ -58,8 +58,13 @@ void grouped_backward_masktype_attnbias_dispatched(
       ck::tensor_operation::device::TensorSpecialization::Default;
   static constexpr bool Deterministic = false;
 
+  // Tunables
+  static constexpr ck::index_t ABBlockTransferSrcScalarPerVector = 1;
+  static constexpr ck::index_t B1CShuffleBlockTransferScalarPerVector = 1;
+  static constexpr ck::index_t Acc0BiasTransferSrcScalarPerVector = 1;
+
   using DeviceOpInstance = ck::tensor_operation::device::
-      DeviceGroupedMultiheadAttentionBackward_Kloop_Xdl_CShuffle_V1<
+      DeviceGroupedMultiheadAttentionBackward_Qloop_Xdl_CShuffle_V2<
           NumDimG,
           NumDimM,
           NumDimN,
@@ -86,42 +91,47 @@ void grouped_backward_masktype_attnbias_dispatched(
           TensorSpecY,
           1,
           256,
-          128, // MPerBlock
+          64, // MPerBlock
           128, // NPerBlock
-          64, // KPerBlock
-          64, // Gemm1NPerBlock
+          128, // KPerBlock
+          128, // Gemm1NPerBlock
           32, // Gemm1KPerBlock
           8, // AK1
           8, // BK1
           2, // B1K1
           32, // MPerXDL
           32, // NPerXDL
-          1, // MXdlPerWave
-          4, // NXdlPerWave
-          2, // Gemm1NXdlPerWave
-          2, // Gemm2NXdlPerWave
+          2, // MXdlPerWave
+          1, // NXdlPerWave
+          4, // Gemm1NXdlPerWave
+          1, // Gemm2NXdlPerWave
           S<4, 64, 1>, // ABlockTransfer
           S<1, 0, 2>,
           S<1, 0, 2>,
           2,
-          8,
+          ABBlockTransferSrcScalarPerVector, // TUNABLE
           8,
           true,
-          S<4, 64, 1>, // BBlockTransfer
+          S<4, 64, 1>, // B0BlockTransfer
           S<1, 0, 2>,
           S<1, 0, 2>,
           2,
-          8,
+          ABBlockTransferSrcScalarPerVector, // TUNABLE
           8,
           true,
+          Acc0BiasTransferSrcScalarPerVector, // TUNABLE
+          S<8, 32, 1>, // B1BlockTransfer
+          S<0, 2, 1>,
+          S<0, 2, 1>,
+          1,
+          B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+          2,
+          false,
           1, // CShuffleMXdlPerWavePerShuffle
-          2, // CShuffleNXdlPerWavePerShuffle
-          S<1,
-            32,
-            1,
-            8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
-          CShuffleBlockTransferScalarPerVector_NPerBlock, // CShuffleBlockTransferScalarPerVector_NPerBlock
-          MaskingSpec, // MaskingSpecialization
+          4, // CShuffleNXdlPerWavePerShuffle
+          S<1, 32, 1, 8>,
+          B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+          MaskingSpec,
           Deterministic>;
 
   std::vector<typename DeviceOpInstance::ProblemDesc> problem_descs;
@@ -162,6 +172,22 @@ void grouped_backward_masktype_attnbias_dispatched(
     std::vector<ck::index_t> lse_gs_ms_lengths{1, G1, M};
     std::vector<ck::index_t> lse_gs_ms_strides{0, param.M, 1};
 
+    std::vector<ck::index_t> d_gs_ms_ns_lengths;
+    std::vector<ck::index_t> d_gs_ms_ns_strides;
+
+    if constexpr (has_attn_bias) {
+      d_gs_ms_ns_lengths = {1, G1, M, N};
+      d_gs_ms_ns_strides = {
+          0,
+          param.attn_bias_strides[0],
+          param.attn_bias_strides[1],
+          param.attn_bias_strides[2]};
+
+    } else {
+      d_gs_ms_ns_lengths = {1, 1, 1, 1};
+      d_gs_ms_ns_strides = {0, 0, 0, 0};
+    };
+
     problem_descs.push_back({
         q_gs_ms_ks_lengths,
         q_gs_ms_ks_strides,
@@ -175,14 +201,10 @@ void grouped_backward_masktype_attnbias_dispatched(
         y_gs_ms_os_strides,
         lse_gs_ms_lengths,
         lse_gs_ms_strides,
-        {}, // std::array<std::vector<ck::index_t>,
-            // 1>{acc0_biases_gs_ms_ns_lengths},
-        {}, // std::array<std::vector<ck::index_t>,
-            // 1>{acc0_biases_gs_ms_ns_strides},
-        {}, // std::array<std::vector<ck::index_t>,
-            // 1>{acc1_biases_gs_ms_os_lengths},
-        {}, // std::array<std::vector<ck::index_t>,
-            // 1>{acc1_biases_gs_ms_os_strides},
+        d_gs_ms_ns_lengths,
+        d_gs_ms_ns_strides,
+        {}, // acc1_biases_gs_ms_os_lengths
+        {}, // acc1_biases_gs_ms_os_strides
     });
   }
 
@@ -202,8 +224,8 @@ void grouped_backward_masktype_attnbias_dispatched(
       param.grad_q_ptrs,
       param.grad_k_ptrs,
       param.grad_v_ptrs,
-      {}, // std::array<void*, 1> p_acc0_biases;
-      {}, // std::array<void*, 1> p_acc1_biases;
+      param.attn_bias_ptrs,
+      {}, // p_acc1_bias_vec;
       problem_descs,
       QKVElementOp{},
       QKVElementOp{},
