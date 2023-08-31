@@ -213,7 +213,7 @@ def fused_matmul(
     if not x.is_contiguous():
         x = x.contiguous()
 
-    x_ = x if x.ndim == 2 else x.flatten(0, 1)
+    x_ = x if x.ndim == 2 else x.flatten(0, -2)
 
     assert (
         x_.shape[1] == weight.shape[1]
@@ -248,6 +248,6 @@ def fused_matmul(
     )
     # fmt: on
 
-    outputs = outputs if x.ndim == 2 else outputs.reshape(x.shape[0], -1, N)
+    outputs = outputs if x.ndim == 2 else outputs.reshape(*x.shape[:-1], N)
 
     return outputs, act_inputs if save_act_inputs else None
