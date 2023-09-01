@@ -55,6 +55,20 @@ def get_local_version_suffix() -> str:
     return f"+{git_hash}.d{date_suffix}"
 
 
+def get_flash_version() -> str:
+    flash_dir = Path(__file__).parent / "third_party" / "flash-attention"
+    try:
+        return subprocess.check_output(
+            ["git", "describe", "--tags", "--always"],
+            cwd=flash_dir,
+        ).decode("ascii")[:-1]
+    except subprocess.CalledProcessError:
+        version = flash_dir / "version.txt"
+        if version.is_file():
+            return version.read_text().strip()
+        return "v?"
+
+
 def write_version_file(version: str):
     version_path = os.path.join(this_dir, "xformers", "version.py")
     with open(version_path, "w") as f:
@@ -263,10 +277,7 @@ def get_extensions():
             cuda_version=cuda_version, extra_compile_args=extra_compile_args
         )
         if flash_extensions:
-            flash_version = subprocess.check_output(
-                ["git", "describe", "--tags", "--always"],
-                cwd=Path(__file__).parent / "third_party" / "flash-attention",
-            ).decode("ascii")[:-1]
+            flash_version = get_flash_version()
         ext_modules += flash_extensions
 
         # NOTE: This should not be applied to Flash-Attention

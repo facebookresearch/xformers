@@ -136,6 +136,18 @@ jobs:
           sh ./cuda.run --silent --toolkit &&
           rm ./cuda.run
 
+      - name: Create source distribution
+        if: inputs.sdist
+        run: |
+          rm -rf dist/
+          (cd third_party/flash-attention && \
+            git describe --tags --always > version.txt && \
+            echo "Flash-Attention version" && \
+            cat version.txt
+          )
+
+          $PY setup.py sdist -d sdist/
+
       - name: Build wheel
         run: $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
         env:
@@ -156,10 +168,6 @@ jobs:
       - name: Upload source distribution to PyPi
         if: inputs.publish && inputs.sdist
         run: |
-          rm -rf dist/
-          # unpin pytorch version
-          git checkout HEAD -- ./requirements.txt
-          $PY setup.py sdist -d sdist/
           $PY -m twine upload sdist/*
         env:
           TWINE_USERNAME: ${{ inputs.twine_username }}
