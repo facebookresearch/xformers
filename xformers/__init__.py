@@ -20,8 +20,6 @@ logger = logging.getLogger("xformers")
 
 _has_cpp_library: bool = _cpp_lib._cpp_library_load_exception is None
 
-# Set to true to utilize functorch
-_is_functorch_available: bool = False
 _is_opensource: bool = True
 
 
@@ -57,13 +55,3 @@ def _is_triton_available():
 @compute_once
 def get_python_lib():
     return torch.library.Library("xformers_python", "DEF")
-
-
-if _is_functorch_available:
-    try:
-        from xformers.components.nvfuser import NVFusedBiasActivationDropout  # noqa
-    except ImportError as e:
-        logger.warning(
-            f"Functorch is not available, some optimizations will not be enabled.\nError caught was: {e}"
-        )
-        _is_functorch_available = False
