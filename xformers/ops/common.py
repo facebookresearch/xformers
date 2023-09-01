@@ -4,9 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import inspect
+import os
 from typing import Any, Dict, List, Type, TypeVar
 
 import torch
+from torch.torch_version import TorchVersion
 
 
 def get_operator(library: str, name: str):
@@ -99,3 +101,36 @@ def make_pytorch_cuda_operator(fn: ClsT) -> ClsT:
         return dispatcher_impl(*args, **kwargs)
 
     return wrapper  # type: ignore
+
+
+def _has_a_version_of_triton():
+    # TODO[fmassa]: Enable this in CI once we fix triton version
+    if os.environ.get("CI", "0") == "1":
+        return False
+    if os.environ.get("XFORMERS_FORCE_DISABLE_TRITON", "0") == "1":
+        return False
+    if not torch.cuda.is_available():
+        return False
+    try:
+        import triton  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _has_triton2():
+    if not _has_a_version_of_triton():
+        return False
+    import triton
+
+    tv = TorchVersion(triton.__version__)
+    return tv >= (2, 1) or tv == (2, 0)
+
+
+def _has_triton21():
+    if not _has_a_version_of_triton():
+        return False
+    import triton
+
+    tv = TorchVersion(triton.__version__)
+    return tv >= (2, 1)

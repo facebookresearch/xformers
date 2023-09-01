@@ -310,7 +310,8 @@ if __name__ == "__main__":
     print(model)
 
     trainer = Trainer(
-        gpus=1,
+        gpusdevices=1,
+        accelerator="gpu",
         max_epochs=EPOCHS,
         precision=16,
         log_every_n_steps=1,

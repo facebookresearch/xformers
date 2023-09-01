@@ -3,11 +3,11 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, Optional, Tuple, Type, Union
+from typing import Any, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
-from . import cutlass, flash, small_k, triton, ck
+from . import cutlass, decoder, flash, small_k, triton, ck
 from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
@@ -24,6 +24,7 @@ from .dispatch import _dispatch_bw, _dispatch_fw, _ensure_op_supports_or_raise
 
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
+MemoryEfficientAttentionDecoderOp = (decoder.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionTritonFwdFlashBwOp = (triton.FwOp, flash.BwOp)
 MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
 MemoryEfficientAttentionOp = (small_k.FwOp, small_k.BwOp)
@@ -303,7 +304,7 @@ def _memory_efficient_attention_forward(
     inp.validate_inputs()
     output_shape = inp.normalize_bmhk()
     if op is None:
-        op = _dispatch_fw(inp)
+        op = _dispatch_fw(inp, False)
     else:
         _ensure_op_supports_or_raise(ValueError, "memory_efficient_attention", op, inp)
 
@@ -317,7 +318,7 @@ def _memory_efficient_attention_forward_requires_grad(
     inp.validate_inputs()
     output_shape = inp.normalize_bmhk()
     if op is None:
-        op = _dispatch_fw(inp)
+        op = _dispatch_fw(inp, True)
     else:
         _ensure_op_supports_or_raise(ValueError, "memory_efficient_attention", op, inp)
     out = op.apply(inp, needs_gradient=True)
@@ -383,6 +384,20 @@ def _memory_efficient_attention_backward(
     return grads
 
 
+ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
+    cutlass.FwOp,
+    flash.FwOp,
+    triton.FwOp,
+    small_k.FwOp,
+]
+
+ALL_BW_OPS: Sequence[Type[AttentionBwOpBase]] = [
+    cutlass.BwOp,
+    flash.BwOp,
+    triton.BwOp,
+    small_k.BwOp,
+]
+
 __all__ = [
     "AttentionBias",
     "AttentionOp",
@@ -397,4 +412,6 @@ __all__ = [
     "TritonFlashAttentionOp",
     "memory_efficient_attention",
     "MemoryEfficientAttentionCkOp",
+    "ALL_FW_OPS",
+    "ALL_BW_OPS",
 ]

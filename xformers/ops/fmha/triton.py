@@ -12,11 +12,38 @@ import torch
 from ... import _is_triton_available
 from ..common import register_operator
 
-if TYPE_CHECKING or _is_triton_available():
-    from ..._flash_attn.flash_attn_triton import (
-        _flash_attn_backward,
-        _flash_attn_forward,
-    )
+# This implementation needs pre-MLIR triton
+# The BW pass is not stable/well tested
+# And also does not have the latest improvements
+if TYPE_CHECKING or (False and _is_triton_available()):
+    try:
+        from flash_attn.flash_attn_triton import (
+            _flash_attn_backward,
+            _flash_attn_forward,
+        )
+    except ImportError:
+        import importlib
+        import pathlib
+        import sys
+        import types
+
+        def import_module_from_path(path: str) -> types.ModuleType:
+            """Import a module from the given path, w/o __init__.py"""
+            module_path = pathlib.Path(path).resolve()
+            module_name = module_path.stem  # 'path/x.py' -> 'x'
+            spec = importlib.util.spec_from_file_location(module_name, module_path)  # type: ignore
+            assert isinstance(spec, importlib.machinery.ModuleSpec)
+            module = importlib.util.module_from_spec(spec)  # type: ignore
+            sys.modules[module_name] = module
+            assert isinstance(spec.loader, importlib.abc.Loader)
+            spec.loader.exec_module(module)
+            return module
+
+        flash_attn = import_module_from_path(
+            "third_party/flash-attention/flash_attn/flash_attn_triton.py"
+        )
+        _flash_attn_backward = flash_attn._flash_attn_backward
+        _flash_attn_forward = flash_attn._flash_attn_forward
 
     triton_flash_backward = _flash_attn_backward
     triton_flash_forward = _flash_attn_forward
@@ -82,10 +109,12 @@ class FwOp(AttentionFwOpBase):
         if cls.OPERATOR is None:
             reasons.append("triton is not available")
         if d.device.type == "cuda":
-            # Has only been tested on 8.0.
+            # Has only been tested on 8.0 / 9.0.
             # Fails on 7.5 with illegal memory access
-            if torch.cuda.get_device_capability(d.device) != (8, 0):
-                reasons.append("requires A100 GPU")
+            if torch.cuda.get_device_capability(d.device) < (8, 0):
+                reasons.append(
+                    "requires GPU with sm80 minimum compute capacity, e.g., A100/H100/L4"
+                )
         if _is_triton_available():
             import triton
 

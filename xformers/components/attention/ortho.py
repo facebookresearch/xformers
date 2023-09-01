@@ -321,4 +321,4 @@ class OrthoFormerAttention(Attention):
         landmarks = torch.masked_select(q_samples, selected_mask.bool()).reshape(
             B, -1, D
         )
-        return landmarks  #  (B, M, D)
+        return landmarks  # (B, M, D)

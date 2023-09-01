@@ -5,12 +5,19 @@
 
 
 from dataclasses import replace
-from typing import Any, List, Optional, Set, Tuple
+from itertools import zip_longest
+from typing import Any, List, Optional, Set, Tuple, Union
 
 import torch
 
 from ..common import _get_storage_base, get_operator, register_operator
-from .attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask, LowerTriangularMask
+from .attn_bias import (
+    AttentionBias,
+    BlockDiagonalCausalFromBottomRightMask,
+    BlockDiagonalCausalMask,
+    BlockDiagonalMask,
+    LowerTriangularMask,
+)
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -20,8 +27,19 @@ from .common import (
     check_lastdim_alignment_stride1,
 )
 
+FLASH_VERSION = "0.0.0"
 try:
-    from ... import _C_flashattention  # type: ignore[attr-defined]
+    try:
+        from ... import _C_flashattention  # type: ignore[attr-defined]
+        from ..._cpp_lib import _build_metadata
+
+        if _build_metadata is not None:
+            FLASH_VERSION = _build_metadata.flash_version
+    except ImportError:
+        import flash_attn
+        from flash_attn.flash_attn_interface import flash_attn_cuda as _C_flashattention
+
+        FLASH_VERSION = flash_attn.__version__
 
     # create library so that flash-attn goes through the PyTorch Dispatcher
     _flash_lib = torch.library.Library("xformers_flash", "DEF")
@@ -56,7 +74,16 @@ try:
         return_softmax,
     ):
         out = query.new_empty(query.shape[0], query.shape[1], value.shape[2])
-        lse, rng_state = _C_flashattention.fwd(
+        (
+            out,
+            q_padded,
+            k_padded,
+            v_padded,
+            out_padded,
+            softmax_lse,
+            p,
+            rng_state,
+        ) = _C_flashattention.varlen_fwd(
             query,
             key,
             value,
@@ -70,10 +97,9 @@ try:
             False,
             causal,
             return_softmax,
-            0,
             None,
         )
-        return out, lse, rng_state
+        return out, softmax_lse, rng_state
 
     def _flash_bwd(
         grad,
@@ -94,7 +120,7 @@ try:
         causal,
         rng_state,
     ):
-        _C_flashattention.bwd(
+        _C_flashattention.varlen_bwd(
             grad,
             query,
             key,
@@ -110,9 +136,8 @@ try:
             max_seq_len_k,
             p,
             softmax_scale,
-            False,
+            False,  # zero_tensors
             causal,
-            0,
             None,
             rng_state,
         )
@@ -181,6 +206,39 @@ def _convert_input_format(
     return new_inp, softmax_scale, cu_seqlen_q, max_seqlen_q, cu_seqlen_k, max_seqlen_k
 
 
+def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
+    return isinstance(
+        attn_bias,
+        (
+            LowerTriangularMask,
+            BlockDiagonalCausalMask,
+            BlockDiagonalCausalFromBottomRightMask,
+        ),
+    )
+
+
+def _check_needs_no_topleft(d: Inputs, reasons: List[str]) -> None:
+    # Flash does not support TopLeft, so only allow causal masks with TopLeft
+    # if each batch element has equal number of queries and keys.
+    if isinstance(d.attn_bias, BlockDiagonalCausalMask):
+        # Flash does not support TopLeft, so only allow BlockDiagonalCausalMask
+        # if each batch element has equal number of queries and keys.
+        for k_start, q_start in zip_longest(
+            d.attn_bias.k_seqinfo.seqstart_py, d.attn_bias.q_seqinfo.seqstart_py
+        ):
+            if k_start != q_start:
+                reasons.append(
+                    "Only support BlockDiagonalCausalMask if equal"
+                    " numbers of keys and queries"
+                )
+                break
+    elif isinstance(d.attn_bias, LowerTriangularMask):
+        if d.query.shape[1] != d.key.shape[1]:
+            reasons.append(
+                "Only support LowerTriangularMask if equal number of" "keys and queries"
+            )
+
+
 @register_operator
 class FwOp(AttentionFwOpBase):
     """Operator that computes memory-efficient attention using \
@@ -190,28 +248,27 @@ class FwOp(AttentionFwOpBase):
 
     OPERATOR = get_operator("xformers_flash", "flash_fwd")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
-    CUDA_MINIMUM_COMPUTE_CAPABILITY = (7, 5)
+    CUDA_MINIMUM_COMPUTE_CAPABILITY = (8, 0)
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
-    SUPPORTED_MAX_K = 128
+    SUPPORTED_MAX_K = 256
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
         LowerTriangularMask,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
+        BlockDiagonalCausalFromBottomRightMask,
     }
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
-    NAME = "flshattF"
+    NAME = f"flshattF@{FLASH_VERSION}"
+    VERSION = FLASH_VERSION
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(FwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
-        if d.device.type == "cuda":
-            device_capability = torch.cuda.get_device_capability(d.device)
-            if device_capability < (7, 5):
-                reasons.append("requires a GPU with compute capability > 7.5")
+        _check_needs_no_topleft(d, reasons)
         return reasons
 
     @classmethod
@@ -243,7 +300,7 @@ class FwOp(AttentionFwOpBase):
             max_seqlen_k,
             inp.p,
             softmax_scale,
-            isinstance(inp.attn_bias, (LowerTriangularMask, BlockDiagonalCausalMask)),
+            _is_causal(inp.attn_bias),
             return_softmax,
         )
 
@@ -293,23 +350,28 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
-    NAME = "flshattB"
+    IS_DETERMINISTIC = False
+    NAME = f"flshattB@{FLASH_VERSION}"
+    VERSION = FLASH_VERSION
+
+    MAX_HEADDIM_SM8x = 192
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(BwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
+        _check_needs_no_topleft(d, reasons)
         if d.device.type == "cuda":
-            # We know `d.device` is cuda now
-            # d=128 is only supported on A100 for bw
-            # d > 64 is only supported on A100 for bw
+            # Due to limited shared-memory, some GPUs are limited in head dimension
             device_capability = torch.cuda.get_device_capability(d.device)
-            if device_capability < (7, 5):
-                reasons.append("requires a GPU with compute capability > 7.5")
             is_sm80_or_sm90 = device_capability in [(8, 0), (9, 0)]
-            if max(d.key.shape[-1], d.query.shape[-1]) > 64 and not is_sm80_or_sm90:
+            if (
+                max(d.key.shape[-1], d.query.shape[-1]) > cls.MAX_HEADDIM_SM8x
+                and not is_sm80_or_sm90
+            ):
                 reasons.append(
-                    "requires a GPU with compute capability 8.0 (A100) or 9.0 (H100) for 'query.shape[-1] > 64'"
+                    "requires a GPU with compute capability 8.0 "
+                    f"(A100) or 9.0 (H100) for 'query.shape[-1] > {cls.MAX_HEADDIM_SM8x}'"
                 )
         return reasons
 
@@ -324,6 +386,11 @@ class BwOp(AttentionBwOpBase):
             cu_seqlens_k,
             max_seqlen_k,
         ) = _convert_input_format(inp)
+        assert ctx.lse.is_contiguous
+        ctx_lse = ctx.lse
+        assert ctx_lse.shape[2] >= max_seqlen_q
+        if max_seqlen_q != ctx_lse.shape[2]:
+            ctx_lse = ctx_lse[:, :, :max_seqlen_q].contiguous()
         kernel_out_shape = [
             inp.query.shape[0],
             inp.query.shape[1],
@@ -368,7 +435,7 @@ class BwOp(AttentionBwOpBase):
             inp.key,
             inp.value,
             ctx.out.reshape(kernel_out_shape),
-            ctx.lse,
+            ctx_lse,
             grads.dq,
             grads.dk,
             grads.dv,
@@ -378,7 +445,7 @@ class BwOp(AttentionBwOpBase):
             max_seqlen_k,
             inp.p,
             softmax_scale,
-            isinstance(inp.attn_bias, (LowerTriangularMask, BlockDiagonalCausalMask)),
+            _is_causal(inp.attn_bias),
             ctx.rng_state,
         )
         grads.dq = grads.dq.reshape(dq_shape)

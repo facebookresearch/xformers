@@ -5,21 +5,15 @@
 
 
 import textwrap
-from typing import List, Type, TypeVar
+from collections import deque
+from typing import List, Sequence, Type, TypeVar
 
-from . import cutlass, flash, small_k, triton
+from . import cutlass, decoder, flash, small_k, triton
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 
 def _is_cutlass_fwd_faster_than_flash(inp: Inputs) -> bool:
-    # For dropout, we can't mix & match kernels
-    # Unfortunately, the dropout implementation in CUTLASS
-    # backward is pretty slow for the BW, so disable it here
-    if inp.p > 0.0:
-        return False
-
-    # Large values of K
-    return max(inp.query.shape[-1], inp.value.shape[-1]) > 64
+    return False
 
 
 def _is_triton_fwd_fastest(inp: Inputs) -> bool:
@@ -53,7 +47,7 @@ def _format_not_supported_reasons(op, reasons: List[str]) -> str:
     return f"`{op.NAME}` is not supported because:\n    " + "\n    ".join(reasons)
 
 
-def _run_priority_list(name: str, priority_list: List[T], inp: Inputs) -> T:
+def _run_priority_list(name: str, priority_list: Sequence[T], inp: Inputs) -> T:
     not_supported_reasons: List[List[str]] = []
     for op in priority_list:
         not_supported = op.not_supported_reasons(inp)
@@ -69,7 +63,7 @@ def _run_priority_list(name: str, priority_list: List[T], inp: Inputs) -> T:
     raise NotImplementedError(msg)
 
 
-def _dispatch_fw(inp: Inputs) -> Type[AttentionFwOpBase]:
+def _dispatch_fw(inp: Inputs, needs_gradient: bool) -> Type[AttentionFwOpBase]:
     """Computes the best operator for forward
 
     Raises:
@@ -79,26 +73,33 @@ def _dispatch_fw(inp: Inputs) -> Type[AttentionFwOpBase]:
         AttentionOp: The best operator for the configuration
     """
 
-    priority_list_ops: List[Type[AttentionFwOpBase]] = [
-        flash.FwOp,
-        triton.FwOp,
-        cutlass.FwOp,
-        small_k.FwOp,
-    ]
+    priority_list_ops = deque(
+        [
+            flash.FwOp,
+            triton.FwOp,
+            cutlass.FwOp,
+            small_k.FwOp,
+        ]
+    )
     if _is_cutlass_fwd_faster_than_flash(inp):
         priority_list_ops.remove(cutlass.FwOp)
-        priority_list_ops.insert(0, cutlass.FwOp)
+        priority_list_ops.appendleft(cutlass.FwOp)
     if _is_triton_fwd_fastest(inp):
         priority_list_ops.remove(triton.FwOp)
-        priority_list_ops.insert(0, triton.FwOp)
+        priority_list_ops.appendleft(triton.FwOp)
+    if not needs_gradient:
+        multiquery = inp.key.stride(2) == 0
+        if not multiquery:
+            # With multiquery, cutlass is sometimes faster than decoder
+            # but it's not currently clear when.
+            priority_list_ops.appendleft(decoder.FwOp)
     return _run_priority_list(
         "memory_efficient_attention_forward", priority_list_ops, inp
     )
 
 
 def _is_cutlassB_faster_than_flash(inp: Inputs) -> bool:
-    embed_dim = max(inp.query.shape[-1], inp.value.shape[-1])
-    return embed_dim > 64 and inp.attn_bias is None and inp.p == 0.0
+    return False
 
 
 def _dispatch_bw(inp: Inputs) -> Type[AttentionBwOpBase]:

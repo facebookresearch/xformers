@@ -19,7 +19,7 @@ on:
 
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0 8.6"
+  TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0+PTX"
   MAX_JOBS: 2  # Avoids OOMs
   XFORMERS_BUILD_TYPE: "Release"
   XFORMERS_PACKAGE_FROM: "conda-${{ github.ref_name }}"
@@ -33,37 +33,35 @@ jobs:
           - "3.9"
           - "3.10"
         config:
-          # NOTE: Always build with nvcc 11.6.2 (`conda_builder_tag`)
-          # See https://github.com/facebookresearch/xformers/issues/712
           - torch_version: "2.1.0"
             torch_channel: "pytorch-nightly"
             cuda_version: "11.8.0"
             cuda_dep_runtime: ">=11.7,<11.9"
-            conda_builder_tag: cuda116
+            cuda_short_version: "118"
 
           - torch_version: "2.0.1"
             torch_channel: "pytorch"
             cuda_version: "11.8.0"
             cuda_dep_runtime: ">=11.7,<11.9"
-            conda_builder_tag: cuda116
+            cuda_short_version: "118"
 
           - torch_version: "1.13.1"
             torch_channel: "pytorch"
             cuda_version: "11.7.1"
             cuda_dep_runtime: ">=11.6,<11.8"
-            conda_builder_tag: cuda116
+            cuda_short_version: "116"
 
           - torch_version: "1.12.1"
             torch_channel: "pytorch"
             cuda_version: "11.6.2"
             cuda_dep_runtime: ">=11.3,<11.7"
-            conda_builder_tag: cuda116
+            cuda_short_version: "116"
 
     name: py${{ matrix.python }}-torch${{ matrix.config.torch_version }}-cu${{ matrix.config.cuda_version }}
     runs-on: 4-core-ubuntu  # 16GB RAM, 4 vCPUs
 
     container:
-      image: pytorch/conda-builder:${{ matrix.config.conda_builder_tag }}
+      image: pytorch/conda-builder:cuda${{ matrix.config.cuda_short_version }}
     env:
       # alias for the current python version
       PY: /opt/conda/bin/python
@@ -87,6 +85,19 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: echo "XFORMERS_CONDA_TAG=main" >> $GITHUB_ENV
       - run: echo "${XFORMERS_CONDA_TAG}"
+      - name: Add H100 if nvcc 11.08+
+        shell: python
+        run: |
+          import os
+          import sys
+          print(sys.version)
+          cuda_short_version = "${{ matrix.config.cuda_short_version }}"
+          arch_list = os.environ["TORCH_CUDA_ARCH_LIST"]
+          if cuda_short_version not in ["116", "117"]:
+            arch_list += " 9.0"
+          with open(os.environ['GITHUB_ENV'], "r+") as fp:
+            fp.write("TORCH_CUDA_ARCH_LIST=" + arch_list + "\n")
+      - run: echo "${TORCH_CUDA_ARCH_LIST}"
       - name: Free up disk space
         run: |
           df -h /

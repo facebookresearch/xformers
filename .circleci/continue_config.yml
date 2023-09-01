@@ -334,16 +334,6 @@ jobs:
       - run_gpu_ci:
           arch: "7.5"
 
-  gpu_tests_cu114_sm70_V100:
-    <<: *gpu_cu114
-    machine:
-      image: ubuntu-2004-cuda-11.4:202110-01
-      resource_class: gpu.nvidia.large  # V100
-
-    steps:
-      - run_gpu_ci:
-          arch: "7.0"
-
   gpu_tests_cu114_sm61_P4:
     <<: *gpu_cu114
     machine:
@@ -393,7 +383,6 @@ workflows:
     jobs:
       - cpu_tests_py38
       - gpu_tests_cu114_sm61_P4
-      - gpu_tests_cu114_sm70_V100
       - gpu_tests_cu114_sm75_T4
       # - gpu_experimental_tests
   # Prevents marking the CI as failed when no jobs run

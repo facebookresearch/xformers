@@ -159,8 +159,8 @@ def unroll_varargs(kernel, N: int):
     fn = next(iter(_locals.values()))
     # Patch `getlines` only the first time
     if not _FILENAME_TO_SRC:
-        linecache.getlines = _monkey_patched_getlines
         _getlines_orig = linecache.getlines
+        linecache.getlines = _monkey_patched_getlines
     _FILENAME_TO_SRC[fn_filename] = new_src
 
     jitted_fn = triton.jit(fn)

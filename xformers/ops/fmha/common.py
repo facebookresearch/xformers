@@ -11,7 +11,12 @@ import torch
 
 from ..._cpp_lib import _built_with_cuda
 from ..common import BaseOperator
-from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
+from .attn_bias import (
+    AttentionBias,
+    BlockDiagonalMask,
+    LowerTriangularMask,
+    LowerTriangularMaskWithTensorBias,
+)
 
 
 def _is_bias_type_supported_in_BMK(attn_bias_type: Any) -> bool:
@@ -50,12 +55,22 @@ class Inputs:
                 f"Invalid shape for query: {self.query.shape}. "
                 "Expected shape [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
             )
-        output_shape = (self.query.shape[:-1]) + (self.value.shape[-1],)
+        if self.value.dtype == torch.int32:
+            # Quantized K/V case, in which the last dims of Q and K/V are different
+            output_shape = tuple(self.query.shape)
+        else:
+            output_shape = (self.query.shape[:-1]) + (self.value.shape[-1],)
         # Convert from legacy format
         if self.query.ndim == 3:
             self.query = self.query.unsqueeze(2)
             self.key = self.key.unsqueeze(2)
             self.value = self.value.unsqueeze(2)
+            if isinstance(self.attn_bias, torch.Tensor):
+                if self.attn_bias.ndim != 3:
+                    raise ValueError(
+                        f"Expected BMK format for attn_bias, but got {self.attn_bias.shape}"
+                    )
+                self.attn_bias = self.attn_bias.unsqueeze(1)
         return output_shape
 
     def validate_inputs(self) -> None:
@@ -69,9 +84,12 @@ class Inputs:
             )
         if any(x.device != self.query.device for x in qkv):
             raise ValueError("Query/Key/Value should all be on the same device")
-        if any(x.dtype != self.query.dtype for x in qkv):
+        quantized_dtypes = self.key.dtype == self.value.dtype == torch.int32
+        non_quantized_dtypes = all(x.dtype == self.query.dtype for x in qkv)
+        if not (quantized_dtypes or non_quantized_dtypes):
             raise ValueError(
-                "Query/Key/Value should all have the same dtype\n"
+                "Query/Key/Value should either all have the same dtype, or "
+                "(in the quantized case) Key/Value should have dtype torch.int32\n"
                 f"  query.dtype: {self.query.dtype}\n"
                 f"  key.dtype  : {self.key.dtype}\n"
                 f"  value.dtype: {self.value.dtype}"
@@ -86,6 +104,25 @@ class Inputs:
                 f"Please provide inputs in BMHK format rather "
                 f"than BMK when using bias type `{type(self.attn_bias).__name__}`"
             )
+        attn_bias_t: Optional[torch.Tensor] = None
+        if isinstance(self.attn_bias, torch.Tensor):
+            attn_bias_t = self.attn_bias
+        if isinstance(self.attn_bias, LowerTriangularMaskWithTensorBias):
+            attn_bias_t = self.attn_bias._bias
+        if self.query.ndim == 4 and attn_bias_t is not None:
+            expected_shape = (
+                self.query.shape[0],
+                self.query.shape[2],
+                self.query.shape[1],
+                self.key.shape[1],
+            )
+            if attn_bias_t.shape != expected_shape:
+                raise ValueError(
+                    f"Invalid shape for attention bias: {attn_bias_t.shape} (expected {expected_shape})\n"
+                    f"  query.shape: {self.query.shape}\n"
+                    f"  key.shape  : {self.key.shape}\n"
+                    f"  value.shape: {self.value.shape}"
+                )
         if isinstance(self.attn_bias, BlockDiagonalMask):
             if any(x.shape[0] != 1 for x in qkv):
                 raise ValueError(
@@ -151,6 +188,7 @@ class AttentionOpBase(BaseOperator):
     SUPPORTS_DROPOUT: bool
     SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
+    IS_DETERMINISTIC: bool = True
     NAME: str
     OPERATOR_CATEGORY = "memory_efficient_attention"
 
@@ -162,29 +200,45 @@ class AttentionOpBase(BaseOperator):
         return not cls.not_supported_reasons(d)
 
     @classmethod
+    def shape_not_supported_reasons(
+        cls, Mq: int, Mkv: int, K: int, Kv: int
+    ) -> List[str]:
+        reasons = []
+        if not cls.SUPPORTS_DIFFERENT_VALUE_EMBED and K != Kv:
+            reasons.append("query.shape[-1] != value.shape[-1]")
+        if max(K, Kv) > cls.SUPPORTED_MAX_K:
+            reasons.append(
+                f"max(query.shape[-1] != value.shape[-1]) > {cls.SUPPORTED_MAX_K}"
+            )
+        return reasons
+
+    @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         """
         Returns a list of reasons why this is not supported.
         The kernel can run these inputs only if the returned list is empty
         """
-        reasons = []
+        reasons = cls.shape_not_supported_reasons(
+            Mq=d.query.shape[1],
+            Mkv=d.key.shape[1],
+            K=d.query.shape[-1],
+            Kv=d.query.shape[-1],
+        )
         device_type = d.query.device.type
         dtype = d.query.dtype
         if device_type not in cls.SUPPORTED_DEVICES:
             reasons.append(f"device={device_type} (supported: {cls.SUPPORTED_DEVICES})")
         if device_type == "cuda" and not _built_with_cuda and (torch.version.hip is None):
             reasons.append("xFormers wasn't build with CUDA support")
+        if device_type == "cuda":
+            device_capability = torch.cuda.get_device_capability(d.device)
+            if device_capability < cls.CUDA_MINIMUM_COMPUTE_CAPABILITY:
+                reasons.append(
+                    f"requires device with capability > {cls.CUDA_MINIMUM_COMPUTE_CAPABILITY} "
+                    f"but your GPU has capability {device_capability} (too old)"
+                )
         if dtype not in cls.SUPPORTED_DTYPES:
             reasons.append(f"dtype={dtype} (supported: {cls.SUPPORTED_DTYPES})")
-        if (
-            not cls.SUPPORTS_DIFFERENT_VALUE_EMBED
-            and d.query.shape[-1] != d.value.shape[-1]
-        ):
-            reasons.append("query.shape[-1] != value.shape[-1]")
-        if max(d.query.shape[-1], d.value.shape[-1]) > cls.SUPPORTED_MAX_K:
-            reasons.append(
-                f"max(query.shape[-1] != value.shape[-1]) > {cls.SUPPORTED_MAX_K}"
-            )
         if type(d.attn_bias) not in cls.SUPPORTED_ATTN_BIAS_TYPES:
             reasons.append(f"attn_bias type is {type(d.attn_bias)}")
         if (d.p != 0.0) and not cls.SUPPORTS_DROPOUT:
@@ -201,7 +255,11 @@ class AttentionOpBase(BaseOperator):
             reasons.append("bf16 is only supported on A100+ GPUs")
         if not cls.is_available():
             reasons.append(
-                "Operator wasn't built - see `python -m xformers.info` for more info"
+                "operator wasn't built - see `python -m xformers.info` for more info"
+            )
+        if not cls.IS_DETERMINISTIC and torch.are_deterministic_algorithms_enabled():
+            reasons.append(
+                "operator is non-deterministic, but `torch.use_deterministic_algorithms` is set"
             )
         return reasons
 
@@ -388,7 +446,7 @@ class AttentionOpDispatch:
             p=p,
             scale=scale,
         )
-        return AttentionOpDispatch(op=(_dispatch_fw(inp), _dispatch_bw(inp)))
+        return AttentionOpDispatch(op=(_dispatch_fw(inp, True), _dispatch_bw(inp)))
 
 
 def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:

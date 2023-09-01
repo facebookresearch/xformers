@@ -1,4 +1,3 @@
-
 # Benchmarks: how to and some results
 
 ## Benchmark a full encoder block

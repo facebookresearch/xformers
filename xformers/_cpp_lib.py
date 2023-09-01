@@ -36,6 +36,10 @@ class _BuildInfo:
         return self.metadata["version"]["python"]
 
     @property
+    def flash_version(self) -> str:
+        return self.metadata["version"].get("flash", "0.0.0")
+
+    @property
     def build_env(self) -> Dict[str, Any]:
         return self.metadata["env"]
 

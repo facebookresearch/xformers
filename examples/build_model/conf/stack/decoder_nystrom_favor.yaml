@@ -4,7 +4,7 @@ defaults:
   #
   # decoder_nystrom_favor:
   #  _target_: xformers.factory.block_factory.xFormerDecoderConfig
-  #  reversible: False  
+  #  reversible: False
   #  ...
   #
   # this helps with organizing the configs at a model level

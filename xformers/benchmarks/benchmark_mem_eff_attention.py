@@ -32,11 +32,8 @@ def create_attn_bias(
     if bias_type is NoneType:
         return None
     if bias_type is torch.Tensor:
-        attn_bias = (
-            torch.randn((batch_size * num_heads, 1, kv_len), device=device, dtype=dtype)
-            * 3
-        )
-        return attn_bias.expand(batch_size * num_heads, q_len, kv_len)
+        attn_bias = torch.randn((1, 1, q_len, kv_len), device=device, dtype=dtype)
+        return attn_bias.expand(batch_size, num_heads, q_len, kv_len)
     if bias_type is xformers.ops.LowerTriangularMask:
         return bias_type()
     assert False, f"Unsupported bias type: {bias_type}"
@@ -64,12 +61,15 @@ def ref_attention_bmk(q, k, v, attn_bias=None, p=0.0):
 
 def ref_attention(q, k, v, attn_bias, p=0.0):
     assert q.ndim == 4
+    B, M, H, K = q.shape
 
     def T(t):
         return t.permute((0, 2, 1, 3)).reshape(
             [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
         )
 
+    if isinstance(attn_bias, torch.Tensor):
+        attn_bias = attn_bias.reshape(B * H, M, M)
     out = ref_attention_bmk(T(q), T(k), T(v), attn_bias, p)
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
@@ -116,8 +116,10 @@ SHAPES = [
     # Zetta B M H K
     (8, 2048, 20, 128),
     # LLaMa 70b - mp=8/16
-    *sorted(list(itertools.product([1, 2], [2048, 4096, 8192], [4, 8], [128]))),
-    *sorted(list(itertools.product([16], [128, 512, 1024], [16], [16, 32, 64, 128]))),
+    *sorted(itertools.product([1, 2], [2048, 4096, 8192], [4, 8], [128])),
+    *sorted(
+        itertools.product([16], [128, 512, 1024], [16], [16, 32, 64, 128, 160, 256])
+    ),
 ]
 
 OPS = [

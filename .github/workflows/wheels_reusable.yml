@@ -32,18 +32,14 @@ on:
       pypirc:
         required: false
         type: string
-      arch_list:
-        required: false
-        type: string
-        default: "5.0+PTX 6.0 6.1 7.0 7.5 8.0 8.6"
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
 
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: ${{ inputs.arch_list }}
-  MAX_JOBS: 1 # will crash otherwise
+  TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0+PTX"
+  MAX_JOBS: 1
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
@@ -79,6 +75,21 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], "r+") as fp:
             fp.write("CUDA_VERSION=" + full_version + "\n")
             fp.write("CUDA_INSTALL_SCRIPT=" + install_script + "\n")
+
+      - name: Add H100 if nvcc 11.08+
+        shell: python
+        run: |
+          import os
+          import sys
+          print(sys.version)
+          cuda_short_version = "${{ inputs.cuda_short_version }}"
+          arch_list = os.environ["TORCH_CUDA_ARCH_LIST"]
+          if cuda_short_version not in ["116", "117"]:
+            arch_list += " 9.0"
+          with open(os.environ['GITHUB_ENV'], "r+") as fp:
+            fp.write("TORCH_CUDA_ARCH_LIST=" + arch_list + "\n")
+      - run: echo "${TORCH_CUDA_ARCH_LIST}"
+
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:

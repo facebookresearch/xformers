@@ -114,12 +114,14 @@ class _SeqLenInfo:
     three blocks of lengths 2, 3 and 2, use `from_seqlength([2, 3, 2])`.
     The members will be:
         max_seqlen: 3
+        min_seqlen: 2
         seqstart_py: [0, 2, 5, 7]
         seqstart: torch.IntTensor([0, 2, 5, 7])
     """
 
     seqstart: torch.Tensor
     max_seqlen: int
+    min_seqlen: int
     seqstart_py: List[int]
 
     def to(self, device: torch.device) -> None:
@@ -136,11 +138,18 @@ class _SeqLenInfo:
         assert not isinstance(seqlens, torch.Tensor)
         seqstart_py = [0]
         max_seqlen = -1
+        min_seqlen = -1
         for seqlen in seqlens:
+            min_seqlen = min(min_seqlen, seqlen) if min_seqlen != -1 else seqlen
             max_seqlen = max(max_seqlen, seqlen)
             seqstart_py.append(seqstart_py[len(seqstart_py) - 1] + seqlen)
         seqstart = torch.tensor(seqstart_py, dtype=torch.int32)
-        return cls(max_seqlen=max_seqlen, seqstart=seqstart, seqstart_py=seqstart_py)
+        return cls(
+            max_seqlen=max_seqlen,
+            min_seqlen=min_seqlen,
+            seqstart=seqstart,
+            seqstart_py=seqstart_py,
+        )
 
     def split(
         self, x: torch.Tensor, batch_sizes: Optional[Sequence[int]] = None
@@ -194,14 +203,17 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
 
     The members will be:
         max_seqlen: 3
+        min_seqlen: 2
         seqstart_py: [0, 4, 8, 12]
         seqstart: torch.IntTensor([0, 4, 8, 12])
         seqlen_py: [2, 3, 2]
         seqlen: torch.IntTensor([2, 3, 2])
+        padding: 4
     """
 
     seqlen: torch.Tensor
     seqlen_py: Sequence[int]
+    padding: int
     # From parent: seqstart[i] contains the start position
     # of the i-th sequence
     # seqstart: torch.Tensor
@@ -238,8 +250,10 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
             seqlen=torch.tensor(seqlens, dtype=torch.int32),
             seqlen_py=seqlens,
             max_seqlen=max(seqlens),
+            min_seqlen=min(seqlens),
             seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
             seqstart_py=seqstart_py,
+            padding=padding,
         )
 
     def split(
@@ -600,7 +614,8 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         kv_seqlen: Sequence[int],
         causal_diagonal: Any = None,
     ) -> "BlockDiagonalCausalWithOffsetPaddedKeysMask":
-        """Creates a :attr:`BlockDiagonalCausalWithOffsetPaddedKeysMask` from a list of tensors lengths for query and key/value.
+        """Creates a :attr:`BlockDiagonalCausalWithOffsetPaddedKeysMask` from a list of tensor
+        lengths for query and key/value.
 
         Args:
             q_seqlen (Sequence[int]): List or tensor of sequence lengths for query tensors

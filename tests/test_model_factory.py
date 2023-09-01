@@ -21,7 +21,7 @@ DEVICES = (
     if not torch.cuda.is_available()
     else [
         torch.device("cuda")
-    ]  # save a bit on CI for now, we have seperate cpu and gpu jobs
+    ]  # save a bit on CI for now, we have separate cpu and gpu jobs
 )
 
 encoder_configs = {

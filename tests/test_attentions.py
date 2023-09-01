@@ -46,7 +46,7 @@ def _get_multihead(
     heads,
     device,
     skip_output_projection=False,
-    use_seperate_proj_weights=True,
+    use_separate_proj_weights=True,
 ):
     test_config = {
         "name": attention_name,
@@ -85,7 +85,7 @@ def _get_multihead(
         residual_dropout=res_dropout,
         num_heads=heads,
         attention=attention,
-        use_separate_proj_weight=use_seperate_proj_weights,
+        use_separate_proj_weight=use_separate_proj_weights,
     ).to(device)
 
     return multi_head
@@ -118,7 +118,7 @@ def test_order_invariance(
         causal,
         heads,
         device,
-        use_seperate_proj_weights=False,
+        use_separate_proj_weights=False,
     )
 
     if (

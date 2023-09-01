@@ -104,14 +104,18 @@ def get_cuda_version(cuda_dir) -> int:
 
 
 def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
+    # XXX: Not supported on windows yet
+    # https://github.com/Dao-AILab/flash-attention/issues/345
+    if platform.system() != "Linux":
+        return []
     # Figure out default archs to target
     DEFAULT_ARCHS_LIST = ""
     if cuda_version >= 1108:
-        DEFAULT_ARCHS_LIST = "7.5;8.0;8.6;9.0"
+        DEFAULT_ARCHS_LIST = "8.0;8.6;9.0"
     elif cuda_version > 1100:
-        DEFAULT_ARCHS_LIST = "7.5;8.0;8.6"
+        DEFAULT_ARCHS_LIST = "8.0;8.6"
     elif cuda_version == 1100:
-        DEFAULT_ARCHS_LIST = "7.5;8.0"
+        DEFAULT_ARCHS_LIST = "8.0"
     else:
         return []
 
@@ -125,8 +129,11 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
 
         arch_arr = arch.split(".")
         num = 10 * int(arch_arr[0]) + int(arch_arr[1].partition("+")[0])
-        # Need at least 7.5
-        if num < 75:
+        # Need at least Sm80
+        if num < 80:
+            continue
+        # Sm90 requires nvcc 11.8+
+        if num >= 90 and cuda_version < 1108:
             continue
         nvcc_archs_flags.append(f"-gencode=arch=compute_{num},code=sm_{num}")
         if arch.endswith("+PTX"):
@@ -134,42 +141,42 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     if not nvcc_archs_flags:
         return []
 
+    nvcc_windows_flags = []
+    if platform.system() == "Windows":
+        nvcc_windows_flags = ["-Xcompiler", "/permissive-"]
+
     flash_root = os.path.join(this_dir, "third_party", "flash-attention")
-    if not os.path.exists(flash_root):
+    cutlass_inc = os.path.join(flash_root, "csrc", "cutlass", "include")
+    if not os.path.exists(flash_root) or not os.path.exists(cutlass_inc):
         raise RuntimeError(
             "flashattention submodule not found. Did you forget "
             "to run `git submodule update --init --recursive` ?"
         )
 
+    sources = ["csrc/flash_attn/flash_api.cpp"]
+    for f in glob.glob(os.path.join(flash_root, "csrc", "flash_attn", "src", "*.cu")):
+        sources.append(str(Path(f).relative_to(flash_root)))
     return [
         CUDAExtension(
             name="xformers._C_flashattention",
-            sources=[
-                os.path.join("third_party", "flash-attention", path)
-                for path in [
-                    "csrc/flash_attn/fmha_api.cpp",
-                    "csrc/flash_attn/src/fmha_fwd_hdim32.cu",
-                    "csrc/flash_attn/src/fmha_fwd_hdim64.cu",
-                    "csrc/flash_attn/src/fmha_fwd_hdim128.cu",
-                    "csrc/flash_attn/src/fmha_bwd_hdim32.cu",
-                    "csrc/flash_attn/src/fmha_bwd_hdim64.cu",
-                    "csrc/flash_attn/src/fmha_bwd_hdim128.cu",
-                    "csrc/flash_attn/src/fmha_block_fprop_fp16_kernel.sm80.cu",
-                    "csrc/flash_attn/src/fmha_block_dgrad_fp16_kernel_loop.sm80.cu",
-                ]
-            ],
+            sources=[os.path.join(flash_root, path) for path in sources],
             extra_compile_args={
                 **extra_compile_args,
                 "nvcc": extra_compile_args.get("nvcc", [])
                 + [
                     "-O3",
                     "-std=c++17",
+                    "-U__CUDA_NO_HALF_OPERATORS__",
+                    "-U__CUDA_NO_HALF_CONVERSIONS__",
+                    "-U__CUDA_NO_HALF2_OPERATORS__",
+                    "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
                     "--use_fast_math",
                     "--ptxas-options=-v",
                 ]
                 + nvcc_archs_flags
+                + nvcc_windows_flags
                 + get_extra_nvcc_flags_for_build_type(),
             },
             include_dirs=[
@@ -177,7 +184,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                 for p in [
                     Path(flash_root) / "csrc" / "flash_attn",
                     Path(flash_root) / "csrc" / "flash_attn" / "src",
-                    Path(this_dir) / "third_party" / "cutlass" / "include",
+                    Path(flash_root) / "csrc" / "cutlass" / "include",
                 ]
             ],
         )
@@ -227,6 +234,7 @@ def get_extensions():
     include_dirs = [extensions_dir]
     ext_modules = []
     cuda_version = None
+    flash_version = "0.0.0"
 
     if (
         (torch.cuda.is_available() and ((CUDA_HOME is not None)))
@@ -243,10 +251,6 @@ def get_extensions():
             "-U__CUDA_NO_HALF_CONVERSIONS__",
             "--extended-lambda",
             "-D_ENABLE_EXTENDED_ALIGNED_STORAGE",
-            # Workaround for a regression with nvcc > 11.6
-            # See https://github.com/facebookresearch/xformers/issues/712
-            "--ptxas-options=-O2",
-            "--ptxas-options=-allow-expensive-optimizations=true",
         ] + get_extra_nvcc_flags_for_build_type()
         if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
             nvcc_flags.append("-DNDEBUG")
@@ -268,9 +272,25 @@ def get_extensions():
             ]
         extra_compile_args["nvcc"] = nvcc_flags
 
-        ext_modules += get_flash_attention_extensions(
+        flash_extensions = get_flash_attention_extensions(
             cuda_version=cuda_version, extra_compile_args=extra_compile_args
         )
+
+        if flash_extensions:
+            flash_version = subprocess.check_output(
+                ["git", "describe", "--tags", "--always"],
+                cwd=Path(__file__).parent / "third_party" / "flash-attention",
+            ).decode("ascii")[:-1]
+        ext_modules += flash_extensions
+
+        # NOTE: This should not be applied to Flash-Attention
+        # see https://github.com/Dao-AILab/flash-attention/issues/359
+        extra_compile_args["nvcc"] += [
+            # Workaround for a regression with nvcc > 11.6
+            # See https://github.com/facebookresearch/xformers/issues/712
+            "--ptxas-options=-O2",
+            "--ptxas-options=-allow-expensive-optimizations=true",
+        ]
     elif torch.cuda.is_available() and torch.version.hip: 
        rename_cpp_cu(source_hip)
        source_hip_cu = glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "*.cu"), recursive=True) 
@@ -315,6 +335,7 @@ def get_extensions():
             "cuda": cuda_version,
             "torch": torch.__version__,
             "python": platform.python_version(),
+            "flash": flash_version,
         },
         "env": {
             k: os.environ.get(k)

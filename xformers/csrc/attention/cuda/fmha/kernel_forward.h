@@ -600,8 +600,8 @@ struct AttentionKernel {
           p.num_heads <= 1 || p.bias_strideH % kAlignmentQ == 0,
           "attn_bias is not correctly aligned (strideH)");
       XFORMERS_CHECK(
-          p.bias_strideM % kAlignmentQ == 0,
-          "attn_bias is not correctly aligned");
+          p.num_queries <= 1 || p.bias_strideM % kAlignmentQ == 0,
+          "attn_bias is not correctly aligned (strideM)");
     }
     XFORMERS_CHECK(
         p.q_strideM % kAlignmentQ == 0,

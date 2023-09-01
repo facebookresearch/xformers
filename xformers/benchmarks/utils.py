@@ -68,7 +68,8 @@ def pretty_plot(
     results, title, units: str, filename=None, dash_key="", legend_loc="lower right"
 ):
     """Graph out the contents of a dict.
-    Dash key means that if the result label has this key, then it will be displayed with a dash"""
+    Dash key means that if the result label has this key, then it will be displayed with a dash
+    """
 
     if not filename:
         filename = title + ".png"
@@ -139,7 +140,8 @@ if _triton_is_available:
 
 def pretty_barplot(results, title, units: str, filename=None, dash_key=""):
     """Graph out the contents of a dict.
-    Dash key means that if the result label has this key, then it will be displayed with a dash"""
+    Dash key means that if the result label has this key, then it will be displayed with a dash
+    """
 
     if not filename:
         filename = title + ".png"
@@ -295,7 +297,7 @@ def _finalize_results(results: List[Tuple[Dict[str, Any], Any]]) -> List[Any]:
     """
     all_algorithms: Set[str] = set()
     all_description: Set[str] = set()
-    for (metadata, r) in results:
+    for metadata, r in results:
         algo = metadata.get(META_ALGORITHM, None)
         if algo is not None:
             all_algorithms.add(algo)
@@ -304,7 +306,7 @@ def _finalize_results(results: List[Tuple[Dict[str, Any], Any]]) -> List[Any]:
     display_descr = len(all_description) > 1
 
     display_results = []
-    for (metadata, r) in results:
+    for metadata, r in results:
         algo = metadata.get(META_ALGORITHM, None)
         if algo is None:
             display_results.append(r)
@@ -343,14 +345,13 @@ def _render_bar_plot(results: List[Any], store_results_folder: str) -> None:
     all_data_run: List[Any] = []
     for key, runtime_values in runtime.items():
         memory_values = memory_usage[key]
-        all_data_mem.append(
-            [key]
-            + [
-                memory_values.get(d, 0)
-                / memory_values.get(all_descriptions[0], math.inf)
-                for d in all_descriptions
-            ]
-        )
+        denom = memory_values.get(all_descriptions[0], math.inf)
+        if denom == 0:
+            all_data_mem.append([key] + [0] * len(all_descriptions))
+        else:
+            all_data_mem.append(
+                [key] + [memory_values.get(d, 0) / denom for d in all_descriptions]
+            )
         all_data_run.append(
             [key]
             + [
@@ -409,7 +410,11 @@ def benchmark_main_helper(benchmark_fn, cases: List[Dict[str, Any]], **kwargs) -
         type=str,
         help="Compare to previously stored benchmarks (coma separated)",
     )
-    parser.add_argument("--omit-baselines", action="store_true")
+    parser.add_argument(
+        "--omit-baselines",
+        action="store_true",
+        help="Do not run the (potentially slow) baselines",
+    )
     parser.add_argument(
         "--quiet",
         action="store_true",

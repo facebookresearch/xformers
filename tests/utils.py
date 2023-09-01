@@ -25,7 +25,7 @@ def assert_allclose(
     max_pos = flatten_diff.argmax()
     max_location = np.unravel_index(int(max_pos), out.shape)
     max_diff = flatten_diff[max_pos]
-    num_different = torch.count_nonzero(flatten_diff > 0)
+    num_different = flatten_diff.numel() - torch.count_nonzero(flatten_diff <= 0)
     percentage = num_different / flatten_diff.numel()
     del flatten_diff
     assert torch.allclose(out, ref, rtol=rtol, atol=atol), (
