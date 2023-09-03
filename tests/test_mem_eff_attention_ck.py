@@ -880,8 +880,10 @@ def _vec_binom_test(x, n, p):
 def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
     if op == fmha.ck.FwOp:
         mask = torch.empty((batch_size, 1, q_len, kv_len), device=device)
+        ## rand_uniform is an int32 tensor
         rand_uniform = torch.ops.xformers._ck_rand_uniform(p, mask)
-        mask = (rand_uniform > p).to(torch.float32)
+        mask = (rand_uniform > int(p*65535)).to(torch.float32)
+        print("call _ck_rand_uniform passed")
         mask = mask.reshape(batch_size, q_len, kv_len)
     else:
         mask = torch.empty((batch_size, q_len, kv_len), device=device)
