@@ -8,10 +8,10 @@
 
 #include <torch/torch.h>
 
+#include <ATen/cuda/CUDAGeneratorImpl.h>
 #include <ck/ck.hpp>
 #include <ck/utility/data_type.hpp>
 #include <ck/utility/sequence.hpp>
-#include <ATen/cuda/CUDAGeneratorImpl.h>
 
 // Here flag can be a constant, variable or function call
 #define FMHA_HIP_CHECK(ret_or_call)                                          \
@@ -166,17 +166,17 @@ struct MaxVectorSizeForType<ck::bhalf_t> {
 
 struct SimpleDeviceMem {
   SimpleDeviceMem() = delete;
-  SimpleDeviceMem(std::size_t mem_size) : p_mem_{} {
-    FMHA_HIP_CHECK(hipMalloc(static_cast<void**>(&p_mem_), mem_size));
+  SimpleDeviceMem(std::size_t mem_size) {
+    auto options = torch::TensorOptions();
+    mem = at::empty(
+        mem_size, options.dtype(at::ScalarType::Byte).device(torch::kCUDA));
   }
   void* GetDeviceBuffer() {
-    return p_mem_;
+    return mem.data_ptr();
   }
-  ~SimpleDeviceMem() {
-    (void)hipFree(p_mem_);
-  }
+  ~SimpleDeviceMem() {}
 
-  void* p_mem_;
+  at::Tensor mem;
 };
 
 struct BatchedInferParams {
@@ -279,7 +279,7 @@ struct BatchedBackwardParams {
   int Kv; // embed_dim for Value
 
   float scale;
-  bool has_attn_bias; 
+  bool has_attn_bias;
 
   // BMHK mode strides, last-dim contiguous
   std::array<int, 4> q_strides;
@@ -332,7 +332,7 @@ struct GroupedBackwardParams {
   std::vector<int> host_seqlen_k;
 
   float scale;
-  bool has_attn_bias; 
+  bool has_attn_bias;
 
   // MHK mode strides, last-dim contiguous
   std::array<int, 3> q_strides;
