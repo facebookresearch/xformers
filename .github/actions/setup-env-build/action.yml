@@ -3,48 +3,115 @@ name: Install env + build
 runs:
   using: composite
   steps:
-    - name: Conda setup
+    - id: prepare_conda_env_paths
+      shell: python
+      run: |
+        import os
+        import subprocess
+        import hashlib
+        import glob
+        from pathlib import Path
+
+        CONDA_INSTALL_CMD = "conda create python=${{ matrix.python }} zlib pip ninja pytorch=${{ matrix.pytorch }} torchvision ccache pytorch-cuda=${{ matrix.cuda }} -c pytorch -c nvidia -q -y"
+
+        conda_env_key = CONDA_INSTALL_CMD
+        for file in sorted(glob.glob("requirement*.txt")):
+          conda_env_key += f"\n########## {file}\n"
+          conda_env_key += Path(file).read_text()
+        conda_env_hash = hashlib.sha224(conda_env_key.encode("ascii")).hexdigest()[:8]
+        shared_dir = os.environ.get("GHRUNNER_SHARED_DIR", os.getcwd())
+        env_path = os.path.join(shared_dir, "tmp", os.environ["GITHUB_RUN_ID"])
+        final_env = Path(shared_dir) / f"env_{conda_env_hash}.txt"
+        (Path(shared_dir) / f"env_{conda_env_hash}_content.txt").write_text(conda_env_key)
+        CONDA_INSTALL_CMD += " -p " + env_path
+        env_already_built = False
+        # If environment is already built
+        if final_env.is_file():
+          final_env_link = final_env.read_text().strip()
+          if (Path(final_env_link) / "bin" / "python").is_file():
+            print("Found valid env - skipping env setup")
+            CONDA_INSTALL_CMD = "true"
+            env_already_built = True
+            env_path = final_env_link
+          else:
+            print("Invalid env")
+        with open(os.environ['GITHUB_ENV'], "r+") as fp:
+            fp.write("CONDA_ENV_LINK=" + str(final_env) + "\n")
+            fp.write("CONDA_ENV_PATH=" + env_path + "\n")
+            fp.write("CONDA_INSTALL_CMD=" + CONDA_INSTALL_CMD + "\n")
+            fp.write("CONDA_ENV_HASH=" + conda_env_hash + "\n")
+            fp.write("PY=" + os.path.join(env_path, "bin", "python") + "\n")
+            fp.write("PIP=" + os.path.join(env_path, "bin", "pip") + "\n")
+        with open(os.environ['GITHUB_OUTPUT'], "r+") as fp:
+          fp.write(f"ENV_CACHED={int(env_already_built)}\n")
+    - name: Print conda commands
       shell: bash
       run: |
+        echo "CONDA_ENV_PATH=$CONDA_ENV_PATH"
+        echo "CONDA_INSTALL_CMD=$CONDA_INSTALL_CMD"
+        echo "CONDA_ENV_HASH=$CONDA_ENV_HASH"
+        echo "PY=$PY"
+        export LIBRARY_PATH="$LIBRARY_PATH:$CONDA_ENV_PATH/lib"
+        echo "$CONDA_ENV_PATH/bin" >> $GITHUB_PATH
+    - name: Conda/pip setup
+      if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
+      shell: bash
+      run: |
+        set -ex
         conda config --set channel_priority strict
-        CONDA_INSTALL_CMD="conda create -p ./c_env python=${{ matrix.python }} zlib pip ninja pytorch=${{ matrix.pytorch }} torchvision ccache pytorch-cuda=${{ matrix.cuda }} -c pytorch -c nvidia -q -y"
         # Retry if failed after removing downloaded packages cache
-        $CONDA_INSTALL_CMD || (rm -rf $HOME/.conda/pkgs && rm -rf ./c_env && $CONDA_INSTALL_CMD)
-        ./c_env/bin/python -m pip install cmake
-        export LIBRARY_PATH="$LIBRARY_PATH:$(pwd)/c_env/lib"
-        # TODO: Remove any triton requirement for now as the setup
-        # breaks in CI
-        sed -i '/triton/d' requirements-test.txt
-        echo "XFORMERS_FORCE_DISABLE_TRITON=1" >> ${GITHUB_ENV}
-        ./c_env/bin/python -m pip install -r requirements-benchmark.txt --progress-bar off
+        $CONDA_INSTALL_CMD || (rm -rf $HOME/.conda/pkgs && rm -rf $CONDA_ENV_PATH && $CONDA_INSTALL_CMD)
+        which pip
+        pip install cmake
+        pip install -r requirements-benchmark.txt --progress-bar off
+    - name: Setup ccache nvcc
+      if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
+      shell: bash
+      run: |
+        echo "#!/bin/bash" > $CONDA_ENV_PATH/bin/nvcc-ccache
+        echo "ccache ${CUDA_HOME}/bin/nvcc \"\$@\"" >> $CONDA_ENV_PATH/bin/nvcc-ccache
+        cat $CONDA_ENV_PATH/bin/nvcc-ccache
+        chmod +x $CONDA_ENV_PATH/bin/nvcc-ccache
+        which nvcc
+        
+    - name: Setup ccache g++
+      if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
+      shell: bash
+      run: |
+        echo "#!/bin/bash" > $CONDA_ENV_PATH/bin/g++-ccache
+        echo "ccache g++ \"\$@\"" >> $CONDA_ENV_PATH/bin/g++-ccache
+        cat $CONDA_ENV_PATH/bin/g++-ccache
+        chmod +x $CONDA_ENV_PATH/bin/g++-ccache
+        which g++-ccache
+    - name: Check NVIDIA libs
+      shell: bash
+      run: |
+        ldconfig -p | grep libcuda.so
+        ls /.singularity.d/libs/
+    - name: Mark env as ready
+      if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
+      shell: bash
+      run: echo $CONDA_ENV_PATH > $CONDA_ENV_LINK
     - name: Setup ccache
       shell: bash
       run: |
-        source activate ./c_env
-        echo "#!/bin/bash" > ./c_env/bin/nvcc-ccache
-        echo "ccache ${CUDA_HOME}/bin/nvcc \"\$@\"" >> ./c_env/bin/nvcc-ccache
-        cat ./c_env/bin/nvcc-ccache
-        chmod +x ./c_env/bin/nvcc-ccache
-        which nvcc
-        echo "CCACHE_DIR=$HOME/.ccache" >> ${GITHUB_ENV}
-    - name: ccache stats
-      shell: bash
-      run: |
-        source activate ./c_env
+        export CCACHE_DIR=$GHRUNNER_SHARED_DIR/ccache
+        echo "CCACHE_DIR=$CCACHE_DIR" >> ${GITHUB_ENV}
+        mkdir -p $CCACHE_DIR
         ccache -s
     - name: Build
       shell: bash
       run: |
-        source activate ./c_env
-        PYTORCH_NVCC="$(pwd)/c_env/bin/nvcc-ccache" TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python -m pip install -v -e .
+        PYTORCH_NVCC="$CONDA_ENV_PATH/bin/nvcc-ccache" CXX="g++-ccache" TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python -m pip install -v -e .
         python -m xformers.info
     - name: xformers.info
       shell: bash
       run: |
-        source activate ./c_env
         python -m xformers.info
+    - name: printenv
+      shell: bash
+      run: printenv
     - name: ccache stats
       shell: bash
       run: |
-        source activate ./c_env
         ccache -s
