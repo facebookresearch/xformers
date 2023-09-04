@@ -72,6 +72,11 @@ efficient_attention_forward_ck(
   TORCH_CHECK(query.scalar_type() == key.scalar_type());
   TORCH_CHECK(query.scalar_type() == value.scalar_type());
 
+  // Query, Key, Value must use the same CUDA device
+  TORCH_CHECK(query.device() == key.device());
+  TORCH_CHECK(query.device() == value.device());
+  TORCH_CHECK(query.device().type() == torch::kCUDA)
+
   TORCH_CHECK(seqstart_q.has_value() == seqstart_k.has_value());
   if (seqstart_q.has_value()) {
     TORCH_CHECK(seqstart_q->scalar_type() == at::ScalarType::Int);
@@ -87,7 +92,7 @@ efficient_attention_forward_ck(
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
-  // at::cuda::CUDAGuard device_guard(query.device());
+  at::cuda::CUDAGuard device_guard(query.device());
   hipStream_t stream = at::cuda::getCurrentHIPStream().stream();
 
   int64_t B = query.size(0);
@@ -379,7 +384,7 @@ efficient_attention_forward_ck(
       } else if constexpr (std::is_same<scalar_t, ck::bhalf_t>::value) {
         batched_forward_bp16(batched_forward_params, stream);
       } else
-        throw std::runtime_error("input data-type is not supported");
+        throw std::runtime_error("input data-type is not supported!");
     } else { // input is grouped
       GroupedForwardParams grouped_forward_params;
 
@@ -390,7 +395,7 @@ efficient_attention_forward_ck(
       } else if constexpr (std::is_same<scalar_t, ck::bhalf_t>::value) {
         grouped_forward_bp16(grouped_forward_params, stream);
       } else
-        throw std::runtime_error("input data-type is not supported");
+        throw std::runtime_error("input data-type is not supported!");
     }
   });
 
