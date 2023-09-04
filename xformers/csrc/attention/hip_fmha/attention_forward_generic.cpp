@@ -254,16 +254,18 @@ efficient_attention_forward_ck(
     p.host_seqstart_q.resize(p.num_batches + 1);
     p.host_seqstart_k.resize(p.num_batches + 1);
 
-    FMHA_HIP_CHECK(hipMemcpy(
+    FMHA_HIP_CHECK(hipMemcpyAsync(
         p.host_seqstart_q.data(),
         seqstart_q->data_ptr(),
         (p.num_batches + 1) * sizeof(int32_t),
-        hipMemcpyDeviceToHost));
-    FMHA_HIP_CHECK(hipMemcpy(
+        hipMemcpyDeviceToHost,
+        stream));
+    FMHA_HIP_CHECK(hipMemcpyAsync(
         p.host_seqstart_k.data(),
         seqstart_k->data_ptr(),
         (p.num_batches + 1) * sizeof(int32_t),
-        hipMemcpyDeviceToHost));
+        hipMemcpyDeviceToHost,
+        stream));
 
     if (seqlen_k.has_value()) {
       TORCH_CHECK(seqlen_k->scalar_type() == at::ScalarType::Int);
@@ -273,11 +275,12 @@ efficient_attention_forward_ck(
 
       p.host_seqlen_k.resize(p.num_batches);
 
-      FMHA_HIP_CHECK(hipMemcpy(
+      FMHA_HIP_CHECK(hipMemcpyAsync(
           p.host_seqlen_k.data(),
           seqlen_k->data_ptr(),
           p.num_batches * sizeof(int32_t),
-          hipMemcpyDeviceToHost));
+          hipMemcpyDeviceToHost,
+          stream));
     }
 
     char* q_ptr = reinterpret_cast<char*>(query.data_ptr());
