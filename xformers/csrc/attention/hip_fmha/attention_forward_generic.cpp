@@ -11,6 +11,7 @@
 #include <c10/util/Optional.h>
 #include <torch/library.h>
 
+#include "ck_fmha_params.h"
 #include "ck_fmha_util.h"
 
 extern void batched_forward_fp16(

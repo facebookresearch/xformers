@@ -10,13 +10,12 @@
 #include <torch/library.h>
 #include <torch/types.h>
 
-#include <sstream>
-#include <stdexcept>
-
 #include <ck/ck.hpp>
 #include <ck/tensor_operation/gpu/device/gemm_specialization.hpp>
 #include <ck/tensor_operation/gpu/device/tensor_specialization.hpp>
 #include "ck/tensor_operation/gpu/device/impl/device_batched_dropout.hpp"
+
+#include "ck_fmha_util.h"
 
 namespace {
 

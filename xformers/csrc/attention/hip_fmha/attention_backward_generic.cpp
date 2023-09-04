@@ -9,6 +9,7 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
 
+#include "ck_fmha_params.h"
 #include "ck_fmha_util.h"
 
 extern void batched_backward_fp16(

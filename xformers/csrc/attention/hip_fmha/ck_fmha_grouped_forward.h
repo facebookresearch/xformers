@@ -10,7 +10,8 @@
 #include <ck/tensor_operation/gpu/element/element_wise_operation.hpp>
 #include <ck/utility/sequence.hpp>
 
-#include "ck_fmha_util.h"
+#include "ck_fmha_op_helper.h"
+#include "ck_fmha_params.h"
 
 template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
 void grouped_forward_masktype_attnbias_dispatched(

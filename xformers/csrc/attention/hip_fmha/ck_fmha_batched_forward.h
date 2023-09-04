@@ -9,7 +9,8 @@
 #include <ck/tensor_operation/gpu/element/element_wise_operation.hpp>
 #include "ck/tensor_operation/gpu/device/impl/device_batched_mha_fwd_xdl_cshuffle_v2.hpp"
 
-#include "ck_fmha_util.h"
+#include "ck_fmha_op_helper.h"
+#include "ck_fmha_params.h"
 
 template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
 void batched_forward_masktype_attnbias_dispatched(
