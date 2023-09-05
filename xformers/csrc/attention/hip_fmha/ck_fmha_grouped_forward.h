@@ -215,10 +215,6 @@ void grouped_forward_masktype_attnbias_dispatched(
          {}}); // acc1_bias_gs_ms_os_strides
   }
 
-  // TODO, how to initialize seed, offset
-  const uint64_t seed = 1;
-  const uint64_t offset = 0;
-
   float alpha = param.scale;
 
   auto a_element_op = AElementOp{};
@@ -246,7 +242,7 @@ void grouped_forward_masktype_attnbias_dispatched(
       b1_element_op,
       c_element_op,
       param.use_dropout ? param.dropout_prob : 0.0f, // dropout ratio
-      {seed, offset});
+      std::tuple<int64_t, int64_t>(param.philox_seed, param.philox_offset));
 
   SimpleDeviceMem workspace(op.GetWorkSpaceSize(arg_ptr.get()));
 

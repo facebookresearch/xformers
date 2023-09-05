@@ -234,8 +234,7 @@ void grouped_backward_masktype_attnbias_dispatched(
       QKVElementOp{},
       YElementOp{},
       param.dropout_prob,
-      std::tuple<unsigned long long, unsigned long long>(
-          param.rng_seed, param.rng_offset));
+      std::tuple<int64_t, int64_t>(param.philox_seed, param.philox_offset));
 
   SimpleDeviceMem workspace(op.GetWorkSpaceSize(arg_ptr.get()));
 

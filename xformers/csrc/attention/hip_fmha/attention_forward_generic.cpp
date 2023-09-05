@@ -10,6 +10,7 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/util/Optional.h>
 #include <torch/library.h>
+#include <ATen/cuda/CUDAGraphsUtils.cuh>
 
 #include "ck_fmha_params.h"
 #include "ck_fmha_util.h"
@@ -108,8 +109,11 @@ efficient_attention_forward_ck(
   at::Tensor randvals;
 
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
-  at::PhiloxCudaState rng_engine_inputs;
+  int64_t philox_seed;
+  int64_t philox_offset;
+
   if (use_dropout) {
+    at::PhiloxCudaState rng_engine_inputs;
     at::CUDAGeneratorImpl* gen =
         at::get_generator_or_default<at::CUDAGeneratorImpl>(
             c10::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
@@ -118,6 +122,11 @@ efficient_attention_forward_ck(
     // if using dropout, we produce 1 random number for each element of the
     // attention tensor
     rng_engine_inputs = gen->philox_cuda_state(B * num_heads * M * N);
+
+    const auto seeds = at::cuda::philox::unpack(rng_engine_inputs);
+
+    philox_seed = std::get<0>(seeds);
+    philox_offset = std::get<1>(seeds);
   }
 
   auto set_batched_forward_params = [&](BatchedForwardParams& p) {
@@ -180,13 +189,13 @@ efficient_attention_forward_ck(
     p.custom_mask_type = custom_mask_type;
 
     p.use_dropout = use_dropout;
+    p.philox_seed = philox_seed;
+    p.philox_offset = philox_offset;
     p.compute_logsumexp = compute_logsumexp;
 
     // the following parameters are only used by training forward
     if (p.use_dropout) {
       p.dropout_prob = static_cast<float>(dropout_p);
-
-      p.rng_engine_inputs = rng_engine_inputs;
 
       randvals = at::empty(
           {B, num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
@@ -324,12 +333,13 @@ efficient_attention_forward_ck(
     }
 
     p.use_dropout = use_dropout;
+    p.philox_seed = philox_seed;
+    p.philox_offset = philox_offset;
     p.compute_logsumexp = compute_logsumexp;
 
     // the following parameters are only used by training forward
     if (p.use_dropout) {
       p.dropout_prob = static_cast<float>(dropout_p);
-      p.rng_engine_inputs = rng_engine_inputs;
 
       randvals = at::empty(
           {num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
@@ -366,10 +376,6 @@ efficient_attention_forward_ck(
     };
   };
 
-  // uint64_t -> int64_t bitwise casting as PyTorch don't support uint64_t
-  // so just fake it as a int64_t
-  int64_t seed, offset;
-
   DISPATCH_TYPES(query.scalar_type(), [&]() {
     out = at::zeros(
         {B, M, num_heads, Kv},
@@ -400,12 +406,9 @@ efficient_attention_forward_ck(
     }
   });
 
-  // torch::save(randvals, "randvals_dev.zip"); 
+  // torch::save(randvals, "randvals_dev.zip");
 
-  std::memcpy(&seed, &rng_engine_inputs.seed_, sizeof(seed));
-  std::memcpy(&offset, &rng_engine_inputs.offset_.val, sizeof(offset));
-
-  return std::make_tuple(out, logsumexp, seed, offset);
+  return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
 }
 
 } // namespace

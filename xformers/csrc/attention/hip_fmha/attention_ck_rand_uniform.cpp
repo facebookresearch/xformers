@@ -6,9 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <ATen/ATen.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <ATen/cuda/CUDAGeneratorImpl.h>
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
 #include <torch/types.h>
+#include <ATen/cuda/CUDAGraphsUtils.cuh>
 
 #include <ck/ck.hpp>
 #include <ck/tensor_operation/gpu/device/gemm_specialization.hpp>
@@ -31,6 +34,21 @@ at::Tensor rand_uniform_int(
   int num_heads = out_pattern.size(1);
   int M = out_pattern.size(2);
   int N = out_pattern.size(3);
+
+  at::CUDAGeneratorImpl* gen =
+      at::get_generator_or_default<at::CUDAGeneratorImpl>(
+          c10::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
+
+  at::PhiloxCudaState rng_engine_inputs;
+  {
+    std::lock_guard<std::mutex> lock(gen->mutex_);
+    rng_engine_inputs = gen->philox_cuda_state(B * num_heads * M * N);
+  }
+
+  const auto seeds = at::cuda::philox::unpack(rng_engine_inputs);
+
+  int64_t philox_seed = std::get<0>(seeds);
+  int64_t philox_offset = std::get<1>(seeds);
 
   at::Tensor randvals;
 
@@ -87,7 +105,7 @@ at::Tensor rand_uniform_int(
       static_cast<int*>(randvals.data_ptr()),
       z_gs_ms_ns_lengths,
       z_gs_ms_ns_strides,
-      {seed, offset});
+      {philox_seed, philox_offset});
 
   dropout_invoker.Run(dropout_arg, StreamConfig{nullptr, false});
 

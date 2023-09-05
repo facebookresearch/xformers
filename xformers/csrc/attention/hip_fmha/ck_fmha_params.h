@@ -3,8 +3,6 @@
 #include <array>
 #include <cstdint>
 
-#include <ATen/cuda/CUDAGeneratorImpl.h>
-
 struct BatchedInferParams {
   int B; // batch size
   int M; // seq_len for Query
@@ -38,7 +36,8 @@ struct BatchedForwardParams : public BatchedInferParams {
   bool compute_logsumexp;
 
   float dropout_prob;
-  at::PhiloxCudaState rng_engine_inputs;
+  int64_t philox_seed;
+  int64_t philox_offset;
 
   // BHMN mode strides, completely contiguous
   std::array<int32_t, 4> randvals_strides;
@@ -86,7 +85,8 @@ struct GroupedForwardParams : public GroupedInferParams {
   bool compute_logsumexp;
 
   float dropout_prob;
-  at::PhiloxCudaState rng_engine_inputs;
+  int64_t philox_seed;
+  int64_t philox_offset;
 
   // HMN mode strides, completely contiguous
   std::array<int, 3> randvals_strides;
@@ -132,7 +132,8 @@ struct BatchedBackwardParams {
   // void* grad_bias_ptr;
 
   float dropout_prob;
-  at::PhiloxCudaState rng_engine_inputs;
+  int64_t philox_seed;
+  int64_t philox_offset;
 
   // completely contiguous
   const void* logsumexp_ptr;
@@ -140,9 +141,6 @@ struct BatchedBackwardParams {
   // BHMN mode strides, completely contiguous
   std::array<int, 4> randvals_strides;
   void* randvals_ptr;
-
-  int64_t rng_seed;
-  int64_t rng_offset;
 };
 
 struct GroupedBackwardParams {
@@ -186,7 +184,8 @@ struct GroupedBackwardParams {
   // std::vector<void *> grad_bias_ptrs;
 
   float dropout_prob;
-  at::PhiloxCudaState rng_engine_inputs;
+  int64_t philox_seed;
+  int64_t philox_offset;
 
   // HM mode strides, completely contiguous
   std::vector<const void*> logsumexp_ptrs;
@@ -194,7 +193,4 @@ struct GroupedBackwardParams {
   // HMN mode strides, completely contiguous
   std::array<int, 3> randvals_strides;
   std::vector<void*> randvals_ptrs;
-
-  int64_t rng_seed;
-  int64_t rng_offset;
 };

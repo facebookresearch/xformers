@@ -4,8 +4,6 @@
 #include <ATen/ScalarOps.h>
 #include <ATen/Tensor.h>
 #include <ATen/TensorOperators.h>
-#include <ATen/cuda/CUDAContext.h>
-#include <ATen/cuda/CUDAGeneratorImpl.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
 
@@ -125,8 +123,6 @@ efficient_attention_backward_ck(
 
   at::Tensor randvals;
 
-  at::PhiloxCudaState rng_engine_inputs(rng_seed, rng_offset);
-
   auto set_batched_backward_params = [&](BatchedBackwardParams& p) {
     p.B = B;
     p.M = M;
@@ -191,7 +187,8 @@ efficient_attention_backward_ck(
     p.custom_mask_type = custom_mask_type;
 
     p.dropout_prob = static_cast<float>(dropout_p);
-    p.rng_engine_inputs = rng_engine_inputs;
+    p.philox_seed = rng_seed;
+    p.philox_offset = rng_offset;
 
     randvals = at::empty(
         {B, num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
@@ -203,9 +200,6 @@ efficient_attention_backward_ck(
     p.randvals_ptr = randvals.data_ptr();
 
     p.logsumexp_ptr = logsumexp.data_ptr();
-
-    p.rng_seed = rng_seed;
-    p.rng_offset = rng_offset;
   };
 
   auto set_grouped_backward_params = [&](GroupedBackwardParams& p) {
@@ -260,7 +254,8 @@ efficient_attention_backward_ck(
       p.has_attn_bias = false;
 
     p.dropout_prob = static_cast<float>(dropout_p);
-    p.rng_engine_inputs = rng_engine_inputs;
+    p.philox_seed = rng_seed;
+    p.philox_offset = rng_offset;
 
     randvals = at::empty(
         {num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
