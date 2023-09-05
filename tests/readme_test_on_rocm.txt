@@ -3,7 +3,7 @@
 
    2. verify testing for memory_efficient_attention inference 
 
-      pytest -k test_forward tests/test_mem_eff_attention_ck.py
+      pytest tests/test_mem_eff_attention_ck.py::test_forward
 
    3. The following tests in tests/memory_eff_attention_ck.py have passed
 
@@ -25,5 +25,9 @@
       * test_unsupported_stride_lastdim
       * test_unsupported_stride_alignment
       * test_cuda_streams
+      * test_dropout
 
+   4. verify testing for memory_efficient_attention forward (with dropout)
+
+      pytest tests/test_mem_eff_attention_ck.py::test_dropout
 
