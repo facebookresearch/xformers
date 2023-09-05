@@ -400,6 +400,8 @@ efficient_attention_forward_ck(
     }
   });
 
+  // torch::save(randvals, "randvals_dev.zip"); 
+
   std::memcpy(&seed, &rng_engine_inputs.seed_, sizeof(seed));
   std::memcpy(&offset, &rng_engine_inputs.offset_.val, sizeof(offset));
 
