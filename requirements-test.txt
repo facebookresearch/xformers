@@ -31,4 +31,3 @@ scipy
 cmake
 --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/
 triton-nightly
-networkx
