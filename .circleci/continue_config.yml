@@ -142,22 +142,6 @@ run_unittests: &run_unittests
         source $BASH_ENV
         $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --maxfail=20 tests
 
-run_benchmarks: &run_benchmarks
-  - run:
-      name: Run Benchmarks
-      when: always
-      command: |
-        source $BASH_ENV
-        $CONDA_PYTHON xformers/benchmarks/benchmark_encoder.py --activations gelu --plot -emb 128 -bs 16 -heads 4
-
-run_pytorch_benchmark: &run_pytorch_benchmark
-  - run:
-      name: Run Pytorch benchmark
-      when: always
-      command: |
-        source $BASH_ENV
-        $CONDA_PYTHON xformers/benchmarks/benchmark_pytorch_transformer.py
-
 run_doc_build: &run_doc_build
    - run:
       name: Testing doc build
@@ -242,8 +226,6 @@ commands:
 
         - <<: *install_repo
         - <<: *run_coverage
-        - <<: *run_benchmarks
-        - <<: *run_pytorch_benchmark
 
         - store_test_results:
             path: test-results

@@ -27,15 +27,6 @@ to create some state of the art models.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Build models and blocks programatically
-
-   factory/index
-
-|
-|
-
-.. toctree::
-   :maxdepth: 2
    :caption: Tutorials and examples
 
    tutorials/index
