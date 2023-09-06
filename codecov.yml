@@ -1,3 +1,2 @@
 ignore:
-  - "experimental"
   - "xformers/_flash_attn"
