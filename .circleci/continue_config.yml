@@ -108,19 +108,6 @@ install_dep: &install_dep
         # Mark install as complete
         touch /home/circleci/miniconda/.finished
 
-install_dep_exp: &install_dep_exp
-  - run:
-      name: Install Dependencies for experimental tests
-      no_output_timeout: 30m
-      command: |
-        source $BASH_ENV
-        # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
-        if [ -f /home/circleci/venv/check_version.py ]; then $CONDA_PYTHON  /home/circleci/venv/check_version.py torch gt 1.11 && exit 0; fi
-        # start installing
-        source activate /home/circleci/venv
-        conda install pytorch=1.13 torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia -q
-        $CONDA_PYTHON -m pip install -r experimental/requirements.txt --progress-bar off
-
 install_repo: &install_repo
   - run:
       name: Install Repository
@@ -136,16 +123,6 @@ install_repo: &install_repo
         ls xformers
         $CONDA_PYTHON -m xformers.info
 
-install_experimental_repo: &install_experimental_repo
-  - run:
-      name: Install Repository
-      no_output_timeout: 30m
-      command: |
-        git submodule update --init --recursive
-        source $BASH_ENV
-
-        cd experimental
-        $CONDA_PYTHON -m pip install -v -e .
 
 run_coverage: &run_coverage
   - run:
@@ -164,14 +141,6 @@ run_unittests: &run_unittests
       command: |
         source $BASH_ENV
         $CONDA_PYTHON -m pytest --junitxml=test-results/junit.xml --verbose --maxfail=20 tests
-
-run_experimental_unittests: &run_experimental_unittests
-  - run:
-      name: Run Unit Tests
-      when: always
-      command: |
-        source $BASH_ENV
-        CUDA_LAUNCH_BLOCKING=1 $CONDA_PYTHON -m pytest experimental/tests
 
 run_benchmarks: &run_benchmarks
   - run:
@@ -344,38 +313,6 @@ jobs:
       - run_gpu_ci:
           arch: "6.1"
 
-  gpu_experimental_tests:
-    <<: *gpu_cu114
-
-    working_directory: ~/xformers
-
-    steps:
-      - checkout
-
-      - run: nvidia-smi
-
-      # Cache the venv directory that contains dependencies
-      - restore_cache:
-          keys:
-            - cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
-
-      - <<: *setup_conda
-      - <<: *install_dep_exp
-
-      - check_torch:
-          major: 1
-          minor: 11
-
-      - save_cache:
-          paths:
-            - ~/miniconda
-            - ~/venv
-
-          key: cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
-
-      - <<: *install_experimental_repo
-      - <<: *run_experimental_unittests
-
 workflows:
   version: 2
   build:
@@ -384,7 +321,6 @@ workflows:
       - cpu_tests_py38
       - gpu_tests_cu114_sm61_P4
       - gpu_tests_cu114_sm75_T4
-      # - gpu_experimental_tests
   # Prevents marking the CI as failed when no jobs run
   # https://github.com/CircleCI-Public/circleci-cli/issues/577
   report_noop:
