@@ -141,10 +141,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="components/index.html">API Reference</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Build models and blocks programatically</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="factory/index.html">Factory</a></li>
-</ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/index.html">Tutorials</a></li>
@@ -241,7 +237,6 @@
  | <a href="#S"><strong>S</strong></a>
  | <a href="#T"><strong>T</strong></a>
  | <a href="#V"><strong>V</strong></a>
- | <a href="#W"><strong>W</strong></a>
  | <a href="#X"><strong>X</strong></a>
  
 </div>
@@ -262,8 +257,6 @@
         <li><a href="components/attentions.html#xformers.components.attention.OrthoFormerAttention.__init__">(xformers.components.attention.OrthoFormerAttention method)</a>
 </li>
         <li><a href="components/attentions.html#xformers.components.attention.RandomAttention.__init__">(xformers.components.attention.RandomAttention method)</a>
-</li>
-        <li><a href="factory/model.html#xformers.factory.model_factory.xFormer.__init__">(xformers.factory.model_factory.xFormer method)</a>
 </li>
       </ul></li>
   </ul></td>
@@ -379,12 +372,6 @@
 </li>
         <li><a href="components/reversible.html#xformers.components.reversible.ReversibleSequence.forward">(xformers.components.reversible.ReversibleSequence method)</a>
 </li>
-        <li><a href="factory/block.html#xformers.factory.block_factory.xFormerDecoderBlock.forward">(xformers.factory.block_factory.xFormerDecoderBlock method)</a>
-</li>
-        <li><a href="factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock.forward">(xformers.factory.block_factory.xFormerEncoderBlock method)</a>
-</li>
-        <li><a href="factory/model.html#xformers.factory.model_factory.xFormer.forward">(xformers.factory.model_factory.xFormer method)</a>
-</li>
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
@@ -396,12 +383,6 @@
         <li><a href="components/feedforward.html#xformers.components.feedforward.Feedforward.from_config">(xformers.components.feedforward.Feedforward class method)</a>
 </li>
         <li><a href="components/mha.html#xformers.components.MultiHeadDispatch.from_config">(xformers.components.MultiHeadDispatch class method)</a>
-</li>
-        <li><a href="factory/block.html#xformers.factory.block_factory.xFormerDecoderBlock.from_config">(xformers.factory.block_factory.xFormerDecoderBlock class method)</a>
-</li>
-        <li><a href="factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock.from_config">(xformers.factory.block_factory.xFormerEncoderBlock class method)</a>
-</li>
-        <li><a href="factory/model.html#xformers.factory.model_factory.xFormer.from_config">(xformers.factory.model_factory.xFormer class method)</a>
 </li>
       </ul></li>
       <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.from_multiplicative">from_multiplicative() (xformers.components.attention.AttentionMask class method)</a>
@@ -430,10 +411,6 @@
 <h2 id="G">G</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock.get_reversible_layer">get_reversible_layer() (xformers.factory.block_factory.xFormerEncoderBlock static method)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/attentions.html#xformers.components.attention.GlobalAttention">GlobalAttention (class in xformers.components.attention)</a>
 </li>
   </ul></td>
@@ -443,11 +420,7 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/position_embedding.html#xformers.components.positional_embedding.VocabEmbedding.init_weights">init_weights() (xformers.components.positional_embedding.VocabEmbedding method)</a>
-
-      <ul>
-        <li><a href="factory/model.html#xformers.factory.model_factory.xFormer.init_weights">(xformers.factory.model_factory.xFormer method)</a>
 </li>
-      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.is_sparse">is_sparse (xformers.components.attention.AttentionMask property)</a>
@@ -504,10 +477,10 @@
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.memory_efficient_attention_forward_requires_grad">memory_efficient_attention_forward_requires_grad() (in module xformers.ops.fmha)</a>
 </li>
-      <li><a href="components/feedforward.html#xformers.components.feedforward.MLP">MLP (class in xformers.components.feedforward)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="components/feedforward.html#xformers.components.feedforward.MLP">MLP (class in xformers.components.feedforward)</a>
+</li>
       <li>
     module
 
@@ -517,10 +490,6 @@
         <li><a href="components/feedforward.html#module-xformers.components.feedforward">xformers.components.feedforward</a>
 </li>
         <li><a href="components/position_embedding.html#module-xformers.components.positional_embedding">xformers.components.positional_embedding</a>
-</li>
-        <li><a href="factory/block.html#module-xformers.factory.block_factory">xformers.factory.block_factory</a>
-</li>
-        <li><a href="factory/model.html#module-xformers.factory.model_factory">xformers.factory.model_factory</a>
 </li>
         <li><a href="components/ops.html#module-xformers.ops">xformers.ops</a>
 </li>
@@ -603,16 +572,12 @@
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.split">split() (xformers.ops.fmha.attn_bias.BlockDiagonalMask method)</a>
 </li>
-      <li><a href="factory/model.html#xformers.factory.model_factory.xFormerConfig.stack_configs">stack_configs (xformers.factory.model_factory.xFormerConfig attribute)</a>
-</li>
   </ul></td>
 </tr></table>
 
 <h2 id="T">T</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="factory/model.html#xformers.factory.model_factory.xFormerConfig.tie_embedding_weights">tie_embedding_weights (xformers.factory.model_factory.xFormerConfig attribute)</a>
-</li>
       <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.to">to() (xformers.components.attention.AttentionMask method)</a>
 </li>
       <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.to_bool">to_bool() (xformers.components.attention.AttentionMask method)</a>
@@ -636,12 +601,6 @@
 </li>
         <li><a href="components/reversible.html#xformers.components.reversible.ReversibleSequence.training">(xformers.components.reversible.ReversibleSequence attribute)</a>
 </li>
-        <li><a href="factory/block.html#xformers.factory.block_factory.xFormerDecoderBlock.training">(xformers.factory.block_factory.xFormerDecoderBlock attribute)</a>
-</li>
-        <li><a href="factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock.training">(xformers.factory.block_factory.xFormerEncoderBlock attribute)</a>
-</li>
-        <li><a href="factory/model.html#xformers.factory.model_factory.xFormer.training">(xformers.factory.model_factory.xFormer attribute)</a>
-</li>
       </ul></li>
   </ul></td>
 </tr></table>
@@ -654,25 +613,9 @@
   </ul></td>
 </tr></table>
 
-<h2 id="W">W</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="factory/model.html#xformers.factory.model_factory.xFormerConfig.weight_init">weight_init (xformers.factory.model_factory.xFormerConfig attribute)</a>
-</li>
-  </ul></td>
-</tr></table>
-
 <h2 id="X">X</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="factory/model.html#xformers.factory.model_factory.xFormer">xFormer (class in xformers.factory.model_factory)</a>
-</li>
-      <li><a href="factory/model.html#xformers.factory.model_factory.xFormerConfig">xFormerConfig (class in xformers.factory.model_factory)</a>
-</li>
-      <li><a href="factory/block.html#xformers.factory.block_factory.xFormerDecoderBlock">xFormerDecoderBlock (class in xformers.factory.block_factory)</a>
-</li>
-      <li><a href="factory/block.html#xformers.factory.block_factory.xFormerEncoderBlock">xFormerEncoderBlock (class in xformers.factory.block_factory)</a>
-</li>
       <li>
     xformers.components.attention
 
@@ -695,28 +638,12 @@
 </li>
       </ul></li>
       <li>
-    xformers.factory.block_factory
-
-      <ul>
-        <li><a href="factory/block.html#module-xformers.factory.block_factory">module</a>
-</li>
-      </ul></li>
-      <li>
-    xformers.factory.model_factory
-
-      <ul>
-        <li><a href="factory/model.html#module-xformers.factory.model_factory">module</a>
-</li>
-      </ul></li>
-      <li>
     xformers.ops
 
       <ul>
         <li><a href="components/ops.html#module-xformers.ops">module</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     xformers.ops.fmha
 
@@ -731,6 +658,8 @@
         <li><a href="components/ops.html#module-xformers.ops.fmha.attn_bias">module</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     xformers.ops.fmha.cutlass
 
