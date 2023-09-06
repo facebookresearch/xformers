@@ -84,7 +84,6 @@ class xFormerConfig:
         tie_embedding_weights: bool = False,
         weight_init: xFormerWeightInit = xFormerWeightInit.ViT,
     ):
-        deprecated_function(self)
         # Type all the configurations. Possible typos are caught here
         if isinstance(stack_configs, dict):
             self.stack_configs = {}
@@ -103,6 +102,7 @@ class xFormerConfig:
 
         self.tie_embedding_weights = tie_embedding_weights
         self.weight_init = weight_init
+        deprecated_function(self)
 
 
 class xFormer(torch.nn.Module):
