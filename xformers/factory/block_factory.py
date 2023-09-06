@@ -11,6 +11,7 @@ from typing import Optional, Tuple, Union
 import torch
 import torch.nn as nn
 
+from xformers._deprecation_warning import deprecated_function
 from xformers.components import (
     PatchEmbeddingConfig,
     PostNorm,
@@ -97,6 +98,7 @@ class xFormerEncoderBlock(torch.nn.Module):
 
     def __init__(self, config: xFormerEncoderConfig, **kwargs):
         super().__init__()
+        deprecated_function(self)
 
         self.reversible_f = None
         self.reversible_g = None
@@ -245,6 +247,7 @@ class xFormerDecoderBlock(torch.nn.Module):
 
     def __init__(self, config: xFormerDecoderConfig, **kwargs):
         super().__init__()
+        deprecated_function(self)
 
         # If this layer is the first one, and a pose encoding as been requested
         if (
