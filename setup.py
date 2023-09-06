@@ -421,9 +421,7 @@ if __name__ == "__main__":
         description="XFormers: A collection of composable Transformer building blocks.",
         version=version,
         install_requires=fetch_requirements(),
-        packages=setuptools.find_packages(
-            exclude=("tests*", "benchmarks*", "experimental*")
-        ),
+        packages=setuptools.find_packages(exclude=("tests*", "benchmarks*")),
         ext_modules=extensions,
         cmdclass={
             "build_ext": BuildExtensionWithMetadata.with_options(
