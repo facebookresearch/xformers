@@ -24,6 +24,7 @@ from .fmha import (
 )
 from .indexing import index_select_cat, scaled_index_add
 from .rmsnorm import RMSNorm
+from .rope_padded import rope_padded
 from .swiglu_op import (
     SwiGLU,
     SwiGLUEagerOp,
@@ -92,4 +93,5 @@ __all__ = [
     "masked_matmul",
     "scaled_index_add",
     "index_select_cat",
+    "rope_padded",
 ]
