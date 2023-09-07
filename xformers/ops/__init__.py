@@ -23,6 +23,7 @@ from .fmha import (
     memory_efficient_attention_forward_requires_grad,
 )
 from .indexing import index_select_cat, scaled_index_add
+from .rmsnorm import RMSNorm
 from .swiglu_op import (
     SwiGLU,
     SwiGLUEagerOp,
@@ -76,6 +77,7 @@ __all__ = [
     "memory_efficient_attention_backward",
     "memory_efficient_attention_forward",
     "memory_efficient_attention_forward_requires_grad",
+    "RMSNorm",
     "SwiGLU",
     "SwiGLUEagerOp",
     "SwiGLUFusedOp",
