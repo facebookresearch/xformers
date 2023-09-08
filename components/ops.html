@@ -241,6 +241,7 @@
 <ul class="simple">
 <li><p>Input tensors must be in format <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">M,</span> <span class="pre">H,</span> <span class="pre">K]</span></code>, where B is the batch size, M         the sequence length, H the number of heads, and K the embeding size per head</p></li>
 <li><p>If inputs have dimension 3, it is assumed that the dimensions are <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">M,</span> <span class="pre">K]</span></code> and <code class="docutils literal notranslate"><span class="pre">H=1</span></code></p></li>
+<li><p>Inputs can also be of dimension 5 with GQA - see note below</p></li>
 <li><p>Inputs can be non-contiguous - we only require the last dimension’s stride to be 1</p></li>
 </ul>
 <dl class="field-list simple">
@@ -276,18 +277,47 @@
 <span class="p">)</span>
 </pre></div>
 </div>
-<dl class="field-list simple">
+<dl class="field-list">
 <dt class="field-odd">Supported hardware</dt>
 <dd class="field-odd"><p>NVIDIA GPUs with compute capability above 6.0 (P100+), datatype <code class="docutils literal notranslate"><span class="pre">f16</span></code>, <code class="docutils literal notranslate"><span class="pre">bf16</span></code> and <code class="docutils literal notranslate"><span class="pre">f32</span></code>.</p>
 </dd>
-<dt class="field-even">Raises</dt>
-<dd class="field-even"><ul class="simple">
+<dt class="field-even">EXPERIMENTAL</dt>
+<dd class="field-even"><p>Using with Multi Query Attention (MQA) and Grouped Query Attention (GQA):</p>
+<p>MQA/GQA is an experimental feature supported on the Flash backend at the moment for the forward pass.
+If you have 16 heads in query, and 2 in key/value, you can provide 5-dim tensors
+in the <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">M,</span> <span class="pre">G,</span> <span class="pre">H,</span> <span class="pre">K]</span></code> format, where <code class="docutils literal notranslate"><span class="pre">G</span></code> is the number of head groups (here 2), and
+<code class="docutils literal notranslate"><span class="pre">H</span></code> is the number of heads per group (8 in the example).</p>
+<p>Please note that xFormers will not automatically broadcast the inputs, so you will need
+to broadcast it manually before calling <cite>memory_efficient_attention</cite>.</p>
+<p>This feature is only supported on A100 or newer GPUs.</p>
+</dd>
+<dt class="field-odd">GQA/MQA example</dt>
+<dd class="field-odd"><p></p></dd>
+</dl>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span> <span class="nn">xformers.ops</span> <span class="k">as</span> <span class="nn">xops</span>
+
+<span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">128</span>
+<span class="n">kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float16</span><span class="p">)</span>
+<span class="n">q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">([</span><span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">([</span><span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">([</span><span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<span class="n">out_gqa</span> <span class="o">=</span> <span class="n">xops</span><span class="o">.</span><span class="n">memory_efficient_attention</span><span class="p">(</span>
+    <span class="n">q</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="n">K</span><span class="p">]),</span>
+    <span class="n">k</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">K</span><span class="p">])</span><span class="o">.</span><span class="n">expand</span><span class="p">([</span><span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="n">K</span><span class="p">]),</span>
+    <span class="n">v</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">K</span><span class="p">])</span><span class="o">.</span><span class="n">expand</span><span class="p">([</span><span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="n">K</span><span class="p">]),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><ul class="simple">
 <li><p><a class="reference external" href="https://docs.python.org/3.6/library/exceptions.html#NotImplementedError" title="(in Python v3.6)"><strong>NotImplementedError</strong></a> – if there is no operator available to compute the MHA</p></li>
 <li><p><a class="reference external" href="https://docs.python.org/3.6/library/exceptions.html#ValueError" title="(in Python v3.6)"><strong>ValueError</strong></a> – if inputs are invalid</p></li>
 </ul>
 </dd>
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
+<dt class="field-even">Parameters</dt>
+<dd class="field-even"><ul class="simple">
 <li><p><strong>query</strong> – Tensor of shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">Mq,</span> <span class="pre">H,</span> <span class="pre">K]</span></code></p></li>
 <li><p><strong>key</strong> – Tensor of shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">Mkv,</span> <span class="pre">H,</span> <span class="pre">K]</span></code></p></li>
 <li><p><strong>value</strong> – Tensor of shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">Mkv,</span> <span class="pre">H,</span> <span class="pre">Kv]</span></code></p></li>
@@ -297,8 +327,8 @@
 <li><p><strong>op</strong> – The operators to use - see <a class="reference internal" href="#xformers.ops.AttentionOpBase" title="xformers.ops.AttentionOpBase"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.AttentionOpBase</span></code></a>.         If set to <code class="docutils literal notranslate"><span class="pre">None</span></code> (recommended), xFormers         will dispatch to the best available operator, depending on the inputs         and options.</p></li>
 </ul>
 </dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p>multi-head attention Tensor with shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">Mq,</span> <span class="pre">H,</span> <span class="pre">Kv]</span></code></p>
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>multi-head attention Tensor with shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">Mq,</span> <span class="pre">H,</span> <span class="pre">Kv]</span></code></p>
 </dd>
 </dl>
 </dd></dl>

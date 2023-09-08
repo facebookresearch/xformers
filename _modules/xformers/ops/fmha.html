@@ -228,7 +228,7 @@
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">cutlass</span><span class="p">,</span> <span class="n">decoder</span><span class="p">,</span> <span class="n">flash</span><span class="p">,</span> <span class="n">small_k</span><span class="p">,</span> <span class="n">triton</span>
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">cutlass</span><span class="p">,</span> <span class="n">decoder</span><span class="p">,</span> <span class="n">flash</span><span class="p">,</span> <span class="n">small_k</span><span class="p">,</span> <span class="n">triton</span><span class="p">,</span> <span class="n">triton_splitk</span>
 <span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="n">AttentionBias</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">,</span> <span class="n">LowerTriangularMask</span>
 <span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBwOpBase</span><span class="p">,</span>
@@ -354,6 +354,8 @@
 
 <span class="sd">    - If inputs have dimension 3, it is assumed that the dimensions are ``[B, M, K]`` and ``H=1``</span>
 
+<span class="sd">    - Inputs can also be of dimension 5 with GQA - see note below</span>
+
 <span class="sd">    - Inputs can be non-contiguous - we only require the last dimension&#39;s stride to be 1</span>
 
 
@@ -391,6 +393,36 @@
 <span class="sd">    :Supported hardware:</span>
 
 <span class="sd">        NVIDIA GPUs with compute capability above 6.0 (P100+), datatype ``f16``, ``bf16`` and ``f32``.</span>
+
+<span class="sd">    :EXPERIMENTAL: Using with Multi Query Attention (MQA) and Grouped Query Attention (GQA):</span>
+
+<span class="sd">        MQA/GQA is an experimental feature supported on the Flash backend at the moment for the forward pass.</span>
+<span class="sd">        If you have 16 heads in query, and 2 in key/value, you can provide 5-dim tensors</span>
+<span class="sd">        in the ``[B, M, G, H, K]`` format, where ``G`` is the number of head groups (here 2), and</span>
+<span class="sd">        ``H`` is the number of heads per group (8 in the example).</span>
+
+<span class="sd">        Please note that xFormers will not automatically broadcast the inputs, so you will need</span>
+<span class="sd">        to broadcast it manually before calling `memory_efficient_attention`.</span>
+
+<span class="sd">        This feature is only supported on A100 or newer GPUs.</span>
+
+<span class="sd">    :GQA/MQA example:</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">        import torch</span>
+<span class="sd">        import xformers.ops as xops</span>
+
+<span class="sd">        B, M, K = 3, 32, 128</span>
+<span class="sd">        kwargs = dict(device=&quot;cuda&quot;, dtype=torch.float16)</span>
+<span class="sd">        q = torch.randn([B, M, 8, K], **kwargs)</span>
+<span class="sd">        k = torch.randn([B, M, 2, K], **kwargs)</span>
+<span class="sd">        v = torch.randn([B, M, 2, K], **kwargs)</span>
+<span class="sd">        out_gqa = xops.memory_efficient_attention(</span>
+<span class="sd">            q.reshape([B, M, 2, 4, K]),</span>
+<span class="sd">            k.reshape([B, M, 2, 1, K]).expand([B, M, 2, 4, K]),</span>
+<span class="sd">            v.reshape([B, M, 2, 1, K]).expand([B, M, 2, 4, K]),</span>
+<span class="sd">        )</span>
 
 <span class="sd">    Raises:</span>
 <span class="sd">        NotImplementedError: if there is no operator available to compute the MHA</span>
@@ -610,6 +642,7 @@
     <span class="n">flash</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
     <span class="n">triton</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
     <span class="n">small_k</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
+    <span class="n">triton_splitk</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
 <span class="p">]</span>
 
 <span class="n">ALL_BW_OPS</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>

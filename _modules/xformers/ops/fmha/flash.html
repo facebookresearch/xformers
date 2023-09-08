@@ -379,9 +379,8 @@
     <span class="n">batch</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
     <span class="n">seqlen_q</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
     <span class="n">seqlen_kv</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-    <span class="n">num_heads</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
-    <span class="n">head_dim_q</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
-    <span class="n">head_dim_v</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+    <span class="n">head_dim_q</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">head_dim_v</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
 
     <span class="n">attn_bias</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">):</span>
@@ -417,13 +416,32 @@
         <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">seqlen_q</span>
         <span class="n">max_seqlen_k</span> <span class="o">=</span> <span class="n">seqlen_kv</span>
 
+    <span class="k">if</span> <span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>  <span class="c1"># QGA</span>
+        <span class="c1"># Fold the group/head_in_group dimensions together</span>
+        <span class="k">def</span> <span class="nf">fold</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+            <span class="c1"># Either the head is replicated</span>
+            <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">x</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span>
+            <span class="c1"># Or we reshape</span>
+            <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
+                <span class="p">[</span>
+                    <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="o">-</span><span class="mi">1</span><span class="p">,</span>
+                    <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">4</span><span class="p">],</span>
+                <span class="p">]</span>
+            <span class="p">)</span>
+
+        <span class="n">query</span> <span class="o">=</span> <span class="n">fold</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">fold</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">fold</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
     <span class="c1"># Initially we have `query.shape = [batch, seqlen, head_dim_q]`</span>
     <span class="c1"># We want format `[batch * seqlen, num_heads, head_dim_q]`</span>
     <span class="n">new_inp</span> <span class="o">=</span> <span class="n">replace</span><span class="p">(</span>
         <span class="n">inp</span><span class="p">,</span>
-        <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_q</span><span class="p">,</span> <span class="n">num_heads</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">]),</span>
-        <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="n">num_heads</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">]),</span>
-        <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="n">num_heads</span><span class="p">,</span> <span class="n">head_dim_v</span><span class="p">]),</span>
+        <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_q</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">]),</span>
+        <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">]),</span>
+        <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_v</span><span class="p">]),</span>
     <span class="p">)</span>
     <span class="n">softmax_scale</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">)</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">scale</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">inp</span><span class="o">.</span><span class="n">scale</span>
     <span class="k">return</span> <span class="n">new_inp</span><span class="p">,</span> <span class="n">softmax_scale</span><span class="p">,</span> <span class="n">cu_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">cu_seqlen_k</span><span class="p">,</span> <span class="n">max_seqlen_k</span>
@@ -462,6 +480,24 @@
             <span class="p">)</span>
 
 
+<span class="k">def</span> <span class="nf">_check_strides_for_bmghk</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">reasons</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    We want to be able to collapse the G/H dimensions together</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>
+        <span class="n">stride_g</span><span class="p">,</span> <span class="n">stride_h</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">x</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">stride_h</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="n">stride_g</span> <span class="o">!=</span> <span class="n">stride_h</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">]:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;GQA is only supported when the G/H dimensions are contiguous&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.stride:  </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">stride</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.shape :  </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+
 <div class="viewcode-block" id="FwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.flash.FwOp">[docs]</a><span class="nd">@register_operator</span>
 <span class="k">class</span> <span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Operator that computes memory-efficient attention using \</span>
@@ -484,6 +520,7 @@
     <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">SUPPORTS_BMGHK</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">NAME</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;flshattF@</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">&quot;</span>
     <span class="n">VERSION</span> <span class="o">=</span> <span class="n">FLASH_VERSION</span>
 
@@ -492,6 +529,9 @@
         <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">FwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
         <span class="n">_check_needs_no_topleft</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">reasons</span><span class="p">)</span>
+        <span class="n">_check_strides_for_bmghk</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">reasons</span><span class="p">)</span>
+        <span class="n">_check_strides_for_bmghk</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="s2">&quot;key&quot;</span><span class="p">,</span> <span class="n">reasons</span><span class="p">)</span>
+        <span class="n">_check_strides_for_bmghk</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="n">reasons</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
@@ -500,10 +540,8 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]]:</span>
         <span class="n">return_softmax</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="n">out_shape</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span>
+            <span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
         <span class="p">]</span>
         <span class="p">(</span>
             <span class="n">inp</span><span class="p">,</span>
@@ -574,6 +612,7 @@
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_CUSTOM_SCALE</span>
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span>
     <span class="n">IS_DETERMINISTIC</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">SUPPORTS_BMGHK</span> <span class="o">=</span> <span class="kc">False</span>  <span class="c1"># NOTE: Don&#39;t forget to update fmha doc when changing this!</span>
     <span class="n">NAME</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;flshattB@</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">&quot;</span>
     <span class="n">VERSION</span> <span class="o">=</span> <span class="n">FLASH_VERSION</span>
 
