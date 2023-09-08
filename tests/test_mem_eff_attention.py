@@ -16,6 +16,7 @@ import xformers.ops
 from xformers.ops import fmha
 from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
 from xformers.ops.fmha.common import AttentionOpBase
+from xformers.ops.fmha.dispatch import _dispatch_fw_priority_list
 
 from .utils import assert_allclose
 
@@ -1948,6 +1949,61 @@ def test_flash_gqa_wrong_strides() -> None:
     fmha.memory_efficient_attention(q, kv, kv, op=op)
 
 
+def _dispatches_to_splitK(q, kv):
+    return (
+        _dispatch_fw_priority_list(fmha.Inputs(q, kv, kv), False)[0]
+        is fmha.triton_splitk.FwOp
+    )
+
+
+def test_dispatch_splitk_bmhk() -> None:
+    assert not _dispatches_to_splitK(
+        torch.empty([1, 8, 1, 128]), torch.empty([1, 2048, 1, 128])
+    ), "Should not use SplitK with 1 head (no tensorcores)"
+    assert _dispatches_to_splitK(
+        torch.empty([1, 8, 32, 128]),
+        torch.empty([1, 2048, 1, 128]).expand(-1, -1, 32, -1),
+    ), "Should use SplitK with BMHK MQA"
+    assert not _dispatches_to_splitK(
+        torch.empty([1, 8, 32, 128]),
+        torch.empty([1, 2048, 32, 128]),
+    ), "Should not use SplitK when no TensorCores"
+    assert not _dispatches_to_splitK(
+        torch.empty([1, 128, 32, 128]),
+        torch.empty([1, 2048, 1, 128]).expand(-1, -1, 32, -1),
+    ), "Should not use SplitK if q seqlen is long"
+    assert not _dispatches_to_splitK(
+        torch.empty([128, 8, 32, 128]),
+        torch.empty([128, 2048, 1, 128]).expand(-1, -1, 32, -1),
+    ), "Should not use SplitK if B is big"
+
+
+def test_dispatch_splitk_bmghk() -> None:
+    assert not _dispatches_to_splitK(
+        torch.empty([1, 8, 1, 1, 128]), torch.empty([1, 2048, 1, 1, 128])
+    ), "Should not use SplitK with 1 head (no tensorcores)"
+    assert _dispatches_to_splitK(
+        torch.empty([1, 8, 1, 32, 128]),
+        torch.empty([1, 2048, 1, 1, 128]).expand(-1, -1, -1, 32, -1),
+    ), "Should use SplitK with MQA"
+    assert _dispatches_to_splitK(
+        torch.empty([1, 8, 4, 32, 128]),
+        torch.empty([1, 2048, 4, 1, 128]).expand(-1, -1, -1, 32, -1),
+    ), "Should use SplitK with GQA"
+    assert not _dispatches_to_splitK(
+        torch.empty([1, 8, 1, 32, 128]),
+        torch.empty([1, 2048, 1, 32, 128]),
+    ), "Should not use SplitK when no TensorCores"
+    assert not _dispatches_to_splitK(
+        torch.empty([1, 128, 1, 32, 128]),
+        torch.empty([1, 2048, 1, 1, 128]).expand(-1, -1, -1, 32, -1),
+    ), "Should not use SplitK if q seqlen is long"
+    assert not _dispatches_to_splitK(
+        torch.empty([128, 8, 1, 32, 128]),
+        torch.empty([128, 2048, 1, 1, 128]).expand(-1, -1, -1, 32, -1),
+    ), "Should not use SplitK if B is big"
+
+
 shapes_triton_splitk = [
     (1, 8, 2**16, 1, 128, 128),
     (1, 4, 2**16, 1, 128, 128),
@@ -1985,6 +2041,36 @@ def test_forward_splitk(
     fmt="BMHK",
 ):
     test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed=packed, fmt=fmt)
+
+
+@cuda_only
+@pytest.mark.parametrize("op", [fmha.triton_splitk.FwOp])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize(
+    "B_Mkv_H_K",
+    [
+        (1, 2**16, 3, 128),
+        (5, 53, 4, 64),
+    ],
+)
+def test_mqa_decoding(op: Type[fmha.AttentionFwOpBase], dtype, B_Mkv_H_K):
+    B, Mkv, H, K = B_Mkv_H_K
+    q = torch.randn([B, 1, H, K], dtype=dtype, device="cuda") * 3
+    k = torch.randn([B, Mkv, 1, K], dtype=dtype, device="cuda") * 3
+    v = torch.randn([B, Mkv, 1, K], dtype=dtype, device="cuda") * 3
+    k = k.expand(-1, -1, H, -1)
+    v = v.expand(-1, -1, H, -1)
+
+    if not op.supports(fmha.Inputs(q, k, v)):
+        pytest.skip("not supported")
+    out = fmha.memory_efficient_attention_forward(q, k, v, op=op)
+    ref = ref_attention(q, k, v)
+    assert_allclose(
+        out.float(),
+        ref,
+        atol=op.ERROR_ATOL[dtype],
+        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
+    )
 
 
 # end of file

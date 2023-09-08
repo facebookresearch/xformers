@@ -8,7 +8,7 @@ import textwrap
 from collections import deque
 from typing import List, Sequence, Type, TypeVar
 
-from . import cutlass, decoder, flash, small_k, triton
+from . import cutlass, decoder, flash, small_k, triton, triton_splitk
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 
@@ -63,16 +63,9 @@ def _run_priority_list(name: str, priority_list: Sequence[T], inp: Inputs) -> T:
     raise NotImplementedError(msg)
 
 
-def _dispatch_fw(inp: Inputs, needs_gradient: bool) -> Type[AttentionFwOpBase]:
-    """Computes the best operator for forward
-
-    Raises:
-        NotImplementedError: if not operator was found
-
-    Returns:
-        AttentionOp: The best operator for the configuration
-    """
-
+def _dispatch_fw_priority_list(
+    inp: Inputs, needs_gradient: bool
+) -> Sequence[Type[AttentionFwOpBase]]:
     priority_list_ops = deque(
         [
             flash.FwOp,
@@ -88,13 +81,41 @@ def _dispatch_fw(inp: Inputs, needs_gradient: bool) -> Type[AttentionFwOpBase]:
         priority_list_ops.remove(triton.FwOp)
         priority_list_ops.appendleft(triton.FwOp)
     if not needs_gradient:
-        multiquery = inp.key.stride(2) == 0
+        multiquery = (
+            inp.key.ndim > 3 and inp.key.stride(-2) == 0 and inp.key.shape[-2] > 1
+        )
         if not multiquery:
             # With multiquery, cutlass is sometimes faster than decoder
             # but it's not currently clear when.
             priority_list_ops.appendleft(decoder.FwOp)
+        # Split-KV is useful with MQA
+        # for short Q-seqlen / long K-seqlen
+        if multiquery and inp.query.shape[1] <= 32 and inp.key.shape[1] >= 256:
+            parallelism_BH = 0  # BMK
+            if inp.query.ndim == 3:
+                parallelism_BH = inp.query.shape[0]
+            elif inp.query.ndim == 4:  # BMHK
+                parallelism_BH = inp.query.shape[0] * inp.query.shape[2]
+            elif inp.query.ndim == 5:  # BMGHK
+                parallelism_BH = inp.query.shape[0] * inp.query.shape[2]
+            if parallelism_BH > 0 and parallelism_BH < 64:
+                priority_list_ops.appendleft(triton_splitk.FwOp)
+    return priority_list_ops
+
+
+def _dispatch_fw(inp: Inputs, needs_gradient: bool) -> Type[AttentionFwOpBase]:
+    """Computes the best operator for forward
+
+    Raises:
+        NotImplementedError: if not operator was found
+
+    Returns:
+        AttentionOp: The best operator for the configuration
+    """
     return _run_priority_list(
-        "memory_efficient_attention_forward", priority_list_ops, inp
+        "memory_efficient_attention_forward",
+        _dispatch_fw_priority_list(inp, needs_gradient),
+        inp,
     )
 
 
