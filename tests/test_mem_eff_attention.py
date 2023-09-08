@@ -230,6 +230,16 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
 
 
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
+    if q.ndim == 5:
+        return torch.stack(
+            [
+                ref_attention_bmhk(
+                    q[:, :, g], k[:, :, g], v[:, :, g], attn_bias=attn_bias
+                )
+                for g in range(q.shape[2])
+            ],
+            dim=2,
+        )
     if q.ndim == 4:
         assert p == 0.0
         return ref_attention_bmhk(q, k, v, attn_bias=attn_bias)
@@ -313,7 +323,10 @@ def _rand_seqlens(
             keys_left = kv_len - sum(seqlens_k, 0)
             queries_left = q_len - sum(seqlens_q[:-1], 0)
             assert keys_left >= queries_left
-            seqlens_k.append(num_queries + r.randrange(0, keys_left - queries_left))
+            if keys_left - queries_left > 0:
+                seqlens_k.append(num_queries + r.randrange(0, keys_left - queries_left))
+            else:
+                seqlens_k.append(num_queries)
         else:
             seqlens_k.append(r.randrange(*step_k))
     seqlens_q[-1] = q_len - sum(seqlens_q[:-1])
@@ -450,7 +463,7 @@ def create_attn_bias(
         fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
     ]:
         # This bias is not supported in BMK format
-        assert fmt == "BMHK"
+        assert fmt in ["BMGHK", "BMHK"]
         block_diag = fmha.attn_bias.BlockDiagonalMask.from_seqlens(
             *_rand_seqlens(
                 r,
@@ -513,14 +526,27 @@ def create_tensors(
     torch.manual_seed(B * q_len + kv_len * k + kv)
     scale = 3
     if fmt == "BMK":
-        query = torch.randn((B * h, q_len, k), device=device, dtype=dtype).mul_(scale)
-        key = torch.randn((B * h, kv_len, k), device=device, dtype=dtype).mul_(scale)
-        value = torch.randn((B * h, kv_len, kv), device=device, dtype=dtype).mul_(scale)
+        query = torch.randn((B * h, q_len, k), device=device, dtype=dtype)
+        key = torch.randn((B * h, kv_len, k), device=device, dtype=dtype)
+        value = torch.randn((B * h, kv_len, kv), device=device, dtype=dtype)
+    elif fmt == "BMHK":
+        query = torch.randn((B, q_len, h, k), device=device, dtype=dtype)
+        key = torch.randn((B, kv_len, h, k), device=device, dtype=dtype)
+        value = torch.randn((B, kv_len, h, kv), device=device, dtype=dtype)
     else:
-        assert fmt == "BMHK"
-        query = torch.randn((B, q_len, h, k), device=device, dtype=dtype).mul_(scale)
-        key = torch.randn((B, kv_len, h, k), device=device, dtype=dtype).mul_(scale)
-        value = torch.randn((B, kv_len, h, kv), device=device, dtype=dtype).mul_(scale)
+        assert fmt == "BMGHK"
+        assert h % 2 == 0, "BMGHK tests only support h%2==0 now"
+        query = torch.randn((B, q_len, 2, h // 2, k), device=device, dtype=dtype)
+        key = torch.randn((B, kv_len, 2, 1, k), device=device, dtype=dtype)
+        value = torch.randn((B, kv_len, 2, 1, kv), device=device, dtype=dtype)
+
+    for x in [query, key, value]:
+        x.mul_(scale)
+
+    if fmt == "BMGHK":
+        # Expand - after the in-place mul
+        key = key.expand((B, kv_len, 2, h // 2, k))
+        value = value.expand((B, kv_len, 2, h // 2, k))
 
     if fmt == "BMK" and not fmha.common._is_bias_type_supported_in_BMK(attn_bias_type):
         attn_bias_type = None
@@ -623,9 +649,11 @@ def test_forward(
                 fmt=fmt,
                 op=op,
             )
-        else:
+        elif fmt == "BMHK":
             # bm3hk -> 3 x bmhk
             query, key, value = xformers.ops.unbind(c, 2)
+        else:
+            assert False, f"Unsupport fmt {fmt} with packing"
         assert not query.is_contiguous()
 
     out = xformers.ops.memory_efficient_attention_forward(
@@ -1839,6 +1867,79 @@ def test_has_kernel_for(sm_shmem: Tuple[int, int], dtype_str: str) -> None:
         assert torch.ops.xformers._has_cutlassB_kernel_for(
             dtype, sm, shmem_kbytes * 1024, k
         ), f"k={k}"
+
+
+@cuda_only
+@pytest.mark.parametrize(
+    "opFW_biasT",
+    [
+        (op, biasT)
+        for op in ALL_FW_OPS
+        for biasT in op.SUPPORTED_ATTN_BIAS_TYPES
+        if op.SUPPORTS_BMGHK
+    ],
+)
+def test_forward_gqa(opFW_biasT):
+    opFW, biasT = opFW_biasT
+    B_Mq_Mkv_H_K_Kv = (3, 512, 512, 16, 128, 128)
+    test_forward(
+        (
+            opFW,
+            "cuda",
+            torch.float16,
+            biasT,
+            *B_Mq_Mkv_H_K_Kv,
+        ),
+        packed=False,
+        fmt="BMGHK",
+    )
+
+
+@cuda_only
+@pytest.mark.parametrize("opFW", [op for op in ALL_FW_OPS if op.SUPPORTS_BMGHK])
+def test_forward_gqa_one_group(opFW):
+    dtype = torch.float16
+    B, Mq, Mkv, H, K = 3, 13, 16, 5, 128
+    q = torch.randn([B, Mq, 1, H, K], dtype=dtype, device="cuda") * 3
+    k = torch.randn([B, Mkv, 1, H, K], dtype=dtype, device="cuda") * 3
+    v = torch.randn([B, Mkv, 1, H, K], dtype=dtype, device="cuda") * 3
+
+    assert opFW.supports(fmha.Inputs(q, k, v))
+    out = fmha.memory_efficient_attention_forward(q, k, v, op=opFW)
+    ref = ref_attention(q, k, v)
+    assert_allclose(
+        out.float(),
+        ref,
+        atol=opFW.ERROR_ATOL[dtype],
+        rtol=opFW.ERROR_RTOL.get(dtype, 1e-5),
+    )
+
+
+@sm80_or_better_only
+def test_flash_gqa_wrong_strides() -> None:
+    op = (fmha.flash.FwOp, None)
+    device = "cuda"
+    B, Mq, Mkv, G, H, K = 3, 1, 512, 2, 8, 128
+    q = torch.empty((B, Mq, G, H, K), dtype=torch.float16, device=device)
+    kv = torch.empty((B, Mkv, G, H, K), dtype=torch.float16, device=device)
+    fmha.memory_efficient_attention(q, kv, kv, op=op)
+
+    kv = torch.empty((B, Mkv, H, G, K), dtype=torch.float16, device=device).permute(
+        0, 1, 3, 2, 4
+    )
+    with pytest.raises(ValueError):
+        fmha.memory_efficient_attention(q, kv, kv, op=op)
+
+    kv = torch.empty((B, Mkv, G, 1, K), dtype=torch.float16, device=device)
+    with pytest.raises(ValueError):
+        fmha.memory_efficient_attention(q, kv, kv, op=op)
+    kv = kv.expand(-1, -1, -1, H, K)
+    fmha.memory_efficient_attention(q, kv, kv, op=op)
+
+    kv = torch.empty((B, Mkv, G, H, 2 * K), dtype=torch.float16, device=device)[
+        :, :, :, :, :K
+    ]
+    fmha.memory_efficient_attention(q, kv, kv, op=op)
 
 
 # end of file

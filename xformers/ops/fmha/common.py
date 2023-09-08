@@ -50,10 +50,11 @@ class Inputs:
         return self.query.shape[-1] ** (-0.5) if self.scale is None else self.scale
 
     def normalize_bmhk(self) -> Tuple[int, ...]:
-        if self.query.ndim not in [3, 4]:
+        if self.query.ndim not in [3, 4, 5]:
             raise ValueError(
                 f"Invalid shape for query: {self.query.shape}. "
-                "Expected shape [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
+                "Expected shape [batch, seqlen, head_groups, num_heads_per_group, K]"
+                ", [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
             )
         if self.value.dtype == torch.int32:
             # Quantized K/V case, in which the last dims of Q and K/V are different
@@ -75,7 +76,9 @@ class Inputs:
 
     def validate_inputs(self) -> None:
         qkv = (self.query, self.key, self.value)
-        if self.query.ndim not in (3, 4) or any(x.ndim != self.query.ndim for x in qkv):
+        if self.query.ndim not in (3, 4, 5) or any(
+            x.ndim != self.query.ndim for x in qkv
+        ):
             raise ValueError(
                 f"Query/Key/Value should all have BMHK or BMK shape.\n"
                 f"  query.shape: {self.query.shape}\n"
@@ -133,6 +136,42 @@ class Inputs:
                 )
         if self.p < 0.0 or self.p > 1.0:
             raise ValueError(f"Invalid dropout probability: p={self.p}")
+        # Check that shapes match between inputs
+        B, Mq = self.query.shape[:2]
+        K = self.query.shape[-1]
+        B, Mkv = self.key.shape[:2]
+        Kv = self.value.shape[-1]
+
+        valid_shapes = True
+        if self.query.ndim == 3:  # BMK
+            valid_shapes = (
+                self.query.shape == (B, Mq, K)
+                and self.key.shape == (B, Mkv, K)
+                and self.value.shape == (B, Mkv, Kv)
+            )
+        H = self.query.shape[-2]
+        if self.query.ndim == 4:  # BMHK
+            valid_shapes = (
+                self.query.shape == (B, Mq, H, K)
+                and self.key.shape == (B, Mkv, H, K)
+                and self.value.shape == (B, Mkv, H, Kv)
+            )
+        G = self.query.shape[2]
+        if self.query.ndim == 5:  # BMNHK
+            valid_shapes = (
+                self.query.shape == (B, Mq, G, H, K)
+                and self.key.shape == (B, Mkv, G, H, K)
+                and self.value.shape == (B, Mkv, G, H, Kv)
+            )
+        if not valid_shapes:
+            raise ValueError(
+                f"Incompatible shapes for attention inputs:\n"
+                f"  query.shape: {self.query.shape}\n"
+                f"  key.shape  : {self.key.shape}\n"
+                f"  value.shape: {self.value.shape}\n"
+                "HINT: We don't support broadcasting, please use `expand` "
+                "yourself before calling `memory_efficient_attention` if you need to"
+            )
 
 
 @dataclass
@@ -189,6 +228,7 @@ class AttentionOpBase(BaseOperator):
     SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
     IS_DETERMINISTIC: bool = True
+    SUPPORTS_BMGHK: bool = False
     NAME: str
     OPERATOR_CATEGORY = "memory_efficient_attention"
 
@@ -261,6 +301,8 @@ class AttentionOpBase(BaseOperator):
             reasons.append(
                 "operator is non-deterministic, but `torch.use_deterministic_algorithms` is set"
             )
+        if not cls.SUPPORTS_BMGHK and d.query.ndim == 5:
+            reasons.append("operator does not support BMNHK format")
         return reasons
 
 

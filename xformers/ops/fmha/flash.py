@@ -156,9 +156,8 @@ def _convert_input_format(
     batch = query.shape[0]
     seqlen_q = query.shape[1]
     seqlen_kv = key.shape[1]
-    num_heads = query.shape[2]
-    head_dim_q = query.shape[3]
-    head_dim_v = value.shape[3]
+    head_dim_q = query.shape[-1]
+    head_dim_v = value.shape[-1]
 
     attn_bias = inp.attn_bias
     if isinstance(attn_bias, BlockDiagonalMask):
@@ -194,13 +193,32 @@ def _convert_input_format(
         max_seqlen_q = seqlen_q
         max_seqlen_k = seqlen_kv
 
+    if query.ndim == 5:  # QGA
+        # Fold the group/head_in_group dimensions together
+        def fold(x):
+            # Either the head is replicated
+            if x.stride(3) == 0:
+                return x[:, :, :, 0]
+            # Or we reshape
+            return x.reshape(
+                [
+                    x.shape[0],
+                    x.shape[1],
+                    -1,
+                    x.shape[4],
+                ]
+            )
+
+        query = fold(query)
+        key = fold(key)
+        value = fold(value)
     # Initially we have `query.shape = [batch, seqlen, head_dim_q]`
     # We want format `[batch * seqlen, num_heads, head_dim_q]`
     new_inp = replace(
         inp,
-        query=query.reshape([batch * seqlen_q, num_heads, head_dim_q]),
-        key=key.reshape([batch * seqlen_kv, num_heads, head_dim_q]),
-        value=value.reshape([batch * seqlen_kv, num_heads, head_dim_v]),
+        query=query.reshape([batch * seqlen_q, -1, head_dim_q]),
+        key=key.reshape([batch * seqlen_kv, -1, head_dim_q]),
+        value=value.reshape([batch * seqlen_kv, -1, head_dim_v]),
     )
     softmax_scale = inp.query.shape[-1] ** (-0.5) if inp.scale is None else inp.scale
     return new_inp, softmax_scale, cu_seqlen_q, max_seqlen_q, cu_seqlen_k, max_seqlen_k
@@ -239,6 +257,24 @@ def _check_needs_no_topleft(d: Inputs, reasons: List[str]) -> None:
             )
 
 
+def _check_strides_for_bmghk(x: torch.Tensor, name: str, reasons: List[str]) -> None:
+    """
+    We want to be able to collapse the G/H dimensions together
+    """
+    if x.ndim == 5:
+        stride_g, stride_h = x.stride(2), x.stride(3)
+        if x.shape[2] == 1:
+            return
+        if x.shape[3] == 1 or stride_h == 0:
+            return
+        if stride_g != stride_h * x.shape[-2]:
+            reasons.append(
+                f"GQA is only supported when the G/H dimensions are contiguous"
+                f"    {name}.stride:  {x.stride()}"
+                f"    {name}.shape :  {list(x.shape)}"
+            )
+
+
 @register_operator
 class FwOp(AttentionFwOpBase):
     """Operator that computes memory-efficient attention using \
@@ -261,6 +297,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
+    SUPPORTS_BMGHK = True
     NAME = f"flshattF@{FLASH_VERSION}"
     VERSION = FLASH_VERSION
 
@@ -269,6 +306,9 @@ class FwOp(AttentionFwOpBase):
         reasons = super(FwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
         _check_needs_no_topleft(d, reasons)
+        _check_strides_for_bmghk(d.query, "query", reasons)
+        _check_strides_for_bmghk(d.key, "key", reasons)
+        _check_strides_for_bmghk(d.value, "value", reasons)
         return reasons
 
     @classmethod
@@ -277,10 +317,8 @@ class FwOp(AttentionFwOpBase):
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         return_softmax = False
         out_shape = [
-            inp.query.shape[0],
-            inp.query.shape[1],
-            inp.query.shape[2],
-            inp.value.shape[3],
+            *inp.query.shape[:-1],
+            inp.value.shape[-1],
         ]
         (
             inp,
@@ -351,6 +389,7 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
     IS_DETERMINISTIC = False
+    SUPPORTS_BMGHK = False  # NOTE: Don't forget to update fmha doc when changing this!
     NAME = f"flshattB@{FLASH_VERSION}"
     VERSION = FLASH_VERSION
 

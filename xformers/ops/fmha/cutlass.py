@@ -168,6 +168,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
+    SUPPORTS_BMGHK = False  # NOTE: Don't forget to update fmha doc when changing this!
     NAME = "cutlassF"
 
     _TEST_K: List[int] = [
