@@ -1661,7 +1661,13 @@ def test_attn_bias_padded() -> None:
 
 
 @sm70_or_better_only
-@pytest.mark.parametrize("op", [fmha.decoder.FwOp])
+@pytest.mark.parametrize(
+    "op",
+    [
+        fmha.decoder.FwOp,
+        fmha.triton_splitk.FwOp,
+    ],
+)
 @pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "")
 @pytest.mark.parametrize("n_heads", [1, 16, 32])
 @pytest.mark.parametrize("padding", [32, 4096])
@@ -1940,6 +1946,45 @@ def test_flash_gqa_wrong_strides() -> None:
         :, :, :, :, :K
     ]
     fmha.memory_efficient_attention(q, kv, kv, op=op)
+
+
+shapes_triton_splitk = [
+    (1, 8, 2**16, 1, 128, 128),
+    (1, 4, 2**16, 1, 128, 128),
+    (1, 16, 2**16, 1, 128, 128),
+    (1, 16, 2**16, 1, 32, 32),
+    (1, 8, 1025, 1, 128, 128),
+    (2, 8, 4096, 1, 128, 128),
+    (10, 8, 2**16, 1, 128, 128),
+    (10, 15, 2**16, 1, 128, 128),
+    (1, 3, 2**16, 1, 128, 128),
+    (1, 3, 2**16 - 10, 1, 128, 128),
+    (2, 3, 73, 1, 128, 128),
+    (2, 7, 7328, 1, 128, 128),
+    (2, 7, 7328, 1, 120, 120),
+    (2, 7, 63, 1, 120, 120),
+]
+op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv_splitk = [
+    (fmha.triton_splitk.FwOp, "cuda", torch.float16, type(None), *s)
+    for s in shapes_triton_splitk
+] + [
+    (fmha.triton_splitk.FwOp, "cuda", torch.bfloat16, type(None), *s)
+    for s in shapes_triton_splitk
+]
+
+
+@pytest.mark.parametrize(
+    "opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv",
+    op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv_splitk,
+    ids=[make_id(*c) for c in op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv_splitk],
+)
+@cuda_only
+def test_forward_splitk(
+    opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
+    packed=False,
+    fmt="BMHK",
+):
+    test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed=packed, fmt=fmt)
 
 
 # end of file

@@ -7,7 +7,7 @@ from typing import Any, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
-from . import cutlass, decoder, flash, small_k, triton
+from . import cutlass, decoder, flash, small_k, triton, triton_splitk
 from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
@@ -421,6 +421,7 @@ ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
     flash.FwOp,
     triton.FwOp,
     small_k.FwOp,
+    triton_splitk.FwOp,
 ]
 
 ALL_BW_OPS: Sequence[Type[AttentionBwOpBase]] = [
