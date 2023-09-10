@@ -78,14 +78,10 @@ efficient_attention_backward_ck(
   TORCH_CHECK(query.size(3) == key.size(3));
   TORCH_CHECK(value.size(3) == grad_out.size(3));
 
-  // Query, Key, Value must use the same CUDA device
-  TORCH_CHECK(query.device() == key.device());
-  TORCH_CHECK(query.device() == value.device());
-  TORCH_CHECK(query.device().type() == torch::kCUDA)
-
   // handle potentially non-contiguous grad_out through a copy
   CHECK_NOSPARSE_CONTIGUOUS_CUDA(grad_out);
 
+  // last dim is contiguous, device is CUDA
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(query);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
@@ -269,18 +265,16 @@ efficient_attention_backward_ck(
     p.host_seqstart_q.resize(p.num_batches + 1);
     p.host_seqstart_k.resize(p.num_batches + 1);
 
-    FMHA_HIP_CHECK(hipMemcpyAsync(
-        p.host_seqstart_q.data(),
-        seqstart_q->data_ptr(),
-        (p.num_batches + 1) * sizeof(int),
-        hipMemcpyDeviceToHost,
-        stream));
-    FMHA_HIP_CHECK(hipMemcpyAsync(
-        p.host_seqstart_k.data(),
-        seqstart_k->data_ptr(),
-        (p.num_batches + 1) * sizeof(int),
-        hipMemcpyDeviceToHost,
-        stream));
+    auto seqstart_q_cpu = seqstart_q->to(at::kCPU);
+    auto seqstart_k_cpu = seqstart_k->to(at::kCPU);
+
+    for (int i = 0; i < p.host_seqstart_q.size(); i++)
+      p.host_seqstart_q[i] =
+          *(reinterpret_cast<int*>(seqstart_q_cpu.data_ptr()) + i);
+
+    for (int i = 0; i < p.host_seqstart_k.size(); i++)
+      p.host_seqstart_k[i] =
+          *(reinterpret_cast<int*>(seqstart_k_cpu.data_ptr()) + i);
 
     if (seqlen_k.has_value()) {
       TORCH_CHECK(seqlen_k->scalar_type() == at::ScalarType::Int);
@@ -290,12 +284,11 @@ efficient_attention_backward_ck(
 
       p.host_seqlen_k.resize(p.num_batches);
 
-      FMHA_HIP_CHECK(hipMemcpyAsync(
-          p.host_seqlen_k.data(),
-          seqlen_k->data_ptr(),
-          p.num_batches * sizeof(int32_t),
-          hipMemcpyDeviceToHost,
-          stream));
+      auto seqlen_k_cpu = seqlen_k->to(at::kCPU);
+
+      for (int i = 0; i < p.host_seqlen_k.size(); i++)
+        p.host_seqlen_k[i] =
+            *(reinterpret_cast<int*>(seqlen_k_cpu.data_ptr()) + i);
     }
 
     char* q_ptr = reinterpret_cast<char*>(query.data_ptr());

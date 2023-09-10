@@ -11,18 +11,6 @@
 #include <ck/utility/data_type.hpp>
 #include <ck/utility/sequence.hpp>
 
-// Here flag can be a constant, variable or function call
-#define FMHA_HIP_CHECK(ret_or_call)                                          \
-  do {                                                                       \
-    hipError_t _tmpVal;                                                      \
-    if ((_tmpVal = ret_or_call) != hipSuccess) {                             \
-      std::ostringstream ostr;                                               \
-      ostr << "HIP Function Failed (" << __FILE__ << "," << __LINE__ << ") " \
-           << hipGetErrorString(_tmpVal);                                    \
-      throw std::runtime_error(ostr.str());                                  \
-    }                                                                        \
-  } while (0)
-
 #define XFORMERS_CHECK(COND, ERR)          \
   if (!(COND)) {                           \
     std::ostringstream ostr;               \
@@ -146,4 +134,3 @@ inline at::Tensor get_bias_4d_view(
       TORCH_CHECK(false, "bias can only have ndims in {2, 3, 4}");
   }
 }
-
