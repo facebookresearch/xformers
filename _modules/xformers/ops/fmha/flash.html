@@ -619,6 +619,19 @@
     <span class="n">MAX_HEADDIM_SM8x</span> <span class="o">=</span> <span class="mi">192</span>
 
     <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">shape_not_supported_reasons</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span> <span class="n">Mq</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Mkv</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">K</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Kv</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">shape_not_supported_reasons</span><span class="p">(</span><span class="n">Mq</span><span class="p">,</span> <span class="n">Mkv</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">Kv</span><span class="p">)</span>
+
+        <span class="c1"># In fbcode in mode/dev-nosan, we get nans from flash v2.1 if there</span>
+        <span class="c1"># is a strange embedding dimension.</span>
+        <span class="k">if</span> <span class="n">K</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">128</span><span class="p">,</span> <span class="mi">256</span><span class="p">}:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Embed dim </span><span class="si">{</span><span class="n">K</span><span class="si">}</span><span class="s2"> not supported&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">reasons</span>
+
+    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
         <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">BwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
