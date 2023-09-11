@@ -396,6 +396,19 @@ class BwOp(AttentionBwOpBase):
     MAX_HEADDIM_SM8x = 192
 
     @classmethod
+    def shape_not_supported_reasons(
+        cls, Mq: int, Mkv: int, K: int, Kv: int
+    ) -> List[str]:
+        reasons = super().shape_not_supported_reasons(Mq, Mkv, K, Kv)
+
+        # In fbcode in mode/dev-nosan, we get nans from flash v2.1 if there
+        # is a strange embedding dimension.
+        if K not in {8, 16, 32, 64, 128, 256}:
+            reasons.append(f"Embed dim {K} not supported")
+
+        return reasons
+
+    @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(BwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)

@@ -57,7 +57,9 @@ class Inputs:
                 ", [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
             )
         if self.value.dtype == torch.int32:
-            # Quantized K/V case, in which the last dims of Q and K/V are different
+            # Quantized K/V case, in which the last dims of Q and K are different.
+            # NB we currently don't have any implementations for quantized KV with
+            # SUPPORTS_DIFFERENT_VALUE_EMBED.
             output_shape = tuple(self.query.shape)
         else:
             output_shape = (self.query.shape[:-1]) + (self.value.shape[-1],)
@@ -151,9 +153,11 @@ class Inputs:
             )
         H = self.query.shape[-2]
         if self.query.ndim == 4:  # BMHK
+            quantized_kv_cache = self.value.dtype == torch.int32
+            key_embed_dim = Kv if quantized_kv_cache else K
             valid_shapes = (
                 self.query.shape == (B, Mq, H, K)
-                and self.key.shape == (B, Mkv, H, K)
+                and self.key.shape == (B, Mkv, H, key_embed_dim)
                 and self.value.shape == (B, Mkv, H, Kv)
             )
         G = self.query.shape[2]
