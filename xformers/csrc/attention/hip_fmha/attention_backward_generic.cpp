@@ -102,7 +102,7 @@ efficient_attention_backward_ck(
   }
 
   at::cuda::CUDAGuard device_guard(query.device());
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  hipStream_t stream = at::cuda::getCurrentHIPStream().stream();
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);

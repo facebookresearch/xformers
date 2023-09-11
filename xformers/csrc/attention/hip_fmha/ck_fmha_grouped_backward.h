@@ -248,4 +248,5 @@ void grouped_backward_masktype_attnbias_dispatched(
   }
 
   (void)invoker.Run(arg_ptr.get(), StreamConfig{stream, false});
+  (void)hipStreamSynchronize(stream);
 };

@@ -35,6 +35,9 @@ at::Tensor rand_uniform_int(
   int M = out_pattern.size(2);
   int N = out_pattern.size(3);
 
+  at::cuda::CUDAGuard device_guard(out_pattern.device());
+  hipStream_t stream = at::cuda::getCurrentHIPStream().stream();
+
   at::CUDAGeneratorImpl* gen =
       at::get_generator_or_default<at::CUDAGeneratorImpl>(
           c10::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
@@ -107,7 +110,8 @@ at::Tensor rand_uniform_int(
       z_gs_ms_ns_strides,
       {philox_seed, philox_offset});
 
-  dropout_invoker.Run(dropout_arg, StreamConfig{nullptr, false});
+  dropout_invoker.Run(dropout_arg, StreamConfig{stream, false});
+  (void)hipStreamSynchronize(stream);
 
   return randvals;
 } // namespace
