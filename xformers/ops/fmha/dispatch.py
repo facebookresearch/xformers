@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-
+import torch
 import textwrap
 from collections import deque
 from typing import List, Sequence, Type, TypeVar
@@ -74,13 +74,13 @@ def _dispatch_fw(inp: Inputs, needs_gradient: bool) -> Type[AttentionFwOpBase]:
     """
 
     priority_list_ops = deque(
-        [
+        [op for op in [
             flash.FwOp,
             triton.FwOp,
-            cutlass.FwOp,
             ck.FwOp,
+            cutlass.FwOp,
             small_k.FwOp,
-        ]
+        ] if op.is_available()]
     )
     if _is_cutlass_fwd_faster_than_flash(inp):
         priority_list_ops.remove(cutlass.FwOp)
@@ -104,14 +104,15 @@ def _is_cutlassB_faster_than_flash(inp: Inputs) -> bool:
 
 
 def _dispatch_bw(inp: Inputs) -> Type[AttentionBwOpBase]:
-    priority_list_ops: List[Type[AttentionBwOpBase]] = [
+    priority_list_ops: List[Type[AttentionBwOpBase]] = [op for op in [
         flash.BwOp,
+        ck.BwOp,
         cutlass.BwOp,
         # CUDA illegal memory issues, race conditions etc..
         # triton.BwOp,
         # Deprecated
         small_k.BwOp,
-    ]
+    ] if op.is_available()]
     if _is_cutlassB_faster_than_flash(inp):
         priority_list_ops.remove(cutlass.BwOp)
         priority_list_ops.insert(0, cutlass.BwOp)
