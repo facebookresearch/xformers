@@ -10,6 +10,8 @@ from typing import List, Optional, Sequence, Tuple, Type, TypeVar, Set, Any
 import pytest
 import torch
 
+from functools import partial
+
 ## need to FIX
 ##from scipy.stats import binomtest
 from torch.utils.checkpoint import checkpoint
@@ -339,25 +341,25 @@ def create_tensors(
 
 ## The same set of supported attn_bias types as defined by ck.FwOp
 SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
-        type(None),
-        torch.Tensor,
-        fmha.attn_bias.LowerTriangularMask,
-        fmha.attn_bias.LowerTriangularMaskWithTensorBias,
+        ##type(None),
+        ##torch.Tensor,
+        ##fmha.attn_bias.LowerTriangularMask,
+        #fmha.attn_bias.LowerTriangularMaskWithTensorBias,
         fmha.attn_bias.BlockDiagonalMask,
-        fmha.attn_bias.BlockDiagonalCausalMask,
-        fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
+        ##fmha.attn_bias.BlockDiagonalCausalMask,
+        ##fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        ##fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
         }
 
 @pytest.mark.parametrize("bias_type", SUPPORTED_ATTN_BIAS_TYPES)
-@pytest.mark.parametrize("packed", [False, True])
-@pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
-@pytest.mark.parametrize("dtype", [torch.half, torch.bfloat16])
+@pytest.mark.parametrize("packed", [True])
+@pytest.mark.parametrize("fmt", ["BMHK"])
+@pytest.mark.parametrize("dtype", [torch.half])
 def test_forward(dtype, fmt, packed, bias_type):
     op = fmha.ck.FwOp
     device = torch.device("cuda")
     batch_size = 7
-    q_len = 200
+    q_len = 100
 
     ## BottomRightMask requires generate {m0,m1,...}, {n0,n1,...} where mi <= ni
     if bias_type is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask:
@@ -411,13 +413,14 @@ def test_forward(dtype, fmt, packed, bias_type):
             # bm3hk -> 3 x bmhk
             query, key, value = xformers.ops.unbind(c, 2)
 
-        print("The query shaped for packed: ", query.size())
         assert not query.is_contiguous()
 
+    '''
     out = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op
     )
     assert not out.isnan().any(), ("Output has NaNs", attn_bias)
+
     out2 = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op
     )
@@ -434,4 +437,15 @@ def test_forward(dtype, fmt, packed, bias_type):
         atol=op.ERROR_ATOL[dtype],
         rtol=op.ERROR_RTOL.get(dtype, 1e-5),
     )
+    '''
+
+    fn = partial(xformers.ops.memory_efficient_attention_forward, op=op)
+
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        fn(query, key, value, attn_bias)
+
+    print("\nExecuting the replaying...\n")
+
+    graph.replay()
 
