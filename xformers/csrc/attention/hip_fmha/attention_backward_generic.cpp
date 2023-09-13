@@ -101,7 +101,7 @@ efficient_attention_backward_ck(
     TORCH_CHECK(query.size(0) == 1, "seqstart_q only supports batch_size=1");
   }
 
-  at::cuda::CUDAGuard device_guard(query.device());
+  // at::cuda::CUDAGuard device_guard(query.device());
   hipStream_t stream = at::cuda::getCurrentHIPStream().stream();
 
   int64_t B = query.size(0);

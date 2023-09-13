@@ -1,8 +1,12 @@
 #pragma once
 
-#include <torch/torch.h>
+#include <map>
+#include <mutex>
 
+#include <c10/hip/HIPCachingAllocator.h>
 #include <ck/utility/data_type.hpp>
+
+#include "ck_fmha_global_workspace_allocator.h"
 
 template <typename scalar_t>
 struct MaxVectorSizeForType {
@@ -21,17 +25,17 @@ struct MaxVectorSizeForType<ck::bhalf_t> {
 
 struct SimpleDeviceMem {
   SimpleDeviceMem() = delete;
-  SimpleDeviceMem(std::size_t mem_size) {
-    auto options = torch::TensorOptions();
-    mem = at::empty(
-        mem_size, options.dtype(at::ScalarType::Byte).device(torch::kCUDA));
+  SimpleDeviceMem(size_t sizeInBytes) {
+    pData_ = c10::hip::HIPCachingAllocator::raw_alloc(sizeInBytes);
   }
   void* GetDeviceBuffer() {
-    return mem.data_ptr();
+    return pData_;
   }
-  ~SimpleDeviceMem() {}
+  ~SimpleDeviceMem() {
+    c10::cuda::HIPCachingAllocator::raw_delete(pData_);
+  }
 
-  at::Tensor mem;
+  void* pData_;
 };
 
 // useful aliasing for making the codes easy

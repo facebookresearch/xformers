@@ -90,7 +90,7 @@ efficient_attention_forward_ck(
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
-  at::cuda::CUDAGuard device_guard(query.device());
+  // at::cuda::CUDAGuard device_guard(query.device());
   hipStream_t stream = at::cuda::getCurrentHIPStream().stream();
 
   int64_t B = query.size(0);
@@ -99,6 +99,22 @@ efficient_attention_forward_ck(
   int64_t num_heads = query.size(-2);
   int64_t K = query.size(-1);
   int64_t Kv = value.size(-1);
+
+  fprintf(
+      stdout,
+      "query data pointer %p, size %lx\n",
+      query.data_ptr(),
+      at::numel(query));
+  fprintf(
+      stdout,
+      "key data pointer %p, size %lx\n",
+      key.data_ptr(),
+      at::numel(key));
+  fprintf(
+      stdout,
+      "value data pointer %p, size %lx\n",
+      value.data_ptr(),
+      at::numel(value));
 
   at::Tensor out;
   at::Tensor logsumexp;
@@ -168,6 +184,8 @@ efficient_attention_forward_ck(
     if (bias.has_value()) {
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
       TORCH_CHECK(bias->scalar_type() == query.scalar_type());
+
+      fprintf(stdout, "bias is not empty!\n");
 
       p.has_attn_bias = true;
       p.attn_bias_ptr = bias->data_ptr();
@@ -248,6 +266,8 @@ efficient_attention_forward_ck(
     if (bias.has_value()) {
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
       TORCH_CHECK(bias->scalar_type() == query.scalar_type());
+
+      fprintf(stdout, "bias is not empty!\n");
 
       p.has_attn_bias = true;
       const at::Tensor bias_4d_view =
@@ -370,7 +390,7 @@ efficient_attention_forward_ck(
   };
 
   DISPATCH_TYPES(query.scalar_type(), [&]() {
-    out = at::zeros(
+    out = at::empty(
         {B, M, num_heads, Kv},
         query.options().dtype(CkToAtenDtype<scalar_t>::atScalarType()));
 
