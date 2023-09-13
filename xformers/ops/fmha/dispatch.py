@@ -8,7 +8,7 @@ import textwrap
 from collections import deque
 from typing import List, Sequence, Type, TypeVar
 
-from . import cutlass, decoder, flash, small_k, triton, ck
+from . import cutlass, decoder, flash, small_k, triton
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 
@@ -78,7 +78,6 @@ def _dispatch_fw(inp: Inputs, needs_gradient: bool) -> Type[AttentionFwOpBase]:
             flash.FwOp,
             triton.FwOp,
             cutlass.FwOp,
-            ck.FwOp,
             small_k.FwOp,
         ]
     )
