@@ -249,9 +249,6 @@ void grouped_forward_masktype_attnbias_dispatched(
   void* workspace =
       GlobalWorkspace::getGlobalWorkspacePtr()->allocate(sizeInBytes, stream);
 
-  fprintf(stdout, "\n[host]output pointer: %p\n", param.out_ptrs[0]);
-  fprintf(stdout, "\n[host]workspace pointer: %p\n", workspace);
-
   op.SetWorkSpacePointer(arg_ptr.get(), workspace);
 
   if (!op.IsSupportedArgument(arg_ptr.get())) {
