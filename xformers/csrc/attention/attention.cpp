@@ -21,6 +21,7 @@ PyMODINIT_FUNC PyInit__C(void) {
 #endif // defined(_WIN32)
 
 TORCH_LIBRARY_FRAGMENT(xformers, m) {
+#if !defined(USE_ROCM)
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_forward_small_k(Tensor query, Tensor key, Tensor value, bool compute_logsumexp, Tensor? attn_bias, float p) -> (Tensor, Tensor, int, int)"));
   m.def(TORCH_SELECTIVE_SCHEMA(
@@ -35,10 +36,13 @@ TORCH_LIBRARY_FRAGMENT(xformers, m) {
       "xformers::_temp_dropout(Tensor out, float p) -> Tensor"));
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::_cutlass_rand_uniform(float p, Tensor out) -> Tensor"));
+#endif
+#if defined(USE_ROCM)
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_forward_ck(Tensor query, Tensor key, Tensor value, Tensor? attn_bias, Tensor? seqstart_q, Tensor? seqstart_k, float dropout_p, bool compute_logsumexp, int custom_mask_type, float? scale, Tensor? seqlen_k) -> (Tensor, Tensor, int, int)"));
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_backward_ck(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor? attn_bias, Tensor? seqstart_q, Tensor? seqstart_k, Tensor? seqlen_k, Tensor logsumexp, Tensor output, float dropout_p, int rng_seed, int rng_offset, int custom_mask_type, float? scale) -> (Tensor, Tensor, Tensor, Tensor)"));
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::_ck_rand_uniform(float p, Tensor out) -> Tensor"));
+#endif
 }
