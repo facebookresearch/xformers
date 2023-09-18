@@ -248,27 +248,16 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
         assert all(seqlen <= padding for seqlen in seqlens)
         seqstart_py = list(range(0, len(seqlens) * padding + 1, padding))
         seqlen = torch.tensor(seqlens, dtype=torch.int32)
-        if torch.cuda.is_available() and torch.version.hip:
-            return cls(
-                seqlen=seqlen,
-                seqlen_cpu=seqlen.to(device=torch.device("cpu")),
-                seqlen_py=seqlens,
-                max_seqlen=max(seqlens),
-                min_seqlen=min(seqlens),
-                seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
-                seqstart_py=seqstart_py,
-                padding=padding,
-            )
-        else:
-            return cls(
-                seqlen=seqlen,
-                seqlen_py=seqlens,
-                max_seqlen=max(seqlens),
-                min_seqlen=min(seqlens),
-                seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
-                seqstart_py=seqstart_py,
-                padding=padding,
-            )
+        return cls(
+            seqlen=seqlen,
+            seqlen_cpu=seqlen.to(device=torch.device("cpu")) if torch.cuda.is_available() and torch.version.hip else None,
+            seqlen_py=seqlens,
+            max_seqlen=max(seqlens),
+            min_seqlen=min(seqlens),
+            seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
+            seqstart_py=seqstart_py,
+            padding=padding,
+        )
 
     def split(
         self, x: torch.Tensor, batch_sizes: Optional[Sequence[int]] = None
