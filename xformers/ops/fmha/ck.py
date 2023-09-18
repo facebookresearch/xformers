@@ -39,8 +39,8 @@ def _get_seqlen_info(
     if isinstance(
         attn_bias, (BlockDiagonalMask, BlockDiagonalCausalWithOffsetPaddedKeysMask)
     ):
-        attn_bias.k_seqinfo.to(inp.query.device)
-        attn_bias.q_seqinfo.to(inp.query.device)
+        ##attn_bias.k_seqinfo.to(inp.query.device)
+        ##attn_bias.q_seqinfo.to(inp.query.device)
         seqstart_k = attn_bias.k_seqinfo.seqstart
         seqstart_q = attn_bias.q_seqinfo.seqstart
         ##max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
@@ -182,7 +182,7 @@ class FwOp(AttentionFwOpBase):
             compute_logsumexp=needs_gradient,
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
-            seqlen_k=inp.attn_bias.k_seqinfo.seqlen
+            seqlen_k=inp.attn_bias.k_seqinfo.seqlen_cpu
             if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
             else None,
         )

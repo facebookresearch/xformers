@@ -212,6 +212,7 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
     """
 
     seqlen: torch.Tensor
+    seqlen_cpu: torch.Tensor
     seqlen_py: Sequence[int]
     padding: int
     # From parent: seqstart[i] contains the start position
@@ -246,15 +247,28 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
         assert not isinstance(seqlens, torch.Tensor)
         assert all(seqlen <= padding for seqlen in seqlens)
         seqstart_py = list(range(0, len(seqlens) * padding + 1, padding))
-        return cls(
-            seqlen=torch.tensor(seqlens, dtype=torch.int32),
-            seqlen_py=seqlens,
-            max_seqlen=max(seqlens),
-            min_seqlen=min(seqlens),
-            seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
-            seqstart_py=seqstart_py,
-            padding=padding,
-        )
+        seqlen = torch.tensor(seqlens, dtype=torch.int32)
+        if torch.cuda.is_available() and torch.version.hip:
+            return cls(
+                seqlen=seqlen,
+                seqlen_cpu=seqlen.to(device=torch.device("cpu")),
+                seqlen_py=seqlens,
+                max_seqlen=max(seqlens),
+                min_seqlen=min(seqlens),
+                seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
+                seqstart_py=seqstart_py,
+                padding=padding,
+            )
+        else:
+            return cls(
+                seqlen=seqlen,
+                seqlen_py=seqlens,
+                max_seqlen=max(seqlens),
+                min_seqlen=min(seqlens),
+                seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
+                seqstart_py=seqstart_py,
+                padding=padding,
+            )
 
     def split(
         self, x: torch.Tensor, batch_sizes: Optional[Sequence[int]] = None

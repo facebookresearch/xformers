@@ -12,6 +12,8 @@
 #include <torch/library.h>
 #include <ATen/cuda/CUDAGraphsUtils.cuh>
 
+#include <ck/host_utility/hip_check_error.hpp>
+
 #include "ck_fmha_params.h"
 #include "ck_fmha_util.h"
 
@@ -79,8 +81,8 @@ efficient_attention_forward_ck(
     TORCH_CHECK(seqstart_q->scalar_type() == at::ScalarType::Int);
     TORCH_CHECK(seqstart_k->scalar_type() == at::ScalarType::Int);
     TORCH_CHECK(seqstart_q->dim() == 1 && seqstart_k->dim() == 1);
-    CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqstart_q));
-    CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqstart_k));
+    CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqstart_q));
+    CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqstart_k));
     TORCH_CHECK(seqstart_q->size(0) == seqstart_k->size(0));
     TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
   };
@@ -91,7 +93,7 @@ efficient_attention_forward_ck(
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
   // at::cuda::CUDAGuard device_guard(query.device());
-  hipStream_t stream = at::cuda::getCurrentHIPStream().stream();
+  hipStream_t stream2 = at::cuda::getCurrentHIPStream().stream();
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -100,9 +102,10 @@ efficient_attention_forward_ck(
   int64_t K = query.size(-1);
   int64_t Kv = value.size(-1);
 
-  at::Tensor out;
   at::Tensor logsumexp;
   at::Tensor randvals;
+
+  at::Tensor out = at::empty({B, M, num_heads, Kv}, query.options());
 
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
   int64_t philox_seed;
@@ -265,30 +268,25 @@ efficient_attention_forward_ck(
     p.host_seqstart_q.resize(p.num_batches + 1);
     p.host_seqstart_k.resize(p.num_batches + 1);
 
-    auto seqstart_q_cpu = seqstart_q->to(at::kCPU);
-    auto seqstart_k_cpu = seqstart_k->to(at::kCPU);
-
     for (int i = 0; i < p.host_seqstart_q.size(); i++)
       p.host_seqstart_q[i] =
-          *(reinterpret_cast<int*>(seqstart_q_cpu.data_ptr()) + i);
+          *(reinterpret_cast<int*>(seqstart_q->data_ptr()) + i);
 
     for (int i = 0; i < p.host_seqstart_k.size(); i++)
       p.host_seqstart_k[i] =
-          *(reinterpret_cast<int*>(seqstart_k_cpu.data_ptr()) + i);
+          *(reinterpret_cast<int*>(seqstart_k->data_ptr()) + i);
 
     if (seqlen_k.has_value()) {
       TORCH_CHECK(seqlen_k->scalar_type() == at::ScalarType::Int);
       TORCH_CHECK(seqlen_k->dim() == 1);
       TORCH_CHECK(seqlen_k->size(0) == p.num_batches)
-      CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqlen_k));
+      CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqlen_k));
 
       p.host_seqlen_k.resize(p.num_batches);
 
-      auto seqlen_k_cpu = seqlen_k->to(at::kCPU);
-
       for (int i = 0; i < p.host_seqlen_k.size(); i++)
         p.host_seqlen_k[i] =
-            *(reinterpret_cast<int*>(seqlen_k_cpu.data_ptr()) + i);
+            *(reinterpret_cast<int*>(seqlen_k->data_ptr()) + i);
     }
 
     char* q_ptr = reinterpret_cast<char*>(query.data_ptr());
@@ -369,35 +367,31 @@ efficient_attention_forward_ck(
     };
   };
 
-  DISPATCH_TYPES(query.scalar_type(), [&]() {
-    out = at::empty(
-        {B, M, num_heads, Kv},
-        query.options().dtype(CkToAtenDtype<scalar_t>::atScalarType()));
+  auto inDataType = query.scalar_type();
 
-    if (!seqstart_q.has_value()) { // input is batched
-      BatchedForwardParams batched_forward_params;
+  if (!seqstart_q.has_value()) { // input is batched
+    BatchedForwardParams batched_forward_params;
 
-      set_batched_forward_params(batched_forward_params);
+    set_batched_forward_params(batched_forward_params);
 
-      if constexpr (std::is_same<scalar_t, ck::half_t>::value) {
-        batched_forward_fp16(batched_forward_params, stream);
-      } else if constexpr (std::is_same<scalar_t, ck::bhalf_t>::value) {
-        batched_forward_bp16(batched_forward_params, stream);
-      } else
-        throw std::runtime_error("input data-type is not supported!");
-    } else { // input is grouped
-      GroupedForwardParams grouped_forward_params;
+    if (inDataType == at::ScalarType::Half) {
+      batched_forward_fp16(batched_forward_params, stream2);
+    } else if (inDataType == at::ScalarType::BFloat16) {
+      batched_forward_bp16(batched_forward_params, stream2);
+    } else
+      throw std::runtime_error("input data-type is not supported!");
+  } else { // input is grouped
+    GroupedForwardParams grouped_forward_params;
 
-      set_grouped_forward_params(grouped_forward_params);
+    set_grouped_forward_params(grouped_forward_params);
 
-      if constexpr (std::is_same<scalar_t, ck::half_t>::value) {
-        grouped_forward_fp16(grouped_forward_params, stream);
-      } else if constexpr (std::is_same<scalar_t, ck::bhalf_t>::value) {
-        grouped_forward_bp16(grouped_forward_params, stream);
-      } else
-        throw std::runtime_error("input data-type is not supported!");
-    }
-  });
+    if (inDataType == at::ScalarType::Half) {
+      grouped_forward_fp16(grouped_forward_params, stream2);
+    } else if (inDataType == at::ScalarType::BFloat16) {
+      grouped_forward_bp16(grouped_forward_params, stream2);
+    } else
+      throw std::runtime_error("input data-type is not supported!");
+  };
 
   // torch::save(randvals, "randvals_dev.zip");
 

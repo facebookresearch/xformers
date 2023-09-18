@@ -67,6 +67,11 @@ struct CkToAtenDtype<float> {
   XFORMERS_CHECK(!TENSOR.is_sparse(), #TENSOR " must be a dense tensor"); \
   XFORMERS_CHECK(TENSOR.is_contiguous(), #TENSOR " must be contiguous");
 
+#define CHECK_NOSPARSE_CONTIGUOUS_CPU(TENSOR)                             \
+  XFORMERS_CHECK(TENSOR.is_cpu(), #TENSOR " must be a CPU tensor");       \
+  XFORMERS_CHECK(!TENSOR.is_sparse(), #TENSOR " must be a dense tensor"); \
+  XFORMERS_CHECK(TENSOR.is_contiguous(), #TENSOR " must be contiguous");
+
 #define CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(TENSOR)                        \
   XFORMERS_CHECK(TENSOR.is_cuda(), #TENSOR " must be a CUDA tensor");     \
   XFORMERS_CHECK(!TENSOR.is_sparse(), #TENSOR " must be a dense tensor"); \
