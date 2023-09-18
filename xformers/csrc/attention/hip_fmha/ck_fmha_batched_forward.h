@@ -264,6 +264,4 @@ void batched_forward_masktype_attnbias_dispatched(
   }
 
   invoker.Run(arg_ptr.get(), StreamConfig{stream, false});
-
-  (void)hipStreamSynchronize(stream);
 };

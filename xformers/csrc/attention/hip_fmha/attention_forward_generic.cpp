@@ -93,7 +93,7 @@ efficient_attention_forward_ck(
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
   // at::cuda::CUDAGuard device_guard(query.device());
-  hipStream_t stream2 = at::cuda::getCurrentHIPStream().stream();
+  hipStream_t stream = at::cuda::getCurrentHIPStream().stream();
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -375,9 +375,9 @@ efficient_attention_forward_ck(
     set_batched_forward_params(batched_forward_params);
 
     if (inDataType == at::ScalarType::Half) {
-      batched_forward_fp16(batched_forward_params, stream2);
+      batched_forward_fp16(batched_forward_params, stream);
     } else if (inDataType == at::ScalarType::BFloat16) {
-      batched_forward_bp16(batched_forward_params, stream2);
+      batched_forward_bp16(batched_forward_params, stream);
     } else
       throw std::runtime_error("input data-type is not supported!");
   } else { // input is grouped
@@ -386,9 +386,9 @@ efficient_attention_forward_ck(
     set_grouped_forward_params(grouped_forward_params);
 
     if (inDataType == at::ScalarType::Half) {
-      grouped_forward_fp16(grouped_forward_params, stream2);
+      grouped_forward_fp16(grouped_forward_params, stream);
     } else if (inDataType == at::ScalarType::BFloat16) {
-      grouped_forward_bp16(grouped_forward_params, stream2);
+      grouped_forward_bp16(grouped_forward_params, stream);
     } else
       throw std::runtime_error("input data-type is not supported!");
   };
