@@ -302,50 +302,56 @@ efficient_attention_backward_ck(
     char* grad_v_ptr = reinterpret_cast<char*>(grad_v.data_ptr());
 
     for (int i = 0; i < p.num_batches; i++) {
-      int32_t tmp_q_stride = get_size_in_bytes(
-          p.host_seqstart_q[i] * p.q_strides[0], query.scalar_type());
-      int32_t tmp_k_stride = get_size_in_bytes(
-          p.host_seqstart_k[i] * p.k_strides[0], key.scalar_type());
-      int32_t tmp_v_stride = get_size_in_bytes(
-          p.host_seqstart_k[i] * p.v_strides[0], value.scalar_type());
-      int32_t tmp_o_stride = get_size_in_bytes(
-          p.host_seqstart_q[i] * p.out_strides[0], out.scalar_type());
-      int32_t tmp_grad_o_stride = get_size_in_bytes(
-          p.host_seqstart_q[i] * p.grad_out_strides[0], grad_out.scalar_type());
-      int32_t tmp_logsumexp_stride =
+      size_t tmp_q_offset = get_size_in_bytes(
+          static_cast<size_t>(p.host_seqstart_q[i]) * p.q_strides[0],
+          query.scalar_type());
+      size_t tmp_k_offset = get_size_in_bytes(
+          static_cast<size_t>(p.host_seqstart_k[i]) * p.k_strides[0],
+          key.scalar_type());
+      size_t tmp_v_offset = get_size_in_bytes(
+          static_cast<size_t>(p.host_seqstart_k[i]) * p.v_strides[0],
+          value.scalar_type());
+      size_t tmp_o_offset = get_size_in_bytes(
+          static_cast<size_t>(p.host_seqstart_q[i]) * p.out_strides[0],
+          out.scalar_type());
+      size_t tmp_grad_o_offset = get_size_in_bytes(
+          static_cast<size_t>(p.host_seqstart_q[i]) * p.grad_out_strides[0],
+          grad_out.scalar_type());
+      size_t tmp_logsumexp_offset =
           get_size_in_bytes(p.host_seqstart_q[i], logsumexp.scalar_type());
-      int32_t tmp_randvals_stride = get_size_in_bytes(
-          p.host_seqstart_q[i] * p.randvals_strides[1] +
-              p.host_seqstart_k[i] * p.randvals_strides[2],
+      size_t tmp_randvals_offset = get_size_in_bytes(
+          static_cast<size_t>(p.host_seqstart_q[i]) * p.randvals_strides[1] +
+              static_cast<size_t>(p.host_seqstart_k[i]) * p.randvals_strides[2],
           randvals.scalar_type());
 
-      p.q_ptrs.push_back(reinterpret_cast<void*>(&q_ptr[tmp_q_stride]));
+      p.q_ptrs.push_back(reinterpret_cast<void*>(&q_ptr[tmp_q_offset]));
       p.grad_q_ptrs.push_back(
-          reinterpret_cast<void*>(&grad_q_ptr[tmp_q_stride]));
-      p.k_ptrs.push_back(reinterpret_cast<void*>(&k_ptr[tmp_k_stride]));
+          reinterpret_cast<void*>(&grad_q_ptr[tmp_q_offset]));
+      p.k_ptrs.push_back(reinterpret_cast<void*>(&k_ptr[tmp_k_offset]));
       p.grad_k_ptrs.push_back(
-          reinterpret_cast<void*>(&grad_k_ptr[tmp_k_stride]));
-      p.v_ptrs.push_back(reinterpret_cast<void*>(&v_ptr[tmp_v_stride]));
+          reinterpret_cast<void*>(&grad_k_ptr[tmp_k_offset]));
+      p.v_ptrs.push_back(reinterpret_cast<void*>(&v_ptr[tmp_v_offset]));
       p.grad_v_ptrs.push_back(
-          reinterpret_cast<void*>(&grad_v_ptr[tmp_v_stride]));
-      p.out_ptrs.push_back(reinterpret_cast<void*>(&out_ptr[tmp_o_stride]));
+          reinterpret_cast<void*>(&grad_v_ptr[tmp_v_offset]));
+      p.out_ptrs.push_back(reinterpret_cast<void*>(&out_ptr[tmp_o_offset]));
       p.grad_out_ptrs.push_back(
-          reinterpret_cast<void*>(&grad_out_ptr[tmp_grad_o_stride]));
+          reinterpret_cast<void*>(&grad_out_ptr[tmp_grad_o_offset]));
 
       if (bias.has_value()) {
-        int32_t tmp_bias_stride = get_size_in_bytes(
-            p.host_seqstart_q[i] * p.attn_bias_strides[2] +
-                p.host_seqstart_k[i] * p.attn_bias_strides[3],
+        size_t tmp_bias_offset = get_size_in_bytes(
+            static_cast<size_t>(p.host_seqstart_q[i]) * p.attn_bias_strides[2] +
+                static_cast<size_t>(p.host_seqstart_k[i]) *
+                    p.attn_bias_strides[3],
             bias->scalar_type());
 
         p.attn_bias_ptrs.push_back(
-            reinterpret_cast<void*>(&attn_bias_ptr[tmp_bias_stride]));
+            reinterpret_cast<void*>(&attn_bias_ptr[tmp_bias_offset]));
       };
 
       p.logsumexp_ptrs.push_back(
-          reinterpret_cast<void*>(&logsumexp_ptr[tmp_logsumexp_stride]));
+          reinterpret_cast<void*>(&logsumexp_ptr[tmp_logsumexp_offset]));
       p.randvals_ptrs.push_back(
-          reinterpret_cast<void*>(&randvals_ptr[tmp_randvals_stride]));
+          reinterpret_cast<void*>(&randvals_ptr[tmp_randvals_offset]));
     }
   };
 

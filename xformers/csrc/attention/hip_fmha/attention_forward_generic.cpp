@@ -298,14 +298,18 @@ efficient_attention_forward_ck(
         bias.has_value() ? reinterpret_cast<char*>(bias->data_ptr()) : nullptr;
 
     for (int i = 0; i < p.num_batches; i++) {
-      int32_t tmp_q_offset = get_size_in_bytes(
-          p.host_seqstart_q[i] * p.q_strides[0], query.scalar_type());
-      int32_t tmp_k_offset = get_size_in_bytes(
-          p.host_seqstart_k[i] * p.k_strides[0], key.scalar_type());
-      int32_t tmp_v_offset = get_size_in_bytes(
-          p.host_seqstart_k[i] * p.v_strides[0], value.scalar_type());
-      int32_t tmp_o_offset = get_size_in_bytes(
-          p.host_seqstart_q[i] * p.out_strides[0], out.scalar_type());
+      size_t tmp_q_offset = get_size_in_bytes(
+          static_cast<size_t>(p.host_seqstart_q[i]) * p.q_strides[0],
+          query.scalar_type());
+      size_t tmp_k_offset = get_size_in_bytes(
+          static_cast<size_t>(p.host_seqstart_k[i]) * p.k_strides[0],
+          key.scalar_type());
+      size_t tmp_v_offset = get_size_in_bytes(
+          static_cast<size_t>(p.host_seqstart_k[i]) * p.v_strides[0],
+          value.scalar_type());
+      size_t tmp_o_offset = get_size_in_bytes(
+          static_cast<size_t>(p.host_seqstart_q[i]) * p.out_strides[0],
+          out.scalar_type());
 
       p.q_ptrs.push_back(reinterpret_cast<void*>(&q_ptr[tmp_q_offset]));
       p.k_ptrs.push_back(reinterpret_cast<void*>(&k_ptr[tmp_k_offset]));
@@ -313,9 +317,10 @@ efficient_attention_forward_ck(
       p.out_ptrs.push_back(reinterpret_cast<void*>(&out_ptr[tmp_o_offset]));
 
       if (bias.has_value()) {
-        int32_t tmp_bias_offset = get_size_in_bytes(
-            p.host_seqstart_q[i] * p.attn_bias_strides[2] +
-                p.host_seqstart_k[i] * p.attn_bias_strides[3],
+        size_t tmp_bias_offset = get_size_in_bytes(
+            static_cast<size_t>(p.host_seqstart_q[i]) * p.attn_bias_strides[2] +
+                static_cast<size_t>(p.host_seqstart_k[i]) *
+                    p.attn_bias_strides[3],
             bias->scalar_type());
 
         p.attn_bias_ptrs.push_back(
@@ -341,13 +346,14 @@ efficient_attention_forward_ck(
       char* randvals_ptr = reinterpret_cast<char*>(randvals.data_ptr());
 
       for (int i = 0; i < p.num_batches; i++) {
-        int32_t tmp_randvals_stride = get_size_in_bytes(
-            p.host_seqstart_q[i] * p.randvals_strides[1] +
-                p.host_seqstart_k[i] * p.randvals_strides[2],
+        size_t tmp_randvals_offset = get_size_in_bytes(
+            static_cast<size_t>(p.host_seqstart_q[i]) * p.randvals_strides[1] +
+                static_cast<size_t>(p.host_seqstart_k[i]) *
+                    p.randvals_strides[2],
             randvals.scalar_type());
 
         p.randvals_ptrs.push_back(reinterpret_cast<void*>(randvals_ptr));
-        randvals_ptr = randvals_ptr + tmp_randvals_stride;
+        randvals_ptr = randvals_ptr + tmp_randvals_offset;
       };
     } else
       p.dropout_prob = 0.0f;
@@ -358,11 +364,11 @@ efficient_attention_forward_ck(
       char* logsumexp_ptr = reinterpret_cast<char*>(logsumexp.data_ptr());
 
       for (int i = 0; i < p.num_batches; i++) {
-        int32_t tmp_logsumexp_stride =
+        size_t tmp_logsumexp_offset =
             get_size_in_bytes(p.host_seqstart_q[i], logsumexp.scalar_type());
 
         p.logsumexp_ptrs.push_back(reinterpret_cast<void*>(logsumexp_ptr));
-        logsumexp_ptr = logsumexp_ptr + tmp_logsumexp_stride;
+        logsumexp_ptr = logsumexp_ptr + tmp_logsumexp_offset;
       };
     };
   };
