@@ -95,8 +95,8 @@ efficient_attention_backward_ck(
     TORCH_CHECK(seqstart_q->scalar_type() == at::ScalarType::Int);
     TORCH_CHECK(seqstart_k->scalar_type() == at::ScalarType::Int);
     TORCH_CHECK(seqstart_q->dim() == 1 && seqstart_k->dim() == 1);
-    CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqstart_q));
-    CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqstart_k));
+    CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqstart_q));
+    CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqstart_k));
     TORCH_CHECK(seqstart_q->size(0) == seqstart_k->size(0));
     TORCH_CHECK(query.size(0) == 1, "seqstart_q only supports batch_size=1");
   }
@@ -265,30 +265,25 @@ efficient_attention_backward_ck(
     p.host_seqstart_q.resize(p.num_batches + 1);
     p.host_seqstart_k.resize(p.num_batches + 1);
 
-    auto seqstart_q_cpu = seqstart_q->to(at::kCPU);
-    auto seqstart_k_cpu = seqstart_k->to(at::kCPU);
-
     for (int i = 0; i < p.host_seqstart_q.size(); i++)
       p.host_seqstart_q[i] =
-          *(reinterpret_cast<int*>(seqstart_q_cpu.data_ptr()) + i);
+          *(reinterpret_cast<int*>(seqstart_q->data_ptr()) + i);
 
     for (int i = 0; i < p.host_seqstart_k.size(); i++)
       p.host_seqstart_k[i] =
-          *(reinterpret_cast<int*>(seqstart_k_cpu.data_ptr()) + i);
+          *(reinterpret_cast<int*>(seqstart_k->data_ptr()) + i);
 
     if (seqlen_k.has_value()) {
       TORCH_CHECK(seqlen_k->scalar_type() == at::ScalarType::Int);
       TORCH_CHECK(seqlen_k->dim() == 1);
       TORCH_CHECK(seqlen_k->size(0) == p.num_batches)
-      CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqlen_k));
+      CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqlen_k));
 
       p.host_seqlen_k.resize(p.num_batches);
 
-      auto seqlen_k_cpu = seqlen_k->to(at::kCPU);
-
       for (int i = 0; i < p.host_seqlen_k.size(); i++)
         p.host_seqlen_k[i] =
-            *(reinterpret_cast<int*>(seqlen_k_cpu.data_ptr()) + i);
+            *(reinterpret_cast<int*>(seqlen_k->data_ptr()) + i);
     }
 
     char* q_ptr = reinterpret_cast<char*>(query.data_ptr());
@@ -354,31 +349,31 @@ efficient_attention_backward_ck(
     }
   };
 
-  DISPATCH_TYPES(query.scalar_type(), [&]() {
-    if (!seqstart_q.has_value()) { // input is batched
-      BatchedBackwardParams batched_backward_params;
+  auto inDataType = query.scalar_type();
 
-      set_batched_backward_params(batched_backward_params);
+  if (!seqstart_q.has_value()) { // input is batched
+    BatchedBackwardParams batched_backward_params;
 
-      if constexpr (std::is_same<scalar_t, ck::half_t>::value) {
-        batched_backward_fp16(batched_backward_params, stream);
-      } else if constexpr (std::is_same<scalar_t, ck::bhalf_t>::value) {
-        batched_backward_bp16(batched_backward_params, stream);
-      } else
-        throw std::runtime_error("input data-type is not supported");
-    } else { // input is grouped
-      GroupedBackwardParams grouped_backward_params;
+    set_batched_backward_params(batched_backward_params);
 
-      set_grouped_backward_params(grouped_backward_params);
+    if (inDataType == at::ScalarType::Half) {
+      batched_backward_fp16(batched_backward_params, stream);
+    } else if (inDataType == at::ScalarType::BFloat16) {
+      batched_backward_bp16(batched_backward_params, stream);
+    } else
+      throw std::runtime_error("input data-type is not supported");
+  } else { // input is grouped
+    GroupedBackwardParams grouped_backward_params;
 
-      if constexpr (std::is_same<scalar_t, ck::half_t>::value) {
-        grouped_backward_fp16(grouped_backward_params, stream);
-      } else if constexpr (std::is_same<scalar_t, ck::bhalf_t>::value) {
-        grouped_backward_bp16(grouped_backward_params, stream);
-      } else
-        throw std::runtime_error("input data-type is not supported");
-    }
-  });
+    set_grouped_backward_params(grouped_backward_params);
+
+    if (inDataType == at::ScalarType::Half) {
+      grouped_backward_fp16(grouped_backward_params, stream);
+    } else if (inDataType == at::ScalarType::BFloat16) {
+      grouped_backward_bp16(grouped_backward_params, stream);
+    } else
+      throw std::runtime_error("input data-type is not supported");
+  }
 
   return std::make_tuple(grad_q, grad_k, grad_v, grad_bias);
 #endif
