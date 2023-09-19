@@ -6,8 +6,6 @@
 #include <c10/hip/HIPCachingAllocator.h>
 #include <ck/utility/data_type.hpp>
 
-#include "ck_fmha_global_workspace_allocator.h"
-
 template <typename scalar_t>
 struct MaxVectorSizeForType {
   static constexpr int value = 4;

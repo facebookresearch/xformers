@@ -246,10 +246,9 @@ void grouped_forward_masktype_attnbias_dispatched(
 
   auto sizeInBytes = op.GetWorkSpaceSize(arg_ptr.get());
 
-  void* workspace =
-      GlobalWorkspace::getGlobalWorkspacePtr()->allocate(sizeInBytes, stream);
+  SimpleDeviceMem workspace(sizeInBytes);
 
-  op.SetWorkSpacePointer(arg_ptr.get(), workspace);
+  op.SetWorkSpacePointer(arg_ptr.get(), workspace.GetDeviceBuffer());
 
   if (!op.IsSupportedArgument(arg_ptr.get())) {
     std::ostringstream ostr;
