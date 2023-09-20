@@ -25,7 +25,7 @@ hydra-core >= 1.1
 
 # Dependency for Mixture of Experts
 fairscale >= 0.4.5
-scipy
+scipy >= 1.7
 
 # Dependency for fused layers, optional
 cmake
