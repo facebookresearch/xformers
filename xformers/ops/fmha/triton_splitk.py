@@ -509,24 +509,24 @@ class FwOp(AttentionFwOpBase):
                 reasons.append(
                     "requires GPU with sm80 minimum compute capacity, e.g., A100/H100/L4"
                 )
-        if d.query.shape[2] > cls.BLOCK_M:
-            reasons.append(f"supports maximum number of heads per gpu={cls.BLOCK_M}")
 
         q_len = d.query.shape[1]
         if isinstance(d.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
-            seq_len = d.attn_bias.k_seqinfo.seqlen
-            B = len(seq_len)
-            q_len = d.query.shape[1] // B
+            seqinfo = d.attn_bias.q_seqinfo
+            if q_len != seqinfo.seqstart_py[-1]:
+                reasons.append(
+                    f"Expected total {seqinfo.seqstart_py[-1]} queries not {q_len}"
+                )
+            q_len = seqinfo.min_seqlen
+            if q_len != seqinfo.max_seqlen:
+                reasons.append(
+                    "Variable query len is not supported in the presence of causal mask."
+                )
 
         if d.key.ndim == 4 and d.key.shape[2] != 1:
-            if d.key.stride(2) != 0 or d.value.stride(2) != 0:
-                reasons.append(
-                    "only supports num_heads>1 with multiquery. "
-                    "If you already use multiquery, make sure you use `expand` on your query tensor "
-                    "rather than repeat."
-                )
-            if q_len > 1:
-                reasons.append("query has both seqlen>1 with multiquery")
+            if d.key.stride(2) == 0 and d.value.stride(2) == 0 and q_len > 1:
+                reasons.append("multiquery is only supported with query seqlen=1")
+
         if d.attn_bias is not None and q_len > 1:
             reasons.append(
                 "query with seqlen > 1 is not supported in the presence of causal mask"
@@ -594,6 +594,8 @@ class FwOp(AttentionFwOpBase):
             PACKED_PER_VAL = 1
         B, H, Mk, Kkv = k.shape
         B, H, M, Kq = q.shape
+        if Kq != Lk:
+            raise ValueError(f"Keys have head dim {Lk} but queries have head dim {Kq}")
         BLOCK_M = cls.BLOCK_M
         BLOCK_N = cls.BLOCK_N
         if cls.SPLIT_K is not None:
