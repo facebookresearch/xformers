@@ -33,7 +33,7 @@ xFormers is optimized for and tested on systems with NVIDIA GPUs, including:
 - Linux with x86-64 architecture
 - Windows with x86-64 architecture
 
-Apple M1/M2 chips (arm64 architecture) are currently not supported. We aim to add support in a future release.
+Apple M1/M2 chips (arm64 architecture) are currently not supported.
 
 ## Installing xFormers
 
