@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.22] - TBD
 ### Fixed
 ### Added
+- fMHA: Added experimental support for Multi-Query Attention and Grouped-Query Attention. This is handled by passing 5-dimensional inputs to `memory_efficient_attention`, see the documentation for more details
 ### Removed
 - fMHA: Removed `smallK` backend support for CPU. `memory_efficient_attention` only works for CUDA/GPU tensors now
 

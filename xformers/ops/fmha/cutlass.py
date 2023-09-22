@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from dataclasses import replace
 from enum import Enum
 from typing import Any, List, Mapping, Optional, Set, Tuple, Union
 
@@ -168,7 +169,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
-    SUPPORTS_BMGHK = False  # NOTE: Don't forget to update fmha doc when changing this!
+    SUPPORTS_BMGHK = True
     NAME = "cutlassF"
 
     _TEST_K: List[int] = [
@@ -179,6 +180,55 @@ class FwOp(AttentionFwOpBase):
 
     @classmethod
     def apply(
+        cls, inp: Inputs, needs_gradient: bool
+    ) -> Tuple[torch.Tensor, Optional[Context]]:
+        if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
+            raise NotImplementedError("Unsupported attn_bias type")
+        if inp.query.ndim in [3, 4]:
+            return cls.apply_bmhk(inp, needs_gradient=needs_gradient)
+        assert inp.query.ndim == 5, f"query has shape {inp.query.shape}"
+
+        # Workaround until this is properly implemented in C++
+        # run each head group in a different stream
+        n_groups = inp.key.shape[2]
+        main_stream = torch.cuda.current_stream()
+        streams = [main_stream] + [
+            torch.cuda.Stream(device=inp.query.device) for _ in range(n_groups - 1)
+        ]
+        outs = []
+        for group, stream in enumerate(streams):
+            stream.wait_stream(main_stream)
+            with torch.cuda.stream(stream):
+                query = inp.query[:, :, group]
+                key = inp.key[:, :, group]
+                value = inp.value[:, :, group]
+                bias = inp.attn_bias
+                if isinstance(bias, torch.Tensor):
+                    bias = bias[:, group]
+                if isinstance(bias, attn_bias.LowerTriangularMaskWithTensorBias):
+                    bias = attn_bias.LowerTriangularMaskWithTensorBias(
+                        bias._bias[:, group]
+                    )
+                outs.append(
+                    cls.apply_bmhk(
+                        replace(inp, query=query, key=key, value=value, attn_bias=bias),
+                        needs_gradient=needs_gradient,
+                    )
+                )
+        for s in streams[1:]:
+            main_stream.wait_stream(s)
+        out = torch.stack([o[0] for o in outs], dim=2)
+        ctx: Optional[Context] = None
+        if needs_gradient:
+            ctx = Context(
+                out=out,
+                lse=torch.stack([o[1].lse for o in outs], dim=1),  # type: ignore
+                op_bw=outs[0][1].op_bw,  # type: ignore
+            )
+        return out, ctx
+
+    @classmethod
+    def apply_bmhk(
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
