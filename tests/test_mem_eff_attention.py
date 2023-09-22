@@ -1604,14 +1604,14 @@ def test_attn_bias_padded() -> None:
     bsize, n_heads, d, padding = 8, 3, 8, 32
 
     # Q / KV have different seqlen
-    k = torch.randn((bsize, padding, n_heads, d)).cuda().half()
+    k = torch.randn((bsize, padding, n_heads, d), device="cuda", dtype=torch.float16)
     k_seqlen = [5, 8, 7, 1, 9, 3, 12, 32]
     other = bsize - 1
-    v = torch.randn((bsize, padding, n_heads, d)).cuda().half()
+    v = torch.randn((bsize, padding, n_heads, d), device="cuda", dtype=torch.float16)
     n_q_first = 4
     q = [
-        torch.randn((1, n_q_first, n_heads, d)).cuda().half(),
-        torch.randn((1, other, n_heads, d)).cuda().half(),
+        torch.randn((1, n_q_first, n_heads, d), device="cuda", dtype=torch.float16),
+        torch.randn((1, other, n_heads, d), device="cuda", dtype=torch.float16),
     ]
     q_cat = torch.cat([x.view(1, -1, n_heads, d) for x in q], dim=1)
     q_seqlen = [n_q_first] + [1] * other
@@ -1685,10 +1685,10 @@ def test_decoder(
     d = 128
     k_shape = (1, bsz * padding, n_heads, d)
     # TODO: support 2 kv heads etc.
-    k = torch.randn(k_shape, dtype=dtype_).cuda()
+    k = torch.randn(k_shape, dtype=dtype_, device="cuda")
     k_seqlen = torch.randint(num_queries, padding + 1, (bsz,)).tolist()
-    v = torch.randn(k_shape, dtype=dtype_).cuda()
-    q = torch.randn((1, bsz * num_queries, n_heads, d), dtype=dtype_).cuda()
+    v = torch.randn(k_shape, dtype=dtype_, device="cuda")
+    q = torch.randn((1, bsz * num_queries, n_heads, d), dtype=dtype_, device="cuda")
 
     if dequant:
         k_shape = k_shape[:-1] + (d // 8 + op.NUM_GROUPS,)
@@ -1719,7 +1719,7 @@ def test_decoder(
 
     def dequant_cache(x):
         x = x[..., op.NUM_GROUPS :, None].expand(k_shape[:-1] + (d // 8, 8))
-        x = x // (2 ** (4 * torch.arange(8).cuda()))
+        x = x // (2 ** (4 * torch.arange(8, device="cuda")))
         x = (x % 16).flatten(start_dim=3)
         return x.to(dtype_) + 1.0
 
