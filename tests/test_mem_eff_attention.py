@@ -679,12 +679,13 @@ def test_forward(
     )
 
 
+@cuda_only
 @pytest.mark.parametrize("k_len", [5, 6, 32])
 @pytest.mark.parametrize("batch_size", [1, 4])
 @pytest.mark.parametrize("kv_len", [128, 512])
 @pytest.mark.parametrize("q_len", [128, 512])
-@pytest.mark.parametrize("device", _devices)
-def test_key_query_all_ones(device, q_len, kv_len, batch_size, k_len):
+def test_key_query_all_ones(q_len, kv_len, batch_size, k_len):
+    device = "cuda"
     scale = 3
     query = torch.ones((batch_size, q_len, k_len), device=device)
     key = torch.ones((batch_size, kv_len, k_len), device=device)
@@ -1087,14 +1088,13 @@ def test_dropout_backward_cutlass(dt, q_len, kv_len, batch_size, k, p):
     )
 
 
+@cuda_only
 @pytest.mark.parametrize("k_len", [32])
 @pytest.mark.parametrize("batch_size", [1])
 @pytest.mark.parametrize("kv_len", [3 * 32])
 @pytest.mark.parametrize("q_len", [3 * 32])
-@pytest.mark.parametrize("device", _devices)
-def test_memory_efficient_attention_full_block_masked(
-    device, q_len, kv_len, batch_size, k_len
-):
+def test_memory_efficient_attention_full_block_masked(q_len, kv_len, batch_size, k_len):
+    device = "cuda"
     op_fw = fmha.small_k.FwOp
     op_bw = fmha.small_k.BwOp
 

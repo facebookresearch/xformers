@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.22] - TBD
 ### Fixed
 ### Added
+### Removed
+- fMHA: Removed `smallK` backend support for CPU. `memory_efficient_attention` only works for CUDA/GPU tensors now
 
 ## [0.0.21] - 2023-08-18
 ### Improved

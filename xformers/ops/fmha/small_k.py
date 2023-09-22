@@ -53,7 +53,7 @@ class FwOp(AttentionFwOpBase):
     """
 
     OPERATOR = get_xformers_operator("efficient_attention_forward_small_k")
-    SUPPORTED_DEVICES = {"cuda", "cpu"}
+    SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.float}
     SUPPORTED_MAX_K: float = 32
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), torch.Tensor}
