@@ -133,13 +133,14 @@ class Attention(nn.Module):
             theta=self.rope_theta,
         )
 
-        # The assertion in Transformer.__init__ makes sure that
-        # n_local_kv_heads is either 1 or n_local_heads; in both
-        # cases, the expands below will make sure xq, cache_k,
-        # and cache_v are homogeneous
-        _, L, _, H = cache_k.shape
-        cache_k = cache_k.expand(1, L, self.n_local_heads, H)
-        cache_v = cache_v.expand(1, L, self.n_local_heads, H)
+        # Handle GQA
+        # Q shape: [B, M, Hkv, Hq // Hkv, K]
+        heads_per_group = self.n_local_heads // self.n_local_kv_heads
+        cache_k = cache_k.unsqueeze(3).expand(-1, -1, -1, heads_per_group, -1)
+        cache_v = cache_v.unsqueeze(3).expand(-1, -1, -1, heads_per_group, -1)
+        xq = xq.reshape(
+            [*xq.shape[:2], self.n_local_kv_heads, heads_per_group, xq.shape[-1]]
+        )
 
         # rope_padded() updated the caches, so we
         # call attention directly
@@ -147,7 +148,7 @@ class Attention(nn.Module):
             xq, cache_k, cache_v, attn_bias
         )
 
-        output = self.wo(output.view(output_shape))
+        output = self.wo(output.reshape(output_shape))
         mp_utils.all_reduce(output)
 
         return output
@@ -262,12 +263,6 @@ class Transformer(nn.Module):
         assert args.dim % mp_size == 0
         assert args.vocab_size > 0
         assert args.vocab_size % mp_size == 0
-
-        if args.n_kv_heads is not None:
-            assert mp_size == args.n_kv_heads, (
-                "unsupported model, the number of key/value "
-                "heads must match the model parallelism"
-            )
 
         self.tok_embeddings = nn.Embedding(
             num_embeddings=args.vocab_size,

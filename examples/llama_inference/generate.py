@@ -60,7 +60,6 @@ class FastGen:
         )
 
         ckpt_path = checkpoints[mp_utils.get_rank()]
-        checkpoint = torch.load(ckpt_path, map_location="cpu")
         with open(Path(ckpt_dir) / "params.json", "r") as f:
             params = json.loads(f.read())
         model_args = fast.ModelArgs(**params)
@@ -78,6 +77,7 @@ class FastGen:
         torch.set_default_dtype(torch.bfloat16)
 
         model = fast.Transformer(model_args)
+        checkpoint = torch.load(ckpt_path, map_location="cpu")
         model.load_state_dict(checkpoint, strict=False)
         print(f"loaded model in {time.time() - start_time:.2f} seconds")
 
