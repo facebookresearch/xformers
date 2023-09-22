@@ -46,7 +46,7 @@ try:
 
     _flash_lib.define(
         "flash_fwd(Tensor query, Tensor key, Tensor value, "
-        "Tensor cu_seqlens_q, Tensor cu_seqlens_k, "
+        "Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, "
         "int max_seqlen_q, int max_seqlen_k, "
         "float p, float softmax_scale, "
         "bool is_causal, bool return_softmax) -> (Tensor, Tensor, Tensor)"
@@ -57,7 +57,7 @@ try:
         "Tensor out, Tensor softmax_lse_, Tensor dq, Tensor dk, Tensor dv, "
         "Tensor cu_seqlens_q, Tensor cu_seqlens_k, "
         "int max_seqlen_q, int max_seqlen_k, "
-        "float p, float softmax_scale, bool is_causal, Tensor rng_state) -> Tensor"
+        "float p, float softmax_scale, bool is_causal, Tensor rng_state) -> (Tensor, Tensor, Tensor)"
     )
 
     def _flash_fwd(
@@ -70,35 +70,58 @@ try:
         max_seq_len_k,
         p,
         softmax_scale,
-        causal,
+        is_causal,
         return_softmax,
     ):
-        out = query.new_empty(query.shape[0], query.shape[1], value.shape[2])
-        (
-            out,
-            q_padded,
-            k_padded,
-            v_padded,
-            out_padded,
-            softmax_lse,
-            p,
-            rng_state,
-        ) = _C_flashattention.varlen_fwd(
-            query,
-            key,
-            value,
-            out,
-            cu_seq_lens_q,
-            cu_seq_lens_k,
-            max_seq_len_q,
-            max_seq_len_k,
-            p,
-            softmax_scale,
-            False,
-            causal,
-            return_softmax,
-            None,
-        )
+        if cu_seq_lens_q is None:
+            assert cu_seq_lens_k is None
+            (
+                out,
+                q_padded,
+                k_padded,
+                v_padded,
+                out_padded,
+                softmax_lse,
+                p,
+                rng_state,
+            ) = _C_flashattention.fwd(
+                query,
+                key,
+                value,
+                None,  # out
+                p,
+                softmax_scale,
+                is_causal,
+                return_softmax,
+                None,  # rng
+            )
+        else:
+            out = query.new_empty(query.shape[0], query.shape[1], value.shape[2])
+            (
+                out,
+                q_padded,
+                k_padded,
+                v_padded,
+                out_padded,
+                softmax_lse,
+                p,
+                rng_state,
+            ) = _C_flashattention.varlen_fwd(
+                query,
+                key,
+                value,
+                out,
+                cu_seq_lens_q,
+                cu_seq_lens_k,
+                max_seq_len_q,
+                max_seq_len_k,
+                p,
+                softmax_scale,
+                False,
+                is_causal,
+                return_softmax,
+                None,
+            )
         return out, softmax_lse, rng_state
 
     def _flash_bwd(
@@ -117,31 +140,50 @@ try:
         max_seq_len_k,
         p,
         softmax_scale,
-        causal,
+        is_causal,
         rng_state,
     ):
-        _C_flashattention.varlen_bwd(
-            grad,
-            query,
-            key,
-            value,
-            out,
-            lse,
-            dq,
-            dk,
-            dv,
-            cu_seq_lens_q,
-            cu_seq_lens_k,
-            max_seq_len_q,
-            max_seq_len_k,
-            p,
-            softmax_scale,
-            False,  # zero_tensors
-            causal,
-            None,
-            rng_state,
-        )
-        return dq
+        if cu_seq_lens_k is None:
+            assert cu_seq_lens_q is None
+            _C_flashattention.bwd(
+                grad,
+                query,
+                key,
+                value,
+                out,
+                lse,
+                dq,
+                dk,
+                dv,
+                p,
+                softmax_scale,
+                is_causal,
+                None,
+                rng_state,
+            )
+        else:
+            _C_flashattention.varlen_bwd(
+                grad,
+                query,
+                key,
+                value,
+                out,
+                lse,
+                dq,
+                dk,
+                dv,
+                cu_seq_lens_q,
+                cu_seq_lens_k,
+                max_seq_len_q,
+                max_seq_len_k,
+                p,
+                softmax_scale,
+                False,  # zero_tensors
+                is_causal,
+                None,
+                rng_state,
+            )
+        return dq, dk, dv
 
     _flash_lib.impl("flash_fwd", _flash_fwd, "CUDA")
     _flash_lib.impl("flash_bwd", _flash_bwd, "CUDA")
@@ -151,7 +193,8 @@ except ImportError:
 
 def _convert_input_format(
     inp: Inputs,
-) -> Tuple[Inputs, float, torch.Tensor, int, torch.Tensor, int]:
+) -> Tuple[Inputs, Optional[torch.Tensor], int, Optional[torch.Tensor], int]:
+    assert inp.query.ndim in [4, 5]
     query, key, value = inp.query, inp.key, inp.value
     batch = query.shape[0]
     seqlen_q = query.shape[1]
@@ -173,25 +216,10 @@ def _convert_input_format(
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
         max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
     else:
-        cu_seqlen_k = torch.arange(
-            0,
-            (batch + 1) * seqlen_kv,
-            step=seqlen_kv,
-            dtype=torch.int32,
-            device=query.device,
-        )
-        if seqlen_q == seqlen_kv:
-            cu_seqlen_q = cu_seqlen_k
-        else:
-            cu_seqlen_q = torch.arange(
-                0,
-                (batch + 1) * seqlen_q,
-                step=seqlen_q,
-                dtype=torch.int32,
-                device=query.device,
-            )
-        max_seqlen_q = seqlen_q
-        max_seqlen_k = seqlen_kv
+        cu_seqlen_k = None
+        cu_seqlen_q = None
+        max_seqlen_q = inp.query.shape[1]
+        max_seqlen_k = inp.key.shape[1]
 
     if query.ndim == 5:  # QGA
         # Fold the group/head_in_group dimensions together
@@ -212,16 +240,23 @@ def _convert_input_format(
         query = fold(query)
         key = fold(key)
         value = fold(value)
+    # Optimize for MHA
+    if key.ndim == 4 and key.stride(2) == 0 and value.stride(2) == 0:
+        key = key[:, :, :1]
+        value = value[:, :, :1]
     # Initially we have `query.shape = [batch, seqlen, head_dim_q]`
     # We want format `[batch * seqlen, num_heads, head_dim_q]`
+    if cu_seqlen_k is not None:
+        query = query.reshape([batch * seqlen_q, -1, head_dim_q])
+        key = key.reshape([batch * seqlen_kv, -1, head_dim_q])
+        value = value.reshape([batch * seqlen_kv, -1, head_dim_v])
     new_inp = replace(
         inp,
-        query=query.reshape([batch * seqlen_q, -1, head_dim_q]),
-        key=key.reshape([batch * seqlen_kv, -1, head_dim_q]),
-        value=value.reshape([batch * seqlen_kv, -1, head_dim_v]),
+        query=query,
+        key=key,
+        value=value,
     )
-    softmax_scale = inp.query.shape[-1] ** (-0.5) if inp.scale is None else inp.scale
-    return new_inp, softmax_scale, cu_seqlen_q, max_seqlen_q, cu_seqlen_k, max_seqlen_k
+    return new_inp, cu_seqlen_q, max_seqlen_q, cu_seqlen_k, max_seqlen_k
 
 
 def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
@@ -269,8 +304,8 @@ def _check_strides_for_bmghk(x: torch.Tensor, name: str, reasons: List[str]) -> 
             return
         if stride_g != stride_h * x.shape[-2]:
             reasons.append(
-                f"GQA is only supported when the G/H dimensions are contiguous"
-                f"    {name}.stride:  {x.stride()}"
+                f"GQA is only supported when the G/H dimensions are contiguous\n"
+                f"    {name}.stride:  {x.stride()}\n"
                 f"    {name}.shape :  {list(x.shape)}"
             )
 
@@ -320,9 +355,9 @@ class FwOp(AttentionFwOpBase):
             *inp.query.shape[:-1],
             inp.value.shape[-1],
         ]
+        # no cumulative seqlen
         (
             inp,
-            softmax_scale,
             cu_seqlens_q,
             max_seqlen_q,
             cu_seqlens_k,
@@ -337,11 +372,10 @@ class FwOp(AttentionFwOpBase):
             max_seqlen_q,
             max_seqlen_k,
             inp.p,
-            softmax_scale,
+            inp.scale_float,
             _is_causal(inp.attn_bias),
             return_softmax,
         )
-
         out = out.reshape(out_shape)
         ctx = Context(out=out, lse=softmax_lse)
         if inp.p != 0.0:
@@ -432,7 +466,6 @@ class BwOp(AttentionBwOpBase):
         dq_shape, dk_shape, dv_shape = inp.query.shape, inp.key.shape, inp.value.shape
         (
             inp,
-            softmax_scale,
             cu_seqlens_q,
             max_seqlen_q,
             cu_seqlens_k,
@@ -444,9 +477,8 @@ class BwOp(AttentionBwOpBase):
         if max_seqlen_q != ctx_lse.shape[2]:
             ctx_lse = ctx_lse[:, :, :max_seqlen_q].contiguous()
         kernel_out_shape = [
-            inp.query.shape[0],
-            inp.query.shape[1],
-            inp.value.shape[2],
+            *inp.query.shape[:-1],
+            inp.value.shape[-1],
         ]
 
         # Create dq,dk,dv
@@ -454,7 +486,7 @@ class BwOp(AttentionBwOpBase):
         # right strides, so we can avoid a `cat`
         if (
             inp.query.shape[0] == inp.key.shape[0]
-            and inp.query.shape[2] == inp.value.shape[2]
+            and inp.query.shape[-1] == inp.value.shape[-1]
             and _get_storage_base(inp.query) == _get_storage_base(inp.key)
             and _get_storage_base(inp.query) == _get_storage_base(inp.value)
         ):
@@ -464,14 +496,14 @@ class BwOp(AttentionBwOpBase):
             # Creating the gradients with the right layout saves us
             # a `torch.cat` call in the backward pass
             chunk = torch.empty(
-                (inp.query.shape[0], 3, inp.query.shape[1], inp.query.shape[2]),
+                (*inp.query.shape[0:-2], 3, inp.query.shape[-2], inp.query.shape[-1]),
                 dtype=inp.query.dtype,
                 device=inp.device,
             )
             grads = Gradients(
-                dq=chunk.select(1, 0),
-                dk=chunk.select(1, 1),
-                dv=chunk.select(1, 2),
+                dq=chunk.select(-3, 0),
+                dk=chunk.select(-3, 1),
+                dv=chunk.select(-3, 2),
             )
         else:
             grads = Gradients(
@@ -496,7 +528,7 @@ class BwOp(AttentionBwOpBase):
             max_seqlen_q,
             max_seqlen_k,
             inp.p,
-            softmax_scale,
+            inp.scale_float,
             _is_causal(inp.attn_bias),
             ctx.rng_state,
         )

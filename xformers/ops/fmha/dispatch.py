@@ -8,7 +8,7 @@ import textwrap
 from collections import deque
 from typing import List, Sequence, Type, TypeVar
 
-from . import cutlass, decoder, flash, small_k, triton, triton_splitk
+from . import attn_bias, cutlass, decoder, flash, small_k, triton, triton_splitk
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 
@@ -81,16 +81,16 @@ def _dispatch_fw_priority_list(
         priority_list_ops.remove(triton.FwOp)
         priority_list_ops.appendleft(triton.FwOp)
     if not needs_gradient:
-        multiquery = (
+        mqa_or_gqa = (
             inp.key.ndim > 3 and inp.key.stride(-2) == 0 and inp.key.shape[-2] > 1
         )
-        if not multiquery:
+        if not mqa_or_gqa:
             # With multiquery, cutlass is sometimes faster than decoder
             # but it's not currently clear when.
             priority_list_ops.appendleft(decoder.FwOp)
         # Split-KV is useful with MQA
         # for short Q-seqlen / long K-seqlen
-        if multiquery and inp.query.shape[1] <= 32 and inp.key.shape[1] >= 256:
+        if mqa_or_gqa and inp.query.shape[1] <= 32 and inp.key.shape[1] >= 256:
             parallelism_BH = 0  # BMK
             if inp.query.ndim == 3:
                 parallelism_BH = inp.query.shape[0]
@@ -100,6 +100,11 @@ def _dispatch_fw_priority_list(
                 parallelism_BH = inp.query.shape[0] * inp.query.shape[2]
             if parallelism_BH > 0 and parallelism_BH < 64:
                 priority_list_ops.appendleft(triton_splitk.FwOp)
+                # Without variable seqlen flash is fastest
+                if not isinstance(inp.attn_bias, attn_bias.BlockDiagonalMask):
+                    priority_list_ops.remove(flash.FwOp)
+                    priority_list_ops.appendleft(flash.FwOp)
+
     return priority_list_ops
 
 

@@ -2001,14 +2001,20 @@ def _dispatches_to_splitK(q, kv):
     )
 
 
-def test_dispatch_splitk_bmhk() -> None:
+def _dispatches_to_flash_decoding(q, kv):
+    return (
+        _dispatch_fw_priority_list(fmha.Inputs(q, kv, kv), False)[0] is fmha.flash.FwOp
+    )
+
+
+def test_dispatch_decoding_bmhk() -> None:
     assert not _dispatches_to_splitK(
         torch.empty([1, 8, 1, 128]), torch.empty([1, 2048, 1, 128])
     ), "Should not use SplitK with 1 head (no tensorcores)"
-    assert _dispatches_to_splitK(
+    assert _dispatches_to_flash_decoding(
         torch.empty([1, 8, 32, 128]),
         torch.empty([1, 2048, 1, 128]).expand(-1, -1, 32, -1),
-    ), "Should use SplitK with BMHK MQA"
+    ), "Should use Flash-Decoding with BMHK MQA"
     assert not _dispatches_to_splitK(
         torch.empty([1, 8, 32, 128]),
         torch.empty([1, 2048, 32, 128]),
@@ -2023,18 +2029,18 @@ def test_dispatch_splitk_bmhk() -> None:
     ), "Should not use SplitK if B is big"
 
 
-def test_dispatch_splitk_bmghk() -> None:
+def test_dispatch_decoding_bmghk() -> None:
     assert not _dispatches_to_splitK(
         torch.empty([1, 8, 1, 1, 128]), torch.empty([1, 2048, 1, 1, 128])
     ), "Should not use SplitK with 1 head (no tensorcores)"
-    assert _dispatches_to_splitK(
+    assert _dispatches_to_flash_decoding(
         torch.empty([1, 8, 1, 32, 128]),
         torch.empty([1, 2048, 1, 1, 128]).expand(-1, -1, -1, 32, -1),
-    ), "Should use SplitK with MQA"
-    assert _dispatches_to_splitK(
+    ), "Should use Flash-Decoding with MQA"
+    assert _dispatches_to_flash_decoding(
         torch.empty([1, 8, 4, 32, 128]),
         torch.empty([1, 2048, 4, 1, 128]).expand(-1, -1, -1, 32, -1),
-    ), "Should use SplitK with GQA"
+    ), "Should use Flash-Decoding with GQA"
     assert not _dispatches_to_splitK(
         torch.empty([1, 8, 1, 32, 128]),
         torch.empty([1, 2048, 1, 32, 128]),
