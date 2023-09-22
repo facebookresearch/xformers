@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "xformers/csrc/**"
+      - "third-party/**"
       - ".github/workflows/win-build.yml"
       - "setup.py"
       - "requirements*.txt"

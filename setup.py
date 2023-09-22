@@ -176,7 +176,6 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
             sources=[os.path.join(flash_root, path) for path in sources],
             extra_compile_args={
                 **extra_compile_args,
-                "cxx": extra_compile_args["cxx"] + ["-std=c++17"],
                 "nvcc": extra_compile_args.get("nvcc", [])
                 + [
                     "-O3",
@@ -226,7 +225,7 @@ def get_extensions():
 
     define_macros = []
 
-    extra_compile_args = {"cxx": ["-O3"]}
+    extra_compile_args = {"cxx": ["-O3", "-std=c++17"]}
     if sys.platform == "win32":
         define_macros += [("xformers_EXPORTS", None)]
         extra_compile_args["cxx"].extend(["/MP", "/Zc:lambda", "/Zc:preprocessor"])
@@ -253,6 +252,7 @@ def get_extensions():
             "-U__CUDA_NO_HALF_CONVERSIONS__",
             "--extended-lambda",
             "-D_ENABLE_EXTENDED_ALIGNED_STORAGE",
+            "-std=c++17",
         ] + get_extra_nvcc_flags_for_build_type()
         if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
             nvcc_flags.append("-DNDEBUG")
@@ -266,7 +266,6 @@ def get_extensions():
             ]
         if sys.platform == "win32":
             nvcc_flags += [
-                "-std=c++17",
                 "-Xcompiler",
                 "/Zc:lambda",
                 "-Xcompiler",
