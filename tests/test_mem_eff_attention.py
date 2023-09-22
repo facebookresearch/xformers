@@ -232,10 +232,20 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
 
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
     if q.ndim == 5:
+
+        def attn_bias_group(group: int):
+            if isinstance(attn_bias, torch.Tensor):
+                return attn_bias[:, group]
+            if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
+                return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
+                    attn_bias._bias[:, group]
+                )
+            return attn_bias
+
         return torch.stack(
             [
                 ref_attention_bmhk(
-                    q[:, :, g], k[:, :, g], v[:, :, g], attn_bias=attn_bias
+                    q[:, :, g], k[:, :, g], v[:, :, g], attn_bias=attn_bias_group(g)
                 )
                 for g in range(q.shape[2])
             ],
@@ -382,26 +392,25 @@ def _rand_seqlens_padded_k(
     return q_seqlens, k_seqlens
 
 
-def _create_aligned_bias(B: int, H: int, Mq: int, Mkv: int, **kwargs) -> torch.Tensor:
+def _create_aligned_bias(*shape: int, **kwargs) -> torch.Tensor:
     align_to = 8
     return (
         torch.randn(
             (
-                B,
-                H,
-                Mq,
-                align_to * ((Mkv + align_to - 1) // align_to),
+                *shape[:-1],
+                align_to * ((shape[-1] + align_to - 1) // align_to),
             ),
             **kwargs,
         )
         * 3
-    )[:, :, :, :Mkv]
+    ).narrow(-1, 0, shape[-1])
 
 
 def create_attn_bias(
     bias_type,
     batch_size: int,
     num_heads: int,
+    num_heads_groups: int,
     q_len: int,
     kv_len: int,
     device,
@@ -429,6 +438,7 @@ def create_attn_bias(
         else:
             attn_bias = _create_aligned_bias(
                 batch_size,
+                num_heads_groups,
                 num_heads,
                 q_len,
                 kv_len,
@@ -437,7 +447,9 @@ def create_attn_bias(
             )
 
             # make sure it also works if the first columns are partially masked out
-            attn_bias[0, 0, q_len - 1 :, : num_heads - 2] = -math.inf
+            attn_bias[0, 0, 0, q_len - 1 :, : num_heads - 2] = -math.inf
+            if fmt in ["BMK", "BMHK"]:
+                attn_bias = attn_bias[:, 0]
 
         if requires_grad:
             attn_bias.requires_grad_(True)
@@ -449,12 +461,17 @@ def create_attn_bias(
     if bias_type is fmha.attn_bias.LowerTriangularMaskWithTensorBias:
         attn_bias = _create_aligned_bias(
             batch_size,
+            num_heads_groups,
             num_heads,
             q_len,
             kv_len,
             device=device,
             dtype=dtype,
         )
+        if fmt in ["BMK", "BMHK"]:
+            attn_bias = attn_bias[:, 0]
+        if fmt == "BMK":
+            attn_bias = attn_bias[:, 0]
         if requires_grad:
             attn_bias.requires_grad_(True)
         return fmha.attn_bias.LowerTriangularMaskWithTensorBias(attn_bias)
@@ -481,7 +498,7 @@ def create_attn_bias(
             block_diag = block_diag.make_causal_from_bottomright()
         return block_diag
     if bias_type == fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask:
-        assert fmt == "BMHK"
+        assert fmt in ["BMHK", "BMGHK"]
         q, k = _rand_seqlens_padded_k(r, batch_size, q_len, kv_len)
         g_block_diag = (
             fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
@@ -523,6 +540,7 @@ def create_tensors(
     *,
     attn_bias_requires_grad: bool = False,
     fmt: str = "BMK",
+    g: int = 1,
 ):
     torch.manual_seed(B * q_len + kv_len * k + kv)
     scale = 3
@@ -536,18 +554,17 @@ def create_tensors(
         value = torch.randn((B, kv_len, h, kv), device=device, dtype=dtype)
     else:
         assert fmt == "BMGHK"
-        assert h % 2 == 0, "BMGHK tests only support h%2==0 now"
-        query = torch.randn((B, q_len, 2, h // 2, k), device=device, dtype=dtype)
-        key = torch.randn((B, kv_len, 2, 1, k), device=device, dtype=dtype)
-        value = torch.randn((B, kv_len, 2, 1, kv), device=device, dtype=dtype)
+        query = torch.randn((B, q_len, g, h, k), device=device, dtype=dtype)
+        key = torch.randn((B, kv_len, g, 1, k), device=device, dtype=dtype)
+        value = torch.randn((B, kv_len, g, 1, kv), device=device, dtype=dtype)
 
     for x in [query, key, value]:
         x.mul_(scale)
 
     if fmt == "BMGHK":
         # Expand - after the in-place mul
-        key = key.expand((B, kv_len, 2, h // 2, k))
-        value = value.expand((B, kv_len, 2, h // 2, k))
+        key = key.expand((B, kv_len, g, h, k))
+        value = value.expand((B, kv_len, g, h, k))
 
     if fmt == "BMK" and not fmha.common._is_bias_type_supported_in_BMK(attn_bias_type):
         attn_bias_type = None
@@ -557,6 +574,7 @@ def create_tensors(
             attn_bias_type,
             batch_size=B,
             num_heads=h,
+            num_heads_groups=g,
             q_len=q_len,
             kv_len=kv_len,
             dtype=dtype,
@@ -603,11 +621,7 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("packed", [False, True])
 @parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
-def test_forward(
-    opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
-    packed,
-    fmt,
-):
+def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs):
     (
         op,
         device,
@@ -628,7 +642,9 @@ def test_forward(
         pytest.skip("BMK incompatible with this bias")
 
     query, key, value, attn_bias = create_tensors(
-        *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, fmt="BMHK" if packed else fmt
+        *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
+        fmt="BMHK" if packed else fmt,
+        **kwargs,
     )
 
     if packed:
@@ -642,6 +658,7 @@ def test_forward(
                 bias_type=bias_type,
                 batch_size=batch_size,
                 num_heads=h,
+                num_heads_groups=1,
                 q_len=q_len,
                 kv_len=kv_len,
                 device=device,
@@ -1944,6 +1961,7 @@ def test_forward_gqa(opFW_biasT):
         ),
         packed=False,
         fmt="BMGHK",
+        g=2,
     )
 
 
