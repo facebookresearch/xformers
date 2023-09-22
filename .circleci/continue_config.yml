@@ -27,6 +27,7 @@ gpu_cu114: &gpu_cu114
   environment:
     CUDA_VERSION: "11.4"
     CUDA_HOME: /usr/local/cuda-11.4
+    XFORMERS_FORCE_DISABLE_TRITON: "1"
   machine:
     image: ubuntu-2004-cuda-11.4:202110-01
     resource_class: gpu.nvidia.medium

@@ -7,12 +7,15 @@ import logging
 
 import torch
 
+from xformers import _is_triton_available
 from xformers.ops import masked_matmul
 
 logger = logging.getLogger("xformers")
 
 
 try:
+    if not _is_triton_available():
+        raise ImportError("triton is not available")
     from triton.ops.blocksparse import matmul as blocksparse_matmul
     from triton.ops.blocksparse import softmax as blocksparse_softmax
 except ImportError as e:
