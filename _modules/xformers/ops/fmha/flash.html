@@ -269,7 +269,7 @@
 
     <span class="n">_flash_lib</span><span class="o">.</span><span class="n">define</span><span class="p">(</span>
         <span class="s2">&quot;flash_fwd(Tensor query, Tensor key, Tensor value, &quot;</span>
-        <span class="s2">&quot;Tensor cu_seqlens_q, Tensor cu_seqlens_k, &quot;</span>
+        <span class="s2">&quot;Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, &quot;</span>
         <span class="s2">&quot;int max_seqlen_q, int max_seqlen_k, &quot;</span>
         <span class="s2">&quot;float p, float softmax_scale, &quot;</span>
         <span class="s2">&quot;bool is_causal, bool return_softmax) -&gt; (Tensor, Tensor, Tensor)&quot;</span>
@@ -280,7 +280,7 @@
         <span class="s2">&quot;Tensor out, Tensor softmax_lse_, Tensor dq, Tensor dk, Tensor dv, &quot;</span>
         <span class="s2">&quot;Tensor cu_seqlens_q, Tensor cu_seqlens_k, &quot;</span>
         <span class="s2">&quot;int max_seqlen_q, int max_seqlen_k, &quot;</span>
-        <span class="s2">&quot;float p, float softmax_scale, bool is_causal, Tensor rng_state) -&gt; Tensor&quot;</span>
+        <span class="s2">&quot;float p, float softmax_scale, bool is_causal, Tensor rng_state) -&gt; (Tensor, Tensor, Tensor)&quot;</span>
     <span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_flash_fwd</span><span class="p">(</span>
@@ -293,35 +293,58 @@
         <span class="n">max_seq_len_k</span><span class="p">,</span>
         <span class="n">p</span><span class="p">,</span>
         <span class="n">softmax_scale</span><span class="p">,</span>
-        <span class="n">causal</span><span class="p">,</span>
+        <span class="n">is_causal</span><span class="p">,</span>
         <span class="n">return_softmax</span><span class="p">,</span>
     <span class="p">):</span>
-        <span class="n">out</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">new_empty</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
-        <span class="p">(</span>
-            <span class="n">out</span><span class="p">,</span>
-            <span class="n">q_padded</span><span class="p">,</span>
-            <span class="n">k_padded</span><span class="p">,</span>
-            <span class="n">v_padded</span><span class="p">,</span>
-            <span class="n">out_padded</span><span class="p">,</span>
-            <span class="n">softmax_lse</span><span class="p">,</span>
-            <span class="n">p</span><span class="p">,</span>
-            <span class="n">rng_state</span><span class="p">,</span>
-        <span class="p">)</span> <span class="o">=</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">varlen_fwd</span><span class="p">(</span>
-            <span class="n">query</span><span class="p">,</span>
-            <span class="n">key</span><span class="p">,</span>
-            <span class="n">value</span><span class="p">,</span>
-            <span class="n">out</span><span class="p">,</span>
-            <span class="n">cu_seq_lens_q</span><span class="p">,</span>
-            <span class="n">cu_seq_lens_k</span><span class="p">,</span>
-            <span class="n">max_seq_len_q</span><span class="p">,</span>
-            <span class="n">max_seq_len_k</span><span class="p">,</span>
-            <span class="n">p</span><span class="p">,</span>
-            <span class="n">softmax_scale</span><span class="p">,</span>
-            <span class="kc">False</span><span class="p">,</span>
-            <span class="n">causal</span><span class="p">,</span>
-            <span class="n">return_softmax</span><span class="p">,</span>
-            <span class="kc">None</span><span class="p">,</span>
-        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">cu_seq_lens_q</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">cu_seq_lens_k</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="p">(</span>
+                <span class="n">out</span><span class="p">,</span>
+                <span class="n">q_padded</span><span class="p">,</span>
+                <span class="n">k_padded</span><span class="p">,</span>
+                <span class="n">v_padded</span><span class="p">,</span>
+                <span class="n">out_padded</span><span class="p">,</span>
+                <span class="n">softmax_lse</span><span class="p">,</span>
+                <span class="n">p</span><span class="p">,</span>
+                <span class="n">rng_state</span><span class="p">,</span>
+            <span class="p">)</span> <span class="o">=</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">fwd</span><span class="p">(</span>
+                <span class="n">query</span><span class="p">,</span>
+                <span class="n">key</span><span class="p">,</span>
+                <span class="n">value</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>  <span class="c1"># out</span>
+                <span class="n">p</span><span class="p">,</span>
+                <span class="n">softmax_scale</span><span class="p">,</span>
+                <span class="n">is_causal</span><span class="p">,</span>
+                <span class="n">return_softmax</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>  <span class="c1"># rng</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">new_empty</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+            <span class="p">(</span>
+                <span class="n">out</span><span class="p">,</span>
+                <span class="n">q_padded</span><span class="p">,</span>
+                <span class="n">k_padded</span><span class="p">,</span>
+                <span class="n">v_padded</span><span class="p">,</span>
+                <span class="n">out_padded</span><span class="p">,</span>
+                <span class="n">softmax_lse</span><span class="p">,</span>
+                <span class="n">p</span><span class="p">,</span>
+                <span class="n">rng_state</span><span class="p">,</span>
+            <span class="p">)</span> <span class="o">=</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">varlen_fwd</span><span class="p">(</span>
+                <span class="n">query</span><span class="p">,</span>
+                <span class="n">key</span><span class="p">,</span>
+                <span class="n">value</span><span class="p">,</span>
+                <span class="n">out</span><span class="p">,</span>
+                <span class="n">cu_seq_lens_q</span><span class="p">,</span>
+                <span class="n">cu_seq_lens_k</span><span class="p">,</span>
+                <span class="n">max_seq_len_q</span><span class="p">,</span>
+                <span class="n">max_seq_len_k</span><span class="p">,</span>
+                <span class="n">p</span><span class="p">,</span>
+                <span class="n">softmax_scale</span><span class="p">,</span>
+                <span class="kc">False</span><span class="p">,</span>
+                <span class="n">is_causal</span><span class="p">,</span>
+                <span class="n">return_softmax</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">rng_state</span>
 
     <span class="k">def</span> <span class="nf">_flash_bwd</span><span class="p">(</span>
@@ -340,31 +363,50 @@
         <span class="n">max_seq_len_k</span><span class="p">,</span>
         <span class="n">p</span><span class="p">,</span>
         <span class="n">softmax_scale</span><span class="p">,</span>
-        <span class="n">causal</span><span class="p">,</span>
+        <span class="n">is_causal</span><span class="p">,</span>
         <span class="n">rng_state</span><span class="p">,</span>
     <span class="p">):</span>
-        <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">varlen_bwd</span><span class="p">(</span>
-            <span class="n">grad</span><span class="p">,</span>
-            <span class="n">query</span><span class="p">,</span>
-            <span class="n">key</span><span class="p">,</span>
-            <span class="n">value</span><span class="p">,</span>
-            <span class="n">out</span><span class="p">,</span>
-            <span class="n">lse</span><span class="p">,</span>
-            <span class="n">dq</span><span class="p">,</span>
-            <span class="n">dk</span><span class="p">,</span>
-            <span class="n">dv</span><span class="p">,</span>
-            <span class="n">cu_seq_lens_q</span><span class="p">,</span>
-            <span class="n">cu_seq_lens_k</span><span class="p">,</span>
-            <span class="n">max_seq_len_q</span><span class="p">,</span>
-            <span class="n">max_seq_len_k</span><span class="p">,</span>
-            <span class="n">p</span><span class="p">,</span>
-            <span class="n">softmax_scale</span><span class="p">,</span>
-            <span class="kc">False</span><span class="p">,</span>  <span class="c1"># zero_tensors</span>
-            <span class="n">causal</span><span class="p">,</span>
-            <span class="kc">None</span><span class="p">,</span>
-            <span class="n">rng_state</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="n">dq</span>
+        <span class="k">if</span> <span class="n">cu_seq_lens_k</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">cu_seq_lens_q</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">bwd</span><span class="p">(</span>
+                <span class="n">grad</span><span class="p">,</span>
+                <span class="n">query</span><span class="p">,</span>
+                <span class="n">key</span><span class="p">,</span>
+                <span class="n">value</span><span class="p">,</span>
+                <span class="n">out</span><span class="p">,</span>
+                <span class="n">lse</span><span class="p">,</span>
+                <span class="n">dq</span><span class="p">,</span>
+                <span class="n">dk</span><span class="p">,</span>
+                <span class="n">dv</span><span class="p">,</span>
+                <span class="n">p</span><span class="p">,</span>
+                <span class="n">softmax_scale</span><span class="p">,</span>
+                <span class="n">is_causal</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>
+                <span class="n">rng_state</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">varlen_bwd</span><span class="p">(</span>
+                <span class="n">grad</span><span class="p">,</span>
+                <span class="n">query</span><span class="p">,</span>
+                <span class="n">key</span><span class="p">,</span>
+                <span class="n">value</span><span class="p">,</span>
+                <span class="n">out</span><span class="p">,</span>
+                <span class="n">lse</span><span class="p">,</span>
+                <span class="n">dq</span><span class="p">,</span>
+                <span class="n">dk</span><span class="p">,</span>
+                <span class="n">dv</span><span class="p">,</span>
+                <span class="n">cu_seq_lens_q</span><span class="p">,</span>
+                <span class="n">cu_seq_lens_k</span><span class="p">,</span>
+                <span class="n">max_seq_len_q</span><span class="p">,</span>
+                <span class="n">max_seq_len_k</span><span class="p">,</span>
+                <span class="n">p</span><span class="p">,</span>
+                <span class="n">softmax_scale</span><span class="p">,</span>
+                <span class="kc">False</span><span class="p">,</span>  <span class="c1"># zero_tensors</span>
+                <span class="n">is_causal</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>
+                <span class="n">rng_state</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">dq</span><span class="p">,</span> <span class="n">dk</span><span class="p">,</span> <span class="n">dv</span>
 
     <span class="n">_flash_lib</span><span class="o">.</span><span class="n">impl</span><span class="p">(</span><span class="s2">&quot;flash_fwd&quot;</span><span class="p">,</span> <span class="n">_flash_fwd</span><span class="p">,</span> <span class="s2">&quot;CUDA&quot;</span><span class="p">)</span>
     <span class="n">_flash_lib</span><span class="o">.</span><span class="n">impl</span><span class="p">(</span><span class="s2">&quot;flash_bwd&quot;</span><span class="p">,</span> <span class="n">_flash_bwd</span><span class="p">,</span> <span class="s2">&quot;CUDA&quot;</span><span class="p">)</span>
@@ -374,7 +416,8 @@
 
 <span class="k">def</span> <span class="nf">_convert_input_format</span><span class="p">(</span>
     <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Inputs</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Inputs</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="nb">int</span><span class="p">]:</span>
+    <span class="k">assert</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span>
     <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span>
     <span class="n">batch</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
     <span class="n">seqlen_q</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
@@ -396,25 +439,10 @@
         <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span>
         <span class="n">max_seqlen_k</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">cu_seqlen_k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
-            <span class="mi">0</span><span class="p">,</span>
-            <span class="p">(</span><span class="n">batch</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span>
-            <span class="n">step</span><span class="o">=</span><span class="n">seqlen_kv</span><span class="p">,</span>
-            <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span>
-            <span class="n">device</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">if</span> <span class="n">seqlen_q</span> <span class="o">==</span> <span class="n">seqlen_kv</span><span class="p">:</span>
-            <span class="n">cu_seqlen_q</span> <span class="o">=</span> <span class="n">cu_seqlen_k</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">cu_seqlen_q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
-                <span class="mi">0</span><span class="p">,</span>
-                <span class="p">(</span><span class="n">batch</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">seqlen_q</span><span class="p">,</span>
-                <span class="n">step</span><span class="o">=</span><span class="n">seqlen_q</span><span class="p">,</span>
-                <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span>
-                <span class="n">device</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">seqlen_q</span>
-        <span class="n">max_seqlen_k</span> <span class="o">=</span> <span class="n">seqlen_kv</span>
+        <span class="n">cu_seqlen_k</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">cu_seqlen_q</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">max_seqlen_k</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
 
     <span class="k">if</span> <span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>  <span class="c1"># QGA</span>
         <span class="c1"># Fold the group/head_in_group dimensions together</span>
@@ -435,16 +463,23 @@
         <span class="n">query</span> <span class="o">=</span> <span class="n">fold</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
         <span class="n">key</span> <span class="o">=</span> <span class="n">fold</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
         <span class="n">value</span> <span class="o">=</span> <span class="n">fold</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="c1"># Optimize for MHA</span>
+    <span class="k">if</span> <span class="n">key</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">4</span> <span class="ow">and</span> <span class="n">key</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">key</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="mi">1</span><span class="p">]</span>
     <span class="c1"># Initially we have `query.shape = [batch, seqlen, head_dim_q]`</span>
     <span class="c1"># We want format `[batch * seqlen, num_heads, head_dim_q]`</span>
+    <span class="k">if</span> <span class="n">cu_seqlen_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_q</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">])</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">])</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_v</span><span class="p">])</span>
     <span class="n">new_inp</span> <span class="o">=</span> <span class="n">replace</span><span class="p">(</span>
         <span class="n">inp</span><span class="p">,</span>
-        <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_q</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">]),</span>
-        <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">]),</span>
-        <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_v</span><span class="p">]),</span>
+        <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
+        <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
+        <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">softmax_scale</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">)</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">scale</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">inp</span><span class="o">.</span><span class="n">scale</span>
-    <span class="k">return</span> <span class="n">new_inp</span><span class="p">,</span> <span class="n">softmax_scale</span><span class="p">,</span> <span class="n">cu_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">cu_seqlen_k</span><span class="p">,</span> <span class="n">max_seqlen_k</span>
+    <span class="k">return</span> <span class="n">new_inp</span><span class="p">,</span> <span class="n">cu_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">cu_seqlen_k</span><span class="p">,</span> <span class="n">max_seqlen_k</span>
 
 
 <span class="k">def</span> <span class="nf">_is_causal</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
@@ -492,8 +527,8 @@
             <span class="k">return</span>
         <span class="k">if</span> <span class="n">stride_g</span> <span class="o">!=</span> <span class="n">stride_h</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">]:</span>
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;GQA is only supported when the G/H dimensions are contiguous&quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.stride:  </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">stride</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;GQA is only supported when the G/H dimensions are contiguous</span><span class="se">\n</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.stride:  </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">stride</span><span class="p">()</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.shape :  </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
 
@@ -543,9 +578,9 @@
             <span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
         <span class="p">]</span>
+        <span class="c1"># no cumulative seqlen</span>
         <span class="p">(</span>
             <span class="n">inp</span><span class="p">,</span>
-            <span class="n">softmax_scale</span><span class="p">,</span>
             <span class="n">cu_seqlens_q</span><span class="p">,</span>
             <span class="n">max_seqlen_q</span><span class="p">,</span>
             <span class="n">cu_seqlens_k</span><span class="p">,</span>
@@ -560,11 +595,10 @@
             <span class="n">max_seqlen_q</span><span class="p">,</span>
             <span class="n">max_seqlen_k</span><span class="p">,</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
-            <span class="n">softmax_scale</span><span class="p">,</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">scale_float</span><span class="p">,</span>
             <span class="n">_is_causal</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
             <span class="n">return_softmax</span><span class="p">,</span>
         <span class="p">)</span>
-
         <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">out_shape</span><span class="p">)</span>
         <span class="n">ctx</span> <span class="o">=</span> <span class="n">Context</span><span class="p">(</span><span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="o">=</span><span class="n">softmax_lse</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
@@ -655,7 +689,6 @@
         <span class="n">dq_shape</span><span class="p">,</span> <span class="n">dk_shape</span><span class="p">,</span> <span class="n">dv_shape</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span>
         <span class="p">(</span>
             <span class="n">inp</span><span class="p">,</span>
-            <span class="n">softmax_scale</span><span class="p">,</span>
             <span class="n">cu_seqlens_q</span><span class="p">,</span>
             <span class="n">max_seqlen_q</span><span class="p">,</span>
             <span class="n">cu_seqlens_k</span><span class="p">,</span>
@@ -667,9 +700,8 @@
         <span class="k">if</span> <span class="n">max_seqlen_q</span> <span class="o">!=</span> <span class="n">ctx_lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]:</span>
             <span class="n">ctx_lse</span> <span class="o">=</span> <span class="n">ctx_lse</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">max_seqlen_q</span><span class="p">]</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
         <span class="n">kernel_out_shape</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+            <span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
         <span class="p">]</span>
 
         <span class="c1"># Create dq,dk,dv</span>
@@ -677,7 +709,7 @@
         <span class="c1"># right strides, so we can avoid a `cat`</span>
         <span class="k">if</span> <span class="p">(</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+            <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
             <span class="ow">and</span> <span class="n">_get_storage_base</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">)</span> <span class="o">==</span> <span class="n">_get_storage_base</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">)</span>
             <span class="ow">and</span> <span class="n">_get_storage_base</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">)</span> <span class="o">==</span> <span class="n">_get_storage_base</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
         <span class="p">):</span>
@@ -687,14 +719,14 @@
             <span class="c1"># Creating the gradients with the right layout saves us</span>
             <span class="c1"># a `torch.cat` call in the backward pass</span>
             <span class="n">chunk</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
-                <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">3</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span>
+                <span class="p">(</span><span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">],</span> <span class="mi">3</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">],</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
                 <span class="n">dtype</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
                 <span class="n">device</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="n">grads</span> <span class="o">=</span> <span class="n">Gradients</span><span class="p">(</span>
-                <span class="n">dq</span><span class="o">=</span><span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
-                <span class="n">dk</span><span class="o">=</span><span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
-                <span class="n">dv</span><span class="o">=</span><span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="n">dq</span><span class="o">=</span><span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+                <span class="n">dk</span><span class="o">=</span><span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="n">dv</span><span class="o">=</span><span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">grads</span> <span class="o">=</span> <span class="n">Gradients</span><span class="p">(</span>
@@ -719,7 +751,7 @@
             <span class="n">max_seqlen_q</span><span class="p">,</span>
             <span class="n">max_seqlen_k</span><span class="p">,</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
-            <span class="n">softmax_scale</span><span class="p">,</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">scale_float</span><span class="p">,</span>
             <span class="n">_is_causal</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
             <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="p">,</span>
         <span class="p">)</span>

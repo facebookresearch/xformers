@@ -396,15 +396,13 @@
 
 <span class="sd">    :EXPERIMENTAL: Using with Multi Query Attention (MQA) and Grouped Query Attention (GQA):</span>
 
-<span class="sd">        MQA/GQA is an experimental feature supported on the Flash backend at the moment for the forward pass.</span>
+<span class="sd">        MQA/GQA is an experimental feature supported only for the forward pass.</span>
 <span class="sd">        If you have 16 heads in query, and 2 in key/value, you can provide 5-dim tensors</span>
 <span class="sd">        in the ``[B, M, G, H, K]`` format, where ``G`` is the number of head groups (here 2), and</span>
 <span class="sd">        ``H`` is the number of heads per group (8 in the example).</span>
 
 <span class="sd">        Please note that xFormers will not automatically broadcast the inputs, so you will need</span>
 <span class="sd">        to broadcast it manually before calling `memory_efficient_attention`.</span>
-
-<span class="sd">        This feature is only supported on A100 or newer GPUs.</span>
 
 <span class="sd">    :GQA/MQA example:</span>
 
