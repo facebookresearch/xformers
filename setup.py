@@ -176,6 +176,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
             sources=[os.path.join(flash_root, path) for path in sources],
             extra_compile_args={
                 **extra_compile_args,
+                "cxx": extra_compile_args["cxx"] + ["-std=c++17"],
                 "nvcc": extra_compile_args.get("nvcc", [])
                 + [
                     "-O3",
