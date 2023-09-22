@@ -1974,7 +1974,11 @@ def test_forward_gqa_one_group(opFW):
     k = torch.randn([B, Mkv, 1, H, K], dtype=dtype, device="cuda") * 3
     v = torch.randn([B, Mkv, 1, H, K], dtype=dtype, device="cuda") * 3
 
-    assert opFW.supports(fmha.Inputs(q, k, v))
+    supported = opFW.supports(fmha.Inputs(q, k, v))
+    if not supported:
+        supported_bmhk = opFW.supports(fmha.Inputs(q[:, :, 0], k[:, :, 0], v[:, :, 0]))
+        assert supported == supported_bmhk
+        pytest.skip("not supported")
     out = fmha.memory_efficient_attention_forward(q, k, v, op=opFW)
     ref = ref_attention(q, k, v)
     assert_allclose(

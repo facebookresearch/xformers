@@ -49,6 +49,23 @@ class Inputs:
     def scale_float(self) -> float:
         return self.query.shape[-1] ** (-0.5) if self.scale is None else self.scale
 
+    def get_qkv_in_bmghk(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if self.query.ndim == 5:
+            return self.query, self.key, self.value
+        if self.query.ndim == 4:
+            return (
+                self.query.unsqueeze(2),
+                self.key.unsqueeze(2),
+                self.value.unsqueeze(2),
+            )
+        if self.value.ndim == 3:
+            return (
+                self.query[:, :, None, None],
+                self.key[:, :, None, None],
+                self.value[:, :, None, None],
+            )
+        assert False
+
     def normalize_bmhk(self) -> Tuple[int, ...]:
         if self.query.ndim not in [3, 4, 5]:
             raise ValueError(
@@ -82,7 +99,7 @@ class Inputs:
             x.ndim != self.query.ndim for x in qkv
         ):
             raise ValueError(
-                f"Query/Key/Value should all have BMHK or BMK shape.\n"
+                f"Query/Key/Value should all have BMGHK, BMHK, or BMK shape.\n"
                 f"  query.shape: {self.query.shape}\n"
                 f"  key.shape  : {self.key.shape}\n"
                 f"  value.shape: {self.value.shape}"
@@ -306,7 +323,7 @@ class AttentionOpBase(BaseOperator):
                 "operator is non-deterministic, but `torch.use_deterministic_algorithms` is set"
             )
         if not cls.SUPPORTS_BMGHK and d.query.ndim == 5:
-            reasons.append("operator does not support BMNHK format")
+            reasons.append("operator does not support BMGHK format")
         return reasons
 
 

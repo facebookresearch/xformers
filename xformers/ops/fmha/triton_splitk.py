@@ -10,6 +10,13 @@ import torch
 
 from ..common import _has_triton21, register_operator
 from .attn_bias import BlockDiagonalCausalWithOffsetPaddedKeysMask
+from .common import AttentionFwOpBase, Context, Inputs, check_lastdim_alignment_stride1
+
+
+def _strides(x: torch.Tensor, *stride_names: str):
+    assert x.ndim == len(stride_names)
+    return {f"stride_{s}": x.stride(i) for i, s in enumerate(stride_names)}
+
 
 if TYPE_CHECKING or _has_triton21():
     import triton
@@ -27,33 +34,34 @@ if TYPE_CHECKING or _has_triton21():
         Metadata,  # [B, H, 2, split_k, M_ceil] contains [mi, li]
         Seq_len,
         stride_qz,
-        stride_qh,
         stride_qm,
+        stride_qg,
+        stride_qh,
         stride_qk,
         stride_kz,
-        stride_kh,
         stride_kn,
+        stride_kg,
+        stride_kh,
         stride_kk,
         stride_vz,
-        stride_vh,
         stride_vn,
+        stride_vg,
+        stride_vh,
         stride_vk,
-        stride_oz,
-        stride_oh,
-        stride_om,
-        stride_os,
-        stride_on,
-        stride_osk_hz,
+        stride_osk_zhg,
         stride_osk_s,
         stride_osk_m,
-        stride_mhz,
+        stride_osk_k,
+        stride_mzhg,
         stride_m2,
         stride_ms,
+        stride_mm,
         Z,
-        H,
         N_CTX_Q,
         N_CTX_K,
         BLOCK_N_PER_SPLIT,
+        H: tl.constexpr,
+        G: tl.constexpr,
         BLOCK_M: tl.constexpr,
         BLOCK_DMODEL: tl.constexpr,
         BLOCK_N: tl.constexpr,
@@ -95,10 +103,12 @@ if TYPE_CHECKING or _has_triton21():
         D_PER_GROUP: tl.constexpr = BLOCK_DMODEL // N_GROUPS
 
         start_m = tl.program_id(0)
-        off_hz = tl.program_id(1)
+        off_zhg = tl.program_id(1)
+        off_z = off_zhg // (H * G)
+        off_h = (off_zhg // G) % H
+        off_g = off_zhg % G
         splitk_idx = tl.program_id(2)
-        off_h = off_hz % H
-        off_z = off_hz // H
+
         lo = splitk_idx * BLOCK_N_PER_SPLIT
         if USE_SEQ_LEN:
             kv_len = tl.load(Seq_len + off_z)
@@ -107,7 +117,7 @@ if TYPE_CHECKING or _has_triton21():
         hi = tl.minimum((splitk_idx + 1) * BLOCK_N_PER_SPLIT, kv_len)
 
         Q_block_ptr = tl.make_block_ptr(
-            base=Q + off_h * stride_qh + off_z * stride_qz,
+            base=Q + off_h * stride_qh + off_z * stride_qz + off_g * stride_qg,
             shape=(N_CTX_Q, D_PER_GROUP),
             strides=(stride_qm, stride_qk),
             offsets=(start_m * BLOCK_M, 0),
@@ -115,7 +125,7 @@ if TYPE_CHECKING or _has_triton21():
             order=(1, 0),
         )
 
-        k_base = K + off_h * stride_kh + off_z * stride_kz
+        k_base = K + off_h * stride_kh + off_z * stride_kz + off_g * stride_kg
         # Additional shift by 1 along the last dimension in the quantized case, since
         # the first element along that dim contains packed quantization coefficients.
         K_block_ptr = tl.make_block_ptr(
@@ -126,7 +136,7 @@ if TYPE_CHECKING or _has_triton21():
             block_shape=(PACKED_D_PER_GROUP, BLOCK_N),
             order=(0, 1),
         )
-        v_base = V + off_h * stride_vh + off_z * stride_vz
+        v_base = V + off_h * stride_vh + off_z * stride_vz + off_g * stride_vg
         V_block_ptr = tl.make_block_ptr(
             base=v_base + stride_vk * QUANTIZED * N_GROUPS,
             shape=(hi, PACKED_D_PER_GROUP),
@@ -235,7 +245,7 @@ if TYPE_CHECKING or _has_triton21():
 
         # write back O
         O_block_ptr = tl.make_block_ptr(
-            base=Out_splitK + off_hz * stride_osk_hz + splitk_idx * stride_osk_s,
+            base=Out_splitK + off_zhg * stride_osk_zhg + splitk_idx * stride_osk_s,
             shape=(N_CTX_Q, D_PER_GROUP),
             strides=(stride_osk_m, 1),
             offsets=(start_m * BLOCK_M, 0),
@@ -251,7 +261,7 @@ if TYPE_CHECKING or _has_triton21():
         # Write metadata for split-K reduction
         Metadata_ptr = (
             Metadata
-            + off_hz * stride_mhz
+            + off_zhg * stride_mzhg
             + splitk_idx * stride_ms
             + start_m * BLOCK_M
             + tl.arange(0, BLOCK_M)
@@ -365,43 +375,48 @@ if TYPE_CHECKING or _has_triton21():
         Out,  # [B, H, M, K]
         LSE,  # [B, H, M]
         split_k,
-        stride_osk_b,
-        stride_osk_h,
+        stride_osk_zhg,
         stride_osk_s,
         stride_osk_m,
-        stride_m_b,
-        stride_m_h,
-        stride_m_2,
-        stride_m_s,
-        stride_o_b,
-        stride_o_h,
-        stride_o_m,
-        lse_stride_b,
-        lse_stride_h,
+        stride_osk_k,
+        stride_mzhg,
+        stride_m2,
+        stride_ms,
+        stride_mm,
+        stride_oz,
+        stride_oh,
+        stride_og,
+        stride_om,
+        stride_ok,
+        stride_lse_zhg,
+        stride_lse_m,
         BLOCK_SIZE: tl.constexpr,
+        H: tl.constexpr,
+        G: tl.constexpr,
     ):
-        off_b = tl.program_id(0)
-        off_h = tl.program_id(1)
-        off_m = tl.program_id(2)
+        off_zhg = tl.program_id(0)
+        off_z = off_zhg // (H * G)
+        off_h = (off_zhg // G) % H
+        off_g = off_zhg % G
+        off_m = tl.program_id(1)
 
         Out_splitK_ptr = (
             Out_splitK
-            + stride_osk_b * off_b
-            + stride_osk_h * off_h
+            + stride_osk_zhg * off_zhg
             + stride_osk_m * off_m
             + tl.arange(0, BLOCK_SIZE)
         )
-        Metadata_ptr = Metadata + stride_m_b * off_b + stride_m_h * off_h + off_m
+        Metadata_ptr = Metadata + stride_mzhg * off_zhg + off_m
         m = tl.load(Metadata_ptr)
-        l_sum = tl.load(Metadata_ptr + stride_m_2)
+        l_sum = tl.load(Metadata_ptr + stride_m2)
         acc = tl.load(Out_splitK_ptr)
 
         for split_k_idx in range(1, split_k):
-            Metadata_ptr = Metadata_ptr + stride_m_s
+            Metadata_ptr = Metadata_ptr + stride_ms
             Out_splitK_ptr = Out_splitK_ptr + stride_osk_s
 
             m_k = tl.load(Metadata_ptr)
-            l_k = tl.load(Metadata_ptr + stride_m_2)
+            l_k = tl.load(Metadata_ptr + stride_m2)
             acc_k = tl.load(Out_splitK_ptr)
 
             m_new = tl.maximum(m, m_k)
@@ -423,21 +438,20 @@ if TYPE_CHECKING or _has_triton21():
         acc = acc / l_sum
         Out_ptr = (
             Out
-            + stride_o_b * off_b
-            + stride_o_h * off_h
-            + stride_o_m * off_m
+            + stride_oz * off_z
+            + stride_oh * off_h
+            + stride_og * off_g
+            + stride_om * off_m
             + tl.arange(0, BLOCK_SIZE)
         )
         tl.store(Out_ptr, acc)
 
-        l_ptrs = LSE + off_b * lse_stride_b + off_h * lse_stride_h + off_m
+        l_ptrs = LSE + off_zhg * stride_lse_zhg + off_m
         tl.store(l_ptrs, (m + tl.math.log2(l_sum)) / 1.44269504)
 
 else:
     _fwd_kernel_splitK = None
     _splitK_reduce = None
-
-from .common import AttentionFwOpBase, Context, Inputs, check_lastdim_alignment_stride1
 
 
 @register_operator
@@ -477,6 +491,7 @@ class FwOp(AttentionFwOpBase):
     }
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
+    SUPPORTS_BMGHK = True
     NAME = "triton_splitKF"
 
     SPLIT_K: Optional[int] = None
@@ -523,8 +538,8 @@ class FwOp(AttentionFwOpBase):
                     "Variable query len is not supported in the presence of causal mask."
                 )
 
-        if d.key.ndim == 4 and d.key.shape[2] != 1:
-            if d.key.stride(2) == 0 and d.value.stride(2) == 0 and q_len > 1:
+        if d.key.ndim in [4, 5] and d.key.shape[-2] != 1:
+            if d.key.stride(-2) == 0 and d.value.stride(-2) == 0 and q_len > 1:
                 reasons.append("multiquery is only supported with query seqlen=1")
 
         if d.attn_bias is not None and q_len > 1:
@@ -551,7 +566,7 @@ class FwOp(AttentionFwOpBase):
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         attn_bias = inp.attn_bias
         seq_len = None
-        q, k, v = inp.query, inp.key, inp.value
+        q, k, v = inp.get_qkv_in_bmghk()
 
         if attn_bias is not None:
             assert isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
@@ -561,29 +576,22 @@ class FwOp(AttentionFwOpBase):
             attn_bias.q_seqinfo.to(inp.query.device)
             seq_len = attn_bias.k_seqinfo.seqlen
             B = len(seq_len)
-            H, Kq = inp.query.shape[-2:]
-            H2, Kkv = inp.key.shape[-2:]
+            G, H, Kq = q.shape[-3:]
+            Kkv = v.shape[-1]
 
             # assume kv has been padded
-            q = q.reshape(B, -1, H, Kq)
-            k = k.reshape(B, -1, H2, Kkv)
-            v = v.reshape(B, -1, H2, Kkv)
+            q = q.reshape(B, -1, G, H, Kq)
+            k = k.reshape(B, -1, G, H, Kkv)
+            v = v.reshape(B, -1, G, H, Kkv)
 
-        # Coded for BHMK format
-        q, k, v = (
-            q.transpose(1, 2),
-            k.transpose(1, 2),
-            v.transpose(1, 2),
-        )
-
-        # Transpose correctly in the case of multiquery
-        mqa = False
-        if k.shape[1] > 1 and k.stride(1) == 0 and v.stride(1) == 0:
-            mqa = True
-            assert q.shape[2] == 1
-            q = q.transpose(1, 2)
-            k = k[:, :1]
-            v = v[:, :1]
+        # Transpose in the case of MQA/GQA
+        mqa_swap_seqlen_head = False
+        if k.shape[3] > 1 and k.stride(3) == 0 and v.stride(3) == 0:
+            mqa_swap_seqlen_head = True
+            assert q.shape[1] == 1
+            q = q.transpose(1, 3)
+            k = k[:, :, :, :1]
+            v = v[:, :, :, :1]
 
         if k.dtype == torch.int32:
             # Quantized K/V
@@ -592,10 +600,11 @@ class FwOp(AttentionFwOpBase):
         else:
             Lk = k.shape[-1]
             PACKED_PER_VAL = 1
-        B, H, Mk, Kkv = k.shape
-        B, H, M, Kq = q.shape
-        if Kq != Lk:
-            raise ValueError(f"Keys have head dim {Lk} but queries have head dim {Kq}")
+
+        B, Mk, G, H, Kkv = k.shape
+        B, M, G, H, Kq = q.shape
+        assert Lk == Kq, f"Keys have head dim {Lk} but queries have head dim {Kq}"
+
         BLOCK_M = cls.BLOCK_M
         BLOCK_N = cls.BLOCK_N
         if cls.SPLIT_K is not None:
@@ -606,54 +615,37 @@ class FwOp(AttentionFwOpBase):
 
         M_ceil = (M + BLOCK_M - 1) // BLOCK_M * BLOCK_M
         o_splitk = torch.empty(
-            [B, H, split_k, M_ceil, Kq], dtype=torch.float32, device=q.device
+            [B * G * H, split_k, M_ceil, Kq], dtype=torch.float32, device=q.device
         )
         metadata = torch.empty(
-            [B, H, 2, split_k, M_ceil], dtype=torch.float32, device=q.device
+            [B * G * H, 2, split_k, M_ceil], dtype=torch.float32, device=q.device
         )
-        lse = torch.empty((B, H, M), device=q.device, dtype=torch.float32)
-        grid = (triton.cdiv(M, BLOCK_M), B * H, split_k)
+        lse = torch.empty((B * G * H, M), device=q.device, dtype=torch.float32)
+        grid = (triton.cdiv(M, BLOCK_M), B * G * H, split_k)
 
         num_warps = 2
-        sm_scale = Kq**-0.5 if inp.scale is None else inp.scale
         split_size = (Mk + split_k - 1) // split_k
         use_seq_len = seq_len is not None
         _fwd_kernel_splitK_unrolled = unroll_varargs(
             _fwd_kernel_splitK, N=cls.NUM_GROUPS if PACKED_PER_VAL > 1 else 1
         )
+
         _fwd_kernel_splitK_unrolled[grid](
-            q,
-            k,
-            v,
-            sm_scale,
-            o_splitk,
-            metadata,
-            seq_len,
-            q.stride(0),
-            q.stride(1),
-            q.stride(2),
-            q.stride(3),
-            k.stride(0),
-            k.stride(1),
-            k.stride(2),
-            k.stride(3),
-            v.stride(0),
-            v.stride(1),
-            v.stride(2),
-            v.stride(3),
-            o_splitk.stride(0),
-            o_splitk.stride(1),
-            o_splitk.stride(2),
-            o_splitk.stride(3),
-            o_splitk.stride(4),
-            stride_osk_hz=o_splitk.stride(1),
-            stride_osk_s=o_splitk.stride(2),
-            stride_osk_m=o_splitk.stride(3),
-            stride_mhz=metadata.stride(1),
-            stride_m2=metadata.stride(2),
-            stride_ms=metadata.stride(3),
+            Q=q,
+            K=k,
+            V=v,
+            sm_scale=inp.scale_float,
+            Out_splitK=o_splitk,
+            Metadata=metadata,
+            Seq_len=seq_len,
+            **_strides(q, "qz", "qm", "qg", "qh", "qk"),
+            **_strides(k, "kz", "kn", "kg", "kh", "kk"),
+            **_strides(v, "vz", "vn", "vg", "vh", "vk"),
+            **_strides(o_splitk, "osk_zhg", "osk_s", "osk_m", "osk_k"),
+            **_strides(metadata, "mzhg", "m2", "ms", "mm"),
             Z=B,
             H=H,
+            G=G,
             N_CTX_Q=M,
             N_CTX_K=Mk,
             BLOCK_N_PER_SPLIT=split_size,
@@ -668,35 +660,40 @@ class FwOp(AttentionFwOpBase):
             N_GROUPS=cls.NUM_GROUPS if PACKED_PER_VAL > 1 else 1,
         )
 
-        out = torch.empty((B, M, H, Kq), device=q.device, dtype=q.dtype)
+        if mqa_swap_seqlen_head:
+            out = torch.empty(
+                (B, H, G, M, Kq), device=q.device, dtype=q.dtype
+            ).transpose(1, 3)
+        else:
+            out = torch.empty((B, M, G, H, Kq), device=q.device, dtype=q.dtype)
 
         # Merge together
-        grid = (B, H, M)
+        grid = (B * G * H, M, 1)
         _splitK_reduce[grid](
             o_splitk,
             metadata,
             out,
             lse,
             split_k=split_k,
-            stride_osk_b=o_splitk.stride(0),
-            stride_osk_h=o_splitk.stride(1),
-            stride_osk_s=o_splitk.stride(2),
-            stride_osk_m=o_splitk.stride(3),
-            stride_m_b=metadata.stride(0),
-            stride_m_h=metadata.stride(1),
-            stride_m_2=metadata.stride(2),
-            stride_m_s=metadata.stride(3),
-            stride_o_b=out.stride(0),
-            stride_o_h=out.stride(2),
-            stride_o_m=out.stride(1),
-            lse_stride_b=lse.stride(0),
-            lse_stride_h=lse.stride(1),
+            **_strides(o_splitk, "osk_zhg", "osk_s", "osk_m", "osk_k"),
+            **_strides(metadata, "mzhg", "m2", "ms", "mm"),
+            **_strides(out, "oz", "om", "og", "oh", "ok"),
+            **_strides(lse, "lse_zhg", "lse_m"),
             BLOCK_SIZE=out.shape[-1],
+            G=G,
+            H=H,
             # TODO: Tune num_warps
         )
-        if mqa:
+        lse = lse.reshape([B, G, H, M])
+        if mqa_swap_seqlen_head:
             # H/M dimensions have been swapped
-            out = out.reshape([B, H, M, Kq])
+            out = out.transpose(1, 3)
+            lse = lse.transpose(2, 3)
+        if inp.query.ndim == 4:
+            # BMGHK -> BMHK
+            assert G == 1
+            out = out[:, :, 0]
+            lse = lse[:, 0]
 
         return out, Context(out=out, lse=lse)
 
