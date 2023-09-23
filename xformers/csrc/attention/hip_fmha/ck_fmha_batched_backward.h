@@ -213,6 +213,8 @@ void batched_backward_masktype_attnbias_dispatched(
       param.grad_v_ptr,
       param.has_attn_bias ? param.attn_bias_ptr : nullptr,
       nullptr, // p_acc1_bias
+      param.bias_has_grad ? param.grad_bias_ptr : nullptr,
+      nullptr,
       q_gs_ms_ks_lengths,
       q_gs_ms_ks_strides,
       k_gs_ns_ks_lengths,

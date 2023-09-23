@@ -117,6 +117,11 @@ efficient_attention_backward_ck(
   grad_k = at::empty(key.sizes(), key.options());
   grad_v = at::empty(value.sizes(), value.options());
 
+  const bool bias_requires_grad = bias.has_value() && bias->requires_grad();
+
+  if (bias_requires_grad)
+    grad_bias = at::empty(value.sizes(), value.options());
+
   at::Tensor randvals;
 
   auto set_batched_backward_params = [&](BatchedBackwardParams& p) {
@@ -177,8 +182,16 @@ efficient_attention_backward_ck(
           static_cast<int>(bias_4d_view.stride(1)),
           static_cast<int>(bias_4d_view.stride(2)),
           static_cast<int>(bias_4d_view.stride(3))};
-    } else
+
+      if (bias_requires_grad)
+        p.grad_bias_ptr = grad_bias.data_ptr();
+    } else {
+      p.has_attn_bias = true;
       p.attn_bias_ptr = nullptr;
+      p.grad_bias_ptr = nullptr;
+    }
+
+    p.bias_has_grad = bias_requires_grad;
 
     p.custom_mask_type = custom_mask_type;
 
@@ -249,6 +262,8 @@ efficient_attention_backward_ck(
     } else
       p.has_attn_bias = false;
 
+    p.bias_has_grad = bias_requires_grad;
+
     p.dropout_prob = static_cast<float>(dropout_p);
     p.philox_seed = rng_seed;
     p.philox_offset = rng_offset;
@@ -300,6 +315,7 @@ efficient_attention_backward_ck(
     char* grad_q_ptr = reinterpret_cast<char*>(grad_q.data_ptr());
     char* grad_k_ptr = reinterpret_cast<char*>(grad_k.data_ptr());
     char* grad_v_ptr = reinterpret_cast<char*>(grad_v.data_ptr());
+    char* grad_bias_ptr = reinterpret_cast<char*>(grad_bias.data_ptr());
 
     for (int i = 0; i < p.num_batches; i++) {
       size_t tmp_q_offset = get_size_in_bytes(
@@ -346,6 +362,11 @@ efficient_attention_backward_ck(
 
         p.attn_bias_ptrs.push_back(
             reinterpret_cast<void*>(&attn_bias_ptr[tmp_bias_offset]));
+
+        if (bias_requires_grad) {
+          p.grad_bias_ptrs.push_back(
+              reinterpret_cast<void*>(&grad_bias_ptr[tmp_bias_offset]));
+        };
       };
 
       p.logsumexp_ptrs.push_back(

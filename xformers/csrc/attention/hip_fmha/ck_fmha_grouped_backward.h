@@ -228,6 +228,8 @@ void grouped_backward_masktype_attnbias_dispatched(
       param.grad_v_ptrs,
       param.attn_bias_ptrs,
       {}, // p_acc1_bias_vec;
+      param.grad_bias_ptrs,
+      {},
       problem_descs,
       QKVElementOp{},
       QKVElementOp{},
