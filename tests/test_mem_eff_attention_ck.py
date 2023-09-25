@@ -1651,8 +1651,8 @@ def test_decoder(
         kv_padding=padding,
     )
     inp = fmha.Inputs(q, k, v, attn_bias=attn_bias)
-    if not op.supports(inp):
-        pytest.skip("not supported")
+    if (not_supported_reasons := op.not_supported_reasons(inp)):
+        pytest.skip(f"{not_supported_reasons=}")
 
     decoder_output = fmha.memory_efficient_attention_forward(
         q, k, v, attn_bias, op=fmha.decoder.FwOp
