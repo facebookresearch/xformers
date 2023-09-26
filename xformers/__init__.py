@@ -9,6 +9,7 @@ import os
 import torch
 
 from . import _cpp_lib
+from .checkpoint import checkpoint, list_operators  # noqa: E402, F401
 
 try:
     from .version import __version__  # noqa: F401
