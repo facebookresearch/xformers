@@ -39,20 +39,15 @@ def _get_seqlen_info(
     if isinstance(
         attn_bias, (BlockDiagonalMask, BlockDiagonalCausalWithOffsetPaddedKeysMask)
     ):
-        ##attn_bias.k_seqinfo.to(inp.query.device)
-        ##attn_bias.q_seqinfo.to(inp.query.device)
         seqstart_k = attn_bias.k_seqinfo.seqstart
         seqstart_q = attn_bias.q_seqinfo.seqstart
-        ##max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
-        ##max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
+        max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
     else:
         seqstart_k = None
         seqstart_q = None
-        ##max_seqlen_q = -1
-        ##max_seqlen_k = -1
+        max_seqlen_q = -1
 
-    return seqstart_k, seqstart_q
-
+    return seqstart_k, seqstart_q, max_seqlen_q
 
 def _get_tensor_bias(
     attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
@@ -170,7 +165,7 @@ class FwOp(AttentionFwOpBase):
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
-        seqstart_k, seqstart_q  = _get_seqlen_info(inp)
+        seqstart_k, seqstart_q, max_seqlen_q  = _get_seqlen_info(inp)
         out, lse, rng_seed, rng_offset = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
@@ -178,6 +173,7 @@ class FwOp(AttentionFwOpBase):
             attn_bias=_get_tensor_bias(inp.attn_bias),
             seqstart_q=seqstart_q,
             seqstart_k=seqstart_k,
+            max_seqlen_q=max_seqlen_q,
             dropout_p=inp.p,
             compute_logsumexp=needs_gradient,
             custom_mask_type=_custom_mask_type(inp.attn_bias),
@@ -247,8 +243,7 @@ class BwOp(AttentionBwOpBase):
         type(None),
         torch.Tensor,
         LowerTriangularMask,
-        # TODO: Fix handling of gradient through the fMHA autograd function
-        # LowerTriangularMaskWithTensorBias,
+        LowerTriangularMaskWithTensorBias,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
@@ -324,7 +319,6 @@ class BwOp(AttentionBwOpBase):
                 raise NotImplementedError(f"Invalid rng_state: {ctx.rng_state}")
             rng_seed, rng_offset = ctx.rng_state.tolist()
 
-        force_pad_inf = torch.cuda.get_device_capability(inp.query.device) == (7, 5)
         (grad_q, grad_k, grad_v, grad_bias) = cls.OPERATOR(
             grad.to(dtype),
             inp.query,
@@ -333,8 +327,10 @@ class BwOp(AttentionBwOpBase):
             attn_bias=_get_tensor_bias(inp.attn_bias),
             seqstart_q=seqstart_q,
             seqstart_k=seqstart_k,
-            seqlen_k=None,
-            logsumexp=ctx.get_padded_lse(32, force_pad_inf=force_pad_inf),
+            seqlen_k=inp.attn_bias.k_seqinfo.seqlen_cpu
+            if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
+            else None,
+            logsumexp=ctx.lse,
             output=ctx.out.to(dtype),
             dropout_p=inp.p,
             # if not using dropout, seed and offset are irrelevant but still expected

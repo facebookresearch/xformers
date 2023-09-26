@@ -55,6 +55,8 @@ struct GroupedInferParams {
   int K; // embed_dim for Query and Key
   int Kv; // embed_dim for Value
 
+  int max_seqlen_q;
+
   std::vector<int> host_seqstart_q;
   std::vector<int> host_seqstart_k;
   std::vector<int> host_seqlen_k;

@@ -50,6 +50,7 @@ efficient_attention_forward_ck(
     // position of the first key token for batch $b
     const c10::optional<at::Tensor>& seqstart_k,
     // (Mode 1MHK only) Maximum sequence length across batches
+    const c10::optional<int64_t> max_seqlen_q_,
     double dropout_p, // attention matrix dropout probability
     bool compute_logsumexp,
     int64_t custom_mask_type,
@@ -85,6 +86,7 @@ efficient_attention_forward_ck(
     CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqstart_k));
     TORCH_CHECK(seqstart_q->size(0) == seqstart_k->size(0));
     TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
+    TORCH_CHECK(max_seqlen_q_.has_value());
   };
 
   // last dim is contiguous, device is kCUDA
@@ -211,7 +213,8 @@ efficient_attention_forward_ck(
 
     if (p.compute_logsumexp) {
       logsumexp = at::empty(
-          {B, num_heads, M}, query.options().dtype(at::ScalarType::Float));
+          {B, num_heads, M},
+          at::TensorOptions().dtype(at::kFloat).device(at::kCUDA));
       p.logsumexp_ptr = logsumexp.data_ptr();
     } else
       p.logsumexp_ptr = nullptr;
@@ -264,6 +267,9 @@ efficient_attention_forward_ck(
       p.has_attn_bias = false;
 
     p.custom_mask_type = custom_mask_type;
+
+    // max_seqlen_q is used to create logsumexp tensor
+    p.max_seqlen_q = *max_seqlen_q_;
 
     p.host_seqstart_q.resize(p.num_batches + 1);
     p.host_seqstart_k.resize(p.num_batches + 1);
@@ -360,12 +366,14 @@ efficient_attention_forward_ck(
 
     if (p.compute_logsumexp) {
       logsumexp = at::empty(
-          {num_heads, M}, query.options().dtype(at::ScalarType::Float));
+          {p.num_batches, num_heads, p.max_seqlen_q},
+          at::TensorOptions().dtype(at::kFloat).device(at::kCUDA));
       char* logsumexp_ptr = reinterpret_cast<char*>(logsumexp.data_ptr());
 
       for (int i = 0; i < p.num_batches; i++) {
-        size_t tmp_logsumexp_offset =
-            get_size_in_bytes(p.host_seqstart_q[i], logsumexp.scalar_type());
+        size_t tmp_logsumexp_offset = get_size_in_bytes(
+            static_cast<size_t>(i) * num_heads * p.max_seqlen_q,
+            logsumexp.scalar_type());
 
         p.logsumexp_ptrs.push_back(reinterpret_cast<void*>(logsumexp_ptr));
         logsumexp_ptr = logsumexp_ptr + tmp_logsumexp_offset;
