@@ -105,7 +105,6 @@ efficient_attention_forward_ck(
   int64_t Kv = value.size(-1);
 
   at::Tensor logsumexp;
-  at::Tensor randvals;
 
   at::Tensor out = at::empty({B, M, num_heads, Kv}, query.options());
 
@@ -195,21 +194,10 @@ efficient_attention_forward_ck(
     p.compute_logsumexp = compute_logsumexp;
 
     // the following parameters are only used by training forward
-    if (p.use_dropout) {
+    if (p.use_dropout)
       p.dropout_prob = static_cast<float>(dropout_p);
-
-      randvals = at::empty(
-          {B, num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
-      p.randvals_strides = {
-          static_cast<int>(randvals.stride(0)),
-          static_cast<int>(randvals.stride(1)),
-          static_cast<int>(randvals.stride(2)),
-          static_cast<int>(randvals.stride(3))};
-      p.randvals_ptr = randvals.data_ptr();
-    } else {
+    else
       p.dropout_prob = 0.0f;
-      p.randvals_ptr = nullptr;
-    };
 
     if (p.compute_logsumexp) {
       logsumexp = at::empty(
@@ -332,6 +320,9 @@ efficient_attention_forward_ck(
         p.attn_bias_ptrs.push_back(
             reinterpret_cast<void*>(&attn_bias_ptr[tmp_bias_offset]));
       };
+
+      // ToDO: remove this after dev-op fix
+      p.randvals_ptrs.push_back(nullptr);
     }
 
     p.use_dropout = use_dropout;
@@ -340,28 +331,9 @@ efficient_attention_forward_ck(
     p.compute_logsumexp = compute_logsumexp;
 
     // the following parameters are only used by training forward
-    if (p.use_dropout) {
+    if (p.use_dropout)
       p.dropout_prob = static_cast<float>(dropout_p);
-
-      randvals = at::empty(
-          {num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
-      p.randvals_strides = {
-          static_cast<int>(randvals.stride(0)),
-          static_cast<int>(randvals.stride(1)),
-          static_cast<int>(randvals.stride(2))};
-      char* randvals_ptr = reinterpret_cast<char*>(randvals.data_ptr());
-
-      for (int i = 0; i < p.num_batches; i++) {
-        size_t tmp_randvals_offset = get_size_in_bytes(
-            static_cast<size_t>(p.host_seqstart_q[i]) * p.randvals_strides[1] +
-                static_cast<size_t>(p.host_seqstart_k[i]) *
-                    p.randvals_strides[2],
-            randvals.scalar_type());
-
-        p.randvals_ptrs.push_back(reinterpret_cast<void*>(randvals_ptr));
-        randvals_ptr = randvals_ptr + tmp_randvals_offset;
-      };
-    } else
+    else
       p.dropout_prob = 0.0f;
 
     if (p.compute_logsumexp) {
@@ -406,8 +378,6 @@ efficient_attention_forward_ck(
     } else
       throw std::runtime_error("input data-type is not supported!");
   };
-
-  // torch::save(randvals, "randvals_dev.zip");
 
   return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
 }

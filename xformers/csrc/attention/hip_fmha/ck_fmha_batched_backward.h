@@ -170,14 +170,6 @@ void batched_backward_masktype_attnbias_dispatched(
   std::vector<ck::index_t> ygrad_gs_ms_os_lengths{
       param.B, param.num_heads, param.M, param.Kv};
 
-  std::vector<ck::index_t> z_gs_ms_ns_lengths{
-      param.B, param.num_heads, param.M, param.N};
-  std::vector<ck::index_t> z_gs_ms_ns_strides{
-      param.randvals_strides[0],
-      param.randvals_strides[1],
-      param.randvals_strides[2],
-      param.randvals_strides[3]};
-
   std::vector<ck::index_t> lse_gs_ms_lengths{param.B, param.num_heads, param.M};
 
   std::vector<ck::index_t> d_gs_ms_ns_lengths;
@@ -203,7 +195,7 @@ void batched_backward_masktype_attnbias_dispatched(
   auto arg_ptr = op.MakeArgumentPointer(
       param.q_ptr,
       param.k_ptr,
-      param.randvals_ptr,
+      nullptr,
       param.v_ptr,
       param.out_ptr,
       param.logsumexp_ptr,
@@ -219,8 +211,8 @@ void batched_backward_masktype_attnbias_dispatched(
       q_gs_ms_ks_strides,
       k_gs_ns_ks_lengths,
       k_gs_ns_ks_strides,
-      z_gs_ms_ns_lengths,
-      z_gs_ms_ns_strides,
+      {1, 1, 1, 1},
+      {0, 0, 0, 0},
       v_gs_os_ns_lengths,
       v_gs_os_ns_strides,
       y_gs_ms_os_lengths,

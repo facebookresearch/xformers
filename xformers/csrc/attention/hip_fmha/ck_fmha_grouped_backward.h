@@ -164,13 +164,6 @@ void grouped_backward_masktype_attnbias_dispatched(
     std::vector<ck::index_t> y_gs_ms_os_strides{
         0, param.out_strides[0], param.out_strides[1], param.out_strides[2]};
 
-    std::vector<ck::index_t> z_gs_ms_ns_lengths{1, G1, M, N};
-    std::vector<ck::index_t> z_gs_ms_ns_strides{
-        0,
-        param.randvals_strides[0],
-        param.randvals_strides[1],
-        param.randvals_strides[2]};
-
     std::vector<ck::index_t> lse_gs_ms_lengths{1, G1, M};
     std::vector<ck::index_t> lse_gs_ms_strides{0, param.M, 1};
 
@@ -195,8 +188,8 @@ void grouped_backward_masktype_attnbias_dispatched(
         q_gs_ms_ks_strides,
         k_gs_ns_ks_lengths,
         k_gs_ns_ks_strides,
-        z_gs_ms_ns_lengths,
-        z_gs_ms_ns_strides,
+        {1, 1, 1, 1},
+        {0, 0, 0, 0},
         v_gs_os_ns_lengths,
         v_gs_os_ns_strides,
         y_gs_ms_os_lengths,

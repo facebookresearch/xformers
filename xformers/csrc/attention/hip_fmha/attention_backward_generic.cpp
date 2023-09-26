@@ -122,8 +122,6 @@ efficient_attention_backward_ck(
   if (bias_requires_grad)
     grad_bias = at::empty(value.sizes(), value.options());
 
-  at::Tensor randvals;
-
   auto set_batched_backward_params = [&](BatchedBackwardParams& p) {
     p.B = B;
     p.M = M;
@@ -199,15 +197,6 @@ efficient_attention_backward_ck(
     p.philox_seed = rng_seed;
     p.philox_offset = rng_offset;
 
-    randvals = at::empty(
-        {B, num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
-    p.randvals_strides = {
-        static_cast<int>(randvals.stride(0)),
-        static_cast<int>(randvals.stride(1)),
-        static_cast<int>(randvals.stride(2)),
-        static_cast<int>(randvals.stride(3))};
-    p.randvals_ptr = randvals.data_ptr();
-
     p.logsumexp_ptr = logsumexp.data_ptr();
   };
 
@@ -268,13 +257,6 @@ efficient_attention_backward_ck(
     p.philox_seed = rng_seed;
     p.philox_offset = rng_offset;
 
-    randvals = at::empty(
-        {num_heads, M, N}, query.options().dtype(at::ScalarType::Short));
-    p.randvals_strides = {
-        static_cast<int>(randvals.stride(0)),
-        static_cast<int>(randvals.stride(1)),
-        static_cast<int>(randvals.stride(2))};
-
     p.custom_mask_type = custom_mask_type;
 
     p.host_seqstart_q.resize(p.num_batches + 1);
@@ -310,7 +292,6 @@ efficient_attention_backward_ck(
     char* attn_bias_ptr = reinterpret_cast<char*>(bias->data_ptr());
 
     char* logsumexp_ptr = reinterpret_cast<char*>(logsumexp.data_ptr());
-    char* randvals_ptr = reinterpret_cast<char*>(randvals.data_ptr());
 
     char* grad_q_ptr = reinterpret_cast<char*>(grad_q.data_ptr());
     char* grad_k_ptr = reinterpret_cast<char*>(grad_k.data_ptr());
@@ -335,10 +316,6 @@ efficient_attention_backward_ck(
           grad_out.scalar_type());
       size_t tmp_logsumexp_offset =
           get_size_in_bytes(p.host_seqstart_q[i], logsumexp.scalar_type());
-      size_t tmp_randvals_offset = get_size_in_bytes(
-          static_cast<size_t>(p.host_seqstart_q[i]) * p.randvals_strides[1] +
-              static_cast<size_t>(p.host_seqstart_k[i]) * p.randvals_strides[2],
-          randvals.scalar_type());
 
       p.q_ptrs.push_back(reinterpret_cast<void*>(&q_ptr[tmp_q_offset]));
       p.grad_q_ptrs.push_back(
@@ -371,8 +348,9 @@ efficient_attention_backward_ck(
 
       p.logsumexp_ptrs.push_back(
           reinterpret_cast<void*>(&logsumexp_ptr[tmp_logsumexp_offset]));
-      p.randvals_ptrs.push_back(
-          reinterpret_cast<void*>(&randvals_ptr[tmp_randvals_offset]));
+
+      // ToDO: remove this after dev-op fix
+      p.randvals_ptrs.push_back(nullptr);
     }
   };
 

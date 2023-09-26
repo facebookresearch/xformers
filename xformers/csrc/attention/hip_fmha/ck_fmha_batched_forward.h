@@ -174,21 +174,6 @@ void batched_forward_masktype_attnbias_dispatched(
       param.out_strides[1],
       param.out_strides[3]};
 
-  std::vector<ck::index_t> z_gs_ms_ns_lengths;
-  std::vector<ck::index_t> z_gs_ms_ns_strides;
-
-  if (param.use_dropout) {
-    z_gs_ms_ns_lengths = {param.B, param.num_heads, param.M, param.N};
-    z_gs_ms_ns_strides = {
-        param.randvals_strides[0],
-        param.randvals_strides[1],
-        param.randvals_strides[2],
-        param.randvals_strides[3]};
-  } else {
-    z_gs_ms_ns_lengths = {1, 1, 1, 1};
-    z_gs_ms_ns_strides = {0, 0, 0, 0};
-  };
-
   std::vector<ck::index_t> lse_gs_ms_lengths{param.B, param.num_heads, param.M};
 
   std::vector<ck::index_t> d_gs_ms_ns_lengths;
@@ -222,7 +207,7 @@ void batched_forward_masktype_attnbias_dispatched(
       param.k_ptr,
       param.v_ptr,
       param.out_ptr,
-      param.randvals_ptr,
+      nullptr,
       param.logsumexp_ptr,
       param.has_attn_bias ? param.attn_bias_ptr : nullptr,
       {}, // p_acc1_biases;
@@ -234,8 +219,8 @@ void batched_forward_masktype_attnbias_dispatched(
       b1_gs_os_ns_strides,
       c_gs_ms_os_lengths,
       c_gs_ms_os_strides,
-      z_gs_ms_ns_lengths,
-      z_gs_ms_ns_strides,
+      {1, 1, 1, 1},
+      {0, 0, 0, 0},
       lse_gs_ms_lengths,
       d_gs_ms_ns_lengths,
       d_gs_ms_ns_strides,

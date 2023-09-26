@@ -39,10 +39,6 @@ struct BatchedForwardParams : public BatchedInferParams {
   int64_t philox_seed;
   int64_t philox_offset;
 
-  // BHMN mode strides, completely contiguous
-  std::array<int32_t, 4> randvals_strides;
-  void* randvals_ptr;
-
   // completely contiguous
   void* logsumexp_ptr;
 };
@@ -90,12 +86,11 @@ struct GroupedForwardParams : public GroupedInferParams {
   int64_t philox_seed;
   int64_t philox_offset;
 
-  // HMN mode strides, completely contiguous
-  std::array<int, 3> randvals_strides;
-  std::vector<void*> randvals_ptrs;
-
   // completely contiguous
   std::vector<void*> logsumexp_ptrs;
+
+  // TODO: need remove this after dev-op fix
+  std::vector<void*> randvals_ptrs;
 };
 
 struct BatchedBackwardParams {
@@ -140,10 +135,6 @@ struct BatchedBackwardParams {
 
   // completely contiguous
   const void* logsumexp_ptr;
-
-  // BHMN mode strides, completely contiguous
-  std::array<int, 4> randvals_strides;
-  void* randvals_ptr;
 };
 
 struct GroupedBackwardParams {
@@ -194,7 +185,6 @@ struct GroupedBackwardParams {
   // HM mode strides, completely contiguous
   std::vector<const void*> logsumexp_ptrs;
 
-  // HMN mode strides, completely contiguous
-  std::array<int, 3> randvals_strides;
+  // TODO: need remove this after dev-op fix
   std::vector<void*> randvals_ptrs;
 };
