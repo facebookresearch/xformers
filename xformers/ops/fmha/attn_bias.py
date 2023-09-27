@@ -470,7 +470,7 @@ class BlockDiagonalMask(AttentionBias):
     def make_local_attention(
         self, window_size: int
     ) -> "BlockDiagonalCausalLocalAttentionMask":
-        """Makes each block causal with local attention"""
+        """Experimental: Makes each block causal with local attention"""
         return BlockDiagonalCausalLocalAttentionMask(
             q_seqinfo=self.q_seqinfo,
             k_seqinfo=self.k_seqinfo,
@@ -481,7 +481,7 @@ class BlockDiagonalMask(AttentionBias):
     def make_local_attention_from_bottomright(
         self, window_size: int
     ) -> "BlockDiagonalCausalLocalAttentionFromBottomRightMask":
-        """Makes each block causal with local attention, start from bottom right"""
+        """Experimental: Makes each block causal with local attention, start from bottom right"""
         return BlockDiagonalCausalLocalAttentionFromBottomRightMask(
             q_seqinfo=self.q_seqinfo,
             k_seqinfo=self.k_seqinfo,
@@ -659,23 +659,21 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
 @dataclass
 class BlockDiagonalCausalLocalAttentionMask(BlockDiagonalCausalMask):
     """
+    (Experimental feature)
     Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.
     This makes the mask "local" and the attention pattern banded.
 
     Query i only attends to keys in its block and cannot attend keys further than "window_size"
     from it.
-
-    _window_size = 0 disables window_size
     """
 
     _window_size: int = 0  # forced due to inheritance and default arguments
 
     def __post_init__(self):
-        self.check()
-
-    def check(self):
-        if self._window_size is None or self._window_size == 0:
-            return
+        if self._window_size <= 0:
+            raise ValueError(
+                f"Expected `window_size > 0`, but window_size={self._window_size}"
+            )
         q_seqlen = [
             y - x
             for x, y in zip(
@@ -721,24 +719,22 @@ class BlockDiagonalCausalLocalAttentionFromBottomRightMask(
     BlockDiagonalCausalFromBottomRightMask
 ):
     """
+    (Experimental feature)
     Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.
     This makes the mask "local" and the attention pattern banded.
 
     Query i only attends to keys in its block and cannot attend keys further than "window_size"
     from it.
-
-    _window_size = 0 disables window_size
     """
 
     _window_size: int = 0  # forced due to inheritance and default arguments
 
     def __post_init__(self):
         super().__post_init__()
-        self.check()
-
-    def check(self):
-        if self._window_size is None or self._window_size == 0:
-            return
+        if self._window_size <= 0:
+            raise ValueError(
+                f"Expected `window_size > 0`, but window_size={self._window_size}"
+            )
         q_seqlen = [
             y - x
             for x, y in zip(

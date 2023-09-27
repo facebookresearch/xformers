@@ -14,6 +14,8 @@ from ..common import _get_storage_base, get_operator, register_operator
 from .attn_bias import (
     AttentionBias,
     BlockDiagonalCausalFromBottomRightMask,
+    BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+    BlockDiagonalCausalLocalAttentionMask,
     BlockDiagonalCausalMask,
     BlockDiagonalMask,
     LowerTriangularMask,
@@ -40,6 +42,9 @@ try:
         from flash_attn.flash_attn_interface import flash_attn_cuda as _C_flashattention
 
         FLASH_VERSION = flash_attn.__version__
+        flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:2])
+        if flash_ver_parsed < (2, 3):
+            raise ImportError("Requires 2.3 for sliding window support")
 
     # create library so that flash-attn goes through the PyTorch Dispatcher
     _flash_lib = torch.library.Library("xformers_flash", "DEF")
@@ -49,7 +54,7 @@ try:
         "Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, "
         "int max_seqlen_q, int max_seqlen_k, "
         "float p, float softmax_scale, "
-        "bool is_causal, bool return_softmax) -> (Tensor, Tensor, Tensor)"
+        "bool is_causal, int window_size, bool return_softmax) -> (Tensor, Tensor, Tensor)"
     )
 
     _flash_lib.define(
@@ -57,7 +62,7 @@ try:
         "Tensor out, Tensor softmax_lse_, Tensor dq, Tensor dk, Tensor dv, "
         "Tensor cu_seqlens_q, Tensor cu_seqlens_k, "
         "int max_seqlen_q, int max_seqlen_k, "
-        "float p, float softmax_scale, bool is_causal, Tensor rng_state) -> (Tensor, Tensor, Tensor)"
+        "float p, float softmax_scale, bool is_causal, int window_size, Tensor rng_state) -> (Tensor, Tensor, Tensor)"
     )
 
     def _flash_fwd(
@@ -71,6 +76,7 @@ try:
         p,
         softmax_scale,
         is_causal,
+        window_size,
         return_softmax,
     ):
         if cu_seq_lens_q is None:
@@ -92,6 +98,8 @@ try:
                 p,
                 softmax_scale,
                 is_causal,
+                window_size - 1,  # window_size_left
+                -1,  # window_size_right
                 return_softmax,
                 None,  # rng
             )
@@ -119,6 +127,8 @@ try:
                 softmax_scale,
                 False,
                 is_causal,
+                window_size - 1,  # window_size_left
+                -1,  # window_size_right
                 return_softmax,
                 None,
             )
@@ -141,6 +151,7 @@ try:
         p,
         softmax_scale,
         is_causal,
+        window_size,
         rng_state,
     ):
         if cu_seq_lens_k is None:
@@ -158,6 +169,8 @@ try:
                 p,
                 softmax_scale,
                 is_causal,
+                window_size - 1,  # window_size_left
+                -1,  # window_size_right
                 None,
                 rng_state,
             )
@@ -180,6 +193,8 @@ try:
                 softmax_scale,
                 False,  # zero_tensors
                 is_causal,
+                window_size - 1,  # window_size_left
+                -1,  # window_size_right
                 None,
                 rng_state,
             )
@@ -265,9 +280,22 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
         (
             LowerTriangularMask,
             BlockDiagonalCausalMask,
+            BlockDiagonalCausalLocalAttentionMask,
             BlockDiagonalCausalFromBottomRightMask,
+            BlockDiagonalCausalLocalAttentionFromBottomRightMask,
         ),
     )
+
+
+def _window_size(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int:
+    if isinstance(
+        attn_bias,
+        (BlockDiagonalCausalLocalAttentionMask,),
+    ):
+        return attn_bias._window_size or 0
+    if isinstance(attn_bias, BlockDiagonalCausalLocalAttentionFromBottomRightMask):
+        return attn_bias._window_size
+    return 0
 
 
 def _check_needs_no_topleft(d: Inputs, reasons: List[str]) -> None:
@@ -327,6 +355,8 @@ class FwOp(AttentionFwOpBase):
         LowerTriangularMask,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
+        BlockDiagonalCausalLocalAttentionMask,
+        BlockDiagonalCausalLocalAttentionFromBottomRightMask,
         BlockDiagonalCausalFromBottomRightMask,
     }
     SUPPORTS_DROPOUT = True
@@ -374,6 +404,7 @@ class FwOp(AttentionFwOpBase):
             inp.p,
             inp.scale_float,
             _is_causal(inp.attn_bias),
+            _window_size(inp.attn_bias),
             return_softmax,
         )
         out = out.reshape(out_shape)
@@ -530,6 +561,7 @@ class BwOp(AttentionBwOpBase):
             inp.p,
             inp.scale_float,
             _is_causal(inp.attn_bias),
+            _window_size(inp.attn_bias),
             ctx.rng_state,
         )
         grads.dq = grads.dq.reshape(dq_shape)
