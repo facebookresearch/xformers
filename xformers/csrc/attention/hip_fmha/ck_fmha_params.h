@@ -116,13 +116,10 @@ struct BatchedBackwardParams {
   const void* k_ptr;
   const void* v_ptr;
   const void* attn_bias_ptr;
+  const void* grad_out_ptr;
   const void* out_ptr;
 
   uint8_t custom_mask_type;
-
-  std::array<int, 4> grad_out_strides;
-
-  const void* grad_out_ptr;
 
   void* grad_q_ptr;
   void* grad_k_ptr;
@@ -133,7 +130,7 @@ struct BatchedBackwardParams {
   int64_t philox_seed;
   int64_t philox_offset;
 
-  // completely contiguous
+  // BHM mode lengths, completely contiguous
   const void* logsumexp_ptr;
 };
 
@@ -144,6 +141,8 @@ struct GroupedBackwardParams {
   int num_heads; //
   int K; // embed_dim for Query and Key
   int Kv; // embed_dim for Value
+
+  int max_seqlen_q;
 
   std::vector<int> host_seqstart_q;
   std::vector<int> host_seqstart_k;
@@ -165,13 +164,10 @@ struct GroupedBackwardParams {
   std::vector<const void*> k_ptrs;
   std::vector<const void*> v_ptrs;
   std::vector<const void*> attn_bias_ptrs;
+  std::vector<const void*> grad_out_ptrs;
   std::vector<const void*> out_ptrs;
 
   uint8_t custom_mask_type;
-
-  std::array<int, 3> grad_out_strides;
-
-  std::vector<const void*> grad_out_ptrs;
 
   std::vector<void*> grad_q_ptrs;
   std::vector<void*> grad_k_ptrs;
@@ -182,7 +178,7 @@ struct GroupedBackwardParams {
   int64_t philox_seed;
   int64_t philox_offset;
 
-  // HM mode strides, completely contiguous
+  // BHM mode lengths, completely contiguous
   std::vector<const void*> logsumexp_ptrs;
 
   // TODO: need remove this after dev-op fix

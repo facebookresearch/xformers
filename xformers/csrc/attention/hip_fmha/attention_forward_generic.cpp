@@ -346,9 +346,8 @@ efficient_attention_forward_ck(
         size_t tmp_logsumexp_offset = get_size_in_bytes(
             static_cast<size_t>(i) * num_heads * p.max_seqlen_q,
             logsumexp.scalar_type());
-
-        p.logsumexp_ptrs.push_back(reinterpret_cast<void*>(logsumexp_ptr));
-        logsumexp_ptr = logsumexp_ptr + tmp_logsumexp_offset;
+        p.logsumexp_ptrs.push_back(
+            reinterpret_cast<void*>(&logsumexp_ptr[tmp_logsumexp_offset]));
       };
     };
   };

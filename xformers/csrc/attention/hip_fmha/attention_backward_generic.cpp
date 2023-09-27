@@ -38,6 +38,8 @@ efficient_attention_backward_ck(
     // (Mode 1MHK only) [b+1]: cu_seqlens_k[b] contains the
     // position of the first key token for batch $b
     const c10::optional<at::Tensor>& seqstart_k,
+    // (Mode 1MHK only) Maximum sequence length across batches
+    const c10::optional<int64_t> max_seqlen_q_,
     const c10::optional<at::Tensor>& seqlen_k,
     const at::Tensor& logsumexp,
     const at::Tensor& out,
@@ -78,13 +80,18 @@ efficient_attention_backward_ck(
   TORCH_CHECK(query.size(3) == key.size(3));
   TORCH_CHECK(value.size(3) == grad_out.size(3));
 
-  // handle potentially non-contiguous grad_out through a copy
-  CHECK_NOSPARSE_CONTIGUOUS_CUDA(grad_out);
+  // CK-FlashAttn requires out, grad_out to have same shapes
+  TORCH_CHECK(out.sizes() == grad_out.sizes());
+  TORCH_CHECK(out.strides() == grad_out.strides());
 
   // last dim is contiguous, device is CUDA
+  CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(grad_out);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(query);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
+
+  // logsumexp should be completely contiguous
+  CHECK_NOSPARSE_CONTIGUOUS_CUDA(logsumexp);
 
   TORCH_CHECK(seqstart_q.has_value() == seqstart_k.has_value());
   TORCH_CHECK(
@@ -99,6 +106,7 @@ efficient_attention_backward_ck(
     CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqstart_k));
     TORCH_CHECK(seqstart_q->size(0) == seqstart_k->size(0));
     TORCH_CHECK(query.size(0) == 1, "seqstart_q only supports batch_size=1");
+    TORCH_CHECK(max_seqlen_q_.has_value());
   }
 
   // at::cuda::CUDAGuard device_guard(query.device());
@@ -113,14 +121,14 @@ efficient_attention_backward_ck(
 
   at::Tensor grad_q, grad_k, grad_v, grad_bias;
 
-  grad_q = at::empty(query.sizes(), query.options());
+  grad_q = at::zeros(query.sizes(), query.options());
   grad_k = at::empty(key.sizes(), key.options());
   grad_v = at::empty(value.sizes(), value.options());
 
   const bool bias_requires_grad = bias.has_value() && bias->requires_grad();
 
   if (bias_requires_grad)
-    grad_bias = at::empty(value.sizes(), value.options());
+    grad_bias = at::empty(bias->sizes(), bias->options());
 
   auto set_batched_backward_params = [&](BatchedBackwardParams& p) {
     p.B = B;
@@ -129,6 +137,10 @@ efficient_attention_backward_ck(
     p.num_heads = num_heads;
     p.K = K;
     p.Kv = Kv;
+
+    TORCH_CHECK(p.B == logsumexp.size(0));
+    TORCH_CHECK(p.num_heads == logsumexp.size(1));
+    TORCH_CHECK(p.M == logsumexp.size(2));
 
     if (scale.has_value()) {
       p.scale = float(*scale);
@@ -140,6 +152,8 @@ efficient_attention_backward_ck(
     p.k_ptr = key.data_ptr();
     p.v_ptr = value.data_ptr();
     p.grad_out_ptr = grad_out.data_ptr();
+    p.out_ptr = out.data_ptr();
+
     p.grad_q_ptr = grad_q.data_ptr();
     p.grad_k_ptr = grad_k.data_ptr();
     p.grad_v_ptr = grad_v.data_ptr();
@@ -159,11 +173,11 @@ efficient_attention_backward_ck(
         static_cast<int>(value.stride(1)),
         static_cast<int>(value.stride(2)),
         static_cast<int>(value.stride(3))};
-    p.grad_out_strides = {
-        static_cast<int>(grad_out.stride(0)),
-        static_cast<int>(grad_out.stride(1)),
-        static_cast<int>(grad_out.stride(2)),
-        static_cast<int>(grad_out.stride(3))};
+    p.out_strides = {
+        static_cast<int>(out.stride(0)),
+        static_cast<int>(out.stride(1)),
+        static_cast<int>(out.stride(2)),
+        static_cast<int>(out.stride(3))};
 
     if (bias.has_value()) {
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
@@ -208,6 +222,12 @@ efficient_attention_backward_ck(
     p.K = K;
     p.Kv = Kv;
 
+    p.max_seqlen_q = *max_seqlen_q_;
+
+    TORCH_CHECK(p.num_batches == logsumexp.size(0));
+    TORCH_CHECK(p.num_heads == logsumexp.size(1));
+    TORCH_CHECK(p.max_seqlen_q == logsumexp.size(2));
+
     if (scale.has_value()) {
       p.scale = float(*scale);
     } else {
@@ -230,11 +250,6 @@ efficient_attention_backward_ck(
         static_cast<int>(out.stride(1)),
         static_cast<int>(out.stride(2)),
         static_cast<int>(out.stride(3))};
-
-    p.grad_out_strides = {
-        static_cast<int>(grad_out.stride(1)),
-        static_cast<int>(grad_out.stride(2)),
-        static_cast<int>(grad_out.stride(3))};
 
     if (bias.has_value()) {
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
@@ -311,11 +326,9 @@ efficient_attention_backward_ck(
       size_t tmp_o_offset = get_size_in_bytes(
           static_cast<size_t>(p.host_seqstart_q[i]) * p.out_strides[0],
           out.scalar_type());
-      size_t tmp_grad_o_offset = get_size_in_bytes(
-          static_cast<size_t>(p.host_seqstart_q[i]) * p.grad_out_strides[0],
-          grad_out.scalar_type());
-      size_t tmp_logsumexp_offset =
-          get_size_in_bytes(p.host_seqstart_q[i], logsumexp.scalar_type());
+      size_t tmp_logsumexp_offset = get_size_in_bytes(
+          static_cast<size_t>(i) * p.num_heads * p.max_seqlen_q,
+          logsumexp.scalar_type());
 
       p.q_ptrs.push_back(reinterpret_cast<void*>(&q_ptr[tmp_q_offset]));
       p.grad_q_ptrs.push_back(
@@ -328,7 +341,7 @@ efficient_attention_backward_ck(
           reinterpret_cast<void*>(&grad_v_ptr[tmp_v_offset]));
       p.out_ptrs.push_back(reinterpret_cast<void*>(&out_ptr[tmp_o_offset]));
       p.grad_out_ptrs.push_back(
-          reinterpret_cast<void*>(&grad_out_ptr[tmp_grad_o_offset]));
+          reinterpret_cast<void*>(&grad_out_ptr[tmp_o_offset]));
 
       if (bias.has_value()) {
         size_t tmp_bias_offset = get_size_in_bytes(

@@ -165,7 +165,7 @@ class FwOp(AttentionFwOpBase):
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
-        seqstart_k, seqstart_q, max_seqlen_q  = _get_seqlen_info(inp)
+        seqstart_k, seqstart_q, max_seqlen_q = _get_seqlen_info(inp)
         out, lse, rng_seed, rng_offset = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
@@ -305,7 +305,7 @@ class BwOp(AttentionBwOpBase):
         if type(inp.attn_bias) not in BwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
 
-        seqstart_k, seqstart_q = _get_seqlen_info(inp)
+        seqstart_k, seqstart_q, max_seqlen_q = _get_seqlen_info(inp)
         dtype = inp.query.dtype
 
         rng_seed = rng_offset = 0
@@ -327,6 +327,7 @@ class BwOp(AttentionBwOpBase):
             attn_bias=_get_tensor_bias(inp.attn_bias),
             seqstart_q=seqstart_q,
             seqstart_k=seqstart_k,
+            max_seqlen_q=max_seqlen_q, 
             seqlen_k=inp.attn_bias.k_seqinfo.seqlen_cpu
             if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
             else None,

@@ -56,7 +56,7 @@ void batched_backward_masktype_attnbias_dispatched(
       ck::tensor_operation::device::TensorSpecialization::Default;
   static constexpr auto TensorSpecY =
       ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr bool Deterministic = false;
+  static constexpr bool Deterministic = true;
 
   // Tunables
   static constexpr ck::index_t ABBlockTransferSrcScalarPerVector = 1;
@@ -167,9 +167,6 @@ void batched_backward_masktype_attnbias_dispatched(
       param.out_strides[1],
       param.out_strides[3]};
 
-  std::vector<ck::index_t> ygrad_gs_ms_os_lengths{
-      param.B, param.num_heads, param.M, param.Kv};
-
   std::vector<ck::index_t> lse_gs_ms_lengths{param.B, param.num_heads, param.M};
 
   std::vector<ck::index_t> d_gs_ms_ns_lengths;
@@ -195,7 +192,7 @@ void batched_backward_masktype_attnbias_dispatched(
   auto arg_ptr = op.MakeArgumentPointer(
       param.q_ptr,
       param.k_ptr,
-      nullptr,
+      nullptr, // p_z_grid
       param.v_ptr,
       param.out_ptr,
       param.logsumexp_ptr,
@@ -207,15 +204,15 @@ void batched_backward_masktype_attnbias_dispatched(
       nullptr, // p_acc1_bias
       param.bias_has_grad ? param.grad_bias_ptr : nullptr,
       nullptr,
-      q_gs_ms_ks_lengths,
+      q_gs_ms_ks_lengths, // q, dQ should have same shape
       q_gs_ms_ks_strides,
-      k_gs_ns_ks_lengths,
+      k_gs_ns_ks_lengths, // k, dK should have same shape
       k_gs_ns_ks_strides,
-      {1, 1, 1, 1},
-      {0, 0, 0, 0},
-      v_gs_os_ns_lengths,
+      {1, 1, 1, 1}, // z_gs_ms_ns_lengths
+      {0, 0, 0, 0}, // z_gs_ms_ns_strides
+      v_gs_os_ns_lengths, // v, dV should have same shape
       v_gs_os_ns_strides,
-      y_gs_ms_os_lengths,
+      y_gs_ms_os_lengths, // y, dY should have same shape
       y_gs_ms_os_strides,
       lse_gs_ms_lengths,
       d_gs_ms_ns_lengths,
