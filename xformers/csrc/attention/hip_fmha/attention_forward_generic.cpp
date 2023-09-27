@@ -408,10 +408,41 @@ efficient_attention_forward_ck(
   return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
 }
 
+at::Tensor
+efficient_attention_forward_decoder_ck(
+    const at::Tensor& XQ, // [B, 1, H, D]
+    const at::Tensor& cache_K, // [B, T_MAX, H or 1, D]
+    const at::Tensor& cache_V, // [B, T_MAX, H or 1, D]
+    const at::Tensor& seq_positions, // [B]
+    double qk_scale) {
+
+  constexpr int32_t kThreadsPerWarp = 32;
+  constexpr int32_t kWarpsPerBlock = 32;
+  constexpr int32_t D_H = 128;
+  constexpr int32_t T_MAX = 8192;
+
+  at::OptionalDeviceGuard guard(XQ.device());
+  TORCH_CHECK(XQ.is_cuda());
+  TORCH_CHECK(cache_K.is_cuda());
+  TORCH_CHECK(cache_V.is_cuda());
+
+  TORCH_CHECK(seq_positions.is_cuda());
+
+  TORCH_CHECK(cache_K.size(1) <= T_MAX);
+  TORCH_CHECK(cache_K.size(3) == D_H);
+
+  auto O = at::randn_like(XQ);
+  return O;
+}  
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_ck"),
       TORCH_FN(efficient_attention_forward_ck));
+
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_decoder_ck"),
+      TORCH_FN(efficient_attention_forward_decoder_ck));
 }

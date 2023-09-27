@@ -39,7 +39,13 @@ TORCH_LIBRARY_FRAGMENT(xformers, m) {
 #endif
 #if defined(USE_ROCM)
   m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::efficient_attention_forward_ck(Tensor query, Tensor key, Tensor value, Tensor? attn_bias, Tensor? seqstart_q, Tensor? seqstart_k, int? max_seqlen_q, float dropout_p, bool compute_logsumexp, int custom_mask_type, float? scale, Tensor? seqlen_k) -> (Tensor, Tensor, int, int)"));
+      "xformers::efficient_attention_forward_ck(Tensor query, "
+          "Tensor key, Tensor value, Tensor? attn_bias, Tensor? seqstart_q, "
+          "Tensor? seqstart_k, int? max_seqlen_q, float dropout_p, "
+          "bool compute_logsumexp, int custom_mask_type, float? scale, Tensor? seqlen_k) -> (Tensor, Tensor, int, int)"));
+  m.def(TORCH_SELECTIVE_SCHEMA(
+      "xformers::efficient_attention_forward_decoder_ck(Tensor query, "
+          "Tensor key, Tensor value, Tensor seq_positions, float scale) -> Tensor"));
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_backward_ck(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor? attn_bias, Tensor? seqstart_q, Tensor? seqstart_k, int? max_seqlen_q, Tensor? seqlen_k, Tensor logsumexp, Tensor output, float dropout_p, int rng_seed, int rng_offset, int custom_mask_type, float? scale) -> (Tensor, Tensor, Tensor, Tensor)"));
   m.def(TORCH_SELECTIVE_SCHEMA(

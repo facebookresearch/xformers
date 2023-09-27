@@ -1618,7 +1618,7 @@ def test_attn_bias_padded() -> None:
     )
 
 
-@pytest.mark.parametrize("op", [fmha.decoder.FwOp])
+@pytest.mark.parametrize("op", [fmha.ck_decoder.FwOp])
 @pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "")
 @pytest.mark.parametrize("n_heads", [1, 16, 32])
 @pytest.mark.parametrize("padding", [32, 4096])
@@ -1627,7 +1627,7 @@ def test_attn_bias_padded() -> None:
 def test_decoder(
     op, multiquery: bool, n_heads: int, padding: int, bsz: int, dtype: str
 ) -> None:
-    dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
+    dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float}[dtype]
     torch.manual_seed(1)
     d = 128
     k_shape = (1, bsz * padding, n_heads, d)
@@ -1655,17 +1655,16 @@ def test_decoder(
         pytest.skip(f"{not_supported_reasons=}")
 
     decoder_output = fmha.memory_efficient_attention_forward(
-        q, k, v, attn_bias, op=fmha.decoder.FwOp
+        q, k, v, attn_bias, op=op
     )
+    
+    ref_output = ref_attention(q, k, v, attn_bias)
 
-    ck_output = fmha.memory_efficient_attention_forward(
-        q, k, v, attn_bias, op=fmha.ck.FwOp
-    )
     assert_allclose(
-        decoder_output,
-        ck_output,
-        atol=fmha.ck.FwOp.ERROR_ATOL[dtype_] * 4,
-        rtol=fmha.ck.FwOp.ERROR_RTOL[dtype_],
+        decoder_output.float(),
+        ref_output,
+        atol=fmha.ck_decoder.FwOp.ERROR_ATOL[dtype_] * 4,
+        rtol=fmha.ck_decoder.FwOp.ERROR_RTOL[dtype_],
     )
 
 
