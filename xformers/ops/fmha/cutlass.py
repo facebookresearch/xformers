@@ -14,6 +14,8 @@ from ..common import get_xformers_operator, register_operator
 from . import attn_bias
 from .attn_bias import (
     AttentionBias,
+    BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+    BlockDiagonalCausalLocalAttentionMask,
     BlockDiagonalCausalMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalMask,
@@ -131,6 +133,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
         (
             LowerTriangularMask,
             BlockDiagonalCausalMask,
+            BlockDiagonalCausalLocalAttentionMask,
         ),
     ):
         return int(_CustomMaskType.CausalFromTopLeft)
@@ -139,6 +142,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
         (
             attn_bias.BlockDiagonalCausalFromBottomRightMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            BlockDiagonalCausalLocalAttentionFromBottomRightMask,
         ),
     ):
         return int(_CustomMaskType.CausalFromBottomRight)
@@ -165,6 +169,8 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalMask,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
+        attn_bias.BlockDiagonalCausalLocalAttentionMask,
+        BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     }
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
@@ -249,6 +255,15 @@ class FwOp(AttentionFwOpBase):
             seqlen_k=inp.attn_bias.k_seqinfo.seqlen
             if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
             else None,
+            window_size=inp.attn_bias._window_size
+            if isinstance(
+                inp.attn_bias,
+                (
+                    BlockDiagonalCausalLocalAttentionMask,
+                    BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+                ),
+            )
+            else None,
         )
         ctx: Optional[Context] = None
         if needs_gradient:
@@ -317,6 +332,7 @@ class BwOp(AttentionBwOpBase):
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
+        attn_bias.BlockDiagonalCausalLocalAttentionMask,
     }
     SUPPORTS_ATTN_BIAS_GRAD = True
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
@@ -412,6 +428,15 @@ class BwOp(AttentionBwOpBase):
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
             num_splits_key=-1,  # Let C++ determine it
+            window_size=inp.attn_bias._window_size
+            if isinstance(
+                inp.attn_bias,
+                (
+                    BlockDiagonalCausalLocalAttentionMask,
+                    BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+                ),
+            )
+            else None,
         )
 
         # c++/CUDA implementation returns an uninitialized tensor if bias doesn't

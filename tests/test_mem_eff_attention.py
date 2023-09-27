@@ -168,10 +168,10 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                         B, Mq, Mkv, H, K, Kv = shape
                         B = min(B, 12)
 
-                        if (
-                            bias_type
-                            is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask
-                        ):
+                        if bias_type in {
+                            fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
+                            fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+                        }:
                             Mq, Mkv = min(Mkv, Mq), max(Mkv, Mq) + 2
                         elif (
                             bias_type
@@ -479,6 +479,8 @@ def create_attn_bias(
         fmha.attn_bias.BlockDiagonalMask,
         fmha.attn_bias.BlockDiagonalCausalMask,
         fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
+        fmha.attn_bias.BlockDiagonalCausalLocalAttentionMask,
+        fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     ]:
         # This bias is not supported in BMK format
         assert fmt in ["BMGHK", "BMHK"]
@@ -489,11 +491,34 @@ def create_attn_bias(
                 q_len,
                 kv_len,
                 more_keys_than_queries_per_block=bias_type
-                is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
+                in {
+                    fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
+                    fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+                },
             )
         )
         if bias_type is fmha.attn_bias.BlockDiagonalCausalMask:
             block_diag = block_diag.make_causal()
+        if bias_type in {
+            fmha.attn_bias.BlockDiagonalCausalLocalAttentionMask,
+            fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+        }:
+            try:
+                block_diag = fmha.attn_bias.BlockDiagonalMask(
+                    q_seqinfo=block_diag.q_seqinfo,
+                    k_seqinfo=block_diag.k_seqinfo,
+                    _batch_sizes=block_diag._batch_sizes,
+                )
+                if bias_type is fmha.attn_bias.BlockDiagonalCausalLocalAttentionMask:
+                    block_diag = block_diag.make_local_attention(
+                        {0: 3, 1: 128, 2: 300}[r.randint(0, 2)]
+                    )
+                else:
+                    block_diag = block_diag.make_local_attention_from_bottomright(
+                        {0: 3, 1: 128, 2: 300}[r.randint(0, 2)]
+                    )
+            except RuntimeError:
+                pytest.skip()  # no keys are attended
         if bias_type is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask:
             block_diag = block_diag.make_causal_from_bottomright()
         return block_diag
@@ -1936,6 +1961,40 @@ def test_has_kernel_for(sm_shmem: Tuple[int, int], dtype_str: str) -> None:
         assert torch.ops.xformers._has_cutlassB_kernel_for(
             dtype, sm, shmem_kbytes * 1024, k
         ), f"k={k}"
+
+
+def test_window_size_materialize() -> None:
+    seqlens = [4, 6]
+    attn_bias = fmha.attn_bias.BlockDiagonalMask.from_seqlens(
+        q_seqlen=seqlens,
+        kv_seqlen=seqlens,
+    ).make_local_attention(2)
+    mask = attn_bias.materialize(
+        (1, 1, sum(seqlens), sum(seqlens)),
+        device="cpu",
+        dtype=torch.float32,
+    )
+    true_mask = torch.log(
+        torch.Tensor(
+            [
+                [
+                    [
+                        [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0],
+                    ]
+                ]
+            ]
+        )
+    )
+    assert torch.all(mask == true_mask)
 
 
 @cuda_only

@@ -48,7 +48,8 @@ mem_efficient_attention_backward_cutlass(
     const c10::optional<double> scale,
     // how many parallel blocks across the keys dimension. Use `-1` to
     // determine automatically
-    int64_t num_splits_key) {
+    int64_t num_splits_key,
+    const c10::optional<int64_t> window_size) {
 #ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD
   TORCH_CHECK(
       false,
@@ -233,6 +234,10 @@ mem_efficient_attention_backward_cutlass(
     if (cu_seqlens_q.has_value()) {
       p.cu_seqlens_q_ptr = (int32_t*)cu_seqlens_q->data_ptr();
       p.cu_seqlens_k_ptr = (int32_t*)cu_seqlens_k->data_ptr();
+    }
+
+    if (window_size.has_value()) {
+      p.window_size = *window_size;
     }
 
     ASSIGN_CHECK_OVERFLOW(p.lse_strideB, logsumexp.stride(0));

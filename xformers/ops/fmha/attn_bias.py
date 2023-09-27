@@ -467,6 +467,28 @@ class BlockDiagonalMask(AttentionBias):
             _batch_sizes=self._batch_sizes,
         )
 
+    def make_local_attention(
+        self, window_size: int
+    ) -> "BlockDiagonalCausalLocalAttentionMask":
+        """Makes each block causal with local attention"""
+        return BlockDiagonalCausalLocalAttentionMask(
+            q_seqinfo=self.q_seqinfo,
+            k_seqinfo=self.k_seqinfo,
+            _batch_sizes=self._batch_sizes,
+            _window_size=window_size,
+        )
+
+    def make_local_attention_from_bottomright(
+        self, window_size: int
+    ) -> "BlockDiagonalCausalLocalAttentionFromBottomRightMask":
+        """Makes each block causal with local attention, start from bottom right"""
+        return BlockDiagonalCausalLocalAttentionFromBottomRightMask(
+            q_seqinfo=self.q_seqinfo,
+            k_seqinfo=self.k_seqinfo,
+            _batch_sizes=self._batch_sizes,
+            _window_size=window_size,
+        )
+
 
 @dataclass
 class BlockDiagonalCausalMask(BlockDiagonalMask):
@@ -632,3 +654,130 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
         k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(kv_seqlen, kv_padding)
         return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo)
+
+
+@dataclass
+class BlockDiagonalCausalLocalAttentionMask(BlockDiagonalCausalMask):
+    """
+    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.
+    This makes the mask "local" and the attention pattern banded.
+
+    Query i only attends to keys in its block and cannot attend keys further than "window_size"
+    from it.
+
+    _window_size = 0 disables window_size
+    """
+
+    _window_size: int = 0  # forced due to inheritance and default arguments
+
+    def __post_init__(self):
+        self.check()
+
+    def check(self):
+        if self._window_size is None or self._window_size == 0:
+            return
+        q_seqlen = [
+            y - x
+            for x, y in zip(
+                self.q_seqinfo.seqstart_py[:-1], self.q_seqinfo.seqstart_py[1:]
+            )
+        ]
+        kv_seqlen = [
+            y - x
+            for x, y in zip(
+                self.k_seqinfo.seqstart_py[:-1], self.k_seqinfo.seqstart_py[1:]
+            )
+        ]
+        for q, k in zip(q_seqlen, kv_seqlen):
+            if q - self._window_size >= k:
+                raise RuntimeError(
+                    f"No keys are attended in q_seqlen {q} k_seqlen {k} with sliding window {self._window_size}"
+                )
+
+    def _create_block_mask(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
+        tensor = torch.full(  # type: ignore
+            shape,
+            dtype=create_as,
+            fill_value=1,
+            device=device,
+        )
+
+        num_queries, num_keys = shape[-2:]
+        mask = torch.tril(tensor, diagonal=0).to(dtype)  # type: ignore
+        if self._window_size is not None and self._window_size > 0:
+            mask = torch.triu(mask, diagonal=-self._window_size + 1)
+        mask = torch.log(mask)
+        return mask.to(dtype)
+
+
+@dataclass
+class BlockDiagonalCausalLocalAttentionFromBottomRightMask(
+    BlockDiagonalCausalFromBottomRightMask
+):
+    """
+    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.
+    This makes the mask "local" and the attention pattern banded.
+
+    Query i only attends to keys in its block and cannot attend keys further than "window_size"
+    from it.
+
+    _window_size = 0 disables window_size
+    """
+
+    _window_size: int = 0  # forced due to inheritance and default arguments
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.check()
+
+    def check(self):
+        if self._window_size is None or self._window_size == 0:
+            return
+        q_seqlen = [
+            y - x
+            for x, y in zip(
+                self.q_seqinfo.seqstart_py[:-1], self.q_seqinfo.seqstart_py[1:]
+            )
+        ]
+        kv_seqlen = [
+            y - x
+            for x, y in zip(
+                self.k_seqinfo.seqstart_py[:-1], self.k_seqinfo.seqstart_py[1:]
+            )
+        ]
+        for q, k in zip(q_seqlen, kv_seqlen):
+            if q + (q - k) - self._window_size >= k:
+                raise RuntimeError(
+                    f"No keys are attended in q_seqlen {q} k_seqlen {k} with sliding window {self._window_size}"
+                )
+        materialized = self.materialize((sum(q_seqlen), sum(kv_seqlen)))
+        if torch.max(materialized, dim=1).values.min() == -float("inf"):
+            raise RuntimeError("FUCKING FUCK FUCK")
+
+    def _create_block_mask(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
+        tensor = torch.full(  # type: ignore
+            shape,
+            dtype=create_as,
+            fill_value=1,
+            device=device,
+        )
+        num_queries, num_keys = shape[-2:]
+        mask = torch.tril(tensor, diagonal=num_keys - num_queries).to(dtype)  # type: ignore
+        if self._window_size is not None:
+            mask = torch.triu(
+                mask, diagonal=num_keys - num_queries - self._window_size + 1
+            )
+        mask = torch.log(mask)
+        return mask.to(dtype)
