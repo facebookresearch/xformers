@@ -126,7 +126,8 @@ def mem_eff_attention_decoder(
     has_run = False
     for fw_op in OPS:
         inp = fmha.Inputs(q, k, v, attn_bias=bias)
-        if not fw_op.supports(inp):
+        if (skip_reasons := fw_op.not_supported_reasons(inp)):
+            print(f"Skip benchmark: {skip_reasons=}")
             continue
 
         fn = partial(xformers.ops.memory_efficient_attention_forward, op=fw_op)
