@@ -693,7 +693,7 @@
 <div class="viewcode-block" id="BlockDiagonalMask.make_local_attention"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask.make_local_attention">[docs]</a>    <span class="k">def</span> <span class="nf">make_local_attention</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">window_size</span><span class="p">:</span> <span class="nb">int</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionMask&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Makes each block causal with local attention&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Experimental: Makes each block causal with local attention&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="p">,</span>
@@ -704,7 +704,7 @@
 <div class="viewcode-block" id="BlockDiagonalMask.make_local_attention_from_bottomright"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask.make_local_attention_from_bottomright">[docs]</a>    <span class="k">def</span> <span class="nf">make_local_attention_from_bottomright</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">window_size</span><span class="p">:</span> <span class="nb">int</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionFromBottomRightMask&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Makes each block causal with local attention, start from bottom right&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Experimental: Makes each block causal with local attention, start from bottom right&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="p">,</span>
@@ -882,23 +882,21 @@
 <div class="viewcode-block" id="BlockDiagonalCausalLocalAttentionMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalLocalAttentionMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalCausalLocalAttentionMask</span><span class="p">(</span><span class="n">BlockDiagonalCausalMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    (Experimental feature)</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.</span>
 <span class="sd">    This makes the mask &quot;local&quot; and the attention pattern banded.</span>
 
 <span class="sd">    Query i only attends to keys in its block and cannot attend keys further than &quot;window_size&quot;</span>
 <span class="sd">    from it.</span>
-
-<span class="sd">    _window_size = 0 disables window_size</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">_window_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># forced due to inheritance and default arguments</span>
 
     <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">check</span><span class="p">()</span>
-
-    <span class="k">def</span> <span class="nf">check</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">return</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Expected `window_size &gt; 0`, but window_size=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
         <span class="n">q_seqlen</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">y</span> <span class="o">-</span> <span class="n">x</span>
             <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
@@ -944,24 +942,22 @@
     <span class="n">BlockDiagonalCausalFromBottomRightMask</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    (Experimental feature)</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.</span>
 <span class="sd">    This makes the mask &quot;local&quot; and the attention pattern banded.</span>
 
 <span class="sd">    Query i only attends to keys in its block and cannot attend keys further than &quot;window_size&quot;</span>
 <span class="sd">    from it.</span>
-
-<span class="sd">    _window_size = 0 disables window_size</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">_window_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># forced due to inheritance and default arguments</span>
 
     <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__post_init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">check</span><span class="p">()</span>
-
-    <span class="k">def</span> <span class="nf">check</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">return</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Expected `window_size &gt; 0`, but window_size=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
         <span class="n">q_seqlen</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">y</span> <span class="o">-</span> <span class="n">x</span>
             <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
