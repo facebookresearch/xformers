@@ -112,10 +112,10 @@ __device__
 float4
 scalar4_scale_acc<uint2, ck::half_t>(float4 acc, const uint2* ra, float b) {
   const auto* a = reinterpret_cast<const ck::half4_t*>(ra);
-  acc.x += a->x * b;
-  acc.y += a->y * b;
-  acc.z += a->z * b;
-  acc.w += a->w * b;
+  acc.x += ck::type_convert<float>(a->x) * b;
+  acc.y += ck::type_convert<float>(a->y) * b;
+  acc.z += ck::type_convert<float>(a->z) * b;
+  acc.w += ck::type_convert<float>(a->w) * b;
   return acc;
 }
 
@@ -124,10 +124,10 @@ __device__
 float4
 scalar4_scale_acc<uint2, ck::bhalf_t>(float4 acc, const uint2* ra, float b) {
   const auto* a = reinterpret_cast<const ck::bhalf4_t*>(ra);
-  acc.x += a->x * b;
-  acc.y += a->y * b;
-  acc.z += a->z * b;
-  acc.w += a->w * b;
+  acc.x += ck::type_convert<float>(a->x) * b;
+  acc.y += ck::type_convert<float>(a->y) * b;
+  acc.z += ck::type_convert<float>(a->z) * b;
+  acc.w += ck::type_convert<float>(a->w) * b;
   return acc;
 }
 
@@ -296,7 +296,7 @@ efficient_attention_forward_decoder_ck_kernel(
   }
   __syncthreads();
 
-  // Now, we can comute the softmax and write the outputs.
+  // Now, we can compute the softmax and write the outputs.
 
   // Split T across wavefronts in a block
   // each wavefront compute sum(t_subset) P[t] * V[t_subset, d]
@@ -322,7 +322,6 @@ efficient_attention_forward_decoder_ck_kernel(
       o_acc = scalar4_scale_acc<read_t, data_t>(o_acc, k_loads[ttt], ps[ttt]);
     }
   }
-
 
   for (auto tt = t_max_unroll + wavefront_idx; tt < t_max;
        tt += kWavefrontsPerBlock * kTimeUnroll1) {
