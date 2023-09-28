@@ -303,7 +303,7 @@ efficient_attention_forward_decoder_ck_kernel(
   // outputs are of size float[D]
 
   float ps[kTimeUnroll];
-  float4 o_acc;
+  float4 o_acc = make_float4(0, 0, 0, 0);
   for (auto tt = wavefront_idx * kTimeUnroll; tt < t_max_unroll;
        tt += kWavefrontsPerBlock * kTimeUnroll) {
 #pragma unroll kTimeUnroll
