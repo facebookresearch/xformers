@@ -157,7 +157,7 @@ efficient_attention_forward_decoder_ck_kernel(
 
   int32_t wavefront_idx = threadIdx.y;
   // need kWavefrontsPerBlock == blockDim.y;
-  // Need D_H == 256
+  // Need D_H == 256 (NB: 128 in CUDA because of wavefront/warp sizes 64/32)
   const auto* q_ = &(XQ[b][0][h][0]);
 
   const bool multiquery = cache_K.size(2) == 1;
