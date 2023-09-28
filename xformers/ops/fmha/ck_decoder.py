@@ -11,8 +11,8 @@ from ..common import get_xformers_operator, register_operator
 class FwOp(AttentionFwOpBase):
     OPERATOR = get_xformers_operator("efficient_attention_forward_decoder_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
-    SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
-    SUPPORTED_MAX_K: float = 128
+    SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16, torch.float}
+    SUPPORTED_MAX_K: float = 256
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {BlockDiagonalCausalWithOffsetPaddedKeysMask}
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
@@ -31,8 +31,8 @@ class FwOp(AttentionFwOpBase):
             if d.query.shape[0] != 1:
                 reasons.append("One formal batch element expected")
 
-            if d.query.shape[-1] != 128:
-                reasons.append("Only head_dim==128 for now.")
+            if d.query.shape[-1] != 256:
+                reasons.append("Only head_dim==256 for now.")
 
             if d.key.stride(-1) != 1:
                 reasons.append("expect keys to have last dim contiguous")

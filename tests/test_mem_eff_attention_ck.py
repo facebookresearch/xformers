@@ -1629,7 +1629,7 @@ def test_decoder(
 ) -> None:
     dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float}[dtype]
     torch.manual_seed(1)
-    d = 128
+    d = 256
     k_shape = (1, bsz * padding, n_heads, d)
     # TODO: support 2 kv heads etc.
     k = torch.randn(k_shape, dtype=dtype_).cuda()
