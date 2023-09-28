@@ -4,12 +4,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.22] - TBD
+## [0.0.23] - TBD
 ### Fixed
 ### Added
+### Removed
+
+## [0.0.22] - 2023-09-27
+### Fixed
+- fMHA: Backward pass now works in PyTorch deterministic mode (although slower)
+### Added
 - fMHA: Added experimental support for Multi-Query Attention and Grouped-Query Attention. This is handled by passing 5-dimensional inputs to `memory_efficient_attention`, see the documentation for more details
+- fMHA: Added experimental support for Local Attention biases to `memory_efficient_attention`
+- Added an example of efficient [LLaMa decoding](https://github.com/facebookresearch/xformers/tree/main/examples/llama_inference) using xformers operators
+- Added Flash-Decoding for faster attention during Large Language Model (LLM) decoding - up to 50x faster for long sequences (token decoding up to 8x faster end-to-end)
+- Added an efficient rope implementation in triton, to be used in LLM decoding
+- Added selective activation checkpointing, which gives fine-grained control of which activations to keep and which activations to recompute
+- `xformers.info` now indicates the Flash-Attention version used
 ### Removed
 - fMHA: Removed `smallK` backend support for CPU. `memory_efficient_attention` only works for CUDA/GPU tensors now
+- **DEPRECATION**: Many classes in `xformers.factory`, `xformers.triton` and `xformers.components` have been or will be deprecated soon (see tracking issue facebookresearch/xformers#848)
 
 ## [0.0.21] - 2023-08-18
 ### Improved
