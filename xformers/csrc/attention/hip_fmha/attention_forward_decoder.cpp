@@ -51,25 +51,6 @@ constexpr int32_t kWavefrontsPerBlock = 16;
 constexpr int32_t D_H = 256;
 constexpr int32_t T_MAX = 8192;
 
-// read 4 elements in one instruction
-template<typename c10_t>
-struct c10_to_read_t;
-
-template<>
-struct c10_to_read_t<float> {
-  using type = uint4;
-};
-
-template<>
-struct c10_to_read_t<c10::Half> {
-  using type = uint2;
-};
-
-template<>
-struct c10_to_read_t<c10::BFloat16> {
-  using type = uint2;
-};
-
 template<typename c10_t>
 struct c10_to_data_t;
 
@@ -140,12 +121,12 @@ __device__ __forceinline__ wavefrontReduce(float val) {
 }
 
 template <typename TDataPtr, typename TDataVec>
-__device__ TDataVec load_v(const TDataPtr data_ptr, int32_t vector_offset) {
+__device__ TDataVec load_v(TDataPtr data_ptr, int32_t vector_offset) {
   return *(reinterpret_cast<const TDataVec*>(data_ptr) + vector_offset);
 }
 
 template <typename TDataPtr, typename TDataVec>
-__device__ void store_v(const TDataPtr data_ptr, int32_t vector_offset, TDataVec value) {
+__device__ void store_v(TDataPtr data_ptr, int32_t vector_offset, TDataVec value) {
   *(reinterpret_cast<TDataVec*>(data_ptr) + vector_offset) = value;
 }
 
@@ -176,16 +157,15 @@ efficient_attention_forward_decoder_ck_kernel(
 
   int32_t wavefront_idx = threadIdx.y;
   // need kWavefrontsPerBlock == blockDim.y;
-  // Need D_H == 128
+  // Need D_H == 256
   const auto* q_ = &(XQ[b][0][h][0]);
 
-  bool multiquery = cache_K.size(2) == 1;
+  const bool multiquery = cache_K.size(2) == 1;
   auto* cache_K_base = &cache_K[b][0][multiquery ? 0 : h][0];
   auto* cache_V_base = &cache_V[b][0][multiquery ? 0 : h][0];
 
   // Load Q into registers in all wavefronts.
   // Each thread handles 4 D dimensions
-  using read_t = typename c10_to_read_t<scalar_t>::type;
   using data_t = typename c10_to_data_t<scalar_t>::type;
   using data_vec4_t = typename c10_to_data_t<scalar_t>::vec4;
   const data_vec4_t q_thread = load_v<decltype(q_), data_vec4_t>(q_, threadIdx.x);
