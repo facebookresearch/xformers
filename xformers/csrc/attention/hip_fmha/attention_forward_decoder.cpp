@@ -130,13 +130,23 @@ scalar4_scale_acc<ck::bhalf4_t>(float4 acc, const ck::bhalf4_t& a, float b) {
 
 template <typename F>
 float
-__device__ wavefrontReduce(float val) {
+__device__ __forceinline__ wavefrontReduce(float val) {
   auto reducer = F();  
 #pragma unroll
-  for (uint mask = kThreadsPerWavefront >> 1; mask > 0; mask >>= 1) {
+  for (int32_t mask = kThreadsPerWavefront >> 1; mask > 0; mask >>= 1) {
     val = reducer(val, __shfl_xor(val, mask, kThreadsPerWavefront));
   }
   return val;
+}
+
+template <typename TDataPtr, typename TDataVec>
+__device__ TDataVec load_v(const TDataPtr data_ptr, int32_t vector_offset) {
+  return *(reinterpret_cast<const TDataVec*>(data_ptr) + vector_offset);
+}
+
+template <typename TDataPtr, typename TDataVec>
+__device__ void store_v(const TDataPtr data_ptr, int32_t vector_offset, TDataVec value) {
+  *(reinterpret_cast<TDataVec*>(data_ptr) + vector_offset) = value;
 }
 
 template<typename scalar_t>
@@ -178,8 +188,7 @@ efficient_attention_forward_decoder_ck_kernel(
   using read_t = typename c10_to_read_t<scalar_t>::type;
   using data_t = typename c10_to_data_t<scalar_t>::type;
   using data_vec4_t = typename c10_to_data_t<scalar_t>::vec4;
-  const data_vec4_t q_thread = *(reinterpret_cast<const data_vec4_t*>(q_) + threadIdx.x);
-
+  const data_vec4_t q_thread = load_v<decltype(q_), data_vec4_t>(q_, threadIdx.x);
   // Each block computes different B value
   float max_qk_acc = std::numeric_limits<float>::lowest();
 
@@ -200,8 +209,7 @@ efficient_attention_forward_decoder_ck_kernel(
       int32_t t = tt + ttt;
       auto* k_ = cache_K_base + t * cache_K.stride(1);
       // scalar4<scalar_t> k_thread;
-      k_loads[ttt] =
-          *(reinterpret_cast<const data_vec4_t*>(k_) + threadIdx.x);
+      k_loads[ttt] = load_v<decltype(k_), data_vec4_t>(k_, threadIdx.x);
     }
 #pragma unroll kTimeUnroll
     for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
@@ -232,8 +240,7 @@ efficient_attention_forward_decoder_ck_kernel(
       // &(cache_K[b][t][0][0]);
       auto* k_ = cache_K_base + t * cache_K.stride(1);
       // scalar4<scalar_t> k_thread;
-      k_loads[ttt] =
-          *(reinterpret_cast<const data_vec4_t*>(k_) + threadIdx.x);
+      k_loads[ttt] = load_v<decltype(k_), data_vec4_t>(k_, threadIdx.x);
     }
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
@@ -309,8 +316,8 @@ efficient_attention_forward_decoder_ck_kernel(
       // &(cache_V[b][t][0][0]);
       auto* v_ = cache_V_base + t * cache_V.stride(1);
       //   scalar4<scalar_t> v_thread;
-      k_loads[ttt] =
-          *(reinterpret_cast<const data_vec4_t*>(v_) + threadIdx.x);
+      k_loads[ttt] = load_v<decltype(v_), data_vec4_t>(v_, threadIdx.x);
+
       ps[ttt] = smem[t];
     }
 
@@ -328,8 +335,8 @@ efficient_attention_forward_decoder_ck_kernel(
       // &(cache_V[b][t][0][0]);
       auto* v_ = cache_V_base + t * cache_V.stride(1);
       //   scalar4<scalar_t> v_thread;
-      k_loads[ttt] =
-          *(reinterpret_cast<const data_vec4_t*>(v_) + threadIdx.x);
+      k_loads[ttt] = load_v<decltype(v_), data_vec4_t>(v_, threadIdx.x);
+
       ps[ttt] = smem[t];
     }
 
@@ -342,29 +349,26 @@ efficient_attention_forward_decoder_ck_kernel(
   // results back.
   __syncthreads();
 
-  *(reinterpret_cast<float4*>(smem) + wavefront_idx * kThreadsPerWavefront +
-    threadIdx.x) = o_acc;
+  store_v<float*, float4>(smem, wavefront_idx * kThreadsPerWavefront +
+    threadIdx.x, o_acc);
   __syncthreads();
   // sum up partial D rows from other wavefronts
   if (wavefront_idx == 0) {
     float4 r = make_float4(0, 0, 0, 0);
     for (int32_t w = 0; w < kWavefrontsPerBlock; ++w) {
-      auto partial_r = *(
-          reinterpret_cast<float4*>(smem) + w * kThreadsPerWavefront + threadIdx.x);
+      auto partial_r = load_v<float*, float4>(smem, w * kThreadsPerWavefront + threadIdx.x);
       r.x += partial_r.x;
       r.y += partial_r.y;
       r.z += partial_r.z;
       r.w += partial_r.w;
     }
     // write output D row
-    auto* o_ = reinterpret_cast<read_t*>(&O[b][0][h][0]);
-    typename c10_to_data_t<scalar_t>::vec4 bf_r;
+    data_vec4_t bf_r;
     bf_r.x = r.x;
     bf_r.y = r.y;
     bf_r.z = r.z;
     bf_r.w = r.w;
-    o_[threadIdx.x] =
-        *reinterpret_cast<const read_t*>(&bf_r);
+    store_v<decltype(&O[b][0][h][0]), data_vec4_t>(&O[b][0][h][0], threadIdx.x, bf_r);
   }
 }
 
