@@ -91,43 +91,40 @@ struct c10_to_data_t<c10::BFloat16> {
     using vec4 = ck::bhalf4_t;
 };
 
-template<typename read_t, typename data_t>
+template<typename data4_t>
 __device__
-float4 scalar4_scale_acc(float4 acc, const read_t* ra, float b);
+float4 scalar4_scale_acc(float4 acc, const data4_t& a, float b);
 
 template<>
 __device__  
 float4
-scalar4_scale_acc<uint4, float>(float4 acc, const uint4* ra, float b) {
-  const auto* a = reinterpret_cast<const float4*>(ra);
-  acc.x += a->x * b;
-  acc.y += a->y * b;
-  acc.z += a->z * b;
-  acc.w += a->w * b;
+scalar4_scale_acc<ck::float4_t>(float4 acc, const ck::float4_t& a, float b) {
+  acc.x += a.x * b;
+  acc.y += a.y * b;
+  acc.z += a.z * b;
+  acc.w += a.w * b;
   return acc;
 }
 
 template<>
 __device__  
 float4
-scalar4_scale_acc<uint2, ck::half_t>(float4 acc, const uint2* ra, float b) {
-  const auto* a = reinterpret_cast<const ck::half4_t*>(ra);
-  acc.x += ck::type_convert<float>(a->x) * b;
-  acc.y += ck::type_convert<float>(a->y) * b;
-  acc.z += ck::type_convert<float>(a->z) * b;
-  acc.w += ck::type_convert<float>(a->w) * b;
+scalar4_scale_acc<ck::half4_t>(float4 acc, const ck::half4_t& a, float b) {
+  acc.x += ck::type_convert<float>(a.x) * b;
+  acc.y += ck::type_convert<float>(a.y) * b;
+  acc.z += ck::type_convert<float>(a.z) * b;
+  acc.w += ck::type_convert<float>(a.w) * b;
   return acc;
 }
 
 template<>
 __device__  
 float4
-scalar4_scale_acc<uint2, ck::bhalf_t>(float4 acc, const uint2* ra, float b) {
-  const auto* a = reinterpret_cast<const ck::bhalf4_t*>(ra);
-  acc.x += ck::type_convert<float>(a->x) * b;
-  acc.y += ck::type_convert<float>(a->y) * b;
-  acc.z += ck::type_convert<float>(a->z) * b;
-  acc.w += ck::type_convert<float>(a->w) * b;
+scalar4_scale_acc<ck::bhalf4_t>(float4 acc, const ck::bhalf4_t& a, float b) {
+  acc.x += ck::type_convert<float>(a.x) * b;
+  acc.y += ck::type_convert<float>(a.y) * b;
+  acc.z += ck::type_convert<float>(a.z) * b;
+  acc.w += ck::type_convert<float>(a.w) * b;
   return acc;
 }
 
@@ -181,7 +178,7 @@ efficient_attention_forward_decoder_ck_kernel(
   using read_t = typename c10_to_read_t<scalar_t>::type;
   using data_t = typename c10_to_data_t<scalar_t>::type;
   using data_vec4_t = typename c10_to_data_t<scalar_t>::vec4;
-  const read_t* q_thread = reinterpret_cast<const read_t*>(q_) + threadIdx.x;
+  const data_vec4_t q_thread = *(reinterpret_cast<const data_vec4_t*>(q_) + threadIdx.x);
 
   // Each block computes different B value
   float max_qk_acc = std::numeric_limits<float>::lowest();
@@ -191,7 +188,7 @@ efficient_attention_forward_decoder_ck_kernel(
   // parallelism.
 
   constexpr int32_t kTimeUnroll = 1;
-  const read_t* k_loads[kTimeUnroll];
+  data_vec4_t k_loads[kTimeUnroll];
 
   const int32_t t_max_unroll =
     (t_max / (kWavefrontsPerBlock * kTimeUnroll)) * (kWavefrontsPerBlock * kTimeUnroll);
@@ -204,15 +201,15 @@ efficient_attention_forward_decoder_ck_kernel(
       auto* k_ = cache_K_base + t * cache_K.stride(1);
       // scalar4<scalar_t> k_thread;
       k_loads[ttt] =
-          reinterpret_cast<const read_t*>(k_) + threadIdx.x;
+          *(reinterpret_cast<const data_vec4_t*>(k_) + threadIdx.x);
     }
 #pragma unroll kTimeUnroll
     for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
       float qk_acc = 0;
       int32_t t = tt + ttt;
 
-      ck::inner_product<data_vec4_t, data_vec4_t, float>(*reinterpret_cast<const data_vec4_t*>(q_thread), 
-                                                         *reinterpret_cast<const data_vec4_t*>(k_loads[ttt]), 
+      ck::inner_product<data_vec4_t, data_vec4_t, float>(q_thread, 
+                                                         k_loads[ttt], 
                                                          qk_acc);
       qk_acc *= qk_scale;
 
@@ -236,14 +233,14 @@ efficient_attention_forward_decoder_ck_kernel(
       auto* k_ = cache_K_base + t * cache_K.stride(1);
       // scalar4<scalar_t> k_thread;
       k_loads[ttt] =
-          reinterpret_cast<const read_t*>(k_) + threadIdx.x;
+          *(reinterpret_cast<const data_vec4_t*>(k_) + threadIdx.x);
     }
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
       float qk_acc = 0;
       int32_t t = tt + ttt;
-      ck::inner_product<data_vec4_t, data_vec4_t, float>(*reinterpret_cast<const data_vec4_t*>(q_thread), 
-                                                         *reinterpret_cast<const data_vec4_t*>(k_loads[ttt]), 
+      ck::inner_product<data_vec4_t, data_vec4_t, float>(q_thread, 
+                                                         k_loads[ttt], 
                                                          qk_acc);
       qk_acc *= qk_scale;
 
@@ -313,13 +310,13 @@ efficient_attention_forward_decoder_ck_kernel(
       auto* v_ = cache_V_base + t * cache_V.stride(1);
       //   scalar4<scalar_t> v_thread;
       k_loads[ttt] =
-          reinterpret_cast<const read_t*>(v_) + threadIdx.x;
+          *(reinterpret_cast<const data_vec4_t*>(v_) + threadIdx.x);
       ps[ttt] = smem[t];
     }
 
 #pragma unroll kTimeUnroll
     for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
-      o_acc = scalar4_scale_acc<read_t, data_t>(o_acc, k_loads[ttt], ps[ttt]);
+      o_acc = scalar4_scale_acc<data_vec4_t>(o_acc, k_loads[ttt], ps[ttt]);
     }
   }
 
@@ -332,13 +329,13 @@ efficient_attention_forward_decoder_ck_kernel(
       auto* v_ = cache_V_base + t * cache_V.stride(1);
       //   scalar4<scalar_t> v_thread;
       k_loads[ttt] =
-          reinterpret_cast<const read_t*>(v_) + threadIdx.x;
+          *(reinterpret_cast<const data_vec4_t*>(v_) + threadIdx.x);
       ps[ttt] = smem[t];
     }
 
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
-      o_acc = scalar4_scale_acc<read_t, data_t>(o_acc, k_loads[ttt], ps[ttt]);
+      o_acc = scalar4_scale_acc<data_vec4_t>(o_acc, k_loads[ttt], ps[ttt]);
     }
   }
   // now, each thread has partial sums. Write to smem and get accumulated
