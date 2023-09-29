@@ -74,23 +74,20 @@ struct c10_to_data_t<c10::BFloat16> {
 
 template<typename data4_t>
 __device__
-float4 scalar4_scale_acc(float4 acc, const data4_t& a, float b);
+ck::float4_t scalar4_scale_acc(ck::float4_t acc, data4_t a, float b);
 
 template<>
 __device__  
-float4
-scalar4_scale_acc<ck::float4_t>(float4 acc, const ck::float4_t& a, float b) {
-  acc.x += a.x * b;
-  acc.y += a.y * b;
-  acc.z += a.z * b;
-  acc.w += a.w * b;
+ck::float4_t
+scalar4_scale_acc<ck::float4_t>(ck::float4_t acc, ck::float4_t a, float b) {
+  acc = acc + a * b;
   return acc;
 }
 
 template<>
 __device__  
-float4
-scalar4_scale_acc<ck::half4_t>(float4 acc, const ck::half4_t& a, float b) {
+ck::float4_t
+scalar4_scale_acc<ck::half4_t>(ck::float4_t acc, ck::half4_t a, float b) {
   acc.x += ck::type_convert<float>(a.x) * b;
   acc.y += ck::type_convert<float>(a.y) * b;
   acc.z += ck::type_convert<float>(a.z) * b;
@@ -100,8 +97,8 @@ scalar4_scale_acc<ck::half4_t>(float4 acc, const ck::half4_t& a, float b) {
 
 template<>
 __device__  
-float4
-scalar4_scale_acc<ck::bhalf4_t>(float4 acc, const ck::bhalf4_t& a, float b) {
+ck::float4_t
+scalar4_scale_acc<ck::bhalf4_t>(ck::float4_t acc, ck::bhalf4_t a, float b) {
   acc.x += ck::type_convert<float>(a.x) * b;
   acc.y += ck::type_convert<float>(a.y) * b;
   acc.z += ck::type_convert<float>(a.z) * b;
@@ -287,7 +284,7 @@ efficient_attention_forward_decoder_ck_kernel(
   // outputs are of size float[D]
 
   float ps[kTimeUnroll];
-  float4 o_acc = make_float4(0, 0, 0, 0);
+  ck::float4_t o_acc = 0;
   for (auto tt = wavefront_idx * kTimeUnroll; tt < t_max_unroll;
        tt += kWavefrontsPerBlock * kTimeUnroll) {
 #pragma unroll kTimeUnroll
@@ -329,25 +326,22 @@ efficient_attention_forward_decoder_ck_kernel(
   // results back.
   __syncthreads();
 
-  store_v<float*, float4>(smem, wavefront_idx * kThreadsPerWavefront +
+  store_v<float*, ck::float4_t>(smem, wavefront_idx * kThreadsPerWavefront +
     threadIdx.x, o_acc);
   __syncthreads();
   // sum up partial D rows from other wavefronts
   if (wavefront_idx == 0) {
-    float4 r = make_float4(0, 0, 0, 0);
+    ck::float4_t r = 0;
     for (int32_t w = 0; w < kWavefrontsPerBlock; ++w) {
-      auto partial_r = load_v<float*, float4>(smem, w * kThreadsPerWavefront + threadIdx.x);
-      r.x += partial_r.x;
-      r.y += partial_r.y;
-      r.z += partial_r.z;
-      r.w += partial_r.w;
+      auto partial_r = load_v<float*, ck::float4_t>(smem, w * kThreadsPerWavefront + threadIdx.x);
+      r += partial_r;
     }
     // write output D row
     data_vec4_t bf_r;
-    bf_r.x = r.x;
-    bf_r.y = r.y;
-    bf_r.z = r.z;
-    bf_r.w = r.w;
+    bf_r.x = ck::type_convert<data_t>(r.x);
+    bf_r.y = ck::type_convert<data_t>(r.y);
+    bf_r.z = ck::type_convert<data_t>(r.z);
+    bf_r.w = ck::type_convert<data_t>(r.w);
     store_v<decltype(&O[b][0][h][0]), data_vec4_t>(&O[b][0][h][0], threadIdx.x, bf_r);
   }
 }
