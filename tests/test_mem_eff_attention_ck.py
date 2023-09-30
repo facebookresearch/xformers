@@ -208,15 +208,17 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
 )
 
 
-def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
+def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None):
     if q.ndim == 4:
         assert p == 0.0
         return ref_attention_bmhk(q, k, v, attn_bias=attn_bias)
-    q = q.float()
-    k = k.float()
-    v = v.float()
+    if dtype is None:
+        dtype = torch.float32
+    q = q.to(dtype=dtype)
+    k = k.to(dtype=dtype)
+    v = v.to(dtype=dtype)
 
-    scale = scale if scale is not None else (1 / q.shape[-1] ** 0.5)
+    scale = scale if scale is not None else (q.shape[-1] ** -0.5)
     q = q * scale
 
     attn = q @ k.transpose(-2, -1)
@@ -226,16 +228,16 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
             attn_bias_tensor = attn_bias.materialize(
                 (q.shape[0], 1, q.shape[1], k.shape[1]),
                 device=q.device,
-                dtype=torch.float32,
+                dtype=dtype,
             )
         else:
-            attn_bias_tensor = attn_bias
+            attn_bias_tensor = attn_bias.to(dtype=dtype)
         if attn_bias_tensor.ndim == 4:
             assert q.shape[0] == attn_bias_tensor.shape[0] * attn_bias_tensor.shape[1]
             attn_bias_tensor = attn_bias_tensor.reshape(
                 [-1, *attn_bias_tensor.shape[2:]]
             )
-        attn = attn + attn_bias_tensor.float()
+        attn = attn + attn_bias_tensor
     attn = attn.softmax(-1)
     if drop_mask is not None:
         attn = attn * (drop_mask / (1 - p))
@@ -1619,10 +1621,10 @@ def test_attn_bias_padded() -> None:
 
 
 @pytest.mark.parametrize("op", [fmha.ck_decoder.FwOp])
-@pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "")
-@pytest.mark.parametrize("n_heads", [1, 16, 32])
-@pytest.mark.parametrize("padding", [32, 4096])
-@pytest.mark.parametrize("bsz", [1, 8])
+@pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "nomq")
+@pytest.mark.parametrize("n_heads", [1, 16, 32], ids=lambda x: f"nh={x}")
+@pytest.mark.parametrize("padding", [32, 4096], ids=lambda x: f"pad={x}")
+@pytest.mark.parametrize("bsz", [1, 8], ids=lambda x: f"bsz={x}")
 @pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
 def test_decoder(
     op, multiquery: bool, n_heads: int, padding: int, bsz: int, dtype: str
@@ -1658,11 +1660,11 @@ def test_decoder(
         q, k, v, attn_bias, op=op
     )
     
-    ref_output = ref_attention(q, k, v, attn_bias)
+    ref_output = ref_attention(q, k, v, attn_bias, dtype=dtype_)
 
     assert_allclose(
         decoder_output.float(),
-        ref_output,
+        ref_output.float(),
         atol=fmha.ck_decoder.FwOp.ERROR_ATOL[dtype_] * 4,
         rtol=fmha.ck_decoder.FwOp.ERROR_RTOL[dtype_],
     )

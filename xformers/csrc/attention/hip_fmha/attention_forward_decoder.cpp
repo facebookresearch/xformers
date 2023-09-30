@@ -135,7 +135,7 @@ efficient_attention_forward_decoder_ck_kernel(
     at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_V,
     at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> O,
     at::PackedTensorAccessor32<int32_t, 1, at::RestrictPtrTraits> seq_positions,
-    float qk_scale
+    const float qk_scale
 ) {
   static_assert(4 * kThreadsPerWavefront == D_H, "");
   static_assert(kWavefrontsPerBlock <= kThreadsPerWavefront, "");
@@ -145,15 +145,15 @@ efficient_attention_forward_decoder_ck_kernel(
   extern __shared__ __align__(16) float smem[];
 
   // Each block handles a single batch and head
-  int32_t b = blockIdx.x;
-  int32_t h = blockIdx.y;
+  const int32_t b = blockIdx.x;
+  const int32_t h = blockIdx.y;
 
   // Note: this is decoding case where we attend to current and all previous
   // tokens.
-  int32_t t_max = seq_positions[b] + seq_positions_shift;
+  const int32_t t_max = seq_positions[b] + seq_positions_shift;
 
+  // blockDim.x = kThreadsPerWavefront, blockDim.y = kWavefrontsPerBlock
   int32_t wavefront_idx = threadIdx.y;
-  // need kWavefrontsPerBlock == blockDim.y;
   // Need D_H == 256 (NB: 128 in CUDA because of wavefront/warp sizes 64/32)
   const auto* q_ = &(XQ[b][0][h][0]);
 
@@ -253,7 +253,7 @@ efficient_attention_forward_decoder_ck_kernel(
   float softmax_denominator = 0.0f;
   for (int32_t t = threadIdx.x + wavefront_idx * kThreadsPerWavefront; t < t_max;
        t += kWavefrontsPerBlock * kThreadsPerWavefront) {
-    softmax_denominator += __expf(smem[t] - max_qk_acc);
+    softmax_denominator += expf(smem[t] - max_qk_acc);
   }
   softmax_denominator = wavefrontReduce<std::plus<float>>(softmax_denominator);
 
@@ -273,7 +273,7 @@ efficient_attention_forward_decoder_ck_kernel(
   // now, compute the normalization across all threads.
   for (int32_t t = threadIdx.x + wavefront_idx * kThreadsPerWavefront; t < t_max;
        t += kWavefrontsPerBlock * kThreadsPerWavefront) {
-    smem[t] = __expf(smem[t] - max_qk_acc) / softmax_denominator;
+    smem[t] = expf(smem[t] - max_qk_acc) / softmax_denominator;
   }
   __syncthreads();
 
