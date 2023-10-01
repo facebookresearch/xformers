@@ -116,7 +116,7 @@ def local_2d_distance(H, W, p=2.0):
     return local_nd_distance(H, W, p=p)
 
 
-def local_2d_gausian_distribution(H, W, sigma=1):
+def local_2d_gaussian_distribution(H, W, sigma=1):
     return local_nd_gaussian_distribution(H, W, sigma=sigma)
 
 
