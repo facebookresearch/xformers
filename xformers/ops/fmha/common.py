@@ -160,6 +160,8 @@ class Inputs:
         K = self.query.shape[-1]
         B, Mkv = self.key.shape[:2]
         Kv = self.value.shape[-1]
+        quantized_kv_cache = self.value.dtype == torch.int32
+        key_embed_dim = Kv if quantized_kv_cache else K
 
         valid_shapes = True
         if self.query.ndim == 3:  # BMK
@@ -170,8 +172,6 @@ class Inputs:
             )
         H = self.query.shape[-2]
         if self.query.ndim == 4:  # BMHK
-            quantized_kv_cache = self.value.dtype == torch.int32
-            key_embed_dim = Kv if quantized_kv_cache else K
             valid_shapes = (
                 self.query.shape == (B, Mq, H, K)
                 and self.key.shape == (B, Mkv, H, key_embed_dim)
@@ -181,7 +181,7 @@ class Inputs:
         if self.query.ndim == 5:  # BMNHK
             valid_shapes = (
                 self.query.shape == (B, Mq, G, H, K)
-                and self.key.shape == (B, Mkv, G, H, K)
+                and self.key.shape == (B, Mkv, G, H, key_embed_dim)
                 and self.value.shape == (B, Mkv, G, H, Kv)
             )
         if not valid_shapes:

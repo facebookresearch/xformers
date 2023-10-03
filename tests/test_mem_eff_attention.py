@@ -1699,6 +1699,14 @@ def test_attn_bias_padded() -> None:
     )
 
 
+def _kv_heads_label(kv_heads: Optional[int]) -> str:
+    if kv_heads is None:
+        return ""
+    if kv_heads == 1:
+        return "mq"
+    return f"gqa{kv_heads}"
+
+
 @sm70_or_better_only
 @pytest.mark.parametrize(
     "op",
@@ -1706,31 +1714,46 @@ def test_attn_bias_padded() -> None:
         fmha.decoder.FwOp,
     ],
 )
-@pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "")
+@pytest.mark.parametrize("kv_heads", [None, 1], ids=_kv_heads_label)
 @pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)])
 @pytest.mark.parametrize("padding", [32, 4096])
 @pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
 def test_decoder(
     op,
-    multiquery: bool,
     n_heads: int,
+    kv_heads: Optional[int],
     padding: int,
     bsz: int,
     dtype: str,
     dequant: bool = False,
     num_queries: int = 1,
 ) -> None:
+    # kv_heads = 1: multiquery
+    # kv_heads = None: neither MQA nor GQA
+    # kv_heads > 1: BMGHK
     if dtype == "bf16" and compute_capability < (8, 0):
         raise pytest.skip("BF16 is only supported on SM80+")
     dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
     torch.manual_seed(1)
     d = 128
-    k_shape = (1, bsz * padding, n_heads, d)
+    if kv_heads is not None and kv_heads > 1:
+        k_shape: Tuple[int, ...] = (1, bsz * padding, kv_heads, n_heads // kv_heads, d)
+        q_shape: Tuple[int, ...] = (
+            1,
+            bsz * num_queries,
+            kv_heads,
+            n_heads // kv_heads,
+            d,
+        )
+    else:
+        k_shape = (1, bsz * padding, n_heads, d)
+        q_shape = (1, bsz * num_queries, n_heads, d)
+
     # TODO: support 2 kv heads etc.
     k = torch.randn(k_shape, dtype=dtype_, device="cuda")
     k_seqlen = torch.randint(num_queries, padding + 1, (bsz,)).tolist()
     v = torch.randn(k_shape, dtype=dtype_, device="cuda")
-    q = torch.randn((1, bsz * num_queries, n_heads, d), dtype=dtype_, device="cuda")
+    q = torch.randn(q_shape, dtype=dtype_, device="cuda")
 
     if dequant:
         k_shape = k_shape[:-1] + (d // 8 + op.NUM_GROUPS,)
@@ -1741,9 +1764,9 @@ def test_decoder(
         v.random_()
         v[..., : op.NUM_GROUPS].view(torch.float16).fill_(1.0)
 
-    if multiquery:
-        k = k[:, :, :1].expand(k_shape)
-        v = v[:, :, :1].expand(k_shape)
+    if kv_heads is not None:
+        k = k[..., :1, :].expand(k_shape)
+        v = v[..., :1, :].expand(k_shape)
 
     attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
         q_seqlen=[num_queries] * bsz,
@@ -1762,7 +1785,7 @@ def test_decoder(
     def dequant_cache(x):
         x = x[..., op.NUM_GROUPS :, None].expand(k_shape[:-1] + (d // 8, 8))
         x = x // (2 ** (4 * torch.arange(8, device="cuda")))
-        x = (x % 16).flatten(start_dim=3)
+        x = (x % 16).flatten(start_dim=-2)
         return x.to(dtype_) + 1.0
 
     if dequant:
@@ -1796,20 +1819,28 @@ def test_decoder(
         ),
     ],
 )
-@pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "")
+@pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
 @pytest.mark.parametrize("n_heads", [16])
 @pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1)])
 def test_triton_splitk_decoder(
     op,
     dequant: bool,
-    multiquery: bool,
+    kv_heads: Optional[int],
     n_heads: int,
     padding: int,
     bsz: int,
     dtype: str,
 ) -> None:
     # We omit dequant with f16: it needs a very high tol
-    test_decoder(op, multiquery, n_heads, padding, bsz, dtype, dequant=dequant)
+    test_decoder(
+        op,
+        kv_heads=kv_heads,
+        n_heads=n_heads,
+        padding=padding,
+        bsz=bsz,
+        dtype=dtype,
+        dequant=dequant,
+    )
 
 
 def test_attn_bias_from_seqlens() -> None:
