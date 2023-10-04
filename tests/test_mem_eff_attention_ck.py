@@ -1622,9 +1622,8 @@ def test_attn_bias_padded() -> None:
 
 @pytest.mark.parametrize("op", [fmha.ck_decoder.FwOp])
 @pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "nomq")
-@pytest.mark.parametrize("n_heads", [1, 16, 32], ids=lambda x: f"nh={x}")
+@pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)], ids=lambda x: f"bsz-nh={x}")
 @pytest.mark.parametrize("padding", [32, 4096], ids=lambda x: f"pad={x}")
-@pytest.mark.parametrize("bsz", [1, 8], ids=lambda x: f"bsz={x}")
 @pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
 def test_decoder(
     op, multiquery: bool, n_heads: int, padding: int, bsz: int, dtype: str
