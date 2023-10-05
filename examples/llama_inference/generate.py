@@ -5,10 +5,12 @@
 
 import json
 import os
+import readline  # type: ignore # noqa
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Iterable, Optional, Tuple, Union
 
 import fire
 import model as fast
@@ -25,8 +27,7 @@ from xformers.ops.fmha.attn_bias import (
 
 @dataclass
 class GenArgs:
-    max_batch: int = 32
-    max_seq: int = 2048
+    gen_length: int = 1000
 
     use_sampling: bool = True
     temperature: float = 0.6
@@ -94,27 +95,26 @@ class FastGen:
         self.model_args = model_args
         self.model = model
         self.tokenizer = tokenizer
-        self.max_batch = args.max_batch
-        self.max_seq = args.max_seq
-        self.cache = fast.make_cache(
-            args=model_args,
-            length=args.max_batch * args.max_seq,
-        )
 
+    @torch.inference_mode()
     def generate_all(
         self, prompts: list[list[int]], use_cuda_graphs: bool
     ) -> Tuple[Stats, list[list[int]]]:
         bs = len(prompts)
-        assert bs <= self.max_batch
-        assert all(len(t) < self.max_seq for t in prompts)
-
-        cache = fast.cache_prefix(self.cache, bs * self.max_seq)
-
         prompt_lens = [len(p) for p in prompts]
+        max_prompt_length = max(prompt_lens)
+        gen_length = self.gen_args.gen_length
+        max_seq_length = max_prompt_length + gen_length
+
+        cache = fast.make_cache(
+            args=self.model_args,
+            length=bs * max_seq_length,
+        )
+
         bias = AttnBias.from_seqlens(
             q_seqlen=prompt_lens,
             kv_seqlen=prompt_lens,
-            kv_padding=self.max_seq,
+            kv_padding=max_seq_length,
         )
         bias.q_seqinfo.to("cuda")
         bias.k_seqinfo.to("cuda")
@@ -125,12 +125,12 @@ class FastGen:
         q_seqstart = bias.q_seqinfo.seqstart
         kv_seqlen = bias.k_seqinfo.seqlen
         tokens = torch.IntTensor(sum(prompts, [])).cuda()
-        out_tokens = torch.zeros((self.max_seq, bs), dtype=torch.int)
+        out_tokens = torch.zeros((max_seq_length, bs), dtype=torch.int)
 
         stats = Stats()
         stats.phase("warmup" if use_cuda_graphs else "total")
 
-        for niter in range(self.max_seq):
+        for niter in range(gen_length):
             if niter <= self.GRAPH_WARMUPS or not use_cuda_graphs:
                 # Keep the first iteration out of the
                 # warmup, it processes prompts while all
@@ -182,15 +182,15 @@ class FastGen:
                 bias.q_seqinfo.seqstart_py = q_seqstart.tolist()
                 tokens = tokens[:bs]
 
-            kv_seqlen.add_(kv_seqlen < self.max_seq)
+            kv_seqlen.add_(kv_seqlen < max_seq_length)
 
             tokens.copy_(next_token)
 
-        stats.end_phase(tokens=self.max_seq * bs)
+        stats.end_phase(tokens=gen_length * bs)
 
         def trim_answer(prompt, tokens):
             """Trim the answer to end it on an eos token."""
-            tokens = tokens[: self.max_seq - len(prompt)]
+            tokens = tokens[: max_seq_length - len(prompt)]
             eos_id = self.tokenizer.eos_id
             if eos_id in tokens:
                 return tokens[: tokens.index(eos_id) + 1]
@@ -204,13 +204,24 @@ class FastGen:
         return stats, answers
 
 
-def main(ckpt_dir: str):
-    prompts = [
-        "[INST]abc[/INST] ",
-        "[INST]can you write a hello world program in C#[/INST]",
-        "[INST]peux tu resoudre le probleme des tours de Hanoi en ocaml[/INST]",
-    ]
+def get_prompts(interactive: bool) -> Iterable[list[str]]:
+    if interactive:
+        while True:
+            try:
+                prompts = input("enter prompt: ").split("\n")
+            except EOFError:
+                print("exiting")
+                sys.exit(0)
+            yield prompts
+    else:
+        yield [
+            "abc",
+            "can you write a hello world program in C#",
+            "peux tu resoudre le probleme des tours de Hanoi en ocaml",
+        ]
 
+
+def main(ckpt_dir: str, interactive: bool = False, add_instruction_tags: bool = True):
     if "WORLD_SIZE" in os.environ:
         mp_size = int(os.environ["WORLD_SIZE"])
         local_rank = int(os.environ["LOCAL_RANK"])
@@ -222,20 +233,24 @@ def main(ckpt_dir: str):
 
     g = FastGen.build(ckpt_dir, GenArgs(), device)
 
-    tokens = [g.tokenizer.encode(x) for x in prompts]
-    stats, out_tokens = g.generate_all(
-        tokens, use_cuda_graphs="NO_CUDA_GRAPHS" not in os.environ
-    )
+    for prompts in get_prompts(interactive):
+        if add_instruction_tags:
+            prompts = [f"[INST]{prompt}[/INST]" for prompt in prompts]
 
-    if mp_utils.get_rank() == 0:
-        for i, prompt in enumerate(prompts):
-            print(f"> {prompt}")
-            answer = g.tokenizer.decode(out_tokens[i])
-            print(answer)
-            print("---------------")
+        tokens = [g.tokenizer.encode(x) for x in prompts]
+        stats, out_tokens = g.generate_all(
+            tokens, use_cuda_graphs="NO_CUDA_GRAPHS" not in os.environ
+        )
 
-        for phase_stats in stats.phases:
-            print(phase_stats.show())
+        if mp_utils.get_rank() == 0:
+            for i, prompt in enumerate(prompts):
+                print(f"> {prompt}")
+                answer = g.tokenizer.decode(out_tokens[i])
+                print(answer)
+                print("---------------")
+
+            for phase_stats in stats.phases:
+                print(phase_stats.show())
 
 
 if __name__ == "__main__":
