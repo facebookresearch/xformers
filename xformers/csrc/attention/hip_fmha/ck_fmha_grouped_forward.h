@@ -58,7 +58,7 @@ void grouped_forward_masktype_attnbias_dispatched(
       ck::tensor_operation::device::TensorSpecialization::Default;
   static constexpr auto TensorSpecC =
       ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr bool Deterministic = true;
+  static constexpr bool Deterministic = false;
 
   // Tunables
   static constexpr ck::index_t ABBlockTransferSrcScalarPerVector = 1;
@@ -170,7 +170,7 @@ void grouped_forward_masktype_attnbias_dispatched(
     std::vector<ck::index_t> c_gs_ms_os_strides{
         0, param.out_strides[1], param.out_strides[0], param.out_strides[2]};
 
-    std::vector<ck::index_t> lse_gs_ms_lengths{1, G1, param.max_seqlen_q};
+    std::vector<ck::index_t> lse_gs_ms_lengths{1, G1, M};
     std::vector<ck::index_t> lse_gs_ms_strides{0, param.max_seqlen_q, 1};
 
     std::vector<ck::index_t> d_gs_ms_ns_lengths;
