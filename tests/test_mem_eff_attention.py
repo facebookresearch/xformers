@@ -1714,7 +1714,7 @@ def _kv_heads_label(kv_heads: Optional[int]) -> str:
         fmha.decoder.FwOp,
     ],
 )
-@pytest.mark.parametrize("kv_heads", [None, 1], ids=_kv_heads_label)
+@pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
 @pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)])
 @pytest.mark.parametrize("padding", [32, 4096])
 @pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
@@ -1737,12 +1737,12 @@ def test_decoder(
     torch.manual_seed(1)
     d = 128
     if kv_heads is not None and kv_heads > 1:
-        k_shape: Tuple[int, ...] = (1, bsz * padding, kv_heads, n_heads // kv_heads, d)
+        k_shape: Tuple[int, ...] = (1, bsz * padding, kv_heads, n_heads, d)
         q_shape: Tuple[int, ...] = (
             1,
             bsz * num_queries,
             kv_heads,
-            n_heads // kv_heads,
+            n_heads,
             d,
         )
     else:
