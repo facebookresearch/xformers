@@ -56,7 +56,7 @@ struct c10_to_data_t;
 
 template<>
 struct c10_to_data_t<float> {
-    using type = float_t;
+    using type = float;
     using vec4 = ck::float4_t;
 };
 
@@ -151,20 +151,25 @@ efficient_attention_forward_decoder_ck_kernel(
   // tokens.
   const int32_t t_max = seq_positions[b] + seq_positions_shift;
 
-  // blockDim.x = kThreadsPerWavefront, blockDim.y = kWavefrontsPerBlock
-  int32_t wavefront_idx = threadIdx.y;
+  const int32_t lane_idx = threadIdx.x;
+  const int32_t wavefront_idx = threadIdx.y;
+  const int32_t threads_per_wavefront = blockDim.x;
+  const int32_t wavefronts_per_block = blockDim.y;
+  const int32_t threads_per_block = threads_per_wavefront * wavefronts_per_block;
+  const int32_t thread_linear_idx = lane_idx + wavefront_idx * threads_per_wavefront;
+
   // Need D_H == 256 (NB: 128 in CUDA because of wavefront/warp sizes 64/32)
   const auto* q_ = &(XQ[b][0][h][0]);
 
   const bool multiquery = cache_K.size(2) == 1;
-  auto* cache_K_base = &cache_K[b][0][multiquery ? 0 : h][0];
-  auto* cache_V_base = &cache_V[b][0][multiquery ? 0 : h][0];
+  const auto* cache_K_base = &cache_K[b][0][multiquery ? 0 : h][0];
+  const auto* cache_V_base = &cache_V[b][0][multiquery ? 0 : h][0];
 
   // Load Q into registers in all wavefronts.
   // Each thread handles 4 D dimensions
   using data_t = typename c10_to_data_t<scalar_t>::type;
   using data_vec4_t = typename c10_to_data_t<scalar_t>::vec4;
-  const data_vec4_t q_thread = load_v<decltype(q_), data_vec4_t>(q_, threadIdx.x);
+  const data_vec4_t q_thread = load_v<decltype(q_), data_vec4_t>(q_, lane_idx);
   // Each block computes different B value
   float max_qk_acc = std::numeric_limits<float>::lowest();
 
@@ -175,19 +180,18 @@ efficient_attention_forward_decoder_ck_kernel(
   constexpr int32_t kTimeUnroll = 1;
   data_vec4_t k_loads[kTimeUnroll];
 
-  const auto dtt = kWavefrontsPerBlock * kTimeUnroll;
+  const auto dtt = wavefronts_per_block * kTimeUnroll;
   const int32_t t_max_unroll =
     (t_max / dtt) * dtt;
 
-  for (auto tt = wavefront_idx * kTimeUnroll; tt < t_max_unroll;
-       tt += dtt) {
+  for (auto tt = wavefront_idx; tt < t_max_unroll; tt += dtt) {
 #pragma unroll kTimeUnroll
     for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
       int32_t t = tt + ttt;
       // &(cache_K[b][t][0][0]);
       auto* k_ = cache_K_base + t * cache_K.stride(1);
       // scalar4<scalar_t> k_thread;
-      k_loads[ttt] = load_v<decltype(k_), data_vec4_t>(k_, threadIdx.x);
+      k_loads[ttt] = load_v<decltype(k_), data_vec4_t>(k_, lane_idx);
     }
 #pragma unroll kTimeUnroll
     for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
@@ -203,7 +207,7 @@ efficient_attention_forward_decoder_ck_kernel(
       max_qk_acc = max(qk_acc, max_qk_acc);
 
       // write accumulated sums to smem.
-      if (threadIdx.x == 0) {
+      if (lane_idx == 0) {
         smem[t] = qk_acc;
       }
     }
@@ -211,14 +215,14 @@ efficient_attention_forward_decoder_ck_kernel(
 
   constexpr int32_t kTimeUnroll1 = 1;
   for (auto tt = t_max_unroll + wavefront_idx; tt < t_max;
-       tt += kWavefrontsPerBlock * kTimeUnroll1) {
+       tt += wavefronts_per_block * kTimeUnroll1) {
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
       int32_t t = tt + ttt;
       // &(cache_K[b][t][0][0]);
       auto* k_ = cache_K_base + t * cache_K.stride(1);
       // scalar4<scalar_t> k_thread;
-      k_loads[ttt] = load_v<decltype(k_), data_vec4_t>(k_, threadIdx.x);
+      k_loads[ttt] = load_v<decltype(k_), data_vec4_t>(k_, lane_idx);
     }
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
@@ -233,7 +237,7 @@ efficient_attention_forward_decoder_ck_kernel(
       max_qk_acc = max(qk_acc, max_qk_acc);
 
       // write accumulated sums to smem.
-      if (threadIdx.x == 0) {
+      if (lane_idx == 0) {
         smem[t] = qk_acc;
       }
     }
@@ -241,39 +245,37 @@ efficient_attention_forward_decoder_ck_kernel(
 
   // Use shared reduction to compute max and compute softmax on shared memory.
   // write max acc
-  if (threadIdx.x == 0) {
+  if (lane_idx == 0) {
     smem[T_MAX + wavefront_idx] = max_qk_acc;
   }
   __syncthreads();
-  if (threadIdx.x < kWavefrontsPerBlock) {
-    max_qk_acc = max(max_qk_acc, smem[T_MAX + threadIdx.x]);
+  if (lane_idx < wavefronts_per_block) {
+    max_qk_acc = max(max_qk_acc, smem[T_MAX + lane_idx]);
   }
   // shared across all threads in block
   max_qk_acc = wavefrontReduce<std::greater<float>>(max_qk_acc);
   // each wavefront computes partial sum of exp.
   float softmax_denominator = 0.0f;
-  for (int32_t t = threadIdx.x + wavefront_idx * kThreadsPerWavefront; t < t_max;
-       t += kWavefrontsPerBlock * kThreadsPerWavefront) {
+  for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
     softmax_denominator += expf(smem[t] - max_qk_acc);
   }
   softmax_denominator = wavefrontReduce<std::plus<float>>(softmax_denominator);
 
   __syncthreads();
-  if (threadIdx.x == 0) {
+  if (lane_idx == 0) {
     smem[T_MAX + wavefront_idx] = softmax_denominator;
   }
   __syncthreads();
   
   // now, compute sum of exp(x - max(x)) over all intermediate results.
   softmax_denominator = 0.0;
-  if (threadIdx.x < kWavefrontsPerBlock) {
-    softmax_denominator = smem[T_MAX + threadIdx.x];
+  if (lane_idx < wavefronts_per_block) {
+    softmax_denominator = smem[T_MAX + lane_idx];
   }
   softmax_denominator = wavefrontReduce<std::plus<float>>(softmax_denominator);
   
   // now, compute the normalization across all threads.
-  for (int32_t t = threadIdx.x + wavefront_idx * kThreadsPerWavefront; t < t_max;
-       t += kWavefrontsPerBlock * kThreadsPerWavefront) {
+  for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
     smem[t] = expf(smem[t] - max_qk_acc) / softmax_denominator;
   }
   __syncthreads();
@@ -286,15 +288,14 @@ efficient_attention_forward_decoder_ck_kernel(
 
   float ps[kTimeUnroll];
   ck::float4_t o_acc = 0;
-  for (auto tt = wavefront_idx * kTimeUnroll; tt < t_max_unroll;
-       tt += dtt) {
+  for (auto tt = wavefront_idx; tt < t_max_unroll; tt += dtt) {
 #pragma unroll kTimeUnroll
     for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
       int32_t t = tt + ttt;
       // &(cache_V[b][t][0][0]);
       auto* v_ = cache_V_base + t * cache_V.stride(1);
       //   scalar4<scalar_t> v_thread;
-      k_loads[ttt] = load_v<decltype(v_), data_vec4_t>(v_, threadIdx.x);
+      k_loads[ttt] = load_v<decltype(v_), data_vec4_t>(v_, lane_idx);
 
       ps[ttt] = smem[t];
     }
@@ -305,15 +306,14 @@ efficient_attention_forward_decoder_ck_kernel(
     }
   }
 
-  for (auto tt = t_max_unroll + wavefront_idx; tt < t_max;
-       tt += kWavefrontsPerBlock * kTimeUnroll1) {
+  for (auto tt = t_max_unroll + wavefront_idx; tt < t_max; tt += wavefronts_per_block * kTimeUnroll1) {
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
       int32_t t = tt + ttt;
       // &(cache_V[b][t][0][0]);
       auto* v_ = cache_V_base + t * cache_V.stride(1);
       //   scalar4<scalar_t> v_thread;
-      k_loads[ttt] = load_v<decltype(v_), data_vec4_t>(v_, threadIdx.x);
+      k_loads[ttt] = load_v<decltype(v_), data_vec4_t>(v_, lane_idx);
 
       ps[ttt] = smem[t];
     }
@@ -326,16 +326,16 @@ efficient_attention_forward_decoder_ck_kernel(
   // now, each thread has partial sums. Write to smem and get accumulated
   // results back.
   __syncthreads();
-
-  store_v<float*, ck::float4_t>(&smem[0], wavefront_idx * kThreadsPerWavefront +
-    threadIdx.x, o_acc);
+  
+  // NB: needs sizeof(smem) >= 4 * (sizeof(float)==4) * threadsPerBlock 
+  store_v<float*, ck::float4_t>(&smem[0], thread_linear_idx, o_acc);
 
   __syncthreads();
   // sum up partial D rows from other wavefronts
   if (wavefront_idx == 0) {
     ck::float4_t r = 0;
-    for (int32_t w = 0; w < kWavefrontsPerBlock; ++w) {
-      auto partial_r = load_v<float*, ck::float4_t>(smem, w * kThreadsPerWavefront + threadIdx.x);
+    for (int32_t w = 0; w < wavefronts_per_block; ++w) {
+      auto partial_r = load_v<float*, ck::float4_t>(smem, w * threads_per_wavefront + lane_idx);
       r += partial_r;
     }
     // write output D row
@@ -345,7 +345,7 @@ efficient_attention_forward_decoder_ck_kernel(
     bf_r.z = ck::type_convert<data_t>(r.z);
     bf_r.w = ck::type_convert<data_t>(r.w);
     auto* o_ = &O[b][0][h][0];
-    store_v<decltype(o_), data_vec4_t>(o_, threadIdx.x, bf_r);
+    store_v<decltype(o_), data_vec4_t>(o_, lane_idx, bf_r);
   }
 }
 
@@ -423,3 +423,88 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
       TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_decoder_ck"),
       TORCH_FN(efficient_attention_forward_decoder_ck));
 }
+
+#ifdef ATTN_FWD_DECODER_MAIN
+
+#include <torch/torch.h>
+
+/*
+
+(1) hipify
+ > pip install -e /xformers
+(2) compile
+ > /opt/rocm/bin/hipcc \
+-I/xformers/xformers/csrc \
+-I/xformers/xformers/csrc/attention/hip_fmha \
+-I/xformers/third_party/composable_kernel/include \
+-I/xformers/third_party/composable_kernel/include/ck \
+-I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device \
+-I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device/impl \
+-I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/element \
+-I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include \
+-I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/torch/csrc/api/include \
+-I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/TH \
+-I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/THC \
+-I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/THH \
+-I/opt/rocm/include \
+-I/opt/conda/envs/py_3.8/include/python3.8 \
+-L/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib \
+-L/opt/conda/envs/py_3.8/lib \
+-L/opt/rocm/lib \
+-L/opt/rocm/hip/lib \
+-fPIC \
+-D__HIP_PLATFORM_HCC__=1 \
+-DATTN_FWD_DECODER_MAIN \
+-DUSE_ROCM=1 \
+-DCUDA_HAS_FP16=1 \
+-D__HIP_NO_HALF_OPERATORS__=1 \
+-D__HIP_NO_HALF_CONVERSIONS__=1 \
+-O3 \
+-std=c++17 \
+--offload-arch=gfx90a \
+-U__CUDA_NO_HALF_OPERATORS__ \
+-U__CUDA_NO_HALF_CONVERSIONS__ \
+-DBUILD_PYTHON_PACKAGE \
+-DTORCH_API_INCLUDE_EXTENSION_H \
+'-DPYBIND11_COMPILER_TYPE="_gcc"' \
+'-DPYBIND11_STDLIB="_libstdcpp"' \
+'-DPYBIND11_BUILD_ABI="_cxxabi1013"' \
+-DTORCH_EXTENSION_NAME=_C \
+-D_GLIBCXX_USE_CXX11_ABI=1 \
+-fno-gpu-rdc \
+/xformers/xformers/csrc/attention/hip_fmha/attention_forward_decoder.hip \
+-lc10_hip \
+-ltorch_hip \
+-lc10 \
+-ltorch \
+-ltorch_cpu \
+-ltorch_python \
+-lpython3.8 \
+-lamdhip64 \
+-o a.out
+
+(3) run
+ > LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib ./a.out
+*/
+
+int main(int argc, char** argv) {
+  const int32_t D = 256;
+  const int32_t B = 4;
+  const int32_t H = 8;
+  auto options = torch::TensorOptions()
+    .dtype(torch::kFloat32)
+    .layout(torch::kStrided)
+    .device(torch::kCUDA, 1)
+    .requires_grad(false);
+  auto int_options = options.dtype(torch::kInt);
+  auto XQ = at::randn({B, 1, H, D}, options);
+  auto K = at::randn({B, T_MAX, H, D}, options);
+  auto V = at::randn({B, T_MAX, H, D}, options);
+  auto seq = at::randint(1, 32, {B}, int_options);
+  double qk_scale = sqrt(D);
+
+  auto result = efficient_attention_forward_decoder_ck(XQ, K, V, seq, qk_scale);
+  return 0;
+}
+
+#endif // MAIN
