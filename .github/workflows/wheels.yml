@@ -27,21 +27,21 @@ jobs:
           - "3.10"
           - "3.11"
         torch_version:
-          - "2.0.1"
+          - "2.1.0"
         include:
           - sdist: false
             publish: false
             cuda_short_version: "CUDA_VERSION_NOT_SET"
           # Publish only for latest pytorch
-          - torch_version: "2.0.1"
+          - torch_version: "2.1.0"
             publish: true
           # Publish source distribution only from this runner
           - os: 4-core-ubuntu
             python: "3.10"
-            torch_version: "2.0.1"
+            torch_version: "2.1.0"
             sdist: true
           # Set corresponding CUDA version
-          - torch_version: "2.0.1"
+          - torch_version: "2.1.0"
             cuda_short_version: "118"
 
     uses: ./.github/workflows/wheels_reusable.yml
