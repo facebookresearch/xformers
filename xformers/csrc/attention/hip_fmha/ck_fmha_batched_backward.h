@@ -215,7 +215,7 @@ void batched_backward_masktype_attnbias_dispatched(
       y_gs_ms_os_lengths, // y, dY should have same shape
       y_gs_ms_os_strides,
       lse_gs_ms_lengths,
-      d_gs_ms_ns_lengths,
+      d_gs_ms_ns_lengths, // bias, grad_bias should have same shape
       d_gs_ms_ns_strides,
       {}, // acc1_biases_gs_ms_os_lengths
       {}, // acc1_biases_gs_ms_os_strides
