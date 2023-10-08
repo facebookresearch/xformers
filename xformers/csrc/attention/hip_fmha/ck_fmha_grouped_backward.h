@@ -94,7 +94,7 @@ void grouped_backward_masktype_attnbias_dispatched(
           256,
           64, // MPerBlock
           128, // NPerBlock
-          64, // KPerBlock
+          128, // KPerBlock
           128, // Gemm1NPerBlock
           32, // Gemm1KPerBlock
           64, // Gemm2KPerBlock

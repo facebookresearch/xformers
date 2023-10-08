@@ -56,7 +56,7 @@ void batched_backward_masktype_attnbias_dispatched(
       ck::tensor_operation::device::TensorSpecialization::Default;
   static constexpr auto TensorSpecY =
       ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr bool Deterministic = true;
+  static constexpr bool Deterministic = false;
 
   // Tunables
   static constexpr ck::index_t ABBlockTransferSrcScalarPerVector = 1;
