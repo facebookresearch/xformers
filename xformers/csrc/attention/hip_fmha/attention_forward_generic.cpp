@@ -104,9 +104,11 @@ efficient_attention_forward_ck(
   int64_t K = query.size(-1);
   int64_t Kv = value.size(-1);
 
+  auto opts = query.options();
+
   at::Tensor logsumexp;
 
-  at::Tensor out = at::empty({B, M, num_heads, Kv}, query.options());
+  at::Tensor out = at::empty({B, M, num_heads, Kv}, opts);
 
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
   int64_t philox_seed;
@@ -200,9 +202,7 @@ efficient_attention_forward_ck(
       p.dropout_prob = 0.0f;
 
     if (p.compute_logsumexp) {
-      logsumexp = at::empty(
-          {B, num_heads, M},
-          at::TensorOptions().dtype(at::kFloat).device(at::kCUDA));
+      logsumexp = at::empty({B, num_heads, M}, opts.dtype(at::kFloat));
       p.logsumexp_ptr = logsumexp.data_ptr();
     } else
       p.logsumexp_ptr = nullptr;
@@ -338,8 +338,7 @@ efficient_attention_forward_ck(
 
     if (p.compute_logsumexp) {
       logsumexp = at::empty(
-          {p.num_batches, num_heads, p.max_seqlen_q},
-          at::TensorOptions().dtype(at::kFloat).device(at::kCUDA));
+          {p.num_batches, num_heads, p.max_seqlen_q}, opts.dtype(at::kFloat));
       char* logsumexp_ptr = reinterpret_cast<char*>(logsumexp.data_ptr());
 
       for (int i = 0; i < p.num_batches; i++) {

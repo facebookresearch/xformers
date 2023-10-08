@@ -167,6 +167,10 @@ struct GroupedBackwardParams {
   std::vector<const void*> grad_out_ptrs;
   std::vector<const void*> out_ptrs;
 
+  // used by the light_v2 kernel
+  // TODO use these as workspace
+  std::vector<void*> ydotdy_ptrs;
+
   uint8_t custom_mask_type;
 
   std::vector<void*> grad_q_ptrs;

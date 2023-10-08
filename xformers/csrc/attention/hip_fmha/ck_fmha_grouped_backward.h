@@ -60,9 +60,9 @@ void grouped_backward_masktype_attnbias_dispatched(
   static constexpr bool Deterministic = false;
 
   // Tunables
-  static constexpr ck::index_t ABBlockTransferSrcScalarPerVector = 1;
-  static constexpr ck::index_t B1CShuffleBlockTransferScalarPerVector = 1;
-  static constexpr ck::index_t Acc0BiasTransferSrcScalarPerVector = 1;
+  static constexpr ck::index_t ABBlockTransferSrcScalarPerVector = 1; // 8
+  static constexpr ck::index_t B1CShuffleBlockTransferScalarPerVector = 1; // 4
+  static constexpr ck::index_t Acc0BiasTransferSrcScalarPerVector = 1; // 4
 
   using DeviceOpInstance = ck::tensor_operation::device::
       DeviceGroupedMultiheadAttentionBackward_Qloop_Xdl_CShuffle_V2<
@@ -94,7 +94,7 @@ void grouped_backward_masktype_attnbias_dispatched(
           256,
           64, // MPerBlock
           128, // NPerBlock
-          128, // KPerBlock
+          64, // KPerBlock
           128, // Gemm1NPerBlock
           32, // Gemm1KPerBlock
           64, // Gemm2KPerBlock
@@ -140,7 +140,7 @@ void grouped_backward_masktype_attnbias_dispatched(
 
   for (std::size_t i = 0; i < param.num_batches; i++) {
     int M = param.host_seqstart_q[i + 1] - param.host_seqstart_q[i]; // seqlen Q
-    int N = param.host_seqstart_k.empty()
+    int N = param.host_seqlen_k.empty()
         ? param.host_seqstart_k[i + 1] - param.host_seqstart_k[i]
         : param.host_seqlen_k[i];
     int K = param.K;
@@ -149,22 +149,22 @@ void grouped_backward_masktype_attnbias_dispatched(
 
     std::vector<ck::index_t> q_gs_ms_ks_lengths{1, G1, M, K};
     std::vector<ck::index_t> q_gs_ms_ks_strides{
-        0, param.q_strides[0], param.q_strides[1], param.q_strides[2]};
+        0, param.q_strides[1], param.q_strides[0], param.q_strides[2]};
 
     std::vector<ck::index_t> k_gs_ns_ks_lengths{1, G1, N, K};
     std::vector<ck::index_t> k_gs_ns_ks_strides{
-        0, param.k_strides[0], param.k_strides[1], param.k_strides[2]};
+        0, param.k_strides[1], param.k_strides[0], param.k_strides[2]};
 
     // to be changed to v_gs_ns_os_lengths
     std::vector<ck::index_t> v_gs_os_ns_lengths{1, G1, Kv, N};
     std::vector<ck::index_t> v_gs_os_ns_strides{
-        0, param.v_strides[0], param.v_strides[2], param.v_strides[1]};
+        0, param.v_strides[1], param.v_strides[2], param.v_strides[0]};
 
     std::vector<ck::index_t> y_gs_ms_os_lengths{1, G1, M, Kv};
     std::vector<ck::index_t> y_gs_ms_os_strides{
-        0, param.out_strides[0], param.out_strides[1], param.out_strides[2]};
+        0, param.out_strides[1], param.out_strides[0], param.out_strides[2]};
 
-    std::vector<ck::index_t> lse_gs_ms_lengths{1, G1, param.max_seqlen_q};
+    std::vector<ck::index_t> lse_gs_ms_lengths{1, G1, M};
     std::vector<ck::index_t> lse_gs_ms_strides{0, param.max_seqlen_q, 1};
 
     std::vector<ck::index_t> d_gs_ms_ns_lengths;
@@ -184,19 +184,19 @@ void grouped_backward_masktype_attnbias_dispatched(
     };
 
     problem_descs.push_back({
-        q_gs_ms_ks_lengths,
+        q_gs_ms_ks_lengths, // q, dQ should have same shape
         q_gs_ms_ks_strides,
-        k_gs_ns_ks_lengths,
+        k_gs_ns_ks_lengths, // k, dK should have same shape
         k_gs_ns_ks_strides,
         {1, 1, 1, 1},
         {0, 0, 0, 0},
-        v_gs_os_ns_lengths,
+        v_gs_os_ns_lengths, // v, dV should have same shape
         v_gs_os_ns_strides,
-        y_gs_ms_os_lengths,
+        y_gs_ms_os_lengths, // y, dY should have same shape
         y_gs_ms_os_strides,
         lse_gs_ms_lengths,
         lse_gs_ms_strides,
-        d_gs_ms_ns_lengths,
+        d_gs_ms_ns_lengths, // bias, grad_bias should have same shape
         d_gs_ms_ns_strides,
         {}, // acc1_biases_gs_ms_os_lengths
         {}, // acc1_biases_gs_ms_os_strides

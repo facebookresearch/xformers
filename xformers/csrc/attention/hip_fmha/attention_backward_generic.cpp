@@ -304,14 +304,17 @@ efficient_attention_backward_ck(
 
     char* out_ptr = reinterpret_cast<char*>(out.data_ptr());
     char* grad_out_ptr = reinterpret_cast<char*>(grad_out.data_ptr());
-    char* attn_bias_ptr = reinterpret_cast<char*>(bias->data_ptr());
+    char* attn_bias_ptr =
+        bias.has_value() ? reinterpret_cast<char*>(bias->data_ptr()) : nullptr;
 
     char* logsumexp_ptr = reinterpret_cast<char*>(logsumexp.data_ptr());
 
     char* grad_q_ptr = reinterpret_cast<char*>(grad_q.data_ptr());
     char* grad_k_ptr = reinterpret_cast<char*>(grad_k.data_ptr());
     char* grad_v_ptr = reinterpret_cast<char*>(grad_v.data_ptr());
-    char* grad_bias_ptr = reinterpret_cast<char*>(grad_bias.data_ptr());
+    char* grad_bias_ptr = bias_requires_grad
+        ? reinterpret_cast<char*>(grad_bias.data_ptr())
+        : nullptr;
 
     for (int i = 0; i < p.num_batches; i++) {
       size_t tmp_q_offset = get_size_in_bytes(
@@ -333,15 +336,21 @@ efficient_attention_backward_ck(
       p.q_ptrs.push_back(reinterpret_cast<void*>(&q_ptr[tmp_q_offset]));
       p.grad_q_ptrs.push_back(
           reinterpret_cast<void*>(&grad_q_ptr[tmp_q_offset]));
+
       p.k_ptrs.push_back(reinterpret_cast<void*>(&k_ptr[tmp_k_offset]));
       p.grad_k_ptrs.push_back(
           reinterpret_cast<void*>(&grad_k_ptr[tmp_k_offset]));
+
       p.v_ptrs.push_back(reinterpret_cast<void*>(&v_ptr[tmp_v_offset]));
       p.grad_v_ptrs.push_back(
           reinterpret_cast<void*>(&grad_v_ptr[tmp_v_offset]));
+
       p.out_ptrs.push_back(reinterpret_cast<void*>(&out_ptr[tmp_o_offset]));
       p.grad_out_ptrs.push_back(
           reinterpret_cast<void*>(&grad_out_ptr[tmp_o_offset]));
+
+      p.logsumexp_ptrs.push_back(
+          reinterpret_cast<void*>(&logsumexp_ptr[tmp_logsumexp_offset]));
 
       if (bias.has_value()) {
         size_t tmp_bias_offset = get_size_in_bytes(
@@ -356,11 +365,8 @@ efficient_attention_backward_ck(
         if (bias_requires_grad) {
           p.grad_bias_ptrs.push_back(
               reinterpret_cast<void*>(&grad_bias_ptr[tmp_bias_offset]));
-        };
-      };
-
-      p.logsumexp_ptrs.push_back(
-          reinterpret_cast<void*>(&logsumexp_ptr[tmp_logsumexp_offset]));
+        }
+      }
 
       // ToDO: remove this after dev-op fix
       p.randvals_ptrs.push_back(nullptr);
