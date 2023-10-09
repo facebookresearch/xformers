@@ -125,7 +125,7 @@ __device__ void store_v(TDataPtr data_ptr, int32_t vector_offset, TDataVec value
   *(reinterpret_cast<TDataVec*>(data_ptr) + vector_offset) = value;
 }
 
-template<typename scalar_t>
+template<typename scalar_t, int32_t n_loop_unroll = 2, int32_t n_loop_unroll_tail = 2>
 __global__ void
 efficient_attention_forward_decoder_ck_kernel(
     at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> XQ,
@@ -135,9 +135,6 @@ efficient_attention_forward_decoder_ck_kernel(
     at::PackedTensorAccessor32<int32_t, 1, at::RestrictPtrTraits> seq_positions,
     const float qk_scale
 ) {
-  static_assert(4 * kThreadsPerWavefront == D_H, "");
-  static_assert(kWavefrontsPerBlock <= kThreadsPerWavefront, "");
-
   constexpr int32_t seq_positions_shift = 0;
 
   extern __shared__ __align__(16) float smem[];
@@ -176,24 +173,23 @@ efficient_attention_forward_decoder_ck_kernel(
   // Split T across wavefronts in a block, unroll loads to expose more
   // parallelism.
 
-  constexpr int32_t kTimeUnroll = 4;
-  data_vec4_t k_loads[kTimeUnroll];
+  data_vec4_t k_loads[n_loop_unroll];
 
-  const auto dtt = wavefronts_per_block * kTimeUnroll;
+  const auto dtt = wavefronts_per_block * n_loop_unroll;
   const int32_t t_max_unroll =
     (t_max / dtt) * dtt;
 
-  for (auto tt = wavefront_idx * kTimeUnroll; tt < t_max_unroll; tt += dtt) {
-#pragma unroll kTimeUnroll
-    for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
+  for (auto tt = wavefront_idx * n_loop_unroll; tt < t_max_unroll; tt += dtt) {
+#pragma unroll n_loop_unroll
+    for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
       const int32_t t = tt + ttt;
       // &(cache_K[b][t][0][0]);
       auto* k_ = cache_K_base + t * cache_K.stride(1);
       // scalar4<scalar_t> k_thread;
       k_loads[ttt] = load_v<decltype(k_), data_vec4_t>(k_, lane_idx);
     }
-#pragma unroll kTimeUnroll
-    for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
+#pragma unroll n_loop_unroll
+    for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
       float qk_acc = 0;
       const int32_t t = tt + ttt;
 
@@ -212,11 +208,10 @@ efficient_attention_forward_decoder_ck_kernel(
     }
   }
 
-  constexpr int32_t kTimeUnroll1 = 4;
-  for (auto tt = t_max_unroll + wavefront_idx * kTimeUnroll1; tt < t_max;
-       tt += wavefronts_per_block * kTimeUnroll1) {
-#pragma unroll kTimeUnroll1
-    for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
+  for (auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail; tt < t_max;
+       tt += wavefronts_per_block * n_loop_unroll_tail) {
+#pragma unroll n_loop_unroll_tail
+    for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
       const int32_t t = tt + ttt;
       if (t < t_max) {
         // &(cache_K[b][t][0][0]);
@@ -225,8 +220,8 @@ efficient_attention_forward_decoder_ck_kernel(
         k_loads[ttt] = load_v<decltype(k_), data_vec4_t>(k_, lane_idx);
       }
     }
-#pragma unroll kTimeUnroll1
-    for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
+#pragma unroll n_loop_unroll_tail
+    for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
       float qk_acc = 0;
       const int32_t t = tt + ttt;
       if (t < t_max) {
@@ -290,11 +285,11 @@ efficient_attention_forward_decoder_ck_kernel(
   // each wavefront compute sum(t_subset) P[t] * V[t_subset, d]
   // outputs are of size float[D]
 
-  float ps[kTimeUnroll];
+  float ps[n_loop_unroll];
   ck::float4_t o_acc = 0;
-  for (auto tt = wavefront_idx * kTimeUnroll; tt < t_max_unroll; tt += dtt) {
-#pragma unroll kTimeUnroll
-    for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
+  for (auto tt = wavefront_idx * n_loop_unroll; tt < t_max_unroll; tt += dtt) {
+#pragma unroll n_loop_unroll
+    for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
       const int32_t t = tt + ttt;
       // &(cache_V[b][t][0][0]);
       auto* v_ = cache_V_base + t * cache_V.stride(1);
@@ -304,15 +299,15 @@ efficient_attention_forward_decoder_ck_kernel(
       ps[ttt] = smem[t];
     }
 
-#pragma unroll kTimeUnroll
-    for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
+#pragma unroll n_loop_unroll
+    for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
       o_acc = scalar4_scale_acc<data_vec4_t>(o_acc, k_loads[ttt], ps[ttt]);
     }
   }
 
-  for (auto tt = t_max_unroll + wavefront_idx * kTimeUnroll1; tt < t_max; tt += wavefronts_per_block * kTimeUnroll1) {
-#pragma unroll kTimeUnroll1
-    for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
+  for (auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail; tt < t_max; tt += wavefronts_per_block * n_loop_unroll_tail) {
+#pragma unroll n_loop_unroll_tail
+    for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
       const int32_t t = tt + ttt;
       if (t < t_max) {
         // &(cache_V[b][t][0][0]);
@@ -324,8 +319,8 @@ efficient_attention_forward_decoder_ck_kernel(
       }
     }
 
-#pragma unroll kTimeUnroll1
-    for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
+#pragma unroll n_loop_unroll_tail
+    for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
       const int32_t t = tt + ttt;
       if (t < t_max) {
         o_acc = scalar4_scale_acc<data_vec4_t>(o_acc, k_loads[ttt], ps[ttt]);
@@ -395,6 +390,9 @@ efficient_attention_forward_decoder_ck_impl(
     const at::Tensor& cache_V, // [B, T_MAX, H or 1, D]
     const at::Tensor& seq_positions, // [B]
     double qk_scale) {
+
+  static_assert(4 * ThreadsPerWavefront == D_H, "");
+  static_assert(WavefrontsPerBlock <= ThreadsPerWavefront, "");
 
   at::OptionalDeviceGuard guard(XQ.device());
   TORCH_CHECK(XQ.is_cuda());
