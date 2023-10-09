@@ -176,14 +176,14 @@ efficient_attention_forward_decoder_ck_kernel(
   // Split T across wavefronts in a block, unroll loads to expose more
   // parallelism.
 
-  constexpr int32_t kTimeUnroll = 1;
+  constexpr int32_t kTimeUnroll = 2;
   data_vec4_t k_loads[kTimeUnroll];
 
   const auto dtt = wavefronts_per_block * kTimeUnroll;
   const int32_t t_max_unroll =
     (t_max / dtt) * dtt;
 
-  for (auto tt = wavefront_idx; tt < t_max_unroll; tt += dtt) {
+  for (auto tt = wavefront_idx * kTimeUnroll; tt < t_max_unroll; tt += dtt) {
 #pragma unroll kTimeUnroll
     for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
       const int32_t t = tt + ttt;
@@ -288,7 +288,7 @@ efficient_attention_forward_decoder_ck_kernel(
 
   float ps[kTimeUnroll];
   ck::float4_t o_acc = 0;
-  for (auto tt = wavefront_idx; tt < t_max_unroll; tt += dtt) {
+  for (auto tt = wavefront_idx * kTimeUnroll; tt < t_max_unroll; tt += dtt) {
 #pragma unroll kTimeUnroll
     for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
       const int32_t t = tt + ttt;
