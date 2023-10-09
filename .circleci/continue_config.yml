@@ -23,13 +23,14 @@ cpu_py38: &cpu_py38
     # We're a bit short on RAM
     MAX_JOBS: "4"
 
-gpu_cu114: &gpu_cu114
+gpu_cu118: &gpu_cu118
   environment:
     CUDA_VERSION: "11.4"
     CUDA_HOME: /usr/local/cuda-11.4
     XFORMERS_FORCE_DISABLE_TRITON: "1"
   machine:
-    image: ubuntu-2004-cuda-11.4:202110-01
+    # See https://circleci.com/docs/linux-cuda-images-support-policy/
+    image: linux-cuda-11:default
     resource_class: gpu.nvidia.medium
   working_directory: ~/xformers
 
@@ -238,7 +239,7 @@ commands:
 jobs:
   skip_circleci_tests:
     machine:
-      image: ubuntu-2004:202010-01
+      image: ubuntu-2004:2023.07.1
     steps:
       - run: echo "No job to run"
   cpu_tests_py38:
@@ -276,25 +277,15 @@ jobs:
       - store_test_results:
           path: test-results
 
-  gpu_tests_cu114_sm75_T4:
-    <<: *gpu_cu114
+  gpu_tests_cu118_sm75_T4:
+    <<: *gpu_cu118
     machine:
-      image: ubuntu-2004-cuda-11.4:202110-01
+      image: linux-cuda-11:default
       resource_class: gpu.nvidia.medium  # T4
 
     steps:
       - run_gpu_ci:
           arch: "7.5"
-
-  gpu_tests_cu114_sm61_P4:
-    <<: *gpu_cu114
-    machine:
-      image: ubuntu-2004-cuda-11.4:202110-01
-      resource_class: gpu.nvidia.small  # P4
-
-    steps:
-      - run_gpu_ci:
-          arch: "6.1"
 
 workflows:
   version: 2
@@ -302,8 +293,7 @@ workflows:
     when: << pipeline.parameters.run-tests >>
     jobs:
       - cpu_tests_py38
-      - gpu_tests_cu114_sm61_P4
-      - gpu_tests_cu114_sm75_T4
+      - gpu_tests_cu118_sm75_T4
   # Prevents marking the CI as failed when no jobs run
   # https://github.com/CircleCI-Public/circleci-cli/issues/577
   report_noop:
