@@ -125,7 +125,7 @@ __device__ void store_v(TDataPtr data_ptr, int32_t vector_offset, TDataVec value
   *(reinterpret_cast<TDataVec*>(data_ptr) + vector_offset) = value;
 }
 
-template<typename scalar_t, int32_t n_loop_unroll = 2, int32_t n_loop_unroll_tail = 2>
+template<typename scalar_t, int32_t n_loop_unroll = 4, int32_t n_loop_unroll_tail = 2>
 __global__ void
 efficient_attention_forward_decoder_ck_kernel(
     at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> XQ,
@@ -135,6 +135,8 @@ efficient_attention_forward_decoder_ck_kernel(
     at::PackedTensorAccessor32<int32_t, 1, at::RestrictPtrTraits> seq_positions,
     const float qk_scale
 ) {
+  static_assert (n_loop_unroll_tail < n_loop_unroll, "");
+
   constexpr int32_t seq_positions_shift = 0;
 
   extern __shared__ __align__(16) float smem[];
@@ -208,6 +210,7 @@ efficient_attention_forward_decoder_ck_kernel(
     }
   }
 
+  // NB: the length of the tail is <= (wavefronts_per_block * n_loop_unroll)
   for (auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail; tt < t_max;
        tt += wavefronts_per_block * n_loop_unroll_tail) {
 #pragma unroll n_loop_unroll_tail
