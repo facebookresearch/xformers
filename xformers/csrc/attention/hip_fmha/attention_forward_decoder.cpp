@@ -111,7 +111,7 @@ __device__ __forceinline__ wavefrontReduce(float val) {
   auto reducer = F();  
 #pragma unroll
   for (int32_t mask = kThreadsPerWavefront >> 1; mask > 0; mask >>= 1) {
-    val = reducer(val, __shfl_xor(val, mask, kThreadsPerWavefront));
+    val = reducer(__shfl_xor(val, mask, kThreadsPerWavefront), val);
   }
   return val;
 }
@@ -254,6 +254,7 @@ efficient_attention_forward_decoder_ck_kernel(
   }
   // shared across all threads in block
   max_qk_acc = wavefrontReduce<std::greater<float>>(max_qk_acc);
+  
   // each wavefront computes partial sum of exp.
   float softmax_denominator = 0.0f;
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
@@ -517,7 +518,7 @@ int main(int argc, char** argv) {
   const int32_t B = 4;
   const int32_t H = 8;
   auto options = torch::TensorOptions()
-    .dtype(torch::kFloat32)
+    .dtype(torch::kFloat16)
     .layout(torch::kStrided)
     .device(torch::kCUDA, 1)
     .requires_grad(false);
@@ -529,7 +530,7 @@ int main(int argc, char** argv) {
   double qk_scale = 1. / sqrt(D);
 
   auto result = efficient_attention_forward_decoder_ck_impl<64, 1>(XQ, K, V, seq, qk_scale);
-  auto gold_result = efficient_attention_forward_decoder_ck_impl<64, 2>(XQ, K, V, seq, qk_scale);
+  auto gold_result = efficient_attention_forward_decoder_ck_impl<64, 16>(XQ, K, V, seq, qk_scale);
   auto mask = at::isclose(result, gold_result, 1e-2, 1e-2, false);
   auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
   printf("Mismatched elements percentage: %.2f\n", 1. - percent_match.item<float>());
