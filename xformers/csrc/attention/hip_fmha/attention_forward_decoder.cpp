@@ -187,7 +187,7 @@ efficient_attention_forward_decoder_ck_kernel(
   for (auto tt = wavefront_idx; tt < t_max_unroll; tt += dtt) {
 #pragma unroll kTimeUnroll
     for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
-      int32_t t = tt + ttt;
+      const int32_t t = tt + ttt;
       // &(cache_K[b][t][0][0]);
       auto* k_ = cache_K_base + t * cache_K.stride(1);
       // scalar4<scalar_t> k_thread;
@@ -196,7 +196,7 @@ efficient_attention_forward_decoder_ck_kernel(
 #pragma unroll kTimeUnroll
     for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
       float qk_acc = 0;
-      int32_t t = tt + ttt;
+      const int32_t t = tt + ttt;
 
       ck::inner_product<data_vec4_t, data_vec4_t, float>(q_thread, 
                                                          k_loads[ttt], 
@@ -218,7 +218,7 @@ efficient_attention_forward_decoder_ck_kernel(
        tt += wavefronts_per_block * kTimeUnroll1) {
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
-      int32_t t = tt + ttt;
+      const int32_t t = tt + ttt;
       // &(cache_K[b][t][0][0]);
       auto* k_ = cache_K_base + t * cache_K.stride(1);
       // scalar4<scalar_t> k_thread;
@@ -227,7 +227,7 @@ efficient_attention_forward_decoder_ck_kernel(
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
       float qk_acc = 0;
-      int32_t t = tt + ttt;
+      const int32_t t = tt + ttt;
       ck::inner_product<data_vec4_t, data_vec4_t, float>(q_thread, 
                                                          k_loads[ttt], 
                                                          qk_acc);
@@ -291,7 +291,7 @@ efficient_attention_forward_decoder_ck_kernel(
   for (auto tt = wavefront_idx; tt < t_max_unroll; tt += dtt) {
 #pragma unroll kTimeUnroll
     for (auto ttt = 0; ttt < kTimeUnroll; ++ttt) {
-      int32_t t = tt + ttt;
+      const int32_t t = tt + ttt;
       // &(cache_V[b][t][0][0]);
       auto* v_ = cache_V_base + t * cache_V.stride(1);
       //   scalar4<scalar_t> v_thread;
@@ -309,7 +309,7 @@ efficient_attention_forward_decoder_ck_kernel(
   for (auto tt = t_max_unroll + wavefront_idx; tt < t_max; tt += wavefronts_per_block * kTimeUnroll1) {
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
-      int32_t t = tt + ttt;
+      const int32_t t = tt + ttt;
       // &(cache_V[b][t][0][0]);
       auto* v_ = cache_V_base + t * cache_V.stride(1);
       //   scalar4<scalar_t> v_thread;
@@ -346,6 +346,24 @@ efficient_attention_forward_decoder_ck_kernel(
     bf_r.w = ck::type_convert<data_t>(r.w);
     auto* o_ = &O[b][0][h][0];
     store_v<decltype(o_), data_vec4_t>(o_, lane_idx, bf_r);
+  }
+}
+
+void update_max_dynamic_shared_memory_size_bytes(void* kernel_func, int32_t new_value) {
+  hipFuncAttributes attributes;
+  C10_CUDA_CHECK(hipFuncGetAttributes(
+      &attributes, 
+      kernel_func));
+
+  const auto default_value = attributes.maxDynamicSharedSizeBytes;
+
+  // printf("Default smem size: %d\n", default_value);
+
+  if (new_value > default_value) {
+    C10_CUDA_CHECK(hipFuncSetAttribute(
+        kernel_func,
+        hipFuncAttributeMaxDynamicSharedMemorySize,
+        new_value));
   }
 }
 
@@ -386,21 +404,16 @@ efficient_attention_forward_decoder_ck_impl(
   dim3 threads(ThreadsPerWavefront, WavefrontsPerBlock);
 
   int32_t smem_softmax = T_MAX * sizeof(float) + threads.y * sizeof(float);
-  int32_t smem_output = D_H * sizeof(float) * threads.y;
-  int32_t smem = max(smem_softmax, smem_output);
+  int32_t smem_output = D_H * sizeof(float) * threads.y; // 4 * threadsPerBlock * sizeof(float) == sizeof(O[b][0][h][:])
+  int32_t smem_size = max(smem_softmax, smem_output);
   auto stream = at::cuda::getCurrentHIPStream().stream();
 
   AT_DISPATCH_SWITCH_3(at::ScalarType::Half, at::ScalarType::BFloat16, at::ScalarType::Float, 
     XQ.scalar_type(), "efficient_attention_forward_decoder_ck", [&] {
       auto* kernel = &efficient_attention_forward_decoder_ck_kernel<scalar_t>;
-      if (smem > 48 * 1024) {
-        C10_CUDA_CHECK(hipFuncSetAttribute(
-            reinterpret_cast<void*&>(kernel),
-            hipFuncAttributeMaxDynamicSharedMemorySize,
-            smem));
-      }
+      update_max_dynamic_shared_memory_size_bytes(reinterpret_cast<void*&>(kernel), smem_size);
       kernel
-          <<<blocks, threads, smem, stream>>>(
+          <<<blocks, threads, smem_size, stream>>>(
               XQ.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>(),
               cache_K.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>(),
               cache_V.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>(),
@@ -510,8 +523,8 @@ int main(int argc, char** argv) {
     .requires_grad(false);
   auto int_options = options.dtype(torch::kInt);
   auto XQ = at::randn({B, 1, H, D}, options);
-  auto K = at::randn({B, T_MAX, H, D}, options);
-  auto V = at::randn({B, T_MAX, H, D}, options);
+  auto K = at::randn({B, T_MAX / 2, H, D}, options);
+  auto V = at::randn({B, T_MAX / 2, H, D}, options);
   auto seq = at::randint(1, 32, {B}, int_options);
   double qk_scale = 1. / sqrt(D);
 
