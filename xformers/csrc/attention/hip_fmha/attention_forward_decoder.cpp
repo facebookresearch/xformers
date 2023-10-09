@@ -47,7 +47,7 @@ __device__ void inner_product<bhalf4_t, bhalf4_t, float>(const bhalf4_t& a, cons
 namespace {
 
 constexpr int32_t kThreadsPerWavefront = 64;
-constexpr int32_t kWavefrontsPerBlock = 1;
+constexpr int32_t kWavefrontsPerBlock = 8;
 constexpr int32_t D_H = 256;
 constexpr int32_t T_MAX = 8192;
 
@@ -107,11 +107,10 @@ scalar4_scale_acc<ck::bhalf4_t>(ck::float4_t acc, ck::bhalf4_t a, float b) {
 
 template <typename F>
 float
-__device__ __forceinline__ wavefrontReduce(float val) {
-  auto reducer = F();  
+__device__ __forceinline__ wavefrontReduce(float val, F f) {
 #pragma unroll
   for (int32_t mask = kThreadsPerWavefront >> 1; mask > 0; mask >>= 1) {
-    val = reducer(__shfl_xor(val, mask, kThreadsPerWavefront), val);
+    val = f(__shfl_xor(val, mask, kThreadsPerWavefront), val);
   }
   return val;
 }
@@ -203,7 +202,7 @@ efficient_attention_forward_decoder_ck_kernel(
                                                          qk_acc);
       qk_acc *= qk_scale;
 
-      qk_acc = wavefrontReduce<std::plus<float>>(qk_acc);
+      qk_acc = wavefrontReduce(qk_acc, [] (float a, float b) { return a + b; });
       max_qk_acc = max(qk_acc, max_qk_acc);
 
       // write accumulated sums to smem.
@@ -233,7 +232,7 @@ efficient_attention_forward_decoder_ck_kernel(
                                                          qk_acc);
       qk_acc *= qk_scale;
 
-      qk_acc = wavefrontReduce<std::plus<float>>(qk_acc);
+      qk_acc = wavefrontReduce(qk_acc, [] (float a, float b) { return a + b; });
       max_qk_acc = max(qk_acc, max_qk_acc);
 
       // write accumulated sums to smem.
@@ -253,14 +252,14 @@ efficient_attention_forward_decoder_ck_kernel(
     max_qk_acc = max(max_qk_acc, smem[T_MAX + lane_idx]);
   }
   // shared across all threads in block
-  max_qk_acc = wavefrontReduce<std::greater<float>>(max_qk_acc);
-  
+  max_qk_acc = wavefrontReduce(max_qk_acc, [] (float a, float b) { return a > b ? a : b; });
+
   // each wavefront computes partial sum of exp.
   float softmax_denominator = 0.0f;
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
     softmax_denominator += expf(smem[t] - max_qk_acc);
   }
-  softmax_denominator = wavefrontReduce<std::plus<float>>(softmax_denominator);
+  softmax_denominator = wavefrontReduce(softmax_denominator, [] (float a, float b) { return a + b; });
 
   __syncthreads();
   if (lane_idx == 0) {
@@ -273,8 +272,8 @@ efficient_attention_forward_decoder_ck_kernel(
   if (lane_idx < wavefronts_per_block) {
     softmax_denominator = smem[T_MAX + lane_idx];
   }
-  softmax_denominator = wavefrontReduce<std::plus<float>>(softmax_denominator);
-  
+  softmax_denominator = wavefrontReduce(softmax_denominator, [] (float a, float b) { return a + b; });
+
   // now, compute the normalization across all threads.
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
     smem[t] = expf(smem[t] - max_qk_acc) / softmax_denominator;
@@ -515,23 +514,23 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 
 int main(int argc, char** argv) {
   const int32_t D = 256;
-  const int32_t B = 4;
-  const int32_t H = 8;
+  const int32_t B = 1;
+  const int32_t H = 4;
   auto options = torch::TensorOptions()
-    .dtype(torch::kFloat16)
+    .dtype(torch::kFloat32)
     .layout(torch::kStrided)
     .device(torch::kCUDA, 1)
     .requires_grad(false);
   auto int_options = options.dtype(torch::kInt);
   auto XQ = at::randn({B, 1, H, D}, options);
-  auto K = at::randn({B, T_MAX / 2, H, D}, options);
-  auto V = at::randn({B, T_MAX / 2, H, D}, options);
-  auto seq = at::randint(1, 32, {B}, int_options);
+  auto K = at::randn({B, 4096, H, D}, options);
+  auto V = at::randn({B, 4096, H, D}, options);
+  auto seq = at::randint(63, 128, {B}, int_options);
   double qk_scale = 1. / sqrt(D);
 
   auto result = efficient_attention_forward_decoder_ck_impl<64, 1>(XQ, K, V, seq, qk_scale);
-  auto gold_result = efficient_attention_forward_decoder_ck_impl<64, 16>(XQ, K, V, seq, qk_scale);
-  auto mask = at::isclose(result, gold_result, 1e-2, 1e-2, false);
+  auto gold_result = efficient_attention_forward_decoder_ck_impl<64, 2>(XQ, K, V, seq, qk_scale);
+  auto mask = at::isclose(result, gold_result, /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
   auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
   printf("Mismatched elements percentage: %.2f\n", 1. - percent_match.item<float>());
   return 0;
