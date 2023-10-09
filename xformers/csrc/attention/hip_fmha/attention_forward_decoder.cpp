@@ -360,8 +360,9 @@ efficient_attention_forward_decoder_ck_kernel(
       NAME,                                                         \
       AT_DISPATCH_CASE_3(SCALARTYPE1, SCALARTYPE2, SCALARTYPE3, __VA_ARGS__))
 
+template<int32_t ThreadsPerWavefront, int32_t WavefrontsPerBlock>
 at::Tensor
-efficient_attention_forward_decoder_ck(
+efficient_attention_forward_decoder_ck_impl(
     const at::Tensor& XQ, // [B, 1, H, D]
     const at::Tensor& cache_K, // [B, T_MAX, H or 1, D]
     const at::Tensor& cache_V, // [B, T_MAX, H or 1, D]
@@ -382,10 +383,10 @@ efficient_attention_forward_decoder_ck(
   auto B = XQ.size(0);
   auto H = XQ.size(2);
   dim3 blocks(B, H);
-  dim3 threads(kThreadsPerWavefront, kWavefrontsPerBlock);
+  dim3 threads(ThreadsPerWavefront, WavefrontsPerBlock);
 
-  int32_t smem_softmax = T_MAX * sizeof(float) + kWavefrontsPerBlock * sizeof(float);
-  int32_t smem_output = D_H * sizeof(float) * kWavefrontsPerBlock;
+  int32_t smem_softmax = T_MAX * sizeof(float) + threads.y * sizeof(float);
+  int32_t smem_output = D_H * sizeof(float) * threads.y;
   int32_t smem = max(smem_softmax, smem_output);
   auto stream = at::cuda::getCurrentHIPStream().stream();
 
@@ -416,6 +417,17 @@ efficient_attention_forward_decoder_ck(
 #undef AT_DISPATCH_CASE_3
 #undef AT_DISPATCH_SWITCH_3
 
+at::Tensor
+efficient_attention_forward_decoder_ck(
+    const at::Tensor& XQ, // [B, 1, H, D]
+    const at::Tensor& cache_K, // [B, T_MAX, H or 1, D]
+    const at::Tensor& cache_V, // [B, T_MAX, H or 1, D]
+    const at::Tensor& seq_positions, // [B]
+    double qk_scale) {
+  return efficient_attention_forward_decoder_ck_impl<kThreadsPerWavefront, kWavefrontsPerBlock> (
+    XQ, cache_K, cache_V, seq_positions, qk_scale
+  );
+}
 } // namespace
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
@@ -501,9 +513,13 @@ int main(int argc, char** argv) {
   auto K = at::randn({B, T_MAX, H, D}, options);
   auto V = at::randn({B, T_MAX, H, D}, options);
   auto seq = at::randint(1, 32, {B}, int_options);
-  double qk_scale = sqrt(D);
+  double qk_scale = 1. / sqrt(D);
 
-  auto result = efficient_attention_forward_decoder_ck(XQ, K, V, seq, qk_scale);
+  auto result = efficient_attention_forward_decoder_ck_impl<64, 1>(XQ, K, V, seq, qk_scale);
+  auto gold_result = efficient_attention_forward_decoder_ck_impl<64, 2>(XQ, K, V, seq, qk_scale);
+  auto mask = at::isclose(result, gold_result, 1e-2, 1e-2, false);
+  auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
+  printf("Mismatched elements percentage: %.2f\n", 1. - percent_match.item<float>());
   return 0;
 }
 
