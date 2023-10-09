@@ -119,16 +119,48 @@ efficient_attention_backward_ck(
   int64_t K = query.size(3);
   int64_t Kv = value.size(3);
 
+  auto opts = query.options();
+
   at::Tensor grad_q, grad_k, grad_v, grad_bias;
 
-  grad_q = at::zeros(query.sizes(), query.options());
-  grad_k = at::empty(key.sizes(), key.options());
-  grad_v = at::empty(value.sizes(), value.options());
+  if (query.size(1) == key.size(1) && query.size(3) == value.size(3) &&
+      query.storage().is_alias_of(key.storage()) &&
+      query.storage().is_alias_of(value.storage())) {
+    // Create one big contiguous chunk for grad_q, grad_k, grad_v
+    // This is because q, k and v usually come from a single
+    // output of a linear layer that is chunked.
+    // Creating the gradients with the right layout saves us
+    // a `torch.cat` call in the backward pass
+    at::Tensor chunk = at::empty({B, M, 3, num_heads, K}, opts);
+    grad_q = chunk.select(2, 0);
+    grad_k = chunk.select(2, 1);
+    grad_v = chunk.select(2, 2);
+  } else if (
+      key.size(3) == value.size(3) &&
+      key.storage().is_alias_of(value.storage())) {
+    // Create one big contiguous chunk for grad_k, grad_v
+    // This is because k and v usually come from a single
+    // output of a linear layer that is chunked.
+    // Creating the gradients with the right layout saves us
+    // a `torch.cat` call in the backward pass
+    at::Tensor chunk = at::empty({B, N, 2, num_heads, Kv}, opts);
+    grad_k = chunk.select(2, 0);
+    grad_v = chunk.select(2, 1);
+
+    grad_q = at::empty_strided(query.sizes(), query.strides(), query.options());
+    grad_q.fill_(0);
+  } else {
+    grad_q = at::empty_strided(query.sizes(), query.strides(), query.options());
+    grad_k = at::empty_strided(key.sizes(), key.strides(), key.options());
+    grad_v = at::empty_strided(value.sizes(), key.strides(), value.options());
+    grad_q.fill_(0);
+  }
 
   const bool bias_requires_grad = bias.has_value() && bias->requires_grad();
 
   if (bias_requires_grad)
-    grad_bias = at::empty(bias->sizes(), bias->options());
+    grad_bias =
+        at::empty_strided(bias->sizes(), bias->strides(), bias->options());
 
   auto set_batched_backward_params = [&](BatchedBackwardParams& p) {
     p.B = B;
