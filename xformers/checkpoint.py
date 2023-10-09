@@ -7,6 +7,7 @@
 import weakref
 from collections import defaultdict
 from contextlib import nullcontext
+from typing import Any, ContextManager, Dict, List
 
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode
@@ -93,7 +94,9 @@ def list_operators(function, *args, **kwargs):
     return verbose_mode.operators
 
 
-def checkpoint(function, *args, preserve_rng_state=True, policy_fn=None, **kwargs):
+def checkpoint(
+    function, *args, preserve_rng_state=True, policy_fn=None, **kwargs
+) -> Any:
     """Checkpointining with custom policy function for selectively deciding
     what to store and what to recompute
     Args:
@@ -153,8 +156,9 @@ def checkpoint(function, *args, preserve_rng_state=True, policy_fn=None, **kwarg
     else:
         assert callable(policy_fn), "policy_fn should be None, list or a callable"
 
-    temp_storage = defaultdict(list)
+    temp_storage: Dict[Any, List[Any]] = defaultdict(list)
     # assumption: grad_mode doesn't change inside function
+    caching_mode: ContextManager[None]
     if torch.is_grad_enabled():
         caching_mode = CachingTorchDispatchMode(policy_fn, temp_storage)
     else:

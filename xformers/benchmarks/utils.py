@@ -38,7 +38,7 @@ if _triton_is_available:
         _triton_is_available = False
 
 
-def pretty_print(results, title, units):
+def pretty_print(results, title, units) -> None:
     """Printout the contents of a dict as a human-readable and Markdown compatible array"""
     print(title)
     header = " Units: {:<45}".format(units)

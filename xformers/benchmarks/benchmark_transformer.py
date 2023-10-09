@@ -6,6 +6,7 @@
 
 import itertools
 from functools import partial, reduce
+from typing import Iterator
 
 import timm
 import torch
@@ -123,7 +124,7 @@ CASES = list(
 )
 
 
-def benchmark_transformer(model_info, dtype):
+def benchmark_transformer(model_info, dtype) -> Iterator[benchmark.Timer]:
     device = "cuda"
 
     model_name, model_factory, input_shape = model_info

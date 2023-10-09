@@ -502,7 +502,7 @@ class BwOp(AttentionBwOpBase):
             cu_seqlens_k,
             max_seqlen_k,
         ) = _convert_input_format(inp)
-        assert ctx.lse.is_contiguous
+        assert ctx.lse.is_contiguous()
         ctx_lse = ctx.lse
         assert ctx_lse.shape[2] >= max_seqlen_q
         if max_seqlen_q != ctx_lse.shape[2]:
