@@ -134,6 +134,13 @@ struct batched_backward_masktype_attnbias_dispatched {
             MaskingSpec,
             Deterministic>;
 
+    RunWithDeviceOp<DeviceOpInstance>(param, stream);
+  };
+
+  template <typename DeviceOpInstance>
+  static void RunWithDeviceOp(
+      BatchedBackwardParams& param,
+      hipStream_t stream) {
     std::vector<ck::index_t> q_gs_ms_ks_lengths{
         param.B, param.num_heads, param.M, param.K};
     std::vector<ck::index_t> q_gs_ms_ks_strides{

@@ -141,6 +141,11 @@ struct grouped_forward_masktype_attnbias_dispatched {
             MaskingSpec, // MaskingSpecialization
             Deterministic>;
 
+    RunWithDeviceOp<DeviceOpInstance>(param, stream);
+  };
+
+  template <typename DeviceOpInstance>
+  static void RunWithDeviceOp(GroupedForwardParams& param, hipStream_t stream) {
     std::vector<typename DeviceOpInstance::ProblemDesc> problem_descs;
 
     for (std::size_t i = 0; i < param.num_batches; i++) {

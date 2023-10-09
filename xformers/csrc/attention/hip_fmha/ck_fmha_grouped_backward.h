@@ -135,6 +135,14 @@ struct grouped_backward_masktype_attnbias_dispatched {
             MaskingSpec,
             Deterministic>;
 
+    RunWithDeviceOp<DeviceOpInstance>(param, stream);
+  };
+
+  template <typename DeviceOpInstance>
+  static void RunWithDeviceOp(
+      GroupedBackwardParams& param,
+      hipStream_t stream) {
+    // Tunables
     std::vector<typename DeviceOpInstance::ProblemDesc> problem_descs;
 
     for (std::size_t i = 0; i < param.num_batches; i++) {
