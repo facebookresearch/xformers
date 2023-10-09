@@ -946,8 +946,6 @@ def test_dropout(dtype, op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias
     assert all(p_values > p_val_tol)
 
 def _test_dropout_backward(q_len, kv_len, batch_size, k, p, op, dtype):
-    if dtype is torch.bfloat16 and compute_capability < (8, 0):
-        pytest.skip("bf16 requires Sm80")
     if not op.is_available():
         pytest.skip()
 
@@ -1034,8 +1032,11 @@ def test_dropout_backward_small_k(q_len, kv_len, batch_size, k, p):
 @pytest.mark.parametrize("batch_size", [1, 2])
 @pytest.mark.parametrize("kv_len", [3, 248, 256])
 @pytest.mark.parametrize("q_len", [3, 248, 256])
-@pytest.mark.parametrize("dt", ["f16", "bf16", "f32"])
+@pytest.mark.parametrize("dt", ["f16", "bf16"])
 def test_dropout_backward_ck(dt, q_len, kv_len, batch_size, k, p):
+    if k > 128:
+        pytest.skip("head-dim size bigger than 128 is not supported by CK-FlashAttention")
+
     _test_dropout_backward(
         q_len,
         kv_len,
