@@ -515,9 +515,9 @@ class AttentionOpDispatch:
 def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
     if tensor.ndim == 4:
         return tensor
-    return tensor.reshape([-1, num_heads, tensor.shape[1], tensor.shape[2]]).permute(
-        (0, 2, 1, 3)
-    )
+    return tensor.reshape(
+        [tensor.shape[0] // num_heads, num_heads, tensor.shape[1], tensor.shape[2]]
+    ).permute((0, 2, 1, 3))
 
 
 def check_lastdim_alignment_stride1(

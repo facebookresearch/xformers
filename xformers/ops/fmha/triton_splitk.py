@@ -551,7 +551,7 @@ class FwOp(AttentionFwOpBase):
     @classmethod
     def get_split_k(cls, B: int, H: int, Mk: int) -> int:
         """Heuristic for the number of splits"""
-        bh = B * H
+        bh = max(B * H, 1)  # NOTE: Handle B*h=0 case
         split_k = max(Mk, 1024) // bh
         max_chunk_size = 64 if Mk <= 512 and bh <= 64 else 128
         while split_k > 0 and Mk / split_k < max_chunk_size:
@@ -694,6 +694,8 @@ class FwOp(AttentionFwOpBase):
             assert G == 1
             out = out[:, :, 0]
             lse = lse[:, 0]
+        if Mk == 0:
+            out.zero_()
 
         return out, Context(out=out, lse=lse)
 

@@ -279,8 +279,13 @@ efficient_attention_forward_cutlass(
           " kb)");
       AT_CUDA_CHECK(err);
     }
+    auto blocks = p.getBlocksGrid();
+    if (blocks.x * blocks.y * blocks.z == 0 || key.size(1) == 0) {
+      res.zero_();
+      return;
+    }
     Kernel::check_supported(p);
-    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
+    kernel_fn<<<blocks, p.getThreadsGrid(), smem_bytes, stream>>>(p);
   };
 
   // Dispatch to the right kernel

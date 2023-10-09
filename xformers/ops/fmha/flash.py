@@ -393,21 +393,30 @@ class FwOp(AttentionFwOpBase):
             cu_seqlens_k,
             max_seqlen_k,
         ) = _convert_input_format(inp)
-        out, softmax_lse, rng_state = cls.OPERATOR(
-            inp.query,
-            inp.key,
-            inp.value,
-            cu_seqlens_q,
-            cu_seqlens_k,
-            max_seqlen_q,
-            max_seqlen_k,
-            inp.p,
-            inp.scale_float,
-            _is_causal(inp.attn_bias),
-            _window_size(inp.attn_bias),
-            return_softmax,
-        )
-        out = out.reshape(out_shape)
+        if inp.query.numel() > 0 and inp.key.numel() > 0:
+            out, softmax_lse, rng_state = cls.OPERATOR(
+                inp.query,
+                inp.key,
+                inp.value,
+                cu_seqlens_q,
+                cu_seqlens_k,
+                max_seqlen_q,
+                max_seqlen_k,
+                inp.p,
+                inp.scale_float,
+                _is_causal(inp.attn_bias),
+                _window_size(inp.attn_bias),
+                return_softmax,
+            )
+            out = out.reshape(out_shape)
+        else:
+            out = torch.zeros(out_shape, device=inp.query.device, dtype=inp.query.dtype)
+            rng_state = None
+            softmax_lse = torch.empty(
+                [inp.query.shape[0], inp.query.shape[2], inp.query.shape[1]],
+                device=inp.query.device,
+                dtype=torch.float32,
+            )
         ctx = Context(out=out, lse=softmax_lse)
         if inp.p != 0.0:
             ctx.op_bw = BwOp
@@ -544,26 +553,33 @@ class BwOp(AttentionBwOpBase):
             )
 
         assert grad.dtype in cls.SUPPORTED_DTYPES
-        cls.OPERATOR(
-            grad.reshape(kernel_out_shape).contiguous(),
-            inp.query,
-            inp.key,
-            inp.value,
-            ctx.out.reshape(kernel_out_shape),
-            ctx_lse,
-            grads.dq,
-            grads.dk,
-            grads.dv,
-            cu_seqlens_q,
-            cu_seqlens_k,
-            max_seqlen_q,
-            max_seqlen_k,
-            inp.p,
-            inp.scale_float,
-            _is_causal(inp.attn_bias),
-            _window_size(inp.attn_bias),
-            ctx.rng_state,
-        )
+
+        if grads.dq.numel() == 0:
+            grads.dk.zero_()
+            grads.dv.zero_()
+        if grads.dv.numel() == 0:
+            grads.dq.zero_()
+        if grads.dq.numel() and grads.dk.numel():
+            cls.OPERATOR(
+                grad.reshape(kernel_out_shape).contiguous(),
+                inp.query,
+                inp.key,
+                inp.value,
+                ctx.out.reshape(kernel_out_shape),
+                ctx_lse,
+                grads.dq,
+                grads.dk,
+                grads.dv,
+                cu_seqlens_q,
+                cu_seqlens_k,
+                max_seqlen_q,
+                max_seqlen_k,
+                inp.p,
+                inp.scale_float,
+                _is_causal(inp.attn_bias),
+                _window_size(inp.attn_bias),
+                ctx.rng_state,
+            )
         grads.dq = grads.dq.reshape(dq_shape)
         grads.dk = grads.dk.reshape(dk_shape)
         grads.dv = grads.dv.reshape(dv_shape)

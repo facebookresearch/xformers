@@ -2236,4 +2236,66 @@ def test_mqa_decoding(op: Type[fmha.AttentionFwOpBase], dtype, B_Mkv_H_K):
     )
 
 
+@parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs
+def test_empty_tensors_empty_query(
+    opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
+):
+    query, key, value, attn_bias = create_tensors(
+        *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
+        fmt="BMHK",
+    )
+    opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
+
+    query = query[:, :0]
+    query.requires_grad_(True)
+    key.requires_grad_(True)
+    value.requires_grad_(True)
+    out = xformers.ops.memory_efficient_attention(query, key, value, op=(opFW, None))
+    assert out.shape[1] == 0
+    out.backward(out)
+    # dK/dV should be all zeros
+    assert_allclose(key.grad, torch.zeros_like(key.grad), "key.grad")
+    assert_allclose(value.grad, torch.zeros_like(value.grad), "value.grad")
+
+
+@parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs
+def test_empty_tensors_empty_kv(
+    opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
+):
+    query, key, value, attn_bias = create_tensors(
+        *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
+        fmt="BMHK",
+    )
+    opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
+
+    key = key[:, :0]
+    value = value[:, :0]
+    query.requires_grad_(True)
+    key.requires_grad_(True)
+    value.requires_grad_(True)
+    out = xformers.ops.memory_efficient_attention(query, key, value, op=(opFW, None))
+    assert_allclose(out, torch.zeros_like(out), "out")
+    out.backward(out)
+    # dQ should be all zeros
+    assert_allclose(query.grad, torch.zeros_like(query.grad), "query.grad")
+
+
+@parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs
+def test_empty_tensors_empty_b(
+    opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
+):
+    query, key, value, attn_bias = create_tensors(
+        *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
+        fmt="BMHK",
+    )
+    opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
+
+    query, key, value = query[:0], key[:0], value[:0]
+    query.requires_grad_(True)
+    key.requires_grad_(True)
+    value.requires_grad_(True)
+    out = xformers.ops.memory_efficient_attention(query, key, value, op=(opFW, None))
+    out.backward(out)
+
+
 # end of file

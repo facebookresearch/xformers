@@ -1179,8 +1179,12 @@ struct AttentionBackwardKernel {
     CHECK_ALIGNED_PTR(p.output_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.grad_output_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.bias_ptr, kMinimumAlignment);
-    XFORMERS_CHECK(p.lse_strideH % 8 == 0, "LSE is not correctly aligned");
-    XFORMERS_CHECK(p.lse_strideB % 8 == 0, "LSE is not correctly aligned");
+    XFORMERS_CHECK(
+        p.num_heads <= 1 || p.lse_strideH % 8 == 0,
+        "LSE is not correctly aligned (strideH)");
+    XFORMERS_CHECK(
+        p.num_batches <= 1 || p.lse_strideB % 8 == 0,
+        "LSE is not correctly aligned (strideB)");
     XFORMERS_CHECK(
         p.num_heads <= 1 || p.q_strideH % kMinimumAlignment == 0,
         "query is not correctly aligned (strideH)");

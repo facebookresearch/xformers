@@ -353,6 +353,15 @@ mem_efficient_attention_backward_cutlass(
         workspace.zero_();
       }
     }
+
+    // Handle the edge-cases where some tensors are empty
+    if (p.num_queries == 0 || p.num_keys == 0 || p.num_batches == 0 ||
+        p.num_heads == 0) {
+      grad_k.zero_();
+      grad_v.zero_();
+      grad_q.zero_();
+      return;
+    }
     Kernel::check_supported(p);
 
     if (smem_bytes > 0xc000) {
