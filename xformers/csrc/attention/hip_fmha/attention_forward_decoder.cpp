@@ -176,7 +176,7 @@ efficient_attention_forward_decoder_ck_kernel(
   // Split T across wavefronts in a block, unroll loads to expose more
   // parallelism.
 
-  constexpr int32_t kTimeUnroll = 2;
+  constexpr int32_t kTimeUnroll = 4;
   data_vec4_t k_loads[kTimeUnroll];
 
   const auto dtt = wavefronts_per_block * kTimeUnroll;
@@ -212,32 +212,36 @@ efficient_attention_forward_decoder_ck_kernel(
     }
   }
 
-  constexpr int32_t kTimeUnroll1 = 1;
-  for (auto tt = t_max_unroll + wavefront_idx; tt < t_max;
+  constexpr int32_t kTimeUnroll1 = 4;
+  for (auto tt = t_max_unroll + wavefront_idx * kTimeUnroll1; tt < t_max;
        tt += wavefronts_per_block * kTimeUnroll1) {
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
       const int32_t t = tt + ttt;
-      // &(cache_K[b][t][0][0]);
-      auto* k_ = cache_K_base + t * cache_K.stride(1);
-      // scalar4<scalar_t> k_thread;
-      k_loads[ttt] = load_v<decltype(k_), data_vec4_t>(k_, lane_idx);
+      if (t < t_max) {
+        // &(cache_K[b][t][0][0]);
+        auto* k_ = cache_K_base + t * cache_K.stride(1);
+        // scalar4<scalar_t> k_thread;
+        k_loads[ttt] = load_v<decltype(k_), data_vec4_t>(k_, lane_idx);
+      }
     }
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
       float qk_acc = 0;
       const int32_t t = tt + ttt;
-      ck::inner_product<data_vec4_t, data_vec4_t, float>(q_thread, 
-                                                         k_loads[ttt], 
-                                                         qk_acc);
-      qk_acc *= qk_scale;
+      if (t < t_max) {
+        ck::inner_product<data_vec4_t, data_vec4_t, float>(q_thread, 
+                                                          k_loads[ttt], 
+                                                          qk_acc);
+        qk_acc *= qk_scale;
 
-      qk_acc = wavefrontReduce(qk_acc, [] (float a, float b) { return a + b; });
-      max_qk_acc = max(qk_acc, max_qk_acc);
+        qk_acc = wavefrontReduce(qk_acc, [] (float a, float b) { return a + b; });
+        max_qk_acc = max(qk_acc, max_qk_acc);
 
-      // write accumulated sums to smem.
-      if (lane_idx == 0) {
-        smem[t] = qk_acc;
+        // write accumulated sums to smem.
+        if (lane_idx == 0) {
+          smem[t] = qk_acc;
+        }
       }
     }
   }
@@ -306,21 +310,26 @@ efficient_attention_forward_decoder_ck_kernel(
     }
   }
 
-  for (auto tt = t_max_unroll + wavefront_idx; tt < t_max; tt += wavefronts_per_block * kTimeUnroll1) {
+  for (auto tt = t_max_unroll + wavefront_idx * kTimeUnroll1; tt < t_max; tt += wavefronts_per_block * kTimeUnroll1) {
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
       const int32_t t = tt + ttt;
-      // &(cache_V[b][t][0][0]);
-      auto* v_ = cache_V_base + t * cache_V.stride(1);
-      //   scalar4<scalar_t> v_thread;
-      k_loads[ttt] = load_v<decltype(v_), data_vec4_t>(v_, lane_idx);
+      if (t < t_max) {
+        // &(cache_V[b][t][0][0]);
+        auto* v_ = cache_V_base + t * cache_V.stride(1);
+        //   scalar4<scalar_t> v_thread;
+        k_loads[ttt] = load_v<decltype(v_), data_vec4_t>(v_, lane_idx);
 
-      ps[ttt] = smem[t];
+        ps[ttt] = smem[t];
+      }
     }
 
 #pragma unroll kTimeUnroll1
     for (auto ttt = 0; ttt < kTimeUnroll1; ++ttt) {
-      o_acc = scalar4_scale_acc<data_vec4_t>(o_acc, k_loads[ttt], ps[ttt]);
+      const int32_t t = tt + ttt;
+      if (t < t_max) {
+        o_acc = scalar4_scale_acc<data_vec4_t>(o_acc, k_loads[ttt], ps[ttt]);
+      }
     }
   }
   // now, each thread has partial sums. Write to smem and get accumulated
