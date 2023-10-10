@@ -156,6 +156,14 @@ efficient_attention_backward_ck(
     grad_q.fill_(0);
   }
 
+  // CK-FlashAttn requires q/k/v to have same shapes with dQ/dK/dV respectively
+  TORCH_CHECK(query.sizes() == grad_q.sizes());
+  TORCH_CHECK(query.strides() == grad_q.strides());
+  TORCH_CHECK(key.sizes() == grad_k.sizes());
+  TORCH_CHECK(key.strides() == grad_k.strides());
+  TORCH_CHECK(value.sizes() == grad_v.sizes());
+  TORCH_CHECK(value.strides() == grad_v.strides());
+
   const bool bias_requires_grad = bias.has_value() && bias->requires_grad();
 
   if (bias_requires_grad)
