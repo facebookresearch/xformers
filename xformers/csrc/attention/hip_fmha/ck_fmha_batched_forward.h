@@ -55,7 +55,6 @@ struct batched_forward_masktype_attnbias_dispatched {
       ck::tensor_operation::device::TensorSpecialization::Default;
   static constexpr auto TensorSpecC =
       ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr bool Deterministic = false;
 
   static void Run(BatchedForwardParams& param, hipStream_t stream) {
     // Tunables
@@ -137,8 +136,7 @@ struct batched_forward_masktype_attnbias_dispatched {
               8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
             B1CShuffleBlockTransferScalarPerVector, // TUNABLE
             4,
-            MaskingSpec, // MaskingSpecialization
-            Deterministic>;
+            MaskingSpec>; // MaskingSpecialization
 
     RunWithDeviceOp<DeviceOpInstance>(param, stream);
   };
