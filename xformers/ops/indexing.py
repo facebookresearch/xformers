@@ -14,6 +14,31 @@ from xformers.ops.triton import (
     scaled_index_add_fwd,
 )
 
+from .common import BaseOperator, register_operator
+
+
+# Keeping these operator registry here so that
+# it's easy to check if they are available
+@register_operator
+class ScaledIndexAddFw(BaseOperator):
+    OPERATOR = scaled_index_add_fwd
+    OPERATOR_CATEGORY = "indexing"
+    NAME = "scaled_index_addF"
+
+
+@register_operator
+class ScaledIndexAddBw(BaseOperator):
+    OPERATOR = scaled_index_add_bwd
+    OPERATOR_CATEGORY = "indexing"
+    NAME = "scaled_index_addB"
+
+
+@register_operator
+class IndexSelect(BaseOperator):
+    OPERATOR = index_select_cat_fwd
+    OPERATOR_CATEGORY = "indexing"
+    NAME = "index_select"
+
 
 class _ScaledIndexAdd(torch.autograd.Function):
     @staticmethod
@@ -77,7 +102,7 @@ class _ScaledIndexAdd(torch.autograd.Function):
 
 
 def scaled_index_add(
-    x: torch.Tensor,  # [B, M, D]
+    input: torch.Tensor,  # [B, M, D]
     index: torch.Tensor,  # [Bi] - int64
     source: torch.Tensor,  # [Bi, M, D]
     scaling: Optional[torch.Tensor] = None,  # [D]
@@ -88,20 +113,20 @@ def scaled_index_add(
 
     Indices in ``index`` are assumed to be unique
 
-    The max index in ``index`` is assumed to be less than the size of dim0 of input ``x``.
+    The max index in ``index`` is assumed to be less than the size of dim0 of ``input``.
 
     :Note:
 
-        The FW pass is done in-place (input ``x`` is modified)
+        The FW pass is done in-place (``input`` is modified)
 
     :Equivalent pytorch code:
 
     .. code-block:: python
 
-        return torch.index_add(inp, dim=0, source=scaling * src, index=indices, alpha=alpha)
+        return torch.index_add(input, dim=0, source=scaling * src, index=indices, alpha=alpha)
     """
 
-    return _ScaledIndexAdd.apply(x, index, source, scaling, alpha)
+    return _ScaledIndexAdd.apply(input, index, source, scaling, alpha)
 
 
 class _IndexSelectCat(torch.autograd.Function):

@@ -9,13 +9,15 @@ import pytest
 import torch
 
 import xformers.ops as xops
+from xformers.ops import indexing
 
 from .utils import assert_allclose
 
-cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 
-
-@cuda_only
+@pytest.mark.skipif(
+    not indexing.ScaledIndexAddFw.is_available(), reason="not available"
+)
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 @pytest.mark.parametrize("with_scaling", [False, True])
 @pytest.mark.parametrize(
     "out_shape", [(48, 1, 257 * 1536), (48, 257, 1536), (192, 50, 1536)]
@@ -71,7 +73,8 @@ def test_scaled_index_add(out_shape, with_scaling: bool) -> None:
         assert_allclose(v.grad, ref_grads[k], f"{k}.grad", atol=atol, rtol=rtol)  # type: ignore
 
 
-@cuda_only
+@pytest.mark.skipif(not indexing.IndexSelect.is_available(), reason="not available")
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 @pytest.mark.parametrize("D", [1536])
 @pytest.mark.parametrize("batches", [((48, 25), (192, 50))])
 def test_index_select_cat(D, batches) -> None:

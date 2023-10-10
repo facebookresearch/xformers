@@ -13,7 +13,7 @@ from utils import benchmark_main_helper
 
 import xformers.ops as xops
 
-min_run_time = 0.5
+min_run_time = 0.2
 device = torch.device("cuda")
 
 
@@ -69,42 +69,24 @@ def _setup_test(
     for k, benchmark_cls in functions.items():
         benchmark_object = benchmark_cls(**kwargs, bw=bw)
         label = benchmark_object.label
-        label += "_fw" if fw else ""
+        label += "fw" if fw else ""
         label += "bw" if bw else ""
 
-        if cuda_graph:
-            stream = torch.cuda.Stream()
+        def run_one():
             if fw:
-                stream.wait_stream(torch.cuda.current_stream())
-                with torch.cuda.stream(stream):
-                    for _ in range(3):
-                        benchmark_object.fw()
-                torch.cuda.current_stream().wait_stream(stream)
-
-                graph = torch.cuda.CUDAGraph()
-                with torch.cuda.graph(graph):
-                    benchmark_object.fw()
+                benchmark_object.fw()
             if bw:
-                stream.wait_stream(torch.cuda.current_stream())
-                with torch.cuda.stream(stream):
-                    for _ in range(3):
-                        benchmark_object.bw()
-                torch.cuda.current_stream().wait_stream(stream)
+                benchmark_object.bw()
 
-                graph = torch.cuda.CUDAGraph()
-                with torch.cuda.graph(graph):
-                    benchmark_object.bw()
-
-            def run_one():
-                graph.replay()
-
-        else:
+        if cuda_graph:
+            run_one()
+            benchmark_object = benchmark_cls(**kwargs, bw=bw)
+            g = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(g):
+                run_one()
 
             def run_one():
-                if fw:
-                    benchmark_object.fw()
-                if bw:
-                    benchmark_object.bw()
+                g.replay()
 
         yield benchmark.Timer(
             stmt="fn()",
@@ -145,11 +127,11 @@ class ScaledIndexAddBenchmark:
 
     def fw(self) -> None:
         self.out = xops.scaled_index_add(
-            self.inp.clone(),
-            self.index,
-            self.src,
-            self.scaling,
-            self.alpha,
+            input=self.inp.clone(),
+            index=self.index,
+            source=self.src,
+            scaling=self.scaling,
+            alpha=self.alpha,
         )
 
     def bw(self):
@@ -200,21 +182,33 @@ class IndexSelectBenchmark:
     def __init__(self, dtype, batches, D, keep_ratio, bw: bool) -> None:
         dtype_str = DTYPE2STR.get(dtype, dtype)
         self.sub_label = f"{dtype_str} D={D} batches={batches} keep={keep_ratio}"
-        self.label = "index_select_cat"
+        self.label = "index_select"
 
-        self.sources = [
-            torch.randn((B, seqlen * D), dtype=dtype, device="cuda", requires_grad=bw)
-            for (B, seqlen) in batches
-        ]
-        self.indices = [
-            torch.tensor(random.sample(range(B), int(B * keep_ratio)), device="cuda")
-            for (B, _) in batches
-        ]
+        indices = []
+        sources = []
+        for (B, seqlen) in batches:
+            index = [i for i in range(B)]
+            random.Random(B).shuffle(index)
+            indices.append(
+                torch.zeros(
+                    index[int(keep_ratio * B)],
+                    dtype=torch.int64,
+                    device="cuda",
+                )
+            )
+            source_i = torch.randn(
+                [B, seqlen * D], dtype=dtype, device="cuda", requires_grad=bw
+            )
+            sources.append(source_i)
+        self.indices, self.sources = indices, sources
+        self.out = torch.Tensor()
 
     def fw(self) -> None:
         self.out = xops.index_select_cat(self.sources, self.indices)
 
     def bw(self):
+        for src in self.sources:
+            src.grad = None
         self.out.backward(self.out, retain_graph=True)
 
 
@@ -229,7 +223,6 @@ def index_select_fw(**kwargs):
     yield from _setup_test(
         **kwargs,
         fw=True,
-        cuda_graph=True,
         functions={
             "xformers": IndexSelectBenchmark,
             "pytorch": IndexSelectBenchmarkBaseline,
@@ -242,7 +235,6 @@ def index_select_fwbw(**kwargs):
         **kwargs,
         fw=True,
         bw=True,
-        cuda_graph=True,
         functions={
             "xformers": IndexSelectBenchmark,
             "pytorch": IndexSelectBenchmarkBaseline,

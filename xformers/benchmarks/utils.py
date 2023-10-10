@@ -654,7 +654,10 @@ def _fail_if_regressions(
     print(f"  Worse    : {num_worse}")
     if num_unk > 0:
         print(f"  (no ref) : {num_unk}")
+    benchmarks_run = num_better + num_nochange + num_worse
     if num_worse > 1:
         raise RuntimeError("At least one benchmark regressed!")
-    if num_nochange == 0:
+    elif num_unk == benchmarks_run:
         raise RuntimeError("No reference found")
+    elif benchmarks_run == 0:
+        raise RuntimeError("No benchmark was run")
