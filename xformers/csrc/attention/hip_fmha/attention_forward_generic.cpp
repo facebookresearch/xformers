@@ -30,6 +30,11 @@ extern void grouped_forward_bp16(
     GroupedForwardParams& param,
     hipStream_t stream);
 
+extern void batched_infer_fp16(BatchedForwardParams& param, hipStream_t stream);
+extern void batched_infer_bp16(BatchedForwardParams& param, hipStream_t stream);
+extern void grouped_infer_fp16(GroupedForwardParams& param, hipStream_t stream);
+extern void grouped_infer_bp16(GroupedForwardParams& param, hipStream_t stream);
+
 namespace {
 
 /*
@@ -358,23 +363,43 @@ efficient_attention_forward_ck(
 
     set_batched_forward_params(batched_forward_params);
 
-    if (inDataType == at::ScalarType::Half) {
-      batched_forward_fp16(batched_forward_params, stream);
-    } else if (inDataType == at::ScalarType::BFloat16) {
-      batched_forward_bp16(batched_forward_params, stream);
-    } else
-      throw std::runtime_error("input data-type is not supported!");
+    if (!batched_forward_params.use_dropout &&
+        !batched_forward_params.compute_logsumexp) {
+      if (inDataType == at::ScalarType::Half) {
+        batched_infer_fp16(batched_forward_params, stream);
+      } else if (inDataType == at::ScalarType::BFloat16) {
+        batched_infer_bp16(batched_forward_params, stream);
+      } else
+        throw std::runtime_error("input data-type is not supported!");
+    } else {
+      if (inDataType == at::ScalarType::Half) {
+        batched_forward_fp16(batched_forward_params, stream);
+      } else if (inDataType == at::ScalarType::BFloat16) {
+        batched_forward_bp16(batched_forward_params, stream);
+      } else
+        throw std::runtime_error("input data-type is not supported!");
+    };
   } else { // input is grouped
     GroupedForwardParams grouped_forward_params;
 
     set_grouped_forward_params(grouped_forward_params);
 
-    if (inDataType == at::ScalarType::Half) {
-      grouped_forward_fp16(grouped_forward_params, stream);
-    } else if (inDataType == at::ScalarType::BFloat16) {
-      grouped_forward_bp16(grouped_forward_params, stream);
-    } else
-      throw std::runtime_error("input data-type is not supported!");
+    if (!grouped_forward_params.use_dropout &&
+        !grouped_forward_params.compute_logsumexp) {
+      if (inDataType == at::ScalarType::Half) {
+        grouped_infer_fp16(grouped_forward_params, stream);
+      } else if (inDataType == at::ScalarType::BFloat16) {
+        grouped_infer_bp16(grouped_forward_params, stream);
+      } else
+        throw std::runtime_error("input data-type is not supported!");
+    } else {
+      if (inDataType == at::ScalarType::Half) {
+        grouped_forward_fp16(grouped_forward_params, stream);
+      } else if (inDataType == at::ScalarType::BFloat16) {
+        grouped_forward_bp16(grouped_forward_params, stream);
+      } else
+        throw std::runtime_error("input data-type is not supported!");
+    };
   };
 
   return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
