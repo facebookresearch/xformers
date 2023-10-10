@@ -211,7 +211,7 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None):
     if q.ndim == 4:
         assert p == 0.0
-        return ref_attention_bmhk(q, k, v, attn_bias=attn_bias)
+        return ref_attention_bmhk(q, k, v, attn_bias=attn_bias, dtype=dtype)
     if dtype is None:
         dtype = torch.float32
     q = q.to(dtype=dtype)
@@ -244,7 +244,7 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dt
     return attn @ v
 
 
-def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
+def ref_attention_bmhk(q, k, v, attn_bias, scale=None, dtype=None) -> torch.Tensor:
     assert q.ndim == 4
 
     def T(t):
@@ -258,7 +258,7 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
             device=q.device,
             dtype=torch.float32,
         ).reshape([q.shape[0] * q.shape[2], q.shape[1], k.shape[1]])
-    out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale)
+    out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale, dtype=dtype)
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
 
@@ -1662,8 +1662,8 @@ def test_decoder(
     ref_output = ref_attention(q, k, v, attn_bias, dtype=dtype_)
 
     assert_allclose(
-        decoder_output.float(),
-        ref_output.float(),
+        decoder_output,
+        ref_output,
         atol=fmha.ck_decoder.FwOp.ERROR_ATOL[dtype_] * 4,
         rtol=fmha.ck_decoder.FwOp.ERROR_RTOL[dtype_],
     )
