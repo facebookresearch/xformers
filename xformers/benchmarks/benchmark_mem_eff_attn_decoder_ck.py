@@ -101,18 +101,19 @@ def mem_eff_attention_decoder(
     torch.manual_seed(42)
     k_seqlen = torch.randint(1, n_keys + 1, (B,)).tolist()
     K = 256
+    dtype = torch.float16
 
-    q = torch.rand(1, B, n_heads, K, device=device, dtype=torch.bfloat16)
+    q = torch.rand(1, B, n_heads, K, device=device, dtype=dtype)
     if multiquery:
         k = torch.rand(
-            1, B * padding, 1, K, device=device, dtype=torch.bfloat16
+            1, B * padding, 1, K, device=device, dtype=dtype
         ).expand(1, B * padding, n_heads, K)
         v = torch.rand(
-            1, B * padding, 1, K, device=device, dtype=torch.bfloat16
+            1, B * padding, 1, K, device=device, dtype=dtype
         ).expand(1, B * padding, n_heads, K)
     else:
-        k = torch.rand(1, B * padding, n_heads, K, device=device, dtype=torch.bfloat16)
-        v = torch.rand(1, B * padding, n_heads, K, device=device, dtype=torch.bfloat16)
+        k = torch.rand(1, B * padding, n_heads, K, device=device, dtype=dtype)
+        v = torch.rand(1, B * padding, n_heads, K, device=device, dtype=dtype)
 
     bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
         q_seqlen=[1] * B,
