@@ -60,6 +60,7 @@ NUM_THREADS = [1] if device.type == "cuda" else [1, 40]
 
 OPS = [
     xformers.ops.fmha.ck.FwOp,
+    xformers.ops.fmha.ck_decoder.FwOp
 ]
 
 KV_SHAPES = [
@@ -99,7 +100,7 @@ def mem_eff_attention_decoder(
     n_keys, padding, B = kv_shape
     torch.manual_seed(42)
     k_seqlen = torch.randint(1, n_keys + 1, (B,)).tolist()
-    K = 128
+    K = 256
 
     q = torch.rand(1, B, n_heads, K, device=device, dtype=torch.bfloat16)
     if multiquery:
