@@ -4,24 +4,16 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import itertools
 from typing import Any
 
 import torch
 from torch.utils import benchmark
-from utils import benchmark_main_helper
+from utils import benchmark_main_helper2
 
 import xformers.ops as xops
 
 min_run_time = 0.5
 device = torch.device("cuda")
-
-
-def product_dict(**kwargs):
-    keys = kwargs.keys()
-    vals = kwargs.values()
-    for instance in itertools.product(*vals):
-        yield dict(zip(keys, instance))
 
 
 CASES = [
@@ -147,13 +139,10 @@ except ImportError:
     pass
 
 
-def attn_decoding(**kwargs):
-    yield from _setup_test(
-        **kwargs,
-        fw=True,
-        cuda_graph=True,
-        functions=BENCHMARKS,
-    )
-
-
-benchmark_main_helper(attn_decoding, CASES, min_run_time=min_run_time)
+benchmark_main_helper2(
+    "attn_decoding",
+    fw=True,
+    cases=CASES,
+    functions=BENCHMARKS,
+    min_run_time=min_run_time,
+)
