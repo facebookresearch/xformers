@@ -2056,6 +2056,47 @@ def test_forward_gqa(opFW_biasT):
 
 
 @cuda_only
+@pytest.mark.parametrize(
+    "opBW",
+    [
+        fmha.flash.BwOp,
+        fmha.cutlass.BwOp,
+    ],
+)
+def test_backward_gqa(opBW):
+    H = 8
+    B_Mq_Mkv_H_K_Kv = (3, 512, 512, H, 128, 128)
+    dtype = torch.float16
+    query, key, value, attn_bias = create_tensors(
+        *(opBW, "cuda", dtype, type(None), *B_Mq_Mkv_H_K_Kv),
+        attn_bias_requires_grad=False,
+        fmt="BMHK",
+    )
+    op = (fmha.cutlass.FwOp, opBW)
+    key = key[:, :, :1].expand(-1, -1, H, -1)
+    value = value[:, :, :1].expand(-1, -1, H, -1)
+    key.requires_grad_(True)
+    out = fmha.memory_efficient_attention(query, key, value, attn_bias=attn_bias)
+    out_ref = ref_attention_bmhk(query, key, value, attn_bias=attn_bias)
+    assert_allclose(
+        out.float(),
+        out_ref.float(),
+        atol=op[0].ERROR_ATOL[dtype],
+        rtol=op[0].ERROR_RTOL[dtype],
+    )
+    out.backward(query)
+    dk = key.grad
+    key.grad = None
+    out_ref.backward(query)
+    assert_allclose(
+        dk.float(),
+        key.grad.float(),
+        atol=op[1].ERROR_ATOL[dtype],
+        rtol=op[1].ERROR_RTOL[dtype],
+    )
+
+
+@cuda_only
 @pytest.mark.parametrize("opFW", [op for op in ALL_FW_OPS if op.SUPPORTS_BMGHK])
 def test_forward_gqa_one_group(opFW):
     dtype = torch.float16

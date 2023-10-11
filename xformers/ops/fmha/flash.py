@@ -208,6 +208,7 @@ except ImportError:
 
 def _convert_input_format(
     inp: Inputs,
+    supports_mqa: bool,
 ) -> Tuple[Inputs, Optional[torch.Tensor], int, Optional[torch.Tensor], int]:
     assert inp.query.ndim in [4, 5]
     query, key, value = inp.query, inp.key, inp.value
@@ -237,6 +238,8 @@ def _convert_input_format(
         max_seqlen_k = inp.key.shape[1]
 
     if query.ndim == 5:  # QGA
+        assert supports_mqa
+
         # Fold the group/head_in_group dimensions together
         def fold(x):
             # Either the head is replicated
@@ -256,7 +259,7 @@ def _convert_input_format(
         key = fold(key)
         value = fold(value)
     # Optimize for MHA
-    if key.ndim == 4 and key.stride(2) == 0 and value.stride(2) == 0:
+    if key.ndim == 4 and key.stride(2) == 0 and value.stride(2) == 0 and supports_mqa:
         key = key[:, :, :1]
         value = value[:, :, :1]
     # Initially we have `query.shape = [batch, seqlen, head_dim_q]`
@@ -392,7 +395,7 @@ class FwOp(AttentionFwOpBase):
             max_seqlen_q,
             cu_seqlens_k,
             max_seqlen_k,
-        ) = _convert_input_format(inp)
+        ) = _convert_input_format(inp, supports_mqa=True)
         if inp.query.numel() > 0 and inp.key.numel() > 0:
             out, softmax_lse, rng_state = cls.OPERATOR(
                 inp.query,
@@ -510,7 +513,7 @@ class BwOp(AttentionBwOpBase):
             max_seqlen_q,
             cu_seqlens_k,
             max_seqlen_k,
-        ) = _convert_input_format(inp)
+        ) = _convert_input_format(inp, supports_mqa=False)
         assert ctx.lse.is_contiguous()
         ctx_lse = ctx.lse
         assert ctx_lse.shape[2] >= max_seqlen_q
