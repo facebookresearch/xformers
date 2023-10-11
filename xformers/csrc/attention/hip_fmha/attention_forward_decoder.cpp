@@ -185,10 +185,9 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 #pragma unroll n_loop_unroll
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
       const int32_t t = tt + ttt;
-      // &(cache_K[b][t][0][0]);
-      auto* k_ = cache_K_base + t * cache_K.stride(1);
-      // scalar4<scalar_t> k_thread;
-      load_v<decltype(k_), data_vec4_t>(k_, lane_idx, &k_loads[ttt]);
+      // load the K[b][t][h|0][:] row into registers
+      load_v<decltype(cache_K_base), data_vec4_t>(
+          cache_K_base + t * cache_K.stride(1), lane_idx, &k_loads[ttt]);
     }
 #pragma unroll n_loop_unroll
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
@@ -216,10 +215,9 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
       const int32_t t = tt + ttt;
       if (t < t_max) {
-        // &(cache_K[b][t][0][0]);
-        auto* k_ = cache_K_base + t * cache_K.stride(1);
-        // scalar4<scalar_t> k_thread;
-        load_v<decltype(k_), data_vec4_t>(k_, lane_idx, &k_loads[ttt]);
+        // load the K[b][t][h|0][:] row into registers
+        load_v<decltype(cache_K_base), data_vec4_t>(
+            cache_K_base + t * cache_K.stride(1), lane_idx, &k_loads[ttt]);
       }
     }
 #pragma unroll n_loop_unroll_tail
@@ -296,11 +294,9 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 #pragma unroll n_loop_unroll
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
       const int32_t t = tt + ttt;
-      // &(cache_V[b][t][0][0]);
-      auto* v_ = cache_V_base + t * cache_V.stride(1);
-      //   scalar4<scalar_t> v_thread;
-      load_v<decltype(v_), data_vec4_t>(v_, lane_idx, &k_loads[ttt]);
-
+      // load the V[b][t][h|0][:] row into registers, reusing K register storage
+      load_v<decltype(cache_V_base), data_vec4_t>(
+          cache_V_base + t * cache_V.stride(1), lane_idx, &k_loads[ttt]);
       ps[ttt] = smem[t];
     }
 
@@ -316,11 +312,10 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
       const int32_t t = tt + ttt;
       if (t < t_max) {
-        // &(cache_V[b][t][0][0]);
-        auto* v_ = cache_V_base + t * cache_V.stride(1);
-        //   scalar4<scalar_t> v_thread;
-        load_v<decltype(v_), data_vec4_t>(v_, lane_idx, &k_loads[ttt]);
-
+        // load the V[b][t][h|0][:] row into registers, reusing K register
+        // storage
+        load_v<decltype(cache_V_base), data_vec4_t>(
+            cache_V_base + t * cache_V.stride(1), lane_idx, &k_loads[ttt]);
         ps[ttt] = smem[t];
       }
     }
