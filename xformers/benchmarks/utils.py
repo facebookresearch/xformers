@@ -489,6 +489,10 @@ def benchmark_run_and_compare(
         ):
             loaded = _benchmark_results_from_csv(filename)
             for m, r in loaded:
+                if m.get(META_ALGORITHM) is not None:
+                    suffix_pos = m[META_ALGORITHM].find("@")
+                    if suffix_pos > 0:
+                        m[META_ALGORITHM] = m[META_ALGORITHM][:suffix_pos]
                 if r.task_spec.env == env and SKIP_VANILLA_TASKS_IF_ALREADY_DONE:
                     skip_vanilla_tasks.add(
                         (r.task_spec.sub_label, r.task_spec.num_threads)
