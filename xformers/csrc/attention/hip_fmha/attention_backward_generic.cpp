@@ -152,7 +152,7 @@ efficient_attention_backward_ck(
   } else {
     grad_q = at::empty_strided(query.sizes(), query.strides(), query.options());
     grad_k = at::empty_strided(key.sizes(), key.strides(), key.options());
-    grad_v = at::empty_strided(value.sizes(), key.strides(), value.options());
+    grad_v = at::empty_strided(value.sizes(), value.strides(), value.options());
     grad_q.fill_(0);
   }
 
