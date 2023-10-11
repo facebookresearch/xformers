@@ -1,5 +1,4 @@
 # TODO(max): add a proper copyright header
-import math
 import torch
 
 from typing import Any, Set, List, Tuple, Optional
@@ -9,10 +8,14 @@ from ..common import get_xformers_operator, register_operator
 
 @register_operator
 class FwOp(AttentionFwOpBase):
+    """
+    An operator optimized for K=256 (so the contiguous dim fits into registers).
+    Tested to work on MI250x.
+    """
     OPERATOR = get_xformers_operator("efficient_attention_forward_decoder_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16, torch.float}
-    SUPPORTED_MAX_K: float = 256
+    SUPPORTED_MAX_K: int = 256
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {BlockDiagonalCausalWithOffsetPaddedKeysMask}
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
@@ -31,8 +34,8 @@ class FwOp(AttentionFwOpBase):
             if d.query.shape[0] != 1:
                 reasons.append("One formal batch element expected")
 
-            if d.query.shape[-1] != 256:
-                reasons.append("Only head_dim==256 for now.")
+            if d.query.shape[-1] != cls.SUPPORTED_MAX_K:
+                reasons.append(f"Got head_dim={d.query.shape[-1]}; only head_dim=={cls.SUPPORTED_MAX_K} is supported for now.")
 
             if d.key.stride(-1) != 1:
                 reasons.append("expect keys to have last dim contiguous")
@@ -79,7 +82,7 @@ class FwOp(AttentionFwOpBase):
         if inp.scale is not None:
             qk_scale = inp.scale
         else:
-            qk_scale = 1.0 / math.sqrt(key.shape[-1])
+            qk_scale = torch.rsqrt(torch.tensor(key.shape[-1], dtype=torch.float32))
 
         out = cls.OPERATOR(
             query=query,
