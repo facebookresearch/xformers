@@ -7,7 +7,7 @@ from typing import Optional, Sequence
 
 import torch
 
-from xformers.ops.triton import (
+from xformers.ops._triton import (
     index_select_cat_bwd,
     index_select_cat_fwd,
     scaled_index_add_bwd,

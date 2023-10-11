@@ -29,7 +29,7 @@ def rms_norm(x, weight: Optional[torch.Tensor], eps: float = 1e-6):
     Use it at your own risk.
     """
     assert _is_triton_available()
-    from .triton.rmsnorm_kernels import _rms_norm_forward
+    from ._triton.rmsnorm_kernels import _rms_norm_forward
 
     if torch.is_grad_enabled() and (
         x.requires_grad or (weight is not None and weight.requires_grad)
@@ -64,7 +64,7 @@ def rms_norm_add(
     ):
         raise ValueError("Gradients not supported.")
     assert _is_triton_available()
-    from .triton.rmsnorm_kernels import _rms_norm_add_forward
+    from ._triton.rmsnorm_kernels import _rms_norm_add_forward
 
     return _rms_norm_add_forward(x, y, weight, eps)
 

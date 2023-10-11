@@ -79,7 +79,7 @@ def rope_padded(
     assert _is_triton_available()
     import triton
 
-    from .triton.rope_padded_kernels import _rope_padded_kernel
+    from ._triton.rope_padded_kernels import _rope_padded_kernel
 
     n_total_queries = attn_bias.q_seqinfo.seqstart_py[-1]
     cache_length = attn_bias.k_seqinfo.seqstart_py[-1]
