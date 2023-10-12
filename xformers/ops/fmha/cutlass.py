@@ -6,6 +6,7 @@
 
 from dataclasses import replace
 from enum import Enum
+from functools import partial
 from typing import Any, List, Mapping, Optional, Set, Tuple, Union
 
 import torch
@@ -28,6 +29,7 @@ from .common import (
     Context,
     Gradients,
     Inputs,
+    _attn_bias_apply,
     check_lastdim_alignment_stride1,
 )
 
@@ -193,6 +195,26 @@ class FwOp(AttentionFwOpBase):
         if inp.query.ndim in [3, 4]:
             return cls.apply_bmhk(inp, needs_gradient=needs_gradient)
         assert inp.query.ndim == 5, f"query has shape {inp.query.shape}"
+        ctx: Optional[Context] = None
+        # XXX: Hackfix for BMGHK with H=1
+        # In that case we don't want to run G different streams because it adds
+        # some overhead
+        if inp.query.ndim == 5 and inp.query.shape[3] == 1:
+            slice_op = partial(torch.squeeze, dim=3)
+            inp = replace(
+                inp,
+                query=slice_op(inp.query),
+                key=slice_op(inp.key),
+                value=slice_op(inp.value),
+                attn_bias=_attn_bias_apply(
+                    inp.attn_bias, partial(torch.squeeze, dim=2)
+                ),
+            )
+            out, ctx = cls.apply_bmhk(inp, needs_gradient=needs_gradient)
+            out = out.unsqueeze(3)
+            if ctx is not None:
+                ctx = replace(ctx, lse=ctx.lse.unsqueeze(1), out=out)
+            return out, ctx
 
         # Workaround until this is properly implemented in C++
         # run each head group in a different stream
@@ -208,13 +230,9 @@ class FwOp(AttentionFwOpBase):
                 query = inp.query[:, :, group]
                 key = inp.key[:, :, group]
                 value = inp.value[:, :, group]
-                bias = inp.attn_bias
-                if isinstance(bias, torch.Tensor):
-                    bias = bias[:, group]
-                if isinstance(bias, attn_bias.LowerTriangularMaskWithTensorBias):
-                    bias = attn_bias.LowerTriangularMaskWithTensorBias(
-                        bias._bias[:, group]
-                    )
+                bias = _attn_bias_apply(
+                    inp.attn_bias, partial(torch.select, dim=1, index=group)
+                )
                 outs.append(
                     cls.apply_bmhk(
                         replace(inp, query=query, key=key, value=value, attn_bias=bias),
@@ -224,7 +242,6 @@ class FwOp(AttentionFwOpBase):
         for s in streams[1:]:
             main_stream.wait_stream(s)
         out = torch.stack([o[0] for o in outs], dim=2)
-        ctx: Optional[Context] = None
         if needs_gradient:
             ctx = Context(
                 out=out,

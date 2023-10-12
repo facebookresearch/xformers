@@ -5,7 +5,8 @@
 
 import math
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Optional, Set, Tuple, Type, Union
+from functools import partial
+from typing import Any, Callable, List, Mapping, Optional, Set, Tuple, Type, Union
 
 import torch
 
@@ -26,6 +27,17 @@ def _is_bias_type_supported_in_BMK(attn_bias_type: Any) -> bool:
     if attn_bias_type in [LowerTriangularMask, torch.Tensor]:
         return True
     return False
+
+
+def _attn_bias_apply(
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]],
+    op: Callable[[torch.Tensor], torch.Tensor],
+) -> Optional[Union[torch.Tensor, AttentionBias]]:
+    if isinstance(attn_bias, torch.Tensor):
+        return op(attn_bias)
+    if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
+        return LowerTriangularMaskWithTensorBias(op(attn_bias._bias))
+    return attn_bias
 
 
 @dataclass
@@ -85,12 +97,9 @@ class Inputs:
             self.query = self.query.unsqueeze(2)
             self.key = self.key.unsqueeze(2)
             self.value = self.value.unsqueeze(2)
-            if isinstance(self.attn_bias, torch.Tensor):
-                if self.attn_bias.ndim != 3:
-                    raise ValueError(
-                        f"Expected BMK format for attn_bias, but got {self.attn_bias.shape}"
-                    )
-                self.attn_bias = self.attn_bias.unsqueeze(1)
+            self.attn_bias = _attn_bias_apply(
+                self.attn_bias, partial(torch.unsqueeze, dim=1)
+            )
         return output_shape
 
     def validate_inputs(self) -> None:
