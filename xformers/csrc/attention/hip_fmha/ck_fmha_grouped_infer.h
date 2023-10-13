@@ -5,10 +5,10 @@
 
 #include <ck/ck.hpp>
 #include <ck/tensor_operation/gpu/device/gemm_specialization.hpp>
-#include <ck/tensor_operation/gpu/device/impl/device_grouped_mha_fwd_xdl_cshuffle_v2.hpp>
 #include <ck/tensor_operation/gpu/device/tensor_specialization.hpp>
 #include <ck/tensor_operation/gpu/element/element_wise_operation.hpp>
 #include <ck/utility/sequence.hpp>
+#include "ck/tensor_operation/gpu/device/impl/device_grouped_mha_infer_xdl_cshuffle.hpp"
 
 #include "ck_fmha_op_helper.h"
 #include "ck_fmha_params.h"
@@ -64,7 +64,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
     constexpr ck::index_t Acc0BiasTransferSrcScalarPerVector = 1;
 
     using DeviceOpInstance = ck::tensor_operation::device::
-        DeviceGroupedMultiheadAttentionForward_Xdl_CShuffle_V2<
+        DeviceGroupedMultiheadAttentionInfer_Xdl_CShuffle<
             NumDimG,
             NumDimM,
             NumDimN,
@@ -74,9 +74,6 @@ struct grouped_infer_masktype_attnbias_dispatched {
             B0DataType,
             B1DataType,
             CDataType,
-            GemmDataType,
-            ZDataType,
-            LSEDataType,
             Acc0BiasDataType,
             Acc1BiasDataType,
             AccDataType,
@@ -106,7 +103,6 @@ struct grouped_infer_masktype_attnbias_dispatched {
             1, // MXdlPerWave
             4, // NXdlPerWave
             4, // Gemm1NXdlPerWave
-            1, // DropoutStep
             S<4, 64, 1>, // ABlockTransfer
             S<1, 0, 2>,
             S<1, 0, 2>,
@@ -136,7 +132,6 @@ struct grouped_infer_masktype_attnbias_dispatched {
               1,
               8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
             B1CShuffleBlockTransferScalarPerVector, // TUNABLE
-            1,
             MaskingSpec>; // MaskingSpecialization
 
     RunWithDeviceOp<DeviceOpInstance>(param, stream);
@@ -172,9 +167,6 @@ struct grouped_infer_masktype_attnbias_dispatched {
       std::vector<ck::index_t> c_gs_ms_os_strides{
           0, param.out_strides[1], param.out_strides[0], param.out_strides[2]};
 
-      std::vector<ck::index_t> lse_gs_ms_lengths{1, G1, M};
-      std::vector<ck::index_t> lse_gs_ms_strides{0, param.max_seqlen_q, 1};
-
       std::vector<ck::index_t> d_gs_ms_ns_lengths;
       std::vector<ck::index_t> d_gs_ms_ns_strides;
 
@@ -200,10 +192,6 @@ struct grouped_infer_masktype_attnbias_dispatched {
            b1_gs_os_ns_strides,
            c_gs_ms_os_lengths,
            c_gs_ms_os_strides,
-           {1, 1, 1, 1},
-           {0, 0, 0, 0},
-           lse_gs_ms_lengths,
-           lse_gs_ms_strides,
            d_gs_ms_ns_lengths,
            d_gs_ms_ns_strides,
            {}, // acc1_bias_gs_ms_os_lengths
@@ -226,8 +214,6 @@ struct grouped_infer_masktype_attnbias_dispatched {
         param.k_ptrs,
         param.v_ptrs,
         param.out_ptrs,
-        param.randvals_ptrs,
-        param.logsumexp_ptrs,
         param.attn_bias_ptrs,
         {}, // p_acc1_biases
         problem_descs,
@@ -235,9 +221,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
         b0_element_op,
         acc0_element_op,
         b1_element_op,
-        c_element_op,
-        param.use_dropout ? param.dropout_prob : 0.0f, // dropout ratio
-        std::tuple<int64_t, int64_t>(param.philox_seed, param.philox_offset));
+        c_element_op);
 
     auto sizeInBytes = op.GetWorkSpaceSize(arg_ptr.get());
 

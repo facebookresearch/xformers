@@ -7,7 +7,7 @@
 #include <ck/tensor_operation/gpu/device/gemm_specialization.hpp>
 #include <ck/tensor_operation/gpu/device/tensor_specialization.hpp>
 #include <ck/tensor_operation/gpu/element/element_wise_operation.hpp>
-#include "ck/tensor_operation/gpu/device/impl/device_batched_mha_fwd_xdl_cshuffle_v2.hpp"
+#include "ck/tensor_operation/gpu/device/impl/device_batched_mha_infer_xdl_cshuffle.hpp"
 
 #include "ck_fmha_op_helper.h"
 #include "ck_fmha_params.h"
@@ -63,7 +63,7 @@ struct batched_infer_masktype_attnbias_dispatched {
     constexpr ck::index_t Acc0BiasTransferSrcScalarPerVector = 1;
 
     using DeviceOpInstance = ck::tensor_operation::device::
-        DeviceBatchedMultiheadAttentionForward_Xdl_CShuffle_V2<
+        DeviceBatchedMultiheadAttentionInfer_Xdl_CShuffle<
             NumDimG,
             NumDimM,
             NumDimN,
@@ -73,9 +73,6 @@ struct batched_infer_masktype_attnbias_dispatched {
             B0DataType,
             B1DataType,
             CDataType,
-            GemmDataType,
-            ZDataType,
-            LSEDataType,
             Acc0BiasDataType,
             Acc1BiasDataType,
             AccDataType,
@@ -105,7 +102,6 @@ struct batched_infer_masktype_attnbias_dispatched {
             1, // MXdlPerWave
             4, // NXdlPerWave
             2, // Gemm1NXdlPerWave
-            1, // DropoutStep
             S<4, 64, 1>, // ABlockTransfer
             S<1, 0, 2>,
             S<1, 0, 2>,
@@ -135,7 +131,6 @@ struct batched_infer_masktype_attnbias_dispatched {
               1,
               8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
             B1CShuffleBlockTransferScalarPerVector, // TUNABLE
-            4,
             MaskingSpec>; // MaskingSpecialization
 
     RunWithDeviceOp<DeviceOpInstance>(param, stream);
@@ -210,8 +205,6 @@ struct batched_infer_masktype_attnbias_dispatched {
         param.k_ptr,
         param.v_ptr,
         param.out_ptr,
-        nullptr,
-        param.logsumexp_ptr,
         param.has_attn_bias ? param.attn_bias_ptr : nullptr,
         {}, // p_acc1_biases;
         a_gs_ms_ks_lengths,
@@ -222,9 +215,6 @@ struct batched_infer_masktype_attnbias_dispatched {
         b1_gs_os_ns_strides,
         c_gs_ms_os_lengths,
         c_gs_ms_os_strides,
-        {1, 1, 1, 1},
-        {0, 0, 0, 0},
-        lse_gs_ms_lengths,
         d_gs_ms_ns_lengths,
         d_gs_ms_ns_strides,
         {}, // acc1_biases_gs_ms_os_lengths
@@ -233,11 +223,7 @@ struct batched_infer_masktype_attnbias_dispatched {
         b0_element_op,
         acc0_element_op,
         b1_element_op,
-        c_element_op,
-        param.use_dropout ? param.dropout_prob : 0.0f, // dropout ratio
-        std::tuple<int64_t, int64_t>(
-            param.philox_seed,
-            param.philox_offset)); // dropout random seed and offset
+        c_element_op);
 
     SimpleDeviceMem workspace(op.GetWorkSpaceSize(arg_ptr.get()));
 
