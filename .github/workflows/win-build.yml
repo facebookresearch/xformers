@@ -11,7 +11,7 @@ on:
 
 env:
   FORCE_CUDA: 1
-  MAX_JOBS: 4
+  MAX_JOBS: 2
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
 
@@ -43,12 +43,13 @@ jobs:
       - name: Setup Runner
         uses: ./.github/actions/setup-windows-runner
         with:
-          cuda: "11.6.2"
+          # (FAv2 requires cuda 12+)
+          cuda: "12.1.0"
           python: "3.8"
 
       - name: Install build dependencies
         run: |
-          $PY -m pip install wheel setuptools ninja torch==2.1.0 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu118
+          $PY -m pip install wheel setuptools ninja torch==2.1.0 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
           git config --global --add safe.directory "*"
           $PY -c "import torch; print('torch', torch.__version__)"
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"
@@ -60,4 +61,6 @@ jobs:
         run: $PY -m pip install -v dist/*
 
       - name: Info
-        run: $PY -m xformers.info
+        run: |
+          cd ../../  # So we don't have a folder named `xformers`
+          XFORMERS_MORE_DETAILS=1 $PY -m xformers.info

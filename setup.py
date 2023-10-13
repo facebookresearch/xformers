@@ -118,9 +118,9 @@ def get_cuda_version(cuda_dir) -> int:
 
 
 def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
-    # XXX: Not supported on windows yet
+    # XXX: Not supported on windows for cuda<12
     # https://github.com/Dao-AILab/flash-attention/issues/345
-    if platform.system() != "Linux":
+    if platform.system() != "Linux" and cuda_version < 1200:
         return []
     # Figure out default archs to target
     DEFAULT_ARCHS_LIST = ""
