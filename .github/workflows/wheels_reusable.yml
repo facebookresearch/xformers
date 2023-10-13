@@ -130,6 +130,7 @@ jobs:
           git config --global --add safe.directory "*"
           $PY -m pip install packaging
           version=`$PY packaging/compute_wheel_version.py`
+          echo $version > version.txt
           echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_ENV}
           echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_OUTPUT}
           cat ${GITHUB_ENV}

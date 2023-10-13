@@ -118,6 +118,7 @@ jobs:
           git config --global --add safe.directory "*"
           $PY -m pip install packaging
           version=`$PY packaging/compute_wheel_version.py`
+          echo $version > version.txt
           echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}
           cat ${GITHUB_ENV}
       - name: Build & store/upload
