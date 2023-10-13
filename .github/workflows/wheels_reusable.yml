@@ -213,15 +213,15 @@ jobs:
         env:
           BUCKET_PATH: s3://pytorch/whl/cu${{ inputs.cuda_short_version }}/xformers
         run: |
-          aws s3 ls $BUCKET_PATH/
           aws s3 cp dist/* $BUCKET_PATH/
+          aws s3 ls $BUCKET_PATH/
 
       - name: Upload wheel to PyTorch.org [main]
         if: inputs.publish && steps.cuda_info.outputs.PUBLISH_PYPI == '1'
         env:
           BUCKET_PATH: s3://pytorch/whl/xformers
         run: |
-          aws s3 ls $BUCKET_PATH/
           aws s3 cp dist/* $BUCKET_PATH/
+          aws s3 ls $BUCKET_PATH/
 
 # Note: it might be helpful to have additional steps that test if the built wheels actually work
