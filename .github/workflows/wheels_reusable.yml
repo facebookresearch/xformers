@@ -47,6 +47,8 @@ env:
 
 jobs:
   build_wheels:
+    permissions:
+      id-token: write # Needed to assume AWS role for upload to pytorch.org
     name: ${{ inputs.os }}-py${{ inputs.python }}-torch${{ inputs.torch_version }}+cu${{ inputs.cuda_short_version }}
     runs-on: ${{ inputs.os }}
     env:
