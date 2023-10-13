@@ -28,6 +28,9 @@ jobs:
           - "3.11"
         torch_version:
           - "2.1.0"
+        cuda_short_version:
+          - "118"
+          - "121"
         include:
           - sdist: false
             publish: false

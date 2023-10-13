@@ -66,15 +66,33 @@ jobs:
           import os
           import sys
           print(sys.version)
+          cushort = "${{ inputs.cuda_short_version }}"
+          TORCH_CUDA_DEFAULT = "121"  # pytorch 2.1.0
           # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
           full_version, install_script = {
+            "121": ("12.1.0", "https://developer.download.nvidia.com/compute/cuda/12.1.0/local_installers/cuda_12.1.0_530.30.02_linux.run"),
             "118": ("11.8.0", "https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda_11.8.0_520.61.05_linux.run"),
             "117": ("11.7.1", "https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run"),
             "116": ("11.6.2", "https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run"),
-          }["${{ inputs.cuda_short_version }}"]
+          }[cushort]
           with open(os.environ['GITHUB_OUTPUT'], "r+") as fp:
             fp.write("CUDA_VERSION=" + full_version + "\n")
+            if cushort == TORCH_CUDA_DEFAULT:
+              fp.write("CUDA_VERSION_SUFFIX=\n")
+              fp.write("TORCH_ORG_S3_PATH=s3://pytorch/whl\n")
+              fp.write("PUBLISH_PYPI=1\n")
+            else:
+              fp.write("CUDA_VERSION_SUFFIX=+cu" + cushort + "\n")
+              fp.write("TORCH_ORG_S3_PATH=s3://pytorch/whl/" + cushort + "\n")
+              fp.write("PUBLISH_PYPI=0\n")
             fp.write("CUDA_INSTALL_SCRIPT=" + install_script + "\n")
+      - run: echo "CUDA_VERSION_SUFFIX=${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}"
+      - run: echo "TORCH_ORG_S3_PATH=${{ steps.cuda_info.outputs.TORCH_ORG_S3_PATH }}"
+      - run: echo "PUBLISH_PYPI=${{ steps.cuda_info.outputs.PUBLISH_PYPI }}"
+
+      - name: Upload wheel to PyPi check
+        if: inputs.publish && steps.cuda_info.outputs.PUBLISH_PYPI == '1'
+        run: echo "Will upload to PyPi!"
 
       - name: Add H100 if nvcc 11.08+
         shell: python
@@ -109,8 +127,9 @@ jobs:
           git config --global --add safe.directory "*"
           $PY -m pip install packaging
           version=`$PY packaging/compute_wheel_version.py`
-          echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}
+          echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_ENV}
           cat ${GITHUB_ENV}
+      - run: echo "xformers-${BUILD_VERSION}"
 
       - name: Setup proper pytorch dependency in "requirements.txt"
         run: |
@@ -153,23 +172,29 @@ jobs:
         env:
           PLAT_ARG: ${{ contains(inputs.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
 
+      - run: du -h dist/*
+
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ inputs.os }}-py${{ inputs.python }}-torch${{ inputs.torch_version }}+cu${{ inputs.cuda_short_version }}
           path: dist/*.whl
 
       - name: Upload wheel to PyPi
-        if: inputs.publish
+        if: inputs.publish && steps.cuda_info.outputs.PUBLISH_PYPI == '1'
         run: $PY -m twine upload dist/*.whl
         env:
           TWINE_USERNAME: ${{ inputs.twine_username }}
           TWINE_PASSWORD: ${{ secrets.twine_password }}
 
       - name: Upload source distribution to PyPi
-        if: inputs.publish && inputs.sdist
+        if: inputs.publish && steps.cuda_info.outputs.PUBLISH_PYPI == '1' && inputs.sdist
         run: |
           $PY -m twine upload sdist/*
         env:
           TWINE_USERNAME: ${{ inputs.twine_username }}
           TWINE_PASSWORD: ${{ secrets.twine_password }}
+
+      - name: Upload wheel to PyTorch.org
+        if: inputs.publish
+        run: echo "Upload to pytorch - todo"
 # Note: it might be helpful to have additional steps that test if the built wheels actually work
