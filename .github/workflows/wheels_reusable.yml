@@ -194,7 +194,34 @@ jobs:
           TWINE_USERNAME: ${{ inputs.twine_username }}
           TWINE_PASSWORD: ${{ secrets.twine_password }}
 
-      - name: Upload wheel to PyTorch.org
+      # Publishing to pytorch.org s3 bucket
+      - name: configure aws credentials
         if: inputs.publish
-        run: echo "Upload to pytorch - todo"
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
+          role-session-name: GitHub_CI_${{ inputs.os }}-py${{ inputs.python }}-torch${{ inputs.torch_version }}+cu${{ inputs.cuda_short_version }}
+          aws-region: "us-east-1"
+
+      - name: Sts GetCallerIdentity
+        if: inputs.publish
+        run: |
+          aws sts get-caller-identity
+
+      - name: Upload wheel to PyTorch.org [cu${{ inputs.cuda_short_version }}]
+        if: inputs.publish
+        env:
+          BUCKET_PATH: s3://pytorch/whl/cu${{ inputs.cuda_short_version }}/xformers
+        run: |
+          aws s3 ls $BUCKET_PATH/
+          aws s3 cp dist/* $BUCKET_PATH/
+
+      - name: Upload wheel to PyTorch.org [main]
+        if: inputs.publish && steps.cuda_info.outputs.PUBLISH_PYPI == '1'
+        env:
+          BUCKET_PATH: s3://pytorch/whl/xformers
+        run: |
+          aws s3 ls $BUCKET_PATH/
+          aws s3 cp dist/* $BUCKET_PATH/
+
 # Note: it might be helpful to have additional steps that test if the built wheels actually work
