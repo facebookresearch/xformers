@@ -20,7 +20,7 @@ on:
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
   TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0+PTX"
-  MAX_JOBS: 2  # Avoids OOMs
+  MAX_JOBS: 3  # Avoids OOMs
   XFORMERS_BUILD_TYPE: "Release"
   XFORMERS_PACKAGE_FROM: "conda-${{ github.ref_name }}"
 
@@ -33,6 +33,12 @@ jobs:
           - "3.9"
           - "3.10"
         config:
+          - torch_version: "2.1.0"
+            torch_channel: "pytorch"
+            cuda_version: "12.1.0"
+            cuda_dep_runtime: ">=12.0,<13.0"
+            cuda_short_version: "121"
+
           - torch_version: "2.1.0"
             torch_channel: "pytorch"
             cuda_version: "11.8.0"
@@ -52,7 +58,7 @@ jobs:
             cuda_short_version: "116"
 
     name: py${{ matrix.python }}-torch${{ matrix.config.torch_version }}-cu${{ matrix.config.cuda_version }}
-    runs-on: 4-core-ubuntu  # 16GB RAM, 4 vCPUs
+    runs-on: 8-core-ubuntu  # 32GB RAM, 8 vCPUs
 
     container:
       image: pytorch/conda-builder:cuda${{ matrix.config.cuda_short_version }}
@@ -67,6 +73,8 @@ jobs:
     steps:
       - name: System info
         run: |
+          pwd
+          df -h
           ldd --version
           $PY --version
           echo "Memory and swap:"

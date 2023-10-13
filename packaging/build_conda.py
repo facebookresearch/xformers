@@ -15,33 +15,6 @@ import compute_wheel_version
 THIS_PATH = Path(__file__).resolve()
 SOURCE_ROOT_DIR = THIS_PATH.parents[1]
 
-PYTHON_VERSIONS = ["3.9", "3.10"]
-PYTORCH_TO_CUDA_VERSIONS = {
-    "1.11.0": ["10.2", "11.1", "11.3", "11.5"],
-    "1.12.0": ["10.2", "11.3", "11.6"],
-    "1.12.1": ["10.2", "11.3", "11.6"],
-    "1.13": ["11.6", "11.7"],
-}
-
-
-def conda_docker_image_for_cuda(cuda_version: str) -> str:
-    """
-    Given a cuda version, return a docker image we could
-    build in.
-    """
-
-    if cuda_version in ("10.1", "10.2", "11.1"):
-        return "pytorch/conda-cuda"
-    if cuda_version == "11.3":
-        return "pytorch/conda-builder:cuda113"
-    if cuda_version == "11.5":
-        return "pytorch/conda-builder:cuda115"
-    if cuda_version == "11.6":
-        return "pytorch/conda-builder:cuda116"
-    if cuda_version == "11.7":
-        return "pytorch/conda-builder:cuda117"
-    raise ValueError(f"Unknown cuda version {cuda_version}")
-
 
 @dataclass
 class Build:
