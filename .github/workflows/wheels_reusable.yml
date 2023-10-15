@@ -152,6 +152,14 @@ jobs:
           ./aws/install
           aws --version
 
+      # TODO: This is needed because github-actions takes more than 6 hours (!)
+      # to build Flash-Attention on windows, and times out.
+      # We need to use bigger gh-action workers...
+      - if: runner.os == 'Windows'
+        name: (Windows) Disable Flash-Attention build
+        run: |
+          echo "XFORMERS_DISABLE_FLASH_ATTN=1" >> ${GITHUB_ENV}
+
       - if: runner.os == 'Windows'
         name: (Windows) Setup Runner
         uses: ./.github/actions/setup-windows-runner
