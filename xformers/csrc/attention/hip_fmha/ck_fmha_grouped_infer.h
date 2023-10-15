@@ -63,78 +63,226 @@ struct grouped_infer_masktype_attnbias_dispatched {
     constexpr ck::index_t B1CShuffleBlockTransferScalarPerVector = 1;
     constexpr ck::index_t Acc0BiasTransferSrcScalarPerVector = 1;
 
-    using DeviceOpInstance = ck::tensor_operation::device::
-        DeviceGroupedMultiheadAttentionInfer_Xdl_CShuffle<
-            NumDimG,
-            NumDimM,
-            NumDimN,
-            NumDimK,
-            NumDimO,
-            ADataType,
-            B0DataType,
-            B1DataType,
-            CDataType,
-            Acc0BiasDataType,
-            Acc1BiasDataType,
-            AccDataType,
-            CShuffleDataType,
-            AElementOp,
-            B0ElementOp,
-            Acc0ElementOp,
-            B1ElementOp,
-            CElementOp,
-            GemmSpec,
-            TensorSpecA,
-            TensorSpecB0,
-            TensorSpecB1,
-            TensorSpecC,
-            1,
-            256,
-            128, // MPerBlock
-            128, // NPerBlock
-            32, // KPerBlock
-            128, // Gemm1NPerBlock
-            32, // Gemm1KPerBlock
-            8, // AK1
-            8, // BK1
-            2, // B1K1
-            32, // MPerXDL
-            32, // NPerXDL
-            1, // MXdlPerWave
-            4, // NXdlPerWave
-            4, // Gemm1NXdlPerWave
-            S<4, 64, 1>, // ABlockTransfer
-            S<1, 0, 2>,
-            S<1, 0, 2>,
-            2,
-            ABBlockTransferSrcScalarPerVector, // TUNABLE
-            8,
-            true,
-            S<4, 64, 1>, // BBlockTransfer
-            S<1, 0, 2>,
-            S<1, 0, 2>,
-            2,
-            ABBlockTransferSrcScalarPerVector, // TUNABLE
-            8,
-            true,
-            Acc0BiasTransferSrcScalarPerVector,
-            S<8, 32, 1>, // B1BlockTransfer
-            S<0, 2, 1>,
-            S<0, 2, 1>,
-            1,
-            B1CShuffleBlockTransferScalarPerVector, // TUNABLE
-            2,
-            false,
-            1, // CShuffleMXdlPerWavePerShuffle
-            2, // CShuffleNXdlPerWavePerShuffle
-            S<1,
-              32,
+    if (param.K < 32 && param.Kv < 32) {
+      using DeviceOpInstance = ck::tensor_operation::device::
+          DeviceGroupedMultiheadAttentionInfer_Xdl_CShuffle<
+              NumDimG,
+              NumDimM,
+              NumDimN,
+              NumDimK,
+              NumDimO,
+              ADataType,
+              B0DataType,
+              B1DataType,
+              CDataType,
+              Acc0BiasDataType,
+              Acc1BiasDataType,
+              AccDataType,
+              CShuffleDataType,
+              AElementOp,
+              B0ElementOp,
+              Acc0ElementOp,
+              B1ElementOp,
+              CElementOp,
+              GemmSpec,
+              TensorSpecA,
+              TensorSpecB0,
+              TensorSpecB1,
+              TensorSpecC,
               1,
-              8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
-            B1CShuffleBlockTransferScalarPerVector, // TUNABLE
-            MaskingSpec>; // MaskingSpecialization
+              256,
+              128, // MPerBlock
+              128, // NPerBlock
+              32, // KPerBlock
+              32, // Gemm1NPerBlock
+              32, // Gemm1KPerBlock
+              8, // AK1
+              8, // BK1
+              2, // B1K1
+              32, // MPerXDL
+              32, // NPerXDL
+              1, // MXdlPerWave
+              4, // NXdlPerWave
+              1, // Gemm1NXdlPerWave
+              S<4, 64, 1>, // ABlockTransfer
+              S<1, 0, 2>,
+              S<1, 0, 2>,
+              2,
+              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              8,
+              true,
+              S<4, 64, 1>, // BBlockTransfer
+              S<1, 0, 2>,
+              S<1, 0, 2>,
+              2,
+              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              8,
+              true,
+              Acc0BiasTransferSrcScalarPerVector,
+              S<8, 32, 1>, // B1BlockTransfer
+              S<0, 2, 1>,
+              S<0, 2, 1>,
+              1,
+              B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+              2,
+              false,
+              1, // CShuffleMXdlPerWavePerShuffle
+              1, // CShuffleNXdlPerWavePerShuffle
+              S<1,
+                32,
+                1,
+                8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
+              B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+              MaskingSpec>; // MaskingSpecialization
 
-    RunWithDeviceOp<DeviceOpInstance>(param, stream);
+      RunWithDeviceOp<DeviceOpInstance>(param, stream);
+    } else if (param.K < 64 && param.Kv < 64) {
+      using DeviceOpInstance = ck::tensor_operation::device::
+          DeviceGroupedMultiheadAttentionInfer_Xdl_CShuffle<
+              NumDimG,
+              NumDimM,
+              NumDimN,
+              NumDimK,
+              NumDimO,
+              ADataType,
+              B0DataType,
+              B1DataType,
+              CDataType,
+              Acc0BiasDataType,
+              Acc1BiasDataType,
+              AccDataType,
+              CShuffleDataType,
+              AElementOp,
+              B0ElementOp,
+              Acc0ElementOp,
+              B1ElementOp,
+              CElementOp,
+              GemmSpec,
+              TensorSpecA,
+              TensorSpecB0,
+              TensorSpecB1,
+              TensorSpecC,
+              1,
+              256,
+              128, // MPerBlock
+              128, // NPerBlock
+              32, // KPerBlock
+              64, // Gemm1NPerBlock
+              32, // Gemm1KPerBlock
+              8, // AK1
+              8, // BK1
+              2, // B1K1
+              32, // MPerXDL
+              32, // NPerXDL
+              1, // MXdlPerWave
+              4, // NXdlPerWave
+              2, // Gemm1NXdlPerWave
+              S<4, 64, 1>, // ABlockTransfer
+              S<1, 0, 2>,
+              S<1, 0, 2>,
+              2,
+              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              8,
+              true,
+              S<4, 64, 1>, // BBlockTransfer
+              S<1, 0, 2>,
+              S<1, 0, 2>,
+              2,
+              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              8,
+              true,
+              Acc0BiasTransferSrcScalarPerVector,
+              S<8, 32, 1>, // B1BlockTransfer
+              S<0, 2, 1>,
+              S<0, 2, 1>,
+              1,
+              B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+              2,
+              false,
+              1, // CShuffleMXdlPerWavePerShuffle
+              2, // CShuffleNXdlPerWavePerShuffle
+              S<1,
+                32,
+                1,
+                8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
+              B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+              MaskingSpec>; // MaskingSpecialization
+
+      RunWithDeviceOp<DeviceOpInstance>(param, stream);
+    } else {
+      using DeviceOpInstance = ck::tensor_operation::device::
+          DeviceGroupedMultiheadAttentionInfer_Xdl_CShuffle<
+              NumDimG,
+              NumDimM,
+              NumDimN,
+              NumDimK,
+              NumDimO,
+              ADataType,
+              B0DataType,
+              B1DataType,
+              CDataType,
+              Acc0BiasDataType,
+              Acc1BiasDataType,
+              AccDataType,
+              CShuffleDataType,
+              AElementOp,
+              B0ElementOp,
+              Acc0ElementOp,
+              B1ElementOp,
+              CElementOp,
+              GemmSpec,
+              TensorSpecA,
+              TensorSpecB0,
+              TensorSpecB1,
+              TensorSpecC,
+              1,
+              256,
+              128, // MPerBlock
+              128, // NPerBlock
+              32, // KPerBlock
+              128, // Gemm1NPerBlock
+              32, // Gemm1KPerBlock
+              8, // AK1
+              8, // BK1
+              2, // B1K1
+              32, // MPerXDL
+              32, // NPerXDL
+              1, // MXdlPerWave
+              4, // NXdlPerWave
+              4, // Gemm1NXdlPerWave
+              S<4, 64, 1>, // ABlockTransfer
+              S<1, 0, 2>,
+              S<1, 0, 2>,
+              2,
+              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              8,
+              true,
+              S<4, 64, 1>, // BBlockTransfer
+              S<1, 0, 2>,
+              S<1, 0, 2>,
+              2,
+              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              8,
+              true,
+              Acc0BiasTransferSrcScalarPerVector,
+              S<8, 32, 1>, // B1BlockTransfer
+              S<0, 2, 1>,
+              S<0, 2, 1>,
+              1,
+              B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+              2,
+              false,
+              1, // CShuffleMXdlPerWavePerShuffle
+              4, // CShuffleNXdlPerWavePerShuffle
+              S<1,
+                32,
+                1,
+                8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
+              B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+              MaskingSpec>; // MaskingSpecialization
+
+      RunWithDeviceOp<DeviceOpInstance>(param, stream);
+    };
   };
 
   template <typename DeviceOpInstance>
