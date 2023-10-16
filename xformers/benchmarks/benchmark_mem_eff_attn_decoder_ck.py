@@ -125,7 +125,21 @@ def mem_eff_attention_decoder(
     if multiquery:
         sub_label += "-mq"
 
+    cache_size = 128 * 2 ** 20
+    mem_slab = torch.zeros(cache_size, device=device, dtype=torch.uint8)
+    cache_reset_str = "mem_slab.fill_(42)"
+
     has_run = False
+
+    yield benchmark.Timer(
+        stmt=cache_reset_str,
+        globals={"mem_slab": mem_slab},
+        label="reset cache",
+        sub_label="mem_slab.fill_",
+        num_threads=num_threads,
+        description="elapsed",
+    )
+
     for fw_op in OPS:
         inp = fmha.Inputs(q, k, v, attn_bias=bias)
         if (skip_reasons := fw_op.not_supported_reasons(inp)):
@@ -135,13 +149,14 @@ def mem_eff_attention_decoder(
         fn = partial(xformers.ops.memory_efficient_attention_forward, op=fw_op)
 
         yield benchmark.Timer(
-            stmt="fn(q, k, v, attn_bias)",
+            stmt=f"{cache_reset_str};fn(q, k, v, attn_bias)",
             globals={
                 "q": q,
                 "k": k,
                 "v": v,
                 "attn_bias": bias,
                 "fn": fn,
+                "mem_slab": mem_slab,
             },
             label="attention",
             description=fw_op.NAME,
@@ -151,6 +166,7 @@ def mem_eff_attention_decoder(
 
         graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(graph):
+            exec(cache_reset_str, {"mem_slab": mem_slab})
             fn(q, k, v, bias)
         yield benchmark.Timer(
             stmt="graph.replay()",
