@@ -38,7 +38,7 @@ namespace {
 
 constexpr int32_t kThreadsPerWavefront = 64;
 constexpr int32_t kWavefrontsPerBlock = 8;
-constexpr int32_t D_H = 256;
+constexpr int32_t D_H = 4 * kThreadsPerWavefront;
 constexpr int32_t T_MAX = 8192;
 
 template <typename c10_t>
