@@ -127,15 +127,16 @@ def mem_eff_attention_decoder(
 
     cache_size = 128 * 2 ** 20
     mem_slab = torch.zeros(cache_size, device=device, dtype=torch.uint8)
-    cache_reset_str = "mem_slab.fill_(42)"
+    def reset_cache():
+        mem_slab.fill_(42)
 
     has_run = False
 
     yield benchmark.Timer(
-        stmt=cache_reset_str,
-        globals={"mem_slab": mem_slab},
+        stmt="reset_cache()",
+        globals={"reset_cache": reset_cache},
         label="reset cache",
-        sub_label="mem_slab.fill_",
+        sub_label=f"fill {cache_size=}",
         num_threads=num_threads,
         description="elapsed",
     )
@@ -149,14 +150,14 @@ def mem_eff_attention_decoder(
         fn = partial(xformers.ops.memory_efficient_attention_forward, op=fw_op)
 
         yield benchmark.Timer(
-            stmt=f"{cache_reset_str};fn(q, k, v, attn_bias)",
+            stmt=f"reset_cache();fn(q, k, v, attn_bias)",
             globals={
                 "q": q,
                 "k": k,
                 "v": v,
                 "attn_bias": bias,
                 "fn": fn,
-                "mem_slab": mem_slab,
+                "reset_cache": reset_cache,
             },
             label="attention",
             description=fw_op.NAME,
@@ -166,7 +167,7 @@ def mem_eff_attention_decoder(
 
         graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(graph):
-            exec(cache_reset_str, {"mem_slab": mem_slab})
+            reset_cache()
             fn(q, k, v, bias)
         yield benchmark.Timer(
             stmt="graph.replay()",
