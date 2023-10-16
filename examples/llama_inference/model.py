@@ -118,9 +118,12 @@ class Attention(nn.Module):
         xk, xv = xkv.chunk(2, 1)
 
         output_shape = xq.shape
-        xq = xq.view(1, xq.shape[0], self.n_local_heads, self.head_dim)
-        xk = xk.view(1, xk.shape[0], self.n_local_kv_heads, self.head_dim)
-        xv = xv.view(1, xv.shape[0], self.n_local_kv_heads, self.head_dim)
+        heads_per_group = self.n_local_heads // self.n_local_kv_heads
+        xq = xq.view(
+            1, xq.shape[0], self.n_local_kv_heads, heads_per_group, self.head_dim
+        )
+        xk = xk.view(1, xk.shape[0], self.n_local_kv_heads, 1, self.head_dim)
+        xv = xv.view(1, xv.shape[0], self.n_local_kv_heads, 1, self.head_dim)
         cache_k, cache_v = cache
 
         xq = rope_padded(
@@ -131,15 +134,6 @@ class Attention(nn.Module):
             cache_v=cache_v,
             attn_bias=attn_bias,
             theta=self.rope_theta,
-        )
-
-        # Handle GQA
-        # Q shape: [B, M, Hkv, Hq // Hkv, K]
-        heads_per_group = self.n_local_heads // self.n_local_kv_heads
-        cache_k = cache_k.unsqueeze(3).expand(-1, -1, -1, heads_per_group, -1)
-        cache_v = cache_v.unsqueeze(3).expand(-1, -1, -1, heads_per_group, -1)
-        xq = xq.reshape(
-            [*xq.shape[:2], self.n_local_kv_heads, heads_per_group, xq.shape[-1]]
         )
 
         # rope_padded() updated the caches, so we
@@ -349,11 +343,13 @@ def make_cache(
     if n_layers is None:
         n_layers = args.n_layers
 
-    shape = (1, length, n_local_kv_heads, head_dim)
+    shape = (1, length, n_local_kv_heads, 1, head_dim)
+    heads_per_group = args.n_heads // n_kv_heads
+    expansion = (-1, -1, -1, heads_per_group, -1)
     return [
         (
-            torch.zeros(shape, device=device, dtype=dtype),
-            torch.zeros(shape, device=device, dtype=dtype),
+            torch.zeros(shape, device=device, dtype=dtype).expand(expansion),
+            torch.zeros(shape, device=device, dtype=dtype).expand(expansion),
         )
         for _ in range(n_layers)
     ]
