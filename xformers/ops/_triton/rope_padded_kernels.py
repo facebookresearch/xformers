@@ -25,21 +25,28 @@ def _rope_padded_kernel(
     theta,
     k_start: tl.constexpr,
     v_start: tl.constexpr,
+    n_groups,
     dim: tl.constexpr,  # dimension of each head
     stride_xqM,
+    stride_xqG,
     stride_xqH,
     stride_xkM,
+    stride_xkG,
     stride_xkH,
     stride_xvM,
+    stride_xvG,
     stride_xvH,
     stride_cachekM,
+    stride_cachekG,
     stride_cachekH,
     stride_cachevM,
+    stride_cachevG,
     stride_cachevH,
     stride_seqstartq,
     stride_seqstartk,
     stride_seqlenk,
     stride_outqM,
+    stride_outqG,
     stride_outqH,
     internal_dtype: tl.constexpr,
     # If True, seqstartq and seqstartk are not used but rather we
@@ -83,7 +90,9 @@ def _rope_padded_kernel(
     """
     batch_elt = tl.program_id(0)
     query_pos_in_batch_elt = tl.program_id(1)
-    head_idx = tl.program_id(2)
+    group_head_idx = tl.program_id(2)
+    group_idx = group_head_idx % n_groups
+    head_idx = group_head_idx // n_groups
 
     if internal_dtype == "f32":
         theta = theta.to(tl.float32)
@@ -104,8 +113,10 @@ def _rope_padded_kernel(
     is_q = head_idx < k_start
     is_v = head_idx >= v_start
 
-    xq += query_pos * stride_xqM + head_idx * stride_xqH
-    out_q += query_pos * stride_outqM + head_idx * stride_outqH
+    xq += query_pos * stride_xqM + head_idx * stride_xqH + group_idx * stride_xqG
+    out_q += (
+        query_pos * stride_outqM + head_idx * stride_outqH + group_idx * stride_outqG
+    )
 
     if const_batch_strides:
         cache_start = cache_padding_length * batch_elt
@@ -117,13 +128,29 @@ def _rope_padded_kernel(
 
     cache_pos = end_of_batch_elt_cache - (end_query_pos - query_pos)
     seq_pos = cache_pos - cache_start
-    cache_k += (head_idx - k_start) * stride_cachekH + cache_pos * stride_cachekM
-    xk += query_pos * stride_xkM + (head_idx - k_start) * stride_xkH
+    cache_k += (
+        (head_idx - k_start) * stride_cachekH
+        + cache_pos * stride_cachekM
+        + group_idx * stride_cachekG
+    )
+    xk += (
+        query_pos * stride_xkM
+        + (head_idx - k_start) * stride_xkH
+        + group_idx * stride_xkG
+    )
     in_qk = tl.where(is_q, xq, xk)
     out_qk = tl.where(is_q, out_q, cache_k)
 
-    cache_v += (head_idx - v_start) * stride_cachevH + cache_pos * stride_cachevM
-    xv += query_pos * stride_xvM + (head_idx - v_start) * stride_xvH
+    cache_v += (
+        (head_idx - v_start) * stride_cachevH
+        + cache_pos * stride_cachevM
+        + group_idx * stride_cachevG
+    )
+    xv += (
+        query_pos * stride_xvM
+        + (head_idx - v_start) * stride_xvH
+        + group_idx * stride_xvG
+    )
 
     out = tl.where(is_v, cache_v, out_qk)
     x_in = tl.where(is_v, xv, in_qk)

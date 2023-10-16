@@ -36,7 +36,10 @@ def _slow_rope(
         seqpos: gives the position of each sequence element in x in its sequence
             (shape (M,)).
     """
-    B, M, H, dim = x.shape
+    x_shape = x.shape
+    dim = x_shape[-1]
+    seq_dim = 1
+    M = x_shape[seq_dim]
     assert dim % 2 == 0
     if seqpos is None:
         seqpos = torch.arange(M, device=x.device)
@@ -44,16 +47,18 @@ def _slow_rope(
     freqs = 1.0 / (theta**power)
     all_freqs = torch.outer(seqpos, freqs)
     freqs_cis = torch.polar(torch.ones_like(all_freqs), all_freqs)  # complex64
+    for _ in range(x.ndim - seq_dim - 2):
+        freqs_cis = freqs_cis[:, None]
     if adjacents:
-        x_reshaped = x.float().reshape(B, M, H, -1, 2)
+        x_reshaped = x.float().unflatten(-1, (-1, 2))
         x_ = torch.view_as_complex(x_reshaped)
-        x_out = torch.view_as_real(x_ * freqs_cis[:, None])
+        x_out = torch.view_as_real(x_ * freqs_cis)
     else:
-        x_reshaped = x.float().reshape(B, M, H, 2, -1).transpose(3, 4).contiguous()
+        x_reshaped = x.float().unflatten(-1, (2, -1)).transpose(-1, -2).contiguous()
         x_ = torch.view_as_complex(x_reshaped)
-        x_out = torch.view_as_real(x_ * freqs_cis[:, None])
-        x_out = x_out.transpose(3, 4)
-    return x_out.flatten(3).type_as(x)
+        x_out = torch.view_as_real(x_ * freqs_cis)
+        x_out = x_out.transpose(-1, -2)
+    return x_out.flatten(-2).type_as(x)
 
 
 def _slow_rope2(
@@ -68,7 +73,9 @@ def _slow_rope2(
     - allows varying dtypes.
     """
     internal_dtype = torch.float64
-    B, M, H, dim = x.shape
+    dim = x.shape[-1]
+    seq_dim = 1
+    M = x.shape[seq_dim]
     assert dim % 2 == 0
     if seqpos is None:
         seqpos = torch.arange(M, device=x.device)
@@ -77,18 +84,20 @@ def _slow_rope2(
     )
     # freqs = 1.0 / (theta**power)
     freqs = theta**-power
-    f = torch.outer(seqpos, freqs)[:, None]
+    f = torch.outer(seqpos, freqs)
+    for _ in range(x.ndim - seq_dim - 2):
+        f = f[:, None]
     if adjacents:
-        x1, x2 = x.to(internal_dtype).reshape(B, M, H, -1, 2).unbind(-1)
+        x1, x2 = x.to(internal_dtype).unflatten(-1, (-1, 2)).unbind(-1)
         y1 = x1 * f.cos() - x2 * f.sin()
         y2 = x1 * f.sin() + x2 * f.cos()
         x_out = torch.stack([y1, y2], -1)
     else:
-        x1, x2 = x.to(internal_dtype).reshape(B, M, H, 2, -1).unbind(3)
+        x1, x2 = x.to(internal_dtype).unflatten(-1, (2, -1)).unbind(-2)
         y1 = x1 * f.cos() - x2 * f.sin()
         y2 = x1 * f.sin() + x2 * f.cos()
         x_out = torch.stack([y1, y2], -2)
-    return x_out.flatten(3).type_as(x)
+    return x_out.flatten(-2).type_as(x)
 
 
 DTYPES = {"bf16": torch.bfloat16, "f32": torch.float32}
@@ -102,8 +111,14 @@ DTYPES = {"bf16": torch.bfloat16, "f32": torch.float32}
 @pytest.mark.parametrize("internal_dtype", ["", "f32", "f64"])
 @pytest.mark.parametrize("dim", [100, 4098])
 @pytest.mark.parametrize("padding", [87, 18300])
+@pytest.mark.parametrize("groups", [1, 3])
 def test_consistency(
-    adjacents: bool, dim: int, padding: int, internal_dtype: str, dtype_str: str
+    adjacents: bool,
+    dim: int,
+    padding: int,
+    groups: int,
+    internal_dtype: str,
+    dtype_str: str,
 ):
     torch.manual_seed(1)
     heads, kvheads = 10, 2
@@ -119,18 +134,35 @@ def test_consistency(
 
     total_cache_length = len(cache_lens) * padding
     total_nqueries = sum(nqueries)
-    cache_k = torch.rand(
-        1, total_cache_length, kvheads, dim, device=device, dtype=dtype
-    )
-    cache_v = torch.rand(
-        1, total_cache_length, kvheads, dim, device=device, dtype=dtype
-    )
+    if groups == 1:
+        cache_k = torch.rand(
+            1, total_cache_length, kvheads, dim, device=device, dtype=dtype
+        )
+        cache_v = torch.rand(
+            1, total_cache_length, kvheads, dim, device=device, dtype=dtype
+        )
+        xq = torch.rand(1, total_nqueries, heads, dim, device=device, dtype=dtype)
+        xk = torch.rand(1, total_nqueries, kvheads, dim, device=device, dtype=dtype)
+        xv = torch.rand(1, total_nqueries, kvheads, dim, device=device, dtype=dtype)
+    else:
+        cache_k = torch.rand(
+            1, total_cache_length, groups, kvheads, dim, device=device, dtype=dtype
+        )
+        cache_v = torch.rand(
+            1, total_cache_length, groups, kvheads, dim, device=device, dtype=dtype
+        )
+        xq = torch.rand(
+            1, total_nqueries, groups, heads, dim, device=device, dtype=dtype
+        )
+        xk = torch.rand(
+            1, total_nqueries, groups, kvheads, dim, device=device, dtype=dtype
+        )
+        xv = torch.rand(
+            1, total_nqueries, groups, kvheads, dim, device=device, dtype=dtype
+        )
+
     cache_k_orig = cache_k.clone()
     cache_v_orig = cache_v.clone()
-    xq = torch.rand(1, total_nqueries, heads, dim, device=device, dtype=dtype)
-    xk = torch.rand(1, total_nqueries, kvheads, dim, device=device, dtype=dtype)
-    xv = torch.rand(1, total_nqueries, kvheads, dim, device=device, dtype=dtype)
-
     out = rope_padded(
         xq,
         xk,

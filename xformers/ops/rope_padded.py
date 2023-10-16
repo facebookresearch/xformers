@@ -30,7 +30,7 @@ def rope_padded(
     Performs RoPE (rotary embeddings) and kv-cache emplacement for a heterogeneous
     batch for inference in the style given by
     BlockDiagonalCausalWithOffsetPaddedKeysMask.
-    The batch is concatted along the sequence dimension, so the
+    The batch is concatenated along the sequence dimension, so the
     actual dim-0 length of all tensors is 1.
 
     xq, xk and xv should be (1, slen, n_heads, dim), where
@@ -83,49 +83,83 @@ def rope_padded(
 
     n_total_queries = attn_bias.q_seqinfo.seqstart_py[-1]
     cache_length = attn_bias.k_seqinfo.seqstart_py[-1]
-    bsz, q_len, n_q_heads, dim = xq.shape
-    assert q_len == n_total_queries
-    if bsz != 1:
-        raise ValueError(
-            "Expected batch size dimension to be 1" "as batches should be concatenated."
-        )
-    xk_shape = xk.shape
-    n_kv_heads = xk_shape[2]
-    if xk_shape != (1, n_total_queries, n_kv_heads, dim):
-        raise ValueError("unexpected k shape")
-    if xv.shape != (1, n_total_queries, n_kv_heads, dim):
-        raise ValueError("unexpected v shape")
-    if cache_k.shape != (1, cache_length, n_kv_heads, dim):
-        raise ValueError("unexpected cache_k length")
-    if cache_v.shape != (1, cache_length, n_kv_heads, dim):
-        raise ValueError("unexpected cache_v length")
-
+    ndim = xq.ndim
+    if ndim not in [4, 5]:
+        raise ValueError("Unexpected xq dimension")
     xq_stride = xq.stride()
     xk_stride = xk.stride()
     xv_stride = xv.stride()
     cache_k_stride = cache_k.stride()
     cache_v_stride = cache_v.stride()
-    if xq_stride[3] != 1:
+    cache_k_shape = cache_k.shape
+    xk_shape = xk.shape
+    n_kv_heads = xk_shape[-2]
+    expected_kv_heads = n_kv_heads
+    if xk_stride[-2] == 0:
+        n_kv_heads = 1
+    expected_cache_heads = n_kv_heads
+    if n_kv_heads == 1 and cache_k_stride[-2] == 0:
+        # If there's 1 kv head, don't care how expanded
+        # cache_k is. User might expand before or after rope.
+        expected_cache_heads = cache_k_shape[-2]
+
+    if ndim == 4:
+        bsz, q_len, n_q_heads, dim = xq.shape
+        assert q_len == n_total_queries
+        if xk_shape != (1, n_total_queries, expected_kv_heads, dim):
+            raise ValueError("unexpected k shape")
+        if xv.shape != (1, n_total_queries, expected_kv_heads, dim):
+            raise ValueError("unexpected v shape")
+        if cache_k_shape != (1, cache_length, expected_cache_heads, dim):
+            raise ValueError("unexpected cache_k shape")
+        if cache_v.shape != (1, cache_length, expected_cache_heads, dim):
+            raise ValueError("unexpected cache_v shape")
+        n_groups = 1
+        out_q_stride: Tuple[int, ...] = (0, n_q_heads * dim, dim, 1)
+
+    else:
+        bsz, q_len, n_groups, n_q_heads, dim = xq.shape
+        assert q_len == n_total_queries
+        if xk_shape != (1, n_total_queries, n_groups, expected_kv_heads, dim):
+            raise ValueError("unexpected k shape")
+        if xv.shape != (1, n_total_queries, n_groups, expected_kv_heads, dim):
+            raise ValueError("unexpected v shape")
+        if cache_k_shape != (1, cache_length, n_groups, expected_cache_heads, dim):
+            raise ValueError("unexpected cache_k shape")
+        if cache_v.shape != (1, cache_length, n_groups, expected_cache_heads, dim):
+            raise ValueError("unexpected cache_v shape")
+        out_q_stride = (
+            0,
+            n_q_heads * dim * n_groups,
+            n_q_heads * dim,
+            dim,
+            1,
+        )
+
+    if bsz != 1:
+        raise ValueError(
+            "Expected batch size dimension to be 1 as batches should be concatenated."
+        )
+    if xq_stride[-1] != 1:
         raise ValueError("Each q head must be contiguous")
-    if xk_stride[3] != 1:
+    if xk_stride[-1] != 1:
         raise ValueError("Each k head must be contiguous")
-    if xv_stride[3] != 1:
+    if xv_stride[-1] != 1:
         raise ValueError("Each v head must be contiguous")
-    if cache_k_stride[3] != 1:
+    if cache_k_stride[-1] != 1:
         raise ValueError("Each cache_k head must be contiguous")
-    if cache_v_stride[3] != 1:
+    if cache_v_stride[-1] != 1:
         raise ValueError("Each cache_v head must be contiguous")
     n_total_heads = n_q_heads + 2 * n_kv_heads
     v_start = n_total_heads - n_kv_heads
     k_start = n_q_heads
     if out_q is None:
-        out_q = xq.new_empty(1, n_total_queries, n_q_heads, dim)
-        out_q_stride: Tuple[int, ...] = (0, n_q_heads * dim, dim, 1)
+        out_q = xq.new_empty(xq.shape)
     else:
         if out_q.shape != xq.shape:
             raise ValueError("Unexpected shape of out_q")
         out_q_stride = out_q.stride()
-        if out_q_stride[3] != 1:
+        if out_q_stride[-1] != 1:
             raise ValueError("Each out_q head must be contiguous")
 
     assert out_q is not None
@@ -148,7 +182,9 @@ def rope_padded(
     seqlenk = attn_bias.k_seqinfo.seqlen
     assert internal_dtype in ["", "f32", "f64"]
     # experiment with the order of dims here.
-    _rope_padded_kernel[(logical_bsz, attn_bias.q_seqinfo.max_seqlen, n_total_heads)](
+    _rope_padded_kernel[
+        (logical_bsz, attn_bias.q_seqinfo.max_seqlen, n_total_heads * n_groups)
+    ](
         xq,
         xk,
         xv,
@@ -161,22 +197,29 @@ def rope_padded(
         theta,
         k_start,
         v_start,
+        n_groups,
         dim,
         xq_stride[1],
-        xq_stride[2],
+        xq_stride[2] if ndim == 5 else 0,
+        xq_stride[-2],
         xk_stride[1],
-        xk_stride[2],
+        xk_stride[2] if ndim == 5 else 0,
+        xk_stride[-2],
         xv_stride[1],
-        xv_stride[2],
+        xv_stride[2] if ndim == 5 else 0,
+        xv_stride[-2],
         cache_k_stride[1],
-        cache_k_stride[2],
+        cache_k_stride[2] if ndim == 5 else 0,
+        cache_k_stride[-2],
         cache_v_stride[1],
-        cache_v_stride[2],
+        cache_v_stride[2] if ndim == 5 else 0,
+        cache_v_stride[-2],
         seqstartq.stride(0),
         seqstartk.stride(0),
         seqlenk.stride(0),
         out_q_stride[1],
-        out_q_stride[2],
+        out_q_stride[2] if ndim == 5 else 0,
+        out_q_stride[-2],
         internal_dtype,
         const_batch_strides=False,
         cache_padding_length=0,
