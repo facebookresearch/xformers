@@ -135,6 +135,7 @@ efficient_attention_backward_ck(
     grad_q = chunk.select(2, 0);
     grad_k = chunk.select(2, 1);
     grad_v = chunk.select(2, 2);
+    grad_q.fill_(0);
   } else if (
       key.size(3) == value.size(3) &&
       key.storage().is_alias_of(value.storage())) {
