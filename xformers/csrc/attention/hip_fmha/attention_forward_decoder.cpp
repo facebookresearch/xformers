@@ -535,6 +535,8 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 -lamdhip64 \
 -o a.out
 
+For assembly debugging, add `--save-temps -g`.
+
 (3a) run correctness check
  > LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib \
  ./a.out
