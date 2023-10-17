@@ -126,21 +126,7 @@ def mem_eff_attention_decoder(
     if multiquery:
         sub_label += "-mq"
 
-    cache_size = 80 * 2 ** 20
-    mem_slab = torch.zeros(cache_size, device=device, dtype=torch.uint8)
-    def reset_cache():
-        mem_slab.fill_(42)
-
     has_run = False
-
-    yield benchmark.Timer(
-        stmt="reset_cache()",
-        globals={"reset_cache": reset_cache},
-        label="reset cache",
-        sub_label=f"fill {cache_size=}",
-        num_threads=num_threads,
-        description="elapsed",
-    )
 
     for fw_op in OPS:
         inp = fmha.Inputs(q, k, v, attn_bias=bias)
@@ -158,14 +144,13 @@ def mem_eff_attention_decoder(
         sizes_label = f"read-{inputs_size//1024}k-write-{outputs_size//1024}k"
 
         yield benchmark.Timer(
-            stmt=f"reset_cache();fn(q, k, v, attn_bias)",
+            stmt=f"fn(q, k, v, attn_bias)",
             globals={
                 "q": q,
                 "k": k,
                 "v": v,
                 "attn_bias": bias,
                 "fn": fn,
-                "reset_cache": reset_cache,
             },
             label="attention",
             description=fw_op.NAME,
@@ -175,7 +160,6 @@ def mem_eff_attention_decoder(
 
         graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(graph):
-            reset_cache()
             fn(q, k, v, bias)
         yield benchmark.Timer(
             stmt="graph.replay()",
