@@ -94,6 +94,23 @@ CASES = list(
     )
 )
 
+def get_memory_traffic(op, q, k, v, bias):
+    # mem_size = ( batch_size * seq_len * 1 * dim_per_head * 2 (K/V) + 
+    #              batch_size * 1 * num_heads * dim_per_head (Q) + 
+    #              batch_size * seq_len * num_heads * dim_per_head (attn_output) ) * bytes_per_element
+    out = xformers.ops.memory_efficient_attention_forward(q, k, v, bias, op=op)
+    dtype = q.dtype
+    multiquery = k.stride(2) == 0
+    n_heads = q.shape[-2]
+    dim_per_head = q.shape[-1]
+    kv_seqlen = bias.k_seqinfo.seqlen_py
+    bytes_per_element = 4 if dtype is torch.float32 else 2 if dtype in (torch.float16, torch.bfloat16) else None
+    mem_size = 0
+    mem_size += q.numel() * bytes_per_element # Q
+    for s in kv_seqlen: # len(kv_seqlen) == batch_size
+        mem_size += s * (1 if multiquery else n_heads) * dim_per_head * bytes_per_element * 2 # K, V
+    mem_size += out.numel() * bytes_per_element # attn_output
+    return mem_size
 
 def mem_eff_attention_decoder(
     kv_shape, n_heads: int, num_threads: int, multiquery: bool
@@ -103,7 +120,6 @@ def mem_eff_attention_decoder(
     k_seqlen = torch.randint(1, n_keys + 1, (B,)).tolist()
     K = 256
     dtype = torch.float16
-
     q = torch.rand(1, B, n_heads, K, device=device, dtype=dtype)
     if multiquery:
         k = torch.rand(
@@ -136,12 +152,7 @@ def mem_eff_attention_decoder(
 
         fn = partial(xformers.ops.memory_efficient_attention_forward, op=fw_op)
 
-        out = fn(q, k, v, attn_bias=bias, op=fw_op)
-        
-        inputs_size = xformers.profiler.slow_ops_profiler.get_size([q, k, v, bias])
-        outputs_size = xformers.profiler.slow_ops_profiler.get_size([out])
-
-        sizes_label = f"read-{inputs_size//1024}k-write-{outputs_size//1024}k"
+        mem_size = get_memory_traffic(fw_op, q, k, v, bias)
 
         yield benchmark.Timer(
             stmt=f"fn(q, k, v, attn_bias)",
@@ -154,7 +165,7 @@ def mem_eff_attention_decoder(
             },
             label="attention",
             description=fw_op.NAME,
-            sub_label=f"{sub_label}_{sizes_label}",
+            sub_label=f"{sub_label}_{mem_size//1024}k",
             num_threads=num_threads,
         )
 
@@ -168,7 +179,7 @@ def mem_eff_attention_decoder(
             },
             label="cuda graphed attention",
             description=fw_op.NAME,
-            sub_label=f"{sub_label}_{sizes_label}",
+            sub_label=f"{sub_label}_{mem_size//1024}k",
             num_threads=num_threads,
         )
 
