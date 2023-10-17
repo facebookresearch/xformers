@@ -37,7 +37,7 @@ __device__ void inner_product<bhalf4_t, bhalf4_t, float>(
 namespace {
 
 constexpr int32_t kThreadsPerWavefront = 64;
-constexpr int32_t kWavefrontsPerBlock = 8;
+constexpr int32_t kWavefrontsPerBlock = 16;
 constexpr int32_t D_H = 4 * kThreadsPerWavefront;
 constexpr int32_t T_MAX = 8192;
 
@@ -276,9 +276,10 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   softmax_denominator = wavefrontReduce(
       softmax_denominator, [](float a, float b) { return a + b; });
 
+  const double softmax_scale_factor = 1. / softmax_denominator;
   // now, compute the normalization across all threads.
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
-    smem[t] = expf(smem[t] - max_qk_acc) / softmax_denominator;
+    smem[t] = expf(smem[t] - max_qk_acc) * softmax_scale_factor;
   }
   __syncthreads();
 
