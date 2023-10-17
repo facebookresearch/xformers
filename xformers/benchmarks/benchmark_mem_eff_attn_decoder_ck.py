@@ -126,7 +126,7 @@ def mem_eff_attention_decoder(
     if multiquery:
         sub_label += "-mq"
 
-    cache_size = 512 * 2 ** 20
+    cache_size = 80 * 2 ** 20
     mem_slab = torch.zeros(cache_size, device=device, dtype=torch.uint8)
     def reset_cache():
         mem_slab.fill_(42)
