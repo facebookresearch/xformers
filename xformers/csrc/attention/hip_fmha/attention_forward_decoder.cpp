@@ -178,7 +178,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   data_vec4_t k_loads[n_loop_unroll];
 
-  const auto dtt = wavefronts_per_block * n_loop_unroll;
+  constexpr auto dtt = kWavefrontsPerBlock * n_loop_unroll;
   const int32_t t_max_unroll = (t_max / dtt) * dtt;
 
   for (auto tt = wavefront_idx * n_loop_unroll; tt < t_max_unroll; tt += dtt) {
@@ -189,21 +189,23 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       load_v<decltype(cache_K_base), data_vec4_t>(
           cache_K_base + t * cache_K.stride(1), lane_idx, &k_loads[ttt]);
     }
+    float qk_accs[n_loop_unroll] = {};
 #pragma unroll n_loop_unroll
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
-      float qk_acc = 0;
       const int32_t t = tt + ttt;
 
       ck::inner_product<data_vec4_t, data_vec4_t, float>(
-          q_thread, k_loads[ttt], qk_acc);
-      qk_acc *= qk_scale;
+          q_thread, k_loads[ttt], qk_accs[ttt]);
+      qk_accs[ttt] *= qk_scale;
 
-      qk_acc = wavefrontReduce(qk_acc, [](float a, float b) { return a + b; });
-      max_qk_acc = max(qk_acc, max_qk_acc);
-
-      // write accumulated sums to smem.
-      if (lane_idx == 0) {
-        smem[t] = qk_acc;
+      qk_accs[ttt] = wavefrontReduce(qk_accs[ttt], [](float a, float b) { return a + b; });
+      max_qk_acc = max(qk_accs[ttt], max_qk_acc);
+    }
+    if (lane_idx == 0) {
+      auto* smem_base = smem + tt;
+ #pragma unroll n_loop_unroll
+      for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
+        smem_base[ttt] = qk_accs[ttt];
       }
     }
   }
