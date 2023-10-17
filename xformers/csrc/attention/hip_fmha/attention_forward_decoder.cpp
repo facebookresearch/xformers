@@ -192,8 +192,6 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     float qk_accs[n_loop_unroll] = {};
 #pragma unroll n_loop_unroll
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
-      const int32_t t = tt + ttt;
-
       ck::inner_product<data_vec4_t, data_vec4_t, float>(
           q_thread, k_loads[ttt], qk_accs[ttt]);
       qk_accs[ttt] *= qk_scale;
