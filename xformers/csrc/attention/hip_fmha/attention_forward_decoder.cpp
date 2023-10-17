@@ -124,7 +124,7 @@ __forceinline__ __device__ void store_v(
 
 template <
     typename scalar_t,
-    int32_t n_loop_unroll = 4,
+    int32_t n_loop_unroll = 16,
     int32_t n_loop_unroll_tail = 2>
 __global__ void efficient_attention_forward_decoder_ck_kernel(
     at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> XQ,
