@@ -13,6 +13,7 @@ from utils import benchmark_main_helper
 
 import xformers.ops
 import xformers.ops.fmha as fmha
+import xformers.profiler.slow_ops_profiler
 
 torch.backends.cuda.matmul.allow_tf32 = False
 
@@ -125,7 +126,7 @@ def mem_eff_attention_decoder(
     if multiquery:
         sub_label += "-mq"
 
-    cache_size = 128 * 2 ** 20
+    cache_size = 512 * 2 ** 20
     mem_slab = torch.zeros(cache_size, device=device, dtype=torch.uint8)
     def reset_cache():
         mem_slab.fill_(42)
@@ -149,6 +150,13 @@ def mem_eff_attention_decoder(
 
         fn = partial(xformers.ops.memory_efficient_attention_forward, op=fw_op)
 
+        out = fn(q, k, v, attn_bias=bias, op=fw_op)
+        
+        inputs_size = xformers.profiler.slow_ops_profiler.get_size([q, k, v, bias])
+        outputs_size = xformers.profiler.slow_ops_profiler.get_size([out])
+
+        sizes_label = f"read-{inputs_size//1024}k-write-{outputs_size//1024}k"
+
         yield benchmark.Timer(
             stmt=f"reset_cache();fn(q, k, v, attn_bias)",
             globals={
@@ -161,7 +169,7 @@ def mem_eff_attention_decoder(
             },
             label="attention",
             description=fw_op.NAME,
-            sub_label=sub_label,
+            sub_label=f"{sub_label}_{sizes_label}",
             num_threads=num_threads,
         )
 
@@ -176,7 +184,7 @@ def mem_eff_attention_decoder(
             },
             label="cuda graphed attention",
             description=fw_op.NAME,
-            sub_label=sub_label,
+            sub_label=f"{sub_label}_{sizes_label}",
             num_threads=num_threads,
         )
 
