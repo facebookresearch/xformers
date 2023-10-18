@@ -600,10 +600,10 @@ int main(int argc, char** argv) {
                      .requires_grad(false);
 
     const auto int_options = options.dtype(torch::kInt);  
-    const auto Q = at::rand({1, batch_size, n_heads, dim_per_head}, options);
+    const auto Q = at::rand({batch_size, 1, n_heads, dim_per_head}, options);
     const auto K = multiquery 
-      ? at::rand({1, batch_size * padding, 1, dim_per_head}, options).expand({1, batch_size * padding, n_heads, dim_per_head})
-      : at::rand({1, batch_size * padding, 1, dim_per_head}, options);
+      ? at::rand({batch_size, padding, 1, dim_per_head}, options).expand({batch_size, padding, n_heads, dim_per_head})
+      : at::rand({batch_size, padding, n_heads, dim_per_head}, options);
     const auto V = at::rand_like(K);
     auto O = at::rand_like(Q);
 
