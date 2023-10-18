@@ -257,7 +257,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   // each wavefront computes partial sum of exp.
   float softmax_denominator = 0.0f;
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
-    softmax_denominator += expf(smem[t] - max_qk_acc);
+    softmax_denominator += __expf(smem[t] - max_qk_acc);
   }
   softmax_denominator = wavefrontReduce(
       softmax_denominator, [](float a, float b) { return a + b; });
@@ -276,10 +276,10 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   softmax_denominator = wavefrontReduce(
       softmax_denominator, [](float a, float b) { return a + b; });
 
-  const double softmax_scale_factor = 1. / softmax_denominator;
+  const float softmax_scale_factor = 1. / softmax_denominator;
   // now, compute the normalization across all threads.
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
-    smem[t] = expf(smem[t] - max_qk_acc) * softmax_scale_factor;
+    smem[t] = __expf(smem[t] - max_qk_acc) * softmax_scale_factor;
   }
   __syncthreads();
 
