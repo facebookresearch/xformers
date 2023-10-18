@@ -243,7 +243,8 @@ class BwOp(AttentionBwOpBase):
         type(None),
         torch.Tensor,
         LowerTriangularMask,
-        LowerTriangularMaskWithTensorBias,
+        # TODO: Fix handling of gradient through the fMHA autograd function
+        # LowerTriangularMaskWithTensorBias,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
