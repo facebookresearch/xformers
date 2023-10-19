@@ -105,6 +105,8 @@ struct BatchedBackwardParams {
   bool has_attn_bias;
   bool bias_has_grad;
 
+  bool use_fp32_qkv_grad;
+
   // BMHK mode strides, last-dim contiguous
   std::array<int, 4> q_strides;
   std::array<int, 4> k_strides;
@@ -151,6 +153,8 @@ struct GroupedBackwardParams {
   float scale;
   bool has_attn_bias;
   bool bias_has_grad;
+
+  bool use_fp32_qkv_grad;
 
   // MHK mode strides, last-dim contiguous
   std::array<int, 3> q_strides;

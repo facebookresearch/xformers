@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdlib>
 
 #include <ATen/Context.h>
 #include <ATen/ScalarOps.h>
@@ -109,6 +110,12 @@ efficient_attention_backward_ck(
     TORCH_CHECK(max_seqlen_q_.has_value());
   }
 
+  bool use_fp32_qkv_grad = false;
+
+  if (const char* env_str = std::getenv("USE_FP32_QKV_GRAD")) {
+    use_fp32_qkv_grad = (std::stoi(env_str) > 0) ? true : false;
+  };
+
   // at::cuda::CUDAGuard device_guard(query.device());
   hipStream_t stream = at::cuda::getCurrentHIPStream().stream();
 
@@ -131,7 +138,11 @@ efficient_attention_backward_ck(
     // output of a linear layer that is chunked.
     // Creating the gradients with the right layout saves us
     // a `torch.cat` call in the backward pass
-    at::Tensor chunk = at::empty({B, M, 3, num_heads, K}, opts);
+    at::Tensor chunk;
+    if (use_fp32_qkv_grad)
+      chunk = at::empty({B, M, 3, num_heads, K}, opts.dtype(at::kFloat));
+    else
+      chunk = at::empty({B, M, 3, num_heads, K}, opts);
     grad_q = chunk.select(2, 0);
     grad_k = chunk.select(2, 1);
     grad_v = chunk.select(2, 2);
@@ -144,16 +155,36 @@ efficient_attention_backward_ck(
     // output of a linear layer that is chunked.
     // Creating the gradients with the right layout saves us
     // a `torch.cat` call in the backward pass
-    at::Tensor chunk = at::empty({B, N, 2, num_heads, Kv}, opts);
+    at::Tensor chunk;
+    if (use_fp32_qkv_grad)
+      chunk = at::empty({B, N, 2, num_heads, Kv}, opts.dtype(at::kFloat));
+    else
+      chunk = at::empty({B, N, 2, num_heads, Kv}, opts);
     grad_k = chunk.select(2, 0);
     grad_v = chunk.select(2, 1);
 
-    grad_q = at::empty_strided(query.sizes(), query.strides(), query.options());
+    if (use_fp32_qkv_grad)
+      grad_q = at::empty_strided(
+          query.sizes(), query.strides(), query.options().dtype(at::kFloat));
+    else
+      grad_q =
+          at::empty_strided(query.sizes(), query.strides(), query.options());
     grad_q.fill_(0);
   } else {
-    grad_q = at::empty_strided(query.sizes(), query.strides(), query.options());
-    grad_k = at::empty_strided(key.sizes(), key.strides(), key.options());
-    grad_v = at::empty_strided(value.sizes(), value.strides(), value.options());
+    if (use_fp32_qkv_grad) {
+      grad_q = at::empty_strided(
+          query.sizes(), query.strides(), query.options().dtype(at::kFloat));
+      grad_k = at::empty_strided(
+          key.sizes(), key.strides(), key.options().dtype(at::kFloat));
+      grad_v = at::empty_strided(
+          value.sizes(), value.strides(), value.options().dtype(at::kFloat));
+    } else {
+      grad_q =
+          at::empty_strided(query.sizes(), query.strides(), query.options());
+      grad_k = at::empty_strided(key.sizes(), key.strides(), key.options());
+      grad_v =
+          at::empty_strided(value.sizes(), value.strides(), value.options());
+    }
     grad_q.fill_(0);
   }
 
@@ -167,6 +198,8 @@ efficient_attention_backward_ck(
 
   const bool bias_requires_grad = bias.has_value() && bias->requires_grad();
 
+  // even it is an output, the grad_bias is required to use the same data-type
+  // as bias in CK-FlashAttn
   if (bias_requires_grad)
     grad_bias =
         at::empty_strided(bias->sizes(), bias->strides(), bias->options());
@@ -178,6 +211,8 @@ efficient_attention_backward_ck(
     p.num_heads = num_heads;
     p.K = K;
     p.Kv = Kv;
+
+    p.use_fp32_qkv_grad = use_fp32_qkv_grad;
 
     TORCH_CHECK(p.B == logsumexp.size(0));
     TORCH_CHECK(p.num_heads == logsumexp.size(1));
@@ -262,6 +297,8 @@ efficient_attention_backward_ck(
     p.num_heads = num_heads;
     p.K = K;
     p.Kv = Kv;
+
+    p.use_fp32_qkv_grad = use_fp32_qkv_grad;
 
     p.max_seqlen_q = *max_seqlen_q_;
 
@@ -357,6 +394,14 @@ efficient_attention_backward_ck(
         ? reinterpret_cast<char*>(grad_bias.data_ptr())
         : nullptr;
 
+    int multiplier = 1;
+
+    if (p.use_fp32_qkv_grad)
+      multiplier = get_size_in_bytes(1, at::ScalarType::Float) /
+          get_size_in_bytes(1, query.scalar_type());
+
+    std::cout << "qkv-grad precision multiplier is " << multiplier << std::endl;
+
     for (int i = 0; i < p.num_batches; i++) {
       size_t tmp_q_offset = get_size_in_bytes(
           static_cast<size_t>(p.host_seqstart_q[i]) * p.q_strides[0],
@@ -376,15 +421,15 @@ efficient_attention_backward_ck(
 
       p.q_ptrs.push_back(reinterpret_cast<void*>(&q_ptr[tmp_q_offset]));
       p.grad_q_ptrs.push_back(
-          reinterpret_cast<void*>(&grad_q_ptr[tmp_q_offset]));
+          reinterpret_cast<void*>(&grad_q_ptr[tmp_q_offset * multiplier]));
 
       p.k_ptrs.push_back(reinterpret_cast<void*>(&k_ptr[tmp_k_offset]));
       p.grad_k_ptrs.push_back(
-          reinterpret_cast<void*>(&grad_k_ptr[tmp_k_offset]));
+          reinterpret_cast<void*>(&grad_k_ptr[tmp_k_offset * multiplier]));
 
       p.v_ptrs.push_back(reinterpret_cast<void*>(&v_ptr[tmp_v_offset]));
       p.grad_v_ptrs.push_back(
-          reinterpret_cast<void*>(&grad_v_ptr[tmp_v_offset]));
+          reinterpret_cast<void*>(&grad_v_ptr[tmp_v_offset * multiplier]));
 
       p.out_ptrs.push_back(reinterpret_cast<void*>(&out_ptr[tmp_o_offset]));
       p.grad_out_ptrs.push_back(

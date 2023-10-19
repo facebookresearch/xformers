@@ -14,7 +14,11 @@
 #include "ck_fmha_op_helper.h"
 #include "ck_fmha_params.h"
 
-template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
+template <
+    typename scalar_t,
+    int32_t custom_mask_type,
+    bool has_attn_bias,
+    bool use_fp32_qkv_grad>
 struct grouped_backward_masktype_attnbias_dispatched {
   using PassThrough = ck::tensor_operation::element_wise::PassThrough;
   using Scale = ck::tensor_operation::element_wise::Scale;
@@ -23,7 +27,8 @@ struct grouped_backward_masktype_attnbias_dispatched {
   using YElementOp = PassThrough;
 
   using InputDataType = scalar_t;
-  using OutputDataType = scalar_t;
+  using OutputDataType =
+      typename std::conditional<use_fp32_qkv_grad, F32, scalar_t>::type;
   using GemmDataType = scalar_t;
   using AccDataType = F32;
   using ShuffleDataType = F32;
