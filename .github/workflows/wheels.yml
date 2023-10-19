@@ -19,8 +19,8 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - 4-core-ubuntu
-          - windows-2019
+          - 8-core-ubuntu
+          - windows-8-core
         python:
           - "3.8"
           - "3.9"
@@ -34,18 +34,15 @@ jobs:
         include:
           - sdist: false
             publish: false
-            cuda_short_version: "CUDA_VERSION_NOT_SET"
-          # Publish only for latest pytorch
-          - torch_version: "2.1.0"
-            publish: true
           # Publish source distribution only from this runner
-          - os: 4-core-ubuntu
+          - os: 8-core-ubuntu
             python: "3.10"
             torch_version: "2.1.0"
             sdist: true
-          # Set corresponding CUDA version
+          # Set version to publish to pypi
           - torch_version: "2.1.0"
             cuda_short_version: "118"
+            publish: true
 
     uses: ./.github/workflows/wheels_reusable.yml
     if: github.repository == 'facebookresearch/xformers' || github.event_name == 'pull_request'
@@ -59,4 +56,3 @@ jobs:
       twine_username: __token__
     secrets:
       twine_password: ${{ secrets.PYPI_TOKEN }}
-

@@ -27,13 +27,6 @@ runs:
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Configure Pagefile
-      # windows runners will OOM with many CUDA architectures
-      # we cheat here with a page file
-      uses: al-cheb/configure-pagefile-action@v1.3
-      with:
-        minimum-size: 8GB
-
     # really unfortunate: https://github.com/ilammy/msvc-dev-cmd#name-conflicts-with-shell-bash
     - name: Remove link.exe
       shell: bash

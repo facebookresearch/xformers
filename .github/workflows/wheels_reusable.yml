@@ -39,7 +39,7 @@ on:
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
   TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0+PTX"
-  MAX_JOBS: 1
+  MAX_JOBS: 4
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
@@ -123,16 +123,26 @@ jobs:
           echo "${{ inputs.pypirc }}" > ~/.pypirc
           cat ~/.pypirc
 
+      - if: runner.os != 'Windows'
+        name: (Linux) Setup venv for linux
+        run: |
+          $PY -m venv venv
+          . ./venv/bin/activate
+          which pip
+          echo "PY=$(which python)" >> ${GITHUB_ENV}
+          echo "PATH=$PATH" >> ${GITHUB_ENV}
+          echo "MAX_JOBS=3" >> ${GITHUB_ENV}
       - name: Define version
         id: xformers_version
         run: |
           set -Eeuo pipefail
           git config --global --add safe.directory "*"
-          $PY -m pip install packaging
-          version=`$PY packaging/compute_wheel_version.py`
+          pip install packaging ninja
+          version=`python packaging/compute_wheel_version.py`
           echo $version > version.txt
           echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_ENV}
           echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_OUTPUT}
+          which ninja
           cat ${GITHUB_ENV}
       - run: echo "xformers-${BUILD_VERSION}"
       - run: echo "release version (will upload to PyTorch)"
@@ -151,14 +161,6 @@ jobs:
           unzip awscliv2.zip
           ./aws/install
           aws --version
-
-      # TODO: This is needed because github-actions takes more than 6 hours (!)
-      # to build Flash-Attention on windows, and times out.
-      # We need to use bigger gh-action workers...
-      - if: runner.os == 'Windows'
-        name: (Windows) Disable Flash-Attention build
-        run: |
-          echo "XFORMERS_DISABLE_FLASH_ATTN=1" >> ${GITHUB_ENV}
 
       - if: runner.os == 'Windows'
         name: (Windows) Setup Runner
@@ -211,8 +213,7 @@ jobs:
 
       - name: Upload source distribution to PyPi
         if: inputs.publish && steps.cuda_info.outputs.PUBLISH_PYPI == '1' && inputs.sdist
-        run: |
-          $PY -m twine upload sdist/*
+        run: $PY -m twine upload sdist/*
         env:
           TWINE_USERNAME: ${{ inputs.twine_username }}
           TWINE_PASSWORD: ${{ secrets.twine_password }}
