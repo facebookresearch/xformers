@@ -56,7 +56,7 @@ struct grouped_backward_masktype_attnbias_dispatched {
       ck::tensor_operation::device::TensorSpecialization::Default;
   static constexpr auto TensorSpecY =
       ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr bool Deterministic = false;
+  static constexpr bool Deterministic = true;
 
   static void Run(GroupedBackwardParams& param, hipStream_t stream) {
     // Tunables
