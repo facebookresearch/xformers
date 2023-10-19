@@ -137,7 +137,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
           MaskingSpec>; // MaskingSpecialization
 
   static void Run(GroupedForwardParams& param, hipStream_t stream) {
-    if (param.K < 32 && param.Kv < 32) {
+    if (param.K <= 32 && param.Kv <= 32) {
       constexpr ck::index_t kGemm1NPerBlock = 32;
       constexpr ck::index_t kGemm1NXdlPerWave = 1;
       constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 1;
@@ -148,7 +148,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
           kCShuffleNXdlPerWavePerShuffle>;
 
       RunWithDeviceOp<DeviceOpInstance>(param, stream);
-    } else if (param.K < 64 && param.Kv < 64) {
+    } else if (param.K <= 64 && param.Kv <= 64) {
       constexpr ck::index_t kGemm1NPerBlock = 64;
       constexpr ck::index_t kGemm1NXdlPerWave = 2;
       constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 2;

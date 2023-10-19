@@ -738,7 +738,7 @@ def test_backward(
     if k > 128 or kv > 128:
         pytest.skip("head-dim length bigger than 128 is not supported by CK-FlashAttention")
 
-    if k % 2 != 0 or kv % 2 !=0:
+    if k % 2 != 0:
         pytest.skip("head-dim length must be an even value for CK-FlashAttention")
 
     if grad_out_contiguous is False:
