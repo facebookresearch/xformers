@@ -394,7 +394,7 @@ efficient_attention_backward_ck(
         ? reinterpret_cast<char*>(grad_bias.data_ptr())
         : nullptr;
 
-    int multiplier = 1;
+    size_t multiplier = 1;
 
     if (p.use_fp32_qkv_grad)
       multiplier = get_size_in_bytes(1, at::ScalarType::Float) /
