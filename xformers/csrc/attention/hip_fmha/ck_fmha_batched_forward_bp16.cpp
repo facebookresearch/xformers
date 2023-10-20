@@ -2,29 +2,56 @@
 #include <stdexcept>
 
 #include "ck_fmha_batched_forward.h"
+#include "ck_static_switch.h"
+
+extern template struct batched_forward_masktype_attnbias_dispatched<
+    ck::bhalf_t,
+    0,
+    true>;
+
+extern template struct batched_forward_masktype_attnbias_dispatched<
+    ck::bhalf_t,
+    0,
+    false>;
+
+extern template struct batched_forward_masktype_attnbias_dispatched<
+    ck::bhalf_t,
+    1,
+    true>;
+
+extern template struct batched_forward_masktype_attnbias_dispatched<
+    ck::bhalf_t,
+    1,
+    false>;
+
+extern template struct batched_forward_masktype_attnbias_dispatched<
+    ck::bhalf_t,
+    2,
+    true>;
+
+extern template struct batched_forward_masktype_attnbias_dispatched<
+    ck::bhalf_t,
+    2,
+    false>;
 
 void batched_forward_bp16(BatchedForwardParams& param, hipStream_t stream) {
-  if (param.custom_mask_type == 0) {
-    if (param.has_attn_bias)
-      batched_forward_masktype_attnbias_dispatched<ck::bhalf_t, 0, true>::Run(
-          param, stream);
+  BOOL_SWITCH_1(param.has_attn_bias, HAS_ATTN_BIAS, [&] {
+    if (param.custom_mask_type == 0)
+      batched_forward_masktype_attnbias_dispatched<
+          ck::bhalf_t,
+          0,
+          HAS_ATTN_BIAS>::Run(param, stream);
+    else if (param.custom_mask_type == 1)
+      batched_forward_masktype_attnbias_dispatched<
+          ck::bhalf_t,
+          1,
+          HAS_ATTN_BIAS>::Run(param, stream);
+    else if (param.custom_mask_type == 2)
+      batched_forward_masktype_attnbias_dispatched<
+          ck::bhalf_t,
+          2,
+          HAS_ATTN_BIAS>::Run(param, stream);
     else
-      batched_forward_masktype_attnbias_dispatched<ck::bhalf_t, 0, false>::Run(
-          param, stream);
-  } else if (param.custom_mask_type == 1) {
-    if (param.has_attn_bias)
-      batched_forward_masktype_attnbias_dispatched<ck::bhalf_t, 1, true>::Run(
-          param, stream);
-    else
-      batched_forward_masktype_attnbias_dispatched<ck::bhalf_t, 1, false>::Run(
-          param, stream);
-  } else if (param.custom_mask_type == 2) {
-    if (param.has_attn_bias)
-      batched_forward_masktype_attnbias_dispatched<ck::bhalf_t, 2, true>::Run(
-          param, stream);
-    else
-      batched_forward_masktype_attnbias_dispatched<ck::bhalf_t, 2, false>::Run(
-          param, stream);
-  } else
-    throw std::runtime_error("Invalid custom_mask_type value");
+      throw std::runtime_error("Invalid custom_mask_type value");
+  });
 };
