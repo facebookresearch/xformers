@@ -58,7 +58,8 @@ struct grouped_infer_masktype_attnbias_dispatched {
       ck::tensor_operation::device::TensorSpecialization::Default;
 
   static constexpr ck::index_t kABBlockTransferSrcScalarPerVector = 1;
-  static constexpr ck::index_t kB1CShuffleBlockTransferScalarPerVector = 1;
+  static constexpr ck::index_t kB1BlockTransferSrcScalarPerVector = 1;
+  static constexpr ck::index_t kCShuffleBlockTransferScalarPerVector = 1;
   static constexpr ck::index_t kAcc0BiasTransferSrcScalarPerVector = 1;
 
   template <
@@ -124,7 +125,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
           S<0, 2, 1>,
           S<0, 2, 1>,
           1,
-          kB1CShuffleBlockTransferScalarPerVector, // TUNABLE
+          kB1BlockTransferSrcScalarPerVector, // TUNABLE
           2,
           false,
           1, // CShuffleMXdlPerWavePerShuffle
@@ -133,7 +134,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
             32,
             1,
             8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
-          kB1CShuffleBlockTransferScalarPerVector, // TUNABLE
+          kCShuffleBlockTransferScalarPerVector, // TUNABLE
           MaskingSpec>; // MaskingSpecialization
 
   static void Run(GroupedForwardParams& param, hipStream_t stream) {

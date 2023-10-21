@@ -59,9 +59,10 @@ struct grouped_forward_masktype_attnbias_dispatched {
 
   static void Run(GroupedForwardParams& param, hipStream_t stream) {
     // Tunables
-    constexpr ck::index_t ABBlockTransferSrcScalarPerVector = 1;
-    constexpr ck::index_t B1CShuffleBlockTransferScalarPerVector = 1;
-    constexpr ck::index_t Acc0BiasTransferSrcScalarPerVector = 1;
+    constexpr ck::index_t kABBlockTransferSrcScalarPerVector = 1;
+    constexpr ck::index_t kB1BlockTransferSrcScalarPerVector = 1;
+    constexpr ck::index_t kCShuffleBlockTransferScalarPerVector = 1;
+    constexpr ck::index_t kAcc0BiasTransferSrcScalarPerVector = 1;
 
     using DeviceOpInstance = ck::tensor_operation::device::
         DeviceGroupedMultiheadAttentionForward_Xdl_CShuffle_V2<
@@ -111,22 +112,22 @@ struct grouped_forward_masktype_attnbias_dispatched {
             S<1, 0, 2>,
             S<1, 0, 2>,
             2,
-            ABBlockTransferSrcScalarPerVector, // TUNABLE
+            kABBlockTransferSrcScalarPerVector, // TUNABLE
             8,
             true,
             S<4, 64, 1>, // BBlockTransfer
             S<1, 0, 2>,
             S<1, 0, 2>,
             2,
-            ABBlockTransferSrcScalarPerVector, // TUNABLE
+            kABBlockTransferSrcScalarPerVector, // TUNABLE
             8,
             true,
-            Acc0BiasTransferSrcScalarPerVector,
+            kAcc0BiasTransferSrcScalarPerVector,
             S<8, 32, 1>, // B1BlockTransfer
             S<0, 2, 1>,
             S<0, 2, 1>,
             1,
-            B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+            kB1BlockTransferSrcScalarPerVector, // TUNABLE
             2,
             false,
             1, // CShuffleMXdlPerWavePerShuffle
@@ -135,7 +136,7 @@ struct grouped_forward_masktype_attnbias_dispatched {
               32,
               1,
               8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
-            B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+            kCShuffleBlockTransferScalarPerVector, // TUNABLE
             1,
             MaskingSpec>; // MaskingSpecialization
 

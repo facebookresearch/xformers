@@ -65,9 +65,10 @@ struct grouped_backward_masktype_attnbias_dispatched {
 
   static void Run(GroupedBackwardParams& param, hipStream_t stream) {
     // Tunables
-    constexpr ck::index_t ABBlockTransferSrcScalarPerVector = 1; // 8
-    constexpr ck::index_t B1CShuffleBlockTransferScalarPerVector = 1; // 4
-    constexpr ck::index_t Acc0BiasTransferSrcScalarPerVector = 1; // 4
+    constexpr ck::index_t kABBlockTransferSrcScalarPerVector = 1;
+    constexpr ck::index_t kB1BlockTransferSrcScalarPerVector = 1;
+    constexpr ck::index_t kCShuffleBlockTransferScalarPerVector = 1;
+    constexpr ck::index_t kAcc0BiasTransferSrcScalarPerVector = 1;
 
     if (param.K <= 32 && param.Kv <= 32) {
       using DeviceOpInstance = ck::tensor_operation::device::
@@ -117,21 +118,21 @@ struct grouped_backward_masktype_attnbias_dispatched {
               S<1, 0, 2>,
               S<1, 0, 2>,
               2,
-              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              kABBlockTransferSrcScalarPerVector, // TUNABLE
               8,
               true,
               S<4, 64, 1>, // BBlockTransfer
               S<1, 0, 2>,
               S<1, 0, 2>,
               2,
-              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              kABBlockTransferSrcScalarPerVector, // TUNABLE
               8,
               true,
-              Acc0BiasTransferSrcScalarPerVector, // TUNABLE
+              kAcc0BiasTransferSrcScalarPerVector, // TUNABLE
               1,
               1,
               S<1, 64, 1, 4>,
-              B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+              kCShuffleBlockTransferScalarPerVector, // TUNABLE
               MaskingSpec,
               Deterministic>;
 
@@ -184,21 +185,21 @@ struct grouped_backward_masktype_attnbias_dispatched {
               S<1, 0, 2>,
               S<1, 0, 2>,
               2,
-              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              kABBlockTransferSrcScalarPerVector, // TUNABLE
               8,
               true,
               S<4, 64, 1>, // BBlockTransfer
               S<1, 0, 2>,
               S<1, 0, 2>,
               2,
-              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              kABBlockTransferSrcScalarPerVector, // TUNABLE
               8,
               true,
-              Acc0BiasTransferSrcScalarPerVector, // TUNABLE
+              kAcc0BiasTransferSrcScalarPerVector, // TUNABLE
               1,
               2,
               S<1, 32, 1, 8>,
-              B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+              kCShuffleBlockTransferScalarPerVector, // TUNABLE
               MaskingSpec,
               Deterministic>;
 
@@ -251,28 +252,28 @@ struct grouped_backward_masktype_attnbias_dispatched {
               S<1, 0, 2>,
               S<1, 0, 2>,
               2,
-              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              kABBlockTransferSrcScalarPerVector, // TUNABLE
               8,
               true,
               S<4, 64, 1>, // B0BlockTransfer
               S<1, 0, 2>,
               S<1, 0, 2>,
               2,
-              ABBlockTransferSrcScalarPerVector, // TUNABLE
+              kABBlockTransferSrcScalarPerVector, // TUNABLE
               8,
               true,
-              Acc0BiasTransferSrcScalarPerVector, // TUNABLE
+              kAcc0BiasTransferSrcScalarPerVector, // TUNABLE
               S<8, 32, 1>, // B1BlockTransfer
               S<0, 2, 1>,
               S<0, 2, 1>,
               1,
-              B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+              kB1BlockTransferSrcScalarPerVector, // TUNABLE
               2,
               false,
               1, // CShuffleMXdlPerWavePerShuffle
               4, // CShuffleNXdlPerWavePerShuffle
               S<1, 32, 1, 8>,
-              B1CShuffleBlockTransferScalarPerVector, // TUNABLE
+              kCShuffleBlockTransferScalarPerVector, // TUNABLE
               MaskingSpec,
               Deterministic>;
 
