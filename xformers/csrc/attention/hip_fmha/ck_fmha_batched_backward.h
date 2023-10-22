@@ -62,145 +62,106 @@ struct batched_backward_masktype_attnbias_dispatched {
       ck::tensor_operation::device::TensorSpecialization::Default;
   static constexpr bool Deterministic = true;
 
-  static void Run(BatchedBackwardParams& param, hipStream_t stream) {
-    // Tunables
-    constexpr ck::index_t kABBlockTransferSrcScalarPerVector = 1;
-    constexpr ck::index_t kB1BlockTransferSrcScalarPerVector = 1;
-    constexpr ck::index_t kCShuffleBlockTransferScalarPerVector = 1;
-    constexpr ck::index_t kAcc0BiasTransferSrcScalarPerVector = 1;
+  static constexpr ck::index_t kABBlockTransferSrcScalarPerVector = 1;
+  static constexpr ck::index_t kB1BlockTransferSrcScalarPerVector = 1;
+  static constexpr ck::index_t kCShuffleBlockTransferScalarPerVector = 1;
+  static constexpr ck::index_t kAcc0BiasTransferSrcScalarPerVector = 1;
 
+  template <
+      ck::index_t kGemm1NPerBlock,
+      ck::index_t kGemm1NXdlPerWave,
+      ck::index_t kCShuffleNXdlPerWavePerShuffle,
+      typename kCShuffleBlockTransferClusterLengths>
+  using DeviceOpInstanceTemp = ck::tensor_operation::device::
+      DeviceBatchedMultiheadAttentionBackward_Qloop_Xdl_CShuffle_V1<
+          NumDimG,
+          NumDimM,
+          NumDimN,
+          NumDimK,
+          NumDimO,
+          InputDataType,
+          OutputDataType,
+          GemmDataType,
+          ZDataType,
+          LSEDataType,
+          Acc0BiasDataType,
+          Acc1BiasDataType,
+          AccDataType,
+          ShuffleDataType,
+          QKVElementOp,
+          QKVElementOp,
+          Scale,
+          QKVElementOp,
+          YElementOp,
+          GemmSpec,
+          TensorSpecQ,
+          TensorSpecK,
+          TensorSpecV,
+          TensorSpecY,
+          1,
+          256,
+          128, // MPerBlock
+          128, // NPerBlock
+          kGemm1NPerBlock, // KPerBlock == kGemm1NPerBlock required
+          kGemm1NPerBlock,
+          32, // Gemm1KperBlock
+          32, // Gemm2KPerBlock
+          8, // AK1
+          8, // BK1
+          2, // B1K1
+          32, // MPerXDL
+          32, // NPerXDL
+          4, // MXdlPerWave
+          1, // NXdlPerWave
+          kGemm1NXdlPerWave,
+          1, // Gemm2NXdlPerWave
+          S<4, 64, 1>, // ABlockTransfer
+          S<1, 0, 2>,
+          S<1, 0, 2>,
+          2,
+          kABBlockTransferSrcScalarPerVector, // TUNABLE
+          8,
+          true,
+          S<4, 64, 1>, // BBlockTransfer
+          S<1, 0, 2>,
+          S<1, 0, 2>,
+          2,
+          kABBlockTransferSrcScalarPerVector, // TUNABLE
+          8,
+          true,
+          kAcc0BiasTransferSrcScalarPerVector, // TUNABLE
+          1, // CShuffleMXdlPerWavePerShuffle
+          kCShuffleNXdlPerWavePerShuffle,
+          kCShuffleBlockTransferClusterLengths,
+          kCShuffleBlockTransferScalarPerVector, // TUNABLE
+          MaskingSpec,
+          Deterministic>;
+
+  static void Run(BatchedBackwardParams& param, hipStream_t stream) {
     if (param.K <= 32 && param.Kv <= 32) {
-      using DeviceOpInstance = ck::tensor_operation::device::
-          DeviceBatchedMultiheadAttentionBackward_Qloop_Xdl_CShuffle_V1<
-              NumDimG,
-              NumDimM,
-              NumDimN,
-              NumDimK,
-              NumDimO,
-              InputDataType,
-              OutputDataType,
-              GemmDataType,
-              ZDataType,
-              LSEDataType,
-              Acc0BiasDataType,
-              Acc1BiasDataType,
-              AccDataType,
-              ShuffleDataType,
-              QKVElementOp,
-              QKVElementOp,
-              Scale,
-              QKVElementOp,
-              YElementOp,
-              GemmSpec,
-              TensorSpecQ,
-              TensorSpecK,
-              TensorSpecV,
-              TensorSpecY,
-              1,
-              256,
-              128, // MPerBlock
-              128, // NPerBlock
-              32, // KPerBlock
-              32, // Gemm1NPerBlock
-              32, // Gemm1KperBlock
-              64, // Gemm2KPerBlock
-              8, // AK1
-              8, // BK1
-              2, // B1K1
-              32, // MPerXDL
-              32, // NPerXDL
-              4, // MXdlPerWave
-              1, // NXdlPerWave
-              1, // Gemm1NXdlPerWave
-              1, // Gemm2NXdlPerWave
-              S<4, 64, 1>, // ABlockTransfer
-              S<1, 0, 2>,
-              S<1, 0, 2>,
-              2,
-              kABBlockTransferSrcScalarPerVector, // TUNABLE
-              8,
-              true,
-              S<4, 64, 1>, // BBlockTransfer
-              S<1, 0, 2>,
-              S<1, 0, 2>,
-              2,
-              kABBlockTransferSrcScalarPerVector, // TUNABLE
-              8,
-              true,
-              kAcc0BiasTransferSrcScalarPerVector, // TUNABLE
-              1,
-              1,
-              S<1, 64, 1, 4>,
-              kCShuffleBlockTransferScalarPerVector, // TUNABLE
-              MaskingSpec,
-              Deterministic>;
+      constexpr ck::index_t kGemm1NPerBlock = 32;
+      constexpr ck::index_t kGemm1NXdlPerWave = 1;
+      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 1;
+      using kCShuffleBlockTransferClusterLengths = S<1, 64, 1, 4>;
+
+      using DeviceOpInstance = DeviceOpInstanceTemp<
+          kGemm1NPerBlock,
+          kGemm1NXdlPerWave,
+          kCShuffleNXdlPerWavePerShuffle,
+          kCShuffleBlockTransferClusterLengths>;
 
       RunWithDeviceOp<DeviceOpInstance>(param, stream);
     } else if (param.K <= 64 && param.Kv <= 64) {
-      using DeviceOpInstance = ck::tensor_operation::device::
-          DeviceBatchedMultiheadAttentionBackward_Qloop_Xdl_CShuffle_V1<
-              NumDimG,
-              NumDimM,
-              NumDimN,
-              NumDimK,
-              NumDimO,
-              InputDataType,
-              OutputDataType,
-              GemmDataType,
-              ZDataType,
-              LSEDataType,
-              Acc0BiasDataType,
-              Acc1BiasDataType,
-              AccDataType,
-              ShuffleDataType,
-              QKVElementOp,
-              QKVElementOp,
-              Scale,
-              QKVElementOp,
-              YElementOp,
-              GemmSpec,
-              TensorSpecQ,
-              TensorSpecK,
-              TensorSpecV,
-              TensorSpecY,
-              1,
-              256,
-              128, // MPerBlock
-              128, // NPerBlock
-              64, // KPerBlock
-              64, // Gemm1NPerBlock
-              32, // Gemm1KPerBlock
-              32, // Gemm2KPerBlock
-              8, // AK1
-              8, // BK1
-              2, // B1K1
-              32, // MPerXDL
-              32, // NPerXDL
-              4, // MXdlPerWave
-              1, // NXdlPerWave
-              2, // Gemm1NXdlPerWave
-              1, // Gemm2NXdlPerWave
-              S<4, 64, 1>, // ABlockTransfer
-              S<1, 0, 2>,
-              S<1, 0, 2>,
-              2,
-              kABBlockTransferSrcScalarPerVector, // TUNABLE
-              8,
-              true,
-              S<4, 64, 1>, // BBlockTransfer
-              S<1, 0, 2>,
-              S<1, 0, 2>,
-              2,
-              kABBlockTransferSrcScalarPerVector, // TUNABLE
-              8,
-              true,
-              kAcc0BiasTransferSrcScalarPerVector, // TUNABLE
-              1,
-              2,
-              S<1, 32, 1, 8>,
-              kCShuffleBlockTransferScalarPerVector, // TUNABLE
-              MaskingSpec,
-              Deterministic>;
+      constexpr ck::index_t kGemm1NPerBlock = 64;
+      constexpr ck::index_t kGemm1NXdlPerWave = 2;
+      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 2;
+      using kCShuffleBlockTransferClusterLengths = S<1, 32, 1, 8>;
+
+      using DeviceOpInstance = DeviceOpInstanceTemp<
+          kGemm1NPerBlock,
+          kGemm1NXdlPerWave,
+          kCShuffleNXdlPerWavePerShuffle,
+          kCShuffleBlockTransferClusterLengths>;
 
       RunWithDeviceOp<DeviceOpInstance>(param, stream);
     } else {
@@ -271,7 +232,10 @@ struct batched_backward_masktype_attnbias_dispatched {
               false,
               1, // CShuffleMXdlPerWavePerShuffle
               4, // CShuffleNXdlPerWavePerShuffle
-              S<1, 32, 1, 8>,
+              S<1,
+                32,
+                1,
+                8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
               kCShuffleBlockTransferScalarPerVector, // TUNABLE
               MaskingSpec,
               Deterministic>;
