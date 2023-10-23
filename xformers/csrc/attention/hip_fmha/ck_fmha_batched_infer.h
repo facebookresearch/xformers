@@ -9,6 +9,7 @@
 #include <ck/tensor_operation/gpu/element/element_wise_operation.hpp>
 #include "ck/tensor_operation/gpu/device/impl/device_batched_mha_infer_xdl_cshuffle.hpp"
 
+#include "ck_fmha_device_gemm_constants.h"
 #include "ck_fmha_op_helper.h"
 #include "ck_fmha_params.h"
 
@@ -29,12 +30,6 @@ struct batched_infer_masktype_attnbias_dispatched {
       typename std::conditional<has_attn_bias, scalar_t, void>::type;
   using Acc1BiasDataType = void;
 
-  static constexpr ck::index_t NumDimG = 2;
-  static constexpr ck::index_t NumDimM = 1;
-  static constexpr ck::index_t NumDimN = 1;
-  static constexpr ck::index_t NumDimK = 1;
-  static constexpr ck::index_t NumDimO = 1;
-
   using AElementOp = PassThrough;
   using B0ElementOp = PassThrough;
   using Acc0ElementOp = ck::tensor_operation::element_wise::Scale;
@@ -47,15 +42,6 @@ struct batched_infer_masktype_attnbias_dispatched {
       static_cast<ck::tensor_operation::device::MaskingSpecialization>(
           custom_mask_type);
 
-  static constexpr auto TensorSpecA =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr auto TensorSpecB0 =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr auto TensorSpecB1 =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr auto TensorSpecC =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-
   static constexpr ck::index_t kABBlockTransferSrcScalarPerVector = 1;
   static constexpr ck::index_t kB1BlockTransferSrcScalarPerVector = 1;
   static constexpr ck::index_t kCShuffleBlockTransferScalarPerVector = 1;
@@ -67,11 +53,11 @@ struct batched_infer_masktype_attnbias_dispatched {
       ck::index_t kCShuffleNXdlPerWavePerShuffle>
   using DeviceOpInstanceTemp = ck::tensor_operation::device::
       DeviceBatchedMultiheadAttentionInfer_Xdl_CShuffle<
-          NumDimG,
-          NumDimM,
-          NumDimN,
-          NumDimK,
-          NumDimO,
+          GemmOpConstantsCommon::NumDimG,
+          GemmOpConstantsCommon::NumDimM,
+          GemmOpConstantsCommon::NumDimN,
+          GemmOpConstantsCommon::NumDimK,
+          GemmOpConstantsCommon::NumDimO,
           ADataType,
           B0DataType,
           B1DataType,
@@ -86,55 +72,56 @@ struct batched_infer_masktype_attnbias_dispatched {
           B1ElementOp,
           CElementOp,
           GemmSpec,
-          TensorSpecA,
-          TensorSpecB0,
-          TensorSpecB1,
-          TensorSpecC,
+          GemmOpConstantsCommon::TensorSpecA,
+          GemmOpConstantsCommon::TensorSpecB0,
+          GemmOpConstantsCommon::TensorSpecB1,
+          GemmOpConstantsCommon::TensorSpecC,
           1,
-          256,
-          128, // MPerBlock
-          128, // NPerBlock
-          32, // KPerBlock
+          GemmOpConstantsBatchedInfer::BlockSize,
+          GemmOpConstantsBatchedInfer::MPerBlock,
+          GemmOpConstantsBatchedInfer::NPerBlock,
+          GemmOpConstantsBatchedInfer::KPerBlock,
           kGemm1NPerBlock,
-          32,
-          8, // AK1
-          8, // BK1
-          2, // B1K1
-          32, // MPerXDL
-          32, // NPerXDL
-          1, // MXdlPerWave
-          4, // NXdlPerWave
+          GemmOpConstantsBatchedInfer::Gemm1KPerBlock,
+          GemmOpConstantsBatchedInfer::AK1,
+          GemmOpConstantsBatchedInfer::BK1,
+          GemmOpConstantsBatchedInfer::B1K1,
+          GemmOpConstantsBatchedInfer::MPerXDL,
+          GemmOpConstantsBatchedInfer::NPerXDL,
+          GemmOpConstantsBatchedInfer::MXdlPerWave,
+          GemmOpConstantsBatchedInfer::NXdlPerWave,
           kGemm1NXdlPerWave,
-          S<4, 64, 1>, // ABlockTransfer
-          S<1, 0, 2>,
-          S<1, 0, 2>,
-          2,
-          kABBlockTransferSrcScalarPerVector, // TUNABLE
-          8,
-          true,
-          S<4, 64, 1>, // BBlockTransfer
-          S<1, 0, 2>,
-          S<1, 0, 2>,
-          2,
-          kABBlockTransferSrcScalarPerVector, // TUNABLE
-          8,
-          true,
-          kAcc0BiasTransferSrcScalarPerVector, // TUNABLE
-          S<16, 16, 1>, // B1BlockTransfer
-          S<0, 2, 1>,
-          S<0, 2, 1>,
-          1,
-          kB1BlockTransferSrcScalarPerVector, // TUNABLE
-          2,
-          false,
-          1, // CShuffleMXdlPerWavePerShuffle
+          GemmOpConstantsBatchedInfer::
+              ABlockTransferThreadClusterLengths_AK0_M_AK1,
+          GemmOpConstantsBatchedInfer::ABlockTransferThreadClusterArrangeOrder,
+          GemmOpConstantsBatchedInfer::ABlockTransferSrcAccessOrder,
+          GemmOpConstantsBatchedInfer::ABlockTransferSrcVectorDim,
+          kABBlockTransferSrcScalarPerVector,
+          GemmOpConstantsBatchedInfer::ABlockTransferDstScalarPerVector_AK1,
+          GemmOpConstantsBatchedInfer::ABlockLdsExtraM,
+          GemmOpConstantsBatchedInfer::
+              BBlockTransferThreadClusterLengths_BK0_N_BK1,
+          GemmOpConstantsBatchedInfer::BBlockTransferThreadClusterArrangeOrder,
+          GemmOpConstantsBatchedInfer::BBlockTransferSrcAccessOrder,
+          GemmOpConstantsBatchedInfer::BBlockTransferSrcVectorDim,
+          kABBlockTransferSrcScalarPerVector,
+          GemmOpConstantsBatchedInfer::BBlockTransferDstScalarPerVector_BK1,
+          GemmOpConstantsBatchedInfer::BBlockLdsExtraN,
+          kAcc0BiasTransferSrcScalarPerVector,
+          GemmOpConstantsBatchedInfer::
+              B1BlockTransferThreadClusterLengths_BK0_N_BK1,
+          GemmOpConstantsBatchedInfer::B1BlockTransferThreadClusterArrangeOrder,
+          GemmOpConstantsBatchedInfer::B1BlockTransferSrcAccessOrder,
+          GemmOpConstantsBatchedInfer::B1BlockTransferSrcVectorDim,
+          kB1BlockTransferSrcScalarPerVector,
+          GemmOpConstantsBatchedInfer::B1BlockTransferDstScalarPerVector_BK1,
+          GemmOpConstantsBatchedInfer::B1BlockLdsExtraN,
+          GemmOpConstantsBatchedInfer::CShuffleMXdlPerWavePerShuffle,
           kCShuffleNXdlPerWavePerShuffle,
-          S<1,
-            32,
-            1,
-            8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
-          kCShuffleBlockTransferScalarPerVector, // TUNABLE
-          MaskingSpec>; // MaskingSpecialization
+          GemmOpConstantsBatchedInfer::
+              CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock,
+          kCShuffleBlockTransferScalarPerVector,
+          MaskingSpec>;
 
   static void Run(BatchedForwardParams& param, hipStream_t stream) {
     if (param.K <= 32 && param.Kv <= 32) {
