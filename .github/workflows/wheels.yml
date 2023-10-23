@@ -31,28 +31,42 @@ jobs:
         cuda_short_version:
           - "118"
           - "121"
-        include:
-          - sdist: false
-            publish: false
-          # Publish source distribution only from this runner
-          - os: 8-core-ubuntu
-            python: "3.10"
-            torch_version: "2.1.0"
-            sdist: true
-          # Set version to publish to pypi
-          - torch_version: "2.1.0"
-            cuda_short_version: "118"
-            publish: true
 
-    uses: ./.github/workflows/wheels_reusable.yml
+    uses: ./.github/workflows/wheels_build.yml
     if: github.repository == 'facebookresearch/xformers' || github.event_name == 'pull_request'
     with:
       os: ${{ matrix.os }}
       python: ${{ matrix.python }}
       torch_version: ${{ matrix.torch_version }}
       cuda_short_version: ${{ matrix.cuda_short_version }}
-      publish: ${{ matrix.publish == true && github.event_name != 'pull_request'}}
-      sdist: ${{ matrix.sdist == true }}
+
+  upload_pip:
+    needs: build
+    uses: ./.github/workflows/wheels_upload_pip.yml
+    with:
       twine_username: __token__
+      filter: "*torch2.1.0+cu121*"
+      execute: ${{ github.repository == 'facebookresearch/xformers' && github.event_name != 'pull_request' }}
     secrets:
       twine_password: ${{ secrets.PYPI_TOKEN }}
+
+  upload_pt_cu118:
+    needs: build
+    uses: ./.github/workflows/wheels_upload_s3.yml
+    with:
+      aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
+      s3_path: s3://pytorch/whl/cu118/
+      aws_s3_cp_extra_args: --acl public-read
+      filter: "*torch2.1.0+cu118*"
+      execute: ${{ github.repository == 'facebookresearch/xformers' && github.ref_type == 'tag' }}
+
+  upload_pt_cu121:
+    needs: build
+    uses: ./.github/workflows/wheels_upload_s3.yml
+    with:
+      aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
+      s3_path: s3://pytorch/whl/cu121/
+      aws_s3_cp_extra_args: --acl public-read
+      filter: "*torch2.1.0+cu121*"
+      execute: ${{ github.repository == 'facebookresearch/xformers' && github.ref_type == 'tag' }}
+

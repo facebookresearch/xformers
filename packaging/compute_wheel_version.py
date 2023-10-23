@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
+import argparse
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -37,7 +38,18 @@ def get_dev_version() -> str:
 
 
 if __name__ == "__main__":
-    tagged_version = get_tagged_version()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--source", choices=["tag", "dev", "tag,dev"], required=False, default="tag,dev"
+    )
+    args = parser.parse_args()
+
+    if "tag" in args.source:
+        tagged_version = get_tagged_version()
+        if args.source == "tag":
+            raise ValueError("No tag found")
+    else:
+        tagged_version = None
     if tagged_version is not None:
         print(tagged_version, end="")
     else:
