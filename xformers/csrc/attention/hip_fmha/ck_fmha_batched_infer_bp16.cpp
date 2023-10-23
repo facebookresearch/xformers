@@ -2,7 +2,7 @@
 #include <stdexcept>
 
 #include "ck_fmha_batched_infer.h"
-#include "ck_static_switch.h"
+#include "ck_bool_switch.h"
 
 extern template struct batched_infer_masktype_attnbias_dispatched<
     ck::bhalf_t,
