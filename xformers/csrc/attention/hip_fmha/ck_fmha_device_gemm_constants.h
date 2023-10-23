@@ -51,7 +51,7 @@ struct GemmOpConstantsBatchedInfer {
   static constexpr ck::index_t BBlockTransferSrcVectorDim = 2;
   // static constexpr ck::index_t BBlockTransferSrcScalarPerVector;
   static constexpr ck::index_t BBlockTransferDstScalarPerVector_BK1 = 8;
-  static consexpr bool BBlockLdsExtraN = true;
+  static constexpr bool BBlockLdsExtraN = true;
   // static constexpr ck::index_t Acc0BiasTransferSrcScalarPerVector;
   using B1BlockTransferThreadClusterLengths_BK0_N_BK1 = S<16, 16, 1>;
   using B1BlockTransferThreadClusterArrangeOrder = S<0, 2, 1>;
@@ -60,7 +60,7 @@ struct GemmOpConstantsBatchedInfer {
   // static constexpr ck::index_t B1BlockTransferSrcScalarPerVector;
   static constexpr ck::index_t B1BlockTransferDstScalarPerVector_BK1 = 2;
   static constexpr bool B1BlockLdsExtraN = false;
-  static ck::index_t CShuffleMXdlPerWavePerShuffle = 1;
+  static constexpr ck::index_t CShuffleMXdlPerWavePerShuffle = 1;
   // static constexpr ck::index_t CShuffleNXdlPerWavePerShuffle;
   using CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock =
       S<1, 32, 1, 8>;
