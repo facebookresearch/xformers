@@ -113,11 +113,13 @@ jobs:
           path: "."
           fetch-depth: 0 # for tags
       - name: Define version
+        env:
+          VERSION_SOURCE: ${{ github.ref_type == 'tag' && 'tag' || 'dev'  }}
         run: |
           set -Eeuo pipefail
           git config --global --add safe.directory "*"
           $PY -m pip install packaging
-          version=`$PY packaging/compute_wheel_version.py`
+          version=`$PY packaging/compute_wheel_version.py --source $VERSION_SOURCE`
           echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}
           cat ${GITHUB_ENV}
       - name: Build & store/upload

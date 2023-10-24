@@ -6,11 +6,9 @@ import argparse
 import os
 import shutil
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
-
-import compute_wheel_version
+from typing import List
 
 THIS_PATH = Path(__file__).resolve()
 SOURCE_ROOT_DIR = THIS_PATH.parents[1]
@@ -40,25 +38,15 @@ class Build:
     conda_debug: bool = False
     conda_dirty: bool = False
     build_inside_tree: bool = False
-    tagged_version: Optional[str] = field(
-        default_factory=compute_wheel_version.get_tagged_version
-    )
-
-    def _get_build_version(self) -> str:
-        if self.tagged_version is not None:
-            return self.tagged_version
-        git_hash = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], text=True
-        ).strip()
-        dev_version = compute_wheel_version.get_dev_version()
-        return f"{dev_version}+git.{git_hash}"
 
     def _set_env_for_build(self) -> None:
         """
         NOTE: Variables set here won't be visible in `setup.py`
         UNLESS they are also specified in meta.yaml
         """
-        os.environ["BUILD_VERSION"] = self._get_build_version()
+        assert (
+            "BUILD_VERSION" in os.environ
+        ), "BUILD_VERSION must be set as env variable"
         tag = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
         ).strip()

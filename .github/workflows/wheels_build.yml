@@ -1,14 +1,8 @@
-name: wheels
+name: wheels_build
 
 on:
   workflow_call:
-    secrets:
-      twine_password:
-        required: true
     inputs:
-      twine_username:
-        required: true
-        type: string
       os:
         required: true
         type: string
@@ -23,15 +17,6 @@ on:
         required: true
         type: string
         description: "Example: 117 for 11.7"
-      publish:
-        required: true
-        type: boolean
-      sdist:
-        required: true
-        type: boolean
-      pypirc:
-        required: false
-        type: string
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
@@ -46,9 +31,7 @@ env:
   XFORMERS_PACKAGE_FROM: "wheel-${{ github.ref_name }}"
 
 jobs:
-  build_wheels:
-    permissions:
-      id-token: write # Needed to assume AWS role for upload to pytorch.org
+  build:
     name: ${{ inputs.os }}-py${{ inputs.python }}-torch${{ inputs.torch_version }}+cu${{ inputs.cuda_short_version }}
     runs-on: ${{ inputs.os }}
     env:
@@ -92,10 +75,6 @@ jobs:
       - run: echo "TORCH_ORG_S3_PATH=${{ steps.cuda_info.outputs.TORCH_ORG_S3_PATH }}"
       - run: echo "PUBLISH_PYPI=${{ steps.cuda_info.outputs.PUBLISH_PYPI }}"
 
-      - name: Upload wheel to PyPi check
-        if: inputs.publish && steps.cuda_info.outputs.PUBLISH_PYPI == '1'
-        run: echo "Will upload to PyPi!"
-
       - name: Add H100 if nvcc 11.08+
         shell: python
         run: |
@@ -117,12 +96,6 @@ jobs:
           path: "."
           fetch-depth: 0 # for tags
 
-      - name: Setup twine config
-        if: inputs.pypirc
-        run: |
-          echo "${{ inputs.pypirc }}" > ~/.pypirc
-          cat ~/.pypirc
-
       - if: runner.os != 'Windows'
         name: (Linux) Setup venv for linux
         run: |
@@ -132,13 +105,16 @@ jobs:
           echo "PY=$(which python)" >> ${GITHUB_ENV}
           echo "PATH=$PATH" >> ${GITHUB_ENV}
           echo "MAX_JOBS=3" >> ${GITHUB_ENV}
+
       - name: Define version
         id: xformers_version
+        env:
+          VERSION_SOURCE: ${{ github.ref_type == 'tag' && 'tag' || 'dev'  }}
         run: |
           set -Eeuo pipefail
           git config --global --add safe.directory "*"
           pip install packaging ninja
-          version=`python packaging/compute_wheel_version.py`
+          version=`python packaging/compute_wheel_version.py --source $VERSION_SOURCE`
           echo $version > version.txt
           echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_ENV}
           echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_OUTPUT}
@@ -153,14 +129,6 @@ jobs:
           sed -i '/torch/d' ./requirements.txt
           echo "torch == ${{ inputs.torch_version }}" >> ./requirements.txt
           cat ./requirements.txt
-
-      - if: runner.os != 'Windows'
-        name: (Linux) Install aws-cli
-        run: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip awscliv2.zip
-          ./aws/install
-          aws --version
 
       - if: runner.os == 'Windows'
         name: (Windows) Setup Runner
@@ -180,72 +148,15 @@ jobs:
           sh ./cuda.run --silent --toolkit &&
           rm ./cuda.run
 
-      - name: Create source distribution
-        if: inputs.sdist
-        run: |
-          rm -rf dist/
-          (cd third_party/flash-attention && \
-            git describe --tags --always > version.txt && \
-            echo "Flash-Attention version" && \
-            cat version.txt
-          )
-
-          $PY setup.py sdist -d sdist/
-
       - name: Build wheel
-        run: $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
+        run: |
+          $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
         env:
           PLAT_ARG: ${{ contains(inputs.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
 
       - run: du -h dist/*
-
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ inputs.os }}-py${{ inputs.python }}-torch${{ inputs.torch_version }}+cu${{ inputs.cuda_short_version }}
           path: dist/*.whl
-
-      - name: Upload wheel to PyPi
-        if: inputs.publish && steps.cuda_info.outputs.PUBLISH_PYPI == '1'
-        run: $PY -m twine upload dist/*.whl
-        env:
-          TWINE_USERNAME: ${{ inputs.twine_username }}
-          TWINE_PASSWORD: ${{ secrets.twine_password }}
-
-      - name: Upload source distribution to PyPi
-        if: inputs.publish && steps.cuda_info.outputs.PUBLISH_PYPI == '1' && inputs.sdist
-        run: $PY -m twine upload sdist/*
-        env:
-          TWINE_USERNAME: ${{ inputs.twine_username }}
-          TWINE_PASSWORD: ${{ secrets.twine_password }}
-
-      # Publishing to pytorch.org s3 bucket
-      - name: configure aws credentials
-        if: inputs.publish && !contains(steps.xformers_version.outputs.BUILD_VERSION, '.dev')
-        uses: aws-actions/configure-aws-credentials@v1.7.0
-        with:
-          role-to-assume: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
-          role-session-name: GitHub_CI_${{ inputs.os }}-py${{ inputs.python }}-torch${{ inputs.torch_version }}+cu${{ inputs.cuda_short_version }}
-          aws-region: "us-east-1"
-
-      - name: Sts GetCallerIdentity
-        if: inputs.publish && !contains(steps.xformers_version.outputs.BUILD_VERSION, '.dev')
-        run: |
-          aws sts get-caller-identity
-
-      - name: Upload wheel to PyTorch.org [cu${{ inputs.cuda_short_version }}]
-        if: inputs.publish && !contains(steps.xformers_version.outputs.BUILD_VERSION, '.dev')
-        env:
-          BUCKET_PATH: s3://pytorch/whl/cu${{ inputs.cuda_short_version }}
-        run: |
-          aws s3 cp dist/* $BUCKET_PATH/ --acl public-read
-          aws s3 ls $BUCKET_PATH/
-
-      - name: Upload wheel to PyTorch.org [main]
-        if: inputs.publish && !contains(steps.xformers_version.outputs.BUILD_VERSION, '.dev') && steps.cuda_info.outputs.PUBLISH_PYPI == '1'
-        env:
-          BUCKET_PATH: s3://pytorch/whl
-        run: |
-          aws s3 cp dist/* $BUCKET_PATH/ --acl public-read
-          aws s3 ls $BUCKET_PATH/
-
 # Note: it might be helpful to have additional steps that test if the built wheels actually work

@@ -3,7 +3,7 @@ Welcome to xFormers's documentation!
 =====================================
 
 *xFormers* is a PyTorch based library which hosts flexible Transformers parts.
-They are interoperable and optimized building blocks, which can be optionally be combined
+They are interoperable and optimized building blocks, which can optionally be combined
 to create some state of the art models.
 
 .. toctree::
