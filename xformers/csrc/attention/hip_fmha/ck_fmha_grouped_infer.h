@@ -170,7 +170,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
                   At(I3);
 
       constexpr ck::index_t kCShuffleBlockTransferScalarPerVector_max =
-          min(1, thread_slice_length_cshuflle_n);
+          min(2, thread_slice_length_cshuflle_n);
 
       ALIGN_SWITCH_3(
           kABBlockTransferSrcScalarPerVector_max,
@@ -228,7 +228,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
                   At(I3);
 
       constexpr ck::index_t kCShuffleBlockTransferScalarPerVector_max =
-          min(1, thread_slice_length_cshuflle_n);
+          min(2, thread_slice_length_cshuflle_n);
 
       ALIGN_SWITCH_3(
           kABBlockTransferSrcScalarPerVector_max,
@@ -286,7 +286,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
                   At(I3);
 
       constexpr ck::index_t kCShuffleBlockTransferScalarPerVector_max =
-          min(1, thread_slice_length_cshuflle_n);
+          min(2, thread_slice_length_cshuflle_n);
 
       ALIGN_SWITCH_3(
           kABBlockTransferSrcScalarPerVector_max,
