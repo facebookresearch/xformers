@@ -13,7 +13,8 @@
 #include "ck/tensor_operation/gpu/device/impl/device_grouped_mha_infer_xdl_cshuffle.hpp"
 
 #include "ck_align_switch.h"
-#include "ck_fmha_device_gemm_constants.h"
+#include "ck_fmha_common_gemm_constants.h"
+#include "ck_fmha_infer_gemm_constants.h"
 #include "ck_fmha_op_helper.h"
 #include "ck_fmha_params.h"
 
@@ -127,6 +128,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
           kCShuffleBlockTransferScalarPerVector,
           MaskingSpec>;
 
+  static constexpr auto I1 = ck::Number<1>{};
   static constexpr auto I2 = ck::Number<2>{};
   static constexpr auto I3 = ck::Number<3>{};
 
@@ -154,12 +156,11 @@ struct grouped_infer_masktype_attnbias_dispatched {
       constexpr ck::index_t kABBlockTransferSrcScalarPerVector_max =
           min(4, thread_slice_length_ak1);
 
-      constexpr ck::index_t thread_slice_length_b1k1 =
-          GemmOpConstantsGroupedInfer::B1K1 /
+      constexpr ck::index_t thread_slice_length_gemm1n = kGemm1NPerBlock /
           GemmOpConstantsGroupedInfer::
-              B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
+              B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I1);
       constexpr ck::index_t kB1BlockTransferSrcScalarPerVector_max =
-          min(4, thread_slice_length_b1k1);
+          min(2, thread_slice_length_gemm1n);
 
       constexpr ck::index_t thread_slice_length_cshuflle_n =
           (kCShuffleNXdlPerWavePerShuffle * kGemm1NPerBlock /
@@ -169,7 +170,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
                   At(I3);
 
       constexpr ck::index_t kCShuffleBlockTransferScalarPerVector_max =
-          min(4, thread_slice_length_cshuflle_n);
+          min(1, thread_slice_length_cshuflle_n);
 
       ALIGN_SWITCH_3(
           kABBlockTransferSrcScalarPerVector_max,
@@ -213,12 +214,11 @@ struct grouped_infer_masktype_attnbias_dispatched {
       constexpr ck::index_t kABBlockTransferSrcScalarPerVector_max =
           min(4, thread_slice_length_ak1);
 
-      constexpr ck::index_t thread_slice_length_b1k1 =
-          GemmOpConstantsGroupedInfer::B1K1 /
+      constexpr ck::index_t thread_slice_length_gemm1n = kGemm1NPerBlock /
           GemmOpConstantsGroupedInfer::
-              B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
+              B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I1);
       constexpr ck::index_t kB1BlockTransferSrcScalarPerVector_max =
-          min(4, thread_slice_length_b1k1);
+          min(2, thread_slice_length_gemm1n);
 
       constexpr ck::index_t thread_slice_length_cshuflle_n =
           (kCShuffleNXdlPerWavePerShuffle * kGemm1NPerBlock /
@@ -228,7 +228,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
                   At(I3);
 
       constexpr ck::index_t kCShuffleBlockTransferScalarPerVector_max =
-          min(4, thread_slice_length_cshuflle_n);
+          min(1, thread_slice_length_cshuflle_n);
 
       ALIGN_SWITCH_3(
           kABBlockTransferSrcScalarPerVector_max,
@@ -272,12 +272,11 @@ struct grouped_infer_masktype_attnbias_dispatched {
       constexpr ck::index_t kABBlockTransferSrcScalarPerVector_max =
           min(4, thread_slice_length_ak1);
 
-      constexpr ck::index_t thread_slice_length_b1k1 =
-          GemmOpConstantsGroupedInfer::B1K1 /
+      constexpr ck::index_t thread_slice_length_gemm1n = kGemm1NPerBlock /
           GemmOpConstantsGroupedInfer::
-              B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
+              B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I1);
       constexpr ck::index_t kB1BlockTransferSrcScalarPerVector_max =
-          min(4, thread_slice_length_b1k1);
+          min(2, thread_slice_length_gemm1n);
 
       constexpr ck::index_t thread_slice_length_cshuflle_n =
           (kCShuffleNXdlPerWavePerShuffle * kGemm1NPerBlock /
@@ -287,7 +286,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
                   At(I3);
 
       constexpr ck::index_t kCShuffleBlockTransferScalarPerVector_max =
-          min(4, thread_slice_length_cshuflle_n);
+          min(1, thread_slice_length_cshuflle_n);
 
       ALIGN_SWITCH_3(
           kABBlockTransferSrcScalarPerVector_max,
