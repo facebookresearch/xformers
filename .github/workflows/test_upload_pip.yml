@@ -1,0 +1,42 @@
+name: wheels_upload_pip
+
+on:
+  workflow_call:
+    secrets:
+      twine_password:
+        required: true
+    inputs:
+      twine_username:
+        required: true
+        type: string
+      pypirc:
+        required: false
+        type: string
+      filter:
+        required: true
+        type: string
+        description: Filter which runs to upload. Example '*+cu121*'
+      execute:
+        required: true
+        type: boolean
+        description: Actually upload the wheels. Dry-run if false
+
+env:
+  TWINE_USERNAME: __token__
+
+jobs:
+  wheels_upload_pip:
+    name: wheels_upload_pip
+    runs-on: ubuntu-20.04
+
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Upload wheel to PyPi
+        if: inputs.execute
+        run: echo "Upload to pypi"
+        env:
+          TWINE_USERNAME: ${{ inputs.twine_username }}
+          TWINE_PASSWORD: ${{ secrets.twine_password }}

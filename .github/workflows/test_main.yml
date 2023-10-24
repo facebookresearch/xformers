@@ -1,0 +1,22 @@
+name: test
+
+on:
+  pull_request: {}
+
+jobs:
+  upload_pip_T:
+    uses: ./.github/workflows/test_upload_pip.yml
+    with:
+      twine_username: __token__
+      filter: "*torch2.1.0+cu121*"
+      execute: ${{ github.event_name == 'pull_request' }}
+    secrets:
+      twine_password: ${{ secrets.PYPI_TOKEN }}
+  upload_pip_F:
+    uses: ./.github/workflows/test_upload_pip.yml
+    with:
+      twine_username: __token__
+      filter: "*torch2.1.0+cu121*"
+      execute: ${{ github.event_name != 'pull_request' }}
+    secrets:
+      twine_password: ${{ secrets.PYPI_TOKEN }}
