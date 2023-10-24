@@ -139,12 +139,12 @@ struct grouped_infer_masktype_attnbias_dispatched {
       constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 1;
 
       constexpr ck::index_t thread_slice_length_ak1 =
-          GemmOpConstantsBatchedInfer::AK1 /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::AK1 /
+          GemmOpConstantsGroupedInfer::
               ABlockTransferThreadClusterLengths_AK0_M_AK1::At(I2);
       constexpr ck::index_t thread_slice_length_bk1 =
-          GemmOpConstantsBatchedInfer::BK1 /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::BK1 /
+          GemmOpConstantsGroupedInfer::
               BBlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
 
       static_assert(
@@ -155,8 +155,8 @@ struct grouped_infer_masktype_attnbias_dispatched {
           min(4, thread_slice_length_ak1);
 
       constexpr ck::index_t thread_slice_length_b1k1 =
-          GemmOpConstantsBatchedInfer::B1K1 /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::B1K1 /
+          GemmOpConstantsGroupedInfer::
               B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
       constexpr ck::index_t kB1BlockTransferSrcScalarPerVector_max =
           min(4, thread_slice_length_b1k1);
@@ -164,7 +164,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
       constexpr ck::index_t thread_slice_length_cshuflle_n =
           (kCShuffleNXdlPerWavePerShuffle * kGemm1NPerBlock /
            kGemm1NXdlPerWave) /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::
               CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock ::
                   At(I3);
 
@@ -198,12 +198,12 @@ struct grouped_infer_masktype_attnbias_dispatched {
       constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 2;
 
       constexpr ck::index_t thread_slice_length_ak1 =
-          GemmOpConstantsBatchedInfer::AK1 /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::AK1 /
+          GemmOpConstantsGroupedInfer::
               ABlockTransferThreadClusterLengths_AK0_M_AK1::At(I2);
       constexpr ck::index_t thread_slice_length_bk1 =
-          GemmOpConstantsBatchedInfer::BK1 /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::BK1 /
+          GemmOpConstantsGroupedInfer::
               BBlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
 
       static_assert(
@@ -214,8 +214,8 @@ struct grouped_infer_masktype_attnbias_dispatched {
           min(4, thread_slice_length_ak1);
 
       constexpr ck::index_t thread_slice_length_b1k1 =
-          GemmOpConstantsBatchedInfer::B1K1 /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::B1K1 /
+          GemmOpConstantsGroupedInfer::
               B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
       constexpr ck::index_t kB1BlockTransferSrcScalarPerVector_max =
           min(4, thread_slice_length_b1k1);
@@ -223,7 +223,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
       constexpr ck::index_t thread_slice_length_cshuflle_n =
           (kCShuffleNXdlPerWavePerShuffle * kGemm1NPerBlock /
            kGemm1NXdlPerWave) /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::
               CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock ::
                   At(I3);
 
@@ -257,12 +257,12 @@ struct grouped_infer_masktype_attnbias_dispatched {
       constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 4;
 
       constexpr ck::index_t thread_slice_length_ak1 =
-          GemmOpConstantsBatchedInfer::AK1 /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::AK1 /
+          GemmOpConstantsGroupedInfer::
               ABlockTransferThreadClusterLengths_AK0_M_AK1::At(I2);
       constexpr ck::index_t thread_slice_length_bk1 =
-          GemmOpConstantsBatchedInfer::BK1 /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::BK1 /
+          GemmOpConstantsGroupedInfer::
               BBlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
 
       static_assert(
@@ -273,8 +273,8 @@ struct grouped_infer_masktype_attnbias_dispatched {
           min(4, thread_slice_length_ak1);
 
       constexpr ck::index_t thread_slice_length_b1k1 =
-          GemmOpConstantsBatchedInfer::B1K1 /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::B1K1 /
+          GemmOpConstantsGroupedInfer::
               B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
       constexpr ck::index_t kB1BlockTransferSrcScalarPerVector_max =
           min(4, thread_slice_length_b1k1);
@@ -282,7 +282,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
       constexpr ck::index_t thread_slice_length_cshuflle_n =
           (kCShuffleNXdlPerWavePerShuffle * kGemm1NPerBlock /
            kGemm1NXdlPerWave) /
-          GemmOpConstantsBatchedInfer::
+          GemmOpConstantsGroupedInfer::
               CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock ::
                   At(I3);
 
