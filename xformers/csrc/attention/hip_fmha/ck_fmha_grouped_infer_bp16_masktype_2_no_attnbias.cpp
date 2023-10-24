@@ -6,9 +6,4 @@
 template struct grouped_infer_masktype_attnbias_dispatched<
     ck::bhalf_t,
     2,
-    true>;
-
-template struct grouped_infer_masktype_attnbias_dispatched<
-    ck::bhalf_t,
-    2,
     false>;

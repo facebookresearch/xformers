@@ -3,9 +3,7 @@
 
 #include "ck_fmha_grouped_infer.h"
 
-template struct grouped_infer_masktype_attnbias_dispatched<ck::half_t, 2, true>;
-
 template struct grouped_infer_masktype_attnbias_dispatched<
-    ck::half_t,
-    2,
+    ck::bhalf_t,
+    0,
     false>;
