@@ -31,6 +31,7 @@ def get_tagged_version() -> Optional[str]:
 
 
 def get_dev_version() -> str:
+    assert ".dev" not in version_from_file
     num_commits = subprocess.check_output(
         ["git", "rev-list", "--count", "HEAD"], text=True
     ).strip()
