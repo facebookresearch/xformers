@@ -90,7 +90,7 @@ jobs:
           BUILD_VERSION=$version $PY setup.py sdist -d sdist/
 
       - name: Upload wheel to PyPi
-        if: ${{ inputs.execute == 'true' }}
+        if: inputs.execute
         run: $PY -m twine upload --skip-existing dist/*/*.whl sdist/*
         env:
           TWINE_USERNAME: ${{ inputs.twine_username }}

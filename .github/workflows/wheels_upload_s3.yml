@@ -61,7 +61,7 @@ jobs:
       - run: ls -R dist/
 
       - name: configure aws credentials
-        if: ${{ inputs.execute == 'true' }}
+        if: inputs.execute
         uses: aws-actions/configure-aws-credentials@v1.7.0
         with:
           role-to-assume: ${{ inputs.aws_role }}
@@ -69,12 +69,12 @@ jobs:
           aws-region: "us-east-1"
 
       - name: Sts GetCallerIdentity
-        if: ${{ inputs.execute == 'true' }}
+        if: inputs.execute
         run: |
           aws sts get-caller-identity
 
       - name: Upload wheels to ${{ inputs.s3_path }}
-        if: ${{ inputs.execute == 'true' }}
+        if: inputs.execute
         run: |
           set -ex
           for f in dist/*.whl; do
