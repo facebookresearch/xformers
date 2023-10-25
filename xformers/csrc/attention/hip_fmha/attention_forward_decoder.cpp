@@ -484,6 +484,9 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 
 (1) hipify
  > pip install -e /xformers
+
+ For obtaining all the library paths needed for compilation below, add `--verbose`.
+ 
 (2) compile
  > /opt/rocm/bin/hipcc \
 -I/xformers/xformers/csrc \
