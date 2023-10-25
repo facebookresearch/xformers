@@ -38,9 +38,9 @@ conda install xformers -c xformers
 
 ```bash
 # cuda 11.8 version
-pip3 install torch xformers --index-url https://download.pytorch.org/whl/cu118
+pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu118
 # cuda 12.1 version
-pip3 install torch xformers --index-url https://download.pytorch.org/whl/cu121
+pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu121
 ```
 
 * **Development binaries**:
