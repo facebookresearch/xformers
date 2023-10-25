@@ -47,7 +47,7 @@ if __name__ == "__main__":
 
     if "tag" in args.source:
         tagged_version = get_tagged_version()
-        if args.source == "tag":
+        if args.source == "tag" and tagged_version is None:
             raise ValueError("No tag found")
     else:
         tagged_version = None
