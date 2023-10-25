@@ -69,7 +69,7 @@ jobs:
           . ./venv/bin/activate
           which pip
           # (we need pytorch to create a source distr...)
-          pip install torch packaging
+          pip install torch packaging twine
           echo "PY=$(which python)" >> ${GITHUB_ENV}
           echo "PATH=$PATH" >> ${GITHUB_ENV}
 
