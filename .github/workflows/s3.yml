@@ -1,0 +1,29 @@
+name: s3_get
+
+on:
+  pull_request: {}
+
+jobs:
+  s3_get:
+    permissions:
+      id-token: write # Needed to assume AWS role
+      pull-requests: read
+      contents: read
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
+          role-session-name: GitHub_CI
+          aws-region: "us-east-1"
+      - name: Setup upterm session
+        uses: lhotari/action-upterm@v1
+        with:
+          ## limits ssh access and adds the ssh public key for the user which triggered the workflow
+          limit-access-to-actor: true
