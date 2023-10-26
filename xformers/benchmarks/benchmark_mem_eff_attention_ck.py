@@ -176,14 +176,6 @@ def create_tensors(shape, dtype, requires_grad=False):
     q, k, v = xformers.ops.unbind(qkv, 2)
     return qkv, q, k, v
 
-def create_discrete_tensors(shape, dtype, requires_grad=False):
-    B, M, H, K = shape
-    q = torch.rand([B, M, H, K], device=device, dtype=dtype, requires_grad=requires_grad)
-    k = torch.rand([B, M, H, K], device=device, dtype=dtype, requires_grad=requires_grad)
-    v = torch.rand([B, M, H, K], device=device, dtype=dtype, requires_grad=requires_grad)
-
-    return q, k, v
-
 def mem_eff_attention_fw(shape, num_threads: int, attn_bias_cfg, dropout_p, dtype):
     B, M, H, K = shape
     _, q, k, v = create_tensors(shape, dtype)
