@@ -264,6 +264,10 @@ struct batched_backward_masktype_attnbias_dispatched {
         param.k_strides[1],
         param.k_strides[3]};
 
+    // ToDo: support multi-query and group-query attention
+    std::vector<ck::index_t> kgrad_gs_ns_ks_lengths = k_gs_ns_ks_lengths;
+    std::vector<ck::index_t> kgrad_gs_ns_ks_strides = k_gs_ns_ks_strides;
+
     std::vector<ck::index_t> v_gs_os_ns_lengths{
         param.B, param.num_heads, param.Kv, param.N};
     std::vector<ck::index_t> v_gs_os_ns_strides{
@@ -271,6 +275,10 @@ struct batched_backward_masktype_attnbias_dispatched {
         param.v_strides[2],
         param.v_strides[3],
         param.v_strides[1]};
+
+    // ToDo: support multi-query and group-query attention
+    std::vector<ck::index_t> vgrad_gs_os_ns_lengths = v_gs_os_ns_lengths;
+    std::vector<ck::index_t> vgrad_gs_os_ns_strides = v_gs_os_ns_strides;
 
     std::vector<ck::index_t> y_gs_ms_os_lengths{
         param.B, param.num_heads, param.M, param.Kv};
@@ -329,6 +337,10 @@ struct batched_backward_masktype_attnbias_dispatched {
         y_gs_ms_os_lengths, // y, dY should have same shape
         y_gs_ms_os_strides,
         lse_gs_ms_lengths,
+        kgrad_gs_ns_ks_lengths,
+        kgrad_gs_ns_ks_strides,
+        vgrad_gs_os_ns_lengths,
+        vgrad_gs_os_ns_strides,
         d_gs_ms_ns_lengths, // bias, grad_bias should have same shape
         d_gs_ms_ns_strides,
         {}, // acc1_biases_gs_ms_os_lengths

@@ -267,10 +267,18 @@ struct grouped_backward_masktype_attnbias_dispatched {
       std::vector<ck::index_t> k_gs_ns_ks_strides{
           0, param.k_strides[1], param.k_strides[0], param.k_strides[2]};
 
+      // ToDo: support multi-query and group-query attention
+      std::vector<ck::index_t> kgrad_gs_ns_ks_lengths = k_gs_ns_ks_lengths;
+      std::vector<ck::index_t> kgrad_gs_ns_ks_strides = k_gs_ns_ks_strides;
+
       // to be changed to v_gs_ns_os_lengths
       std::vector<ck::index_t> v_gs_os_ns_lengths{1, G1, Kv, N};
       std::vector<ck::index_t> v_gs_os_ns_strides{
           0, param.v_strides[1], param.v_strides[2], param.v_strides[0]};
+
+      // ToDo: support multi-query and group-query attention
+      std::vector<ck::index_t> vgrad_gs_os_ns_lengths = v_gs_os_ns_lengths;
+      std::vector<ck::index_t> vgrad_gs_os_ns_strides = v_gs_os_ns_strides;
 
       std::vector<ck::index_t> y_gs_ms_os_lengths{1, G1, M, Kv};
       std::vector<ck::index_t> y_gs_ms_os_strides{
@@ -308,6 +316,10 @@ struct grouped_backward_masktype_attnbias_dispatched {
           y_gs_ms_os_strides,
           lse_gs_ms_lengths,
           lse_gs_ms_strides,
+          kgrad_gs_ns_ks_lengths,
+          kgrad_gs_ns_ks_strides,
+          vgrad_gs_os_ns_lengths,
+          vgrad_gs_os_ns_strides,
           d_gs_ms_ns_lengths, // bias, grad_bias should have same shape
           d_gs_ms_ns_strides,
           {}, // acc1_biases_gs_ms_os_lengths
