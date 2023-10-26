@@ -175,9 +175,10 @@ class FastGen:
             next_token = next_token.reshape(bs)
             out_tokens[niter, :] = next_token
 
-            # Update attention bias state for next rounds
+            # Update attention bias state for decoding rounds
             if niter == 0:
                 q_seqstart.copy_(torch.arange(bs + 1, dtype=torch.int))
+                bias.q_seqinfo.min_seqlen = 1
                 bias.q_seqinfo.max_seqlen = 1
                 bias.q_seqinfo.seqstart_py = q_seqstart.tolist()
                 tokens = tokens[:bs]
