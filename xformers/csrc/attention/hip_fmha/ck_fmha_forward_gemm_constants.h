@@ -88,7 +88,7 @@ struct GemmOpConstantsGroupedForward {
   static constexpr ck::index_t BBlockTransferDstScalarPerVector_BK1 = 8;
   static constexpr bool BBlockLdsExtraN = true;
   // static constexpr ck::index_t Acc0BiasTransferSrcScalarPerVector;
-  using B1BlockTransferThreadClusterLengths_BK0_N_BK1 = S<8, 32, 1>;
+  using B1BlockTransferThreadClusterLengths_BK0_N_BK1 = S<16, 16, 1>;
   using B1BlockTransferThreadClusterArrangeOrder = S<0, 2, 1>;
   using B1BlockTransferSrcAccessOrder = S<0, 2, 1>;
   static constexpr ck::index_t B1BlockTransferSrcVectorDim = 1;
