@@ -8,8 +8,12 @@
 #include <ck/tensor_operation/gpu/device/impl/device_grouped_mha_fwd_xdl_cshuffle_v2.hpp>
 #include <ck/tensor_operation/gpu/device/tensor_specialization.hpp>
 #include <ck/tensor_operation/gpu/element/element_wise_operation.hpp>
-#include <ck/utility/sequence.hpp>
+#include <ck/utility/math.hpp>
+#include <ck/utility/number.hpp>
 
+#include "ck_align_switch.h"
+#include "ck_fmha_common_gemm_constants.h"
+#include "ck_fmha_forward_gemm_constants.h"
 #include "ck_fmha_op_helper.h"
 #include "ck_fmha_params.h"
 
@@ -30,12 +34,6 @@ struct grouped_forward_masktype_attnbias_dispatched {
       typename std::conditional<has_attn_bias, scalar_t, void>::type;
   using Acc1BiasDataType = void;
 
-  static constexpr ck::index_t NumDimG = 2;
-  static constexpr ck::index_t NumDimM = 1;
-  static constexpr ck::index_t NumDimN = 1;
-  static constexpr ck::index_t NumDimK = 1;
-  static constexpr ck::index_t NumDimO = 1;
-
   using AElementOp = PassThrough;
   using B0ElementOp = PassThrough;
   using Acc0ElementOp = ck::tensor_operation::element_wise::Scale;
@@ -48,32 +46,44 @@ struct grouped_forward_masktype_attnbias_dispatched {
       static_cast<ck::tensor_operation::device::MaskingSpecialization>(
           custom_mask_type);
 
-  static constexpr auto TensorSpecA =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr auto TensorSpecB0 =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr auto TensorSpecB1 =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr auto TensorSpecC =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-
-  // Tunables
-  static constexpr ck::index_t kABBlockTransferSrcScalarPerVector = 1;
-  static constexpr ck::index_t kB1BlockTransferSrcScalarPerVector = 1;
-  static constexpr ck::index_t kCShuffleBlockTransferScalarPerVector = 1;
   static constexpr ck::index_t kAcc0BiasTransferSrcScalarPerVector = 1;
+
+#ifndef GROUPED_FORWARD_HEADDIM_SWITCH
+#define GROUPED_FORWARD_HEADDIM_SWITCH(HEAD_DIM1, HEAD_DIM2, ...) \
+  [&] {                                                           \
+    if (HEAD_DIM1 <= 32 && HEAD_DIM2 <= 32) {                     \
+      constexpr ck::index_t kGemm1NPerBlock = 32;                 \
+      constexpr ck::index_t kGemm1NXdlPerWave = 1;                \
+      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 1;   \
+      __VA_ARGS__();                                              \
+    } else if (HEAD_DIM1 <= 64 && HEAD_DIM2 <= 64) {              \
+      constexpr ck::index_t kGemm1NPerBlock = 64;                 \
+      constexpr ck::index_t kGemm1NXdlPerWave = 2;                \
+      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 2;   \
+      __VA_ARGS__();                                              \
+    } else {                                                      \
+      constexpr ck::index_t kGemm1NPerBlock = 128;                \
+      constexpr ck::index_t kGemm1NXdlPerWave = 4;                \
+      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 4;   \
+      __VA_ARGS__();                                              \
+    }                                                             \
+  }()
+#endif
 
   template <
       ck::index_t kGemm1NPerBlock,
       ck::index_t kGemm1NXdlPerWave,
-      ck::index_t kCShuffleNXdlPerWavePerShuffle>
+      ck::index_t kCShuffleNXdlPerWavePerShuffle,
+      ck::index_t kABBlockTransferSrcScalarPerVector,
+      ck::index_t kB1BlockTransferSrcScalarPerVector,
+      ck::index_t kCShuffleBlockTransferScalarPerVector>
   using DeviceOpInstanceTemp = ck::tensor_operation::device::
       DeviceGroupedMultiheadAttentionForward_Xdl_CShuffle_V2<
-          NumDimG,
-          NumDimM,
-          NumDimN,
-          NumDimK,
-          NumDimO,
+          GemmOpConstantsCommon::NumDimG,
+          GemmOpConstantsCommon::NumDimM,
+          GemmOpConstantsCommon::NumDimN,
+          GemmOpConstantsCommon::NumDimK,
+          GemmOpConstantsCommon::NumDimO,
           ADataType,
           B0DataType,
           B1DataType,
@@ -91,93 +101,150 @@ struct grouped_forward_masktype_attnbias_dispatched {
           B1ElementOp,
           CElementOp,
           GemmSpec,
-          TensorSpecA,
-          TensorSpecB0,
-          TensorSpecB1,
-          TensorSpecC,
-          1,
-          256,
-          128, // MPerBlock
-          128, // NPerBlock
-          32, // KPerBlock
+          GemmOpConstantsCommon::TensorSpecA,
+          GemmOpConstantsCommon::TensorSpecB0,
+          GemmOpConstantsCommon::TensorSpecB1,
+          GemmOpConstantsCommon::TensorSpecC,
+          GemmOpConstantsGroupedForward::NumGemmKPrefetchStage,
+          GemmOpConstantsGroupedForward::BlockSize,
+          GemmOpConstantsGroupedForward::MPerBlock,
+          GemmOpConstantsGroupedForward::NPerBlock,
+          GemmOpConstantsGroupedForward::KPerBlock,
           kGemm1NPerBlock,
-          32, // Gemm1KPerBlock
-          8, // AK1
-          8, // BK1
-          2, // B1K1
-          32, // MPerXDL
-          32, // NPerXDL
-          1, // MXdlPerWave
-          4, // NXdlPerWave
+          GemmOpConstantsGroupedForward::Gemm1KPerBlock,
+          GemmOpConstantsGroupedForward::AK1,
+          GemmOpConstantsGroupedForward::BK1,
+          GemmOpConstantsGroupedForward::B1K1,
+          GemmOpConstantsGroupedForward::MPerXDL,
+          GemmOpConstantsGroupedForward::NPerXDL,
+          GemmOpConstantsGroupedForward::MXdlPerWave,
+          GemmOpConstantsGroupedForward::NXdlPerWave,
           kGemm1NXdlPerWave,
-          1, // DropoutStep
-          S<4, 64, 1>, // ABlockTransfer
-          S<1, 0, 2>,
-          S<1, 0, 2>,
-          2,
-          kABBlockTransferSrcScalarPerVector, // TUNABLE
-          8,
-          true,
-          S<4, 64, 1>, // BBlockTransfer
-          S<1, 0, 2>,
-          S<1, 0, 2>,
-          2,
-          kABBlockTransferSrcScalarPerVector, // TUNABLE
-          8,
-          true,
+          GemmOpConstantsGroupedForward::DropoutStep,
+          GemmOpConstantsGroupedForward::
+              ABlockTransferThreadClusterLengths_AK0_M_AK1,
+          GemmOpConstantsGroupedForward::
+              ABlockTransferThreadClusterArrangeOrder,
+          GemmOpConstantsGroupedForward::ABlockTransferSrcAccessOrder,
+          GemmOpConstantsGroupedForward::ABlockTransferSrcVectorDim,
+          kABBlockTransferSrcScalarPerVector,
+          GemmOpConstantsGroupedForward::ABlockTransferDstScalarPerVector_AK1,
+          GemmOpConstantsGroupedForward::ABlockLdsExtraM,
+          GemmOpConstantsGroupedForward::
+              BBlockTransferThreadClusterLengths_BK0_N_BK1,
+          GemmOpConstantsGroupedForward::
+              BBlockTransferThreadClusterArrangeOrder,
+          GemmOpConstantsGroupedForward::BBlockTransferSrcAccessOrder,
+          GemmOpConstantsGroupedForward::BBlockTransferSrcVectorDim,
+          kABBlockTransferSrcScalarPerVector,
+          GemmOpConstantsGroupedForward::BBlockTransferDstScalarPerVector_BK1,
+          GemmOpConstantsGroupedForward::BBlockLdsExtraN,
           kAcc0BiasTransferSrcScalarPerVector,
-          S<8, 32, 1>, // B1BlockTransfer
-          S<0, 2, 1>,
-          S<0, 2, 1>,
-          1,
-          kB1BlockTransferSrcScalarPerVector, // TUNABLE
-          2,
-          false,
-          1, // CShuffleMXdlPerWavePerShuffle
+          GemmOpConstantsGroupedForward::
+              B1BlockTransferThreadClusterLengths_BK0_N_BK1,
+          GemmOpConstantsGroupedForward::
+              B1BlockTransferThreadClusterArrangeOrder,
+          GemmOpConstantsGroupedForward::B1BlockTransferSrcAccessOrder,
+          GemmOpConstantsGroupedForward::B1BlockTransferSrcVectorDim,
+          kB1BlockTransferSrcScalarPerVector,
+          GemmOpConstantsGroupedForward::B1BlockTransferDstScalarPerVector_BK1,
+          GemmOpConstantsGroupedForward::B1BlockLdsExtraN,
+          GemmOpConstantsGroupedForward::CShuffleMXdlPerWavePerShuffle,
           kCShuffleNXdlPerWavePerShuffle,
-          S<1,
-            32,
-            1,
-            8>, // CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock
-          kCShuffleBlockTransferScalarPerVector, // TUNABLE
-          1,
-          MaskingSpec>; // MaskingSpecialization
+          GemmOpConstantsGroupedForward::
+              CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock,
+          kCShuffleBlockTransferScalarPerVector,
+          GemmOpConstantsGroupedForward::Acc1BiasTransferSrcScalarPerVector,
+          MaskingSpec>;
+
+  static constexpr auto I1 = ck::Number<1>{};
+  static constexpr auto I2 = ck::Number<2>{};
+  static constexpr auto I3 = ck::Number<3>{};
 
   static void Run(GroupedForwardParams& param, hipStream_t stream) {
-    if (param.K <= 32 && param.Kv <= 32) {
-      constexpr ck::index_t kGemm1NPerBlock = 32;
-      constexpr ck::index_t kGemm1NXdlPerWave = 1;
-      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 1;
+    using ck::math::min;
 
-      using DeviceOpInstance = DeviceOpInstanceTemp<
-          kGemm1NPerBlock,
-          kGemm1NXdlPerWave,
-          kCShuffleNXdlPerWavePerShuffle>;
+    GROUPED_FORWARD_HEADDIM_SWITCH(param.K, param.Kv, [&] {
+      constexpr ck::index_t thread_slice_length_ak1 =
+          GemmOpConstantsBatchedForward::AK1 /
+          GemmOpConstantsBatchedForward::
+              ABlockTransferThreadClusterLengths_AK0_M_AK1::At(I2);
+      constexpr ck::index_t thread_slice_length_bk1 =
+          GemmOpConstantsBatchedForward::BK1 /
+          GemmOpConstantsBatchedForward::
+              BBlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
 
-      RunWithDeviceOp<DeviceOpInstance>(param, stream);
-    } else if (param.K <= 64 && param.Kv <= 64) {
-      constexpr ck::index_t kGemm1NPerBlock = 64;
-      constexpr ck::index_t kGemm1NXdlPerWave = 2;
-      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 2;
+      static_assert(
+          thread_slice_length_ak1 == thread_slice_length_bk1,
+          "ABlockTransfer and BBlockTransfer should use completely same K1 sizes and ThreadClusterLengths!");
 
-      using DeviceOpInstance = DeviceOpInstanceTemp<
-          kGemm1NPerBlock,
-          kGemm1NXdlPerWave,
-          kCShuffleNXdlPerWavePerShuffle>;
+      constexpr ck::index_t kABBlockTransferSrcScalarPerVector_max =
+          min(2, thread_slice_length_ak1);
 
-      RunWithDeviceOp<DeviceOpInstance>(param, stream);
-    } else {
-      constexpr ck::index_t kGemm1NPerBlock = 128;
-      constexpr ck::index_t kGemm1NXdlPerWave = 4;
-      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 4;
+      constexpr ck::index_t thread_slice_length_gemm1n = kGemm1NPerBlock /
+          GemmOpConstantsBatchedForward::
+              B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I1);
+      constexpr ck::index_t kB1BlockTransferSrcScalarPerVector_max =
+          min(2, thread_slice_length_gemm1n);
 
-      using DeviceOpInstance = DeviceOpInstanceTemp<
-          kGemm1NPerBlock,
-          kGemm1NXdlPerWave,
-          kCShuffleNXdlPerWavePerShuffle>;
+      constexpr ck::index_t thread_slice_length_cshuflle_n =
+          (kCShuffleNXdlPerWavePerShuffle * kGemm1NPerBlock /
+           kGemm1NXdlPerWave) /
+          GemmOpConstantsBatchedForward::
+              CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock ::
+                  At(I3);
 
-      RunWithDeviceOp<DeviceOpInstance>(param, stream);
-    };
+      constexpr ck::index_t kCShuffleBlockTransferScalarPerVector_max =
+          min(2, thread_slice_length_cshuflle_n);
+
+      if constexpr (
+          kB1BlockTransferSrcScalarPerVector_max >=
+          kCShuffleBlockTransferScalarPerVector_max) {
+        ALIGN_SWITCH_2(
+            kABBlockTransferSrcScalarPerVector_max,
+            kABBlockTransferSrcScalarPerVector,
+            param.K,
+            kB1BlockTransferSrcScalarPerVector_max,
+            kB1BlockTransferSrcScalarPerVector,
+            param.Kv,
+            [&] {
+              constexpr ck::index_t kCShuffleBlockTransferScalarPerVector =
+                  min(kB1BlockTransferSrcScalarPerVector,
+                      kCShuffleBlockTransferScalarPerVector_max);
+              using DeviceOpInstance = DeviceOpInstanceTemp<
+                  kGemm1NPerBlock,
+                  kGemm1NXdlPerWave,
+                  kCShuffleNXdlPerWavePerShuffle,
+                  kABBlockTransferSrcScalarPerVector,
+                  kB1BlockTransferSrcScalarPerVector,
+                  kCShuffleBlockTransferScalarPerVector>;
+
+              RunWithDeviceOp<DeviceOpInstance>(param, stream);
+            });
+      } else {
+        ALIGN_SWITCH_2(
+            kABBlockTransferSrcScalarPerVector_max,
+            kABBlockTransferSrcScalarPerVector,
+            param.K,
+            kCShuffleBlockTransferScalarPerVector_max,
+            kCShuffleBlockTransferScalarPerVector,
+            param.Kv,
+            [&] {
+              constexpr ck::index_t kB1BlockTransferSrcScalarPerVector =
+                  min(kCShuffleBlockTransferScalarPerVector,
+                      kB1BlockTransferSrcScalarPerVector_max);
+              using DeviceOpInstance = DeviceOpInstanceTemp<
+                  kGemm1NPerBlock,
+                  kGemm1NXdlPerWave,
+                  kCShuffleNXdlPerWavePerShuffle,
+                  kABBlockTransferSrcScalarPerVector,
+                  kB1BlockTransferSrcScalarPerVector,
+                  kCShuffleBlockTransferScalarPerVector>;
+
+              RunWithDeviceOp<DeviceOpInstance>(param, stream);
+            });
+      };
+    });
   };
 
   template <typename DeviceOpInstance>
