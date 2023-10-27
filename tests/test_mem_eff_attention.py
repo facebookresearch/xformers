@@ -795,6 +795,35 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
     assert_allclose(lse[:, 0, : ref_lse.shape[1]], ref_lse, atol=2e-4)
 
 
+@cuda_only
+@pytest.mark.parametrize("op", [fmha.cutlass.FwOp, fmha.flash.FwOp])
+def test_logsumexp_mqa(op):
+    if not op.is_available():
+        pytest.skip("not available")
+
+    dtype = torch.float16
+    s = 3
+    query = torch.randn([1, 1, 32, 128], dtype=dtype, device="cuda") * s
+    key = (torch.randn([1, 16, 1, 128], dtype=dtype, device="cuda") * s).expand(
+        -1, -1, 32, -1
+    )
+    value = (torch.randn([1, 16, 1, 128], dtype=dtype, device="cuda") * s).expand(
+        -1, -1, 32, -1
+    )
+    assert key.stride(2) == 0
+
+    _, lse = xformers.ops.memory_efficient_attention_forward_requires_grad(
+        query,
+        key,
+        value,
+        op=op,
+    )
+    query, key, value = [x[0].transpose(0, 1) for x in [query, key, value]]
+    attn = (query.float() / query.shape[-1] ** 0.5) @ key.float().transpose(-2, -1)
+    ref_lse = attn.logsumexp(-1)
+    assert_allclose(lse[0, :, 0], ref_lse[:, 0], atol=2e-4)
+
+
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("grad_out_contiguous", [False, True])
 @parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
