@@ -164,23 +164,24 @@ struct grouped_forward_masktype_attnbias_dispatched {
   static void Run(GroupedForwardParams& param, hipStream_t stream) {
     using ck::math::min;
 
+    // compile-time constants which don't depend on head-dim switching
+    constexpr ck::index_t thread_slice_length_ak1 =
+        GemmOpConstantsGroupedForward::AK1 /
+        GemmOpConstantsGroupedForward::
+            ABlockTransferThreadClusterLengths_AK0_M_AK1::At(I2);
+    constexpr ck::index_t thread_slice_length_bk1 =
+        GemmOpConstantsGroupedForward::BK1 /
+        GemmOpConstantsGroupedForward::
+            BBlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
+
+    static_assert(
+        thread_slice_length_ak1 == thread_slice_length_bk1,
+        "ABlockTransfer and BBlockTransfer should use completely same K1 sizes and ThreadClusterLengths!");
+
+    constexpr ck::index_t kABBlockTransferSrcScalarPerVector_max =
+        min(2, thread_slice_length_ak1);
+
     GROUPED_FORWARD_HEADDIM_SWITCH(param.K, param.Kv, [&] {
-      constexpr ck::index_t thread_slice_length_ak1 =
-          GemmOpConstantsGroupedForward::AK1 /
-          GemmOpConstantsGroupedForward::
-              ABlockTransferThreadClusterLengths_AK0_M_AK1::At(I2);
-      constexpr ck::index_t thread_slice_length_bk1 =
-          GemmOpConstantsGroupedForward::BK1 /
-          GemmOpConstantsGroupedForward::
-              BBlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
-
-      static_assert(
-          thread_slice_length_ak1 == thread_slice_length_bk1,
-          "ABlockTransfer and BBlockTransfer should use completely same K1 sizes and ThreadClusterLengths!");
-
-      constexpr ck::index_t kABBlockTransferSrcScalarPerVector_max =
-          min(2, thread_slice_length_ak1);
-
       constexpr ck::index_t thread_slice_length_gemm1n = kGemm1NPerBlock /
           GemmOpConstantsGroupedForward::
               B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I1);
