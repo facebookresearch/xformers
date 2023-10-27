@@ -5,11 +5,11 @@
 
 #include <ck/ck.hpp>
 #include <ck/tensor_operation/gpu/device/gemm_specialization.hpp>
+#include <ck/tensor_operation/gpu/device/impl/device_batched_mha_infer_xdl_cshuffle.hpp>
 #include <ck/tensor_operation/gpu/device/tensor_specialization.hpp>
 #include <ck/tensor_operation/gpu/element/element_wise_operation.hpp>
 #include <ck/utility/math.hpp>
 #include <ck/utility/number.hpp>
-#include "ck/tensor_operation/gpu/device/impl/device_batched_mha_infer_xdl_cshuffle.hpp"
 
 #include "ck_align_switch.h"
 #include "ck_fmha_common_gemm_constants.h"
@@ -47,6 +47,28 @@ struct batched_infer_masktype_attnbias_dispatched {
           custom_mask_type);
 
   static constexpr ck::index_t kAcc0BiasTransferSrcScalarPerVector = 1;
+
+#ifndef BATCHED_INFER_HEADDIM_SWITCH
+#define BATCHED_INFER_HEADDIM_SWITCH(HEAD_DIM1, HEAD_DIM2, ...) \
+  [&] {                                                         \
+    if (HEAD_DIM1 <= 32 && HEAD_DIM2 <= 32) {                   \
+      constexpr ck::index_t kGemm1NPerBlock = 32;               \
+      constexpr ck::index_t kGemm1NXdlPerWave = 1;              \
+      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 1; \
+      __VA_ARGS__();                                            \
+    } else if (HEAD_DIM1 <= 64 && HEAD_DIM2 <= 64) {            \
+      constexpr ck::index_t kGemm1NPerBlock = 64;               \
+      constexpr ck::index_t kGemm1NXdlPerWave = 2;              \
+      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 2; \
+      __VA_ARGS__();                                            \
+    } else {                                                    \
+      constexpr ck::index_t kGemm1NPerBlock = 128;              \
+      constexpr ck::index_t kGemm1NXdlPerWave = 4;              \
+      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 4; \
+      __VA_ARGS__();                                            \
+    }                                                           \
+  }()
+#endif
 
   template <
       ck::index_t kGemm1NPerBlock,
@@ -134,11 +156,7 @@ struct batched_infer_masktype_attnbias_dispatched {
   static void Run(BatchedForwardParams& param, hipStream_t stream) {
     using ck::math::min;
 
-    if (param.K <= 32 && param.Kv <= 32) {
-      constexpr ck::index_t kGemm1NPerBlock = 32;
-      constexpr ck::index_t kGemm1NXdlPerWave = 1;
-      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 1;
-
+    BATCHED_INFER_HEADDIM_SWITCH(param.K, param.Kv, [&] {
       constexpr ck::index_t thread_slice_length_ak1 =
           GemmOpConstantsBatchedInfer::AK1 /
           GemmOpConstantsBatchedInfer::
@@ -171,144 +189,54 @@ struct batched_infer_masktype_attnbias_dispatched {
       constexpr ck::index_t kCShuffleBlockTransferScalarPerVector_max =
           min(2, thread_slice_length_cshuflle_n);
 
-      ALIGN_SWITCH_3(
-          kABBlockTransferSrcScalarPerVector_max,
-          kABBlockTransferSrcScalarPerVector,
-          param.K,
-          kB1BlockTransferSrcScalarPerVector_max,
-          kB1BlockTransferSrcScalarPerVector,
-          param.Kv,
-          kCShuffleBlockTransferScalarPerVector_max,
-          kCShuffleBlockTransferScalarPerVector,
-          param.Kv,
-          [&] {
-            using DeviceOpInstance = DeviceOpInstanceTemp<
-                kGemm1NPerBlock,
-                kGemm1NXdlPerWave,
-                kCShuffleNXdlPerWavePerShuffle,
-                kABBlockTransferSrcScalarPerVector,
-                kB1BlockTransferSrcScalarPerVector,
-                kCShuffleBlockTransferScalarPerVector>;
+      if constexpr (
+          kB1BlockTransferSrcScalarPerVector_max >=
+          kCShuffleBlockTransferScalarPerVector_max) {
+        ALIGN_SWITCH_2(
+            kABBlockTransferSrcScalarPerVector_max,
+            kABBlockTransferSrcScalarPerVector,
+            param.K,
+            kB1BlockTransferSrcScalarPerVector_max,
+            kB1BlockTransferSrcScalarPerVector,
+            param.Kv,
+            [&] {
+              constexpr ck::index_t kCShuffleBlockTransferScalarPerVector =
+                  min(kB1BlockTransferSrcScalarPerVector,
+                      kCShuffleBlockTransferScalarPerVector_max);
+              using DeviceOpInstance = DeviceOpInstanceTemp<
+                  kGemm1NPerBlock,
+                  kGemm1NXdlPerWave,
+                  kCShuffleNXdlPerWavePerShuffle,
+                  kABBlockTransferSrcScalarPerVector,
+                  kB1BlockTransferSrcScalarPerVector,
+                  kCShuffleBlockTransferScalarPerVector>;
 
-            RunWithDeviceOp<DeviceOpInstance>(param, stream);
-          });
-    } else if (param.K <= 64 && param.Kv <= 64) {
-      constexpr ck::index_t kGemm1NPerBlock = 64;
-      constexpr ck::index_t kGemm1NXdlPerWave = 2;
-      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 2;
+              RunWithDeviceOp<DeviceOpInstance>(param, stream);
+            });
+      } else {
+        ALIGN_SWITCH_2(
+            kABBlockTransferSrcScalarPerVector_max,
+            kABBlockTransferSrcScalarPerVector,
+            param.K,
+            kCShuffleBlockTransferScalarPerVector_max,
+            kCShuffleBlockTransferScalarPerVector,
+            param.Kv,
+            [&] {
+              constexpr ck::index_t kB1BlockTransferSrcScalarPerVector =
+                  min(kCShuffleBlockTransferScalarPerVector,
+                      kB1BlockTransferSrcScalarPerVector_max);
+              using DeviceOpInstance = DeviceOpInstanceTemp<
+                  kGemm1NPerBlock,
+                  kGemm1NXdlPerWave,
+                  kCShuffleNXdlPerWavePerShuffle,
+                  kABBlockTransferSrcScalarPerVector,
+                  kB1BlockTransferSrcScalarPerVector,
+                  kCShuffleBlockTransferScalarPerVector>;
 
-      constexpr ck::index_t thread_slice_length_ak1 =
-          GemmOpConstantsBatchedInfer::AK1 /
-          GemmOpConstantsBatchedInfer::
-              ABlockTransferThreadClusterLengths_AK0_M_AK1::At(I2);
-      constexpr ck::index_t thread_slice_length_bk1 =
-          GemmOpConstantsBatchedInfer::BK1 /
-          GemmOpConstantsBatchedInfer::
-              BBlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
-
-      static_assert(
-          thread_slice_length_ak1 == thread_slice_length_bk1,
-          "ABlockTransfer and BBlockTransfer should use completely same K1 sizes and ThreadClusterLengths!");
-
-      constexpr ck::index_t kABBlockTransferSrcScalarPerVector_max =
-          min(4, thread_slice_length_ak1);
-
-      constexpr ck::index_t thread_slice_length_gemm1n = kGemm1NPerBlock /
-          GemmOpConstantsBatchedInfer::
-              B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I1);
-      constexpr ck::index_t kB1BlockTransferSrcScalarPerVector_max =
-          min(4, thread_slice_length_gemm1n);
-
-      constexpr ck::index_t thread_slice_length_cshuflle_n =
-          (kCShuffleNXdlPerWavePerShuffle * kGemm1NPerBlock /
-           kGemm1NXdlPerWave) /
-          GemmOpConstantsBatchedInfer::
-              CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock ::
-                  At(I3);
-
-      constexpr ck::index_t kCShuffleBlockTransferScalarPerVector_max =
-          min(2, thread_slice_length_cshuflle_n);
-
-      ALIGN_SWITCH_3(
-          kABBlockTransferSrcScalarPerVector_max,
-          kABBlockTransferSrcScalarPerVector,
-          param.K,
-          kB1BlockTransferSrcScalarPerVector_max,
-          kB1BlockTransferSrcScalarPerVector,
-          param.Kv,
-          kCShuffleBlockTransferScalarPerVector_max,
-          kCShuffleBlockTransferScalarPerVector,
-          param.Kv,
-          [&] {
-            using DeviceOpInstance = DeviceOpInstanceTemp<
-                kGemm1NPerBlock,
-                kGemm1NXdlPerWave,
-                kCShuffleNXdlPerWavePerShuffle,
-                kABBlockTransferSrcScalarPerVector,
-                kB1BlockTransferSrcScalarPerVector,
-                kCShuffleBlockTransferScalarPerVector>;
-
-            RunWithDeviceOp<DeviceOpInstance>(param, stream);
-          });
-    } else {
-      constexpr ck::index_t kGemm1NPerBlock = 128;
-      constexpr ck::index_t kGemm1NXdlPerWave = 4;
-      constexpr ck::index_t kCShuffleNXdlPerWavePerShuffle = 4;
-
-      constexpr ck::index_t thread_slice_length_ak1 =
-          GemmOpConstantsBatchedInfer::AK1 /
-          GemmOpConstantsBatchedInfer::
-              ABlockTransferThreadClusterLengths_AK0_M_AK1::At(I2);
-      constexpr ck::index_t thread_slice_length_bk1 =
-          GemmOpConstantsBatchedInfer::BK1 /
-          GemmOpConstantsBatchedInfer::
-              BBlockTransferThreadClusterLengths_BK0_N_BK1::At(I2);
-
-      static_assert(
-          thread_slice_length_ak1 == thread_slice_length_bk1,
-          "ABlockTransfer and BBlockTransfer should use completely same K1 sizes and ThreadClusterLengths!");
-
-      constexpr ck::index_t kABBlockTransferSrcScalarPerVector_max =
-          min(4, thread_slice_length_ak1);
-
-      constexpr ck::index_t thread_slice_length_gemm1n = kGemm1NPerBlock /
-          GemmOpConstantsBatchedInfer::
-              B1BlockTransferThreadClusterLengths_BK0_N_BK1::At(I1);
-      constexpr ck::index_t kB1BlockTransferSrcScalarPerVector_max =
-          min(4, thread_slice_length_gemm1n);
-
-      constexpr ck::index_t thread_slice_length_cshuflle_n =
-          (kCShuffleNXdlPerWavePerShuffle * kGemm1NPerBlock /
-           kGemm1NXdlPerWave) /
-          GemmOpConstantsBatchedInfer::
-              CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock ::
-                  At(I3);
-
-      constexpr ck::index_t kCShuffleBlockTransferScalarPerVector_max =
-          min(2, thread_slice_length_cshuflle_n);
-
-      ALIGN_SWITCH_3(
-          kABBlockTransferSrcScalarPerVector_max,
-          kABBlockTransferSrcScalarPerVector,
-          param.K,
-          kB1BlockTransferSrcScalarPerVector_max,
-          kB1BlockTransferSrcScalarPerVector,
-          param.Kv,
-          kCShuffleBlockTransferScalarPerVector_max,
-          kCShuffleBlockTransferScalarPerVector,
-          param.Kv,
-          [&] {
-            using DeviceOpInstance = DeviceOpInstanceTemp<
-                kGemm1NPerBlock,
-                kGemm1NXdlPerWave,
-                kCShuffleNXdlPerWavePerShuffle,
-                kABBlockTransferSrcScalarPerVector,
-                kB1BlockTransferSrcScalarPerVector,
-                kCShuffleBlockTransferScalarPerVector>;
-
-            RunWithDeviceOp<DeviceOpInstance>(param, stream);
-          });
-    }
+              RunWithDeviceOp<DeviceOpInstance>(param, stream);
+            });
+      };
+    });
   };
 
   template <typename DeviceOpInstance>
