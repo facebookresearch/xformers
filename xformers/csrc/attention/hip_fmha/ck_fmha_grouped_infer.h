@@ -70,6 +70,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
   }()
 #endif
 
+  // clang-format off
   template <
       ck::index_t kGemm1NPerBlock,
       ck::index_t kGemm1NXdlPerWave,
@@ -77,8 +78,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
       ck::index_t kABBlockTransferSrcScalarPerVector,
       ck::index_t kB1BlockTransferSrcScalarPerVector,
       ck::index_t kCShuffleBlockTransferScalarPerVector>
-  using DeviceOpInstanceTemp = ck::tensor_operation::device::
-      DeviceGroupedMultiheadAttentionInfer_Xdl_CShuffle<
+  using DeviceOpInstanceTemp = ck::tensor_operation::device::DeviceGroupedMultiheadAttentionInfer_Xdl_CShuffle<
           GemmOpConstantsCommon::NumDimG,
           GemmOpConstantsCommon::NumDimM,
           GemmOpConstantsCommon::NumDimN,
@@ -117,16 +117,14 @@ struct grouped_infer_masktype_attnbias_dispatched {
           GemmOpConstantsGroupedInfer::MXdlPerWave,
           GemmOpConstantsGroupedInfer::NXdlPerWave,
           kGemm1NXdlPerWave,
-          GemmOpConstantsGroupedInfer::
-              ABlockTransferThreadClusterLengths_AK0_M_AK1,
+          GemmOpConstantsGroupedInfer::ABlockTransferThreadClusterLengths_AK0_M_AK1,
           GemmOpConstantsGroupedInfer::ABlockTransferThreadClusterArrangeOrder,
           GemmOpConstantsGroupedInfer::ABlockTransferSrcAccessOrder,
           GemmOpConstantsGroupedInfer::ABlockTransferSrcVectorDim,
-          kABBlockTransferSrcScalarPerVector, // TUNABLE
+          kABBlockTransferSrcScalarPerVector, 
           GemmOpConstantsGroupedInfer::ABlockTransferDstScalarPerVector_AK1,
           GemmOpConstantsGroupedInfer::ABlockLdsExtraM,
-          GemmOpConstantsGroupedInfer::
-              BBlockTransferThreadClusterLengths_BK0_N_BK1,
+          GemmOpConstantsGroupedInfer::BBlockTransferThreadClusterLengths_BK0_N_BK1,
           GemmOpConstantsGroupedInfer::BBlockTransferThreadClusterArrangeOrder,
           GemmOpConstantsGroupedInfer::BBlockTransferSrcAccessOrder,
           GemmOpConstantsGroupedInfer::BBlockTransferSrcVectorDim,
@@ -134,8 +132,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
           GemmOpConstantsGroupedInfer::BBlockTransferDstScalarPerVector_BK1,
           GemmOpConstantsGroupedInfer::BBlockLdsExtraN,
           kAcc0BiasTransferSrcScalarPerVector,
-          GemmOpConstantsGroupedInfer::
-              B1BlockTransferThreadClusterLengths_BK0_N_BK1,
+          GemmOpConstantsGroupedInfer::B1BlockTransferThreadClusterLengths_BK0_N_BK1,
           GemmOpConstantsGroupedInfer::B1BlockTransferThreadClusterArrangeOrder,
           GemmOpConstantsGroupedInfer::B1BlockTransferSrcAccessOrder,
           GemmOpConstantsGroupedInfer::B1BlockTransferSrcVectorDim,
@@ -144,10 +141,10 @@ struct grouped_infer_masktype_attnbias_dispatched {
           GemmOpConstantsGroupedInfer::B1BlockLdsExtraN,
           GemmOpConstantsGroupedInfer::CShuffleMXdlPerWavePerShuffle,
           kCShuffleNXdlPerWavePerShuffle,
-          GemmOpConstantsGroupedInfer::
-              CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock,
+          GemmOpConstantsGroupedInfer::CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock,
           kCShuffleBlockTransferScalarPerVector,
           MaskingSpec>;
+  // clang-format on
 
   static constexpr auto I1 = ck::Number<1>{};
   static constexpr auto I2 = ck::Number<2>{};

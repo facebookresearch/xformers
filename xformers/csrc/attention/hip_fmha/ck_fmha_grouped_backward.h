@@ -153,8 +153,7 @@ struct grouped_backward_masktype_attnbias_dispatched {
       ck::index_t kABBlockTransferSrcScalarPerVector,
       ck::index_t kB1BlockTransferSrcScalarPerVector,
       ck::index_t kCShuffleBlockTransferScalarPerVector>
-  using DeviceOpInstanceTemp_V2 = ck::tensor_operation::device::
-      DeviceGroupedMultiheadAttentionBackward_Qloop_Xdl_CShuffle_V2<
+  using DeviceOpInstanceTemp_V2 = ck::tensor_operation::device::DeviceGroupedMultiheadAttentionBackward_Qloop_Xdl_CShuffle_V2<
           GemmOpConstantsCommon::NumDimG,
           GemmOpConstantsCommon::NumDimM,
           GemmOpConstantsCommon::NumDimN,

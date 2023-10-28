@@ -70,6 +70,7 @@ struct batched_infer_masktype_attnbias_dispatched {
   }()
 #endif
 
+  // clang-format off
   template <
       ck::index_t kGemm1NPerBlock,
       ck::index_t kGemm1NXdlPerWave,
@@ -77,8 +78,7 @@ struct batched_infer_masktype_attnbias_dispatched {
       ck::index_t kABBlockTransferSrcScalarPerVector,
       ck::index_t kB1BlockTransferSrcScalarPerVector,
       ck::index_t kCShuffleBlockTransferScalarPerVector>
-  using DeviceOpInstanceTemp = ck::tensor_operation::device::
-      DeviceBatchedMultiheadAttentionInfer_Xdl_CShuffle<
+  using DeviceOpInstanceTemp = ck::tensor_operation::device::DeviceBatchedMultiheadAttentionInfer_Xdl_CShuffle<
           GemmOpConstantsCommon::NumDimG,
           GemmOpConstantsCommon::NumDimM,
           GemmOpConstantsCommon::NumDimN,
@@ -117,16 +117,14 @@ struct batched_infer_masktype_attnbias_dispatched {
           GemmOpConstantsBatchedInfer::MXdlPerWave,
           GemmOpConstantsBatchedInfer::NXdlPerWave,
           kGemm1NXdlPerWave,
-          GemmOpConstantsBatchedInfer::
-              ABlockTransferThreadClusterLengths_AK0_M_AK1,
+          GemmOpConstantsBatchedInfer::ABlockTransferThreadClusterLengths_AK0_M_AK1,
           GemmOpConstantsBatchedInfer::ABlockTransferThreadClusterArrangeOrder,
           GemmOpConstantsBatchedInfer::ABlockTransferSrcAccessOrder,
           GemmOpConstantsBatchedInfer::ABlockTransferSrcVectorDim,
           kABBlockTransferSrcScalarPerVector,
           GemmOpConstantsBatchedInfer::ABlockTransferDstScalarPerVector_AK1,
           GemmOpConstantsBatchedInfer::ABlockLdsExtraM,
-          GemmOpConstantsBatchedInfer::
-              BBlockTransferThreadClusterLengths_BK0_N_BK1,
+          GemmOpConstantsBatchedInfer::BBlockTransferThreadClusterLengths_BK0_N_BK1,
           GemmOpConstantsBatchedInfer::BBlockTransferThreadClusterArrangeOrder,
           GemmOpConstantsBatchedInfer::BBlockTransferSrcAccessOrder,
           GemmOpConstantsBatchedInfer::BBlockTransferSrcVectorDim,
@@ -134,8 +132,7 @@ struct batched_infer_masktype_attnbias_dispatched {
           GemmOpConstantsBatchedInfer::BBlockTransferDstScalarPerVector_BK1,
           GemmOpConstantsBatchedInfer::BBlockLdsExtraN,
           kAcc0BiasTransferSrcScalarPerVector,
-          GemmOpConstantsBatchedInfer::
-              B1BlockTransferThreadClusterLengths_BK0_N_BK1,
+          GemmOpConstantsBatchedInfer::B1BlockTransferThreadClusterLengths_BK0_N_BK1,
           GemmOpConstantsBatchedInfer::B1BlockTransferThreadClusterArrangeOrder,
           GemmOpConstantsBatchedInfer::B1BlockTransferSrcAccessOrder,
           GemmOpConstantsBatchedInfer::B1BlockTransferSrcVectorDim,
@@ -144,10 +141,10 @@ struct batched_infer_masktype_attnbias_dispatched {
           GemmOpConstantsBatchedInfer::B1BlockLdsExtraN,
           GemmOpConstantsBatchedInfer::CShuffleMXdlPerWavePerShuffle,
           kCShuffleNXdlPerWavePerShuffle,
-          GemmOpConstantsBatchedInfer::
-              CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock,
+          GemmOpConstantsBatchedInfer::CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock,
           kCShuffleBlockTransferScalarPerVector,
           MaskingSpec>;
+  // clang-format on
 
   static constexpr auto I1 = ck::Number<1>{};
   static constexpr auto I2 = ck::Number<2>{};

@@ -85,6 +85,7 @@ struct batched_forward_masktype_attnbias_dispatched {
   }()
 #endif
 
+  // clang-format off
   template <
       ck::index_t kGemm1NPerBlock,
       ck::index_t kGemm1NXdlPerWave,
@@ -92,8 +93,7 @@ struct batched_forward_masktype_attnbias_dispatched {
       ck::index_t kABBlockTransferSrcScalarPerVector,
       ck::index_t kB1BlockTransferSrcScalarPerVector,
       ck::index_t kCShuffleBlockTransferScalarPerVector>
-  using DeviceOpInstanceTemp = ck::tensor_operation::device::
-      DeviceBatchedMultiheadAttentionForward_Xdl_CShuffle_V2<
+  using DeviceOpInstanceTemp = ck::tensor_operation::device::DeviceBatchedMultiheadAttentionForward_Xdl_CShuffle_V2<
           GemmOpConstantsCommon::NumDimG,
           GemmOpConstantsCommon::NumDimM,
           GemmOpConstantsCommon::NumDimN,
@@ -136,29 +136,23 @@ struct batched_forward_masktype_attnbias_dispatched {
           GemmOpConstantsBatchedForward::NXdlPerWave,
           kGemm1NXdlPerWave,
           GemmOpConstantsBatchedForward::DropoutStep,
-          GemmOpConstantsBatchedForward::
-              ABlockTransferThreadClusterLengths_AK0_M_AK1,
-          GemmOpConstantsBatchedForward::
-              ABlockTransferThreadClusterArrangeOrder,
+          GemmOpConstantsBatchedForward::ABlockTransferThreadClusterLengths_AK0_M_AK1,
+          GemmOpConstantsBatchedForward::ABlockTransferThreadClusterArrangeOrder,
           GemmOpConstantsBatchedForward::ABlockTransferSrcAccessOrder,
           GemmOpConstantsBatchedForward::ABlockTransferSrcVectorDim,
           kABBlockTransferSrcScalarPerVector,
           GemmOpConstantsBatchedForward::ABlockTransferDstScalarPerVector_AK1,
           GemmOpConstantsBatchedForward::ABlockLdsExtraM,
-          GemmOpConstantsBatchedForward::
-              BBlockTransferThreadClusterLengths_BK0_N_BK1,
-          GemmOpConstantsBatchedForward::
-              BBlockTransferThreadClusterArrangeOrder,
+          GemmOpConstantsBatchedForward::BBlockTransferThreadClusterLengths_BK0_N_BK1,
+          GemmOpConstantsBatchedForward::BBlockTransferThreadClusterArrangeOrder,
           GemmOpConstantsBatchedForward::BBlockTransferSrcAccessOrder,
           GemmOpConstantsBatchedForward::BBlockTransferSrcVectorDim,
           kABBlockTransferSrcScalarPerVector,
           GemmOpConstantsBatchedForward::BBlockTransferDstScalarPerVector_BK1,
           GemmOpConstantsBatchedForward::BBlockLdsExtraN,
           kAcc0BiasTransferSrcScalarPerVector,
-          GemmOpConstantsBatchedForward::
-              B1BlockTransferThreadClusterLengths_BK0_N_BK1,
-          GemmOpConstantsBatchedForward::
-              B1BlockTransferThreadClusterArrangeOrder,
+          GemmOpConstantsBatchedForward::B1BlockTransferThreadClusterLengths_BK0_N_BK1,
+          GemmOpConstantsBatchedForward::B1BlockTransferThreadClusterArrangeOrder,
           GemmOpConstantsBatchedForward::B1BlockTransferSrcAccessOrder,
           GemmOpConstantsBatchedForward::B1BlockTransferSrcVectorDim,
           kB1BlockTransferSrcScalarPerVector,
@@ -166,11 +160,11 @@ struct batched_forward_masktype_attnbias_dispatched {
           GemmOpConstantsBatchedForward::B1BlockLdsExtraN,
           GemmOpConstantsBatchedForward::CShuffleMXdlPerWavePerShuffle,
           kCShuffleNXdlPerWavePerShuffle,
-          GemmOpConstantsBatchedForward::
-              CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock,
+          GemmOpConstantsBatchedForward::CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock,
           kCShuffleBlockTransferScalarPerVector,
           GemmOpConstantsBatchedForward::Acc1BiasTransferSrcScalarPerVector,
           MaskingSpec>;
+  // clang-format on
 
   static constexpr auto I1 = ck::Number<1>{};
   static constexpr auto I2 = ck::Number<2>{};
