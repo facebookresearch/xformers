@@ -6,6 +6,7 @@
 // list the template parameters that will not be tuned,
 // the commented lines gives the tunable template parameters
 struct GemmOpConstantsBatchedInfer {
+  static constexpr ck::index_t NumGemmKPrefetchStage = 1;
   static constexpr ck::index_t BlockSize = 256;
   static constexpr ck::index_t MPerBlock = 128;
   static constexpr ck::index_t NPerBlock = 128;
@@ -53,6 +54,7 @@ struct GemmOpConstantsBatchedInfer {
 // list the template parameters that will not be tuned,
 // the commented lines gives the tunable template parameters
 struct GemmOpConstantsGroupedInfer {
+  static constexpr ck::index_t NumGemmKPrefetchStage = 1;
   static constexpr ck::index_t BlockSize = 256;
   static constexpr ck::index_t MPerBlock = 128;
   static constexpr ck::index_t NPerBlock = 128;

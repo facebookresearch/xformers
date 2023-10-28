@@ -102,7 +102,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
           GemmOpConstantsCommon::TensorSpecB0,
           GemmOpConstantsCommon::TensorSpecB1,
           GemmOpConstantsCommon::TensorSpecC,
-          1,
+          GemmOpConstantsBatchedInfer::NumGemmKPrefetchStage,
           GemmOpConstantsGroupedInfer::BlockSize,
           GemmOpConstantsGroupedInfer::MPerBlock,
           GemmOpConstantsGroupedInfer::NPerBlock,
