@@ -381,41 +381,48 @@ struct grouped_backward_masktype_attnbias_dispatched {
           : param.host_seqlen_k[i];
       int K = param.K;
       int Kv = param.Kv;
-      int G1 = param.num_heads;
+      int G1q = param.Hq;
+      int G1kv = param.Hkv;
 
-      std::vector<ck::index_t> q_gs_ms_ks_lengths{1, G1, M, K};
+      std::vector<ck::index_t> q_gs_ms_ks_lengths{1, G1q, M, K};
       std::vector<ck::index_t> q_gs_ms_ks_strides{
           0, param.q_strides[1], param.q_strides[0], param.q_strides[2]};
 
-      std::vector<ck::index_t> k_gs_ns_ks_lengths{1, G1, N, K};
+      std::vector<ck::index_t> k_gs_ns_ks_lengths{1, G1kv, N, K};
       std::vector<ck::index_t> k_gs_ns_ks_strides{
           0, param.k_strides[1], param.k_strides[0], param.k_strides[2]};
 
-      // ToDo: support multi-query and group-query attention
-      std::vector<ck::index_t> kgrad_gs_ns_ks_lengths = k_gs_ns_ks_lengths;
-      std::vector<ck::index_t> kgrad_gs_ns_ks_strides = k_gs_ns_ks_strides;
+      std::vector<ck::index_t> kgrad_gs_ns_ks_lengths = {1, G1q, N, K};
+      std::vector<ck::index_t> kgrad_gs_ns_ks_strides = {
+          0,
+          param.tmp_grad_k_strides[1],
+          param.tmp_grad_k_strides[0],
+          param.tmp_grad_k_strides[2]};
 
       // to be changed to v_gs_ns_os_lengths
-      std::vector<ck::index_t> v_gs_os_ns_lengths{1, G1, Kv, N};
+      std::vector<ck::index_t> v_gs_os_ns_lengths{1, G1kv, Kv, N};
       std::vector<ck::index_t> v_gs_os_ns_strides{
           0, param.v_strides[1], param.v_strides[2], param.v_strides[0]};
 
-      // ToDo: support multi-query and group-query attention
-      std::vector<ck::index_t> vgrad_gs_os_ns_lengths = v_gs_os_ns_lengths;
-      std::vector<ck::index_t> vgrad_gs_os_ns_strides = v_gs_os_ns_strides;
+      std::vector<ck::index_t> vgrad_gs_os_ns_lengths = {1, G1q, Kv, N};
+      std::vector<ck::index_t> vgrad_gs_os_ns_strides = {
+          0,
+          param.tmp_grad_v_strides[1],
+          param.tmp_grad_v_strides[2],
+          param.tmp_grad_v_strides[0]};
 
-      std::vector<ck::index_t> y_gs_ms_os_lengths{1, G1, M, Kv};
+      std::vector<ck::index_t> y_gs_ms_os_lengths{1, G1q, M, Kv};
       std::vector<ck::index_t> y_gs_ms_os_strides{
           0, param.out_strides[1], param.out_strides[0], param.out_strides[2]};
 
-      std::vector<ck::index_t> lse_gs_ms_lengths{1, G1, M};
+      std::vector<ck::index_t> lse_gs_ms_lengths{1, G1q, M};
       std::vector<ck::index_t> lse_gs_ms_strides{0, param.max_seqlen_q, 1};
 
       std::vector<ck::index_t> d_gs_ms_ns_lengths;
       std::vector<ck::index_t> d_gs_ms_ns_strides;
 
       if constexpr (has_attn_bias) {
-        d_gs_ms_ns_lengths = {1, G1, M, N};
+        d_gs_ms_ns_lengths = {1, G1q, M, N};
         d_gs_ms_ns_strides = {
             0,
             param.attn_bias_strides[0],
@@ -440,10 +447,10 @@ struct grouped_backward_masktype_attnbias_dispatched {
           y_gs_ms_os_strides,
           lse_gs_ms_lengths,
           lse_gs_ms_strides,
-          kgrad_gs_ns_ks_lengths,
-          kgrad_gs_ns_ks_strides,
-          vgrad_gs_os_ns_lengths,
-          vgrad_gs_os_ns_strides,
+          param.is_mqa_gqa ? kgrad_gs_ns_ks_lengths : k_gs_ns_ks_lengths,
+          param.is_mqa_gqa ? kgrad_gs_ns_ks_strides : k_gs_ns_ks_strides,
+          param.is_mqa_gqa ? vgrad_gs_os_ns_lengths : v_gs_os_ns_lengths,
+          param.is_mqa_gqa ? vgrad_gs_os_ns_strides : v_gs_os_ns_strides,
           d_gs_ms_ns_lengths, // bias, grad_bias should have same shape
           d_gs_ms_ns_strides,
           {}, // acc1_biases_gs_ms_os_lengths

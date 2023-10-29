@@ -248,22 +248,23 @@ struct grouped_infer_masktype_attnbias_dispatched {
           : param.host_seqlen_k[i];
       int K = param.K;
       int Kv = param.Kv;
-      int G1 = param.num_heads;
+      int G1q = param.Hq;
+      int G1kv = param.Hkv;
 
-      std::vector<ck::index_t> a_gs_ms_ks_lengths{1, G1, M, K};
+      std::vector<ck::index_t> a_gs_ms_ks_lengths{1, G1q, M, K};
       std::vector<ck::index_t> a_gs_ms_ks_strides{
           0, param.q_strides[1], param.q_strides[0], param.q_strides[2]};
 
-      std::vector<ck::index_t> b0_gs_ns_ks_lengths{1, G1, N, K};
+      std::vector<ck::index_t> b0_gs_ns_ks_lengths{1, G1kv, N, K};
       std::vector<ck::index_t> b0_gs_ns_ks_strides{
           0, param.k_strides[1], param.k_strides[0], param.k_strides[2]};
 
       // to be changed to b1_gs_ns_os_lengths
-      std::vector<ck::index_t> b1_gs_os_ns_lengths{1, G1, Kv, N};
+      std::vector<ck::index_t> b1_gs_os_ns_lengths{1, G1kv, Kv, N};
       std::vector<ck::index_t> b1_gs_os_ns_strides{
           0, param.v_strides[1], param.v_strides[2], param.v_strides[0]};
 
-      std::vector<ck::index_t> c_gs_ms_os_lengths{1, G1, M, Kv};
+      std::vector<ck::index_t> c_gs_ms_os_lengths{1, G1q, M, Kv};
       std::vector<ck::index_t> c_gs_ms_os_strides{
           0, param.out_strides[1], param.out_strides[0], param.out_strides[2]};
 
@@ -271,7 +272,7 @@ struct grouped_infer_masktype_attnbias_dispatched {
       std::vector<ck::index_t> d_gs_ms_ns_strides;
 
       if constexpr (has_attn_bias) {
-        d_gs_ms_ns_lengths = {1, G1, M, N};
+        d_gs_ms_ns_lengths = {1, G1q, M, N};
         d_gs_ms_ns_strides = {
             0,
             param.attn_bias_strides[0],

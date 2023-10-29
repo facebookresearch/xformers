@@ -7,7 +7,8 @@ struct BatchedInferParams {
   int B; // batch size
   int M; // seq_len for Query
   int N; // seq_len for Key and Value
-  int num_heads; //
+  int Hq; // number of heads for Query
+  int Hkv; // number of heads for Key and Value
   int K; // embed_dim for Query and Key
   int Kv; // embed_dim for Value
 
@@ -47,7 +48,8 @@ struct GroupedInferParams {
   int num_batches;
   int M; // total seq_len for all queries in the batch
   int N; // total seq_len for all keys/values in the batch
-  int num_heads; //
+  int Hq; // number of heads for Query
+  int Hkv; // number of heads for Key and Value
   int K; // embed_dim for Query and Key
   int Kv; // embed_dim for Value
 
@@ -97,7 +99,8 @@ struct BatchedBackwardParams {
   int B; // batch size
   int M; // seq_len for Query
   int N; // seq_len for Key and Value
-  int num_heads; //
+  int Hq; // number of heads for Query
+  int Hkv; // number of heads for Key and Value
   int K; // embed_dim for Query and Key
   int Kv; // embed_dim for Value
 
@@ -106,6 +109,7 @@ struct BatchedBackwardParams {
   bool bias_has_grad;
 
   bool use_fp32_qkv_grad;
+  bool is_mqa_gqa;
 
   // BMHK mode strides, last-dim contiguous
   std::array<int, 4> q_strides;
@@ -113,6 +117,9 @@ struct BatchedBackwardParams {
   std::array<int, 4> v_strides;
   std::array<int, 4> attn_bias_strides; // 4d tensor_view [B, H, M, N]
   std::array<int, 4> out_strides;
+
+  std::array<int, 4> tmp_grad_k_strides;
+  std::array<int, 4> tmp_grad_v_strides;
 
   const void* q_ptr;
   const void* k_ptr;
@@ -140,7 +147,8 @@ struct GroupedBackwardParams {
   int num_batches;
   int M; // total seq_len for all queries in the batch
   int N; // total seq_len for all keys/values in the batch
-  int num_heads; //
+  int Hq; // number of heads for Query
+  int Hkv; // number of heads for Key and Value
   int K; // embed_dim for Query and Key
   int Kv; // embed_dim for Value
 
@@ -155,6 +163,7 @@ struct GroupedBackwardParams {
   bool bias_has_grad;
 
   bool use_fp32_qkv_grad;
+  bool is_mqa_gqa;
 
   // MHK mode strides, last-dim contiguous
   std::array<int, 3> q_strides;
@@ -163,6 +172,9 @@ struct GroupedBackwardParams {
   std::array<int, 3> out_strides;
   // 4d tensor view [B, H, M, N]
   std::array<int, 4> attn_bias_strides;
+
+  std::array<int, 3> tmp_grad_k_strides;
+  std::array<int, 3> tmp_grad_v_strides;
 
   std::vector<const void*> q_ptrs;
   std::vector<const void*> k_ptrs;

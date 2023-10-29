@@ -260,7 +260,7 @@ struct batched_forward_masktype_attnbias_dispatched {
   template <typename DeviceOpInstance>
   static void RunWithDeviceOp(BatchedForwardParams& param, hipStream_t stream) {
     std::vector<ck::index_t> a_gs_ms_ks_lengths{
-        param.B, param.num_heads, param.M, param.K};
+        param.B, param.Hq, param.M, param.K};
     std::vector<ck::index_t> a_gs_ms_ks_strides{
         param.q_strides[0],
         param.q_strides[2],
@@ -268,7 +268,7 @@ struct batched_forward_masktype_attnbias_dispatched {
         param.q_strides[3]};
 
     std::vector<ck::index_t> b0_gs_ns_ks_lengths{
-        param.B, param.num_heads, param.N, param.K};
+        param.B, param.Hkv, param.N, param.K};
     std::vector<ck::index_t> b0_gs_ns_ks_strides{
         param.k_strides[0],
         param.k_strides[2],
@@ -277,7 +277,7 @@ struct batched_forward_masktype_attnbias_dispatched {
 
     // to be changed to b1_gs_ns_os_lengths
     std::vector<ck::index_t> b1_gs_os_ns_lengths{
-        param.B, param.num_heads, param.Kv, param.N};
+        param.B, param.Hkv, param.Kv, param.N};
     std::vector<ck::index_t> b1_gs_os_ns_strides{
         param.v_strides[0],
         param.v_strides[2],
@@ -285,21 +285,20 @@ struct batched_forward_masktype_attnbias_dispatched {
         param.v_strides[1]};
 
     std::vector<ck::index_t> c_gs_ms_os_lengths{
-        param.B, param.num_heads, param.M, param.Kv};
+        param.B, param.Hq, param.M, param.Kv};
     std::vector<ck::index_t> c_gs_ms_os_strides{
         param.out_strides[0],
         param.out_strides[2],
         param.out_strides[1],
         param.out_strides[3]};
 
-    std::vector<ck::index_t> lse_gs_ms_lengths{
-        param.B, param.num_heads, param.M};
+    std::vector<ck::index_t> lse_gs_ms_lengths{param.B, param.Hq, param.M};
 
     std::vector<ck::index_t> d_gs_ms_ns_lengths;
     std::vector<ck::index_t> d_gs_ms_ns_strides;
 
     if constexpr (has_attn_bias) {
-      d_gs_ms_ns_lengths = {param.B, param.num_heads, param.M, param.N};
+      d_gs_ms_ns_lengths = {param.B, param.Hq, param.M, param.N};
       d_gs_ms_ns_strides = {
           param.attn_bias_strides[0],
           param.attn_bias_strides[1],

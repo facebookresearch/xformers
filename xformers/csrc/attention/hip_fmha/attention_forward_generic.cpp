@@ -44,10 +44,10 @@ namespace {
 */
 std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
 efficient_attention_forward_ck(
-    const at::Tensor& query, // [b, seqlen, num_heads, K]
-    const at::Tensor& key, // [b, seqlen, num_heads, K]
-    const at::Tensor& value, // [b, seqlen, num_heads, Kv]
-    const c10::optional<at::Tensor>& bias, // [b, num_heads, seqlen, seqlen]
+    const at::Tensor& query, // [b, seqlen, num_heads_q, K]
+    const at::Tensor& key, // [b, seqlen, num_heads_kv, K]
+    const at::Tensor& value, // [b, seqlen, num_heads_kv, Kv]
+    const c10::optional<at::Tensor>& bias, // [b, num_heads_q, seqlen, seqlen]
     // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
     // position of the first query token for batch $b
     const c10::optional<at::Tensor>& seqstart_q,
@@ -73,8 +73,8 @@ efficient_attention_forward_ck(
   TORCH_CHECK(key.size(1) == value.size(1));
 
   // Num heads
-  TORCH_CHECK(query.size(2) == key.size(2));
-  TORCH_CHECK(query.size(2) == value.size(2));
+  TORCH_CHECK(query.size(2) % key.size(2) == 0);
+  TORCH_CHECK(key.size(2) == value.size(2));
 
   // Embedding per head
   TORCH_CHECK(query.size(3) == key.size(3));
@@ -105,7 +105,8 @@ efficient_attention_forward_ck(
   int64_t B = query.size(0);
   int64_t M = query.size(1);
   int64_t N = key.size(1);
-  int64_t num_heads = query.size(-2);
+  int64_t Hq = query.size(-2);
+  int64_t Hkv = key.size(-2);
   int64_t K = query.size(-1);
   int64_t Kv = value.size(-1);
 
@@ -113,7 +114,7 @@ efficient_attention_forward_ck(
 
   at::Tensor logsumexp;
 
-  at::Tensor out = at::empty({B, M, num_heads, Kv}, opts);
+  at::Tensor out = at::empty({B, M, Hq, Kv}, opts);
 
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
   int64_t philox_seed;
@@ -128,7 +129,7 @@ efficient_attention_forward_ck(
     std::lock_guard<std::mutex> lock(gen->mutex_);
     // if using dropout, we produce 1 random number for each element of the
     // attention tensor
-    rng_engine_inputs = gen->philox_cuda_state(B * num_heads * M * N);
+    rng_engine_inputs = gen->philox_cuda_state(B * Hq * M * N);
 
     const auto seeds = at::cuda::philox::unpack(rng_engine_inputs);
 
@@ -140,7 +141,8 @@ efficient_attention_forward_ck(
     p.B = B;
     p.M = M;
     p.N = N;
-    p.num_heads = num_heads;
+    p.Hq = Hq;
+    p.Hkv = Hkv;
     p.K = K;
     p.Kv = Kv;
 
@@ -184,7 +186,7 @@ efficient_attention_forward_ck(
       p.attn_bias_ptr = bias->data_ptr();
 
       const at::Tensor bias_4d_view =
-          get_bias_4d_view(*bias, B, num_heads, M, N);
+          get_bias_4d_view(*bias, B, Hq, M, N);
       p.attn_bias_strides = {
           static_cast<int>(bias_4d_view.stride(0)),
           static_cast<int>(bias_4d_view.stride(1)),
@@ -207,7 +209,7 @@ efficient_attention_forward_ck(
       p.dropout_prob = 0.0f;
 
     if (p.compute_logsumexp) {
-      logsumexp = at::empty({B, num_heads, M}, opts.dtype(at::kFloat));
+      logsumexp = at::empty({B, Hq, M}, opts.dtype(at::kFloat));
       p.logsumexp_ptr = logsumexp.data_ptr();
     } else
       p.logsumexp_ptr = nullptr;
@@ -217,7 +219,8 @@ efficient_attention_forward_ck(
     p.num_batches = seqstart_q->size(0) - 1;
     p.M = M;
     p.N = N;
-    p.num_heads = num_heads;
+    p.Hq = Hq;
+    p.Hkv = Hkv;
     p.K = K;
     p.Kv = Kv;
 
@@ -250,7 +253,7 @@ efficient_attention_forward_ck(
 
       p.has_attn_bias = true;
       const at::Tensor bias_4d_view =
-          get_bias_4d_view(*bias, B, num_heads, M, N);
+          get_bias_4d_view(*bias, B, Hq, M, N);
       p.attn_bias_strides = {
           static_cast<int>(bias_4d_view.stride(0)),
           static_cast<int>(bias_4d_view.stride(1)),
@@ -343,12 +346,12 @@ efficient_attention_forward_ck(
 
     if (p.compute_logsumexp) {
       logsumexp = at::empty(
-          {p.num_batches, num_heads, p.max_seqlen_q}, opts.dtype(at::kFloat));
+          {p.num_batches, Hq, p.max_seqlen_q}, opts.dtype(at::kFloat));
       char* logsumexp_ptr = reinterpret_cast<char*>(logsumexp.data_ptr());
 
       for (int i = 0; i < p.num_batches; i++) {
         size_t tmp_logsumexp_offset = get_size_in_bytes(
-            static_cast<size_t>(i) * num_heads * p.max_seqlen_q,
+            static_cast<size_t>(i) * Hq * p.max_seqlen_q,
             logsumexp.scalar_type());
         p.logsumexp_ptrs.push_back(
             reinterpret_cast<void*>(&logsumexp_ptr[tmp_logsumexp_offset]));

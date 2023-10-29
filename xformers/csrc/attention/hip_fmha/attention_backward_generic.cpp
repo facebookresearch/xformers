@@ -73,8 +73,8 @@ efficient_attention_backward_ck(
   TORCH_CHECK(query.size(1) == grad_out.size(1));
 
   // Num heads
-  TORCH_CHECK(query.size(2) == key.size(2));
-  TORCH_CHECK(query.size(2) == value.size(2));
+  TORCH_CHECK(query.size(2) % key.size(2) == 0);
+  TORCH_CHECK(key.size(2) == value.size(2));
   TORCH_CHECK(query.size(2) == grad_out.size(2));
 
   // Embedding per head
@@ -122,7 +122,8 @@ efficient_attention_backward_ck(
   int64_t B = query.size(0);
   int64_t M = query.size(1);
   int64_t N = key.size(1);
-  int64_t num_heads = query.size(2);
+  int64_t Hq = query.size(2);
+  int64_t Hkv = key.size(2);
   int64_t K = query.size(3);
   int64_t Kv = value.size(3);
 
@@ -131,6 +132,7 @@ efficient_attention_backward_ck(
   at::Tensor grad_q, grad_k, grad_v, grad_bias;
 
   if (query.size(1) == key.size(1) && query.size(3) == value.size(3) &&
+      query.size(2) == key.size(2) &&
       query.storage().is_alias_of(key.storage()) &&
       query.storage().is_alias_of(value.storage())) {
     // Create one big contiguous chunk for grad_q, grad_k, grad_v
@@ -140,9 +142,9 @@ efficient_attention_backward_ck(
     // a `torch.cat` call in the backward pass
     at::Tensor chunk;
     if (use_fp32_qkv_grad)
-      chunk = at::empty({B, M, 3, num_heads, K}, opts.dtype(at::kFloat));
+      chunk = at::empty({B, M, 3, Hq, K}, opts.dtype(at::kFloat));
     else
-      chunk = at::empty({B, M, 3, num_heads, K}, opts);
+      chunk = at::empty({B, M, 3, Hq, K}, opts);
     grad_q = chunk.select(2, 0);
     grad_k = chunk.select(2, 1);
     grad_v = chunk.select(2, 2);
@@ -157,9 +159,9 @@ efficient_attention_backward_ck(
     // a `torch.cat` call in the backward pass
     at::Tensor chunk;
     if (use_fp32_qkv_grad)
-      chunk = at::empty({B, N, 2, num_heads, Kv}, opts.dtype(at::kFloat));
+      chunk = at::empty({B, N, 2, Hkv, Kv}, opts.dtype(at::kFloat));
     else
-      chunk = at::empty({B, N, 2, num_heads, Kv}, opts);
+      chunk = at::empty({B, N, 2, Hkv, Kv}, opts);
     grad_k = chunk.select(2, 0);
     grad_v = chunk.select(2, 1);
 
@@ -204,18 +206,36 @@ efficient_attention_backward_ck(
     grad_bias =
         at::empty_strided(bias->sizes(), bias->strides(), bias->options());
 
+  bool is_mqa_gqa = (Hq > Hkv);
+
+  at::Tensor tmp_grad_k, tmp_grad_v;
+
+  if (is_mqa_gqa) {
+    // allocate tmp_grad_k/tmp_grad_v which will be reduce to
+    // grad_k/grad_v for returning
+    if (use_fp32_qkv_grad) {
+      tmp_grad_k = at::empty({B, N, Hq, K}, opts.dtype(at::kFloat));
+      tmp_grad_v = at::empty({B, N, Hq, Kv}, opts.dtype(at::kFloat));
+    } else {
+      tmp_grad_k = at::empty({B, N, Hq, K}, opts);
+      tmp_grad_v = at::empty({B, N, Hq, Kv}, opts);
+    }
+  }
+
   auto set_batched_backward_params = [&](BatchedBackwardParams& p) {
     p.B = B;
     p.M = M;
     p.N = N;
-    p.num_heads = num_heads;
+    p.Hq = Hq;
+    p.Hkv = Hkv;
     p.K = K;
     p.Kv = Kv;
 
     p.use_fp32_qkv_grad = use_fp32_qkv_grad;
+    p.is_mqa_gqa = is_mqa_gqa;
 
     TORCH_CHECK(p.B == logsumexp.size(0));
-    TORCH_CHECK(p.num_heads == logsumexp.size(1));
+    TORCH_CHECK(p.Hq == logsumexp.size(1));
     TORCH_CHECK(p.M == logsumexp.size(2));
 
     if (scale.has_value()) {
@@ -231,8 +251,8 @@ efficient_attention_backward_ck(
     p.out_ptr = out.data_ptr();
 
     p.grad_q_ptr = grad_q.data_ptr();
-    p.grad_k_ptr = grad_k.data_ptr();
-    p.grad_v_ptr = grad_v.data_ptr();
+    p.grad_k_ptr = is_mqa_gqa ? tmp_grad_k.data_ptr() : grad_k.data_ptr();
+    p.grad_v_ptr = is_mqa_gqa ? tmp_grad_v.data_ptr() : grad_v.data_ptr();
 
     p.q_strides = {
         static_cast<int>(query.stride(0)),
@@ -255,6 +275,19 @@ efficient_attention_backward_ck(
         static_cast<int>(out.stride(2)),
         static_cast<int>(out.stride(3))};
 
+    if (is_mqa_gqa) {
+      p.tmp_grad_k_strides = {
+          static_cast<int>(tmp_grad_k.stride(0)),
+          static_cast<int>(tmp_grad_k.stride(1)),
+          static_cast<int>(tmp_grad_k.stride(2)),
+          static_cast<int>(tmp_grad_k.stride(3))};
+      p.tmp_grad_v_strides = {
+          static_cast<int>(tmp_grad_v.stride(0)),
+          static_cast<int>(tmp_grad_v.stride(1)),
+          static_cast<int>(tmp_grad_v.stride(2)),
+          static_cast<int>(tmp_grad_v.stride(3))};
+    }
+
     if (bias.has_value()) {
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
       TORCH_CHECK(bias->scalar_type() == query.scalar_type());
@@ -262,8 +295,7 @@ efficient_attention_backward_ck(
       p.has_attn_bias = true;
       p.attn_bias_ptr = bias->data_ptr();
 
-      const at::Tensor bias_4d_view =
-          get_bias_4d_view(*bias, B, num_heads, M, N);
+      const at::Tensor bias_4d_view = get_bias_4d_view(*bias, B, Hq, M, N);
 
       p.attn_bias_strides = {
           static_cast<int>(bias_4d_view.stride(0)),
@@ -294,16 +326,18 @@ efficient_attention_backward_ck(
     p.num_batches = seqstart_q->size(0) - 1;
     p.M = M;
     p.N = N;
-    p.num_heads = num_heads;
+    p.Hq = Hq;
+    p.Hkv = Hkv;
     p.K = K;
     p.Kv = Kv;
 
     p.use_fp32_qkv_grad = use_fp32_qkv_grad;
+    p.is_mqa_gqa = is_mqa_gqa;
 
     p.max_seqlen_q = *max_seqlen_q_;
 
     TORCH_CHECK(p.num_batches == logsumexp.size(0));
-    TORCH_CHECK(p.num_heads == logsumexp.size(1));
+    TORCH_CHECK(p.Hq == logsumexp.size(1));
     TORCH_CHECK(p.max_seqlen_q == logsumexp.size(2));
 
     if (scale.has_value()) {
@@ -329,13 +363,23 @@ efficient_attention_backward_ck(
         static_cast<int>(out.stride(2)),
         static_cast<int>(out.stride(3))};
 
+    if (is_mqa_gqa) {
+      p.tmp_grad_k_strides = {
+          static_cast<int>(tmp_grad_k.stride(1)),
+          static_cast<int>(tmp_grad_k.stride(2)),
+          static_cast<int>(tmp_grad_k.stride(3))};
+      p.tmp_grad_v_strides = {
+          static_cast<int>(tmp_grad_v.stride(1)),
+          static_cast<int>(tmp_grad_v.stride(2)),
+          static_cast<int>(tmp_grad_v.stride(3))};
+    };
+
     if (bias.has_value()) {
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
       TORCH_CHECK(bias->scalar_type() == query.scalar_type());
 
       p.has_attn_bias = true;
-      const at::Tensor bias_4d_view =
-          get_bias_4d_view(*bias, B, num_heads, M, N);
+      const at::Tensor bias_4d_view = get_bias_4d_view(*bias, B, Hq, M, N);
       p.attn_bias_strides = {
           static_cast<int>(bias_4d_view.stride(0)),
           static_cast<int>(bias_4d_view.stride(1)),
@@ -388,8 +432,12 @@ efficient_attention_backward_ck(
     char* logsumexp_ptr = reinterpret_cast<char*>(logsumexp.data_ptr());
 
     char* grad_q_ptr = reinterpret_cast<char*>(grad_q.data_ptr());
-    char* grad_k_ptr = reinterpret_cast<char*>(grad_k.data_ptr());
-    char* grad_v_ptr = reinterpret_cast<char*>(grad_v.data_ptr());
+    char* grad_k_ptr = is_mqa_gqa
+        ? reinterpret_cast<char*>(tmp_grad_k.data_ptr())
+        : reinterpret_cast<char*>(grad_k.data_ptr());
+    char* grad_v_ptr = is_mqa_gqa
+        ? reinterpret_cast<char*>(tmp_grad_v.data_ptr())
+        : reinterpret_cast<char*>(grad_v.data_ptr());
     char* grad_bias_ptr = bias_requires_grad
         ? reinterpret_cast<char*>(grad_bias.data_ptr())
         : nullptr;
@@ -416,8 +464,21 @@ efficient_attention_backward_ck(
           static_cast<size_t>(p.host_seqstart_q[i]) * p.out_strides[0],
           out.scalar_type());
       size_t tmp_logsumexp_offset = get_size_in_bytes(
-          static_cast<size_t>(i) * p.num_heads * p.max_seqlen_q,
+          static_cast<size_t>(i) * p.Hq * p.max_seqlen_q,
           logsumexp.scalar_type());
+
+      size_t tmp_grad_k_offset = is_mqa_gqa
+          ? get_size_in_bytes(
+                static_cast<size_t>(p.host_seqstart_k[i]) *
+                    p.tmp_grad_k_strides[0],
+                tmp_grad_k.scalar_type())
+          : tmp_k_offset;
+      size_t tmp_grad_v_offset = is_mqa_gqa
+          ? get_size_in_bytes(
+                static_cast<size_t>(p.host_seqstart_k[i]) *
+                    p.tmp_grad_v_strides[0],
+                tmp_grad_v.scalar_type())
+          : tmp_v_offset;
 
       p.q_ptrs.push_back(reinterpret_cast<void*>(&q_ptr[tmp_q_offset]));
       p.grad_q_ptrs.push_back(
@@ -425,11 +486,11 @@ efficient_attention_backward_ck(
 
       p.k_ptrs.push_back(reinterpret_cast<void*>(&k_ptr[tmp_k_offset]));
       p.grad_k_ptrs.push_back(
-          reinterpret_cast<void*>(&grad_k_ptr[tmp_k_offset * multiplier]));
+          reinterpret_cast<void*>(&grad_k_ptr[tmp_grad_k_offset * multiplier]));
 
       p.v_ptrs.push_back(reinterpret_cast<void*>(&v_ptr[tmp_v_offset]));
       p.grad_v_ptrs.push_back(
-          reinterpret_cast<void*>(&grad_v_ptr[tmp_v_offset * multiplier]));
+          reinterpret_cast<void*>(&grad_v_ptr[tmp_grad_v_offset * multiplier]));
 
       p.out_ptrs.push_back(reinterpret_cast<void*>(&out_ptr[tmp_o_offset]));
       p.grad_out_ptrs.push_back(
@@ -483,6 +544,13 @@ efficient_attention_backward_ck(
       grouped_backward_bp16(grouped_backward_params, stream);
     } else
       throw std::runtime_error("input data-type is not supported");
+  }
+
+  if (is_mqa_gqa) {
+    auto tmp_grad_k_view = tmp_grad_k.unflatten(2, {Hkv, Hq / Hkv});
+    auto tmp_grad_v_view = tmp_grad_v.unflatten(2, {Hkv, Hq / Hkv});
+    grad_k = tmp_grad_k_view.sum(3);
+    grad_v = tmp_grad_v_view.sum(3);
   }
 
   return std::make_tuple(grad_q, grad_k, grad_v, grad_bias);
