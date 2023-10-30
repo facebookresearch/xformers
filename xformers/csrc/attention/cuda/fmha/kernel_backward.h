@@ -1281,7 +1281,9 @@ struct AttentionBackwardKernel {
         p.num_keys);
 
     if (p.window_size > 0) {
-      XFORMERS_CHECK(p.custom_mask_type == CausalFromTopLeft);
+      XFORMERS_CHECK(
+          p.custom_mask_type == CausalFromTopLeft,
+          "custom_mask_type needs to be CausalFromTopLeft");
     }
 
     return true;

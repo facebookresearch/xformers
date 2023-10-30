@@ -632,7 +632,8 @@ struct AttentionKernel {
     if (p.window_size > 0) {
       XFORMERS_CHECK(
           p.custom_mask_type == CausalFromTopLeft ||
-          p.custom_mask_type == CausalFromBottomRight);
+              p.custom_mask_type == CausalFromBottomRight,
+          "custom_mask_type not supported");
     }
     return true;
   }
