@@ -47,7 +47,7 @@ struct GemmOpConstantsBatchedForward {
   static constexpr ck::index_t CShuffleMXdlPerWavePerShuffle = 1;
   // static constexpr ck::index_t CShuffleNXdlPerWavePerShuffle;
   using CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock =
-      S<1, 32, 1, 8>;
+      S<1, 16, 1, 16>;
   // static constexpr ck::index_t
   // CShuffleBlockTransferScalarPerVector_NPerBlock;
   static constexpr ck::index_t Acc1BiasTransferSrcScalarPerVector =
@@ -98,7 +98,7 @@ struct GemmOpConstantsGroupedForward {
   static constexpr ck::index_t CShuffleMXdlPerWavePerShuffle = 1;
   // static constexpr ck::index_t CShuffleNXdlPerWavePerShuffle;
   using CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock =
-      S<1, 32, 1, 8>;
+      S<1, 16, 1, 16>;
   // static constexpr ck::index_t
   // CShuffleBlockTransferScalarPerVector_NPerBlock;
   static constexpr ck::index_t Acc1BiasTransferSrcScalarPerVector =

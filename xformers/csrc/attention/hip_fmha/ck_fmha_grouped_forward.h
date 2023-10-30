@@ -190,7 +190,7 @@ struct grouped_forward_masktype_attnbias_dispatched {
                   At(I3);
 
       constexpr ck::index_t kCShuffleBlockTransferScalarPerVector_max =
-          min(2, thread_slice_length_cshuflle_n);
+          min(1, thread_slice_length_cshuflle_n);
 
       if constexpr (
           kB1BlockTransferSrcScalarPerVector_max >=
