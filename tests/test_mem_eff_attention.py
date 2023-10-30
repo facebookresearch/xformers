@@ -1859,12 +1859,6 @@ def test_window_size_materialize() -> None:
 def test_forward_gqa(opFW_biasT):
     opFW, biasT = opFW_biasT
     B_Mq_Mkv_H_K_Kv = (3, 512, 512, 16, 128, 128)
-    if issubclass(
-        biasT, fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask
-    ) and issubclass(opFW, fmha.cutlass.FwOp):
-        pytest.xfail(
-            "Output has NaNs - need to fix. Inputs, including seqlens, look normal "
-        )
     test_forward(
         (
             opFW,

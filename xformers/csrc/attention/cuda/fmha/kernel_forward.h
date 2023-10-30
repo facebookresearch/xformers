@@ -322,7 +322,7 @@ struct AttentionKernel {
       //  - we only launch kernels for head_id % kQueriesPerBlock == 0
       //  - we iterate over heads instead of queries (strideM = strideH)
       if (num_queries == 1 && k_strideH == 0 && v_strideH == 0 &&
-          logsumexp_ptr == nullptr) {
+          logsumexp_ptr == nullptr && window_size == 0) {
         if (head_id % kQueriesPerBlock != 0) {
           return false;
         }
