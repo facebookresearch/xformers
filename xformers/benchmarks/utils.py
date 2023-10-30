@@ -7,6 +7,7 @@ import argparse
 import contextlib
 import copy
 import csv
+import functools
 import glob
 import itertools
 import logging
@@ -37,6 +38,12 @@ if _triton_is_available:
     except ImportError as e:
         logging.warning(f"Triton is not available: {e}.\nbench_functions")
         _triton_is_available = False
+
+
+def get_func_name(fn):
+    if isinstance(fn, functools.partial):
+        return fn.func.__name__
+    return fn.__name__
 
 
 def pretty_print(results, title, units) -> None:
@@ -423,8 +430,8 @@ def benchmark_main_helper(benchmark_fn, cases: List[Dict[str, Any]], **kwargs) -
     )
     args = parser.parse_args()
 
-    if args.fn is not None and args.fn != benchmark_fn.__name__:
-        print(f'Skipping benchmark "{benchmark_fn.__name__}"')
+    if args.fn is not None and args.fn != get_func_name(benchmark_fn):
+        print(f'Skipping benchmark "{get_func_name(benchmark_fn)}"')
         return
     benchmark_run_and_compare(
         benchmark_fn=benchmark_fn,
@@ -447,7 +454,7 @@ def benchmark_run_and_compare(
     quiet: bool = False,
     optimized_label: str = "optimized",
     *,
-    min_run_time: int = 2,
+    min_run_time: float = 2.0,
     atol_s: float = 30e-6,
     rtol: float = 0.05,
 ) -> None:
@@ -461,7 +468,7 @@ def benchmark_run_and_compare(
                 "XFORMERS_BENCHMARKS_CACHE",
                 os.path.join("~", ".cache", "xformers", "benchmarks"),
             ),
-            benchmark_fn.__name__,
+            get_func_name(benchmark_fn),
         )
     )
 

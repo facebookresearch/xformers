@@ -688,6 +688,8 @@ class BlockDiagonalCausalLocalAttentionMask(BlockDiagonalCausalMask):
         ]
         for q, k in zip(q_seqlen, kv_seqlen):
             if q - self._window_size >= k:
+                # Each query only attends to keys no further than window_size back.
+                # When q > k + window_size, there will be a query for which the window doesn't reach any key.
                 raise RuntimeError(
                     f"No keys are attended in q_seqlen {q} k_seqlen {k} with sliding window {self._window_size}"
                 )
@@ -735,26 +737,6 @@ class BlockDiagonalCausalLocalAttentionFromBottomRightMask(
             raise ValueError(
                 f"Expected `window_size > 0`, but window_size={self._window_size}"
             )
-        q_seqlen = [
-            y - x
-            for x, y in zip(
-                self.q_seqinfo.seqstart_py[:-1], self.q_seqinfo.seqstart_py[1:]
-            )
-        ]
-        kv_seqlen = [
-            y - x
-            for x, y in zip(
-                self.k_seqinfo.seqstart_py[:-1], self.k_seqinfo.seqstart_py[1:]
-            )
-        ]
-        for q, k in zip(q_seqlen, kv_seqlen):
-            if q + (q - k) - self._window_size >= k:
-                raise RuntimeError(
-                    f"No keys are attended in q_seqlen {q} k_seqlen {k} with sliding window {self._window_size}"
-                )
-        materialized = self.materialize((sum(q_seqlen), sum(kv_seqlen)))
-        if torch.max(materialized, dim=1).values.min() == -float("inf"):
-            raise RuntimeError("FUCKING FUCK FUCK")
 
     def _create_block_mask(
         self,
