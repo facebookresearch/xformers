@@ -911,6 +911,8 @@
         <span class="p">]</span>
         <span class="k">for</span> <span class="n">q</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">,</span> <span class="n">kv_seqlen</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">q</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span> <span class="o">&gt;=</span> <span class="n">k</span><span class="p">:</span>
+                <span class="c1"># Each query only attends to keys no further than window_size back.</span>
+                <span class="c1"># When q &gt; k + window_size, there will be a query for which the window doesn&#39;t reach any key.</span>
                 <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;No keys are attended in q_seqlen </span><span class="si">{</span><span class="n">q</span><span class="si">}</span><span class="s2"> k_seqlen </span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2"> with sliding window </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
@@ -958,26 +960,6 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Expected `window_size &gt; 0`, but window_size=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
-        <span class="n">q_seqlen</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">y</span> <span class="o">-</span> <span class="n">x</span>
-            <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
-            <span class="p">)</span>
-        <span class="p">]</span>
-        <span class="n">kv_seqlen</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">y</span> <span class="o">-</span> <span class="n">x</span>
-            <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
-            <span class="p">)</span>
-        <span class="p">]</span>
-        <span class="k">for</span> <span class="n">q</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">,</span> <span class="n">kv_seqlen</span><span class="p">):</span>
-            <span class="k">if</span> <span class="n">q</span> <span class="o">+</span> <span class="p">(</span><span class="n">q</span> <span class="o">-</span> <span class="n">k</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span> <span class="o">&gt;=</span> <span class="n">k</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;No keys are attended in q_seqlen </span><span class="si">{</span><span class="n">q</span><span class="si">}</span><span class="s2"> k_seqlen </span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2"> with sliding window </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="si">}</span><span class="s2">&quot;</span>
-                <span class="p">)</span>
-        <span class="n">materialized</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">materialize</span><span class="p">((</span><span class="nb">sum</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">),</span> <span class="nb">sum</span><span class="p">(</span><span class="n">kv_seqlen</span><span class="p">)))</span>
-        <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">materialized</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="o">==</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s2">&quot;inf&quot;</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;FUCKING FUCK FUCK&quot;</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
