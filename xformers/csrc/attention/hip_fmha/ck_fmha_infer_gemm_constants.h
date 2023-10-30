@@ -5,6 +5,7 @@
 
 // list the template parameters that will not be tuned,
 // the commented lines gives the tunable template parameters
+// clang-format off
 struct GemmOpConstantsBatchedInfer {
   static constexpr ck::index_t NumGemmKPrefetchStage = 1;
   static constexpr ck::index_t BlockSize = 256;
@@ -45,14 +46,14 @@ struct GemmOpConstantsBatchedInfer {
   static constexpr bool B1BlockLdsExtraN = false;
   static constexpr ck::index_t CShuffleMXdlPerWavePerShuffle = 1;
   // static constexpr ck::index_t CShuffleNXdlPerWavePerShuffle;
-  using CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock =
-      S<1, 32, 1, 8>;
-  // static constexpr ck::index_t
-  // CShuffleBlockTransferScalarPerVector_NPerBlock;
+  using CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock = S<1, 16, 1, 16>;
+  // static constexpr ck::index_t CShuffleBlockTransferScalarPerVector_NPerBlock;
 };
+//clang-format on
 
 // list the template parameters that will not be tuned,
 // the commented lines gives the tunable template parameters
+// clang-format off
 struct GemmOpConstantsGroupedInfer {
   static constexpr ck::index_t NumGemmKPrefetchStage = 1;
   static constexpr ck::index_t BlockSize = 256;
@@ -93,8 +94,7 @@ struct GemmOpConstantsGroupedInfer {
   static constexpr bool B1BlockLdsExtraN = false;
   static constexpr ck::index_t CShuffleMXdlPerWavePerShuffle = 1;
   // static constexpr ck::index_t CShuffleNXdlPerWavePerShuffle;
-  using CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock =
-      S<1, 32, 1, 8>;
-  // static constexpr ck::index_t
-  // CShuffleBlockTransferScalarPerVector_NPerBlock;
+  using CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock = S<1, 16, 1, 16>;
+  // static constexpr ck::index_t CShuffleBlockTransferScalarPerVector_NPerBlock;
 };
+// clang-format on
