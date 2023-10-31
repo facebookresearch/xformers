@@ -91,7 +91,7 @@ Let's start from a classical overview of the Transformer architecture (illustrat
   <img src="./docs/assets/Transformer_arch_Lin_et_al.png" width=600>
 </p>
 
-You'll find the key repository boundaries in this illustration: a Transformer is generally made of a collection of attention mechanisms, embeddings to encode some positional information, feed-forward blocks and a residual path (typically referred to as pre- or post- layer norm). These boundaries do not work for all models, but we found in practice that given some accomodations it could capture most of the state of the art.
+You'll find the key repository boundaries in this illustration: a Transformer is generally made of a collection of attention mechanisms, embeddings to encode some positional information, feed-forward blocks and a residual path (typically referred to as pre- or post- layer norm). These boundaries do not work for all models, but we found in practice that given some accommodations it could capture most of the state of the art.
 
 Models are thus not implemented in monolithic files, which are typically complicated to handle and modify. Most of the concepts present in the above illustration correspond to an abstraction level, and when variants are present for a given sub-block it should always be possible to select any of them. You can focus on a given encapsulation level and modify it as needed.
 
@@ -217,10 +217,10 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
    7. fused dropout(activation(x+bias))
    8. fused SwiGLU
 3. Benchmarking and testing tools
-   1. [micro benchnmarks](BENCHMARKS.md)
+   1. [micro benchmarks](BENCHMARKS.md)
    2. transformer block benchmark
    3. [LRA](xformers/benchmarks/LRA/README.md), with SLURM support
-4. Programatic and sweep friendly layer and model construction
+4. Programmatic and sweep friendly layer and model construction
    1. Compatible with hierarchical Transformers, like Swin or Metaformer
 5. Hackable
    1. Not using monolithic CUDA kernels, composable building blocks
