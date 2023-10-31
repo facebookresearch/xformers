@@ -24,7 +24,7 @@
 xFormers is:
 - **Customizable building blocks**: Independent/customizable building blocks that can be used without boilerplate code. The components are domain-agnostic and xFormers is used by researchers in vision, NLP and more.
 - **Research first**: xFormers contains bleeding-edge components, that are not yet available in mainstream libraries like PyTorch.
-- **Built with efficiency in mind**: Because speed of iteration matters, components are as fast and memory-efficient as possible. xFormers contains its own CUDA kernels, but dispatches to other libraries when relevant.
+- **Built with efficiency in mind**: Because the speed of iteration matters, components are as fast and memory-efficient as possible. xFormers contains its own CUDA kernels, but dispatches to other libraries when relevant.
 
 ## Installing xFormers
 
@@ -86,7 +86,7 @@ python -m xformers.info
 
 ### Transformers key concepts
 
-Let's start from a classical overview of the Transformer architecture (illustration from Lin et al,, "A Survey of Transformers")
+Let's start with a classical overview of the Transformer architecture (illustration from Lin et al,, "A Survey of Transformers")
 <p align="center">
   <img src="./docs/assets/Transformer_arch_Lin_et_al.png" width=600>
 </p>
@@ -200,13 +200,13 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
   - [Moco v3 defaults](https://github.com/facebookresearch/moco-v3)
 
   One way to specify the init scheme is to set the `config.weight_init` field to the matching enum value.
-  This could easily be extended, feel free to submit a PR !
+  This could easily be extended, feel free to submit a PR!
 
 </p></details>
 
 ### Key Features
 
-1. Many attention mechanisms, interchangeables
+1. Many attention mechanisms, interchangeable
 2. Optimized building blocks, beyond PyTorch primitives
    1. Memory-efficient exact attention - up to 10x faster
    2. sparse attention
@@ -220,7 +220,7 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
    1. [micro benchmarks](BENCHMARKS.md)
    2. transformer block benchmark
    3. [LRA](xformers/benchmarks/LRA/README.md), with SLURM support
-4. Programmatic and sweep friendly layer and model construction
+4. Programmatic and sweep-friendly layer and model construction
    1. Compatible with hierarchical Transformers, like Swin or Metaformer
 5. Hackable
    1. Not using monolithic CUDA kernels, composable building blocks
@@ -231,9 +231,9 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 
 * NVCC and the current CUDA runtime match. Depending on your setup, you may be able to change the CUDA runtime with `module unload cuda; module load cuda/xx.x`, possibly also `nvcc`
-* the version of GCC that you're using matches the current NVCC capabilities
-* the `TORCH_CUDA_ARCH_LIST` env variable is set to the architectures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6"`
-* If the build from source OOMs, it's possible to reduce the parallelism of ninja with `MAX_JOBS` (eg `MAX_JOBS=2`)
+* The version of GCC that you're using matches the current NVCC capabilities
+* The `TORCH_CUDA_ARCH_LIST` env variable is set to the architectures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6"`
+* If the build is from source OOMs, it's possible to reduce the parallelism of ninja with `MAX_JOBS` (eg `MAX_JOBS=2`)
 * If you encounter [`UnsatisfiableError`](https://github.com/facebookresearch/xformers/issues/390#issuecomment-1315020700) when installing with conda, make sure you have PyTorch installed in your conda environment, and that your setup (PyTorch version, cuda version, python version, OS) match [an existing binary for xFormers](https://anaconda.org/xformers/xformers/files)
 
 
@@ -256,7 +256,7 @@ If you use xFormers in your publication, please cite it by using the following B
 
 ## Credits
 
-The following repositories are used in xFormers, either in close to original form or as an inspiration:
+The following repositories are used in xFormers, either in close to the original form or as an inspiration:
 
 * [Sputnik](https://github.com/google-research/sputnik)
 * [GE-SpMM](https://github.com/hgyhungry/ge-spmm)
