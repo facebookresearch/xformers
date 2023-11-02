@@ -7,6 +7,9 @@
 #include <ATen/Functions.h>
 #include <ATen/Tensor.h>
 #include <c10/cuda/CUDAStream.h>
+#include <ck/host_utility/kernel_launch_hip.hpp>
+#include <ck/stream_config.hpp>
+#include <ck/tensor_operation/gpu/device/device_base.hpp>
 #include <ck/utility/data_type.hpp>
 #include <ck/utility/inner_product.hpp>
 #include <torch/library.h>
@@ -215,12 +218,13 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
           q_thread, k_loads[ttt], qk_accs[ttt]);
       qk_accs[ttt] *= qk_scale;
 
-      qk_accs[ttt] = wavefrontReduce(qk_accs[ttt], [](float a, float b) { return a + b; });
+      qk_accs[ttt] =
+          wavefrontReduce(qk_accs[ttt], [](float a, float b) { return a + b; });
       max_qk_acc = max(qk_accs[ttt], max_qk_acc);
     }
     if (lane_idx == 0) {
       auto* smem_base = smem + tt;
- #pragma unroll n_loop_unroll
+#pragma unroll n_loop_unroll
       for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
         smem_base[ttt] = qk_accs[ttt];
       }
@@ -377,21 +381,73 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   }
 }
 
-void update_max_dynamic_shared_memory_size_bytes(
-    void* kernel_func,
-    int32_t new_value) {
-  hipFuncAttributes attributes;
-  C10_CUDA_CHECK(hipFuncGetAttributes(&attributes, kernel_func));
+} // namespace
 
-  const auto default_value = attributes.maxDynamicSharedSizeBytes;
+namespace ck {
+namespace tensor_operation {
+namespace device {
+template <typename scalar_t>
+struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
+  using DeviceOp = FMHADecoderSeqlen1DeviceOp;
+  struct Argument : public BaseArgument {
+    at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> XQ_acc;
+    at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_K_acc;
+    at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_V_acc;
+    at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> O_acc;
+    at::PackedTensorAccessor32<int32_t, 1, at::RestrictPtrTraits> seq_positions_acc;
+    const float qk_scale;
 
-  // printf("Default smem size: %d\n", default_value);
+    const dim3 grid_dim;
+    const dim3 block_dim;
+    const size_t lds_bytes;
 
-  if (new_value > default_value) {
-    C10_CUDA_CHECK(hipFuncSetAttribute(
-        kernel_func, hipFuncAttributeMaxDynamicSharedMemorySize, new_value));
-  }
-}
+    Argument(
+        at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> XQ_acc,
+        at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_K_acc,
+        at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_V_acc,
+        at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> O_acc,
+        at::PackedTensorAccessor32<int32_t, 1, at::RestrictPtrTraits> seq_positions_acc,
+        const float qk_scale,
+
+        const dim3 grid_dim,
+        const dim3 block_dim,
+        const size_t lds_bytes)
+        : XQ_acc(XQ_acc),
+          cache_K_acc(cache_K_acc),
+          cache_V_acc(cache_V_acc),
+          O_acc(O_acc),
+          seq_positions_acc(seq_positions_acc),
+          qk_scale(qk_scale),
+          grid_dim(grid_dim),
+          block_dim(block_dim),
+          lds_bytes(lds_bytes) {}
+  };
+  struct Invoker : public BaseInvoker {
+    using Argument = DeviceOp::Argument;
+    float Run(
+        const Argument& arg,
+        const StreamConfig& stream_config = StreamConfig{}) {
+      auto* kernel = &efficient_attention_forward_decoder_ck_kernel<scalar_t>;
+      return launch_and_time_kernel(
+          stream_config,
+          kernel,
+          arg.grid_dim,
+          arg.block_dim,
+          arg.lds_bytes,
+          arg.XQ_acc,
+          arg.cache_K_acc,
+          arg.cache_V_acc,
+          arg.O_acc,
+          arg.seq_positions_acc,
+          arg.qk_scale);
+    }
+  };
+};
+} // namespace device
+} // namespace tensor_operation
+} // namespace ck
+
+namespace {
 
 #define AT_DISPATCH_CASE_3(SCALARTYPE1, SCALARTYPE2, SCALARTYPE3, ...) \
   AT_DISPATCH_CASE(SCALARTYPE1, __VA_ARGS__)                           \
@@ -434,7 +490,7 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
   int32_t smem_softmax = T_MAX * sizeof(float) + threads.y * sizeof(float);
   int32_t smem_output = D_H * sizeof(float) *
       threads.y; // 4 * threadsPerBlock * sizeof(float) == sizeof(O[b][0][h][:])
-  int32_t smem_size = max(smem_softmax, smem_output);
+  const size_t lds_bytes = max(smem_softmax, smem_output);
   auto stream = at::cuda::getCurrentHIPStream().stream();
 
   AT_DISPATCH_SWITCH_3(
@@ -444,18 +500,23 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
       XQ.scalar_type(),
       "efficient_attention_forward_decoder_ck",
       [&] {
-        auto* kernel = &efficient_attention_forward_decoder_ck_kernel<scalar_t>;
-        update_max_dynamic_shared_memory_size_bytes(
-            reinterpret_cast<void*&>(kernel), smem_size);
-        kernel<<<blocks, threads, smem_size, stream>>>(
+        using device_op_t = ck::tensor_operation::device::FMHADecoderSeqlen1DeviceOp<
+            scalar_t>;
+        auto op = device_op_t{};
+        auto arg = device_op_t::Argument(
             XQ.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>(),
             cache_K.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>(),
             cache_V.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>(),
             O.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>(),
             seq_positions
                 .packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(),
-            qk_scale);
-        C10_CUDA_KERNEL_LAUNCH_CHECK();
+            qk_scale,
+            blocks,
+            threads,
+            lds_bytes);
+
+        auto invoker = device_op_t::Invoker{};
+        (void)invoker.Run(arg, {stream});
       });
 
   return O;
@@ -472,9 +533,9 @@ at::Tensor efficient_attention_forward_decoder_ck_impl(
     const at::Tensor& seq_positions, // [B]
     double qk_scale) {
   auto O = at::empty_like(XQ);
-  efficient_attention_forward_decoder_ck_out_impl<ThreadsPerWavefront, WavefrontsPerBlock>(
-    XQ, cache_K, cache_V, seq_positions, qk_scale, O
-  );
+  efficient_attention_forward_decoder_ck_out_impl<
+      ThreadsPerWavefront,
+      WavefrontsPerBlock>(XQ, cache_K, cache_V, seq_positions, qk_scale, O);
   return O;
 }
 
@@ -505,19 +566,24 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 (1) hipify
  > pip install -e /xformers
 
- For obtaining all the library paths needed for compilation below, add `--verbose`.
- 
+ For obtaining all the library paths needed for compilation below, add
+`--verbose`.
+
 (2) compile
  > /opt/rocm/bin/hipcc \
 -I/xformers/xformers/csrc \
 -I/xformers/xformers/csrc/attention/hip_fmha \
 -I/xformers/third_party/composable_kernel/include \
 -I/xformers/third_party/composable_kernel/include/ck \
--I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device \
--I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device/impl \
--I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/element \
+-I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device
+\
+-I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device/impl
+\
+-I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/element
+\
 -I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include \
--I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/torch/csrc/api/include \
+-I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/torch/csrc/api/include
+\
 -I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/TH \
 -I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/THC \
 -I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/THH \
@@ -561,12 +627,17 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 For assembly debugging, add `--save-temps -g`.
 
 (3a) run correctness check
- > LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib \
+ >
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib
+\
  ./a.out
 
 (3b) run specific input shape
- > LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib \
- ./a.out n_keys padding batch_size n_heads is_multiquery dtype n_wavefronts_per_block
+ >
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib
+\
+ ./a.out n_keys padding batch_size n_heads is_multiquery dtype
+n_wavefronts_per_block
 */
 
 static void do_correctness_check() {
@@ -603,7 +674,9 @@ int main(int argc, char** argv) {
   } else {
     const auto args = std::vector<std::string>(argv + 1, argv + argc);
     if (args.size() != 7) {
-      std::cout << "Usage: ./a.out n_keys padding batch_size n_heads is_multiquery dtype n_wavefronts_per_block" << std::endl;
+      std::cout
+          << "Usage: ./a.out n_keys padding batch_size n_heads is_multiquery dtype n_wavefronts_per_block"
+          << std::endl;
       return 0;
     }
     const int32_t n_keys = std::stoi(args[0]);
@@ -611,35 +684,42 @@ int main(int argc, char** argv) {
     const int32_t batch_size = std::stoi(args[2]);
     const int32_t n_heads = std::stoi(args[3]);
     const int32_t multiquery = (args[4] == "mq");
-    const auto dtype = (args[5] == "f32") ? torch::kFloat32 : (args[5] == "f16") ? torch::kFloat16 : torch::kBFloat16;
+    const auto dtype = (args[5] == "f32") ? torch::kFloat32
+        : (args[5] == "f16")              ? torch::kFloat16
+                                          : torch::kBFloat16;
     const int32_t n_wavefronts_per_block = std::stoi(args[6]);
-    
+
     const int32_t dim_per_head = 4 * kThreadsPerWavefront;
 
     const auto options = torch::TensorOptions()
-                     .dtype(dtype)
-                     .layout(torch::kStrided)
-                     .device(torch::kCUDA, 1)
-                     .requires_grad(false);
+                             .dtype(dtype)
+                             .layout(torch::kStrided)
+                             .device(torch::kCUDA, 1)
+                             .requires_grad(false);
 
-    const auto int_options = options.dtype(torch::kInt);  
+    const auto int_options = options.dtype(torch::kInt);
     const auto Q = at::rand({batch_size, 1, n_heads, dim_per_head}, options);
-    const auto K = multiquery 
-      ? at::rand({batch_size, padding, 1, dim_per_head}, options).expand({batch_size, padding, n_heads, dim_per_head})
-      : at::rand({batch_size, padding, n_heads, dim_per_head}, options);
+    const auto K = multiquery
+        ? at::rand({batch_size, padding, 1, dim_per_head}, options)
+              .expand({batch_size, padding, n_heads, dim_per_head})
+        : at::rand({batch_size, padding, n_heads, dim_per_head}, options);
     const auto V = at::rand_like(K);
     auto O = at::rand_like(Q);
 
     const auto seq = at::randint(1, n_keys, {batch_size}, int_options);
     const double qk_scale = 1. / sqrt(dim_per_head);
-    auto call_ptr = decltype(&efficient_attention_forward_decoder_ck_out_impl<kThreadsPerWavefront, kWavefrontsPerBlock>) {};
-    
-    #define SWITCH_CASE_SET_CALLPTR(n) \
-    case (n): \
-      call_ptr = &efficient_attention_forward_decoder_ck_out_impl<kThreadsPerWavefront, (n)>; \
-      break; 
+    auto call_ptr = decltype(&efficient_attention_forward_decoder_ck_out_impl<
+                             kThreadsPerWavefront,
+                             kWavefrontsPerBlock>){};
 
-    switch(n_wavefronts_per_block) {
+#define SWITCH_CASE_SET_CALLPTR(n)                               \
+  case (n):                                                      \
+    call_ptr = &efficient_attention_forward_decoder_ck_out_impl< \
+        kThreadsPerWavefront,                                    \
+        (n)>;                                                    \
+    break;
+
+    switch (n_wavefronts_per_block) {
       SWITCH_CASE_SET_CALLPTR(1);
       SWITCH_CASE_SET_CALLPTR(2);
       SWITCH_CASE_SET_CALLPTR(4);
@@ -650,12 +730,13 @@ int main(int argc, char** argv) {
         call_ptr = nullptr;
         break;
     }
-    #undef SWITCH_CASE_SET_CALLPTR
+#undef SWITCH_CASE_SET_CALLPTR
 
     if (call_ptr) {
       call_ptr(Q, K, V, seq, qk_scale, O);
     } else {
-      std::cout << "Warning: no kernel was found for wavefronts_per_block=" << n_wavefronts_per_block << std::endl;
+      std::cout << "Warning: no kernel was found for wavefronts_per_block="
+                << n_wavefronts_per_block << std::endl;
     }
   }
   return 0;
