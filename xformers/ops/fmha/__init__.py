@@ -7,7 +7,11 @@ from typing import Any, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
+<<<<<<< HEAD
 from . import cutlass, decoder, flash, small_k, triton, ck, ck_decoder
+=======
+from . import cutlass, decoder, flash, small_k, triton, ck, forward_splitk
+>>>>>>> d7ba109 (implement boilerplate which creates an xformers op and binds it with a backend implementation)
 from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
@@ -31,6 +35,7 @@ MemoryEfficientAttentionOp = (small_k.FwOp, small_k.BwOp)
 TritonFlashAttentionOp = (triton.FwOp, triton.BwOp)
 MemoryEfficientAttentionCkOp = (ck.FwOp, ck.BwOp) 
 MemoryEfficientAttentionCkDecoderOp = (ck_decoder.FwOp, ck.BwOp)
+MemoryEfficientAttentionSplitKCkOp = (forward_splitk.FwOp, ck.BwOp) 
 
 class _fMHA(torch.autograd.Function):
     @staticmethod
