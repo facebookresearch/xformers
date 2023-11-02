@@ -94,7 +94,7 @@
 
 template <typename... Args>
 void print_check_args(const Args&... args) {
-  (std::cout << ... << args) << std::endl;
+  (std::cerr << ... << args) << std::endl;
 }
 
 #define XFORMERS_CHECK(COND, ...)        \
