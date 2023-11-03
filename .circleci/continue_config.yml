@@ -150,9 +150,10 @@ run_doc_build: &run_doc_build
       when: always
       command: |
         source $BASH_ENV
+        source activate /home/circleci/venv
         cd docs
-        python3 -m ensurepip
-        python3 -m pip install -r requirements.txt
+        # Don't install PyTorch as we already pulled it from conda, and we'd risk having two conflicting versions
+        $CONDA_PYTHON -m pip install $(grep -ivE "^#|^torch" requirements.txt)
         make help
         make singlehtml | tee make.out
         ! tail make.out | grep -q warning

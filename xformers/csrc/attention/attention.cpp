@@ -7,19 +7,6 @@
  */
 #include <torch/types.h>
 
-// If we are in a Windows environment, we need to define
-// initialization functions for the _custom_ops extension.
-// For PyMODINIT_FUNC to work, we need to include Python.h
-// https://github.com/pytorch/vision/blob/main/torchvision/csrc/vision.cpp#L17
-// Fixes error LNK2001: unresolved external symbol PyInit__C
-#if defined(_WIN32)
-#include <Python.h>
-PyMODINIT_FUNC PyInit__C(void) {
-  // No need to do anything.
-  return NULL;
-}
-#endif // defined(_WIN32)
-
 TORCH_LIBRARY_FRAGMENT(xformers, m) {
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_forward_small_k(Tensor query, Tensor key, Tensor value, bool compute_logsumexp, Tensor? attn_bias, float p) -> (Tensor, Tensor, int, int)"));
