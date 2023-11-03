@@ -143,14 +143,11 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   const scalar_t* __restrict__ cache_V = cache_V_acc.data();
   scalar_t* __restrict__ O = O_acc.data();
   const int32_t* __restrict__ seq_positions = seq_positions_acc.data();
-  const int32_t XQ_stride_0 = XQ_acc.stride(0);
-  const int32_t XQ_stride_2 = XQ_acc.stride(2);
-  const int32_t K_stride_0 = cache_K_acc.stride(0);
-  const int32_t K_stride_1 = cache_K_acc.stride(1);
-  const int32_t K_stride_2 = cache_K_acc.stride(2);
-  const int32_t V_stride_0 = cache_V_acc.stride(0); // cache_V strides should be the same as cache_K strides
-  const int32_t V_stride_1 = cache_V_acc.stride(1);
-  const int32_t V_stride_2 = cache_V_acc.stride(2);
+  const ptrdiff_t XQ_stride_0 = XQ_acc.stride(0);
+  const ptrdiff_t XQ_stride_2 = XQ_acc.stride(2);
+  const ptrdiff_t K_stride_0 = cache_K_acc.stride(0);
+  const ptrdiff_t K_stride_1 = cache_K_acc.stride(1);
+  const ptrdiff_t K_stride_2 = cache_K_acc.stride(2);
   const bool multiquery = cache_K_acc.size(2) == 1;
 
   constexpr int32_t seq_positions_shift = 0;
@@ -176,14 +173,12 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   // Need D_H == 256 (NB: 128 in CUDA because of wavefront/warp sizes 64/32)
   // const auto* q_ = &(XQ_acc[b][0][h][0]);
-  const auto* q_ = XQ + b * XQ_stride_0 + h * XQ_stride_2;
+  const auto XQO_base_offset = b * XQ_stride_0 + h * XQ_stride_2;
+  const auto* q_ = XQ + XQO_base_offset;
 
-  // const bool multiquery = cache_K.size(2) == 1;
-  // const auto* cache_K_base = &cache_K_acc[b][0][multiquery ? 0 : h][0];
   const auto cache_KV_base_offset = b * K_stride_0 + (multiquery ? 0 : h * K_stride_2);
   const auto* cache_K_base = cache_K + cache_KV_base_offset;
-  const auto* cache_V_base = &cache_V_acc[b][0][multiquery ? 0 : h][0];
-  // const auto* cache_V_base = cache_V + cache_KV_base_offset; // invalid memory access error
+  const auto* cache_V_base = cache_V + cache_KV_base_offset;
 
   // Load Q into registers in all wavefronts.
   // Each thread handles 4 D dimensions
@@ -320,7 +315,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       const int32_t t = tt + ttt;
       // load the V[b][t][h|0][:] row into registers, reusing K register storage
       load_v<decltype(cache_V_base), data_vec4_t>(
-          cache_V_base + t * V_stride_1, lane_idx, &k_loads[ttt]);
+          cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
       ps[ttt] = smem[t];
     }
 
@@ -339,7 +334,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
         // load the V[b][t][h|0][:] row into registers, reusing K register
         // storage
         load_v<decltype(cache_V_base), data_vec4_t>(
-            cache_V_base + t * V_stride_1, lane_idx, &k_loads[ttt]);
+            cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
         ps[ttt] = smem[t];
       }
     }
@@ -375,8 +370,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     bf_r.y = ck::type_convert<data_t>(r.y);
     bf_r.z = ck::type_convert<data_t>(r.z);
     bf_r.w = ck::type_convert<data_t>(r.w);
-    // auto* o_ = &O[b][0][h][0];
-    auto* o_ = O + b * XQ_stride_0 + h * XQ_stride_2;
+    auto* o_ = O + XQO_base_offset;
     store_v<decltype(o_), data_vec4_t>(o_, lane_idx, bf_r);
   }
 }
