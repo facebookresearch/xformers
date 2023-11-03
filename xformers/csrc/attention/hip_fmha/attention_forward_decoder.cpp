@@ -127,19 +127,28 @@ template <
     int32_t n_loop_unroll = 16,
     int32_t n_loop_unroll_tail = 2>
 __global__ void efficient_attention_forward_decoder_ck_kernel(
-    const scalar_t* __restrict__ XQ,
-    const scalar_t* __restrict__ cache_K,
-    const scalar_t* __restrict__ cache_V,
-    scalar_t* __restrict__ O,
-    const int32_t* __restrict__ seq_positions,
-    const int32_t XQ_stride_0,
-    const int32_t XQ_stride_2,
-    const int32_t K_stride_0,
-    const int32_t K_stride_1,
-    const int32_t K_stride_2,
-    const bool multiquery,
+    at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> XQ_acc,
+    at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_K_acc,
+    at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_V_acc,
+    at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> O_acc,
+    at::PackedTensorAccessor32<int32_t, 1, at::RestrictPtrTraits> seq_positions_acc,
     const float qk_scale) {
   static_assert(n_loop_unroll_tail < n_loop_unroll, "");
+
+  const scalar_t* __restrict__ XQ = XQ_acc.data();
+  const scalar_t* __restrict__ cache_K = cache_K_acc.data();
+  const scalar_t* __restrict__ cache_V = cache_V_acc.data();
+  scalar_t* __restrict__ O = O_acc.data();
+  const int32_t* __restrict__ seq_positions = seq_positions_acc.data();
+  const int32_t XQ_stride_0 = XQ_acc.stride(0);
+  const int32_t XQ_stride_2 = XQ_acc.stride(2);
+  const int32_t K_stride_0 = cache_K_acc.stride(0);
+  const int32_t K_stride_1 = cache_K_acc.stride(1);
+  const int32_t K_stride_2 = cache_K_acc.stride(2);
+  const int32_t V_stride_0 = cache_V_acc.stride(0); // cache_V strides should be the same as cache_K strides
+  const int32_t V_stride_1 = cache_V_acc.stride(1);
+  const int32_t V_stride_2 = cache_V_acc.stride(2);
+  const bool multiquery = cache_K_acc.size(2) == 1;
 
   constexpr int32_t seq_positions_shift = 0;
 
@@ -163,14 +172,15 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       lane_idx + wavefront_idx * threads_per_wavefront;
 
   // Need D_H == 256 (NB: 128 in CUDA because of wavefront/warp sizes 64/32)
-  // const auto* q_ = &(XQ[b][0][h][0]);
+  // const auto* q_ = &(XQ_acc[b][0][h][0]);
   const auto* q_ = XQ + b * XQ_stride_0 + h * XQ_stride_2;
 
   // const bool multiquery = cache_K.size(2) == 1;
-  // const auto* cache_K_base = &cache_K[b][0][multiquery ? 0 : h][0];
-  const auto* cache_K_base = cache_K + b * K_stride_0 + (multiquery ? 0 : h * K_stride_2);
-  // const auto* cache_V_base = &cache_V[b][0][multiquery ? 0 : h][0];
-  const auto* cache_V_base = cache_V + b * K_stride_0 + (multiquery ? 0 : h * K_stride_2);
+  // const auto* cache_K_base = &cache_K_acc[b][0][multiquery ? 0 : h][0];
+  const auto cache_KV_base_offset = b * K_stride_0 + (multiquery ? 0 : h * K_stride_2);
+  const auto* cache_K_base = cache_K + cache_KV_base_offset;
+  const auto* cache_V_base = &cache_V_acc[b][0][multiquery ? 0 : h][0];
+  // const auto* cache_V_base = cache_V + cache_KV_base_offset; // invalid memory access error
 
   // Load Q into registers in all wavefronts.
   // Each thread handles 4 D dimensions
@@ -306,7 +316,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       const int32_t t = tt + ttt;
       // load the V[b][t][h|0][:] row into registers, reusing K register storage
       load_v<decltype(cache_V_base), data_vec4_t>(
-          cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
+          cache_V_base + t * V_stride_1, lane_idx, &k_loads[ttt]);
       ps[ttt] = smem[t];
     }
 
@@ -325,7 +335,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
         // load the V[b][t][h|0][:] row into registers, reusing K register
         // storage
         load_v<decltype(cache_V_base), data_vec4_t>(
-            cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
+            cache_V_base + t * V_stride_1, lane_idx, &k_loads[ttt]);
         ps[ttt] = smem[t];
       }
     }
@@ -437,24 +447,13 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
         auto* kernel = &efficient_attention_forward_decoder_ck_kernel<scalar_t>;
         update_max_dynamic_shared_memory_size_bytes(
             reinterpret_cast<void*&>(kernel), smem_size);
-        auto XQ_acc = XQ.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>();
-        auto K_acc = cache_K.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>();
-        auto V_acc = cache_V.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>();
-        auto O_acc = O.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>();
-        auto seq_acc = seq_positions
-                .packed_accessor32<int32_t, 1, at::RestrictPtrTraits>();
         kernel<<<blocks, threads, smem_size, stream>>>(
-            XQ_acc.data(),
-            K_acc.data(),
-            V_acc.data(),
-            O_acc.data(),
-            seq_acc.data(),
-            XQ_acc.stride(0),
-            XQ_acc.stride(2),
-            K_acc.stride(0),
-            K_acc.stride(1),
-            K_acc.stride(2),
-            K_acc.size(2) == 1,
+            XQ.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>(),
+            cache_K.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>(),
+            cache_V.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>(),
+            O.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>(),
+            seq_positions
+                .packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(),
             qk_scale);
         C10_CUDA_KERNEL_LAUNCH_CHECK();
       });
