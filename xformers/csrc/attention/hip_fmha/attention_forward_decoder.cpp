@@ -130,25 +130,19 @@ template <
     int32_t n_loop_unroll = 16,
     int32_t n_loop_unroll_tail = 2>
 __global__ void efficient_attention_forward_decoder_ck_kernel(
-    at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> XQ_acc,
-    at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_K_acc,
-    at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_V_acc,
-    at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> O_acc,
-    at::PackedTensorAccessor32<int32_t, 1, at::RestrictPtrTraits> seq_positions_acc,
+    const scalar_t* __restrict__ XQ,
+    const scalar_t* __restrict__ cache_K,
+    const scalar_t* __restrict__ cache_V,
+    scalar_t* __restrict__ O,
+    const int32_t* __restrict__ seq_positions,
+    const ptrdiff_t XQ_stride_0,
+    const ptrdiff_t XQ_stride_2,
+    const ptrdiff_t K_stride_0,
+    const ptrdiff_t K_stride_1,
+    const ptrdiff_t K_stride_2,
+    const bool multiquery,
     const float qk_scale) {
   static_assert(n_loop_unroll_tail < n_loop_unroll, "");
-
-  const scalar_t* __restrict__ XQ = XQ_acc.data();
-  const scalar_t* __restrict__ cache_K = cache_K_acc.data();
-  const scalar_t* __restrict__ cache_V = cache_V_acc.data();
-  scalar_t* __restrict__ O = O_acc.data();
-  const int32_t* __restrict__ seq_positions = seq_positions_acc.data();
-  const ptrdiff_t XQ_stride_0 = XQ_acc.stride(0);
-  const ptrdiff_t XQ_stride_2 = XQ_acc.stride(2);
-  const ptrdiff_t K_stride_0 = cache_K_acc.stride(0);
-  const ptrdiff_t K_stride_1 = cache_K_acc.stride(1);
-  const ptrdiff_t K_stride_2 = cache_K_acc.stride(2);
-  const bool multiquery = cache_K_acc.size(2) == 1;
 
   constexpr int32_t seq_positions_shift = 0;
 
@@ -176,7 +170,8 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   const auto XQO_base_offset = b * XQ_stride_0 + h * XQ_stride_2;
   const auto* q_ = XQ + XQO_base_offset;
 
-  const auto cache_KV_base_offset = b * K_stride_0 + (multiquery ? 0 : h * K_stride_2);
+  const auto cache_KV_base_offset =
+      b * K_stride_0 + (multiquery ? 0 : h * K_stride_2);
   const auto* cache_K_base = cache_K + cache_KV_base_offset;
   const auto* cache_V_base = cache_V + cache_KV_base_offset;
 
@@ -384,11 +379,17 @@ template <typename scalar_t>
 struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
   using DeviceOp = FMHADecoderSeqlen1DeviceOp;
   struct Argument : public BaseArgument {
-    at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> XQ_acc;
-    at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_K_acc;
-    at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_V_acc;
-    at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> O_acc;
-    at::PackedTensorAccessor32<int32_t, 1, at::RestrictPtrTraits> seq_positions_acc;
+    const scalar_t* __restrict__ XQ;
+    const scalar_t* __restrict__ cache_K;
+    const scalar_t* __restrict__ cache_V;
+    scalar_t* __restrict__ O;
+    const int32_t* __restrict__ seq_positions;
+    const ptrdiff_t XQ_stride_0;
+    const ptrdiff_t XQ_stride_2;
+    const ptrdiff_t K_stride_0;
+    const ptrdiff_t K_stride_1;
+    const ptrdiff_t K_stride_2;
+    const bool multiquery;
     const float qk_scale;
 
     const dim3 grid_dim;
@@ -396,21 +397,32 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
     const size_t lds_bytes;
 
     Argument(
-        at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> XQ_acc,
-        at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_K_acc,
-        at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_V_acc,
-        at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> O_acc,
-        at::PackedTensorAccessor32<int32_t, 1, at::RestrictPtrTraits> seq_positions_acc,
+        const scalar_t* __restrict__ XQ,
+        const scalar_t* __restrict__ cache_K,
+        const scalar_t* __restrict__ cache_V,
+        scalar_t* __restrict__ O,
+        const int32_t* __restrict__ seq_positions,
+        const ptrdiff_t XQ_stride_0,
+        const ptrdiff_t XQ_stride_2,
+        const ptrdiff_t K_stride_0,
+        const ptrdiff_t K_stride_1,
+        const ptrdiff_t K_stride_2,
+        const bool multiquery,
         const float qk_scale,
-
         const dim3 grid_dim,
         const dim3 block_dim,
         const size_t lds_bytes)
-        : XQ_acc(XQ_acc),
-          cache_K_acc(cache_K_acc),
-          cache_V_acc(cache_V_acc),
-          O_acc(O_acc),
-          seq_positions_acc(seq_positions_acc),
+        : XQ(XQ),
+          cache_K(cache_K),
+          cache_V(cache_V),
+          O(O),
+          seq_positions(seq_positions),
+          XQ_stride_0(XQ_stride_0),
+          XQ_stride_2(XQ_stride_2),
+          K_stride_0(K_stride_0),
+          K_stride_1(K_stride_1),
+          K_stride_2(K_stride_2),
+          multiquery(multiquery),
           qk_scale(qk_scale),
           grid_dim(grid_dim),
           block_dim(block_dim),
@@ -421,18 +433,23 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
     float Run(
         const Argument& arg,
         const StreamConfig& stream_config = StreamConfig{}) {
-      auto* kernel = &efficient_attention_forward_decoder_ck_kernel<scalar_t>;
       return launch_and_time_kernel(
           stream_config,
-          kernel,
+          efficient_attention_forward_decoder_ck_kernel<scalar_t>,
           arg.grid_dim,
           arg.block_dim,
           arg.lds_bytes,
-          arg.XQ_acc,
-          arg.cache_K_acc,
-          arg.cache_V_acc,
-          arg.O_acc,
-          arg.seq_positions_acc,
+          arg.XQ,
+          arg.cache_K,
+          arg.cache_V,
+          arg.O,
+          arg.seq_positions,
+          arg.XQ_stride_0,
+          arg.XQ_stride_2,
+          arg.K_stride_0,
+          arg.K_stride_1,
+          arg.K_stride_2,
+          arg.multiquery,
           arg.qk_scale);
     }
   };
@@ -494,16 +511,32 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
       XQ.scalar_type(),
       "efficient_attention_forward_decoder_ck",
       [&] {
-        using device_op_t = ck::tensor_operation::device::FMHADecoderSeqlen1DeviceOp<
-            scalar_t>;
+        using device_op_t =
+            ck::tensor_operation::device::FMHADecoderSeqlen1DeviceOp<scalar_t>;
         auto op = device_op_t{};
-        auto arg = device_op_t::Argument(
-            XQ.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>(),
-            cache_K.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>(),
-            cache_V.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>(),
-            O.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>(),
+
+        auto XQ_acc =
+            XQ.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>();
+        auto K_acc =
+            cache_K.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>();
+        auto V_acc =
+            cache_V.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>();
+        auto O_acc = O.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>();
+        auto seq_acc =
             seq_positions
-                .packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(),
+                .packed_accessor32<int32_t, 1, at::RestrictPtrTraits>();
+        auto arg = device_op_t::Argument(
+            XQ_acc.data(),
+            K_acc.data(),
+            V_acc.data(),
+            O_acc.data(),
+            seq_acc.data(),
+            XQ_acc.stride(0),
+            XQ_acc.stride(2),
+            K_acc.stride(0),
+            K_acc.stride(1),
+            K_acc.stride(2),
+            K_acc.size(2) == 1,
             qk_scale,
             blocks,
             threads,
@@ -555,13 +588,15 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 
 #include <torch/torch.h>
 
+// clang-format off
+
 /*
 
 (1) hipify
  > pip install -e /xformers
 
- For obtaining all the library paths needed for compilation below, add
-`--verbose`.
+ For obtaining all the library paths needed for compilation below, add `--verbose`.
+ For efficient utilization of CPU cores for compilation use MAX_JOBS env variable.
 
 (2) compile
  > /opt/rocm/bin/hipcc \
@@ -569,15 +604,11 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 -I/xformers/xformers/csrc/attention/hip_fmha \
 -I/xformers/third_party/composable_kernel/include \
 -I/xformers/third_party/composable_kernel/include/ck \
--I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device
-\
--I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device/impl
-\
--I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/element
-\
+-I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device \
+-I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device/impl \
+-I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/element \
 -I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include \
--I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/torch/csrc/api/include
-\
+-I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/torch/csrc/api/include \
 -I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/TH \
 -I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/THC \
 -I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/THH \
@@ -622,17 +653,16 @@ For assembly debugging, add `--save-temps -g`.
 
 (3a) run correctness check
  >
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib
-\
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib \
  ./a.out
 
 (3b) run specific input shape
  >
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib
-\
- ./a.out n_keys padding batch_size n_heads is_multiquery dtype
-n_wavefronts_per_block
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib \
+ ./a.out n_keys padding batch_size n_heads is_multiquery dtype n_wavefronts_per_block
 */
+
+// clang-format on
 
 static void do_correctness_check() {
   const int32_t D = 4 * kThreadsPerWavefront;
