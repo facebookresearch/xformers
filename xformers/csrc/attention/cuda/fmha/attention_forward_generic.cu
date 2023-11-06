@@ -267,6 +267,9 @@ efficient_attention_forward_cutlass(
     if (p.use_dropout) {
       p.rng_engine_inputs = rng_engine_inputs;
       p.dropout_prob = dropout_p;
+      auto seeds = at::cuda::philox::unpack(p.rng_engine_inputs);
+      p.dropout_philox_seed = std::get<0>(seeds);
+      p.dropout_philox_offset = std::get<1>(seeds);
     }
 
     if (smem_bytes > 0xc000) {

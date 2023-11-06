@@ -246,7 +246,6 @@ def get_extensions():
         sources += source_cuda
         include_dirs += [sputnik_dir, cutlass_dir, cutlass_examples_dir]
         nvcc_flags = [
-            "-DHAS_PYTORCH",
             "--use_fast_math",
             "-U__CUDA_NO_HALF_OPERATORS__",
             "-U__CUDA_NO_HALF_CONVERSIONS__",

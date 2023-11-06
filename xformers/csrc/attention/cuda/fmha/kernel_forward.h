@@ -7,11 +7,6 @@
  */
 #pragma once
 
-#ifdef HAS_PYTORCH
-#include <ATen/cuda/CUDAGeneratorImpl.h>
-#include <ATen/cuda/CUDAGraphsUtils.cuh>
-#endif
-
 #include <curand_kernel.h>
 #include <cmath>
 #include <vector>
@@ -205,9 +200,9 @@ struct AttentionKernel {
     bool use_dropout = false;
     unsigned long long dropout_batch_head_rng_offset = 0;
     float dropout_prob = 0.0f;
-#ifdef HAS_PYTORCH
-    at::PhiloxCudaState rng_engine_inputs = at::PhiloxCudaState(0, 0);
-#endif
+
+    uint64_t dropout_philox_seed = 0;
+    uint64_t dropout_philox_offset = 0;
 
     // Moves pointers to what we should process
     // Returns "false" if there is no work to do
@@ -686,11 +681,8 @@ struct AttentionKernel {
               {0, col});
         };
 
-#ifdef HAS_PYTORCH
     curandStatePhilox4_32_10_t curand_state_init;
     if (kSupportsDropout && p.use_dropout) {
-      const auto seeds = at::cuda::philox::unpack(p.rng_engine_inputs);
-
       // each element of the attention matrix P with shape
       // (batch_sz, n_heads, n_queries, n_keys) is associated with a single
       // offset in RNG sequence. we initialize the RNG state with offset that
@@ -700,12 +692,11 @@ struct AttentionKernel {
       // rather than once per iteration. each iteration takes a copy of the
       // initialized RNG state and offsets it as needed.
       curand_init(
-          std::get<0>(seeds),
+          p.dropout_philox_seed,
           0,
-          std::get<1>(seeds) + p.dropout_batch_head_rng_offset,
+          p.dropout_philox_offset + p.dropout_batch_head_rng_offset,
           &curand_state_init);
     }
-#endif
 
     // Iterate through keys
     for (int32_t iter_key_start = 0; iter_key_start < p.num_keys;
@@ -940,7 +931,6 @@ struct AttentionKernel {
 
       __syncthreads();
 
-#ifdef HAS_PYTORCH
       // apply dropout (if applicable) after we've written Pij to smem.
       // dropout is applied by multiplying each element of Pij by:
       // - 0 with probability dropout_p
@@ -1001,7 +991,6 @@ struct AttentionKernel {
         }
         __syncthreads(); // p.use_dropout should have same value kernel-wide
       }
-#endif
 
       //
       // MATMUL: Attn . V

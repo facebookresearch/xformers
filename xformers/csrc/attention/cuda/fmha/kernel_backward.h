@@ -14,13 +14,6 @@
 #include <cuda_fp16.h>
 #include <curand_kernel.h>
 
-#ifdef HAS_PYTORCH
-#include <ATen/cuda/CUDAContext.h>
-#include <ATen/cuda/CUDAGeneratorImpl.h>
-#include <c10/cuda/CUDAGuard.h>
-#include <ATen/cuda/CUDAGraphsUtils.cuh>
-#endif
-
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/epilogue/thread/scale_type.h"
@@ -674,10 +667,9 @@ struct AttentionBackwardKernel {
     int32_t gB_strideM = -1;
     int8_t gQKV_strideM_multiplier = 1; // 3 for packed, 1 otherwise
 
-#ifdef HAS_PYTORCH
-    // dropout
-    at::PhiloxCudaState rng_engine_inputs = {0, 0};
-#endif
+    uint64_t dropout_philox_seed = 0;
+    uint64_t dropout_philox_offset = 0;
+
     // RNG sequence offset based on batch_id and head_id
     unsigned long long dropout_batch_head_rng_offset = 0;
     float dropout_prob = 0.0f;
@@ -1328,9 +1320,7 @@ struct AttentionBackwardKernel {
     OutputFragments output_frags;
 
     curandStatePhilox4_32_10_t rng_state_init;
-#ifdef HAS_PYTORCH
     if (kApplyDropout) {
-      auto seeds = at::cuda::philox::unpack(p.rng_engine_inputs);
       // each element of the attention matrix P with shape
       // (batch_sz, n_heads, n_queries, n_keys) is associated with a single
       // offset in RNG sequence. we initialize the RNG state with offset that
@@ -1340,12 +1330,12 @@ struct AttentionBackwardKernel {
       // rather than once per iteration. each iteration takes a copy of the
       // initialized RNG state and offsets it as needed.
       curand_init(
-          std::get<0>(seeds),
+          p.dropout_philox_seed,
           0,
-          std::get<1>(seeds) + p.dropout_batch_head_rng_offset,
+          p.dropout_philox_offset + p.dropout_batch_head_rng_offset,
           &rng_state_init);
     }
-#endif
+
     CUTLASS_PRAGMA_UNROLL
     for (; key_start < p.num_keys;
          key_start += p.num_splits_key_device() * kBlockSizeJ) {
