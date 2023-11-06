@@ -266,8 +266,8 @@ efficient_attention_forward_cutlass(
     p.use_dropout = use_dropout;
     if (p.use_dropout) {
       p.dropout_prob = dropout_p;
-      p.dropout_philox_seed = rng_engine_inputs.seed_;
-      p.dropout_philox_offset = rng_engine_inputs.offset_.val;
+      p.dropout_rng_seed = rng_engine_inputs.seed_.val;
+      p.dropout_rng_offset = rng_engine_inputs.offset_.val;
     }
 
     if (smem_bytes > 0xc000) {

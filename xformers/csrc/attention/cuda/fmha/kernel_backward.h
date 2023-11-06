@@ -667,8 +667,8 @@ struct AttentionBackwardKernel {
     int32_t gB_strideM = -1;
     int8_t gQKV_strideM_multiplier = 1; // 3 for packed, 1 otherwise
 
-    uint64_t dropout_philox_seed = 0;
-    uint64_t dropout_philox_offset = 0;
+    uint64_t dropout_rng_seed = 0;
+    uint64_t dropout_rng_offset = 0;
 
     // RNG sequence offset based on batch_id and head_id
     unsigned long long dropout_batch_head_rng_offset = 0;
@@ -1330,9 +1330,9 @@ struct AttentionBackwardKernel {
       // rather than once per iteration. each iteration takes a copy of the
       // initialized RNG state and offsets it as needed.
       curand_init(
-          p.dropout_philox_seed,
+          p.dropout_rng_seed,
           0,
-          p.dropout_philox_offset + p.dropout_batch_head_rng_offset,
+          p.dropout_rng_offset + p.dropout_batch_head_rng_offset,
           &rng_state_init);
     }
 

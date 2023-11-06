@@ -201,8 +201,8 @@ struct AttentionKernel {
     unsigned long long dropout_batch_head_rng_offset = 0;
     float dropout_prob = 0.0f;
 
-    uint64_t dropout_philox_seed = 0;
-    uint64_t dropout_philox_offset = 0;
+    uint64_t dropout_rng_seed = 0;
+    uint64_t dropout_rng_offset = 0;
 
     // Moves pointers to what we should process
     // Returns "false" if there is no work to do
@@ -692,9 +692,9 @@ struct AttentionKernel {
       // rather than once per iteration. each iteration takes a copy of the
       // initialized RNG state and offsets it as needed.
       curand_init(
-          p.dropout_philox_seed,
+          p.dropout_rng_seed,
           0,
-          p.dropout_philox_offset + p.dropout_batch_head_rng_offset,
+          p.dropout_rng_offset + p.dropout_batch_head_rng_offset,
           &curand_state_init);
     }
 
