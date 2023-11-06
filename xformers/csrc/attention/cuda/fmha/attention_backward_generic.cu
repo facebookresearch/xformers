@@ -309,7 +309,6 @@ mem_efficient_attention_backward_cutlass(
     }
 
     if (use_dropout) {
-      p.rng_engine_inputs = rng_engine_inputs;
       p.dropout_prob = dropout_p;
       p.dropout_philox_seed = rng_seed;
       p.dropout_philox_offset = rng_offset;
