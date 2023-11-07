@@ -11,8 +11,6 @@ from typing import Any, Dict, List, Type, TypeVar, Union, get_args, get_origin
 import torch
 from torch.torch_version import TorchVersion
 
-from .._C import box_process_group, unbox_process_group
-
 
 def get_operator(library: str, name: str):
     def no_such_operator(*args, **kwargs):
@@ -122,6 +120,8 @@ def make_pytorch_cuda_operator(fn: ClsT) -> ClsT:
         ba = sign.bind(*args, **kwargs)
         for name, value in ba.arguments.items():
             if sign.parameters[name].annotation is torch.distributed.ProcessGroup:
+                from .._C import unbox_process_group
+
                 ba.arguments[name] = unbox_process_group(value)
         return fn(*ba.args, **ba.kwargs)
 
@@ -135,6 +135,8 @@ def make_pytorch_cuda_operator(fn: ClsT) -> ClsT:
         ba = sign.bind(*args, **kwargs)
         for name, value in ba.arguments.items():
             if sign.parameters[name].annotation is torch.distributed.ProcessGroup:
+                from .._C import box_process_group
+
                 ba.arguments[name] = box_process_group(value)
         return dispatcher_impl(*ba.args, **ba.kwargs)
 
