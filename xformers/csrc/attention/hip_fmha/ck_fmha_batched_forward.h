@@ -52,15 +52,6 @@ struct batched_forward_masktype_attnbias_dispatched {
       static_cast<ck::tensor_operation::device::MaskingSpecialization>(
           custom_mask_type);
 
-  static constexpr auto TensorSpecA =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr auto TensorSpecB0 =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr auto TensorSpecB1 =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-  static constexpr auto TensorSpecC =
-      ck::tensor_operation::device::TensorSpecialization::Default;
-
   static constexpr ck::index_t kAcc0BiasTransferSrcScalarPerVector = 1;
 
 #ifndef BATCHED_FORWARD_HEADDIM_SWITCH
