@@ -208,7 +208,7 @@ def get_extensions():
     source_cuda += glob.glob(os.path.join(extensions_dir, "attention", "cuda", "**", "*.cu"), recursive=True)
     source_cuda += glob.glob(os.path.join(extensions_dir, "indexing", "**", "*.cu"), recursive=True)
     source_cuda += glob.glob(os.path.join(extensions_dir, "swiglu", "**", "*.cu"), recursive=True)
-    source_hip = glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "*.cpp"), recursive=True) 
+    source_hip = glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cpp"), recursive=True) 
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
@@ -293,7 +293,7 @@ def get_extensions():
         ]
     elif torch.cuda.is_available() and torch.version.hip: 
        rename_cpp_cu(source_hip)
-       source_hip_cu = glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "*.cu"), recursive=True) 
+       source_hip_cu = glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cu"), recursive=True) 
        extension = CUDAExtension
        sources += source_hip_cu
        include_dirs += [ Path(this_dir) / 'xformers' / 'csrc' / 'attention' / 'hip_fmha', 
