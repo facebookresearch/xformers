@@ -5,10 +5,4 @@ template void run_grouped_backward_masktype_attnbias_dispatched<
     ck::half_t,
     2,
     true,
-    true>(GroupedBackwardParams& param, hipStream_t stream);
-
-template void run_grouped_backward_masktype_attnbias_dispatched<
-    ck::half_t,
-    2,
-    true,
     false>(GroupedBackwardParams& param, hipStream_t stream);

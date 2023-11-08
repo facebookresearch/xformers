@@ -3,6 +3,6 @@
 
 template void run_batched_backward_masktype_attnbias_dispatched<
     ck::bhalf_t,
-    0,
-    true,
-    false>(BatchedBackwardParams& param, hipStream_t stream);
+    2,
+    false,
+    true>(BatchedBackwardParams& param, hipStream_t stream);
