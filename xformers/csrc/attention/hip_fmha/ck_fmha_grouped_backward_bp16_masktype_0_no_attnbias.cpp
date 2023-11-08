@@ -1,14 +1,14 @@
 #include <ck/ck.hpp>
 #include "ck_fmha_grouped_backward.h"
 
-template struct grouped_backward_masktype_attnbias_dispatched<
+template void run_grouped_backward_masktype_attnbias_dispatched<
     ck::bhalf_t,
     0,
     false,
-    true>;
+    true>(GroupedBackwardParams& param, hipStream_t stream);
 
-template struct grouped_backward_masktype_attnbias_dispatched<
+template void run_grouped_backward_masktype_attnbias_dispatched<
     ck::bhalf_t,
     0,
     false,
-    false>;
+    false>(GroupedBackwardParams& param, hipStream_t stream);

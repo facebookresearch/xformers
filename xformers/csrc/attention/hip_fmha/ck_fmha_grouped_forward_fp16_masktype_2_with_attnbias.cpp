@@ -1,7 +1,7 @@
 #include <ck/ck.hpp>
 #include "ck_fmha_grouped_forward.h"
 
-template struct grouped_forward_masktype_attnbias_dispatched<
+template void run_grouped_forward_masktype_attnbias_dispatched<
     ck::half_t,
     2,
-    true>;
+    true>(GroupedForwardParams& param, hipStream_t stream);

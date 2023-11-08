@@ -357,3 +357,13 @@ struct grouped_forward_masktype_attnbias_dispatched {
     (void)invoker.Run(arg_ptr.get(), StreamConfig{stream, false});
   };
 };
+
+template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
+void run_grouped_forward_masktype_attnbias_dispatched(
+    GroupedForwardParams& param,
+    hipStream_t stream) {
+  grouped_forward_masktype_attnbias_dispatched<
+      scalar_t,
+      custom_mask_type,
+      has_attn_bias>::Run(param, stream);
+};

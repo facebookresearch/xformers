@@ -1,14 +1,14 @@
 #include <ck.hpp>
 #include "ck_fmha_batched_backward.h"
 
-template struct batched_backward_masktype_attnbias_dispatched<
+template void run_batched_backward_masktype_attnbias_dispatched<
     ck::bhalf_t,
     2,
     false,
-    true>;
+    true>(BatchedBackwardParams& param, hipStream_t stream);
 
-template struct batched_backward_masktype_attnbias_dispatched<
+template void run_batched_backward_masktype_attnbias_dispatched<
     ck::bhalf_t,
     2,
     false,
-    false>;
+    false>(BatchedBackwardParams& param, hipStream_t stream);

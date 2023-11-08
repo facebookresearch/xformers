@@ -500,3 +500,18 @@ struct batched_backward_masktype_attnbias_dispatched {
     (void)invoker.Run(arg_ptr.get(), StreamConfig{stream, false});
   };
 };
+
+template <
+    typename scalar_t,
+    int32_t custom_mask_type,
+    bool has_attn_bias,
+    bool use_fp32_qkv_grad>
+void run_batched_backward_masktype_attnbias_dispatched(
+    BatchedBackwardParams& param,
+    hipStream_t stream) {
+  batched_backward_masktype_attnbias_dispatched<
+      scalar_t,
+      custom_mask_type,
+      has_attn_bias,
+      use_fp32_qkv_grad>::Run(param, stream);
+};

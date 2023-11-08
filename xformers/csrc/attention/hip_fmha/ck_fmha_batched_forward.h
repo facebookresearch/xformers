@@ -360,3 +360,12 @@ struct batched_forward_masktype_attnbias_dispatched {
     invoker.Run(arg_ptr.get(), StreamConfig{stream, false});
   };
 };
+
+template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
+void run_batched_forward_masktype_attnbias_dispatched(BatchedForwardParams& param, hipStream_t stream)
+{
+  batched_forward_masktype_attnbias_dispatched<
+      scalar_t,
+      custom_mask_type,
+      has_attn_bias>::Run(param, stream);
+};

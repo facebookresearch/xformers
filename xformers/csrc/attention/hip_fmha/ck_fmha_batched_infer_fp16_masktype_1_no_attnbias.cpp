@@ -1,9 +1,8 @@
 #include <ck/ck.hpp>
-#include <stdexcept>
 
 #include "ck_fmha_batched_infer.h"
 
-template struct batched_infer_masktype_attnbias_dispatched<
+template void run_batched_infer_masktype_attnbias_dispatched<
     ck::half_t,
     1,
-    false>;
+    false>(BatchedForwardParams& param, hipStream_t stream);

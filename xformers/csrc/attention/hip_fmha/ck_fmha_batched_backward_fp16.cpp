@@ -1,80 +1,80 @@
 #include <ck.hpp>
 #include <stdexcept>
 
-#include "ck_fmha_batched_backward.h"
 #include "ck_bool_switch.h"
+#include "ck_fmha_batched_backward.h"
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     0,
     true,
-    true>;
+    true>(BatchedBackwardParams& param, hipStream_t stream);
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     0,
     true,
-    false>;
+    false>(BatchedBackwardParams& param, hipStream_t stream);
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     0,
     false,
-    true>;
+    true>(BatchedBackwardParams& param, hipStream_t stream);
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     0,
     false,
-    false>;
+    false>(BatchedBackwardParams& param, hipStream_t stream);
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     1,
     true,
-    true>;
+    true>(BatchedBackwardParams& param, hipStream_t stream);
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     1,
     true,
-    false>;
+    false>(BatchedBackwardParams& param, hipStream_t stream);
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     1,
     false,
-    true>;
+    true>(BatchedBackwardParams& param, hipStream_t stream);
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     1,
     false,
-    false>;
+    false>(BatchedBackwardParams& param, hipStream_t stream);
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     2,
     true,
-    true>;
+    true>(BatchedBackwardParams& param, hipStream_t stream);
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     2,
     true,
-    false>;
+    false>(BatchedBackwardParams& param, hipStream_t stream);
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     2,
     false,
-    true>;
+    true>(BatchedBackwardParams& param, hipStream_t stream);
 
-extern template struct batched_backward_masktype_attnbias_dispatched<
+extern template void run_batched_backward_masktype_attnbias_dispatched<
     ck::half_t,
     2,
     false,
-    false>;
+    false>(BatchedBackwardParams& param, hipStream_t stream);
 
 void batched_backward_fp16(BatchedBackwardParams& param, hipStream_t stream) {
   BOOL_SWITCH_2(
@@ -84,23 +84,23 @@ void batched_backward_fp16(BatchedBackwardParams& param, hipStream_t stream) {
       USE_FP32_QKV_GRAD,
       [&] {
         if (param.custom_mask_type == 0)
-          batched_backward_masktype_attnbias_dispatched<
+          run_batched_backward_masktype_attnbias_dispatched<
               ck::half_t,
               0,
               HAS_ATTN_BIAS,
-              USE_FP32_QKV_GRAD>::Run(param, stream);
+              USE_FP32_QKV_GRAD>(param, stream);
         else if (param.custom_mask_type == 1)
-          batched_backward_masktype_attnbias_dispatched<
+          run_batched_backward_masktype_attnbias_dispatched<
               ck::half_t,
               1,
               HAS_ATTN_BIAS,
-              USE_FP32_QKV_GRAD>::Run(param, stream);
+              USE_FP32_QKV_GRAD>(param, stream);
         else if (param.custom_mask_type == 2)
-          batched_backward_masktype_attnbias_dispatched<
+          run_batched_backward_masktype_attnbias_dispatched<
               ck::half_t,
               2,
               HAS_ATTN_BIAS,
-              USE_FP32_QKV_GRAD>::Run(param, stream);
+              USE_FP32_QKV_GRAD>(param, stream);
         else
           throw std::runtime_error("Invalid custom_mask_type value");
       });
