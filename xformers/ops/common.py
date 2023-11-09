@@ -5,11 +5,13 @@
 
 import inspect
 import os
+from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Dict, List, Type, TypeVar, Union, get_args, get_origin
+from typing import Any, Callable, Dict, List, Type, TypeVar, Union
 
 import torch
 from torch.torch_version import TorchVersion
+from typing_extensions import Annotated, get_args, get_origin
 
 
 def get_operator(library: str, name: str):
@@ -69,7 +71,24 @@ def _get_storage_base(x: torch.Tensor) -> int:
     return _GET_TENSOR_STORAGE(x).data_ptr()  # type: ignore
 
 
+@dataclass(frozen=True)
+class Alias:
+    name: str
+    write: bool
+
+
 def make_pytorch_cuda_operator(fn: ClsT) -> ClsT:
+    return turn_into_pytorch_op(fn, "CUDA")
+
+
+def make_pytorch_operator_for_dispatch_key(dispatch_key: str) -> Callable[[ClsT], ClsT]:
+    def decorator(fn: ClsT) -> ClsT:
+        return turn_into_pytorch_op(fn, dispatch_key)
+
+    return decorator
+
+
+def turn_into_pytorch_op(fn: ClsT, dispatch_key: str) -> ClsT:
     from .. import get_python_lib
 
     def render_arg_type(annotation) -> str:
@@ -89,6 +108,11 @@ def make_pytorch_cuda_operator(fn: ClsT) -> ClsT:
                 + ", ".join([render_arg_type(t) for t in get_args(annotation)])
                 + ")"
             )
+        if get_origin(annotation) is Annotated:
+            inner_type, annotation = get_args(annotation)
+            if isinstance(annotation, Alias):
+                alias = annotation.name + ("!" if annotation.write else "")
+                return f"{render_arg_type(inner_type)}({alias})"
         if annotation is torch.Tensor:
             return "Tensor"
         if annotation is bool:
@@ -127,7 +151,7 @@ def make_pytorch_cuda_operator(fn: ClsT) -> ClsT:
 
     xformers_lib = get_python_lib()
     xformers_lib.define(definition)
-    xformers_lib.impl(op_name, callee, "CUDA")
+    xformers_lib.impl(op_name, callee, dispatch_key)
     dispatcher_impl = getattr(getattr(torch.ops, xformers_lib.ns), op_name)
 
     @wraps(fn)  # type: ignore[arg-type]
