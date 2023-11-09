@@ -5,6 +5,7 @@
 
 // list the template parameters that will not be tuned,
 // the commented lines gives the tunable template parameters
+// clang-format off
 struct GemmOpConstantsBatchedForward {
   static constexpr ck::index_t NumGemmKPrefetchStage = 1;
   static constexpr ck::index_t BlockSize = 256;
@@ -46,16 +47,15 @@ struct GemmOpConstantsBatchedForward {
   static constexpr bool B1BlockLdsExtraN = false;
   static constexpr ck::index_t CShuffleMXdlPerWavePerShuffle = 1;
   // static constexpr ck::index_t CShuffleNXdlPerWavePerShuffle;
-  using CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock =
-      S<1, 16, 1, 16>;
-  // static constexpr ck::index_t
-  // CShuffleBlockTransferScalarPerVector_NPerBlock;
-  static constexpr ck::index_t Acc1BiasTransferSrcScalarPerVector =
-      1; // not actually used by the kernel
+  using CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock = S<1, 8, 1, 32>;
+  // static constexpr ck::index_t CShuffleBlockTransferScalarPerVector_NPerBlock;
+  static constexpr ck::index_t Acc1BiasTransferSrcScalarPerVector = 1; // not actually used by the kernel
 };
+// clang-format on
 
 // list the template parameters that will not be tuned,
 // the commented lines gives the tunable template parameters
+// clang-format off
 struct GemmOpConstantsGroupedForward {
   static constexpr ck::index_t NumGemmKPrefetchStage = 1;
   static constexpr ck::index_t BlockSize = 256;
@@ -97,10 +97,8 @@ struct GemmOpConstantsGroupedForward {
   static constexpr bool B1BlockLdsExtraN = false;
   static constexpr ck::index_t CShuffleMXdlPerWavePerShuffle = 1;
   // static constexpr ck::index_t CShuffleNXdlPerWavePerShuffle;
-  using CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock =
-      S<1, 16, 1, 16>;
-  // static constexpr ck::index_t
-  // CShuffleBlockTransferScalarPerVector_NPerBlock;
-  static constexpr ck::index_t Acc1BiasTransferSrcScalarPerVector =
-      1; // not actually used by the kernel
+  using CShuffleBlockTransferClusterLengths_MBlock_MPerBlock_NBlock_NPerBlock = S<1, 8, 1, 32>;
+  // static constexpr ck::index_t CShuffleBlockTransferScalarPerVector_NPerBlock;
+  static constexpr ck::index_t Acc1BiasTransferSrcScalarPerVector = 1; // not actually used by the kernel
 };
+// clang-format on
