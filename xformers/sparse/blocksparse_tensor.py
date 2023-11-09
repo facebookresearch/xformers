@@ -183,7 +183,7 @@ class BlockSparseTensor(torch.Tensor):
 
     @classmethod
     def _bmm(cls, arg0, arg1):
-        if not (isinstance(arg0, cls) and type(arg1) == torch.Tensor):
+        if not (isinstance(arg0, cls) and type(arg1) is torch.Tensor):
             return NotImplemented
         if _can_use_triton(arg1):
             res = arg0.__sparse_dot_dsd(arg0.__values, arg1)
@@ -193,7 +193,7 @@ class BlockSparseTensor(torch.Tensor):
 
     @classmethod
     def _masked_matmul(cls, a, b, mask):
-        if not (type(a) == torch.Tensor and type(b) == torch.Tensor):
+        if not (type(a) is torch.Tensor and type(b) is torch.Tensor):
             return NotImplemented
         b = b.transpose(-2, -1)
         assert b.is_contiguous()
