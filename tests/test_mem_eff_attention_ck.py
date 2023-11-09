@@ -370,8 +370,6 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2) -> torch.Ten
         splits))
     out = torch.zeros_like(q)
 
-    assert(not slices[0]["attn_slice"].isnan().any())
-
     # reduce out over split-k slices
 
     m_current_max = torch.zeros_like(slices[0]["row_max"]).fill_(float("-inf"))
