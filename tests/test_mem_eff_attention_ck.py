@@ -354,7 +354,7 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2) -> torch.Ten
         s = torch.exp(p_slice_scaled)
         assert s.shape == p_slice.shape
         assert not s.isnan().any(), f"s is nan: {s.isnan().sum()} of {s.numel()} values"
-        l = torch.sum(s, dim = -1)
+        l = torch.sum(s, dim=-1, keepdim=True)
         assert not l.isnan().any(), "l is nan"
         attn_slice = s @ v_slice
         assert not attn_slice.isnan().any(), "attn_slice is nan"
@@ -375,12 +375,12 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2) -> torch.Ten
     # reduce out over split-k slices
 
     m_current_max = torch.zeros_like(slices[0]["row_max"]).fill_(float("-inf"))
-    l_current_sum = torch.zeros_like(slices[0]["row_lse"]).unsqueeze(-1)
+    l_current_sum = torch.zeros_like(slices[0]["row_lse"])
 
     for s in slices:
         attn_slice = s["attn_slice"]
         m = s["row_max"]
-        l = s["row_lse"].unsqueeze(-1)
+        l = s["row_lse"]
         m_new = torch.max(m, m_current_max)
         assert not m_new.isnan().any(), "m_new is nan"
         pick_new = m < m_current_max
