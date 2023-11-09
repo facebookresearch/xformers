@@ -282,6 +282,75 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
     return out.permute((0, 2, 1, 3))
 
 
+def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2) -> torch.Tensor:
+    assert q.ndim == 3
+
+    q = q.float()
+    k = k.float()
+    v = v.float()
+
+    if scale is None:
+        scale = torch.rsqrt(q.shape[-1])
+    q = q * scale
+
+    if attn_bias is not None:
+        if isinstance(attn_bias, xformers.ops.AttentionBias):
+            # Always create in B,H,Mq,Mk format
+            attn_bias_tensor = attn_bias.materialize(
+                (q.shape[0], 1, q.shape[1], k.shape[1]),
+                device=q.device,
+                dtype=torch.float32,
+            )
+        else:
+            attn_bias_tensor = attn_bias
+        if attn_bias_tensor.ndim == 4:
+            assert q.shape[0] == attn_bias_tensor.shape[0] * attn_bias_tensor.shape[1]
+            attn_bias_tensor = attn_bias_tensor.reshape(
+                [-1, *attn_bias_tensor.shape[2:]]
+            )
+
+    split_config = { "dim": -1, "split_size_or_sections": k.size(-1) // split_k}
+    k_split = torch.split(k, **split_config)
+    v_split = torch.split(v, **split_config)
+    attn_bias_split = torch.split(attn_bias_tensor, **split_config)
+
+    def compute_attention_split(q, k_slice, v_slice, attn_bias_slice):
+        p_slice = q @ k_slice.transpose(-2, -1)
+        p_slice += attn_bias_slice
+        m = p_slice.max(dim = -1)
+        s = torch.exp(p_slice - m[:, :, None])
+        l = torch.sum(s, dim = -1)
+        attn_slice = s @ v_slice
+        return {
+            "attn_slice": attn_slice,
+            "row_max": m,
+            "row_lse": l, 
+        }
+    
+    slices = map(lambda k, v, b: compute_attention_split(q, k, v, b), 
+        zip(k_split, v_split, attn_bias_split))
+    slices = list(slices)
+    out = torch.zero_like(q)
+
+    m_current_max = slices[0]["row_max"]
+    l_current_sum = torch.zero_like(slices[0]["row_lse"])
+
+    for s in slices:
+        (attn_slice, m, l) = s.values()
+        m_new = torch.max(m, m_current_max)
+        pick_new = m < m_current_max
+        pick_our = torch.logical_not(pick_new)
+
+        alpha = torch.exp(-torch.abs(m - m_current_max))
+
+        out = (pick_our * out + pick_new * attn_slice) * alpha
+        l_current_sum = (pick_our * l_current_sum + pick_new * l) * alpha
+        m_current_max = m_new
+    
+    out /= l_current_sum
+    return out
+
+
 def _rand_seqlens(
     r: random.Random,
     bs: int,

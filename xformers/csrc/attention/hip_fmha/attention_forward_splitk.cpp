@@ -30,8 +30,10 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck(
     auto M_k = cache_K.size(1);
 
     constexpr auto BLOCK_M = 16;
-
     auto M_ceil = (M + BLOCK_M - 1) / BLOCK_M * BLOCK_M;
+
+    constexpr auto kThreadsPerWarp = 64;
+    constexpr auto kWarpsPerBlock = 2; // original uses 2 warps
 
     const auto options = at::TensorOptions()
                              .dtype(XQ.dtype())
@@ -39,8 +41,15 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck(
                              .device(XQ.device())
                              .requires_grad(false);
 
-    auto O = at::empty({B * G * H, split_k, M_ceil, K_q}, options);
+    auto O_splitk = at::empty({B * G * H, split_k, M_ceil, K_q}, options);
     auto metadata = at::empty({B * G * H, 2, split_k, M_ceil}, options);
+
+    dim3 attention_grid = {static_cast<uint32_t>(M / BLOCK_M), static_cast<uint32_t>(B * G * H), static_cast<uint32_t>(split_k)};
+    dim3 reduce_grid = {static_cast<uint32_t>(B * G * H), static_cast<uint32_t>(M)};
+
+    dim3 threads = {kThreadsPerWarp * kWarpsPerBlock};
+    
+    auto O = at::empty_like(XQ);
 
     return O;
 }
