@@ -283,6 +283,122 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None, dtype=None) -> torch.Tens
     return out.permute((0, 2, 1, 3))
 
 
+def ref_attention_splitk_bmhk(q, k, v, attn_bias, scale=None, split_k=None) -> torch.Tensor:
+    assert q.ndim == 4
+
+    def T(t):
+        return t.permute((0, 2, 1, 3)).reshape(
+            [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
+        )
+
+    if isinstance(attn_bias, xformers.ops.AttentionBias):
+        attn_bias = attn_bias.materialize(
+            (q.shape[0], q.shape[2], q.shape[1], k.shape[1]),
+            device=q.device,
+            dtype=torch.float32,
+        ).reshape([q.shape[0] * q.shape[2], q.shape[1], k.shape[1]])
+    out = ref_attention_splitk(T(q), T(k), T(v), attn_bias, scale=scale, split_k=split_k)
+    out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
+    return out.permute((0, 2, 1, 3))
+
+
+def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2) -> torch.Tensor:
+    if q.ndim == 4:
+        return ref_attention_splitk_bmhk(q, k, v, attn_bias=attn_bias, split_k=split_k)
+    assert q.ndim == 3
+    q = q.float()
+    k = k.float()
+    v = v.float()
+
+    if scale is None:
+        scale = q.shape[-1] ** -.5
+    assert not q.isnan().any()
+    q = q * scale
+    assert not q.isnan().any()
+
+    if attn_bias is not None:
+        if isinstance(attn_bias, xformers.ops.AttentionBias):
+            # Always create in B,H,Mq,Mk format
+            attn_bias_tensor = attn_bias.materialize(
+                (q.shape[0], 1, q.shape[1], k.shape[1]),
+                device=q.device,
+                dtype=torch.float32,
+            )
+        else:
+            attn_bias_tensor = attn_bias
+        if attn_bias_tensor.ndim == 4:
+            assert q.shape[0] == attn_bias_tensor.shape[0] * attn_bias_tensor.shape[1]
+            attn_bias_tensor = attn_bias_tensor.reshape(
+                [-1, *attn_bias_tensor.shape[2:]]
+            )
+
+    split_size = k.size(-2) // split_k
+    split_config = { "dim": -2, "split_size_or_sections": split_size}
+    k_split = torch.split(k, **split_config)
+    v_split = torch.split(v, **split_config)
+    attn_bias_split = torch.split(attn_bias_tensor, dim=-1, split_size_or_sections=split_size)
+    
+    def compute_attention_split(q_whole, k_slice, v_slice, attn_bias_slice):
+        assert not q_whole.isnan().any(), "q_whole is nan"
+        assert not k_slice.isnan().any(), "k_slice is nan"
+        p_slice = q_whole @ k_slice.transpose(-2, -1)
+        assert not p_slice.isnan().any(), "p_slice is nan"
+        assert not p_slice.isinf().any(), "p_slice is inf"
+        p_slice += attn_bias_slice
+        assert not p_slice.isnan().any(), "p_slice is nan after bias add"
+        m = torch.max(p_slice, dim = -1, keepdim=True).values
+        assert not m.isnan().any(), "m is nan"
+        p_slice_scaled = p_slice - m
+        p_slice_scaled[p_slice_scaled.isnan()] = float("-inf")
+        assert not p_slice_scaled.isnan().any(), f"p_slice_scaled is nan: {p_slice_scaled.isnan().sum()} of {p_slice_scaled.numel()} values"
+        s = torch.exp(p_slice_scaled)
+        assert s.shape == p_slice.shape
+        assert not s.isnan().any(), f"s is nan: {s.isnan().sum()} of {s.numel()} values"
+        l = torch.sum(s, dim = -1)
+        assert not l.isnan().any(), "l is nan"
+        attn_slice = s @ v_slice
+        assert not attn_slice.isnan().any(), "attn_slice is nan"
+        return {
+            "attn_slice": attn_slice,
+            "row_max": m,
+            "row_lse": l, 
+        }
+    
+    splits = list(zip(k_split, v_split, attn_bias_split))
+
+    slices = list(map(lambda s: compute_attention_split(q, s[0], s[1], s[2]), 
+        splits))
+    out = torch.zeros_like(q)
+
+    assert(not slices[0]["attn_slice"].isnan().any())
+
+    # reduce out over split-k slices
+
+    m_current_max = torch.zeros_like(slices[0]["row_max"]).fill_(float("-inf"))
+    l_current_sum = torch.zeros_like(slices[0]["row_lse"]).unsqueeze(-1)
+
+    for s in slices:
+        attn_slice = s["attn_slice"]
+        m = s["row_max"]
+        l = s["row_lse"].unsqueeze(-1)
+        m_new = torch.max(m, m_current_max)
+        assert not m_new.isnan().any(), "m_new is nan"
+        pick_new = m < m_current_max
+        pick_our = torch.logical_not(pick_new)
+
+        log_alpha = -torch.abs(m - m_current_max)
+        log_alpha[log_alpha.isnan()] = 0
+        alpha = torch.exp(log_alpha)
+        assert not alpha.isnan().any(), "alpha is nan"
+        out = out + attn_slice + (pick_our * out + pick_new * attn_slice) * (torch.sub(alpha, 1))
+        assert not out.isnan().any(), "out acc is nan"
+        l_current_sum = l_current_sum + l + (pick_our * l_current_sum + pick_new * l) * (torch.sub(alpha, 1))
+        assert not l_current_sum.isnan().any(), "l acc is nan"
+        m_current_max = m_new
+    out /= l_current_sum
+    assert not out.isnan().any(), "final out is nan"
+    return out
+
 def _rand_seqlens(
     r: random.Random,
     bs: int,
@@ -1637,6 +1753,47 @@ def test_attn_bias_padded() -> None:
         fmha_output,
         atol=fmha.ck.FwOp.ERROR_ATOL[torch.float16],
         rtol=fmha.ck.FwOp.ERROR_RTOL[torch.float16],
+    )
+
+@pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "nomq")
+@pytest.mark.parametrize("n_heads", [1, 16, 32])
+@pytest.mark.parametrize("padding", [32, 4096])
+@pytest.mark.parametrize("bsz", [1, 8])
+@pytest.mark.parametrize("dtype", ["f16"])
+@pytest.mark.parametrize("split_k", [1, 2])
+def test_splitk_reference(
+    multiquery: bool, n_heads: int, padding: int, bsz: int, dtype: str, split_k: int
+):
+    dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
+    torch.manual_seed(1)
+    d = 256
+    k_shape = (1, bsz * padding, n_heads, d)
+    # TODO: support 2 kv heads etc.
+    k = torch.rand(k_shape, dtype=dtype_).cuda()
+    k_seqlen = torch.randint(1, padding + 1, (bsz,)).tolist()
+    v = torch.rand(k_shape, dtype=dtype_).cuda()
+    q = torch.rand((1, bsz, n_heads, d), dtype=dtype_).cuda()
+    causal_diagonal = torch.tensor(  # TODO: make unnecessary
+        [i - 1 for i in k_seqlen], dtype=torch.int32
+    ).cuda()
+
+    if multiquery:
+        k = k[:, :, :1].expand(k_shape)
+        v = v[:, :, :1].expand(k_shape)
+
+    attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+        q_seqlen=[1] * bsz,
+        kv_seqlen=k_seqlen,
+        causal_diagonal=causal_diagonal,
+        kv_padding=padding,
+    )
+    ref_out = ref_attention(q, k, v, attn_bias)
+    splitk_out = ref_attention_splitk(q, k, v, attn_bias, None, split_k=split_k)
+    assert_allclose(
+        ref_out,
+        splitk_out,
+        atol=fmha.ck.FwOp.ERROR_ATOL[dtype_],
+        rtol=fmha.ck.FwOp.ERROR_RTOL[dtype_],
     )
 
 
