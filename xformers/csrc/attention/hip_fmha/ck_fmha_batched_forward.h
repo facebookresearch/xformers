@@ -179,7 +179,7 @@ struct batched_forward_masktype_attnbias_dispatched {
         "ABlockTransfer and BBlockTransfer should use completely same K1 sizes and ThreadClusterLengths!");
 
     constexpr ck::index_t kABBlockTransferSrcScalarPerVector_max =
-        min(4, thread_slice_length_ak1);
+        min(8, thread_slice_length_ak1);
 
     BATCHED_FORWARD_HEADDIM_SWITCH(param.K, param.Kv, [&] {
       constexpr ck::index_t thread_slice_length_gemm1n = kGemm1NPerBlock /
@@ -362,8 +362,9 @@ struct batched_forward_masktype_attnbias_dispatched {
 };
 
 template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
-void run_batched_forward_masktype_attnbias_dispatched(BatchedForwardParams& param, hipStream_t stream)
-{
+void run_batched_forward_masktype_attnbias_dispatched(
+    BatchedForwardParams& param,
+    hipStream_t stream) {
   batched_forward_masktype_attnbias_dispatched<
       scalar_t,
       custom_mask_type,
