@@ -4,6 +4,18 @@
 #include <c10/cuda/CUDAStream.h>
 #include <torch/library.h>
 
+#define AT_DISPATCH_CASE_3(SCALARTYPE1, SCALARTYPE2, SCALARTYPE3, ...) \
+  AT_DISPATCH_CASE(SCALARTYPE1, __VA_ARGS__)                           \
+  AT_DISPATCH_CASE(SCALARTYPE2, __VA_ARGS__)                           \
+  AT_DISPATCH_CASE(SCALARTYPE3, __VA_ARGS__)
+
+#define AT_DISPATCH_SWITCH_3(                               \
+    SCALARTYPE1, SCALARTYPE2, SCALARTYPE3, TYPE, NAME, ...) \
+  AT_DISPATCH_SWITCH(                                       \
+      TYPE,                                                 \
+      NAME,                                                 \
+      AT_DISPATCH_CASE_3(SCALARTYPE1, SCALARTYPE2, SCALARTYPE3, __VA_ARGS__))
+
 namespace {
 
 at::Tensor efficient_attention_forward_decoder_splitk_ck(
@@ -60,3 +72,6 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
       TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_decoder_splitk_ck"),
       TORCH_FN(efficient_attention_forward_decoder_splitk_ck));
 }
+
+#undef AT_DISPATCH_CASE_3
+#undef AT_DISPATCH_SWITCH_3
