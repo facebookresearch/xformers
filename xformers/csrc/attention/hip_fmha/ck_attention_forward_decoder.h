@@ -150,7 +150,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   data_vec4_t q_thread;
   load_v<decltype(q_), data_vec4_t>(q_, lane_idx, &q_thread);
   // Each block computes different B value
-  float max_qk_acc = std::numeric_limits<float>::lowest();
+  float max_qk_acc = ck::NumericLimits<float>::Lowest();
 
   // Compute S[T_MAX] = for i in range(T): S[t] = sum(Q[d] * K[t, d])
   // Split T across wavefronts in a block, unroll loads to expose more
