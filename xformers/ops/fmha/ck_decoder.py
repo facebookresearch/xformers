@@ -32,7 +32,7 @@ class FwOp(AttentionFwOpBase):
                 reasons.append("Inputs must be BMHK. BMK not supported")
 
             if d.query.shape[0] != 1:
-                reasons.append("One formal batch element expected")
+                reasons.append(f"One formal batch element expected; got {d.query.shape[0]}")
 
             if d.query.shape[-1] > cls.SUPPORTED_MAX_K:
                 reasons.append(f"Got head_dim={d.query.shape[-1]}; only head_dim<={cls.SUPPORTED_MAX_K} is supported for now.")
@@ -80,7 +80,7 @@ class FwOp(AttentionFwOpBase):
 
         seq_positions = attn_bias.k_seqinfo.seqlen
 
-        query = inp.query[0, :, None]
+        query = inp.query.transpose(0, 1)
 
         if inp.scale is not None:
             qk_scale = inp.scale
