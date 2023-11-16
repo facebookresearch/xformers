@@ -256,7 +256,6 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   softmax_denominator = wavefrontReduce(
       softmax_denominator, [](auto a, auto b) { return a + b; });
 
-  __syncthreads();
   if (lane_idx == 0) {
     smem[T_MAX + wavefront_idx] = softmax_denominator;
   }
