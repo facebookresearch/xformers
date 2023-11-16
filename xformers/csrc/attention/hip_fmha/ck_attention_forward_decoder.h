@@ -60,12 +60,9 @@ scalar_scale_acc(typename ck::vector_type<float, vec_size>::type acc,
                  typename ck::vector_type<data_t, vec_size>::type a, 
                  float b) {
   
-  union { decltype(acc) vec; float arr[vec_size]; } acc_u;
-  union { decltype(a) vec; data_t arr[vec_size]; } a_u;
-
-  acc_u.vec = acc;
-  a_u.vec = a;
-
+  union { decltype(acc) vec; float arr[vec_size]; } acc_u {acc};
+  union { decltype(a) vec; data_t arr[vec_size]; } a_u {a};
+  
   #pragma unroll
   for (int32_t i = 0; i < vec_size; ++i) {
     acc_u.arr[i] += ck::type_convert<float>(a_u.arr[i]) * b;
