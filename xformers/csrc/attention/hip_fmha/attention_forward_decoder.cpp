@@ -72,7 +72,7 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
   TORCH_CHECK(seq_positions.is_cuda());
 
   TORCH_CHECK(cache_K.size(1) <= T_MAX);
-  TORCH_CHECK(cache_K.size(3) == D_H);
+  TORCH_CHECK(cache_K.size(3) <= D_H);
 
   auto B = XQ.size(0);
   auto H = XQ.size(2);
@@ -118,6 +118,7 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
             K_acc.stride(0),
             K_acc.stride(1),
             K_acc.stride(2),
+            K_acc.size(3),
             K_acc.size(2) == 1,
             qk_scale,
             blocks,

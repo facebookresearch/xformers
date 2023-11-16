@@ -75,20 +75,20 @@ float __device__ __forceinline__ wavefrontReduce(float val, F f) {
   return val;
 }
 
-template <typename TDataPtr, typename TDataVec>
+template <typename TData, typename TDataVec>
 __forceinline__ __device__ void load_v(
-    TDataPtr data_ptr,
+    const TData* __restrict__ data_ptr,
     int32_t vector_offset,
-    TDataVec* load_to) {
-  *load_to = *(reinterpret_cast<const TDataVec*>(data_ptr) + vector_offset);
+    TDataVec* __restrict__ load_to) {
+      *load_to = *(reinterpret_cast<const TDataVec*>(data_ptr) + vector_offset);
 }
 
-template <typename TDataPtr, typename TDataVec>
+template <typename TData, typename TDataVec>
 __forceinline__ __device__ void store_v(
-    TDataPtr data_ptr,
+    TData* __restrict__ data_ptr,
     int32_t vector_offset,
     TDataVec value) {
-  *(reinterpret_cast<TDataVec*>(data_ptr) + vector_offset) = value;
+      *(reinterpret_cast<TDataVec*>(data_ptr) + vector_offset) = value;
 }
 
 template <
@@ -108,6 +108,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     const ptrdiff_t K_stride_0,
     const ptrdiff_t K_stride_1,
     const ptrdiff_t K_stride_2,
+    const int32_t D_H,
     const bool multiquery,
     const float qk_scale) {
   static_assert(n_loop_unroll_tail < n_loop_unroll, "");
@@ -133,7 +134,6 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   const int32_t thread_linear_idx =
       lane_idx + wavefront_idx * threads_per_wavefront;
 
-  // Need D_H == 256 (NB: 128 in CUDA because of wavefront/warp sizes 64/32)
   // const auto* q_ = &(XQ_acc[b][0][h][0]);
   const auto XQO_base_offset = b * XQ_stride_0 + h * XQ_stride_2;
   const auto* q_ = XQ + XQO_base_offset;
@@ -148,7 +148,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   using data_t = scalar_t;
   using data_vec4_t = typename ck::vector_type<data_t, 4>::type;
   data_vec4_t q_thread;
-  load_v<decltype(q_), data_vec4_t>(q_, lane_idx, &q_thread);
+  load_v<data_t, data_vec4_t>(q_, lane_idx, &q_thread);
   // Each block computes different B value
   float max_qk_acc = ck::NumericLimits<float>::Lowest();
 
@@ -166,7 +166,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
       const int32_t t = tt + ttt;
       // load the K[b][t][h|0][:] row into registers
-      load_v<decltype(cache_K_base), data_vec4_t>(
+      load_v<data_t, data_vec4_t>(
           cache_K_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
     }
     float qk_accs[n_loop_unroll] = {};
@@ -197,7 +197,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       const int32_t t = tt + ttt;
       if (t < t_max) {
         // load the K[b][t][h|0][:] row into registers
-        load_v<decltype(cache_K_base), data_vec4_t>(
+        load_v<data_t, data_vec4_t>(
             cache_K_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
       }
     }
@@ -277,7 +277,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
       const int32_t t = tt + ttt;
       // load the V[b][t][h|0][:] row into registers, reusing K register storage
-      load_v<decltype(cache_V_base), data_vec4_t>(
+      load_v<data_t, data_vec4_t>(
           cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
       ps[ttt] = smem[t];
     }
@@ -296,7 +296,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       if (t < t_max) {
         // load the V[b][t][h|0][:] row into registers, reusing K register
         // storage
-        load_v<decltype(cache_V_base), data_vec4_t>(
+        load_v<data_t, data_vec4_t>(
             cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
         ps[ttt] = smem[t];
       }
@@ -315,7 +315,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   __syncthreads();
 
   // NB: needs sizeof(smem) >= 4 * (sizeof(float)==4) * threadsPerBlock
-  store_v<float*, ck::float4_t>(&smem[0], thread_linear_idx, o_acc);
+  store_v<float, ck::float4_t>(&smem[0], thread_linear_idx, o_acc);
 
   __syncthreads();
   // sum up partial D rows from other wavefronts
@@ -323,7 +323,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     ck::float4_t r = 0;
     for (int32_t w = 0; w < wavefronts_per_block; ++w) {
       ck::float4_t partial_r;
-      load_v<float*, ck::float4_t>(
+      load_v<float, ck::float4_t>(
           smem, w * threads_per_wavefront + lane_idx, &partial_r);
       r += partial_r;
     }
@@ -333,8 +333,8 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     bf_r.y = ck::type_convert<data_t>(r.y);
     bf_r.z = ck::type_convert<data_t>(r.z);
     bf_r.w = ck::type_convert<data_t>(r.w);
-    auto* o_ = O + XQO_base_offset;
-    store_v<decltype(o_), data_vec4_t>(o_, lane_idx, bf_r);
+    data_t* __restrict__ o_ = O + XQO_base_offset;
+    store_v<data_t, data_vec4_t>(o_, lane_idx, bf_r);
   }
 }
 
@@ -357,6 +357,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
     const ptrdiff_t K_stride_0;
     const ptrdiff_t K_stride_1;
     const ptrdiff_t K_stride_2;
+    const int32_t D_H;
     const bool multiquery;
     const float qk_scale;
 
@@ -375,6 +376,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
         const ptrdiff_t K_stride_0,
         const ptrdiff_t K_stride_1,
         const ptrdiff_t K_stride_2,
+        const int32_t D_H,
         const bool multiquery,
         const float qk_scale,
         const dim3 grid_dim,
@@ -390,6 +392,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
           K_stride_0(K_stride_0),
           K_stride_1(K_stride_1),
           K_stride_2(K_stride_2),
+          D_H(D_H),
           multiquery(multiquery),
           qk_scale(qk_scale),
           grid_dim(grid_dim),
@@ -417,6 +420,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
           arg.K_stride_0,
           arg.K_stride_1,
           arg.K_stride_2,
+          arg.D_H,
           arg.multiquery,
           arg.qk_scale);
     }
