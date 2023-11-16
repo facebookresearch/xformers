@@ -152,12 +152,10 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   extern __shared__ __align__(16) compute_t smem[];
 
-  data_vec_t q_thread;
+  data_vec_t q_thread = 0;
   if (lane_active_for_io) {
     load_v<data_t, data_vec_t>(q_, lane_idx, &q_thread);
-  } else {
-    q_thread = 0;
-  }
+  } 
   // Each block computes different B value
   compute_t max_qk_acc = ck::NumericLimits<compute_t>::Lowest();
 
@@ -165,7 +163,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   // Split T across wavefronts in a block, unroll loads to expose more
   // parallelism.
 
-  data_vec_t k_loads[n_loop_unroll];
+  data_vec_t k_loads[n_loop_unroll] = {};
 
   constexpr auto dtt = n_wavefronts_per_block * n_loop_unroll;
   const int32_t t_max_unroll = (t_max / dtt) * dtt;
@@ -178,9 +176,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       if (lane_active_for_io) {
         load_v<data_t, data_vec_t>(
             cache_K_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
-      } else {
-        k_loads[ttt] = 0;
-      }
+      } 
     }
     compute_t qk_accs[n_loop_unroll] = {};
 #pragma unroll n_loop_unroll
@@ -213,9 +209,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
           // load the K[b][t][h|0][:] row into registers
           load_v<data_t, data_vec_t>(
               cache_K_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
-        } else {
-          k_loads[ttt] = 0;
-        }
+        } 
       }
     }
 #pragma unroll n_loop_unroll_tail
@@ -297,9 +291,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
         // load the V[b][t][h|0][:] row into registers, reusing K register storage
         load_v<data_t, data_vec_t>(
             cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
-      } else {
-        k_loads[ttt] = 0;
-      }
+      } 
       ps[ttt] = smem[t];
     }
 
@@ -320,9 +312,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
         if (lane_active_for_io) {
           load_v<data_t, data_vec_t>(
               cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
-        } else {
-          k_loads[ttt] = 0;
-        }
+        } 
         ps[ttt] = smem[t];
       }
     }
@@ -346,14 +336,12 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   __syncthreads();
   // sum up partial D rows from other wavefronts
-  if (wavefront_idx == 0) {
+  if (wavefront_idx == 0 && lane_active_for_io) {
     union { compute_vec_t vec = 0; compute_t arr[vec_size]; } r;
     for (int32_t w = 0; w < wavefronts_per_block; ++w) {
-      compute_vec_t partial_r = 0;
-      if (lane_active_for_io) {
-        load_v<compute_t, compute_vec_t>(
-            smem, w * threads_per_wavefront + lane_idx, &partial_r);
-      }
+      compute_vec_t partial_r;
+      load_v<compute_t, compute_vec_t>(
+          smem, w * threads_per_wavefront + lane_idx, &partial_r);
       r.vec += partial_r;
     }
     // elementwise convert from compute_t result to data_t out to be written
@@ -364,9 +352,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     }
     // write output D row
     data_t* __restrict__ o_ = O + XQO_base_offset;
-    if (lane_active_for_io) {
-      store_v<data_t, data_vec_t>(o_, lane_idx, bf_r.vec);
-    }
+    store_v<data_t, data_vec_t>(o_, lane_idx, bf_r.vec);
   }
 }
 
