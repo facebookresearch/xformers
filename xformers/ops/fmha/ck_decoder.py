@@ -47,9 +47,10 @@ class FwOp(AttentionFwOpBase):
                 reasons.append("expect values to have last dim contiguous")
 
             q_starts = attn_bias.q_seqinfo.seqstart_py
-            if attn_bias.q_seqinfo.max_seqlen != 1:
-                reasons.append("decoding expects one query")
-            elif d.query.shape[1] != len(q_starts) - 1:
+            padding = attn_bias.k_seqinfo.padding
+            bsz = d.key.shape[1] // padding
+            num_queries = d.query.shape[1] // bsz
+            if bsz != len(q_starts) - 1:
                 reasons.append("empty lanes not supported yet")
 
             if attn_bias.k_seqinfo.padding > 8192:
@@ -80,7 +81,7 @@ class FwOp(AttentionFwOpBase):
 
         seq_positions = attn_bias.k_seqinfo.seqlen
 
-        query = inp.query.transpose(0, 1)
+        query = inp.query[0].unflatten(0, (key.shape[0], -1))
 
         if inp.scale is not None:
             qk_scale = inp.scale

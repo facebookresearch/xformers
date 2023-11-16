@@ -1631,12 +1631,12 @@ def test_decoder(
     dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float}[dtype]
     torch.manual_seed(1)
     d = 256
+    num_queries = 1
     k_shape = (1, bsz * padding, n_heads, d)
-    # TODO: support 2 kv heads etc.
     k = torch.randn(k_shape, dtype=dtype_).cuda()
-    k_seqlen = torch.randint(1, padding + 1, (bsz,)).tolist()
+    k_seqlen = torch.randint(num_queries, padding + 1, (bsz,)).tolist()
     v = torch.randn(k_shape, dtype=dtype_).cuda()
-    q = torch.randn((1, bsz, n_heads, d), dtype=dtype_).cuda()
+    q = torch.randn((1, bsz * num_queries, n_heads, d), dtype=dtype_).cuda()
     causal_diagonal = torch.tensor(  # TODO: make unnecessary
         [i - 1 for i in k_seqlen], dtype=torch.int32
     ).cuda()
@@ -1646,7 +1646,7 @@ def test_decoder(
         v = v[:, :, :1].expand(k_shape)
 
     attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
-        q_seqlen=[1] * bsz,
+        q_seqlen=[num_queries] * bsz,
         kv_seqlen=k_seqlen,
         causal_diagonal=causal_diagonal,
         kv_padding=padding,
