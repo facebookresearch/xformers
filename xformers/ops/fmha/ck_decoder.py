@@ -37,8 +37,18 @@ class FwOp(AttentionFwOpBase):
             if d.query.shape[-1] > cls.SUPPORTED_MAX_K:
                 reasons.append(f"Got head_dim={d.query.shape[-1]}; only head_dim<={cls.SUPPORTED_MAX_K} is supported for now.")
 
-            if d.query.shape[-1] % 4 != 0:
-                reasons.append(f"Got head_dim={d.query.shape[-1]}; it needs to be divisible by 4")
+            threads_per_warp = 64 # TODO: ideally query the platform here
+            required_alignment = 0
+            head_dim = d.query.shape[-1]
+            for vec_size in (4, 2, 1):
+                if head_dim <= vec_size * threads_per_warp:
+                    required_alignment = vec_size
+            
+            if not required_alignment:
+                reasons.append(f"Got head_dim={head_dim} which is too large")
+            
+            if head_dim % required_alignment != 0:
+                reasons.append(f"Got head_dim={head_dim}; it needs to be divisible by {required_alignment}")
 
             if d.key.stride(-1) != 1:
                 reasons.append("expect keys to have last dim contiguous")

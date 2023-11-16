@@ -16,6 +16,27 @@ __device__ void inner_product<bhalf_t, bhalf_t, float>(
   inner_product(type_convert<float>(a), type_convert<float>(b), c);
 }
 
+template<>
+__device__ void inner_product<half_t, half_t, float>(
+    const half_t& a,
+    const half_t& b,
+    float& c) {
+  inner_product(type_convert<float>(a), type_convert<float>(b), c);
+}
+
+template <>
+__device__ void inner_product<bhalf2_t, bhalf2_t, float>(
+    const bhalf2_t& a,
+    const bhalf2_t& b,
+    float& c) {
+  const vector_type<bhalf_t, 2> a_vector{a};
+  const vector_type<bhalf_t, 2> b_vector{b};
+  ck::static_for<0, 2, 1>{}([&](auto i) {
+    inner_product(
+        a_vector.AsType<bhalf_t>()[i], b_vector.AsType<bhalf_t>()[i], c);
+  });
+}
+
 template <>
 __device__ void inner_product<bhalf4_t, bhalf4_t, float>(
     const bhalf4_t& a,
@@ -405,14 +426,37 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
           block_dim(block_dim),
           lds_bytes(lds_bytes) {}
   };
+
   struct Invoker : public BaseInvoker {
     using Argument = DeviceOp::Argument;
     float Run(
         const Argument& arg,
         const StreamConfig& stream_config = StreamConfig{}) {
+
+      auto threads_per_wavefront = arg.block_dim.x;
+
+      auto D_H_alignment_necessary = 0;
+
+      for (auto vec_size: {4, 2, 1}) {
+        if (arg.D_H <= vec_size * threads_per_wavefront) {
+          D_H_alignment_necessary = vec_size;
+        }
+      }
+
+      if (!D_H_alignment_necessary) {
+        throw std::runtime_error("Unsupported D_H");
+      }
+
+      if (arg.D_H % D_H_alignment_necessary) {
+        throw std::runtime_error("Unsupported alignment for D_H");
+      }
+
       return launch_and_time_kernel(
           stream_config,
-          efficient_attention_forward_decoder_ck_kernel<scalar_t>,
+          D_H_alignment_necessary == 4 ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 4> 
+        : D_H_alignment_necessary == 2 ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 2>
+        : D_H_alignment_necessary == 1 ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 1>
+        : nullptr,
           arg.grid_dim,
           arg.block_dim,
           arg.lds_bytes,
