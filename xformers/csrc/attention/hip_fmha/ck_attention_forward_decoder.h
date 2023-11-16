@@ -134,12 +134,12 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   const bool lane_active_for_io = lane_idx * vec_size < D_H;
   // const auto* q_ = &(XQ_acc[b][0][h][0]);
   const auto XQO_base_offset = b * XQ_stride_0 + h * XQ_stride_2;
-  const auto* q_ = XQ + XQO_base_offset;
+  const auto* __restrict__ q_ = XQ + XQO_base_offset;
 
   const auto cache_KV_base_offset =
       b * K_stride_0 + (multiquery ? 0 : h * K_stride_2);
-  const auto* cache_K_base = cache_K + cache_KV_base_offset;
-  const auto* cache_V_base = cache_V + cache_KV_base_offset;
+  const auto* __restrict__ cache_K_base = cache_K + cache_KV_base_offset;
+  const auto* __restrict__ cache_V_base = cache_V + cache_KV_base_offset;
 
   // Load Q into registers in all wavefronts.
   // Each thread handles 4 D dimensions
@@ -194,7 +194,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       max_qk_acc = max(qk_accs[ttt], max_qk_acc);
     }
     if (lane_idx == 0) {
-      auto* smem_base = smem + tt;
+      auto* __restrict__ smem_base = smem + tt;
 #pragma unroll n_loop_unroll
       for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
         smem_base[ttt] = qk_accs[ttt];
@@ -358,6 +358,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     }
     // elementwise convert from compute_t result to data_t out to be written
     union { data_vec_t vec; data_t arr[vec_size]; } bf_r;
+    #pragma unroll 
     for (int32_t i = 0; i < vec_size; ++i) {
       bf_r.arr[i] = ck::type_convert<data_t>(r.arr[i]);
     }
