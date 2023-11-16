@@ -31,7 +31,6 @@ set_target_properties(${exe_name} PROPERTIES HIP_ARCHITECTURES ${GPU_TARGETS})
 
 target_compile_options(${exe_name} PUBLIC 
   -O3 
-  --offload-arch=${GPU_TARGETS}
   -fno-gpu-rdc
   $<$<CONFIG:Debug>:
   --save-temps
@@ -39,16 +38,13 @@ target_compile_options(${exe_name} PUBLIC
 )
 
 target_include_directories(${exe_name} PUBLIC 
-  ${xformers_csrc} 
-  ${xformers_csrc}/attention/hip_fmha
-  ${ck_include}
-  ${torch_include}
-  ${torch_include}/torch/csrc/api/include
+  ${ck_include}                           # ck includes
+  ${torch_include}                        # aten includes
+  ${torch_include}/torch/csrc/api/include # torch includes
 )
 
 target_link_directories(${exe_name} PUBLIC
-  /opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib
-  /opt/rocm/lib
+  /opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib # c10, torch
   /opt/rocm/hip/lib
 )
 
