@@ -75,8 +75,14 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
   TORCH_CHECK(cache_K.size(3) <= D_H);
 
   auto B = XQ.size(0);
+  auto M = XQ.size(1);
   auto H = XQ.size(2);
-  dim3 blocks(B, H);
+
+  TORCH_CHECK(B <= 1024);
+  TORCH_CHECK(M <= 1024);
+  TORCH_CHECK(H <= 1024);
+
+  dim3 blocks(B, H, M);
   dim3 threads(ThreadsPerWavefront, WavefrontsPerBlock);
 
   int32_t smem_softmax = T_MAX * sizeof(float) + threads.y * sizeof(float);
@@ -114,6 +120,7 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
             reinterpret_cast<ck_data_t* __restrict__>(O_acc.data()),
             seq_acc.data(),
             XQ_acc.stride(0),
+            XQ_acc.stride(1),
             XQ_acc.stride(2),
             K_acc.stride(0),
             K_acc.stride(1),

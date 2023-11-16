@@ -104,6 +104,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     scalar_t* __restrict__ O,
     const int32_t* __restrict__ seq_positions,
     const ptrdiff_t XQ_stride_0,
+    const ptrdiff_t XQ_stride_1,
     const ptrdiff_t XQ_stride_2,
     const ptrdiff_t K_stride_0,
     const ptrdiff_t K_stride_1,
@@ -118,6 +119,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   // Each block handles a single batch and head
   const int32_t b = blockIdx.x;
   const int32_t h = blockIdx.y;
+  const int32_t m = blockIdx.z;
 
   // Note: this is decoding case where we attend to current and all previous
   // tokens.
@@ -131,9 +133,8 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       threads_per_wavefront * wavefronts_per_block;
   const int32_t thread_linear_idx =
       lane_idx + wavefront_idx * threads_per_wavefront;
-  const bool lane_active_for_io = lane_idx * vec_size < D_H;
   // const auto* q_ = &(XQ_acc[b][0][h][0]);
-  const auto XQO_base_offset = b * XQ_stride_0 + h * XQ_stride_2;
+  const auto XQO_base_offset = b * XQ_stride_0 + m * XQ_stride_1 + h * XQ_stride_2;
   const auto* __restrict__ q_ = XQ + XQO_base_offset;
 
   const auto cache_KV_base_offset =
@@ -149,6 +150,8 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   using data_vec_t = typename ck::vector_type<data_t, vec_size>::type;
   using compute_t = float;
   using compute_vec_t = typename ck::vector_type<compute_t, vec_size>::type;
+
+  const bool lane_active_for_io = lane_idx * vec_size < D_H;
 
   extern __shared__ __align__(16) compute_t smem[];
 
@@ -371,6 +374,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
     scalar_t* __restrict__ O;
     const int32_t* __restrict__ seq_positions;
     const ptrdiff_t XQ_stride_0;
+    const ptrdiff_t XQ_stride_1;
     const ptrdiff_t XQ_stride_2;
     const ptrdiff_t K_stride_0;
     const ptrdiff_t K_stride_1;
@@ -390,6 +394,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
         scalar_t* __restrict__ O,
         const int32_t* __restrict__ seq_positions,
         const ptrdiff_t XQ_stride_0,
+        const ptrdiff_t XQ_stride_1,
         const ptrdiff_t XQ_stride_2,
         const ptrdiff_t K_stride_0,
         const ptrdiff_t K_stride_1,
@@ -406,6 +411,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
           O(O),
           seq_positions(seq_positions),
           XQ_stride_0(XQ_stride_0),
+          XQ_stride_1(XQ_stride_1),
           XQ_stride_2(XQ_stride_2),
           K_stride_0(K_stride_0),
           K_stride_1(K_stride_1),
@@ -434,6 +440,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
           arg.O,
           arg.seq_positions,
           arg.XQ_stride_0,
+          arg.XQ_stride_1,
           arg.XQ_stride_2,
           arg.K_stride_0,
           arg.K_stride_1,
