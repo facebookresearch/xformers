@@ -34,8 +34,11 @@ class FwOp(AttentionFwOpBase):
             if d.query.shape[0] != 1:
                 reasons.append("One formal batch element expected")
 
-            if d.query.shape[-1] != cls.SUPPORTED_MAX_K:
-                reasons.append(f"Got head_dim={d.query.shape[-1]}; only head_dim=={cls.SUPPORTED_MAX_K} is supported for now.")
+            if d.query.shape[-1] > cls.SUPPORTED_MAX_K:
+                reasons.append(f"Got head_dim={d.query.shape[-1]}; only head_dim<={cls.SUPPORTED_MAX_K} is supported for now.")
+
+            if d.query.shape[-1] % 4 != 0:
+                reasons.append(f"Got head_dim={d.query.shape[-1]}; it needs to be divisible by 4")
 
             if d.key.stride(-1) != 1:
                 reasons.append("expect keys to have last dim contiguous")
