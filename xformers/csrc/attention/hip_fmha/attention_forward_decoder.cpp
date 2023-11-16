@@ -2,7 +2,6 @@
   TODO: license header
 */
 
-// #include <ck/ck.hpp>
 #include <ATen/Dispatch.h>
 #include <ATen/Functions.h>
 #include <ATen/Tensor.h>
@@ -189,67 +188,20 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
  For efficient utilization of CPU cores for compilation use MAX_JOBS env variable.
 
 (2) compile
- > /opt/rocm/bin/hipcc \
--I/xformers/xformers/csrc \
--I/xformers/xformers/csrc/attention/hip_fmha \
--I/xformers/third_party/composable_kernel/include \
--I/xformers/third_party/composable_kernel/include/ck \
--I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device \
--I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/device/impl \
--I/xformers/third_party/composable_kernel/include/ck/tensor_operation/gpu/element \
--I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include \
--I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/torch/csrc/api/include \
--I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/TH \
--I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/THC \
--I/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include/THH \
--I/opt/rocm/include \
--I/opt/conda/envs/py_3.8/include/python3.8 \
--L/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib \
--L/opt/conda/envs/py_3.8/lib \
--L/opt/rocm/lib \
--L/opt/rocm/hip/lib \
--fPIC \
--D__HIP_PLATFORM_HCC__=1 \
--DATTN_FWD_DECODER_MAIN \
--DUSE_ROCM=1 \
--DCUDA_HAS_FP16=1 \
--D__HIP_NO_HALF_OPERATORS__=1 \
--D__HIP_NO_HALF_CONVERSIONS__=1 \
--O3 \
--std=c++17 \
---offload-arch=gfx90a \
--U__CUDA_NO_HALF_OPERATORS__ \
--U__CUDA_NO_HALF_CONVERSIONS__ \
--DBUILD_PYTHON_PACKAGE \
--DTORCH_API_INCLUDE_EXTENSION_H \
-'-DPYBIND11_COMPILER_TYPE="_gcc"' \
-'-DPYBIND11_STDLIB="_libstdcpp"' \
-'-DPYBIND11_BUILD_ABI="_cxxabi1013"' \
--DTORCH_EXTENSION_NAME=_C \
--D_GLIBCXX_USE_CXX11_ABI=1 \
--fno-gpu-rdc \
-/xformers/xformers/csrc/attention/hip_fmha/attention_forward_decoder.hip \
--lc10_hip \
--ltorch_hip \
--lc10 \
--ltorch \
--ltorch_cpu \
--ltorch_python \
--lpython3.8 \
--lamdhip64 \
--o a.out
-
-For assembly debugging, add `--save-temps -g`.
+ > mkdir build
+ > cd build
+ > cmake /xformers/xformers/csrc/attention/hip_fmha/ \ 
+       -DCMAKE_CXX_COMPILER=/opt/rocm/bin/hipcc \
+       -D CMAKE_PREFIX_PATH=/opt/rocm \
+       -D CMAKE_BUILD_TYPE=Debug \
+       -D GPU_TARGETS="gfx90a" 
+  > make
 
 (3a) run correctness check
- >
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib \
- ./a.out
+ > ./attention_forward_decoder_main
 
 (3b) run specific input shape
- >
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib \
- ./a.out n_keys padding batch_size n_heads is_multiquery dtype n_wavefronts_per_block
+ > ./attention_forward_decoder_main n_keys padding batch_size n_heads is_multiquery dtype n_wavefronts_per_block
 */
 
 // clang-format on

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(FMHADecoderMain LANGUAGES CXX)
+project(FMHADecoderMain LANGUAGES CXX HIP)
 
 message("CMAKE_CXX_COMPILER: ${CMAKE_CXX_COMPILER} (need hipcc)")
 
@@ -16,12 +16,9 @@ set(sources ${xformers_csrc}/attention/hip_fmha/attention_forward_decoder.hip)
 set(ck_include ${project_root_dir}/third_party/composable_kernel/include/)
 set(torch_include /opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include)
 
-set_source_files_properties(${sources} PROPERTIES LANGUAGE CXX)
+set_source_files_properties(${sources} PROPERTIES LANGUAGE HIP)
 add_executable(${exe_name} ${sources})
 
-message("sources: ${sources}")
-
-message("CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 find_package(HIP REQUIRED)
 find_package(ROCM REQUIRED PATHS /opt/rocm)
 include(ROCMInstallTargets)
@@ -30,29 +27,27 @@ message("HIP_VERSION: ${HIP_VERSION_MAJOR}.${HIP_VERSION_MINOR}.${HIP_VERSION_PA
 
 set_target_properties(${exe_name} PROPERTIES LINKER_LANGUAGE CXX)
 set_target_properties(${exe_name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(${exe_name} PROPERTIES HIP_ARCHITECTURES ${GPU_TARGETS})
 
 target_compile_options(${exe_name} PUBLIC 
   -O3 
   --offload-arch=${GPU_TARGETS}
-  -fno-gpu-rdc)
+  -fno-gpu-rdc
+  $<$<CONFIG:Debug>:
+  --save-temps
+  >
+)
 
 target_include_directories(${exe_name} PUBLIC 
   ${xformers_csrc} 
   ${xformers_csrc}/attention/hip_fmha
   ${ck_include}
-  ${ck_include}/ck/tensor_operation/gpu/device
-  ${ck_include}/ck/tensor_operation/gpu/device/impl
-  ${ck_include}/ck/tensor_operation/gpu/element
   ${torch_include}
   ${torch_include}/torch/csrc/api/include
-  ${torch_include}/TH
-  ${torch_include}/THC
-  ${torch_include}/THH
 )
 
 target_link_directories(${exe_name} PUBLIC
   /opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib
-  /opt/conda/envs/py_3.8/lib
   /opt/rocm/lib
   /opt/rocm/hip/lib
 )
@@ -61,10 +56,8 @@ target_link_libraries(${exe_name} PUBLIC
   c10
   c10_hip
   torch
-  torch_python
   torch_hip
   torch_cpu
-  python3.8
   amdhip64
 )
 
@@ -76,6 +69,13 @@ target_compile_definitions(${exe_name} PUBLIC
 )
 
 include(CMakePrintHelpers)
-cmake_print_properties(TARGETS ${exe_name} PROPERTIES LINK_LIBRARIES LINK_DIRECTORIES INCLUDE_DIRECTORIES COMPILE_DEFINITIONS COMPILE_OPTIONS)
+cmake_print_properties(TARGETS ${exe_name} PROPERTIES 
+  LINK_LIBRARIES 
+  LINK_DIRECTORIES 
+  INCLUDE_DIRECTORIES 
+  COMPILE_DEFINITIONS 
+  COMPILE_OPTIONS
+  SOURCES
+  HIP_ARCHITECTURES)
 
 rocm_install(TARGETS ${exe_name})
