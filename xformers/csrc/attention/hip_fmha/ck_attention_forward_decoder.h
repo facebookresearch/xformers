@@ -5,6 +5,7 @@
 #include <ck/tensor_operation/gpu/device/device_base.hpp>
 #include <ck/utility/data_type.hpp>
 #include <ck/utility/inner_product.hpp>
+#include <ck/utility/math.hpp>
 
 namespace ck {
 template <>
@@ -190,7 +191,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
       qk_accs[ttt] =
           wavefrontReduce(qk_accs[ttt], [](auto a, auto b) { return a + b; });
-      max_qk_acc = max(qk_accs[ttt], max_qk_acc);
+      max_qk_acc = ck::math::max(qk_accs[ttt], max_qk_acc);
     }
     if (lane_idx == 0) {
       auto* __restrict__ smem_base = smem + tt;
@@ -226,7 +227,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
         qk_acc =
             wavefrontReduce(qk_acc, [](auto a, auto b) { return a + b; });
-        max_qk_acc = max(qk_acc, max_qk_acc);
+        max_qk_acc = ck::math::max(qk_acc, max_qk_acc);
 
         // write accumulated sums to smem.
         if (lane_idx == 0) {
@@ -243,7 +244,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   }
   __syncthreads();
   if (lane_idx < wavefronts_per_block) {
-    max_qk_acc = max(max_qk_acc, smem[T_MAX + lane_idx]);
+    max_qk_acc = ck::math::max(max_qk_acc, smem[T_MAX + lane_idx]);
   }
   // shared across all threads in block
   max_qk_acc = wavefrontReduce(
@@ -252,7 +253,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   // each wavefront computes partial sum of exp.
   compute_t softmax_denominator = 0.0f;
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
-    softmax_denominator += __expf(smem[t] - max_qk_acc);
+    softmax_denominator += ck::math::exp(smem[t] - max_qk_acc);
   }
   softmax_denominator = wavefrontReduce(
       softmax_denominator, [](auto a, auto b) { return a + b; });
@@ -274,11 +275,9 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   const compute_t softmax_scale_factor = 1. / softmax_denominator;
   // now, compute the normalization across all threads.
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
-    smem[t] = __expf(smem[t] - max_qk_acc) * softmax_scale_factor;
+    smem[t] = ck::math::exp(smem[t] - max_qk_acc) * softmax_scale_factor;
   }
   __syncthreads();
-
-  // Now, we can compute the softmax and write the outputs.
 
   // Split T across wavefronts in a block
   // each wavefront compute sum(t_subset) P[t] * V[t_subset, d]
