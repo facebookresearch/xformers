@@ -133,7 +133,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       threads_per_wavefront * wavefronts_per_block;
   const int32_t thread_linear_idx =
       lane_idx + wavefront_idx * threads_per_wavefront;
-  // const auto* q_ = &(XQ_acc[b][0][h][0]);
+  // const auto* q_ = &(XQ_acc[b][m][h][0]);
   const auto XQO_base_offset = b * XQ_stride_0 + m * XQ_stride_1 + h * XQ_stride_2;
   const auto* __restrict__ q_ = XQ + XQO_base_offset;
 
@@ -353,7 +353,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     for (int32_t i = 0; i < vec_size; ++i) {
       bf_r.arr[i] = ck::type_convert<data_t>(r.arr[i]);
     }
-    // write output D row
+    // write output row O[b][m][h][:]
     data_t* __restrict__ o_ = O + XQO_base_offset;
     store_v<data_t, data_vec_t>(o_, lane_idx, bf_r.vec);
   }
