@@ -30,7 +30,6 @@ set_target_properties(${exe_name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(${exe_name} PROPERTIES HIP_ARCHITECTURES ${GPU_TARGETS})
 
 target_compile_options(${exe_name} PUBLIC 
-  -O3 
   -fno-gpu-rdc
   $<$<CONFIG:Debug>:
   --save-temps
