@@ -103,7 +103,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     const scalar_t* __restrict__ cache_K,
     const scalar_t* __restrict__ cache_V,
     scalar_t* __restrict__ O,
-    const int32_t* __restrict__ seq_positions,
+    const int32_t* __restrict__ seq_kv_lens,
     const ptrdiff_t XQ_stride_0,
     const ptrdiff_t XQ_stride_1,
     const ptrdiff_t XQ_stride_2,
@@ -115,8 +115,6 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     const float qk_scale) {
   static_assert(n_loop_unroll_tail < n_loop_unroll, "");
 
-  constexpr int32_t seq_positions_shift = 0;
-
   // Each block handles a single batch and head and query
   const int32_t b = blockIdx.x;
   const int32_t h = blockIdx.y;
@@ -124,7 +122,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   // Note: this is decoding case where we attend to current and all previous
   // tokens.
-  const int32_t t_max = seq_positions[b] + seq_positions_shift;
+  const int32_t t_max = seq_kv_lens[b];
 
   const int32_t lane_idx = threadIdx.x;
   const int32_t wavefront_idx = threadIdx.y;
@@ -371,7 +369,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
     const scalar_t* __restrict__ cache_K;
     const scalar_t* __restrict__ cache_V;
     scalar_t* __restrict__ O;
-    const int32_t* __restrict__ seq_positions;
+    const int32_t* __restrict__ seq_kv_lens;
     const ptrdiff_t XQ_stride_0;
     const ptrdiff_t XQ_stride_1;
     const ptrdiff_t XQ_stride_2;
@@ -391,7 +389,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
         const scalar_t* __restrict__ cache_K,
         const scalar_t* __restrict__ cache_V,
         scalar_t* __restrict__ O,
-        const int32_t* __restrict__ seq_positions,
+        const int32_t* __restrict__ seq_kv_lens,
         const ptrdiff_t XQ_stride_0,
         const ptrdiff_t XQ_stride_1,
         const ptrdiff_t XQ_stride_2,
@@ -408,7 +406,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
           cache_K(cache_K),
           cache_V(cache_V),
           O(O),
-          seq_positions(seq_positions),
+          seq_kv_lens(seq_kv_lens),
           XQ_stride_0(XQ_stride_0),
           XQ_stride_1(XQ_stride_1),
           XQ_stride_2(XQ_stride_2),
@@ -437,7 +435,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
           arg.cache_K,
           arg.cache_V,
           arg.O,
-          arg.seq_positions,
+          arg.seq_kv_lens,
           arg.XQ_stride_0,
           arg.XQ_stride_1,
           arg.XQ_stride_2,

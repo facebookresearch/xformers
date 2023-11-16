@@ -58,7 +58,7 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
     const at::Tensor& XQ, // [B, 1, H, D]
     const at::Tensor& cache_K, // [B, T_MAX, H or 1, D]
     const at::Tensor& cache_V, // [B, T_MAX, H or 1, D]
-    const at::Tensor& seq_positions, // [B]
+    const at::Tensor& seq_kv_lens, // [B]
     double qk_scale,
     at::Tensor& O) {
   static_assert(4 * ThreadsPerWavefront == D_H, "");
@@ -69,7 +69,7 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
   TORCH_CHECK(cache_K.is_cuda());
   TORCH_CHECK(cache_V.is_cuda());
 
-  TORCH_CHECK(seq_positions.is_cuda());
+  TORCH_CHECK(seq_kv_lens.is_cuda());
 
   TORCH_CHECK(cache_K.size(1) <= T_MAX);
   TORCH_CHECK(cache_K.size(3) <= D_H);
@@ -111,7 +111,7 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
             cache_V.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>();
         auto O_acc = O.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>();
         auto seq_acc =
-            seq_positions
+            seq_kv_lens
                 .packed_accessor32<int32_t, 1, at::RestrictPtrTraits>();
         auto arg = device_op_t::Argument(
             reinterpret_cast<const ck_data_t* __restrict__>(XQ_acc.data()),
@@ -147,12 +147,12 @@ at::Tensor efficient_attention_forward_decoder_ck_impl(
     const at::Tensor& XQ, // [B, 1, H, D]
     const at::Tensor& cache_K, // [B, T_MAX, H or 1, D]
     const at::Tensor& cache_V, // [B, T_MAX, H or 1, D]
-    const at::Tensor& seq_positions, // [B]
+    const at::Tensor& seq_kv_lens, // [B]
     double qk_scale) {
   auto O = at::empty_like(XQ);
   efficient_attention_forward_decoder_ck_out_impl<
       ThreadsPerWavefront,
-      WavefrontsPerBlock>(XQ, cache_K, cache_V, seq_positions, qk_scale, O);
+      WavefrontsPerBlock>(XQ, cache_K, cache_V, seq_kv_lens, qk_scale, O);
   return O;
 }
 
@@ -160,11 +160,11 @@ at::Tensor efficient_attention_forward_decoder_ck(
     const at::Tensor& XQ, // [B, 1, H, D]
     const at::Tensor& cache_K, // [B, T_MAX, H or 1, D]
     const at::Tensor& cache_V, // [B, T_MAX, H or 1, D]
-    const at::Tensor& seq_positions, // [B]
+    const at::Tensor& seq_kv_lens, // [B]
     double qk_scale) {
   return efficient_attention_forward_decoder_ck_impl<
       kThreadsPerWavefront,
-      kWavefrontsPerBlock>(XQ, cache_K, cache_V, seq_positions, qk_scale);
+      kWavefrontsPerBlock>(XQ, cache_K, cache_V, seq_kv_lens, qk_scale);
 }
 } // namespace
 
