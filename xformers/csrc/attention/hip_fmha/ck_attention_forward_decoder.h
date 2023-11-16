@@ -32,39 +32,25 @@ __device__ void inner_product<bhalf4_t, bhalf4_t, float>(
 
 namespace {
 
-template <typename data4_t>
-__device__ ck::float4_t scalar4_scale_acc(ck::float4_t acc, data4_t a, float b);
+template <typename data_t, int32_t vec_size>
+__device__ 
+typename ck::vector_type<float, vec_size>::type
+scalar_scale_acc(typename ck::vector_type<float, vec_size>::type acc, 
+                 typename ck::vector_type<data_t, vec_size>::type a, 
+                 float b) {
+  
+  union { decltype(acc) vec; float arr[vec_size]; } acc_u;
+  union { decltype(a) vec; data_t arr[vec_size]; } a_u;
 
-template <>
-__device__ ck::float4_t scalar4_scale_acc<ck::float4_t>(
-    ck::float4_t acc,
-    ck::float4_t a,
-    float b) {
-  return acc + a * b;
-}
+  acc_u.vec = acc;
+  a_u.vec = a;
 
-template <>
-__device__ ck::float4_t scalar4_scale_acc<ck::half4_t>(
-    ck::float4_t acc,
-    ck::half4_t a,
-    float b) {
-  acc.x += ck::type_convert<float>(a.x) * b;
-  acc.y += ck::type_convert<float>(a.y) * b;
-  acc.z += ck::type_convert<float>(a.z) * b;
-  acc.w += ck::type_convert<float>(a.w) * b;
-  return acc;
-}
+  #pragma unroll
+  for (int32_t i = 0; i < vec_size; ++i) {
+    acc_u.arr[i] += ck::type_convert<float>(a_u.arr[i]) * b;
+  }
 
-template <>
-__device__ ck::float4_t scalar4_scale_acc<ck::bhalf4_t>(
-    ck::float4_t acc,
-    ck::bhalf4_t a,
-    float b) {
-  acc.x += ck::type_convert<float>(a.x) * b;
-  acc.y += ck::type_convert<float>(a.y) * b;
-  acc.z += ck::type_convert<float>(a.z) * b;
-  acc.w += ck::type_convert<float>(a.w) * b;
-  return acc;
+  return acc_u.vec;
 }
 
 template <typename F, int32_t n_threads_per_wavefront = 64>
@@ -94,6 +80,7 @@ __forceinline__ __device__ void store_v(
 
 template <
     typename scalar_t,
+    int32_t vec_size = 4,
     int32_t n_loop_unroll = 16,
     int32_t n_loop_unroll_tail = 2,
     int32_t T_MAX = 8192,
@@ -144,7 +131,6 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   // Load Q into registers in all wavefronts.
   // Each thread handles 4 D dimensions
   
-  constexpr int32_t vec_size = 4;
   using data_t = scalar_t;
   using data_vec_t = typename ck::vector_type<data_t, vec_size>::type;
   using compute_t = float;
@@ -296,7 +282,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
 #pragma unroll n_loop_unroll
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
-      o_acc = scalar4_scale_acc<data_vec_t>(o_acc, k_loads[ttt], ps[ttt]);
+      o_acc = scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
     }
   }
 
@@ -320,7 +306,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
       const int32_t t = tt + ttt;
       if (t < t_max) {
-        o_acc = scalar4_scale_acc<data_vec_t>(o_acc, k_loads[ttt], ps[ttt]);
+        o_acc = scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
       }
     }
   }
