@@ -325,19 +325,19 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   __syncthreads();
   // sum up partial D rows from other wavefronts
   if (wavefront_idx == 0) {
-    compute_vec_t r = 0;
+    union { compute_vec_t vec; compute_t[vec_size] arr; } r = 0;
     for (int32_t w = 0; w < wavefronts_per_block; ++w) {
       compute_vec_t partial_r;
       load_v<compute_t, compute_vec_t>(
           smem, w * threads_per_wavefront + lane_idx, &partial_r);
-      r += partial_r;
+      r.vec += partial_r;
+    }
+    // elementwise convert from compute_t result to data_t out to be written
+    union { data_vec_t vec; data_t[vec_size] arr; } bf_r = 0;
+    for (int32_t i = 0; i < vec_size; ++i) {
+      bf_r.arr[i] = ck::type_convert<data_t>(r.arr[i]);
     }
     // write output D row
-    data_vec_t bf_r;
-    bf_r.x = ck::type_convert<data_t>(r.x);
-    bf_r.y = ck::type_convert<data_t>(r.y);
-    bf_r.z = ck::type_convert<data_t>(r.z);
-    bf_r.w = ck::type_convert<data_t>(r.w);
     data_t* __restrict__ o_ = O + XQO_base_offset;
     store_v<data_t, data_vec_t>(o_, lane_idx, bf_r);
   }
