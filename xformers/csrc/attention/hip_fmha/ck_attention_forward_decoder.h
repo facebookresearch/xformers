@@ -115,8 +115,6 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   constexpr int32_t seq_positions_shift = 0;
 
-  extern __shared__ __align__(16) float smem[];
-
   // Each block handles a single batch and head
   const int32_t b = blockIdx.x;
   const int32_t h = blockIdx.y;
@@ -145,18 +143,25 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   // Load Q into registers in all wavefronts.
   // Each thread handles 4 D dimensions
+  
+  constexpr int32_t vec_size = 4;
   using data_t = scalar_t;
-  using data_vec4_t = typename ck::vector_type<data_t, 4>::type;
-  data_vec4_t q_thread;
-  load_v<data_t, data_vec4_t>(q_, lane_idx, &q_thread);
+  using data_vec_t = typename ck::vector_type<data_t, vec_size>::type;
+  using compute_t = float;
+  using compute_vec_t = typename ck::vector_type<compute_t, vec_size>::type;
+
+  extern __shared__ __align__(16) compute_t smem[];
+
+  data_vec_t q_thread;
+  load_v<data_t, data_vec_t>(q_, lane_idx, &q_thread);
   // Each block computes different B value
-  float max_qk_acc = ck::NumericLimits<float>::Lowest();
+  compute_t max_qk_acc = ck::NumericLimits<compute_t>::Lowest();
 
   // Compute S[T_MAX] = for i in range(T): S[t] = sum(Q[d] * K[t, d])
   // Split T across wavefronts in a block, unroll loads to expose more
   // parallelism.
 
-  data_vec4_t k_loads[n_loop_unroll];
+  data_vec_t k_loads[n_loop_unroll];
 
   constexpr auto dtt = n_wavefronts_per_block * n_loop_unroll;
   const int32_t t_max_unroll = (t_max / dtt) * dtt;
@@ -166,18 +171,18 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
       const int32_t t = tt + ttt;
       // load the K[b][t][h|0][:] row into registers
-      load_v<data_t, data_vec4_t>(
+      load_v<data_t, data_vec_t>(
           cache_K_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
     }
-    float qk_accs[n_loop_unroll] = {};
+    compute_t qk_accs[n_loop_unroll] = {};
 #pragma unroll n_loop_unroll
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
-      ck::inner_product<data_vec4_t, data_vec4_t, float>(
+      ck::inner_product<data_vec_t, data_vec_t, compute_t>(
           q_thread, k_loads[ttt], qk_accs[ttt]);
       qk_accs[ttt] *= qk_scale;
 
       qk_accs[ttt] =
-          wavefrontReduce(qk_accs[ttt], [](float a, float b) { return a + b; });
+          wavefrontReduce(qk_accs[ttt], [](auto a, auto b) { return a + b; });
       max_qk_acc = max(qk_accs[ttt], max_qk_acc);
     }
     if (lane_idx == 0) {
@@ -197,21 +202,21 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       const int32_t t = tt + ttt;
       if (t < t_max) {
         // load the K[b][t][h|0][:] row into registers
-        load_v<data_t, data_vec4_t>(
+        load_v<data_t, data_vec_t>(
             cache_K_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
       }
     }
 #pragma unroll n_loop_unroll_tail
     for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
-      float qk_acc = 0;
+      compute_t qk_acc = 0;
       const int32_t t = tt + ttt;
       if (t < t_max) {
-        ck::inner_product<data_vec4_t, data_vec4_t, float>(
+        ck::inner_product<data_vec_t, data_vec_t, compute_t>(
             q_thread, k_loads[ttt], qk_acc);
         qk_acc *= qk_scale;
 
         qk_acc =
-            wavefrontReduce(qk_acc, [](float a, float b) { return a + b; });
+            wavefrontReduce(qk_acc, [](auto a, auto b) { return a + b; });
         max_qk_acc = max(qk_acc, max_qk_acc);
 
         // write accumulated sums to smem.
@@ -233,15 +238,15 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   }
   // shared across all threads in block
   max_qk_acc = wavefrontReduce(
-      max_qk_acc, [](float a, float b) { return a > b ? a : b; });
+      max_qk_acc, [](auto a, auto b) { return a > b ? a : b; });
 
   // each wavefront computes partial sum of exp.
-  float softmax_denominator = 0.0f;
+  compute_t softmax_denominator = 0.0f;
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
     softmax_denominator += __expf(smem[t] - max_qk_acc);
   }
   softmax_denominator = wavefrontReduce(
-      softmax_denominator, [](float a, float b) { return a + b; });
+      softmax_denominator, [](auto a, auto b) { return a + b; });
 
   __syncthreads();
   if (lane_idx == 0) {
@@ -255,9 +260,9 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     softmax_denominator = smem[T_MAX + lane_idx];
   }
   softmax_denominator = wavefrontReduce(
-      softmax_denominator, [](float a, float b) { return a + b; });
+      softmax_denominator, [](auto a, auto b) { return a + b; });
 
-  const float softmax_scale_factor = 1. / softmax_denominator;
+  const compute_t softmax_scale_factor = 1. / softmax_denominator;
   // now, compute the normalization across all threads.
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
     smem[t] = __expf(smem[t] - max_qk_acc) * softmax_scale_factor;
@@ -270,21 +275,21 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   // each wavefront compute sum(t_subset) P[t] * V[t_subset, d]
   // outputs are of size float[D]
 
-  float ps[n_loop_unroll];
-  ck::float4_t o_acc = 0;
+  compute_t ps[n_loop_unroll];
+  compute_vec_t o_acc = 0;
   for (auto tt = wavefront_idx * n_loop_unroll; tt < t_max_unroll; tt += dtt) {
 #pragma unroll n_loop_unroll
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
       const int32_t t = tt + ttt;
       // load the V[b][t][h|0][:] row into registers, reusing K register storage
-      load_v<data_t, data_vec4_t>(
+      load_v<data_t, data_vec_t>(
           cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
       ps[ttt] = smem[t];
     }
 
 #pragma unroll n_loop_unroll
     for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
-      o_acc = scalar4_scale_acc<data_vec4_t>(o_acc, k_loads[ttt], ps[ttt]);
+      o_acc = scalar4_scale_acc<data_vec_t>(o_acc, k_loads[ttt], ps[ttt]);
     }
   }
 
@@ -296,7 +301,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       if (t < t_max) {
         // load the V[b][t][h|0][:] row into registers, reusing K register
         // storage
-        load_v<data_t, data_vec4_t>(
+        load_v<data_t, data_vec_t>(
             cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
         ps[ttt] = smem[t];
       }
@@ -306,7 +311,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
       const int32_t t = tt + ttt;
       if (t < t_max) {
-        o_acc = scalar4_scale_acc<data_vec4_t>(o_acc, k_loads[ttt], ps[ttt]);
+        o_acc = scalar4_scale_acc<data_vec_t>(o_acc, k_loads[ttt], ps[ttt]);
       }
     }
   }
@@ -315,26 +320,26 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   __syncthreads();
 
   // NB: needs sizeof(smem) >= 4 * (sizeof(float)==4) * threadsPerBlock
-  store_v<float, ck::float4_t>(&smem[0], thread_linear_idx, o_acc);
+  store_v<compute_t, compute_vec_t>(&smem[0], thread_linear_idx, o_acc);
 
   __syncthreads();
   // sum up partial D rows from other wavefronts
   if (wavefront_idx == 0) {
-    ck::float4_t r = 0;
+    compute_vec_t r = 0;
     for (int32_t w = 0; w < wavefronts_per_block; ++w) {
-      ck::float4_t partial_r;
-      load_v<float, ck::float4_t>(
+      compute_vec_t partial_r;
+      load_v<compute_t, compute_vec_t>(
           smem, w * threads_per_wavefront + lane_idx, &partial_r);
       r += partial_r;
     }
     // write output D row
-    data_vec4_t bf_r;
+    data_vec_t bf_r;
     bf_r.x = ck::type_convert<data_t>(r.x);
     bf_r.y = ck::type_convert<data_t>(r.y);
     bf_r.z = ck::type_convert<data_t>(r.z);
     bf_r.w = ck::type_convert<data_t>(r.w);
     data_t* __restrict__ o_ = O + XQO_base_offset;
-    store_v<data_t, data_vec4_t>(o_, lane_idx, bf_r);
+    store_v<data_t, data_vec_t>(o_, lane_idx, bf_r);
   }
 }
 
