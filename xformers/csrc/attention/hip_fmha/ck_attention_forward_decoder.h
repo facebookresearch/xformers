@@ -116,7 +116,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   constexpr int32_t seq_positions_shift = 0;
 
-  // Each block handles a single batch and head
+  // Each block handles a single batch and head and query
   const int32_t b = blockIdx.x;
   const int32_t h = blockIdx.y;
   const int32_t m = blockIdx.z;
