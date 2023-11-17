@@ -311,7 +311,7 @@ def get_extensions():
                 [
                     "-O3",
                     "-std=c++17",
-                    f"--offload-arch={os.getenv('HIP_ARCHITECTURES', 'gfx90a')}",
+                    f"--offload-arch={os.getenv('HIP_ARCHITECTURES', 'native')}",
                     "-U__CUDA_NO_HALF_OPERATORS__",
                     "-U__CUDA_NO_HALF_CONVERSIONS__",
                 ]
