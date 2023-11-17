@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once
 
 #include <ck/host_utility/kernel_launch_hip.hpp>
 #include <ck/stream_config.hpp>
@@ -16,7 +16,7 @@ __device__ void inner_product<bhalf_t, bhalf_t, float>(
   inner_product(type_convert<float>(a), type_convert<float>(b), c);
 }
 
-template<>
+template <>
 __device__ void inner_product<half_t, half_t, float>(
     const half_t& a,
     const half_t& b,
@@ -54,16 +54,20 @@ __device__ void inner_product<bhalf4_t, bhalf4_t, float>(
 namespace {
 
 template <typename data_t, int32_t vec_size>
-__device__ 
-typename ck::vector_type<float, vec_size>::type
-scalar_scale_acc(typename ck::vector_type<float, vec_size>::type acc, 
-                 typename ck::vector_type<data_t, vec_size>::type a, 
-                 float b) {
-  
-  union { decltype(acc) vec; float arr[vec_size]; } acc_u {acc};
-  union { decltype(a) vec; data_t arr[vec_size]; } a_u {a};
-  
-  #pragma unroll
+__device__ typename ck::vector_type<float, vec_size>::type scalar_scale_acc(
+    typename ck::vector_type<float, vec_size>::type acc,
+    typename ck::vector_type<data_t, vec_size>::type a,
+    float b) {
+  union {
+    decltype(acc) vec;
+    float arr[vec_size];
+  } acc_u{acc};
+  union {
+    decltype(a) vec;
+    data_t arr[vec_size];
+  } a_u{a};
+
+#pragma unroll
   for (int32_t i = 0; i < vec_size; ++i) {
     acc_u.arr[i] += ck::type_convert<float>(a_u.arr[i]) * b;
   }
@@ -85,7 +89,7 @@ __forceinline__ __device__ void load_v(
     const TData* __restrict__ data_ptr,
     int32_t vector_offset,
     TDataVec* __restrict__ load_to) {
-      *load_to = *(reinterpret_cast<const TDataVec*>(data_ptr) + vector_offset);
+  *load_to = *(reinterpret_cast<const TDataVec*>(data_ptr) + vector_offset);
 }
 
 template <typename TData, typename TDataVec>
@@ -93,7 +97,7 @@ __forceinline__ __device__ void store_v(
     TData* __restrict__ data_ptr,
     int32_t vector_offset,
     TDataVec value) {
-      *(reinterpret_cast<TDataVec*>(data_ptr) + vector_offset) = value;
+  *(reinterpret_cast<TDataVec*>(data_ptr) + vector_offset) = value;
 }
 
 template <
@@ -138,7 +142,8 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   const int32_t thread_linear_idx =
       lane_idx + wavefront_idx * threads_per_wavefront;
   // const auto* q_ = &(XQ_acc[b][m][h][0]);
-  const auto XQO_base_offset = b * XQ_stride_0 + m * XQ_stride_1 + h * XQ_stride_2;
+  const auto XQO_base_offset =
+      b * XQ_stride_0 + m * XQ_stride_1 + h * XQ_stride_2;
   const auto* __restrict__ q_ = XQ + XQO_base_offset;
 
   const auto cache_KV_base_offset =
@@ -148,7 +153,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   // Load Q into registers in all wavefronts.
   // Each thread handles `vec_size` D dimensions
-  
+
   using data_t = scalar_t;
   using data_vec_t = typename ck::vector_type<data_t, vec_size>::type;
   using compute_t = float;
@@ -161,7 +166,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   data_vec_t q_thread = 0;
   if (lane_active_for_io) {
     load_v<data_t, data_vec_t>(q_, lane_idx, &q_thread);
-  } 
+  }
   // Each block computes different B value
   compute_t max_qk_acc = ck::NumericLimits<compute_t>::Lowest();
 
@@ -182,7 +187,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
         // load the K[b][t][h|0][:] row into registers
         load_v<data_t, data_vec_t>(
             cache_K_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
-      } 
+      }
     }
     compute_t qk_accs[n_loop_unroll] = {};
 #pragma unroll n_loop_unroll
@@ -207,7 +212,6 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   // NB: the length of the tail is <= (wavefronts_per_block * n_loop_unroll)
   for (auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail; tt < t_max;
        tt += wavefronts_per_block * n_loop_unroll_tail) {
-        
     if (lane_active_for_io) {
 #pragma unroll n_loop_unroll_tail
       for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
@@ -216,7 +220,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
           // load the K[b][t][h|0][:] row into registers
           load_v<data_t, data_vec_t>(
               cache_K_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
-        } 
+        }
       }
     }
 #pragma unroll n_loop_unroll_tail
@@ -228,8 +232,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
             q_thread, k_loads[ttt], qk_acc);
         qk_acc *= qk_scale;
 
-        qk_acc =
-            wavefrontReduce(qk_acc, [](auto a, auto b) { return a + b; });
+        qk_acc = wavefrontReduce(qk_acc, [](auto a, auto b) { return a + b; });
         max_qk_acc = ck::math::max(qk_acc, max_qk_acc);
 
         // write accumulated sums to smem.
@@ -250,8 +253,8 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     max_qk_acc = ck::math::max(max_qk_acc, smem[T_MAX + lane_idx]);
   }
   // shared across all threads in block
-  max_qk_acc = wavefrontReduce(
-      max_qk_acc, [](auto a, auto b) { return a > b ? a : b; });
+  max_qk_acc =
+      wavefrontReduce(max_qk_acc, [](auto a, auto b) { return a > b ? a : b; });
 
   // each wavefront computes partial sum of exp.
   compute_t softmax_denominator = 0.0f;
@@ -287,28 +290,29 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   compute_t ps[n_loop_unroll] = {};
   compute_vec_t o_acc = 0;
-  for (auto tt = wavefront_idx * n_loop_unroll; tt < t_max_unroll; tt += dtt) {
-    if (lane_active_for_io) {
+  if (lane_active_for_io) {
+    for (auto tt = wavefront_idx * n_loop_unroll; tt < t_max_unroll;
+         tt += dtt) {
 #pragma unroll n_loop_unroll
       for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
         const int32_t t = tt + ttt;
-        // load the V[b][t][h|0][:] row into registers, reusing K register storage
+        // load the V[b][t][h|0][:] row into registers, reusing K register
+        // storage
         load_v<data_t, data_vec_t>(
-            cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]); 
+            cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
         ps[ttt] = smem[t];
+      }
+
+#pragma unroll n_loop_unroll
+      for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
+        o_acc =
+            scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
       }
     }
 
-#pragma unroll n_loop_unroll
-    for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
-      o_acc = scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
-    }
-  }
-
-  for (auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail; tt < t_max;
-       tt += wavefronts_per_block * n_loop_unroll_tail) {
-        
-    if (lane_active_for_io) {
+    for (auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail;
+         tt < t_max;
+         tt += wavefronts_per_block * n_loop_unroll_tail) {
 #pragma unroll n_loop_unroll_tail
       for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
         const int32_t t = tt + ttt;
@@ -320,13 +324,14 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
           ps[ttt] = smem[t];
         }
       }
-    }
 
 #pragma unroll n_loop_unroll_tail
-    for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
-      const int32_t t = tt + ttt;
-      if (t < t_max) {
-        o_acc = scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
+      for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
+        const int32_t t = tt + ttt;
+        if (t < t_max) {
+          o_acc =
+              scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
+        }
       }
     }
   }
@@ -342,7 +347,10 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   __syncthreads();
   // sum up partial D rows from other wavefronts
   if (wavefront_idx == 0 && lane_active_for_io) {
-    union { compute_vec_t vec = 0; compute_t arr[vec_size]; } r;
+    union {
+      compute_vec_t vec = 0;
+      compute_t arr[vec_size];
+    } r;
     for (int32_t w = 0; w < wavefronts_per_block; ++w) {
       compute_vec_t partial_r;
       load_v<compute_t, compute_vec_t>(
@@ -350,8 +358,11 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
       r.vec += partial_r;
     }
     // elementwise convert from compute_t result to data_t out to be written
-    union { data_vec_t vec; data_t arr[vec_size]; } bf_r;
-    #pragma unroll 
+    union {
+      data_vec_t vec;
+      data_t arr[vec_size];
+    } bf_r;
+#pragma unroll
     for (int32_t i = 0; i < vec_size; ++i) {
       bf_r.arr[i] = ck::type_convert<data_t>(r.arr[i]);
     }
@@ -431,12 +442,11 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
     float Run(
         const Argument& arg,
         const StreamConfig& stream_config = StreamConfig{}) {
-
       auto threads_per_wavefront = arg.block_dim.x;
 
       auto D_H_alignment_necessary = 0;
 
-      for (auto vec_size: {4, 2, 1}) {
+      for (auto vec_size : {4, 2, 1}) {
         if (arg.D_H <= vec_size * threads_per_wavefront) {
           D_H_alignment_necessary = vec_size;
         }
@@ -452,10 +462,13 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
 
       return launch_and_time_kernel(
           stream_config,
-          D_H_alignment_necessary == 4 ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 4> 
-        : D_H_alignment_necessary == 2 ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 2>
-        : D_H_alignment_necessary == 1 ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 1>
-        : nullptr,
+          D_H_alignment_necessary == 4
+              ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 4>
+              : D_H_alignment_necessary == 2
+              ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 2>
+              : D_H_alignment_necessary == 1
+              ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 1>
+              : nullptr,
           arg.grid_dim,
           arg.block_dim,
           arg.lds_bytes,
