@@ -118,8 +118,8 @@ def mem_eff_attention_decoder(
     n_keys, padding, B = kv_shape
     torch.manual_seed(42)
     k_seqlen = torch.randint(1, n_keys + 1, (B,)).tolist()
-    K = 256
-    dtype = torch.float16
+    K = 128
+    dtype = torch.bfloat16
     q = torch.rand(1, B, n_heads, K, device=device, dtype=dtype)
     if multiquery:
         k = torch.rand(
