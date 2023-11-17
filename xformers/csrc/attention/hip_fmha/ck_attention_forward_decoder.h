@@ -339,7 +339,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   // results back.
   __syncthreads();
 
-  // NB: needs sizeof(smem) >= 4 * (sizeof(float)==4) * threadsPerBlock
+  // NB: needs sizeof(smem) >= `vec_size` * (sizeof(float)==4) * threadsPerBlock
   if (lane_active_for_io) {
     store_v<compute_t, compute_vec_t>(&smem[0], thread_linear_idx, o_acc);
   }
