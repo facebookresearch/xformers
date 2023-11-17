@@ -175,11 +175,11 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   const int32_t t_max_unroll = (t_max / dtt) * dtt;
 
   for (auto tt = wavefront_idx * n_loop_unroll; tt < t_max_unroll; tt += dtt) {
+    if (lane_active_for_io) {
 #pragma unroll n_loop_unroll
-    for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
-      const int32_t t = tt + ttt;
-      // load the K[b][t][h|0][:] row into registers
-      if (lane_active_for_io) {
+      for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
+        const int32_t t = tt + ttt;
+        // load the K[b][t][h|0][:] row into registers
         load_v<data_t, data_vec_t>(
             cache_K_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
       } 
@@ -207,11 +207,12 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   // NB: the length of the tail is <= (wavefronts_per_block * n_loop_unroll)
   for (auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail; tt < t_max;
        tt += wavefronts_per_block * n_loop_unroll_tail) {
+        
+    if (lane_active_for_io) {
 #pragma unroll n_loop_unroll_tail
-    for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
-      const int32_t t = tt + ttt;
-      if (t < t_max) {
-        if (lane_active_for_io) {
+      for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
+        const int32_t t = tt + ttt;
+        if (t < t_max) {
           // load the K[b][t][h|0][:] row into registers
           load_v<data_t, data_vec_t>(
               cache_K_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
@@ -284,18 +285,18 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   // each wavefront compute sum(t_subset) P[t] * V[t_subset, d]
   // outputs are of size float[D]
 
-  compute_t ps[n_loop_unroll];
+  compute_t ps[n_loop_unroll] = {};
   compute_vec_t o_acc = 0;
   for (auto tt = wavefront_idx * n_loop_unroll; tt < t_max_unroll; tt += dtt) {
+    if (lane_active_for_io) {
 #pragma unroll n_loop_unroll
-    for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
-      const int32_t t = tt + ttt;
-      if (lane_active_for_io) {
+      for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
+        const int32_t t = tt + ttt;
         // load the V[b][t][h|0][:] row into registers, reusing K register storage
         load_v<data_t, data_vec_t>(
-            cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
-      } 
-      ps[ttt] = smem[t];
+            cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]); 
+        ps[ttt] = smem[t];
+      }
     }
 
 #pragma unroll n_loop_unroll
@@ -306,17 +307,18 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   for (auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail; tt < t_max;
        tt += wavefronts_per_block * n_loop_unroll_tail) {
+        
+    if (lane_active_for_io) {
 #pragma unroll n_loop_unroll_tail
-    for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
-      const int32_t t = tt + ttt;
-      if (t < t_max) {
-        // load the V[b][t][h|0][:] row into registers, reusing K register
-        // storage
-        if (lane_active_for_io) {
+      for (auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt) {
+        const int32_t t = tt + ttt;
+        if (t < t_max) {
+          // load the V[b][t][h|0][:] row into registers, reusing K register
+          // storage
           load_v<data_t, data_vec_t>(
               cache_V_base + t * K_stride_1, lane_idx, &k_loads[ttt]);
-        } 
-        ps[ttt] = smem[t];
+          ps[ttt] = smem[t];
+        }
       }
     }
 
