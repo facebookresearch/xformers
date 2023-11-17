@@ -147,7 +147,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
   const auto* __restrict__ cache_V_base = cache_V + cache_KV_base_offset;
 
   // Load Q into registers in all wavefronts.
-  // Each thread handles 4 D dimensions
+  // Each thread handles `vec_size` D dimensions
   
   using data_t = scalar_t;
   using data_vec_t = typename ck::vector_type<data_t, vec_size>::type;
