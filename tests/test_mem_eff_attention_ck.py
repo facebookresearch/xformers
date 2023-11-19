@@ -208,15 +208,17 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
 )
 
 
-def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
+def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None):
     if q.ndim == 4:
         assert p == 0.0
-        return ref_attention_bmhk(q, k, v, attn_bias=attn_bias)
-    q = q.float()
-    k = k.float()
-    v = v.float()
+        return ref_attention_bmhk(q, k, v, attn_bias=attn_bias, dtype=dtype)
+    if dtype is None:
+        dtype = torch.float32
+    q = q.to(dtype=dtype)
+    k = k.to(dtype=dtype)
+    v = v.to(dtype=dtype)
 
-    scale = scale if scale is not None else (1 / q.shape[-1] ** 0.5)
+    scale = scale if scale is not None else (q.shape[-1] ** -0.5)
     q = q * scale
 
     attn = q @ k.transpose(-2, -1)
@@ -226,23 +228,23 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
             attn_bias_tensor = attn_bias.materialize(
                 (q.shape[0], 1, q.shape[1], k.shape[1]),
                 device=q.device,
-                dtype=torch.float32,
+                dtype=dtype,
             )
         else:
-            attn_bias_tensor = attn_bias
+            attn_bias_tensor = attn_bias.to(dtype=dtype)
         if attn_bias_tensor.ndim == 4:
             assert q.shape[0] == attn_bias_tensor.shape[0] * attn_bias_tensor.shape[1]
             attn_bias_tensor = attn_bias_tensor.reshape(
                 [-1, *attn_bias_tensor.shape[2:]]
             )
-        attn = attn + attn_bias_tensor.float()
+        attn = attn + attn_bias_tensor
     attn = attn.softmax(-1)
     if drop_mask is not None:
         attn = attn * (drop_mask / (1 - p))
     return attn @ v
 
 
-def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
+def ref_attention_bmhk(q, k, v, attn_bias, scale=None, dtype=None) -> torch.Tensor:
     assert q.ndim == 4
 
     def T(t):
@@ -256,7 +258,7 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
             device=q.device,
             dtype=torch.float32,
         ).reshape([q.shape[0] * q.shape[2], q.shape[1], k.shape[1]])
-    out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale)
+    out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale, dtype=dtype)
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
 
@@ -1618,24 +1620,23 @@ def test_attn_bias_padded() -> None:
     )
 
 
-@pytest.mark.parametrize("op", [fmha.decoder.FwOp])
-@pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "")
-@pytest.mark.parametrize("n_heads", [1, 16, 32])
-@pytest.mark.parametrize("padding", [32, 4096])
-@pytest.mark.parametrize("bsz", [1, 8])
+@pytest.mark.parametrize("op", [fmha.ck_decoder.FwOp])
+@pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "nomq")
+@pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)], ids=lambda x: f"bsz-nh={x}")
+@pytest.mark.parametrize("padding", [32, 4096], ids=lambda x: f"pad={x}")
 @pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
 def test_decoder(
     op, multiquery: bool, n_heads: int, padding: int, bsz: int, dtype: str
 ) -> None:
-    dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
+    dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float}[dtype]
     torch.manual_seed(1)
-    d = 128
+    d = 256
+    num_queries = 1
     k_shape = (1, bsz * padding, n_heads, d)
-    # TODO: support 2 kv heads etc.
     k = torch.randn(k_shape, dtype=dtype_).cuda()
-    k_seqlen = torch.randint(1, padding + 1, (bsz,)).tolist()
+    k_seqlen = torch.randint(num_queries, padding + 1, (bsz,)).tolist()
     v = torch.randn(k_shape, dtype=dtype_).cuda()
-    q = torch.randn((1, bsz, n_heads, d), dtype=dtype_).cuda()
+    q = torch.randn((1, bsz * num_queries, n_heads, d), dtype=dtype_).cuda()
     causal_diagonal = torch.tensor(  # TODO: make unnecessary
         [i - 1 for i in k_seqlen], dtype=torch.int32
     ).cuda()
@@ -1645,27 +1646,26 @@ def test_decoder(
         v = v[:, :, :1].expand(k_shape)
 
     attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
-        q_seqlen=[1] * bsz,
+        q_seqlen=[num_queries] * bsz,
         kv_seqlen=k_seqlen,
         causal_diagonal=causal_diagonal,
         kv_padding=padding,
     )
     inp = fmha.Inputs(q, k, v, attn_bias=attn_bias)
-    if not op.supports(inp):
-        pytest.skip("not supported")
+    if (not_supported_reasons := op.not_supported_reasons(inp)):
+        pytest.skip(f"{not_supported_reasons=}")
 
     decoder_output = fmha.memory_efficient_attention_forward(
-        q, k, v, attn_bias, op=fmha.decoder.FwOp
+        q, k, v, attn_bias, op=op
     )
+    
+    ref_output = ref_attention(q, k, v, attn_bias, dtype=dtype_)
 
-    ck_output = fmha.memory_efficient_attention_forward(
-        q, k, v, attn_bias, op=fmha.ck.FwOp
-    )
     assert_allclose(
         decoder_output,
-        ck_output,
-        atol=fmha.ck.FwOp.ERROR_ATOL[dtype_] * 4,
-        rtol=fmha.ck.FwOp.ERROR_RTOL[dtype_],
+        ref_output,
+        atol=fmha.ck_decoder.FwOp.ERROR_ATOL[dtype_] * 4,
+        rtol=fmha.ck_decoder.FwOp.ERROR_RTOL[dtype_],
     )
 
 

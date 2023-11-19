@@ -13,6 +13,7 @@ from utils import benchmark_main_helper
 
 import xformers.ops
 import xformers.ops.fmha as fmha
+import xformers.profiler.slow_ops_profiler
 
 torch.backends.cuda.matmul.allow_tf32 = False
 
@@ -60,6 +61,7 @@ NUM_THREADS = [1] if device.type == "cuda" else [1, 40]
 
 OPS = [
     xformers.ops.fmha.ck.FwOp,
+    xformers.ops.fmha.ck_decoder.FwOp
 ]
 
 KV_SHAPES = [
@@ -92,6 +94,23 @@ CASES = list(
     )
 )
 
+def get_memory_traffic(op, q, k, v, bias):
+    # mem_size = ( batch_size * seq_len * 1 * dim_per_head * 2 (K/V) + 
+    #              batch_size * 1 * num_heads * dim_per_head (Q) + 
+    #              batch_size * seq_len * num_heads * dim_per_head (attn_output) ) * bytes_per_element
+    out = xformers.ops.memory_efficient_attention_forward(q, k, v, bias, op=op)
+    dtype = q.dtype
+    multiquery = k.stride(2) == 0
+    n_heads = q.shape[-2]
+    dim_per_head = q.shape[-1]
+    kv_seqlen = bias.k_seqinfo.seqlen_py
+    bytes_per_element = 4 if dtype is torch.float32 else 2 if dtype in (torch.float16, torch.bfloat16) else None
+    mem_size = 0
+    mem_size += q.numel() * bytes_per_element # Q
+    for s in kv_seqlen: # len(kv_seqlen) == batch_size
+        mem_size += s * (1 if multiquery else n_heads) * dim_per_head * bytes_per_element * 2 # K, V
+    mem_size += out.numel() * bytes_per_element # attn_output
+    return mem_size
 
 def mem_eff_attention_decoder(
     kv_shape, n_heads: int, num_threads: int, multiquery: bool
@@ -100,18 +119,18 @@ def mem_eff_attention_decoder(
     torch.manual_seed(42)
     k_seqlen = torch.randint(1, n_keys + 1, (B,)).tolist()
     K = 128
-
-    q = torch.rand(1, B, n_heads, K, device=device, dtype=torch.bfloat16)
+    dtype = torch.bfloat16
+    q = torch.rand(1, B, n_heads, K, device=device, dtype=dtype)
     if multiquery:
         k = torch.rand(
-            1, B * padding, 1, K, device=device, dtype=torch.bfloat16
+            1, B * padding, 1, K, device=device, dtype=dtype
         ).expand(1, B * padding, n_heads, K)
         v = torch.rand(
-            1, B * padding, 1, K, device=device, dtype=torch.bfloat16
+            1, B * padding, 1, K, device=device, dtype=dtype
         ).expand(1, B * padding, n_heads, K)
     else:
-        k = torch.rand(1, B * padding, n_heads, K, device=device, dtype=torch.bfloat16)
-        v = torch.rand(1, B * padding, n_heads, K, device=device, dtype=torch.bfloat16)
+        k = torch.rand(1, B * padding, n_heads, K, device=device, dtype=dtype)
+        v = torch.rand(1, B * padding, n_heads, K, device=device, dtype=dtype)
 
     bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
         q_seqlen=[1] * B,
@@ -124,15 +143,19 @@ def mem_eff_attention_decoder(
         sub_label += "-mq"
 
     has_run = False
+
     for fw_op in OPS:
         inp = fmha.Inputs(q, k, v, attn_bias=bias)
-        if not fw_op.supports(inp):
+        if (skip_reasons := fw_op.not_supported_reasons(inp)):
+            print(f"Skip benchmark: {skip_reasons=}")
             continue
 
         fn = partial(xformers.ops.memory_efficient_attention_forward, op=fw_op)
 
+        mem_size = get_memory_traffic(fw_op, q, k, v, bias)
+
         yield benchmark.Timer(
-            stmt="fn(q, k, v, attn_bias)",
+            stmt=f"fn(q, k, v, attn_bias)",
             globals={
                 "q": q,
                 "k": k,
@@ -142,7 +165,7 @@ def mem_eff_attention_decoder(
             },
             label="attention",
             description=fw_op.NAME,
-            sub_label=sub_label,
+            sub_label=f"{sub_label}_{mem_size//1024}k",
             num_threads=num_threads,
         )
 
@@ -156,7 +179,7 @@ def mem_eff_attention_decoder(
             },
             label="cuda graphed attention",
             description=fw_op.NAME,
-            sub_label=sub_label,
+            sub_label=f"{sub_label}_{mem_size//1024}k",
             num_threads=num_threads,
         )
 
