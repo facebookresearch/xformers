@@ -16,7 +16,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16, torch.float}
     SUPPORTED_MAX_K: int = 256
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {BlockDiagonalCausalWithOffsetPaddedKeysMask}
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), BlockDiagonalCausalWithOffsetPaddedKeysMask}
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
     NAME = "ck_decoderF"
@@ -73,25 +73,37 @@ class FwOp(AttentionFwOpBase):
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         if needs_gradient:
-            raise NotImplementedError("gradient")
+            raise NotImplementedError("backward pass is not supported")
         attn_bias = inp.attn_bias
-        assert isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
 
-        attn_bias.k_seqinfo.to(inp.query.device)
-        attn_bias.q_seqinfo.to(inp.query.device)
-
-        padding = attn_bias.k_seqinfo.padding
-        multiquery = inp.key.stride(2) == 0
-        if multiquery:
-            key = inp.key[0, :, :1].unflatten(0, (-1, padding))
-            value = inp.value[0, :, :1].unflatten(0, (-1, padding))
+        if attn_bias is not None:
+            attn_bias.k_seqinfo.to(inp.key.device)
+            attn_bias.q_seqinfo.to(inp.query.device)
+            padding = attn_bias.k_seqinfo.padding
+            seq_positions_gpu = attn_bias.k_seqinfo.seqlen
         else:
-            key = inp.key[0].unflatten(0, (-1, padding))
-            value = inp.value[0].unflatten(0, (-1, padding))
+            padding = inp.key.shape[1]
+            seq_positions_gpu = None
 
-        seq_positions = attn_bias.k_seqinfo.seqlen
-
-        query = inp.query[0].unflatten(0, (key.shape[0], -1))
+        if attn_bias is not None:
+            # key: (1, B * padding, 1 if multiquery else Hkv, D)
+            # value: like key
+            # query: (1, B * q_seqlen, Hq, D)
+            multiquery = inp.key.stride(2) == 0
+            if multiquery:
+                key = inp.key[0, :, :1].unflatten(0, (-1, padding))
+                value = inp.value[0, :, :1].unflatten(0, (-1, padding))
+            else:
+                key = inp.key[0].unflatten(0, (-1, padding))
+                value = inp.value[0].unflatten(0, (-1, padding))
+            query = inp.query[0].unflatten(0, (key.shape[0], -1))    
+        else:
+            # key: (B, padding, 1 if multiquery else Hkv, D)
+            # value: like key
+            # query: (B, q_seqlen, Hq, D)
+            key = inp.key
+            query = inp.query
+            value = inp.value
 
         if inp.scale is not None:
             qk_scale = inp.scale
@@ -102,7 +114,7 @@ class FwOp(AttentionFwOpBase):
             query=query,
             key=key,
             value=value,
-            seq_positions=seq_positions,
+            seq_positions=seq_positions_gpu,
             scale=qk_scale,
         )
         return out, None
