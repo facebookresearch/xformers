@@ -322,7 +322,7 @@ def get_extensions():
 
        if os.getenv("FORCE_CK_TILED_KERNEL", "0") == "1":
            include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel_tiled' / 'include',
-                             Path(this_dir) / 'third_party' / 'composable_kernel' / 'include' / 'ck']
+                             Path(this_dir) / 'third_party' / 'composable_kernel_tiled' / 'include' / 'ck']
        else:
            include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel' / 'include', 
                              Path(this_dir) / 'third_party' / 'composable_kernel' / 'include' / 'ck']
