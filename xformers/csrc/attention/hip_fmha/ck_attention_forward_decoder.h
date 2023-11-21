@@ -131,7 +131,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   // Note: this is decoding case where we attend to current and all previous
   // tokens.
-  const int32_t t_max = seq_kv_lens[b];
+  const int32_t t_max = seq_kv_lens ? seq_kv_lens[b] : gridDim.x;
 
   const int32_t lane_idx = threadIdx.x;
   const int32_t wavefront_idx = threadIdx.y;

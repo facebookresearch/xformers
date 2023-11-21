@@ -64,12 +64,14 @@ def _setup_test(
 class AttentionDecodingFlashDecoding:
     OP: Any = xops.fmha.flash.FwOp
 
+    label = "flash_decoding"
+
     def __init__(
         self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
     ) -> None:
         dtype = torch.float16
         self.sub_label = f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K}"
-        self.label = "attn_decoding"
+
         self.shapes = (B, Mq, Mkv, Hq, Hkv, K)
 
         assert Hkv <= Hq
@@ -94,7 +96,10 @@ class AttentionDecodingFlashDecoding:
             self.v = self.v[:, :, 0]
 
     def fw(self) -> None:
-        xops.memory_efficient_attention_forward(self.q, self.k, self.v, op=self.OP)
+        try:
+            xops.memory_efficient_attention_forward(self.q, self.k, self.v, op=self.OP)
+        except RuntimeError as e:
+            print(e.__cause__)
 
 
 # class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
@@ -102,14 +107,20 @@ class AttentionDecodingFlashDecoding:
 
 
 class AttentionDecodingCK(AttentionDecodingFlashDecoding):
+    label = "ck"
+
     OP = xops.fmha.ck.FwOp
 
 
 class AttentionDecodingCKDecoder(AttentionDecodingFlashDecoding):
+    label = "ck_decoder"
+
     OP = xops.fmha.ck_decoder.FwOp
 
 
 class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
+    label = "pytorch"
+
     def fw(self) -> None:
         B, Mq, Mkv, Hq, Hkv, K = self.shapes
         scale = 1 / K**0.5
