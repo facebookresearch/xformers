@@ -123,6 +123,7 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
             K_acc.stride(0),
             K_acc.stride(1),
             K_acc.stride(2),
+            K_acc.size(1),
             K_acc.size(3),
             K_acc.size(2) == 1,
             qk_scale,

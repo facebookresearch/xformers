@@ -119,6 +119,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
     const ptrdiff_t K_stride_0,
     const ptrdiff_t K_stride_1,
     const ptrdiff_t K_stride_2,
+    const int32_t K_size_1,
     const int32_t D_H,
     const bool multiquery,
     const float qk_scale) {
@@ -131,7 +132,7 @@ __global__ void efficient_attention_forward_decoder_ck_kernel(
 
   // Note: this is decoding case where we attend to current and all previous
   // tokens.
-  const int32_t t_max = seq_kv_lens ? seq_kv_lens[b] : gridDim.x;
+  const int32_t t_max = seq_kv_lens ? seq_kv_lens[b] : K_size_1;
 
   const int32_t lane_idx = threadIdx.x;
   const int32_t wavefront_idx = threadIdx.y;
@@ -392,6 +393,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
     const ptrdiff_t K_stride_0;
     const ptrdiff_t K_stride_1;
     const ptrdiff_t K_stride_2;
+    const int32_t K_size_1;
     const int32_t D_H;
     const bool multiquery;
     const float qk_scale;
@@ -412,6 +414,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
         const ptrdiff_t K_stride_0,
         const ptrdiff_t K_stride_1,
         const ptrdiff_t K_stride_2,
+        const int32_t K_size_1,
         const int32_t D_H,
         const bool multiquery,
         const float qk_scale,
@@ -429,6 +432,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
           K_stride_0(K_stride_0),
           K_stride_1(K_stride_1),
           K_stride_2(K_stride_2),
+          K_size_1(K_size_1),
           D_H(D_H),
           multiquery(multiquery),
           qk_scale(qk_scale),
@@ -483,6 +487,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
           arg.K_stride_0,
           arg.K_stride_1,
           arg.K_stride_2,
+          arg.K_size_1,
           arg.D_H,
           arg.multiquery,
           arg.qk_scale);
