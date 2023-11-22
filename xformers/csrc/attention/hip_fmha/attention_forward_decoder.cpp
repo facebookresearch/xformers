@@ -85,7 +85,7 @@ efficient_attention_forward_decoder_ck_out_impl(const at::Tensor& XQ,      // [B
     TORCH_CHECK(M <= 1024);
     TORCH_CHECK(H <= 1024);
 
-    dim3 blocks(B, H, M);
+    dim3 blocks(B * H * M);
     dim3 threads(ThreadsPerWavefront, WavefrontsPerBlock);
 
     int32_t smem_softmax = T_MAX * sizeof(float) + threads.y * sizeof(float);
@@ -125,8 +125,10 @@ efficient_attention_forward_decoder_ck_out_impl(const at::Tensor& XQ,      // [B
                 K_acc.stride(0),
                 K_acc.stride(1),
                 K_acc.stride(2),
+                XQ_acc.size(1),
+                XQ_acc.size(2),
+                XQ_acc.size(3),
                 K_acc.size(1),
-                K_acc.size(3),
                 K_acc.size(2) == 1,
                 qk_scale,
                 blocks,
@@ -248,14 +250,14 @@ int main(int argc, char** argv)
                       << std::endl;
             return 0;
         }
-        const int32_t n_keys     = std::stoi(args[0]);
-        const int32_t padding    = std::stoi(args[1]);
-        const int32_t batch_size = std::stoi(args[2]);
-        const int32_t n_heads    = std::stoi(args[3]);
-        const int32_t multiquery = (args[4] == "mq");
-        const auto dtype         = (args[5] == "f32")
-                               ? torch::kFloat32
-                               : (args[5] == "f16") ? torch::kFloat16 : torch::kBFloat16;
+        const int32_t n_keys                 = std::stoi(args[0]);
+        const int32_t padding                = std::stoi(args[1]);
+        const int32_t batch_size             = std::stoi(args[2]);
+        const int32_t n_heads                = std::stoi(args[3]);
+        const int32_t multiquery             = (args[4] == "mq");
+        const auto dtype                     = (args[5] == "f32")   ? torch::kFloat32
+                                               : (args[5] == "f16") ? torch::kFloat16
+                                                                    : torch::kBFloat16;
         const int32_t n_wavefronts_per_block = std::stoi(args[6]);
 
         const int32_t dim_per_head = 4 * kThreadsPerWavefront;
