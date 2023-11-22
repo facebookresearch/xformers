@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #include <ck/ck.hpp>
+#include <ck/utility/data_type.hpp>
 
 #include "ck_fmha_params.h"
 

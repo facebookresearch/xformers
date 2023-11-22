@@ -31,9 +31,11 @@ extern void grouped_forward_bp16(
 */
 
 extern void batched_infer_fp16(BatchedForwardParams& param, hipStream_t stream);
-extern void batched_infer_bp16(BatchedForwardParams& param, hipStream_t stream);
+// extern void batched_infer_bp16(BatchedForwardParams& param, hipStream_t
+// stream);
 extern void grouped_infer_fp16(GroupedForwardParams& param, hipStream_t stream);
-extern void grouped_infer_bp16(GroupedForwardParams& param, hipStream_t stream);
+// extern void grouped_infer_bp16(GroupedForwardParams& param, hipStream_t
+// stream);
 
 namespace {
 
@@ -93,6 +95,9 @@ efficient_attention_forward_ck(
     TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
     TORCH_CHECK(max_seqlen_q_.has_value());
   };
+
+  if (seqstart_q.has_value())
+    throw std::runtime_error("Grouped mode is ready by current ck-tiled!");
 
   // last dim is contiguous, device is kCUDA
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(query);
@@ -183,6 +188,7 @@ efficient_attention_forward_ck(
         static_cast<int>(out.stride(3))};
 
     if (bias.has_value()) {
+      /*
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
       TORCH_CHECK(bias->scalar_type() == query.scalar_type());
 
@@ -195,10 +201,17 @@ efficient_attention_forward_ck(
           static_cast<int>(bias_4d_view.stride(1)),
           static_cast<int>(bias_4d_view.stride(2)),
           static_cast<int>(bias_4d_view.stride(3))};
+      */
+
+      throw std::runtime_error("bias is currently not supported by ck-tiled!");
     } else
       p.has_attn_bias = false;
 
     p.custom_mask_type = custom_mask_type;
+
+    if (p.custom_mask_type != 0)
+      throw std::runtime_error(
+          "causal mask-type is currently not supported by ck-tiled!");
 
     p.use_dropout = use_dropout;
     p.philox_seed = philox_seed;
@@ -257,6 +270,7 @@ efficient_attention_forward_ck(
         static_cast<int>(out.stride(3))};
 
     if (bias.has_value()) {
+      /*
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
       TORCH_CHECK(bias->scalar_type() == query.scalar_type());
 
@@ -267,10 +281,16 @@ efficient_attention_forward_ck(
           static_cast<int>(bias_4d_view.stride(1)),
           static_cast<int>(bias_4d_view.stride(2)),
           static_cast<int>(bias_4d_view.stride(3))};
+       */
+      throw std::runtime_error("bias is currently not supported by ck-tiled!");
     } else
       p.has_attn_bias = false;
 
     p.custom_mask_type = custom_mask_type;
+
+    if (p.custom_mask_type != 0)
+      throw std::runtime_error(
+          "causal mask-type is currently not supported by ck-tiled!");
 
     // max_seqlen_q is used to create logsumexp tensor
     p.max_seqlen_q = *max_seqlen_q_;
@@ -327,6 +347,7 @@ efficient_attention_forward_ck(
       p.out_ptrs.push_back(reinterpret_cast<void*>(&out_ptr[tmp_o_offset]));
 
       if (bias.has_value()) {
+        /*
         size_t tmp_bias_offset = get_size_in_bytes(
             static_cast<size_t>(p.host_seqstart_q[i]) * p.attn_bias_strides[2] +
                 static_cast<size_t>(p.host_seqstart_k[i]) *
@@ -335,6 +356,10 @@ efficient_attention_forward_ck(
 
         p.attn_bias_ptrs.push_back(
             reinterpret_cast<void*>(&attn_bias_ptr[tmp_bias_offset]));
+        */
+
+        throw std::runtime_error(
+            "bias is currently not supported by ck-tiled!");
       };
 
       // ToDO: remove this after dev-op fix
@@ -385,7 +410,8 @@ efficient_attention_forward_ck(
       if (inDataType == at::ScalarType::Half) {
         batched_infer_fp16(batched_forward_params, stream);
       } else if (inDataType == at::ScalarType::BFloat16) {
-        batched_infer_bp16(batched_forward_params, stream);
+        // batched_infer_bp16(batched_forward_params, stream);
+        throw std::runtime_error("input data-type is not supported!");
       } else
         throw std::runtime_error("input data-type is not supported!");
     } else {
@@ -410,7 +436,8 @@ efficient_attention_forward_ck(
       if (inDataType == at::ScalarType::Half) {
         grouped_infer_fp16(grouped_forward_params, stream);
       } else if (inDataType == at::ScalarType::BFloat16) {
-        grouped_infer_bp16(grouped_forward_params, stream);
+        // grouped_infer_bp16(grouped_forward_params, stream);
+        throw std::runtime_error("input data-type is not supported!");
       } else
         throw std::runtime_error("input data-type is not supported!");
     } else {

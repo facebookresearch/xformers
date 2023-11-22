@@ -1,6 +1,6 @@
 #include <ck/ck.hpp>
 
-#include "ck_fmha_batched_infer.h"
+#include "ck_tiled_fmha_batched_infer.h"
 
 template void run_batched_infer_masktype_attnbias_dispatched<
     ck::half_t,
