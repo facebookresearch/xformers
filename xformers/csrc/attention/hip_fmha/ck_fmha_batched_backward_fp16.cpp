@@ -1,4 +1,4 @@
-#include <ck.hpp>
+#include <ck/ck.hpp>
 #include <stdexcept>
 
 #include "ck_bool_switch.h"

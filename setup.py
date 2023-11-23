@@ -321,11 +321,9 @@ def get_extensions():
        include_dirs += [ Path(this_dir) / 'xformers' / 'csrc' / 'attention' / 'hip_fmha' ]
 
        if os.getenv("FORCE_CK_TILED_KERNEL", "0") == "1":
-           include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel_tiled' / 'include',
-                             Path(this_dir) / 'third_party' / 'composable_kernel_tiled' / 'include' / 'ck']
+           include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel_tiled' / 'include']
        else:
-           include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel' / 'include', 
-                             Path(this_dir) / 'third_party' / 'composable_kernel' / 'include' / 'ck']
+           include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel' / 'include']
            
        generator_flag = []
        cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
