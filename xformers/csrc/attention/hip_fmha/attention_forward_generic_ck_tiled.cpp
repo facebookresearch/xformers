@@ -12,8 +12,8 @@
 #include <torch/library.h>
 #include <ATen/cuda/CUDAGraphsUtils.cuh>
 
-#include "ck_fmha_params.h"
 #include "ck_fmha_util.h"
+#include "ck_tiled_fmha_params.h"
 
 /*
 extern void batched_forward_fp16(
@@ -95,9 +95,6 @@ efficient_attention_forward_ck(
     TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
     TORCH_CHECK(max_seqlen_q_.has_value());
   };
-
-  if (seqstart_q.has_value())
-    throw std::runtime_error("Grouped mode is ready by current ck-tiled!");
 
   // last dim is contiguous, device is kCUDA
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(query);
@@ -188,7 +185,6 @@ efficient_attention_forward_ck(
         static_cast<int>(out.stride(3))};
 
     if (bias.has_value()) {
-      /*
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
       TORCH_CHECK(bias->scalar_type() == query.scalar_type());
 
@@ -201,9 +197,6 @@ efficient_attention_forward_ck(
           static_cast<int>(bias_4d_view.stride(1)),
           static_cast<int>(bias_4d_view.stride(2)),
           static_cast<int>(bias_4d_view.stride(3))};
-      */
-
-      throw std::runtime_error("bias is currently not supported by ck-tiled!");
     } else
       p.has_attn_bias = false;
 
@@ -252,6 +245,11 @@ efficient_attention_forward_ck(
       p.scale = float(1.0 / std::sqrt(float(K)));
     }
 
+    p.q_ptr = query.data_ptr();
+    p.k_ptr = key.data_ptr();
+    p.v_ptr = value.data_ptr();
+    p.out_ptr = out.data_ptr();
+
     p.q_strides = {
         static_cast<int>(query.stride(1)),
         static_cast<int>(query.stride(2)),
@@ -270,19 +268,18 @@ efficient_attention_forward_ck(
         static_cast<int>(out.stride(3))};
 
     if (bias.has_value()) {
-      /*
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA((*bias));
       TORCH_CHECK(bias->scalar_type() == query.scalar_type());
 
       p.has_attn_bias = true;
+      p.attn_bias_ptr = bias->data_ptr();
+
       const at::Tensor bias_4d_view = get_bias_4d_view(*bias, B, Hq, M, N);
       p.attn_bias_strides = {
           static_cast<int>(bias_4d_view.stride(0)),
           static_cast<int>(bias_4d_view.stride(1)),
           static_cast<int>(bias_4d_view.stride(2)),
           static_cast<int>(bias_4d_view.stride(3))};
-       */
-      throw std::runtime_error("bias is currently not supported by ck-tiled!");
     } else
       p.has_attn_bias = false;
 
@@ -295,16 +292,27 @@ efficient_attention_forward_ck(
     // max_seqlen_q is used to create logsumexp tensor
     p.max_seqlen_q = *max_seqlen_q_;
 
-    p.host_seqstart_q.resize(p.num_batches + 1);
-    p.host_seqstart_k.resize(p.num_batches + 1);
+    at::Tensor dev_seqstart_q =
+        at::empty({p.num_batches + 1}, opts.dtype(at::kInt));
+    at::Tensor dev_seqstart_k =
+        at::empty({p.num_batches + 1}, opts.dtype(at::kInt));
+    at::Tensor dev_seqlen_k;
 
-    for (int i = 0; i < p.host_seqstart_q.size(); i++)
-      p.host_seqstart_q[i] =
-          *(reinterpret_cast<int*>(seqstart_q->data_ptr()) + i);
+    p.seqstart_q_dev_ptr = dev_seqstart_q.data_ptr();
+    HIP_CALL_CHECK(hipMemcpyAsync(
+        p.seqstart_q_dev_ptr,
+        seqstart_q->data_ptr(),
+        (p.num_batches + 1) * sizeof(int),
+        hipMemcpyHostToDevice,
+        stream));
 
-    for (int i = 0; i < p.host_seqstart_k.size(); i++)
-      p.host_seqstart_k[i] =
-          *(reinterpret_cast<int*>(seqstart_k->data_ptr()) + i);
+    p.seqstart_k_dev_ptr = dev_seqstart_k.data_ptr();
+    HIP_CALL_CHECK(hipMemcpyAsync(
+        p.seqstart_k_dev_ptr,
+        seqstart_k->data_ptr(),
+        (p.num_batches + 1) * sizeof(int),
+        hipMemcpyHostToDevice,
+        stream));
 
     if (seqlen_k.has_value()) {
       TORCH_CHECK(seqlen_k->scalar_type() == at::ScalarType::Int);
@@ -312,59 +320,18 @@ efficient_attention_forward_ck(
       TORCH_CHECK(seqlen_k->size(0) == p.num_batches)
       CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqlen_k));
 
-      p.host_seqlen_k.resize(p.num_batches);
+      dev_seqlen_k = at::empty({p.num_batches}, opts.dtype(at::kInt));
 
-      for (int i = 0; i < p.host_seqlen_k.size(); i++)
-        p.host_seqlen_k[i] =
-            *(reinterpret_cast<int*>(seqlen_k->data_ptr()) + i);
-    }
+      p.seqlen_k_dev_ptr = dev_seqlen_k.data_ptr();
 
-    char* q_ptr = reinterpret_cast<char*>(query.data_ptr());
-    char* k_ptr = reinterpret_cast<char*>(key.data_ptr());
-    char* v_ptr = reinterpret_cast<char*>(value.data_ptr());
-
-    char* out_ptr = reinterpret_cast<char*>(out.data_ptr());
-    char* attn_bias_ptr =
-        bias.has_value() ? reinterpret_cast<char*>(bias->data_ptr()) : nullptr;
-
-    for (int i = 0; i < p.num_batches; i++) {
-      size_t tmp_q_offset = get_size_in_bytes(
-          static_cast<size_t>(p.host_seqstart_q[i]) * p.q_strides[0],
-          query.scalar_type());
-      size_t tmp_k_offset = get_size_in_bytes(
-          static_cast<size_t>(p.host_seqstart_k[i]) * p.k_strides[0],
-          key.scalar_type());
-      size_t tmp_v_offset = get_size_in_bytes(
-          static_cast<size_t>(p.host_seqstart_k[i]) * p.v_strides[0],
-          value.scalar_type());
-      size_t tmp_o_offset = get_size_in_bytes(
-          static_cast<size_t>(p.host_seqstart_q[i]) * p.out_strides[0],
-          out.scalar_type());
-
-      p.q_ptrs.push_back(reinterpret_cast<void*>(&q_ptr[tmp_q_offset]));
-      p.k_ptrs.push_back(reinterpret_cast<void*>(&k_ptr[tmp_k_offset]));
-      p.v_ptrs.push_back(reinterpret_cast<void*>(&v_ptr[tmp_v_offset]));
-      p.out_ptrs.push_back(reinterpret_cast<void*>(&out_ptr[tmp_o_offset]));
-
-      if (bias.has_value()) {
-        /*
-        size_t tmp_bias_offset = get_size_in_bytes(
-            static_cast<size_t>(p.host_seqstart_q[i]) * p.attn_bias_strides[2] +
-                static_cast<size_t>(p.host_seqstart_k[i]) *
-                    p.attn_bias_strides[3],
-            bias->scalar_type());
-
-        p.attn_bias_ptrs.push_back(
-            reinterpret_cast<void*>(&attn_bias_ptr[tmp_bias_offset]));
-        */
-
-        throw std::runtime_error(
-            "bias is currently not supported by ck-tiled!");
-      };
-
-      // ToDO: remove this after dev-op fix
-      p.randvals_ptrs.push_back(nullptr);
-    }
+      HIP_CALL_CHECK(hipMemcpyAsync(
+          p.seqlen_k_dev_ptr,
+          seqstart_k->data_ptr(),
+          p.num_batches * sizeof(int),
+          hipMemcpyHostToDevice,
+          stream));
+    } else
+      p.seqlen_k_dev_ptr = nullptr;
 
     p.use_dropout = use_dropout;
     p.philox_seed = philox_seed;

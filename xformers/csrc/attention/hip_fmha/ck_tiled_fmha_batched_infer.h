@@ -1,14 +1,15 @@
 #pragma once
 
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 
-#include "ck/host_utility/device_prop.hpp"
-#include "ck/host_utility/kernel_launch.hpp"
-#include "ck/tensor/tensor_view.hpp"
-#include "ck/tensor_description/cluster_descriptor.hpp"
-#include "ck/tensor_description/tensor_descriptor_helper.hpp"
-#include "ck/utility/common_header.hpp"
+#include <ck/host_utility/device_prop.hpp>
+#include <ck/host_utility/kernel_launch.hpp>
+#include <ck/tensor/tensor_view.hpp>
+#include <ck/tensor_description/cluster_descriptor.hpp>
+#include <ck/tensor_description/tensor_descriptor_helper.hpp>
+#include <ck/utility/common_header.hpp>
 
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_problem.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qkvs.hpp>
@@ -17,8 +18,8 @@
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_default_policy.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
 
-#include "ck_fmha_params.h"
-#include "ck_tiled_fmha_batched_forward_kernel.h"
+#include "ck_tiled_fmha_params.h"
+#include "ck_tiled_fmha_forward_kernel.h"
 #include "ck_tiled_fmha_fwd_epilogue.h"
 #include "ck_tiled_fmha_fwd_tile_partitioner.h"
 
@@ -27,6 +28,7 @@ struct batched_infer_masktype_attnbias_dispatched {
   using QDataType = scalar_t;
   using KDataType = scalar_t;
   using VDataType = scalar_t;
+  using BiasDataType = scalar_t;
   using SaccDataType = float; // data type for first gemm accumulation
   using SMPLComputeDataType = float; // data type for reduction, softmax
   using PDataType = scalar_t; // data type for A matrix of second gemm
@@ -63,6 +65,7 @@ struct batched_infer_masktype_attnbias_dispatched {
           VDataType,
           SaccDataType,
           SMPLComputeDataType,
+          BiasDataType,
           PDataType,
           OaccDataType,
           ODataType,
@@ -75,6 +78,7 @@ struct batched_infer_masktype_attnbias_dispatched {
           VDataType,
           SaccDataType,
           SMPLComputeDataType,
+          BiasDataType,
           PDataType,
           OaccDataType,
           ODataType,
@@ -126,6 +130,17 @@ struct batched_infer_masktype_attnbias_dispatched {
     constexpr ck::index_t kWarpPerBlock = kBlockSize.x / warpSize;
     constexpr ck::index_t kBlockPerCu = kWarpPerCu / kWarpPerBlock;
 
+    std::optional<
+        std::tuple<const void*, ck::index_t, ck::index_t, ck::index_t>>
+        bias;
+
+    if (param.has_attn_bias)
+      bias = std::make_tuple(
+          param.attn_bias_ptr,
+          param.attn_bias_strides[2],
+          param.attn_bias_strides[1],
+          param.attn_bias_strides[0]);
+
     auto kargs = FmhaKernel::MakeKargs(
         param.q_ptr,
         param.k_ptr,
@@ -147,7 +162,8 @@ struct batched_infer_masktype_attnbias_dispatched {
         param.q_strides[0], // q, k, v, out tensor batch-dim stride
         param.k_strides[0],
         param.v_strides[0],
-        param.out_strides[0]);
+        param.out_strides[0],
+        bias);
 
     (void)launch_kernel<kBlockSize.x, kBlockPerCu>(
         StreamConfig{stream, false},
