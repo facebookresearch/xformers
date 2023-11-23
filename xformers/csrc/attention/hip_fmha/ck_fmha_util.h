@@ -78,6 +78,17 @@ struct CkToAtenDtype<float> {
   XFORMERS_CHECK(                                                         \
       TENSOR.stride(-1) == 1, #TENSOR ": last dimension must be contiguous");
 
+#define HIP_CALL_CHECK(flag)                                                 \
+  do {                                                                       \
+    hipError_t _tmpVal;                                                      \
+    if ((_tmpVal = flag) != hipSuccess) {                                    \
+      std::ostringstream ostr;                                               \
+      ostr << "HIP Function Failed (" << __FILE__ << "," << __LINE__ << ") " \
+           << hipGetErrorString(_tmpVal);                                    \
+      throw std::runtime_error(ostr.str());                                  \
+    }                                                                        \
+  } while (0)
+
 static inline size_t get_size_in_bytes(size_t n, at::ScalarType dtype) {
   if (dtype == at::ScalarType::Float) {
     return n * 4;
