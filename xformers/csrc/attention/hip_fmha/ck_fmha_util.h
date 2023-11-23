@@ -139,3 +139,15 @@ inline at::Tensor get_bias_4d_view(
       TORCH_CHECK(false, "bias can only have ndims in {2, 3, 4}");
   }
 }
+
+#define HIP_CALL_CHECK(flag)                                                 \
+  do {                                                                       \
+    hipError_t _tmpVal;                                                      \
+    if ((_tmpVal = flag) != hipSuccess) {                                    \
+      std::ostringstream ostr;                                               \
+      ostr << "HIP Function Failed (" << __FILE__ << "," << __LINE__ << ") " \
+           << hipGetErrorString(_tmpVal);                                    \
+      throw std::runtime_error(ostr.str());                                  \
+    }                                                                        \
+  } while (0)
+~
