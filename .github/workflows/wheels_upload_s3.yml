@@ -23,6 +23,9 @@ on:
         required: true
         type: boolean
         description: Actually upload the wheels. Dry-run if false
+      artifact_tag:
+        default: "facebookresearch"
+        type: string
 
 jobs:
   wheels_upload_s3:
@@ -55,7 +58,7 @@ jobs:
           set -ex
           mv dist all-dist
           mkdir dist
-          for f in all-dist/${{ inputs.filter }}/*.whl; do
+          for f in all-dist/${{ inputs.filter }}_${{ inputs.artifact_tag }}/*.whl; do
             cp $f dist/
           done;
       - run: ls -R dist/

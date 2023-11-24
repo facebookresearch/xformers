@@ -17,6 +17,9 @@ on:
         required: true
         type: string
         description: "Example: 117 for 11.7"
+      artifact_tag:
+        default: "facebookresearch"
+        type: string
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
@@ -32,7 +35,7 @@ env:
 
 jobs:
   build:
-    name: ${{ inputs.os }}-py${{ inputs.python }}-torch${{ inputs.torch_version }}+cu${{ inputs.cuda_short_version }}
+    name: ${{ contains(inputs.os, 'ubuntu') && 'ubuntu' || 'win' }}-py${{ inputs.python }}-pt${{ inputs.torch_version }}+cu${{ inputs.cuda_short_version }}
     runs-on: ${{ inputs.os }}
     env:
       # alias for the current python version
@@ -157,6 +160,6 @@ jobs:
       - run: du -h dist/*
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{ inputs.os }}-py${{ inputs.python }}-torch${{ inputs.torch_version }}+cu${{ inputs.cuda_short_version }}
+          name: ${{ inputs.os }}-py${{ inputs.python }}-torch${{ inputs.torch_version }}+cu${{ inputs.cuda_short_version }}_${{ inputs.artifact_tag }}
           path: dist/*.whl
 # Note: it might be helpful to have additional steps that test if the built wheels actually work
