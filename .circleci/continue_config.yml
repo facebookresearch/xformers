@@ -251,6 +251,14 @@ jobs:
     steps:
       - checkout
 
+      - run:
+          name: Remove internal components, as they require GPU
+          command: |
+            mkdir -p .github/sync.fairinternal
+            touch .github/sync.fairinternal/ossify.sh
+            chmod +x .github/sync.fairinternal/ossify.sh
+            .github/sync.fairinternal/ossify.sh
+
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
