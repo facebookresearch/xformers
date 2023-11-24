@@ -37,7 +37,7 @@ runs:
             print("Invalid env")
         with open(os.environ['GITHUB_ENV'], "r+") as fp:
             fp.write("CONDA_ENV_LINK=" + str(final_env) + "\n")
-            fp.write("CONDA_ENV_PATH=" + env_path + "\n")
+            fp.write("CONDA_PREFIX=" + env_path + "\n")
             fp.write("CONDA_INSTALL_CMD=" + CONDA_INSTALL_CMD + "\n")
             fp.write("CONDA_ENV_HASH=" + conda_env_hash + "\n")
             fp.write("PY=" + os.path.join(env_path, "bin", "python") + "\n")
@@ -45,73 +45,77 @@ runs:
         with open(os.environ['GITHUB_OUTPUT'], "r+") as fp:
           fp.write(f"ENV_CACHED={int(env_already_built)}\n")
     - name: Print conda commands
-      shell: bash
+      shell: bash -l {0}
       run: |
-        echo "CONDA_ENV_PATH=$CONDA_ENV_PATH"
+        echo "CONDA_PREFIX=$CONDA_PREFIX"
         echo "CONDA_INSTALL_CMD=$CONDA_INSTALL_CMD"
         echo "CONDA_ENV_HASH=$CONDA_ENV_HASH"
         echo "PY=$PY"
-        export LIBRARY_PATH="$LIBRARY_PATH:$CONDA_ENV_PATH/lib"
-        echo "$CONDA_ENV_PATH/bin" >> $GITHUB_PATH
     - name: Conda/pip setup
+      shell: bash -l {0}
       if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
-      shell: bash
       run: |
         set -ex
         conda config --set channel_priority strict
         # Retry if failed after removing downloaded packages cache
-        $CONDA_INSTALL_CMD || (rm -rf $HOME/.conda/pkgs && rm -rf $CONDA_ENV_PATH && $CONDA_INSTALL_CMD)
+        $CONDA_INSTALL_CMD || (rm -rf $HOME/.conda/pkgs && rm -rf $CONDA_PREFIX && $CONDA_INSTALL_CMD)
         which pip
         pip install cmake
         pip install -r requirements-benchmark.txt --progress-bar off
-    - name: Setup ccache nvcc
-      if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
-      shell: bash
+    - name: Activate environment
+      shell: bash -l {0}
       run: |
-        echo "#!/bin/bash" > $CONDA_ENV_PATH/bin/nvcc-ccache
-        echo "ccache ${CUDA_HOME}/bin/nvcc \"\$@\"" >> $CONDA_ENV_PATH/bin/nvcc-ccache
-        cat $CONDA_ENV_PATH/bin/nvcc-ccache
-        chmod +x $CONDA_ENV_PATH/bin/nvcc-ccache
+        echo "" > ~/.bashrc
+        conda init
+        echo "conda activate $CONDA_PREFIX" >> ~/.bashrc
+        # For some reason bash only reads from `.profile`
+        # but conda writes init script to `.bashrc`
+        cat ~/.bashrc >> ~/.profile
+    - run: which python
+      shell: bash -l {0}
+    - name: Setup ccache nvcc
+      shell: bash -l {0}
+      if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
+      run: |
+        echo "#!/bin/bash" > $CONDA_PREFIX/bin/nvcc-ccache
+        echo "ccache ${CUDA_HOME}/bin/nvcc \"\$@\"" >> $CONDA_PREFIX/bin/nvcc-ccache
+        cat $CONDA_PREFIX/bin/nvcc-ccache
+        chmod +x $CONDA_PREFIX/bin/nvcc-ccache
         which nvcc
         
     - name: Setup ccache g++
+      shell: bash -l {0}
       if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
-      shell: bash
       run: |
-        echo "#!/bin/bash" > $CONDA_ENV_PATH/bin/g++-ccache
-        echo "ccache g++ \"\$@\"" >> $CONDA_ENV_PATH/bin/g++-ccache
-        cat $CONDA_ENV_PATH/bin/g++-ccache
-        chmod +x $CONDA_ENV_PATH/bin/g++-ccache
+        echo "#!/bin/bash" > $CONDA_PREFIX/bin/g++-ccache
+        echo "ccache g++ \"\$@\"" >> $CONDA_PREFIX/bin/g++-ccache
+        cat $CONDA_PREFIX/bin/g++-ccache
+        chmod +x $CONDA_PREFIX/bin/g++-ccache
         which g++-ccache
     - name: Check NVIDIA libs
-      shell: bash
+      shell: bash -l {0}
       run: |
         ldconfig -p | grep libcuda.so
         ls /.singularity.d/libs/
     - name: Mark env as ready
+      shell: bash -l {0}
       if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
-      shell: bash
-      run: echo $CONDA_ENV_PATH > $CONDA_ENV_LINK
+      run: echo $CONDA_PREFIX > $CONDA_ENV_LINK
     - name: Setup ccache
-      shell: bash
+      shell: bash -l {0}
       run: |
         export CCACHE_DIR=$GHRUNNER_SHARED_DIR/ccache
         echo "CCACHE_DIR=$CCACHE_DIR" >> ${GITHUB_ENV}
         mkdir -p $CCACHE_DIR
         ccache -s
     - name: Build
-      shell: bash
+      shell: bash -l {0}
       run: |
-        PYTORCH_NVCC="$CONDA_ENV_PATH/bin/nvcc-ccache" CXX="g++-ccache" TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python -m pip install -v -e .
+        PYTORCH_NVCC="$CONDA_PREFIX/bin/nvcc-ccache" CXX="g++-ccache" TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python -m pip install -v -e .
+    - name: Build info
+      run: |
+        printenv
         python -m xformers.info
-    - name: xformers.info
-      shell: bash
-      run: |
-        python -m xformers.info
-    - name: printenv
-      shell: bash
-      run: printenv
-    - name: ccache stats
-      shell: bash
-      run: |
+        python xformers/_triton_version_fairinternal.py
         ccache -s
+      shell: bash -l {0}
