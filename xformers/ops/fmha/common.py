@@ -104,9 +104,11 @@ class Inputs:
 
     def validate_inputs(self) -> None:
         qkv = (self.query, self.key, self.value)
-        if self.query.ndim not in (3, 4) or any(x.ndim != self.query.ndim for x in qkv):
+        if self.query.ndim not in (3, 4, 5) or any(
+            x.ndim != self.query.ndim for x in qkv
+        ):
             raise ValueError(
-                f"Query/Key/Value should all have BMHK or BMK shape.\n"
+                f"Query/Key/Value should all have BMGHK, BMHK or BMK shape.\n"
                 f"  query.shape: {self.query.shape}\n"
                 f"  key.shape  : {self.key.shape}\n"
                 f"  value.shape: {self.value.shape}"

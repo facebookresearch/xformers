@@ -116,11 +116,14 @@ efficient_attention_forward_decoder_ck_kernel(const scalar_t* __restrict__ XQ,
                                               const int32_t* __restrict__ seq_kv_lens,
                                               const ptrdiff_t XQ_stride_b,
                                               const ptrdiff_t XQ_stride_m,
+                                              const ptrdiff_t XQ_stride_g,
                                               const ptrdiff_t XQ_stride_h,
                                               const ptrdiff_t K_stride_b,
                                               const ptrdiff_t K_stride_m,
+                                              const ptrdiff_t K_stride_g,
                                               const ptrdiff_t K_stride_h,
                                               const int32_t Q_size_m,
+                                              const int32_t Q_size_g,
                                               const int32_t Q_size_h,
                                               const int32_t Q_size_k,
                                               const int32_t K_size_m,
@@ -129,10 +132,11 @@ efficient_attention_forward_decoder_ck_kernel(const scalar_t* __restrict__ XQ,
 {
     static_assert(n_loop_unroll_tail < n_loop_unroll, "");
 
-    // Each block handles a single batch and head and query
-    const int32_t b = blockIdx.x / (Q_size_m * Q_size_h);
-    const int32_t h = (blockIdx.x / Q_size_m) % Q_size_h;
-    const int32_t m = blockIdx.x % Q_size_m;
+    // Each block handles a single batch and head and query and group
+    const int32_t b = blockIdx.x / (Q_size_m * Q_size_g * Q_size_h);
+    const int32_t m = (blockIdx.x / (Q_size_g * Q_size_h)) % Q_size_m;
+    const int32_t g = (blockIdx.x / Q_size_h) % Q_size_g;
+    const int32_t h = blockIdx.x % Q_size_h;
 
     // Note: this is decoding case where we attend to current and all previous
     // tokens.
@@ -145,10 +149,12 @@ efficient_attention_forward_decoder_ck_kernel(const scalar_t* __restrict__ XQ,
     const int32_t threads_per_block     = threads_per_wavefront * wavefronts_per_block;
     const int32_t thread_linear_idx     = lane_idx + wavefront_idx * threads_per_wavefront;
     // const auto* q_ = &(XQ_acc[b][m][h][0]);
-    const auto XQO_base_offset  = b * XQ_stride_b + m * XQ_stride_m + h * XQ_stride_h;
+    const auto XQO_base_offset =
+        b * XQ_stride_b + m * XQ_stride_m + g * XQ_stride_g + h * XQ_stride_h;
     const auto* __restrict__ q_ = XQ + XQO_base_offset;
 
-    const auto cache_KV_base_offset       = b * K_stride_b + (multiquery ? 0 : h * K_stride_h);
+    const auto cache_KV_base_offset =
+        b * K_stride_b + 0 * K_stride_m + g * K_stride_g + (multiquery ? 0 : h * K_stride_h);
     const auto* __restrict__ cache_K_base = cache_K + cache_KV_base_offset;
     const auto* __restrict__ cache_V_base = cache_V + cache_KV_base_offset;
 
@@ -341,11 +347,14 @@ efficient_attention_forward_decoder_ck_kernel(const scalar_t* __restrict__ XQ,
                     const int32_t* __restrict__ seq_kv_lens;
                     const ptrdiff_t XQ_stride_b;
                     const ptrdiff_t XQ_stride_m;
+                    const ptrdiff_t XQ_stride_g;
                     const ptrdiff_t XQ_stride_h;
                     const ptrdiff_t K_stride_b;
                     const ptrdiff_t K_stride_m;
+                    const ptrdiff_t K_stride_g;
                     const ptrdiff_t K_stride_h;
                     const int32_t Q_size_m;
+                    const int32_t Q_size_g;
                     const int32_t Q_size_h;
                     const int32_t Q_size_k;
                     const int32_t K_size_m;
@@ -363,11 +372,14 @@ efficient_attention_forward_decoder_ck_kernel(const scalar_t* __restrict__ XQ,
                              const int32_t* __restrict__ seq_kv_lens,
                              const ptrdiff_t XQ_stride_b,
                              const ptrdiff_t XQ_stride_m,
+                             const ptrdiff_t XQ_stride_g,
                              const ptrdiff_t XQ_stride_h,
                              const ptrdiff_t K_stride_b,
                              const ptrdiff_t K_stride_m,
+                             const ptrdiff_t K_stride_g,
                              const ptrdiff_t K_stride_h,
                              const int32_t Q_size_m,
+                             const int32_t Q_size_g,
                              const int32_t Q_size_h,
                              const int32_t Q_size_k,
                              const int32_t K_size_m,
@@ -383,11 +395,14 @@ efficient_attention_forward_decoder_ck_kernel(const scalar_t* __restrict__ XQ,
                           seq_kv_lens(seq_kv_lens),
                           XQ_stride_b(XQ_stride_b),
                           XQ_stride_m(XQ_stride_m),
+                          XQ_stride_g(XQ_stride_g),
                           XQ_stride_h(XQ_stride_h),
                           K_stride_b(K_stride_b),
                           K_stride_m(K_stride_m),
+                          K_stride_g(K_stride_g),
                           K_stride_h(K_stride_h),
                           Q_size_m(Q_size_m),
+                          Q_size_g(Q_size_g),
                           Q_size_h(Q_size_h),
                           Q_size_k(Q_size_k),
                           K_size_m(K_size_m),
@@ -447,11 +462,14 @@ efficient_attention_forward_decoder_ck_kernel(const scalar_t* __restrict__ XQ,
                             arg.seq_kv_lens,
                             arg.XQ_stride_b,
                             arg.XQ_stride_m,
+                            arg.XQ_stride_g,
                             arg.XQ_stride_h,
                             arg.K_stride_b,
                             arg.K_stride_m,
+                            arg.K_stride_g,
                             arg.K_stride_h,
                             arg.Q_size_m,
+                            arg.Q_size_g,
                             arg.Q_size_h,
                             arg.Q_size_k,
                             arg.K_size_m,

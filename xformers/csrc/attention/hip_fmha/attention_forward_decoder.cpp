@@ -75,17 +75,20 @@ efficient_attention_forward_decoder_ck_out_impl(const at::Tensor& XQ,      // [B
     TORCH_CHECK(!seq_kv_lens || seq_kv_lens->is_cuda());
 
     TORCH_CHECK(cache_K.size(1) <= T_MAX);
-    TORCH_CHECK(cache_K.size(3) <= D_H);
+    TORCH_CHECK(cache_K.size(4) <= D_H);
+
+    constexpr auto rank = 5;
 
     auto B = XQ.size(0);
     auto M = XQ.size(1);
-    auto H = XQ.size(2);
+    auto G = XQ.size(2);
+    auto H = XQ.size(3);
 
     TORCH_CHECK(B <= 1024);
     TORCH_CHECK(M <= 1024);
     TORCH_CHECK(H <= 1024);
 
-    dim3 blocks(B * H * M);
+    dim3 blocks(B * H * M * G);
     dim3 threads(ThreadsPerWavefront, WavefrontsPerBlock);
 
     int32_t smem_softmax = T_MAX * sizeof(float) + threads.y * sizeof(float);
@@ -105,10 +108,10 @@ efficient_attention_forward_decoder_ck_out_impl(const at::Tensor& XQ,      // [B
             using device_op_t = ck::tensor_operation::device::FMHADecoderSeqlen1DeviceOp<ck_data_t>;
             auto op           = device_op_t{};
 
-            auto XQ_acc = XQ.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>();
-            auto K_acc  = cache_K.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>();
-            auto V_acc  = cache_V.packed_accessor64<scalar_t, 4, at::RestrictPtrTraits>();
-            auto O_acc  = O.packed_accessor32<scalar_t, 4, at::RestrictPtrTraits>();
+            auto XQ_acc = XQ.packed_accessor32<scalar_t, rank, at::RestrictPtrTraits>();
+            auto K_acc  = cache_K.packed_accessor64<scalar_t, rank, at::RestrictPtrTraits>();
+            auto V_acc  = cache_V.packed_accessor64<scalar_t, rank, at::RestrictPtrTraits>();
+            auto O_acc  = O.packed_accessor32<scalar_t, rank, at::RestrictPtrTraits>();
             auto seq_acc =
                 seq_kv_lens
                     ? seq_kv_lens->packed_accessor32<int32_t, 1, at::RestrictPtrTraits>().data()
@@ -122,14 +125,17 @@ efficient_attention_forward_decoder_ck_out_impl(const at::Tensor& XQ,      // [B
                 XQ_acc.stride(0),
                 XQ_acc.stride(1),
                 XQ_acc.stride(2),
+                XQ_acc.stride(3),
                 K_acc.stride(0),
                 K_acc.stride(1),
                 K_acc.stride(2),
+                K_acc.stride(3),
                 XQ_acc.size(1),
                 XQ_acc.size(2),
                 XQ_acc.size(3),
+                XQ_acc.size(4),
                 K_acc.size(1),
-                K_acc.size(2) == 1,
+                K_acc.size(3) == 1,
                 qk_scale,
                 blocks,
                 threads,
