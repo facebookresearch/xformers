@@ -17,13 +17,9 @@ device = torch.device("cuda")
 
 
 CASES = [
-    dict(B=max(1, 2 ** (16 - i)), Mq=1, Mkv=2**i, Hq=16, Hkv=1, K=128)
-    for i in range(8, 18)
+    dict(B=max(1, 2 ** (16 - i)), Mq=1, Mkv=2**i, Hq=16, Hkv=hkv, K=128)
+    for i in range(8, 18) for hkv in (1, 2)
 ]
-# + [
-#     dict(B=max(1, 2 ** (16 - i)), Mq=1, Mkv=2**i, Hq=16, Hkv=2, K=128)
-#     for i in range(8, 18)
-# ]
 
 
 def _setup_test(
@@ -98,21 +94,19 @@ class AttentionDecodingFlashDecoding:
     def fw(self) -> None:
         try:
             xops.memory_efficient_attention_forward(self.q, self.k, self.v, op=self.OP)
-        except RuntimeError as e:
+        except (RuntimeError, ValueError) as e:
             print(f"Runtime error: {e}")
 
 
-# class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
-#     OP = xops.fmha.triton_splitk.FwOp
+class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
+    OP = xops.fmha.triton_splitk.FwOp
 
 
 class AttentionDecodingCK(AttentionDecodingFlashDecoding):
-
     OP = xops.fmha.ck.FwOp
 
 
 class AttentionDecodingCKDecoder(AttentionDecodingFlashDecoding):
-
     OP = xops.fmha.ck_decoder.FwOp
 
 
