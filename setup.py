@@ -113,6 +113,8 @@ def get_cuda_version(cuda_dir) -> int:
     release = output[release_idx].split(".")
     bare_metal_major = int(release[0])
     bare_metal_minor = int(release[1][0])
+    if bare_metal_minor < 10 and len(release[1][0]) == 1:
+        bare_metal_minor = bare_metal_minor * 10
 
     assert bare_metal_minor < 100
     return bare_metal_major * 100 + bare_metal_minor
