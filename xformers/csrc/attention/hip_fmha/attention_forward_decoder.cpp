@@ -56,13 +56,13 @@ template <int32_t ThreadsPerWavefront,
           int32_t WavefrontsPerBlock,
           int32_t T_MAX = 8192,
           int32_t D_H   = 256>
-at::Tensor&
-efficient_attention_forward_decoder_ck_out_impl(const at::Tensor& XQ,      // [B, 1, H, D]
-                                                const at::Tensor& cache_K, // [B, T_MAX, H or 1, D]
-                                                const at::Tensor& cache_V, // [B, T_MAX, H or 1, D]
-                                                at::optional<at::Tensor> seq_kv_lens, // [B]
-                                                double qk_scale,
-                                                at::Tensor& O)
+at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
+    const at::Tensor& XQ,                 // [B, 1, G, H, D]
+    const at::Tensor& cache_K,            // [B, T_MAX, G, H or 1, D]
+    const at::Tensor& cache_V,            // [B, T_MAX, G, H or 1, D]
+    at::optional<at::Tensor> seq_kv_lens, // [B]
+    double qk_scale,
+    at::Tensor& O)
 {
     static_assert(4 * ThreadsPerWavefront == D_H, "");
     static_assert(WavefrontsPerBlock <= ThreadsPerWavefront, "");
@@ -153,8 +153,8 @@ efficient_attention_forward_decoder_ck_out_impl(const at::Tensor& XQ,      // [B
 
 template <int32_t ThreadsPerWavefront, int32_t WavefrontsPerBlock>
 at::Tensor
-efficient_attention_forward_decoder_ck_impl(const at::Tensor& XQ,      // [B, 1, H, D]
-                                            const at::Tensor& cache_K, // [B, T_MAX, H or 1, D]
+efficient_attention_forward_decoder_ck_impl(const at::Tensor& XQ,      // [B, 1, G, H, D]
+                                            const at::Tensor& cache_K, // [B, T_MAX, G, H or 1, D]
                                             const at::Tensor& cache_V, // [B, T_MAX, H or 1, D]
                                             at::optional<at::Tensor> seq_kv_lens, // [B]
                                             double qk_scale)
@@ -166,9 +166,9 @@ efficient_attention_forward_decoder_ck_impl(const at::Tensor& XQ,      // [B, 1,
 }
 
 at::Tensor
-efficient_attention_forward_decoder_ck(const at::Tensor& XQ,      // [B, 1, H, D]
-                                       const at::Tensor& cache_K, // [B, T_MAX, H or 1, D]
-                                       const at::Tensor& cache_V, // [B, T_MAX, H or 1, D]
+efficient_attention_forward_decoder_ck(const at::Tensor& XQ,      // [B, 1, G, H, D]
+                                       const at::Tensor& cache_K, // [B, T_MAX, G, H or 1, D]
+                                       const at::Tensor& cache_V, // [B, T_MAX, G, H or 1, D]
                                        at::optional<at::Tensor> seq_kv_lens, // [B]
                                        double qk_scale)
 {
@@ -200,11 +200,11 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m)
 (2) compile
  > mkdir build
  > cd build
- > cmake /xformers/xformers/csrc/attention/hip_fmha/ \ 
+ > cmake /xformers/xformers/csrc/attention/hip_fmha/ \
        -DCMAKE_CXX_COMPILER=/opt/rocm/bin/hipcc \
        -D CMAKE_PREFIX_PATH=/opt/rocm \
        -D CMAKE_BUILD_TYPE=Debug \
-       -D GPU_TARGETS="gfx90a" 
+       -D GPU_TARGETS="native" 
   > make
 
 (3a) run correctness check
@@ -221,15 +221,16 @@ static void do_correctness_check()
     const int32_t D = 4 * kThreadsPerWavefront;
     const int32_t B = 1;
     const int32_t H = 4;
+    const int32_t G = 1;
     auto options    = torch::TensorOptions()
                        .dtype(torch::kFloat32)
                        .layout(torch::kStrided)
                        .device(torch::kCUDA, 1)
                        .requires_grad(false);
     auto int_options = options.dtype(torch::kInt);
-    auto XQ          = at::randn({B, 1, H, D}, options);
-    auto K           = at::randn({B, 4096, H, D}, options);
-    auto V           = at::randn({B, 4096, H, D}, options);
+    auto XQ          = at::randn({B, 1, G, H, D}, options);
+    auto K           = at::randn({B, 4096, G, H, D}, options);
+    auto V           = at::randn({B, 4096, G, H, D}, options);
     auto seq         = at::randint(63, 128, {B}, int_options);
     double qk_scale  = 1. / sqrt(D);
 
@@ -246,76 +247,68 @@ int main(int argc, char** argv)
     {
         do_correctness_check();
     }
-    else
-    {
-        const auto args = std::vector<std::string>(argv + 1, argv + argc);
-        if(args.size() != 7)
-        {
-            std::cout << "Usage: ./a.out n_keys padding batch_size n_heads is_multiquery dtype "
-                         "n_wavefronts_per_block"
-                      << std::endl;
-            return 0;
-        }
-        const int32_t n_keys                 = std::stoi(args[0]);
-        const int32_t padding                = std::stoi(args[1]);
-        const int32_t batch_size             = std::stoi(args[2]);
-        const int32_t n_heads                = std::stoi(args[3]);
-        const int32_t multiquery             = (args[4] == "mq");
-        const auto dtype                     = (args[5] == "f32")   ? torch::kFloat32
-                                               : (args[5] == "f16") ? torch::kFloat16
-                                                                    : torch::kBFloat16;
-        const int32_t n_wavefronts_per_block = std::stoi(args[6]);
+    const int32_t n_keys                 = std::stoi(args[0]);
+    const int32_t padding                = std::stoi(args[1]);
+    const int32_t batch_size             = std::stoi(args[2]);
+    const int32_t n_heads                = std::stoi(args[3]);
+    const int32_t n_groups               = 1;
+    const int32_t multiquery             = (args[4] == "mq");
+    const auto dtype                     = (args[5] == "f32")   ? torch::kFloat32
+                                           : (args[5] == "f16") ? torch::kFloat16
+                                                                : torch::kBFloat16;
+    const int32_t n_wavefronts_per_block = std::stoi(args[6]);
 
-        const int32_t dim_per_head = 4 * kThreadsPerWavefront;
+    const int32_t dim_per_head = 4 * kThreadsPerWavefront;
 
-        const auto options = torch::TensorOptions()
-                                 .dtype(dtype)
-                                 .layout(torch::kStrided)
-                                 .device(torch::kCUDA, 1)
-                                 .requires_grad(false);
+    const auto options = torch::TensorOptions()
+                             .dtype(dtype)
+                             .layout(torch::kStrided)
+                             .device(torch::kCUDA, 1)
+                             .requires_grad(false);
 
-        const auto int_options = options.dtype(torch::kInt);
-        const auto Q           = at::rand({batch_size, 1, n_heads, dim_per_head}, options);
-        const auto K = multiquery ? at::rand({batch_size, padding, 1, dim_per_head}, options)
-                                        .expand({batch_size, padding, n_heads, dim_per_head})
-                                  : at::rand({batch_size, padding, n_heads, dim_per_head}, options);
-        const auto V = at::rand_like(K);
-        auto O       = at::rand_like(Q);
+    const auto int_options = options.dtype(torch::kInt);
+    const auto Q           = at::rand({batch_size, 1, n_groups, n_heads, dim_per_head}, options);
+    const auto K           = multiquery
+                                 ? at::rand({batch_size, padding, n_groups, 1, dim_per_head}, options)
+                             .expand({batch_size, padding, n_groups, n_heads, dim_per_head})
+                                 : at::rand({batch_size, padding, n_groups, n_heads, dim_per_head}, options);
+    const auto V           = at::rand_like(K);
+    auto O                 = at::empty_like(Q);
 
-        const auto seq        = at::randint(1, n_keys, {batch_size}, int_options);
-        const double qk_scale = 1. / sqrt(dim_per_head);
-        auto call_ptr =
-            decltype(&efficient_attention_forward_decoder_ck_out_impl<kThreadsPerWavefront,
-                                                                      kWavefrontsPerBlock>){};
+    const auto seq        = at::randint(1, n_keys, {batch_size}, int_options);
+    const double qk_scale = 1. / sqrt(dim_per_head);
+    auto call_ptr =
+        decltype(&efficient_attention_forward_decoder_ck_out_impl<kThreadsPerWavefront,
+                                                                  kWavefrontsPerBlock>){};
 
 #define SWITCH_CASE_SET_CALLPTR(n)                                                              \
     case(n):                                                                                    \
         call_ptr = &efficient_attention_forward_decoder_ck_out_impl<kThreadsPerWavefront, (n)>; \
         break;
 
-        switch(n_wavefronts_per_block)
-        {
-            SWITCH_CASE_SET_CALLPTR(1);
-            SWITCH_CASE_SET_CALLPTR(2);
-            SWITCH_CASE_SET_CALLPTR(4);
-            SWITCH_CASE_SET_CALLPTR(8);
-            SWITCH_CASE_SET_CALLPTR(16);
+    switch(n_wavefronts_per_block)
+    {
+        SWITCH_CASE_SET_CALLPTR(1);
+        SWITCH_CASE_SET_CALLPTR(2);
+        SWITCH_CASE_SET_CALLPTR(4);
+        SWITCH_CASE_SET_CALLPTR(8);
+        SWITCH_CASE_SET_CALLPTR(16);
 
-        default: call_ptr = nullptr; break;
-        }
+    default: call_ptr = nullptr; break;
+    }
 #undef SWITCH_CASE_SET_CALLPTR
 
-        if(call_ptr)
-        {
-            call_ptr(Q, K, V, seq, qk_scale, O);
-        }
-        else
-        {
-            std::cout << "Warning: no kernel was found for wavefronts_per_block="
-                      << n_wavefronts_per_block << std::endl;
-        }
+    if(call_ptr)
+    {
+        call_ptr(Q, K, V, seq, qk_scale, O);
     }
-    return 0;
+    else
+    {
+        std::cout << "Warning: no kernel was found for wavefronts_per_block="
+                  << n_wavefronts_per_block << std::endl;
+    }
+}
+return 0;
 }
 
 #endif // MAIN
