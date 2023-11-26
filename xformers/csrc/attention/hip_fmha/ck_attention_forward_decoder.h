@@ -106,7 +106,7 @@ template <typename scalar_t,
           int32_t vec_size               = 4,
           int32_t n_loop_unroll          = 16,
           int32_t n_loop_unroll_tail     = 2,
-          int32_t T_MAX                  = 8192,
+          int32_t KV_M_MAX               = 8192,
           int32_t n_wavefronts_per_block = 16>
 __global__ void
 efficient_attention_forward_decoder_ck_kernel(const scalar_t* __restrict__ XQ,
@@ -158,9 +158,6 @@ efficient_attention_forward_decoder_ck_kernel(const scalar_t* __restrict__ XQ,
     const auto* __restrict__ cache_K_base = cache_K + cache_KV_base_offset;
     const auto* __restrict__ cache_V_base = cache_V + cache_KV_base_offset;
 
-    // Load Q into registers in all wavefronts.
-    // Each thread handles `vec_size` D dimensions
-
     using data_t        = scalar_t;
     using data_vec_t    = typename ck::vector_type<data_t, vec_size>::type;
     using compute_t     = float;
@@ -171,16 +168,24 @@ efficient_attention_forward_decoder_ck_kernel(const scalar_t* __restrict__ XQ,
     extern __shared__ __align__(16) compute_t smem[];
 
     data_vec_t q_thread = 0;
+    // Load Q into registers in all wavefronts.
+    // Each thread handles `vec_size` D dimensions
     if(lane_active_for_io)
     {
         load_v<data_t, data_vec_t>(q_, lane_idx, &q_thread);
     }
-    // Each block computes different B value
+
     compute_t max_qk_acc = ck::NumericLimits<compute_t>::Lowest();
 
-    // Compute S[T_MAX] = for i in range(T): S[t] = sum(Q[d] * K[t, d])
-    // Split T across wavefronts in a block, unroll loads to expose more
-    // parallelism.
+    // Compute S[0:t_max] =
+    // ```
+    // for t in range(t_max):
+    //   S[t] = dot(Q, K[t])
+    // ```
+    // Split the 0:t_max range across wavefronts in a block,
+    // unroll loads to expose more parallelism.
+    // Reduce the dot product with cross-lane operation;
+    // Q and K[t] are in the registers of threads in a single wavefront.
 
     data_vec_t k_loads[n_loop_unroll] = {};
 
@@ -206,288 +211,358 @@ efficient_attention_forward_decoder_ck_kernel(const scalar_t* __restrict__ XQ,
         // Split T across wavefronts in a block, unroll loads to expose more
         // parallelism.
 
-        // NB: the length of the tail is <= (wavefronts_per_block * n_loop_unroll)
-        for(auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail; tt < t_max;
-            tt += wavefronts_per_block * n_loop_unroll_tail)
+        data_vec_t k_loads[n_loop_unroll] = {};
+
+        constexpr auto dtt         = n_wavefronts_per_block * n_loop_unroll;
+        const int32_t t_max_unroll = (t_max / dtt) * dtt;
+
+        for(auto tt = wavefront_idx * n_loop_unroll; tt < t_max_unroll; tt += dtt)
         {
             if(lane_active_for_io)
             {
-#pragma unroll n_loop_unroll_tail
-                for(auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt)
+#pragma unroll n_loop_unroll
+                for(auto ttt = 0; ttt < n_loop_unroll; ++ttt)
                 {
                     const int32_t t = tt + ttt;
-                    if(t < t_max)
-                    {
-                        // load the K[b][t][g][h|0][:] row into registers
-                        load_v<data_t, data_vec_t>(
-                            cache_K_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
-                    }
-                    // Each block computes different B value
-                    compute_t max_qk_acc = ck::NumericLimits<compute_t>::Lowest();
+                    // load the K[b][t][g][h|0][:] row into registers
+                    load_v<data_t, data_vec_t>(
+                        cache_K_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
+                }
+            }
+            // Each block computes different B value
+            compute_t max_qk_acc = ck::NumericLimits<compute_t>::Lowest();
 
-                    // Compute S[T_MAX] = for i in range(T): S[t] = sum(Q[d] * K[t, d])
-                    // Split T across wavefronts in a block, unroll loads to expose more
-                    // parallelism.
+            // Compute S[T_MAX] = for i in range(T): S[t] = sum(Q[d] * K[t, d])
+            // Split T across wavefronts in a block, unroll loads to expose more
+            // parallelism.
 
-                    // NB: the length of the tail is <= (wavefronts_per_block * n_loop_unroll)
-                    for(auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail; tt < t_max;
-                        tt += wavefronts_per_block * n_loop_unroll_tail)
-                    {
-                        if(lane_active_for_io)
-                        {
-#pragma unroll n_loop_unroll_tail
-                            for(auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt)
-                            {
-                                const int32_t t = tt + ttt;
-                                if(t < t_max)
-                                {
-                                    // load the K[b][t][h|0][:] row into registers
-                                    load_v<data_t, data_vec_t>(
-                                        cache_K_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
-                                }
-                                compute_t qk_accs[n_loop_unroll] = {};
-#pragma unroll n_loop_unroll
-                                for(auto ttt = 0; ttt < n_loop_unroll; ++ttt)
-                                {
-                                    const int32_t t = tt + ttt;
-                                    // load the V[b][t][g][h|0][:] row into registers, reusing K
-                                    // register storage
-                                    load_v<data_t, data_vec_t>(
-                                        cache_V_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
-                                    ps[ttt] = smem[t];
-                                }
-
-#pragma unroll n_loop_unroll
-                                for(auto ttt = 0; ttt < n_loop_unroll; ++ttt)
-                                {
-                                    o_acc = scalar_scale_acc<data_t, vec_size>(
-                                        o_acc, k_loads[ttt], ps[ttt]);
-                                }
-                            }
-
-                            for(auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail;
-                                tt < t_max;
-                                tt += wavefronts_per_block * n_loop_unroll_tail)
-                            {
-#pragma unroll n_loop_unroll_tail
-                                for(auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt)
-                                {
-                                    const int32_t t = tt + ttt;
-                                    if(t < t_max)
-                                    {
-                                        // load the V[b][t][g][h|0][:] row into registers, reusing K
-                                        // register storage
-                                        load_v<data_t, data_vec_t>(
-                                            cache_V_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
-                                        ps[ttt] = smem[t];
-                                    }
-                                }
-
-#pragma unroll n_loop_unroll_tail
-                                for(auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt)
-                                {
-                                    const int32_t t = tt + ttt;
-                                    if(t < t_max)
-                                    {
-                                        o_acc = scalar_scale_acc<data_t, vec_size>(
-                                            o_acc, k_loads[ttt], ps[ttt]);
-                                    }
-                                }
-                            }
-                        }
-                        // now, each thread has partial sums. Write to smem and get accumulated
-                        // results back.
-                        __syncthreads();
-
-                        // NB: needs sizeof(smem) >= `vec_size` * (sizeof(float)==4) *
-                        // threadsPerBlock
-                        if(lane_active_for_io)
-                        {
-                            store_v<compute_t, compute_vec_t>(&smem[0], thread_linear_idx, o_acc);
-                        }
-
-                        __syncthreads();
-                        // sum up partial D rows from other wavefronts
-                        if(wavefront_idx == 0 && lane_active_for_io)
-                        {
-                            union
-                            {
-                                compute_vec_t vec = 0;
-                                compute_t arr[vec_size];
-                            } r;
-                            for(int32_t w = 0; w < wavefronts_per_block; ++w)
-                            {
-                                compute_vec_t partial_r;
-                                load_v<compute_t, compute_vec_t>(
-                                    smem, w * threads_per_wavefront + lane_idx, &partial_r);
-                                r.vec += partial_r;
-                            }
-                            // elementwise convert from compute_t result to data_t out to be written
-                            union
-                            {
-                                data_vec_t vec;
-                                data_t arr[vec_size];
-                            } bf_r;
-#pragma unroll
-                            for(int32_t i = 0; i < vec_size; ++i)
-                            {
-                                bf_r.arr[i] = ck::type_convert<data_t>(r.arr[i]);
-                            }
-                            // write output row O[b][m][g][h][:]
-                            data_t* __restrict__ o_ = O + XQO_base_offset;
-                            store_v<data_t, data_vec_t>(o_, lane_idx, bf_r.vec);
-                        }
-                    }
-
-                } // namespace
-
-                namespace ck {
-                namespace tensor_operation {
-                namespace device {
-                template <typename scalar_t>
-                struct FMHADecoderSeqlen1DeviceOp : public BaseOperator
+            // NB: the length of the tail is <= (wavefronts_per_block * n_loop_unroll)
+            for(auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail; tt < t_max;
+                tt += wavefronts_per_block * n_loop_unroll_tail)
+            {
+                if(lane_active_for_io)
                 {
-                    using DeviceOp = FMHADecoderSeqlen1DeviceOp;
-                    struct Argument : public BaseArgument
+#pragma unroll n_loop_unroll_tail
+                    for(auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt)
                     {
-                        const scalar_t* __restrict__ XQ;
-                        const scalar_t* __restrict__ cache_K;
-                        const scalar_t* __restrict__ cache_V;
-                        scalar_t* __restrict__ O;
-                        const int32_t* __restrict__ seq_kv_lens;
-                        const ptrdiff_t XQ_stride_b;
-                        const ptrdiff_t XQ_stride_m;
-                        const ptrdiff_t XQ_stride_g;
-                        const ptrdiff_t XQ_stride_h;
-                        const ptrdiff_t K_stride_b;
-                        const ptrdiff_t K_stride_m;
-                        const ptrdiff_t K_stride_g;
-                        const ptrdiff_t K_stride_h;
-                        const int32_t Q_size_m;
-                        const int32_t Q_size_g;
-                        const int32_t Q_size_h;
-                        const int32_t Q_size_k;
-                        const int32_t K_size_m;
-                        const bool multiquery;
-                        const float qk_scale;
-
-                        const dim3 grid_dim;
-                        const dim3 block_dim;
-                        const size_t lds_bytes;
-
-                        Argument(const scalar_t* __restrict__ XQ,
-                                 const scalar_t* __restrict__ cache_K,
-                                 const scalar_t* __restrict__ cache_V,
-                                 scalar_t* __restrict__ O,
-                                 const int32_t* __restrict__ seq_kv_lens,
-                                 const ptrdiff_t XQ_stride_b,
-                                 const ptrdiff_t XQ_stride_m,
-                                 const ptrdiff_t XQ_stride_g,
-                                 const ptrdiff_t XQ_stride_h,
-                                 const ptrdiff_t K_stride_b,
-                                 const ptrdiff_t K_stride_m,
-                                 const ptrdiff_t K_stride_g,
-                                 const ptrdiff_t K_stride_h,
-                                 const int32_t Q_size_m,
-                                 const int32_t Q_size_g,
-                                 const int32_t Q_size_h,
-                                 const int32_t Q_size_k,
-                                 const int32_t K_size_m,
-                                 const bool multiquery,
-                                 const float qk_scale,
-                                 const dim3 grid_dim,
-                                 const dim3 block_dim,
-                                 const size_t lds_bytes)
-                            : XQ(XQ),
-                              cache_K(cache_K),
-                              cache_V(cache_V),
-                              O(O),
-                              seq_kv_lens(seq_kv_lens),
-                              XQ_stride_b(XQ_stride_b),
-                              XQ_stride_m(XQ_stride_m),
-                              XQ_stride_g(XQ_stride_g),
-                              XQ_stride_h(XQ_stride_h),
-                              K_stride_b(K_stride_b),
-                              K_stride_m(K_stride_m),
-                              K_stride_g(K_stride_g),
-                              K_stride_h(K_stride_h),
-                              Q_size_m(Q_size_m),
-                              Q_size_g(Q_size_g),
-                              Q_size_h(Q_size_h),
-                              Q_size_k(Q_size_k),
-                              K_size_m(K_size_m),
-                              multiquery(multiquery),
-                              qk_scale(qk_scale),
-                              grid_dim(grid_dim),
-                              block_dim(block_dim),
-                              lds_bytes(lds_bytes)
+                        const int32_t t = tt + ttt;
+                        if(t < t_max)
                         {
+                            // load the K[b][t][g][h|0][:] row into registers
+                            load_v<data_t, data_vec_t>(
+                                cache_K_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
                         }
-                    };
+                        // Each block computes different B value
+                        compute_t max_qk_acc = ck::NumericLimits<compute_t>::Lowest();
 
-                    struct Invoker : public BaseInvoker
+                        // Compute S[T_MAX] = for i in range(T): S[t] = sum(Q[d] * K[t, d])
+                        // Split T across wavefronts in a block, unroll loads to expose more
+                        // parallelism.
+
+                        // write accumulated sums to smem.
+                        if(lane_idx == 0)
+                        {
+                            smem[t] = qk_acc;
+                        }
+                    }
+                }
+            }
+
+            // Use shared reduction to compute max and compute softmax on shared memory.
+            // write max acc
+            if(lane_idx == 0)
+            {
+                smem[KV_M_MAX + wavefront_idx] = max_qk_acc;
+            }
+            __syncthreads();
+            if(lane_idx < wavefronts_per_block)
+            {
+                max_qk_acc = ck::math::max(max_qk_acc, smem[KV_M_MAX + lane_idx]);
+            }
+            // shared across all threads in block
+            max_qk_acc = wavefrontReduce(max_qk_acc, [](auto a, auto b) { return a > b ? a : b; });
+
+            // each wavefront computes partial sum of exp.
+            compute_t softmax_denominator = 0.0f;
+            for(int32_t t = thread_linear_idx; t < t_max; t += threads_per_block)
+            {
+                softmax_denominator += ck::math::exp(smem[t] - max_qk_acc);
+            }
+            softmax_denominator =
+                wavefrontReduce(softmax_denominator, [](auto a, auto b) { return a + b; });
+
+            if(lane_idx == 0)
+            {
+                smem[KV_M_MAX + wavefront_idx] = softmax_denominator;
+            }
+            __syncthreads();
+
+            // now, compute sum of exp(x - max(x)) over all intermediate results.
+            softmax_denominator = 0.0;
+            if(lane_idx < wavefronts_per_block)
+            {
+                softmax_denominator = smem[KV_M_MAX + lane_idx];
+            }
+            softmax_denominator =
+                wavefrontReduce(softmax_denominator, [](auto a, auto b) { return a + b; });
+
+            const compute_t softmax_scale_factor = 1. / softmax_denominator;
+            // now, compute the normalization across all threads.
+            for(int32_t t = thread_linear_idx; t < t_max; t += threads_per_block)
+            {
+                smem[t] = ck::math::exp(smem[t] - max_qk_acc) * softmax_scale_factor;
+            }
+            __syncthreads();
+
+            // Split T across wavefronts in a block
+            // each wavefront compute sum(t_subset) P[t] * V[t_subset, d]
+            // outputs are of size float[D]
+
+            compute_t ps[n_loop_unroll] = {};
+            compute_vec_t o_acc         = 0;
+            if(lane_active_for_io)
+            {
+                for(auto tt = wavefront_idx * n_loop_unroll; tt < t_max_unroll; tt += dtt)
+                {
+#pragma unroll n_loop_unroll
+                    for(auto ttt = 0; ttt < n_loop_unroll; ++ttt)
                     {
-                        using Argument = DeviceOp::Argument;
-                        float Run(const Argument& arg,
-                                  const StreamConfig& stream_config = StreamConfig{})
+                        const int32_t t = tt + ttt;
+                        // load the V[b][t][g][h|0][:] row into registers, reusing K
+                        // register storage
+                        load_v<data_t, data_vec_t>(
+                            cache_V_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
+                        ps[ttt] = smem[t];
+                    }
+
+#pragma unroll n_loop_unroll
+                    for(auto ttt = 0; ttt < n_loop_unroll; ++ttt)
+                    {
+                        o_acc = scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
+                    }
+                }
+
+                for(auto tt = t_max_unroll + wavefront_idx * n_loop_unroll_tail; tt < t_max;
+                    tt += wavefronts_per_block * n_loop_unroll_tail)
+                {
+#pragma unroll n_loop_unroll_tail
+                    for(auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt)
+                    {
+                        const int32_t t = tt + ttt;
+                        if(t < t_max)
                         {
-                            auto threads_per_wavefront = arg.block_dim.x;
-
-                            auto Q_size_k_alignment_necessary = 0;
-
-                            for(auto vec_size : {4, 2, 1})
-                            {
-                                if(arg.Q_size_k <= vec_size * threads_per_wavefront)
-                                {
-                                    Q_size_k_alignment_necessary = vec_size;
-                                }
-                            };
-
-                            if(!Q_size_k_alignment_necessary)
-                            {
-                                throw std::runtime_error("Unsupported Q_size_k");
-                            }
-
-                            if(arg.Q_size_k % Q_size_k_alignment_necessary)
-                            {
-                                throw std::runtime_error("Unsupported alignment for Q_size_k");
-                            }
-
-                            return launch_and_time_kernel(
-                                stream_config,
-                                Q_size_k_alignment_necessary == 4
-                                    ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 4>
-                                : Q_size_k_alignment_necessary == 2
-                                    ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 2>
-                                : Q_size_k_alignment_necessary == 1
-                                    ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 1>
-                                    : nullptr,
-                                arg.grid_dim,
-                                arg.block_dim,
-                                arg.lds_bytes,
-                                arg.XQ,
-                                arg.cache_K,
-                                arg.cache_V,
-                                arg.O,
-                                arg.seq_kv_lens,
-                                arg.XQ_stride_b,
-                                arg.XQ_stride_m,
-                                arg.XQ_stride_g,
-                                arg.XQ_stride_h,
-                                arg.K_stride_b,
-                                arg.K_stride_m,
-                                arg.K_stride_g,
-                                arg.K_stride_h,
-                                arg.Q_size_m,
-                                arg.Q_size_g,
-                                arg.Q_size_h,
-                                arg.Q_size_k,
-                                arg.K_size_m,
-                                arg.multiquery,
-                                arg.qk_scale);
+                            // load the V[b][t][g][h|0][:] row into registers, reusing K
+                            // register storage
+                            load_v<data_t, data_vec_t>(
+                                cache_V_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
+                            ps[ttt] = smem[t];
                         }
-                    };
+                    }
+
+#pragma unroll n_loop_unroll_tail
+                    for(auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt)
+                    {
+                        const int32_t t = tt + ttt;
+                        if(t < t_max)
+                        {
+                            o_acc =
+                                scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
+                        }
+                    }
+                }
+            }
+            // now, each thread has partial sums. Write to smem and get accumulated
+            // results back.
+            __syncthreads();
+
+            // NB: needs sizeof(smem) >= `vec_size` * (sizeof(float)==4) *
+            // threadsPerBlock
+            if(lane_active_for_io)
+            {
+                store_v<compute_t, compute_vec_t>(&smem[0], thread_linear_idx, o_acc);
+            }
+
+            __syncthreads();
+            // sum up partial D rows from other wavefronts
+            if(wavefront_idx == 0 && lane_active_for_io)
+            {
+                union
+                {
+                    compute_vec_t vec = 0;
+                    compute_t arr[vec_size];
+                } r;
+                for(int32_t w = 0; w < wavefronts_per_block; ++w)
+                {
+                    compute_vec_t partial_r;
+                    load_v<compute_t, compute_vec_t>(
+                        smem, w * threads_per_wavefront + lane_idx, &partial_r);
+                    r.vec += partial_r;
+                }
+                // elementwise convert from compute_t result to data_t out to be written
+                union
+                {
+                    data_vec_t vec;
+                    data_t arr[vec_size];
+                } bf_r;
+#pragma unroll
+                for(int32_t i = 0; i < vec_size; ++i)
+                {
+                    bf_r.arr[i] = ck::type_convert<data_t>(r.arr[i]);
+                }
+                // write output row O[b][m][g][h][:]
+                data_t* __restrict__ o_ = O + XQO_base_offset;
+                store_v<data_t, data_vec_t>(o_, lane_idx, bf_r.vec);
+            }
+        }
+
+    } // namespace
+
+    namespace ck {
+    namespace tensor_operation {
+    namespace device {
+    template <typename scalar_t>
+    struct FMHADecoderSeqlen1DeviceOp : public BaseOperator
+    {
+        using DeviceOp = FMHADecoderSeqlen1DeviceOp;
+        struct Argument : public BaseArgument
+        {
+            const scalar_t* __restrict__ XQ;
+            const scalar_t* __restrict__ cache_K;
+            const scalar_t* __restrict__ cache_V;
+            scalar_t* __restrict__ O;
+            const int32_t* __restrict__ seq_kv_lens;
+            const ptrdiff_t XQ_stride_b;
+            const ptrdiff_t XQ_stride_m;
+            const ptrdiff_t XQ_stride_g;
+            const ptrdiff_t XQ_stride_h;
+            const ptrdiff_t K_stride_b;
+            const ptrdiff_t K_stride_m;
+            const ptrdiff_t K_stride_g;
+            const ptrdiff_t K_stride_h;
+            const int32_t Q_size_m;
+            const int32_t Q_size_g;
+            const int32_t Q_size_h;
+            const int32_t Q_size_k;
+            const int32_t K_size_m;
+            const bool multiquery;
+            const float qk_scale;
+
+            const dim3 grid_dim;
+            const dim3 block_dim;
+            const size_t lds_bytes;
+
+            Argument(const scalar_t* __restrict__ XQ,
+                     const scalar_t* __restrict__ cache_K,
+                     const scalar_t* __restrict__ cache_V,
+                     scalar_t* __restrict__ O,
+                     const int32_t* __restrict__ seq_kv_lens,
+                     const ptrdiff_t XQ_stride_b,
+                     const ptrdiff_t XQ_stride_m,
+                     const ptrdiff_t XQ_stride_g,
+                     const ptrdiff_t XQ_stride_h,
+                     const ptrdiff_t K_stride_b,
+                     const ptrdiff_t K_stride_m,
+                     const ptrdiff_t K_stride_g,
+                     const ptrdiff_t K_stride_h,
+                     const int32_t Q_size_m,
+                     const int32_t Q_size_g,
+                     const int32_t Q_size_h,
+                     const int32_t Q_size_k,
+                     const int32_t K_size_m,
+                     const bool multiquery,
+                     const float qk_scale,
+                     const dim3 grid_dim,
+                     const dim3 block_dim,
+                     const size_t lds_bytes)
+                : XQ(XQ),
+                  cache_K(cache_K),
+                  cache_V(cache_V),
+                  O(O),
+                  seq_kv_lens(seq_kv_lens),
+                  XQ_stride_b(XQ_stride_b),
+                  XQ_stride_m(XQ_stride_m),
+                  XQ_stride_g(XQ_stride_g),
+                  XQ_stride_h(XQ_stride_h),
+                  K_stride_b(K_stride_b),
+                  K_stride_m(K_stride_m),
+                  K_stride_g(K_stride_g),
+                  K_stride_h(K_stride_h),
+                  Q_size_m(Q_size_m),
+                  Q_size_g(Q_size_g),
+                  Q_size_h(Q_size_h),
+                  Q_size_k(Q_size_k),
+                  K_size_m(K_size_m),
+                  multiquery(multiquery),
+                  qk_scale(qk_scale),
+                  grid_dim(grid_dim),
+                  block_dim(block_dim),
+                  lds_bytes(lds_bytes)
+            {
+            }
+        };
+
+        struct Invoker : public BaseInvoker
+        {
+            using Argument = DeviceOp::Argument;
+            float Run(const Argument& arg, const StreamConfig& stream_config = StreamConfig{})
+            {
+                auto threads_per_wavefront = arg.block_dim.x;
+
+                auto Q_size_k_alignment_necessary = 0;
+
+                for(auto vec_size : {4, 2, 1})
+                {
+                    if(arg.Q_size_k <= vec_size * threads_per_wavefront)
+                    {
+                        Q_size_k_alignment_necessary = vec_size;
+                    }
                 };
-                } // namespace device
-                } // namespace tensor_operation
-                } // namespace ck
+
+                if(!Q_size_k_alignment_necessary)
+                {
+                    throw std::runtime_error("Unsupported Q_size_k");
+                }
+
+                if(arg.Q_size_k % Q_size_k_alignment_necessary)
+                {
+                    throw std::runtime_error("Unsupported alignment for Q_size_k");
+                }
+
+                return launch_and_time_kernel(
+                    stream_config,
+                    Q_size_k_alignment_necessary == 4
+                        ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 4>
+                    : Q_size_k_alignment_necessary == 2
+                        ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 2>
+                    : Q_size_k_alignment_necessary == 1
+                        ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 1>
+                        : nullptr,
+                    arg.grid_dim,
+                    arg.block_dim,
+                    arg.lds_bytes,
+                    arg.XQ,
+                    arg.cache_K,
+                    arg.cache_V,
+                    arg.O,
+                    arg.seq_kv_lens,
+                    arg.XQ_stride_b,
+                    arg.XQ_stride_m,
+                    arg.XQ_stride_g,
+                    arg.XQ_stride_h,
+                    arg.K_stride_b,
+                    arg.K_stride_m,
+                    arg.K_stride_g,
+                    arg.K_stride_h,
+                    arg.Q_size_m,
+                    arg.Q_size_g,
+                    arg.Q_size_h,
+                    arg.Q_size_k,
+                    arg.K_size_m,
+                    arg.multiquery,
+                    arg.qk_scale);
+            }
+        };
+    };
+    } // namespace device
+    } // namespace tensor_operation
+    } // namespace ck

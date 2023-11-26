@@ -15,8 +15,8 @@
 namespace {
 constexpr int32_t kThreadsPerWavefront = 64;
 constexpr int32_t kWavefrontsPerBlock  = 16;
-constexpr int32_t D_H                  = 4 * kThreadsPerWavefront;
-} // namespace
+constexpr int32_t K_MAX                = 4 * kThreadsPerWavefront;
+}
 
 namespace {
 
@@ -54,17 +54,17 @@ namespace {
 
 template <int32_t ThreadsPerWavefront,
           int32_t WavefrontsPerBlock,
-          int32_t T_MAX = 8192,
-          int32_t D_H   = 256>
+          int32_t KV_M_MAX = 8192,
+          int32_t K_MAX    = 256>
 at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
     const at::Tensor& XQ,                 // [B, 1, G, H, D]
-    const at::Tensor& cache_K,            // [B, T_MAX, G, H or 1, D]
-    const at::Tensor& cache_V,            // [B, T_MAX, G, H or 1, D]
+    const at::Tensor& cache_K,            // [B, KV_M_MAX, G, H or 1, D]
+    const at::Tensor& cache_V,            // [B, KV_M_MAX, G, H or 1, D]
     at::optional<at::Tensor> seq_kv_lens, // [B]
     double qk_scale,
     at::Tensor& O)
 {
-    static_assert(4 * ThreadsPerWavefront == D_H, "");
+    static_assert(4 * ThreadsPerWavefront == K_MAX, "");
     static_assert(WavefrontsPerBlock <= ThreadsPerWavefront, "");
 
     at::OptionalDeviceGuard guard(XQ.device());
@@ -74,8 +74,8 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
 
     TORCH_CHECK(!seq_kv_lens || seq_kv_lens->is_cuda());
 
-    TORCH_CHECK(cache_K.size(1) <= T_MAX);
-    TORCH_CHECK(cache_K.size(4) <= D_H);
+    TORCH_CHECK(cache_K.size(1) <= KV_M_MAX);
+    TORCH_CHECK(cache_K.size(4) <= K_MAX);
 
     constexpr auto rank = 5;
 
@@ -91,8 +91,8 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
     dim3 blocks(B * H * M * G);
     dim3 threads(ThreadsPerWavefront, WavefrontsPerBlock);
 
-    int32_t smem_softmax = T_MAX * sizeof(float) + threads.y * sizeof(float);
-    int32_t smem_output  = D_H * sizeof(float) *
+    int32_t smem_softmax = KV_M_MAX * sizeof(float) + threads.y * sizeof(float);
+    int32_t smem_output  = K_MAX * sizeof(float) *
                           threads.y; // 4 * threadsPerBlock * sizeof(float) == sizeof(O[b][0][h][:])
     const size_t lds_bytes = max(smem_softmax, smem_output);
     auto stream            = at::cuda::getCurrentHIPStream().stream();
@@ -152,12 +152,12 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
 #undef AT_DISPATCH_SWITCH_3
 
 template <int32_t ThreadsPerWavefront, int32_t WavefrontsPerBlock>
-at::Tensor
-efficient_attention_forward_decoder_ck_impl(const at::Tensor& XQ,      // [B, 1, G, H, D]
-                                            const at::Tensor& cache_K, // [B, T_MAX, G, H or 1, D]
-                                            const at::Tensor& cache_V, // [B, T_MAX, H or 1, D]
-                                            at::optional<at::Tensor> seq_kv_lens, // [B]
-                                            double qk_scale)
+at::Tensor efficient_attention_forward_decoder_ck_impl(
+    const at::Tensor& XQ,                 // [B, 1, G, H, D]
+    const at::Tensor& cache_K,            // [B, KV_M_MAX, G, H or 1, D]
+    const at::Tensor& cache_V,            // [B, KV_M_MAX, H or 1, D]
+    at::optional<at::Tensor> seq_kv_lens, // [B]
+    double qk_scale)
 {
     auto O = at::empty_like(XQ);
     efficient_attention_forward_decoder_ck_out_impl<ThreadsPerWavefront, WavefrontsPerBlock>(
@@ -167,8 +167,8 @@ efficient_attention_forward_decoder_ck_impl(const at::Tensor& XQ,      // [B, 1,
 
 at::Tensor
 efficient_attention_forward_decoder_ck(const at::Tensor& XQ,      // [B, 1, G, H, D]
-                                       const at::Tensor& cache_K, // [B, T_MAX, G, H or 1, D]
-                                       const at::Tensor& cache_V, // [B, T_MAX, G, H or 1, D]
+                                       const at::Tensor& cache_K, // [B, KV_M_MAX, G, H or 1, D]
+                                       const at::Tensor& cache_V, // [B, KV_M_MAX, G, H or 1, D]
                                        at::optional<at::Tensor> seq_kv_lens, // [B]
                                        double qk_scale)
 {
