@@ -98,8 +98,8 @@ class AttentionDecodingFlashDecoding:
             print(f"Runtime error: {e}")
 
 
-class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
-    OP = xops.fmha.triton_splitk.FwOp
+# class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
+#     OP = xops.fmha.triton_splitk.FwOp
 
 
 class AttentionDecodingCK(AttentionDecodingFlashDecoding):
