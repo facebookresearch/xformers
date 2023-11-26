@@ -13,7 +13,7 @@ class FwOp(AttentionFwOpBase):
         torch.half,
         torch.bfloat16,
     }  # Those are dtypes of Q. In the quantized case K/V has dtype int32
-    SUPPORTED_MAX_K = 128
+    SUPPORTED_MAX_K = 256
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
@@ -34,8 +34,8 @@ class FwOp(AttentionFwOpBase):
         cls, Mq: int, Mkv: int, K: int, Kv: int
     ) -> List[str]:
         reasons = super().shape_not_supported_reasons(Mq, Mkv, K, Kv)
-        if K not in {16, 32, 64, 128}:
-            reasons.append(f"Embed dim {K} not supported")
+        # if K not in {16, 32, 64, 128}:
+        #     reasons.append(f"Embed dim {K} not supported")
         return reasons
 
     @classmethod
@@ -99,6 +99,8 @@ class FwOp(AttentionFwOpBase):
         
         if attn_bias is not None:
             assert isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
+            attn_bias.k_seqinfo.to(k.device)
+            attn_bias.q_seqinfo.to(q.device)
             seq_len = attn_bias.k_seqinfo.seqlen
             B = len(seq_len)
             G, H, Kq = q.shape[-3:]
@@ -145,7 +147,48 @@ class FwOp(AttentionFwOpBase):
         else:
             qk_scale = torch.rsqrt(torch.tensor(k.shape[-1], dtype=torch.float32))
 
+        print(f"{q.shape=} {k.shape=} {v.shape=}")
+
         out = cls.OPERATOR(query=q, key=k, value=v, seq_positions=seq_len, scale=qk_scale, split_k=split_k)
 
         return out, None
 
+
+class FwOp_S1(FwOp):
+    SPLIT_K = 1
+    NAME = "ck_splitK1"
+
+
+class FwOp_S2(FwOp):
+    SPLIT_K = 2
+    NAME = "ck_splitK2"
+
+
+class FwOp_S4(FwOp):
+    SPLIT_K = 4
+    NAME = "ck_splitK4"
+
+
+class FwOp_S8(FwOp):
+    SPLIT_K = 8
+    NAME = "ck_splitK8"
+
+
+class FwOp_S16(FwOp):
+    SPLIT_K = 16
+    NAME = "ck_splitK16"
+
+
+class FwOp_S32(FwOp):
+    SPLIT_K = 32
+    NAME = "ck_splitK32"
+
+
+class FwOp_S64(FwOp):
+    SPLIT_K = 64
+    NAME = "ck_splitK64"
+
+
+class FwOp_S128(FwOp):
+    SPLIT_K = 128
+    NAME = "ck_splitK128"
