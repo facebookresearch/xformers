@@ -209,6 +209,26 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
 
 
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None):
+    if q.ndim == 5:
+        def attn_bias_group(group: int):
+            if isinstance(attn_bias, torch.Tensor):
+                return attn_bias[:, group]
+            if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
+                return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
+                    attn_bias._bias[:, group]
+                )
+            return attn_bias
+
+        return torch.stack(
+            [
+                ref_attention_bmhk(
+                    q[:, :, g], k[:, :, g], v[:, :, g], attn_bias=attn_bias_group(g), dtype=dtype
+                )
+                for g in range(q.shape[2])
+            ],
+            dim=2,
+        )
+     
     if q.ndim == 4:
         assert p == 0.0
         return ref_attention_bmhk(q, k, v, attn_bias=attn_bias, dtype=dtype)
@@ -1620,30 +1640,61 @@ def test_attn_bias_padded() -> None:
     )
 
 
+def _kv_heads_label(kv_heads: Optional[int]) -> str:
+    if kv_heads is None:
+        return ""
+    if kv_heads == 1:
+        return "mq"
+    return f"gqa{kv_heads}"
+
+
 @pytest.mark.parametrize("op", [fmha.ck_decoder.FwOp])
-@pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "nomq")
-@pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)], ids=lambda x: f"bsz-nh={x}")
-@pytest.mark.parametrize("padding", [32, 4096], ids=lambda x: f"pad={x}")
+@pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
+@pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)])
+@pytest.mark.parametrize("padding", [32, 4096])
 @pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
 def test_decoder(
-    op, multiquery: bool, n_heads: int, padding: int, bsz: int, dtype: str
+    op,
+    n_heads: int,
+    kv_heads: Optional[int],
+    padding: int,
+    bsz: int,
+    dtype: str,
+    dequant: bool = False,
+    num_queries: int = 1,
+    d = 256,
 ) -> None:
+    # kv_heads = 1: multiquery
+    # kv_heads = None: neither MQA nor GQA
+    # kv_heads > 1: BMGHK
     dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float}[dtype]
+    tensor_options = {"dtype": dtype_, "device": "cuda"}
     torch.manual_seed(1)
-    d = 256
     num_queries = 1
-    k_shape = (1, bsz * padding, n_heads, d)
-    k = torch.randn(k_shape, dtype=dtype_).cuda()
+    if kv_heads is not None and kv_heads > 1:
+        k_shape: Tuple[int, ...] = (1, bsz * padding, kv_heads, n_heads, d)
+        q_shape: Tuple[int, ...] = (
+            1,
+            bsz * num_queries,
+            kv_heads,
+            n_heads,
+            d,
+        )
+    else:
+        k_shape = (1, bsz * padding, n_heads, d)
+        q_shape = (1, bsz * num_queries, n_heads, d)
+
+    k = torch.randn(k_shape, **tensor_options)
     k_seqlen = torch.randint(num_queries, padding + 1, (bsz,)).tolist()
-    v = torch.randn(k_shape, dtype=dtype_).cuda()
-    q = torch.randn((1, bsz * num_queries, n_heads, d), dtype=dtype_).cuda()
+    v = torch.randn_like(k)
+    q = torch.randn(q_shape, **tensor_options)
     causal_diagonal = torch.tensor(  # TODO: make unnecessary
         [i - 1 for i in k_seqlen], dtype=torch.int32
     ).cuda()
 
-    if multiquery:
-        k = k[:, :, :1].expand(k_shape)
-        v = v[:, :, :1].expand(k_shape)
+    if kv_heads is not None:
+        k = k[..., :1, :].expand(k_shape)
+        v = v[..., :1, :].expand(k_shape)
 
     attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
         q_seqlen=[num_queries] * bsz,

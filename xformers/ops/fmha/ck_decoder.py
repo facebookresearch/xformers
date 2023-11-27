@@ -27,10 +27,6 @@ class FwOp(AttentionFwOpBase):
 
         attn_bias = d.attn_bias
         if isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
-            # If we don't get here, we've an error elsewhere
-            if d.query.ndim != 4 or d.key.ndim != 4:
-                reasons.append("Inputs must be BMHK. BMK not supported")
-
             if d.query.shape[0] != 1:
                 reasons.append(f"One formal batch element expected; got {d.query.shape[0]}")
 
