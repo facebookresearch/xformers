@@ -25,7 +25,7 @@
 #include "ck_tiled_fmha_fwd_tile_partitioner.h"
 #include "ck_tiled_fmha_params.h"
 
-template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
+template <typename scalar_t, int32_t custom_mask_type>
 struct grouped_infer_masktype_attnbias_dispatched {
   using QDataType = scalar_t;
   using KDataType = scalar_t;
@@ -172,12 +172,10 @@ struct grouped_infer_masktype_attnbias_dispatched {
   };
 };
 
-template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
+template <typename scalar_t, int32_t custom_mask_type>
 void run_grouped_infer_masktype_attnbias_dispatched(
     GroupedForwardParams& param,
     hipStream_t stream) {
-  grouped_infer_masktype_attnbias_dispatched<
-      scalar_t,
-      custom_mask_type,
-      has_attn_bias>::Run(param, stream);
+  grouped_infer_masktype_attnbias_dispatched<scalar_t, custom_mask_type>::Run(
+      param, stream);
 };

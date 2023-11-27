@@ -18,12 +18,12 @@
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_default_policy.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
 
-#include "ck_tiled_fmha_params.h"
 #include "ck_tiled_fmha_forward_kernel.h"
 #include "ck_tiled_fmha_fwd_epilogue.h"
 #include "ck_tiled_fmha_fwd_tile_partitioner.h"
+#include "ck_tiled_fmha_params.h"
 
-template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
+template <typename scalar_t, int32_t custom_mask_type>
 struct batched_infer_masktype_attnbias_dispatched {
   using QDataType = scalar_t;
   using KDataType = scalar_t;
@@ -175,12 +175,10 @@ struct batched_infer_masktype_attnbias_dispatched {
   };
 };
 
-template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
+template <typename scalar_t, int32_t custom_mask_type>
 void run_batched_infer_masktype_attnbias_dispatched(
     BatchedForwardParams& param,
     hipStream_t stream) {
-  batched_infer_masktype_attnbias_dispatched<
-      scalar_t,
-      custom_mask_type,
-      has_attn_bias>::Run(param, stream);
+  batched_infer_masktype_attnbias_dispatched<scalar_t, custom_mask_type>::Run(
+      param, stream);
 };
