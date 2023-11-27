@@ -121,6 +121,7 @@ try:
                 out,
                 cu_seq_lens_q,
                 cu_seq_lens_k,
+                None,
                 max_seq_len_q,
                 max_seq_len_k,
                 p,
