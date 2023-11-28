@@ -172,7 +172,7 @@ class BwOp(AttentionBwOpBase):
             key,
             value,
             # LSE: BHM -> (BH)M
-            ctx.lse.reshape([-1, ctx.lse.shape[-1]]),
+            ctx.lse.flatten(end_dim=-2),
             out,
             _get_tensor_bias_bmk(inp.attn_bias),
             inp.p,
