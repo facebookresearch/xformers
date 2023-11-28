@@ -1,4 +1,22 @@
 name: Install env + build
+inputs:
+  arch:
+    description: 'GPU architecture'
+    required: true
+  python:
+    description: 'Python version'
+    required: false
+    default: "3.11"
+  cuda:
+    description: 'CUDA version'
+    required: false
+    default: "11.8"
+  pytorch_version:
+    description: 'PyTorch version'
+    default: "2"
+  pytorch_channel:
+    description: 'PyTorch channel on conda'
+    default: "pytorch"
 
 runs:
   using: composite
@@ -10,14 +28,18 @@ runs:
         import subprocess
         import hashlib
         import glob
+        import datetime
         from pathlib import Path
 
-        CONDA_INSTALL_CMD = "conda create python=${{ matrix.python }} zlib pip ninja pytorch=${{ matrix.pytorch }} torchvision ccache pytorch-cuda=${{ matrix.cuda }} -c pytorch -c nvidia -q -y"
+        CONDA_INSTALL_CMD = "conda create python=${{ inputs.python }} zlib pip ninja pytorch=${{ inputs.pytorch_version }} torchvision ccache pytorch-cuda=${{ inputs.cuda }} -c ${{ inputs.pytorch_channel }} -c nvidia -q -y"
 
         conda_env_key = CONDA_INSTALL_CMD
         for file in sorted(glob.glob("requirement*.txt")):
           conda_env_key += f"\n########## {file}\n"
           conda_env_key += Path(file).read_text()
+        if "${{ inputs.pytorch_channel }}" != "pytorch":
+          # Nightly or Test, update every week
+          conda_env_key += datetime.date.today().strftime("%Y-week%W") + "\n"
         conda_env_hash = hashlib.sha224(conda_env_key.encode("ascii")).hexdigest()[:8]
         shared_dir = os.environ.get("GHRUNNER_SHARED_DIR", os.getcwd())
         env_path = os.path.join(shared_dir, "tmp", os.environ["GITHUB_RUN_ID"])
@@ -59,9 +81,8 @@ runs:
         conda config --set channel_priority strict
         # Retry if failed after removing downloaded packages cache
         $CONDA_INSTALL_CMD || (rm -rf $HOME/.conda/pkgs && rm -rf $CONDA_PREFIX && $CONDA_INSTALL_CMD)
-        which pip
-        pip install cmake
-        pip install -r requirements-benchmark.txt --progress-bar off
+        $PY -m pip install cmake
+        $PY -m pip install -r requirements-benchmark.txt --progress-bar off
     - name: Activate environment
       shell: bash -l {0}
       run: |
@@ -111,7 +132,7 @@ runs:
     - name: Build
       shell: bash -l {0}
       run: |
-        PYTORCH_NVCC="$CONDA_PREFIX/bin/nvcc-ccache" CXX="g++-ccache" TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python -m pip install -v -e .
+        PYTORCH_NVCC="$CONDA_PREFIX/bin/nvcc-ccache" CXX="g++-ccache" TORCH_CUDA_ARCH_LIST=${{ inputs.arch }} python -m pip install -v -e .
     - name: Build info
       run: |
         printenv
