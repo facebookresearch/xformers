@@ -20,6 +20,7 @@ from .attn_bias import (
     BlockDiagonalCausalMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalMask,
+    LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
     LowerTriangularMaskWithTensorBias,
@@ -144,6 +145,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
         bias,
         (
             LowerTriangularFromBottomRightMask,
+            LowerTriangularFromBottomRightLocalAttentionMask,
             attn_bias.BlockDiagonalCausalFromBottomRightMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
@@ -169,6 +171,7 @@ class FwOp(AttentionFwOpBase):
         torch.Tensor,
         LowerTriangularMask,
         LowerTriangularFromBottomRightMask,
+        LowerTriangularFromBottomRightLocalAttentionMask,
         LowerTriangularMaskWithTensorBias,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
@@ -281,6 +284,7 @@ class FwOp(AttentionFwOpBase):
                 (
                     BlockDiagonalCausalLocalAttentionMask,
                     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+                    LowerTriangularFromBottomRightLocalAttentionMask,
                 ),
             )
             else None,
@@ -348,6 +352,8 @@ class BwOp(AttentionBwOpBase):
         torch.Tensor,
         LowerTriangularMask,
         LowerTriangularFromBottomRightMask,
+        # TODO: Still some bugs in the BW pass for that one
+        # LowerTriangularFromBottomRightLocalAttentionMask,
         # TODO: Fix handling of gradient through the fMHA autograd function
         # LowerTriangularMaskWithTensorBias,
         BlockDiagonalMask,
@@ -455,6 +461,7 @@ class BwOp(AttentionBwOpBase):
                 (
                     BlockDiagonalCausalLocalAttentionMask,
                     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+                    LowerTriangularFromBottomRightLocalAttentionMask,
                 ),
             )
             else None,

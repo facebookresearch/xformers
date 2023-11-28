@@ -18,6 +18,7 @@ from .attn_bias import (
     BlockDiagonalCausalLocalAttentionMask,
     BlockDiagonalCausalMask,
     BlockDiagonalMask,
+    LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
 )
@@ -285,6 +286,7 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
         (
             LowerTriangularMask,
             LowerTriangularFromBottomRightMask,
+            LowerTriangularFromBottomRightLocalAttentionMask,
             BlockDiagonalCausalMask,
             BlockDiagonalCausalLocalAttentionMask,
             BlockDiagonalCausalFromBottomRightMask,
@@ -300,6 +302,8 @@ def _window_size(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
     ):
         return attn_bias._window_size or 0
     if isinstance(attn_bias, BlockDiagonalCausalLocalAttentionFromBottomRightMask):
+        return attn_bias._window_size
+    if isinstance(attn_bias, LowerTriangularFromBottomRightLocalAttentionMask):
         return attn_bias._window_size
     return 0
 
@@ -360,6 +364,7 @@ class FwOp(AttentionFwOpBase):
         type(None),
         LowerTriangularMask,
         LowerTriangularFromBottomRightMask,
+        LowerTriangularFromBottomRightLocalAttentionMask,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
         BlockDiagonalCausalLocalAttentionMask,

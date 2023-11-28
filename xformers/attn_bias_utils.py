@@ -43,6 +43,7 @@ def create_attn_bias(
     if bias_type is None or isinstance(None, bias_type):
         return None
     r = random.Random("-".join(map(str, [batch_size, q_len, kv_len, dtype, fmt])))
+    window_size = {0: 3, 1: 128, 2: 300}[r.randint(0, 2)]
     if bias_type is torch.Tensor:
         if fmt == "BMK":
             batch_size *= num_heads
@@ -81,6 +82,8 @@ def create_attn_bias(
         return bias_type()
     if bias_type is fmha.attn_bias.LowerTriangularFromBottomRightMask:
         return bias_type()
+    if bias_type is fmha.attn_bias.LowerTriangularFromBottomRightLocalAttentionMask:
+        return bias_type(window_size)
     if bias_type is fmha.attn_bias.LowerTriangularMaskWithTensorBias:
         attn_bias = _create_aligned_bias(
             batch_size,
@@ -107,13 +110,6 @@ def create_attn_bias(
     ]:
         # These bias types are not supported in BMK format
         assert fmt in ["BMGHK", "BMHK"]
-
-        window_size = None
-        if bias_type in {
-            fmha.attn_bias.BlockDiagonalCausalLocalAttentionMask,
-            fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask,
-        }:
-            window_size = {0: 3, 1: 128, 2: 300}[r.randint(0, 2)]
         max_q_minus_k = None
         if bias_type in {
             fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
