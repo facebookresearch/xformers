@@ -243,6 +243,8 @@
     <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalMask</span><span class="p">,</span>
+    <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
+    <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
     <span class="n">LowerTriangularMask</span><span class="p">,</span>
     <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">,</span>
 <span class="p">)</span>
@@ -365,6 +367,8 @@
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
         <span class="n">bias</span><span class="p">,</span>
         <span class="p">(</span>
+            <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
+            <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
             <span class="n">attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
@@ -389,6 +393,8 @@
         <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">LowerTriangularMask</span><span class="p">,</span>
+        <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
+        <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
         <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">,</span>
         <span class="n">BlockDiagonalMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
@@ -501,6 +507,7 @@
                 <span class="p">(</span>
                     <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
                     <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
+                    <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
                 <span class="p">),</span>
             <span class="p">)</span>
             <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
@@ -567,6 +574,9 @@
         <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">LowerTriangularMask</span><span class="p">,</span>
+        <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
+        <span class="c1"># TODO: Still some bugs in the BW pass for that one</span>
+        <span class="c1"># LowerTriangularFromBottomRightLocalAttentionMask,</span>
         <span class="c1"># TODO: Fix handling of gradient through the fMHA autograd function</span>
         <span class="c1"># LowerTriangularMaskWithTensorBias,</span>
         <span class="n">BlockDiagonalMask</span><span class="p">,</span>
@@ -674,6 +684,7 @@
                 <span class="p">(</span>
                     <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
                     <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
+                    <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
                 <span class="p">),</span>
             <span class="p">)</span>
             <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>

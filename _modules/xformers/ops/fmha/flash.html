@@ -241,6 +241,8 @@
     <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalMask</span><span class="p">,</span>
+    <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
+    <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
     <span class="n">LowerTriangularMask</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
@@ -506,6 +508,8 @@
         <span class="n">attn_bias</span><span class="p">,</span>
         <span class="p">(</span>
             <span class="n">LowerTriangularMask</span><span class="p">,</span>
+            <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
+            <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
@@ -521,6 +525,8 @@
     <span class="p">):</span>
         <span class="k">return</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">_window_size</span> <span class="ow">or</span> <span class="mi">0</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">_window_size</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">_window_size</span>
     <span class="k">return</span> <span class="mi">0</span>
 
@@ -580,6 +586,8 @@
     <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
         <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
         <span class="n">LowerTriangularMask</span><span class="p">,</span>
+        <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
+        <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>

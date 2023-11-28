@@ -228,7 +228,7 @@
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">cutlass</span><span class="p">,</span> <span class="n">decoder</span><span class="p">,</span> <span class="n">flash</span><span class="p">,</span> <span class="n">small_k</span><span class="p">,</span> <span class="n">triton</span><span class="p">,</span> <span class="n">triton_splitk</span>
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">attn_bias</span><span class="p">,</span> <span class="n">cutlass</span><span class="p">,</span> <span class="n">decoder</span><span class="p">,</span> <span class="n">flash</span><span class="p">,</span> <span class="n">small_k</span><span class="p">,</span> <span class="n">triton</span><span class="p">,</span> <span class="n">triton_splitk</span>
 <span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="n">AttentionBias</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">,</span> <span class="n">LowerTriangularMask</span>
 <span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBwOpBase</span><span class="p">,</span>
@@ -665,6 +665,7 @@
     <span class="s2">&quot;memory_efficient_attention&quot;</span><span class="p">,</span>
     <span class="s2">&quot;ALL_FW_OPS&quot;</span><span class="p">,</span>
     <span class="s2">&quot;ALL_BW_OPS&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;attn_bias&quot;</span><span class="p">,</span>
 <span class="p">]</span>
 </pre></div>
 
