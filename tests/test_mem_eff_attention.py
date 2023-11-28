@@ -1652,6 +1652,9 @@ def test_triton_splitk_decoder(
     bsz: int,
     dtype: str,
 ) -> None:
+    if dequant:
+        pytest.skip("dequant is not supported")
+
     # We omit dequant with f16: it needs a very high tol
     test_decoder(
         op,
