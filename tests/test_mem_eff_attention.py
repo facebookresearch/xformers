@@ -348,15 +348,15 @@ def create_tensors(
     mask_is_bottom_right = attn_bias_type is not None and issubclass(
         attn_bias_type,
         (
+            fmha.attn_bias.LowerTriangularFromBottomRightMask,
             fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
             fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask,
             fmha.attn_bias.BlockDiagonalCausalLocalAttentionMask,
         ),
     )
     if mask_is_bottom_right and q_len > kv_len:
-        pytest.skip(
-            "Bottom-right attention and local-attention masks require q_len <= kv_len"
-        )
+        # Bottom-right attention and local-attention masks require q_len <= kv_len
+        kv_len = q_len
     scale = 3
     if fmt == "BMK":
         query = torch.randn((B * h, q_len, k), device=device, dtype=dtype)
@@ -1622,6 +1622,9 @@ def test_decoder(
 
 
 @sm80_or_better_only
+@pytest.mark.skipif(
+    fmha.triton_splitk.FwOp_S2.OPERATOR is None, reason="splitK disabled"
+)
 @pytest.mark.parametrize(
     "op,dequant,dtype",
     [

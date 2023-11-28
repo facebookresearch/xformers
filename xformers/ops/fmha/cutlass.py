@@ -20,6 +20,7 @@ from .attn_bias import (
     BlockDiagonalCausalMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalMask,
+    LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
     LowerTriangularMaskWithTensorBias,
 )
@@ -142,6 +143,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
     if isinstance(
         bias,
         (
+            LowerTriangularFromBottomRightMask,
             attn_bias.BlockDiagonalCausalFromBottomRightMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
@@ -166,6 +168,7 @@ class FwOp(AttentionFwOpBase):
         type(None),
         torch.Tensor,
         LowerTriangularMask,
+        LowerTriangularFromBottomRightMask,
         LowerTriangularMaskWithTensorBias,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
@@ -344,6 +347,7 @@ class BwOp(AttentionBwOpBase):
         type(None),
         torch.Tensor,
         LowerTriangularMask,
+        LowerTriangularFromBottomRightMask,
         # TODO: Fix handling of gradient through the fMHA autograd function
         # LowerTriangularMaskWithTensorBias,
         BlockDiagonalMask,

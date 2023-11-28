@@ -18,6 +18,7 @@ from .attn_bias import (
     BlockDiagonalCausalLocalAttentionMask,
     BlockDiagonalCausalMask,
     BlockDiagonalMask,
+    LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
 )
 from .common import (
@@ -283,6 +284,7 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
         attn_bias,
         (
             LowerTriangularMask,
+            LowerTriangularFromBottomRightMask,
             BlockDiagonalCausalMask,
             BlockDiagonalCausalLocalAttentionMask,
             BlockDiagonalCausalFromBottomRightMask,
@@ -357,6 +359,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
         LowerTriangularMask,
+        LowerTriangularFromBottomRightMask,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
         BlockDiagonalCausalLocalAttentionMask,

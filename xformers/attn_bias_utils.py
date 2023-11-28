@@ -78,7 +78,9 @@ def create_attn_bias(
             attn_bias = attn_bias[:, 0]
         return attn_bias
     if bias_type is fmha.attn_bias.LowerTriangularMask:
-        return fmha.attn_bias.LowerTriangularMask()
+        return bias_type()
+    if bias_type is fmha.attn_bias.LowerTriangularFromBottomRightMask:
+        return bias_type()
     if bias_type is fmha.attn_bias.LowerTriangularMaskWithTensorBias:
         attn_bias = _create_aligned_bias(
             batch_size,

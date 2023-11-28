@@ -94,4 +94,5 @@ __all__ = [
     "scaled_index_add",
     "index_select_cat",
     "rope_padded",
+    "attn_bias",
 ]

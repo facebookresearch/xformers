@@ -7,7 +7,7 @@ from typing import Any, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
-from . import cutlass, decoder, flash, small_k, triton, triton_splitk
+from . import attn_bias, cutlass, decoder, flash, small_k, triton, triton_splitk
 from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
@@ -444,4 +444,5 @@ __all__ = [
     "memory_efficient_attention",
     "ALL_FW_OPS",
     "ALL_BW_OPS",
+    "attn_bias",
 ]

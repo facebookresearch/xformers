@@ -38,6 +38,7 @@ class AttentionBias:
     See:
 
     - :attr:`xformers.ops.fmha.attn_bias.LowerTriangularMask`
+    - :attr:`xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask`
     - :attr:`xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias`
     - :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`
     - :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`
@@ -65,6 +66,9 @@ class LowerTriangularMask(AttentionBias):
 
     A query Q cannot attend to a key which is farther from the
     initial key than Q is from the initial query.
+
+    See also :attr:`LowerTriangularFromBottomRightMask` if the number
+    of queries is not equal to the number of keys/values.
     """
 
     def __init__(self, *tensor_args, **tensor_kwargs) -> None:
@@ -88,6 +92,43 @@ class LowerTriangularMask(AttentionBias):
 
     def add_bias(self, bias: torch.Tensor) -> "LowerTriangularMaskWithTensorBias":
         return LowerTriangularMaskWithTensorBias(bias)
+
+
+class LowerTriangularFromBottomRightMask(AttentionBias):
+    """
+    A causal masking.
+
+    This mask is exactly the same as :attr:`LowerTriangularMask` when there is
+    the same number of queries and keys.
+    When the number of queries is different from the number of keys,
+    it is a triangular mask shifted so that the last query can attend to
+    the last key.
+    In other words, a query Q cannot attend to a key which is nearer the
+    final key than Q is to the final query.
+
+
+    .. figure:: /_static/causal_bottom_right.png
+
+        The difference between :attr:`LowerTriangularMask` (left) and
+        :attr:`LowerTriangularFromBottomRightMask` (right). They become
+        equivalent if the number of queries equals the number of keys.
+    """
+
+    def materialize(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
+        tensor = torch.full(  # type: ignore
+            shape,
+            dtype=create_as,
+            fill_value=float("-inf"),
+            device=device,
+        )
+        num_queries, num_keys = shape[-2:]
+        return torch.triu(tensor, diagonal=num_keys - num_queries + 1).to(dtype)  # type: ignore
 
 
 class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
@@ -549,15 +590,9 @@ class BlockDiagonalCausalFromBottomRightMask(BlockDiagonalMask):
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
-        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
-        tensor = torch.full(  # type: ignore
-            shape,
-            dtype=create_as,
-            fill_value=float("-inf"),
-            device=device,
+        return LowerTriangularFromBottomRightMask().materialize(
+            shape=shape, dtype=dtype, device=device
         )
-        num_queries, num_keys = shape[-2:]
-        return torch.triu(tensor, diagonal=num_keys - num_queries + 1).to(dtype)  # type: ignore
 
 
 @dataclass
@@ -590,15 +625,9 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
-        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
-        tensor = torch.full(  # type: ignore
-            shape,
-            dtype=create_as,
-            fill_value=float("-inf"),
-            device=device,
+        return LowerTriangularFromBottomRightMask().materialize(
+            shape=shape, dtype=dtype, device=device
         )
-        num_queries, num_keys = shape[-2:]
-        return torch.triu(tensor, diagonal=1 + num_keys - num_queries).to(dtype)  # type: ignore
 
     def materialize(
         self,
