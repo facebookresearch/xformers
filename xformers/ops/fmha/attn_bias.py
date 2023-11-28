@@ -60,6 +60,34 @@ class AttentionBias:
         raise NotImplementedError()
 
 
+def _materialize_causal_mask(
+    shape: Tuple[int, ...],
+    dtype: torch.dtype = torch.float32,
+    device: Union[str, torch.device] = "cpu",
+    *,
+    window_size: Optional[int] = None,
+    from_bottomright: bool = False,
+) -> torch.Tensor:
+    create_as = dtype if dtype is not torch.bfloat16 else torch.float32
+    tensor = torch.full(  # type: ignore
+        shape,
+        dtype=create_as,
+        fill_value=1,
+        device=device,
+    )
+
+    num_queries, num_keys = shape[-2:]
+    shift = 0
+    if from_bottomright:
+        shift = num_keys - num_queries
+
+    mask = torch.tril(tensor, diagonal=shift).to(dtype)  # type: ignore
+    if window_size is not None:
+        mask = torch.triu(mask, diagonal=shift - window_size + 1)
+    mask = torch.log(mask)
+    return mask.to(dtype)
+
+
 class LowerTriangularMask(AttentionBias):
     """
     A lower-triangular (aka causal) mask
@@ -81,14 +109,7 @@ class LowerTriangularMask(AttentionBias):
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
-        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
-        tensor = torch.full(  # type: ignore
-            shape,
-            dtype=create_as,
-            fill_value=float("-inf"),
-            device=device,
-        )
-        return torch.triu(tensor, diagonal=1).to(dtype)  # type: ignore
+        return _materialize_causal_mask(shape, dtype=dtype, device=device)
 
     def add_bias(self, bias: torch.Tensor) -> "LowerTriangularMaskWithTensorBias":
         return LowerTriangularMaskWithTensorBias(bias)
@@ -120,15 +141,9 @@ class LowerTriangularFromBottomRightMask(AttentionBias):
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
-        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
-        tensor = torch.full(  # type: ignore
-            shape,
-            dtype=create_as,
-            fill_value=float("-inf"),
-            device=device,
+        return _materialize_causal_mask(
+            shape, dtype=dtype, device=device, from_bottomright=True
         )
-        num_queries, num_keys = shape[-2:]
-        return torch.triu(tensor, diagonal=num_keys - num_queries + 1).to(dtype)  # type: ignore
 
 
 class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
@@ -729,20 +744,12 @@ class BlockDiagonalCausalLocalAttentionMask(BlockDiagonalCausalMask):
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
-        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
-        tensor = torch.full(  # type: ignore
+        return _materialize_causal_mask(
             shape,
-            dtype=create_as,
-            fill_value=1,
+            dtype=dtype,
             device=device,
+            window_size=self._window_size,
         )
-
-        num_queries, num_keys = shape[-2:]
-        mask = torch.tril(tensor, diagonal=0).to(dtype)  # type: ignore
-        if self._window_size is not None and self._window_size > 0:
-            mask = torch.triu(mask, diagonal=-self._window_size + 1)
-        mask = torch.log(mask)
-        return mask.to(dtype)
 
 
 @dataclass
@@ -773,18 +780,10 @@ class BlockDiagonalCausalLocalAttentionFromBottomRightMask(
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
-        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
-        tensor = torch.full(  # type: ignore
+        return _materialize_causal_mask(
             shape,
-            dtype=create_as,
-            fill_value=1,
+            dtype=dtype,
             device=device,
+            window_size=self._window_size,
+            from_bottomright=True,
         )
-        num_queries, num_keys = shape[-2:]
-        mask = torch.tril(tensor, diagonal=num_keys - num_queries).to(dtype)  # type: ignore
-        if self._window_size is not None:
-            mask = torch.triu(
-                mask, diagonal=num_keys - num_queries - self._window_size + 1
-            )
-        mask = torch.log(mask)
-        return mask.to(dtype)
