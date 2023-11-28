@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -136,13 +137,16 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     if os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") != "0":
         return []
 
+    # Supports `9.0`, `9.0+PTX`, `9.0a+PTX` etc...
+    PARSE_CUDA_ARCH_RE = re.compile(
+        r"(?P<major>[0-9]+)\.(?P<minor>[0-9])(?P<suffix>[a-zA-Z]{0,1})(?P<ptx>\+PTX){0,1}"
+    )
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST", DEFAULT_ARCHS_LIST)
     nvcc_archs_flags = []
     for arch in archs_list.replace(" ", ";").split(";"):
-        assert len(arch) >= 3, f"Invalid sm version: {arch}"
-
-        arch_arr = arch.split(".")
-        num = 10 * int(arch_arr[0]) + int(arch_arr[1].partition("+")[0])
+        match = PARSE_CUDA_ARCH_RE.match(arch)
+        assert match is not None, f"Invalid sm version: {arch}"
+        num = 10 * int(match.group("major")) + int(match.group("minor"))
         # Need at least Sm80
         if num < 80:
             continue
@@ -150,7 +154,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
         if num >= 90 and cuda_version < 1108:
             continue
         nvcc_archs_flags.append(f"-gencode=arch=compute_{num},code=sm_{num}")
-        if arch.endswith("+PTX"):
+        if match.group("ptx") is not None:
             nvcc_archs_flags.append(f"-gencode=arch=compute_{num},code=compute_{num}")
     if not nvcc_archs_flags:
         return []
