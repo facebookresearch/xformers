@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fMHA: Fixed a bug in cutlass backend forward pass where the logsumexp was not correctly calculated, resulting in wrong results in the BW pass. This would happen with MQA when one sequence has a query with `length%64 == 1`
 ### Added
 ### Removed
+- Removed `xformers.triton.sum_strided`
 
 ## [0.0.22] - 2023-09-27
 ### Fixed
