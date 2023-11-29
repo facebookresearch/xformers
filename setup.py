@@ -154,9 +154,14 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
         # Sm90 requires nvcc 11.8+
         if num >= 90 and cuda_version < 1108:
             continue
-        nvcc_archs_flags.append(f"-gencode=arch=compute_{num},code=sm_{num}")
+        suffix = match.group("suffix")
+        nvcc_archs_flags.append(
+            f"-gencode=arch=compute_{num}{suffix},code=sm_{num}{suffix}"
+        )
         if match.group("ptx") is not None:
-            nvcc_archs_flags.append(f"-gencode=arch=compute_{num},code=compute_{num}")
+            nvcc_archs_flags.append(
+                f"-gencode=arch=compute_{num}{suffix},code=compute_{num}{suffix}"
+            )
     if not nvcc_archs_flags:
         return []
 
