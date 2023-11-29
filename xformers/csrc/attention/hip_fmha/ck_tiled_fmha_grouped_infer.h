@@ -57,59 +57,24 @@ struct grouped_infer_masktype_attnbias_dispatched
                                                              FmhaWarpTile,
                                                              VLayout>;
 
-    using FmhaTilePartitionerHDim64  = FmhaFwdTilePartitioner<FmhaShapeHDim64>;
-    using FmhaTilePartitionerHDim128 = FmhaFwdTilePartitioner<FmhaShapeHDim128>;
-    using FmhaPipelineProblemHDim64 =
-        ck::tile_program::block::BlockFmhaPipelineProblem<QDataType,
-                                                          KDataType,
-                                                          VDataType,
-                                                          SaccDataType,
-                                                          SMPLComputeDataType,
-                                                          BiasDataType,
-                                                          PDataType,
-                                                          OaccDataType,
-                                                          ODataType,
-                                                          256, // BlockSize
-                                                          FmhaShapeHDim64>;
-    using FmhaPipelineProblemHDim128 =
-        ck::tile_program::block::BlockFmhaPipelineProblem<QDataType,
-                                                          KDataType,
-                                                          VDataType,
-                                                          SaccDataType,
-                                                          SMPLComputeDataType,
-                                                          BiasDataType,
-                                                          PDataType,
-                                                          OaccDataType,
-                                                          ODataType,
-                                                          256, // BlockSize
-                                                          FmhaShapeHDim128>;
-
-    using FmhaPipelineHDim64 =
-        ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblemHDim64>;
-    using FmhaPipelineHDim128 =
-        ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblemHDim128>;
-
     using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<OaccDataType, ODataType>>;
 
-    // ToDo: define NeedPadding according to runtime lengths
-    static constexpr bool NeedPadding = true;
-
-    using FmhaKernelHDim64 =
-        FmhaFwdKernel<FmhaTilePartitionerHDim64, FmhaPipelineHDim64, FmhaEpilogue, NeedPadding>;
-    using FmhaKernelHDim128 =
-        FmhaFwdKernel<FmhaTilePartitionerHDim128, FmhaPipelineHDim128, FmhaEpilogue, NeedPadding>;
+    // This is the default setting, the effective setting should be done according to M/N size of
+    // each batch
+    static constexpr bool MNeedPadding = true;
+    static constexpr bool NNeedPadding = true;
 
 #ifndef GROUPED_INFER_HEADDIM_SWITCH
 #define GROUPED_INFER_HEADDIM_SWITCH(HEAD_DIM1, HEAD_DIM2, ...)        \
     [&] {                                                              \
         if(HEAD_DIM1 == HEAD_DIM2 && HEAD_DIM2 == 64)                  \
         {                                                              \
-            using FmhaKernel = FmhaKernelHDim64;                       \
+            using FmhaShape = FmhaShapeHDim64;                         \
             __VA_ARGS__();                                             \
         }                                                              \
         else if(HEAD_DIM1 == HEAD_DIM2 && HEAD_DIM2 == 128)            \
         {                                                              \
-            using FmhaKernel = FmhaKernelHDim128;                      \
+            using FmhaShape = FmhaShapeHDim128;                        \
             __VA_ARGS__();                                             \
         }                                                              \
         else                                                           \
@@ -121,8 +86,32 @@ struct grouped_infer_masktype_attnbias_dispatched
 
     static void Run(GroupedForwardParams& param, hipStream_t stream)
     {
-        GROUPED_INFER_HEADDIM_SWITCH(
-            param.K, param.Kv, [&] { RunWithKernel<FmhaKernel>(param, stream); });
+        GROUPED_INFER_HEADDIM_SWITCH(param.K, param.Kv, [&] {
+            using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
+            using FmhaPipelineProblem =
+                ck::tile_program::block::BlockFmhaPipelineProblem<QDataType,
+                                                                  KDataType,
+                                                                  VDataType,
+                                                                  SaccDataType,
+                                                                  SMPLComputeDataType,
+                                                                  BiasDataType,
+                                                                  PDataType,
+                                                                  OaccDataType,
+                                                                  ODataType,
+                                                                  256, // BlockSize
+                                                                  FmhaShape>;
+
+            using FmhaPipeline =
+                ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+
+            using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner,
+                                             FmhaPipeline,
+                                             FmhaEpilogue,
+                                             MNeedPadding,
+                                             NNeedPadding>;
+
+            RunWithKernel<FmhaKernel>(param, stream);
+        });
     };
 
     template <typename FmhaKernel>

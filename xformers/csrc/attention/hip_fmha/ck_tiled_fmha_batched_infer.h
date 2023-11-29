@@ -99,18 +99,48 @@ struct batched_infer_masktype_attnbias_dispatched
 
             if(param.M % FmhaShape::kM0 == 0 && param.N % FmhaShape::kN0 == 0)
             {
-                constexpr bool NeedPadding = false;
-                using FmhaKernel =
-                    FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue, NeedPadding>;
+                constexpr bool MNeedPadding = false;
+                constexpr bool NNeedPadding = false;
+                using FmhaKernel            = FmhaFwdKernel<FmhaTilePartitioner,
+                                                 FmhaPipeline,
+                                                 FmhaEpilogue,
+                                                 MNeedPadding,
+                                                 NNeedPadding>;
                 RunWithKernel<FmhaKernel>(param, stream);
             }
-            else
+            else if(param.M % FmhaShape::kM0 == 0 && param.N % FmhaShape::kN0 != 0)
             {
-                constexpr bool NeedPadding = true;
-                using FmhaKernel =
-                    FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue, NeedPadding>;
+                constexpr bool MNeedPadding = false;
+                constexpr bool NNeedPadding = true;
+                using FmhaKernel            = FmhaFwdKernel<FmhaTilePartitioner,
+                                                 FmhaPipeline,
+                                                 FmhaEpilogue,
+                                                 MNeedPadding,
+                                                 NNeedPadding>;
                 RunWithKernel<FmhaKernel>(param, stream);
             }
+            else if(param.M % FmhaShape::kM0 != 0 && param.N % FmhaShape::kN0 == 0)
+            {
+                constexpr bool MNeedPadding = true;
+                constexpr bool NNeedPadding = false;
+                using FmhaKernel            = FmhaFwdKernel<FmhaTilePartitioner,
+                                                 FmhaPipeline,
+                                                 FmhaEpilogue,
+                                                 MNeedPadding,
+                                                 NNeedPadding>;
+                RunWithKernel<FmhaKernel>(param, stream);
+            }
+            else if(param.M % FmhaShape::kM0 != 0 && param.N % FmhaShape::kN0 != 0)
+            {
+                constexpr bool MNeedPadding = true;
+                constexpr bool NNeedPadding = true;
+                using FmhaKernel            = FmhaFwdKernel<FmhaTilePartitioner,
+                                                 FmhaPipeline,
+                                                 FmhaEpilogue,
+                                                 MNeedPadding,
+                                                 NNeedPadding>;
+                RunWithKernel<FmhaKernel>(param, stream);
+            };
         });
     };
 
