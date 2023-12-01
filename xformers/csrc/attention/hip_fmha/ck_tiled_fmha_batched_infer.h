@@ -22,8 +22,9 @@
 #include "ck_tiled_fmha_fwd_epilogue.h"
 #include "ck_tiled_fmha_fwd_tile_partitioner.h"
 #include "ck_tiled_fmha_params.h"
+#include "ck_tiled_fmha_definitions.h"
 
-template <typename scalar_t, int32_t custom_mask_type>
+template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
 struct batched_infer_masktype_attnbias_dispatched
 {
     using QDataType           = scalar_t;
@@ -37,6 +38,9 @@ struct batched_infer_masktype_attnbias_dispatched
     using ODataType           = scalar_t;
 
     using VLayout = ck::tensor_layout::gemm::RowMajor;
+
+    static constexpr auto masktype = static_cast<CausalMaskType>(custom_mask_type);
+    using FmhaCausalMask           = typename CausalMaskPredicate<masktype>::predicate;
 
     using FmhaBlockTileHdim64  = ck::Sequence<128, 64, 32, 64, 32, 64>;
     using FmhaBlockTileHdim128 = ck::Sequence<128, 128, 32, 128, 32, 128>;
@@ -77,68 +81,64 @@ struct batched_infer_masktype_attnbias_dispatched
     }()
 #endif
 
+    template <bool kM0NeedPadding, bool kN0K1NeedPadding, typename FmhaShape>
+    using FmhaPipelineProblemTemp =
+        ck::tile_program::block::BlockFmhaPipelineProblem<QDataType,
+                                                          KDataType,
+                                                          VDataType,
+                                                          SaccDataType,
+                                                          SMPLComputeDataType,
+                                                          BiasDataType,
+                                                          PDataType,
+                                                          OaccDataType,
+                                                          ODataType,
+                                                          256, // BlockSize
+                                                          FmhaShape,
+                                                          false, // kIsGroupMode
+                                                          kM0NeedPadding,
+                                                          kN0K1NeedPadding,
+                                                          has_attn_bias,
+                                                          FmhaCausalMask>;
+
     static void Run(BatchedForwardParams& param, hipStream_t stream)
     {
         BATCHED_INFER_HEADDIM_SWITCH(param.K, param.Kv, [&] {
             using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
-            using FmhaPipelineProblem =
-                ck::tile_program::block::BlockFmhaPipelineProblem<QDataType,
-                                                                  KDataType,
-                                                                  VDataType,
-                                                                  SaccDataType,
-                                                                  SMPLComputeDataType,
-                                                                  BiasDataType,
-                                                                  PDataType,
-                                                                  OaccDataType,
-                                                                  ODataType,
-                                                                  256, // BlockSize
-                                                                  FmhaShape>;
-
-            using FmhaPipeline =
-                ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
 
             if(param.M % FmhaShape::kM0 == 0 && param.N % FmhaShape::kN0 == 0)
             {
-                constexpr bool MNeedPadding = false;
-                constexpr bool NNeedPadding = false;
-                using FmhaKernel            = FmhaFwdKernel<FmhaTilePartitioner,
-                                                 FmhaPipeline,
-                                                 FmhaEpilogue,
-                                                 MNeedPadding,
-                                                 NNeedPadding>;
+                using FmhaPipelineProblem = FmhaPipelineProblemTemp<false, false, FmhaShape>;
+                using FmhaPipeline =
+                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+                using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
                 RunWithKernel<FmhaKernel>(param, stream);
             }
             else if(param.M % FmhaShape::kM0 == 0 && param.N % FmhaShape::kN0 != 0)
             {
-                constexpr bool MNeedPadding = false;
-                constexpr bool NNeedPadding = true;
-                using FmhaKernel            = FmhaFwdKernel<FmhaTilePartitioner,
-                                                 FmhaPipeline,
-                                                 FmhaEpilogue,
-                                                 MNeedPadding,
-                                                 NNeedPadding>;
+                using FmhaPipelineProblem = FmhaPipelineProblemTemp<false, true, FmhaShape>;
+                using FmhaPipeline =
+                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+                using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
                 RunWithKernel<FmhaKernel>(param, stream);
             }
             else if(param.M % FmhaShape::kM0 != 0 && param.N % FmhaShape::kN0 == 0)
             {
-                constexpr bool MNeedPadding = true;
-                constexpr bool NNeedPadding = false;
-                using FmhaKernel            = FmhaFwdKernel<FmhaTilePartitioner,
-                                                 FmhaPipeline,
-                                                 FmhaEpilogue,
-                                                 MNeedPadding,
-                                                 NNeedPadding>;
+                using FmhaPipelineProblem = FmhaPipelineProblemTemp<true, false, FmhaShape>;
+                using FmhaPipeline =
+                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+                using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
                 RunWithKernel<FmhaKernel>(param, stream);
             }
             else if(param.M % FmhaShape::kM0 != 0 && param.N % FmhaShape::kN0 != 0)
             {
-                constexpr bool MNeedPadding = true;
-                constexpr bool NNeedPadding = true;
-                using FmhaKernel            = FmhaFwdKernel<FmhaTilePartitioner,
-                                                 FmhaPipeline,
-                                                 FmhaEpilogue,
-                                                 MNeedPadding,
-                                                 NNeedPadding>;
+                using FmhaPipelineProblem = FmhaPipelineProblemTemp<true, true, FmhaShape>;
+                using FmhaPipeline =
+                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+                using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
                 RunWithKernel<FmhaKernel>(param, stream);
             };
         });
@@ -147,6 +147,67 @@ struct batched_infer_masktype_attnbias_dispatched
     template <typename FmhaKernel>
     static void RunWithKernel(BatchedForwardParams& param, hipStream_t stream)
     {
+        const auto kargs = [&] {
+            if constexpr(FmhaKernel::kSupportsBias)
+            {
+                std::optional<std::tuple<const void*, ck::index_t, ck::index_t, ck::index_t>> bias;
+
+                bias = std::make_tuple(param.attn_bias_ptr,
+                                       param.attn_bias_strides[2],
+                                       param.attn_bias_strides[1],
+                                       param.attn_bias_strides[0]);
+
+                return FmhaKernel::MakeKargs(
+                    param.q_ptr,
+                    param.k_ptr,
+                    param.v_ptr,
+                    param.out_ptr,
+                    param.M,  // seqlen_q
+                    param.N,  // seqlen_k
+                    param.K,  // hdim_q
+                    param.Kv, // hdim_v
+                    param.scale,
+                    param.q_strides[1], // q, k, v, out tensor seq-dim stride
+                    param.k_strides[1],
+                    param.v_strides[1],
+                    param.out_strides[1],
+                    param.q_strides[2], // q, k, v, out tensor head-dim stride
+                    param.k_strides[2],
+                    param.v_strides[2],
+                    param.out_strides[2],
+                    param.q_strides[0], // q, k, v, out tensor batch-dim stride
+                    param.k_strides[0],
+                    param.v_strides[0],
+                    param.out_strides[0],
+                    bias);
+            }
+            else
+            {
+                return FmhaKernel::MakeKargs(
+                    param.q_ptr,
+                    param.k_ptr,
+                    param.v_ptr,
+                    param.out_ptr,
+                    param.M,  // seqlen_q
+                    param.N,  // seqlen_k
+                    param.K,  // hdim_q
+                    param.Kv, // hdim_v
+                    param.scale,
+                    param.q_strides[1], // q, k, v, out tensor seq-dim stride
+                    param.k_strides[1],
+                    param.v_strides[1],
+                    param.out_strides[1],
+                    param.q_strides[2], // q, k, v, out tensor head-dim stride
+                    param.k_strides[2],
+                    param.v_strides[2],
+                    param.out_strides[2],
+                    param.q_strides[0], // q, k, v, out tensor batch-dim stride
+                    param.k_strides[0],
+                    param.v_strides[0],
+                    param.out_strides[0]);
+            };
+        }();
+
         dim3 kGridSize            = FmhaKernel::GridSize(param.B, param.Hq, param.M, param.Kv);
         constexpr dim3 kBlockSize = FmhaKernel::BlockSize();
 
@@ -154,45 +215,14 @@ struct batched_infer_masktype_attnbias_dispatched
         constexpr ck::index_t kWarpPerBlock = kBlockSize.x / warpSize;
         constexpr ck::index_t kBlockPerCu   = kWarpPerCu / kWarpPerBlock;
 
-        std::optional<std::tuple<const void*, ck::index_t, ck::index_t, ck::index_t>> bias;
-
-        if(param.has_attn_bias)
-            bias = std::make_tuple(param.attn_bias_ptr,
-                                   param.attn_bias_strides[2],
-                                   param.attn_bias_strides[1],
-                                   param.attn_bias_strides[0]);
-
-        auto kargs =
-            FmhaKernel::MakeKargs(param.q_ptr,
-                                  param.k_ptr,
-                                  param.v_ptr,
-                                  param.out_ptr,
-                                  param.M,  // seqlen_q
-                                  param.N,  // seqlen_k
-                                  param.K,  // hdim_q
-                                  param.Kv, // hdim_v
-                                  param.scale,
-                                  param.q_strides[1], // q, k, v, out tensor seq-dim stride
-                                  param.k_strides[1],
-                                  param.v_strides[1],
-                                  param.out_strides[1],
-                                  param.q_strides[2], // q, k, v, out tensor head-dim stride
-                                  param.k_strides[2],
-                                  param.v_strides[2],
-                                  param.out_strides[2],
-                                  param.q_strides[0], // q, k, v, out tensor batch-dim stride
-                                  param.k_strides[0],
-                                  param.v_strides[0],
-                                  param.out_strides[0],
-                                  bias);
-
         (void)launch_kernel<kBlockSize.x, kBlockPerCu>(
             StreamConfig{stream, false}, FmhaKernel{}, kGridSize, kBlockSize, 0, kargs);
     };
 };
 
-template <typename scalar_t, int32_t custom_mask_type>
+template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
 void run_batched_infer_masktype_attnbias_dispatched(BatchedForwardParams& param, hipStream_t stream)
 {
-    batched_infer_masktype_attnbias_dispatched<scalar_t, custom_mask_type>::Run(param, stream);
+    batched_infer_masktype_attnbias_dispatched<scalar_t, custom_mask_type, has_attn_bias>::Run(
+        param, stream);
 };
