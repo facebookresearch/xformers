@@ -33,29 +33,17 @@ jobs:
           - "3.9"
           - "3.10"
         config:
-          - torch_version: "2.1.0"
+          - torch_version: "2.1.1"
             torch_channel: "pytorch"
             cuda_version: "12.1.0"
             cuda_dep_runtime: ">=12.0,<13.0"
             cuda_short_version: "121"
 
-          - torch_version: "2.1.0"
+          - torch_version: "2.1.1"
             torch_channel: "pytorch"
             cuda_version: "11.8.0"
             cuda_dep_runtime: ">=11.7,<11.9"
             cuda_short_version: "118"
-
-          - torch_version: "2.0.1"
-            torch_channel: "pytorch"
-            cuda_version: "11.8.0"
-            cuda_dep_runtime: ">=11.7,<11.9"
-            cuda_short_version: "118"
-
-          - torch_version: "1.13.1"
-            torch_channel: "pytorch"
-            cuda_version: "11.7.1"
-            cuda_dep_runtime: ">=11.6,<11.8"
-            cuda_short_version: "116"
 
     name: py${{ matrix.python }}-torch${{ matrix.config.torch_version }}-cu${{ matrix.config.cuda_version }}
     runs-on: 8-core-ubuntu  # 32GB RAM, 8 vCPUs
