@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import os
 from dataclasses import replace
 from itertools import zip_longest
 from typing import Any, List, Optional, Set, Tuple, Union
@@ -44,9 +45,12 @@ try:
         from flash_attn.flash_attn_interface import flash_attn_cuda as _C_flashattention
 
         FLASH_VERSION = flash_attn.__version__
-        flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:2])
-        if flash_ver_parsed < (2, 3):
-            raise ImportError("Requires 2.3 for sliding window support")
+        flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
+        if (
+            flash_ver_parsed != (2, 3, 6)
+            and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1"
+        ):
+            raise ImportError("Requires Flash attention 2.3.6 for varlen_fwd api")
 
     # create library so that flash-attn goes through the PyTorch Dispatcher
     _flash_lib = torch.library.Library("xformers_flash", "DEF")
