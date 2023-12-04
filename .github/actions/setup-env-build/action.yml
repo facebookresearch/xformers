@@ -21,6 +21,9 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Cleanup
+      shell: bash
+      run: rm -f ~/.profile ~/.bashrc
     - id: prepare_conda_env_paths
       shell: python
       run: |
@@ -31,7 +34,7 @@ runs:
         import datetime
         from pathlib import Path
 
-        CONDA_INSTALL_CMD = "conda create python=${{ inputs.python }} zlib pip ninja pytorch=${{ inputs.pytorch_version }} torchvision ccache pytorch-cuda=${{ inputs.cuda }} -c ${{ inputs.pytorch_channel }} -c nvidia -q -y"
+        CONDA_INSTALL_CMD = "conda create python=${{ inputs.python }} zlib pip ninja pytorch=${{ inputs.pytorch_version }} torchvision ccache=4.8 pytorch-cuda=${{ inputs.cuda }} -c ${{ inputs.pytorch_channel }} -c nvidia -c conda-forge -q -y"
 
         conda_env_key = CONDA_INSTALL_CMD
         for file in sorted(glob.glob("requirement*.txt")):
@@ -92,6 +95,9 @@ runs:
         # For some reason bash only reads from `.profile`
         # but conda writes init script to `.bashrc`
         cat ~/.bashrc >> ~/.profile
+        rm ~/.bashrc
+        echo "==== .profile ====="
+        cat ~/.profile
     - run: which python
       shell: bash -l {0}
     - name: Setup ccache nvcc
@@ -103,6 +109,7 @@ runs:
         cat $CONDA_PREFIX/bin/nvcc-ccache
         chmod +x $CONDA_PREFIX/bin/nvcc-ccache
         which nvcc
+        ccache --version
         
     - name: Setup ccache g++
       shell: bash -l {0}
@@ -113,6 +120,13 @@ runs:
         cat $CONDA_PREFIX/bin/g++-ccache
         chmod +x $CONDA_PREFIX/bin/g++-ccache
         which g++-ccache
+  
+    - name: Patch for https://github.com/pytorch/pytorch/issues/114962
+      shell: bash -l {0}
+      run: |
+        CPP_EXTENSIONS_PY=$(python -c "import torch.utils.cpp_extension; print(torch.utils.cpp_extension.__file__)")
+        echo "Patching $CPP_EXTENSIONS_PY"
+        sed -i "/generate-dependencies-with-compile/d" $CPP_EXTENSIONS_PY
     - name: Check NVIDIA libs
       shell: bash -l {0}
       run: |
