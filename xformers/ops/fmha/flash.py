@@ -18,6 +18,7 @@ from .attn_bias import (
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
     BlockDiagonalCausalMask,
+    BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalMask,
     LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
@@ -57,7 +58,7 @@ try:
 
     _flash_lib.define(
         "flash_fwd(Tensor query, Tensor key, Tensor value, "
-        "Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, "
+        "Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, Tensor? seqused_k, "
         "int max_seqlen_q, int max_seqlen_k, "
         "float p, float softmax_scale, "
         "bool is_causal, int window_size, bool return_softmax) -> (Tensor, Tensor, Tensor)"
@@ -77,6 +78,7 @@ try:
         value,
         cu_seq_lens_q,
         cu_seq_lens_k,
+        seqused_k,
         max_seq_len_q,
         max_seq_len_k,
         p,
@@ -87,6 +89,7 @@ try:
     ):
         if cu_seq_lens_q is None:
             assert cu_seq_lens_k is None
+            assert seqused_k is None
             (
                 out,
                 q_padded,
@@ -127,7 +130,7 @@ try:
                 out,
                 cu_seq_lens_q,
                 cu_seq_lens_k,
-                None,
+                seqused_k,
                 max_seq_len_q,
                 max_seq_len_k,
                 p,
@@ -216,7 +219,14 @@ except ImportError:
 def _convert_input_format(
     inp: Inputs,
     supports_mqa: bool,
-) -> Tuple[Inputs, Optional[torch.Tensor], int, Optional[torch.Tensor], int]:
+) -> Tuple[
+    Inputs,
+    Optional[torch.Tensor],
+    int,
+    Optional[torch.Tensor],
+    int,
+    Optional[torch.Tensor],
+]:
     assert inp.query.ndim in [4, 5]
     query, key, value = inp.query, inp.key, inp.value
     batch = query.shape[0]
@@ -227,6 +237,7 @@ def _convert_input_format(
 
     attn_bias = inp.attn_bias
     if isinstance(attn_bias, BlockDiagonalMask):
+        # BlockDiagonalMask or BlockDiagonalCausalMask
         attn_bias.k_seqinfo.seqstart = attn_bias.k_seqinfo.seqstart.to(
             inp.query.device, non_blocking=True
         )
@@ -238,9 +249,26 @@ def _convert_input_format(
         cu_seqlen_q = attn_bias.q_seqinfo.seqstart
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
         max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
+        seqused_k = None
+    elif isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
+        attn_bias.k_seqinfo.seqstart = attn_bias.k_seqinfo.seqstart.to(
+            inp.query.device, non_blocking=True
+        )
+        attn_bias.q_seqinfo.seqstart = attn_bias.q_seqinfo.seqstart.to(
+            inp.query.device, non_blocking=True
+        )
+        attn_bias.k_seqinfo.seqlen = attn_bias.k_seqinfo.seqlen.to(
+            inp.query.device, non_blocking=True
+        )
+        cu_seqlen_k = attn_bias.k_seqinfo.seqstart
+        cu_seqlen_q = attn_bias.q_seqinfo.seqstart
+        max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
+        max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
+        seqused_k = attn_bias.k_seqinfo.seqlen
     else:
         cu_seqlen_k = None
         cu_seqlen_q = None
+        seqused_k = None
         max_seqlen_q = inp.query.shape[1]
         max_seqlen_k = inp.key.shape[1]
 
@@ -269,7 +297,7 @@ def _convert_input_format(
     if key.ndim == 4 and key.stride(2) == 0 and value.stride(2) == 0 and supports_mqa:
         key = key[:, :, :1]
         value = value[:, :, :1]
-    # Initially we have `query.shape = [batch, seqlen, head_dim_q]`
+    # Initially we have `query.shape = [batch, seqlen, num_heads, head_dim_q]`
     # We want format `[batch * seqlen, num_heads, head_dim_q]`
     if cu_seqlen_k is not None:
         query = query.reshape([batch * seqlen_q, -1, head_dim_q])
@@ -281,7 +309,7 @@ def _convert_input_format(
         key=key,
         value=value,
     )
-    return new_inp, cu_seqlen_q, max_seqlen_q, cu_seqlen_k, max_seqlen_k
+    return new_inp, cu_seqlen_q, max_seqlen_q, cu_seqlen_k, max_seqlen_k, seqused_k
 
 
 def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
@@ -295,6 +323,7 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
             BlockDiagonalCausalLocalAttentionMask,
             BlockDiagonalCausalFromBottomRightMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+            BlockDiagonalCausalWithOffsetPaddedKeysMask,
         ),
     )
 
@@ -374,6 +403,7 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalLocalAttentionMask,
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
         BlockDiagonalCausalFromBottomRightMask,
+        BlockDiagonalCausalWithOffsetPaddedKeysMask,
     }
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
@@ -408,6 +438,7 @@ class FwOp(AttentionFwOpBase):
             max_seqlen_q,
             cu_seqlens_k,
             max_seqlen_k,
+            seqused_k,
         ) = _convert_input_format(inp, supports_mqa=True)
         if inp.query.numel() > 0 and inp.key.numel() > 0:
             out, softmax_lse, rng_state = cls.OPERATOR(
@@ -416,6 +447,7 @@ class FwOp(AttentionFwOpBase):
                 inp.value,
                 cu_seqlens_q,
                 cu_seqlens_k,
+                seqused_k,
                 max_seqlen_q,
                 max_seqlen_k,
                 inp.p,
@@ -474,7 +506,9 @@ class BwOp(AttentionBwOpBase):
     CUDA_MINIMUM_COMPUTE_CAPABILITY = FwOp.CUDA_MINIMUM_COMPUTE_CAPABILITY
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
-    SUPPORTED_ATTN_BIAS_TYPES = FwOp.SUPPORTED_ATTN_BIAS_TYPES
+    SUPPORTED_ATTN_BIAS_TYPES = FwOp.SUPPORTED_ATTN_BIAS_TYPES.difference(
+        {BlockDiagonalCausalWithOffsetPaddedKeysMask}
+    )
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
@@ -526,8 +560,10 @@ class BwOp(AttentionBwOpBase):
             max_seqlen_q,
             cu_seqlens_k,
             max_seqlen_k,
+            seqused_k,
         ) = _convert_input_format(inp, supports_mqa=False)
         assert ctx.lse.is_contiguous()
+        assert seqused_k is None
         ctx_lse = ctx.lse
         assert ctx_lse.shape[2] >= max_seqlen_q
         if max_seqlen_q != ctx_lse.shape[2]:
