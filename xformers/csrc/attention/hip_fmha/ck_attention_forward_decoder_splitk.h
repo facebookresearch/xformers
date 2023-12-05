@@ -189,7 +189,7 @@ __global__ void efficient_attention_forward_decoder_splitk_reduce_ck_kernel(
                                + m * O_stride_m 
                                + g * O_stride_g 
                                + h * O_stride_h
-                               + split_idx * O_stride_split, lane_idx, &O_split_data.vec);
+                               + split_idx * O_stride_split, lane_idx, &O_split_data.vec);                       
     #pragma unroll
     for (int32_t i = 0; i < vec_size; ++i) {
       O_split_compute.arr[i] = ck::type_convert<compute_t>(O_split_data.arr[i]);
@@ -199,11 +199,16 @@ __global__ void efficient_attention_forward_decoder_splitk_reduce_ck_kernel(
     new_max = ck::math::max(local_max, global_max);
     bool pick_new = local_max < global_max;
     compute_t log_alpha = -std::abs(local_max - global_max);
-    compute_t alpha = ck::math::exp(log_alpha);
+    compute_t alpha = isnan(log_alpha) ? compute_t{1} : ck::math::exp(log_alpha);
+    // assert(!isnan(alpha));
+    // assert(isnan(alpha));
     compute_t pick_current_coef = (1 + (1 - pick_new) * (alpha - 1));
+    // assert(!isnan(pick_current_coef));
     compute_t pick_new_coef = (1 + pick_new * (alpha - 1));
+    // assert(!isnan(pick_new_coef));
     global_sumexp = pick_current_coef * global_sumexp + pick_new_coef * local_sumexp;
-    global_O_compute.vec = pick_current_coef * global_O_compute.vec + pick_new_coef * O_split_compute.vec;
+    // global_O_compute.vec = pick_current_coef * global_O_compute.vec + pick_new_coef * O_split_compute.vec;
+    global_O_compute.vec = O_split_compute.vec;
     global_max = new_max;
   }
   global_O_compute.vec /= global_sumexp;
@@ -673,7 +678,6 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator {
         const dim3 reduce_gridsize = {arg.grid_dim.x};
         const dim3 reduce_blocksize = {arg.block_dim.x};
         constexpr int32_t reduce_lds_bytes = 0;
-
         float reduce_result = launch_and_time_kernel(
           stream_config,
           Q_size_k_alignment_necessary == 4

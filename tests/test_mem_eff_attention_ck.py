@@ -1864,6 +1864,10 @@ def test_decoder(
         q, k, v, attn_bias, op=op
     )
     
+    print(f"{decoder_output.shape=}")
+    nans_in_result = torch.sum(torch.isnan(decoder_output))
+    print(f"{nans_in_result=}")
+
     ref_output = ref_attention(q, k, v, attn_bias, dtype=dtype_)
 
     assert_allclose(
@@ -1881,12 +1885,12 @@ def _kv_heads_label(kv_heads: Optional[int]) -> str:
     return f"gqa{kv_heads}"
 
 
-@pytest.mark.parametrize("op", [fmha.forward_splitk.FwOp])
+@pytest.mark.parametrize("op", [fmha.forward_splitk.FwOp_S1, fmha.forward_splitk.FwOp_S2])
 @pytest.mark.parametrize("dtype", ["f16"])
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
 @pytest.mark.parametrize("n_heads", [16])
 @pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1)])
-def test_triton_splitk_decoder(
+def test_splitk_decoder(
     op,
     kv_heads: Optional[int],
     n_heads: int,

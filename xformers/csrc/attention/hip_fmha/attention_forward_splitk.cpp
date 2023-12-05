@@ -260,3 +260,150 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 
 #undef AT_DISPATCH_CASE_3
 #undef AT_DISPATCH_SWITCH_3
+
+#ifdef ATTN_FWD_SPLITK_DECODER_MAIN
+
+#include <torch/torch.h>
+
+// clang-format off
+
+/*
+
+(1) hipify
+ > pip install -e /xformers
+
+ For obtaining all the library paths needed for compilation below, add `--verbose`.
+ For efficient utilization of CPU cores for compilation use MAX_JOBS env variable.
+
+(2) compile
+ > mkdir build
+ > cd build
+ > cmake /xformers/xformers/csrc/attention/hip_fmha/ \
+       -DCMAKE_CXX_COMPILER=/opt/rocm/bin/hipcc \
+       -D CMAKE_PREFIX_PATH=/opt/rocm \
+       -D CMAKE_BUILD_TYPE=Debug \
+       -D GPU_TARGETS="native" 
+  > make
+
+(3a) run correctness check
+ > ./attention_forward_splitk_decoder_main
+
+(3b) run specific input shape
+ > ./attention_forward_splitk_decoder_main n_keys padding batch_size n_heads is_multiquery dtype n_wavefronts_per_block
+*/
+
+// clang-format on
+
+static void do_correctness_check() {
+  const int32_t D = 4 * kThreadsPerWavefront;
+  const int32_t B = 1;
+  const int32_t H = 4;
+  const int32_t G = 1;
+  auto options = torch::TensorOptions()
+                     .dtype(torch::kFloat32)
+                     .layout(torch::kStrided)
+                     .device(torch::kCUDA, 1)
+                     .requires_grad(false);
+  auto int_options = options.dtype(torch::kInt);
+  auto XQ = at::randn({B, 1, G, H, D}, options);
+  auto K = at::randn({B, 4096, G, H, D}, options);
+  auto V = at::randn({B, 4096, G, H, D}, options);
+  auto seq = at::randint(63, 128, {B}, int_options);
+  double qk_scale = 1. / sqrt(D);
+  constexpr auto split_k = 1;
+
+  auto result = efficient_attention_forward_decoder_splitk_ck_impl<64, 1>(
+      XQ, K, V, seq, qk_scale, split_k);
+  auto gold_result = efficient_attention_forward_decoder_splitk_ck_impl<64, 2>(
+      XQ, K, V, seq, qk_scale, split_k);
+  auto mask = at::isclose(
+      result, gold_result, /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
+  auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
+  printf(
+      "Mismatched elements percentage: %.2f\n",
+      1. - percent_match.item<float>());
+}
+
+int main(int argc, char** argv) {
+  if (argc == 1) {
+    do_correctness_check();
+  } else {
+    const auto args = std::vector<std::string>(argv + 1, argv + argc);
+    if (args.size() != 7) {
+      std::cout
+          << "Usage: ./a.out n_keys padding batch_size n_heads is_multiquery dtype n_wavefronts_per_block"
+          << std::endl;
+      return 0;
+    }
+    const int32_t n_keys = std::stoi(args[0]);
+    const int32_t padding = std::stoi(args[1]);
+    const int32_t batch_size = std::stoi(args[2]);
+    const int32_t n_heads = std::stoi(args[3]);
+    const int32_t n_groups = 1;
+    const int32_t multiquery = (args[4] == "mq");
+    const auto dtype = (args[5] == "f32") ? torch::kFloat32
+        : (args[5] == "f16")              ? torch::kFloat16
+                                          : torch::kBFloat16;
+    const int32_t n_wavefronts_per_block = std::stoi(args[6]);
+
+    const int32_t dim_per_head = 4 * kThreadsPerWavefront;
+
+    const auto options = torch::TensorOptions()
+                             .dtype(dtype)
+                             .layout(torch::kStrided)
+                             .device(torch::kCUDA, 1)
+                             .requires_grad(false);
+
+    const auto int_options = options.dtype(torch::kInt);
+    const auto Q = at::rand({batch_size, 1, n_groups, n_heads, dim_per_head}, options);
+    const auto K = multiquery
+        ? at::rand({batch_size, padding, n_groups, 1, dim_per_head}, options)
+              .expand({batch_size, padding, n_groups, n_heads, dim_per_head})
+        : at::rand({batch_size, padding, n_groups, n_heads, dim_per_head}, options);
+    const auto V = at::rand_like(K);
+    auto O = at::empty_like(Q);
+
+    constexpr auto splitk_dim = 0;
+    constexpr auto split_k = 1;
+    auto O_splits = at::stack(O, splitk_dim);
+
+    auto split_max = at::empty({batch_size, padding, n_groups, n_heads, split_k}, options.dtype(at::kFloat));
+    auto split_sumexp = at::empty_like(split_max);
+
+    const auto seq = at::randint(1, n_keys, {batch_size}, int_options);
+    const double qk_scale = 1. / sqrt(dim_per_head);
+    auto call_ptr = decltype(&efficient_attention_forward_decoder_splitk_ck_out_impl<
+                             kThreadsPerWavefront,
+                             kWavefrontsPerBlock>){};
+
+#define SWITCH_CASE_SET_CALLPTR(n)                               \
+  case (n):                                                      \
+    call_ptr = &efficient_attention_forward_decoder_splitk_ck_out_impl< \
+        kThreadsPerWavefront,                                    \
+        (n)>;                                                    \
+    break;
+
+    switch (n_wavefronts_per_block) {
+      SWITCH_CASE_SET_CALLPTR(1);
+      SWITCH_CASE_SET_CALLPTR(2);
+      SWITCH_CASE_SET_CALLPTR(4);
+      SWITCH_CASE_SET_CALLPTR(8);
+      SWITCH_CASE_SET_CALLPTR(16);
+
+      default:
+        call_ptr = nullptr;
+        break;
+    }
+#undef SWITCH_CASE_SET_CALLPTR
+
+    if (call_ptr) {
+      call_ptr(Q, K, V, seq, qk_scale, split_k, split_max, split_sumexp, O_splits, O);
+    } else {
+      std::cout << "Warning: no kernel was found for wavefronts_per_block="
+                << n_wavefronts_per_block << std::endl;
+    }
+  }
+  return 0;
+}
+
+#endif // MAIN
