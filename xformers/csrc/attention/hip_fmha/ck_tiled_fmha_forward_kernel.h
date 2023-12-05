@@ -464,6 +464,9 @@ struct FmhaFwdKernel
                 const auto adjusted_seqstart_k_ptr = kargs.seqstart_k_ptr + i_batch;
                 kargs.seqlen_k = adjusted_seqstart_k_ptr[1] - adjusted_seqstart_k_ptr[0];
             }
+
+            if(i_m0 >= kargs.seqlen_q)
+                return;
         }
         else
         {

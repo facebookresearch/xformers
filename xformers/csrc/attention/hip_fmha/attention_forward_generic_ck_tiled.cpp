@@ -317,7 +317,7 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
             p.seqlen_k_dev_ptr = dev_seqlen_k.data_ptr();
 
             HIP_CALL_CHECK(hipMemcpyAsync(p.seqlen_k_dev_ptr,
-                                          seqstart_k->data_ptr(),
+                                          seqlen_k->data_ptr(),
                                           p.num_batches * sizeof(int),
                                           hipMemcpyHostToDevice,
                                           stream));

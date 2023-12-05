@@ -3,6 +3,7 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <iostream>
 
 #include <ck/utility/common_header.hpp>
 #include <ck/host_utility/device_prop.hpp>
@@ -139,14 +140,14 @@ struct grouped_infer_masktype_attnbias_dispatched
                     param.K,  // hdim_q
                     param.Kv, // hdim_v
                     param.scale,
-                    param.q_strides[1], // q, k, v, out tensor seq-dim stride
+                    param.q_strides[0], // q, k, v, out tensor seq-dim stride
+                    param.k_strides[0],
+                    param.v_strides[0],
+                    param.out_strides[0],
+                    param.q_strides[1], // q, k, v, out tensor head-dim stride
                     param.k_strides[1],
                     param.v_strides[1],
                     param.out_strides[1],
-                    param.q_strides[2], // q, k, v, out tensor head-dim stride
-                    param.k_strides[2],
-                    param.v_strides[2],
-                    param.out_strides[2],
                     bias);
             }
             else
@@ -162,18 +163,19 @@ struct grouped_infer_masktype_attnbias_dispatched
                     param.K,  // hdim_q
                     param.Kv, // hdim_v
                     param.scale,
-                    param.q_strides[1], // q, k, v, out tensor seq-dim stride
+                    param.q_strides[0], // q, k, v, out tensor seq-dim stride
+                    param.k_strides[0],
+                    param.v_strides[0],
+                    param.out_strides[0],
+                    param.q_strides[1], // q, k, v, out tensor head-dim stride
                     param.k_strides[1],
                     param.v_strides[1],
-                    param.out_strides[1],
-                    param.q_strides[2], // q, k, v, out tensor head-dim stride
-                    param.k_strides[2],
-                    param.v_strides[2],
-                    param.out_strides[2]);
+                    param.out_strides[1]);
             };
         }();
 
-        dim3 kGridSize = FmhaKernel::GridSize(param.num_batches, param.Hq, param.M, param.Kv);
+        dim3 kGridSize =
+            FmhaKernel::GridSize(param.num_batches, param.Hq, param.max_seqlen_q, param.Kv);
         constexpr dim3 kBlockSize = FmhaKernel::BlockSize();
 
         constexpr ck::index_t kWarpPerCu    = 8; // 2 warps per SIMD
