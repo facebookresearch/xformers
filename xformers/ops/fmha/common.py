@@ -292,7 +292,7 @@ class AttentionOpBase(BaseOperator):
             Mq=d.query.shape[1],
             Mkv=d.key.shape[1],
             K=d.query.shape[-1],
-            Kv=d.query.shape[-1],
+            Kv=d.value.shape[-1],
         )
         device_type = d.query.device.type
         dtype = d.query.dtype
