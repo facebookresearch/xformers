@@ -24,6 +24,7 @@
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_default_policy.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
+#include <ck/tile_program/tile/tile_fmha_traits.hpp>
 
 #include "ck_tiled_fmha_forward_kernel.h"
 #include "ck_tiled_fmha_fwd_epilogue.h"
@@ -97,6 +98,7 @@ struct grouped_infer_masktype_attnbias_dispatched
     {
         GROUPED_INFER_HEADDIM_SWITCH(param.K, param.Kv, [&] {
             using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
+            using FmhaTraits          = ck::tile_program::TileFmhaTraits<true, true, has_attn_bias>;
             using FmhaPipelineProblem =
                 ck::tile_program::block::BlockFmhaPipelineProblem<QDataType,
                                                                   KDataType,
@@ -110,10 +112,8 @@ struct grouped_infer_masktype_attnbias_dispatched
                                                                   256, // BlockSize
                                                                   FmhaShape,
                                                                   true, // IsGroupMode
-                                                                  true, // kM0NeedPadding
-                                                                  true, // kN0K1Needpadding
-                                                                  has_attn_bias,
-                                                                  FmhaCausalMask>;
+                                                                  FmhaCausalMask,
+                                                                  FmhaTraits>;
 
             using FmhaPipeline =
                 ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
