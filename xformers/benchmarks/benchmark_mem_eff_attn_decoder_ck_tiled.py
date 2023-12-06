@@ -119,6 +119,7 @@ def mem_eff_attention_decoder(
     torch.manual_seed(42)
     k_seqlen = torch.randint(1, n_keys + 1, (B,)).tolist()
     K = 128
+    ##dtype = torch.bfloat16
     dtype = torch.float16
     q = torch.rand(1, B, n_heads, K, device=device, dtype=dtype)
     if multiquery:
@@ -132,9 +133,10 @@ def mem_eff_attention_decoder(
         k = torch.rand(1, B * padding, n_heads, K, device=device, dtype=dtype)
         v = torch.rand(1, B * padding, n_heads, K, device=device, dtype=dtype)
 
-    bias = fmha.attn_bias.BlockDiagonalMask.from_seqlens(
+    bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
         q_seqlen=[1] * B,
         kv_seqlen=k_seqlen,
+        kv_padding=padding,
     )
 
     sub_label = f"{B}batch-{k_seqlen[0]}keys-{n_heads}heads"
@@ -151,6 +153,8 @@ def mem_eff_attention_decoder(
 
         fn = partial(xformers.ops.memory_efficient_attention_forward, op=fw_op)
 
+        mem_size = get_memory_traffic(fw_op, q, k, v, bias)
+
         yield benchmark.Timer(
             stmt=f"fn(q, k, v, attn_bias)",
             globals={
@@ -162,7 +166,7 @@ def mem_eff_attention_decoder(
             },
             label="attention",
             description=fw_op.NAME,
-            sub_label=sub_label,
+            sub_label=f"{sub_label}_{mem_size//1024}k",
             num_threads=num_threads,
         )
 
@@ -176,7 +180,7 @@ def mem_eff_attention_decoder(
             },
             label="cuda graphed attention",
             description=fw_op.NAME,
-            sub_label=sub_label,
+            sub_label=f"{sub_label}_{mem_size//1024}k",
             num_threads=num_threads,
         )
 

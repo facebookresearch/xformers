@@ -159,6 +159,7 @@ for c in CASES.copy():
                 ##{"dropout_p": 0.3},
                 {"attn_bias_cfg": (torch.Tensor, False)},
                 ##{"attn_bias_cfg": (torch.Tensor, True)},
+                {"attn_bias_cfg": (xformers.ops.LowerTriangularMask, False)},
                 ##{"dtype": torch.bfloat16},
                 ##{"dtype": torch.float},
             ]
