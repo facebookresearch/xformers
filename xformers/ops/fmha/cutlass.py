@@ -352,7 +352,8 @@ class BwOp(AttentionBwOpBase):
         torch.Tensor,
         LowerTriangularMask,
         LowerTriangularFromBottomRightMask,
-        # TODO: Still some bugs in the BW pass for that one
+        # TODO: Still some bugs in the BW pass for
+        # local + causal
         # LowerTriangularFromBottomRightLocalAttentionMask,
         # TODO: Fix handling of gradient through the fMHA autograd function
         # LowerTriangularMaskWithTensorBias,

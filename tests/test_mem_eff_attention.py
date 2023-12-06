@@ -5,10 +5,12 @@
 
 import math
 import random
+from functools import partial
 from typing import List, Optional, Sequence, Tuple, Type, TypeVar
 
 import pytest
 import torch
+import torch.nn.functional as F
 from scipy.stats import binomtest
 from torch.utils.checkpoint import checkpoint
 
@@ -2175,6 +2177,132 @@ def test_local_attn_bias() -> None:
         [[1, 1, 1, 0], [1, 1, 1, 1], [0, 1, 1, 1], [0, 0, 1, 1]], dtype=torch.float32
     )
     assert (mask == expected).all().item()
+
+
+@cuda_only
+@pytest.mark.parametrize("cc", [60, 70, 80])
+@pytest.mark.parametrize("maxK", [32, 64, 128, 256])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+@pytest.mark.parametrize(
+    "custom_mask_type",
+    [
+        fmha.cutlass._CustomMaskType.NoCustomMask,
+        fmha.cutlass._CustomMaskType.CausalFromTopLeft,
+        fmha.cutlass._CustomMaskType.CausalFromBottomRight,
+    ],
+)
+@pytest.mark.parametrize("window_size", [0, 3, 300])
+@pytest.mark.parametrize(
+    "num_queries,num_keys",
+    [
+        (30, 66),
+        (256, 256),
+        # Edge cases
+        (314, 320),
+        (32, 256),
+        (224, 226),
+        (5, 531),
+        (320, 332),  # for win_size=300
+        # Others
+        (256, 62),
+        (256, 63),
+        (256, 64),
+        (256, 65),
+        (256, 66),
+    ],
+)
+def test_cutlassB_iter_order(
+    dtype,
+    cc: int,
+    maxK: int,
+    num_queries: int,
+    num_keys: int,
+    custom_mask_type,
+    window_size,
+) -> None:
+    """
+    This tests some internals of the cutlassB kernel
+    We test the iteration across blocks of [queries, keys] to ensure
+    that we correctly:
+    * Iterate over all the blocks that should be iterated
+    * Do *not* iterate over blocks that are completely masked out
+    * Correctly compute the number of parallel blocks that will compute
+        the same block of dQ
+    .. and we test this across variable causal masks+local attention combinations
+    """
+    if (
+        window_size > 0
+        and custom_mask_type == fmha.cutlass._CustomMaskType.NoCustomMask
+    ):
+        pytest.skip("LocalAttention is only supported for causal")
+    get_iteration_data = partial(
+        torch.ops.xformers._cutlassB_iteration_data,
+        dtype=dtype,
+        cc=cc,
+        maxK=maxK,
+        num_queries=num_queries,
+        num_keys=num_keys,
+        custom_mask_type=custom_mask_type,
+        window_size=window_size,
+    )
+    bias = torch.zeros([num_queries, num_keys], dtype=torch.float32)
+    if custom_mask_type != fmha.cutlass._CustomMaskType.NoCustomMask:
+        bias = fmha.attn_bias._materialize_causal_mask(
+            (num_queries, num_keys),
+            dtype=torch.float32,
+            device="cpu",
+            window_size=None if window_size == 0 else window_size,
+            from_bottomright=(
+                custom_mask_type == fmha.cutlass._CustomMaskType.CausalFromBottomRight
+            ),
+        )
+
+    block_queries, block_keys = get_iteration_data()[:2]
+    mask_pooled = (
+        F.max_pool2d(bias.unsqueeze(0), (block_queries, block_keys), ceil_mode=True)
+        == 0
+    ).int()[0]
+    attn_computed = torch.zeros_like(mask_pooled)
+    for key_start in range(0, num_keys, block_keys):
+        it = 0
+        new_key_start = key_start
+        new_query_start = get_iteration_data(key_start=key_start)[2]
+        try:
+            expected_first_query = (
+                mask_pooled[:, key_start // block_keys].tolist().index(1)
+                * block_queries
+            )
+            assert (
+                new_query_start == expected_first_query
+            ), f"Wrong first query for K={key_start}: {new_query_start} (expected {expected_first_query})"
+        except ValueError:  # Nothing to compute in this column
+            pass
+
+        while new_key_start == key_start and new_query_start < num_queries:
+            query_start = new_query_start
+            attn_computed[query_start // block_queries, key_start // block_keys] += 1
+            # print(f"Compute [{query_start}, {key_start}]")
+
+            # Is there something to compute here?
+            assert mask_pooled[
+                query_start // block_queries, key_start // block_keys
+            ].item(), "Computing a block that is not needed!"
+            new_query_start, new_key_start = get_iteration_data(
+                key_start=key_start, query_start=query_start
+            )[3:5]
+            it += 1
+            assert it < num_queries, ""
+        assert (attn_computed == mask_pooled)[
+            :, key_start // block_keys
+        ].all(), "some blocks were not computed!"
+
+    # Now check that the number returned by `getNumParallelBlocksForQuery` is correct
+    for query_start in range(0, num_queries, block_queries):
+        num_parallel_blocks = get_iteration_data(
+            query_start=query_start, num_splits_key=num_keys
+        )[5]
+        num_actual = mask_pooled[query_start // block_queries].sum().item()
+        assert num_parallel_blocks == num_actual
 
 
 # end of file
