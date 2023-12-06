@@ -4,9 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.23] - TBD
+## [0.0.24] - TBD
+
+## [0.0.23] - 2023-12-05
+Pre-built binary wheels require PyTorch 2.1.1
 ### Fixed
 - fMHA: Fixed a bug in cutlass backend forward pass where the logsumexp was not correctly calculated, resulting in wrong results in the BW pass. This would happen with MQA when one sequence has a query with `length%64 == 1`
+- fMHA: Updated Flash-Attention to v2.3.6 - this fixes a performance regression in causal backward passes, and now supports `BlockDiagonalCausalWithOffsetPaddedKeysMask`
 ### Added
 - fMHA: Added `LocalAttentionFromBottomRightMask` (local)
 - fMHA: Added `LowerTriangularFromBottomRightMask` (causal)
