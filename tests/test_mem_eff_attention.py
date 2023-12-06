@@ -248,7 +248,11 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
         return torch.stack(
             [
                 ref_attention_bmhk(
-                    q[:, :, g], k[:, :, g], v[:, :, g], attn_bias=attn_bias_group(g)
+                    q[:, :, g],
+                    k[:, :, g],
+                    v[:, :, g],
+                    scale=scale,
+                    attn_bias=attn_bias_group(g),
                 )
                 for g in range(q.shape[2])
             ],
@@ -256,7 +260,7 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
         )
     if q.ndim == 4:
         assert p == 0.0
-        return ref_attention_bmhk(q, k, v, attn_bias=attn_bias)
+        return ref_attention_bmhk(q, k, v, scale=scale, attn_bias=attn_bias)
     q = q.float()
     k = k.float()
     v = v.float()
@@ -351,6 +355,7 @@ def create_tensors(
         attn_bias_type,
         (
             fmha.attn_bias.LowerTriangularFromBottomRightMask,
+            fmha.attn_bias.LowerTriangularFromBottomRightLocalAttentionMask,
             fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
             fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask,
             fmha.attn_bias.BlockDiagonalCausalLocalAttentionMask,
@@ -644,6 +649,12 @@ def test_backward(
         attn_bias_requires_grad=attn_bias_requires_grad,
         fmt=fmt,
     )
+
+    # To understand why we do this, check the comment on the
+    # `AttentionBwOpBase` class
+    scale = None
+    if op_bw.SUPPORTS_CUSTOM_SCALE and query.shape[-1] < 32:
+        scale = (1 / 32) ** 0.5
     op_fw = (
         sample_random_supported_fw(
             fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias),
@@ -673,10 +684,10 @@ def test_backward(
         pytest.skip("inputs not supported")
 
     out = xformers.ops.memory_efficient_attention(
-        query, key, value, attn_bias, op=(op_fw, op_bw)
+        query, key, value, attn_bias, scale=scale, op=(op_fw, op_bw)
     )
 
-    grad_out = torch.ones_like(out)
+    grad_out = torch.randn_like(out)
     if grad_out_contiguous is False:
         grad_out = torch.tensor([1.0], dtype=query.dtype, device=device)[
             None, None, :
@@ -701,7 +712,7 @@ def test_backward(
         if attn_bias_grad is not None:
             grads.append(attn_bias_grad)
 
-    ref = ref_attention(query, key, value, attn_bias)
+    ref = ref_attention(query, key, value, attn_bias, scale=scale)
     ref.backward(grad_out)
 
     assert_allclose(
@@ -709,7 +720,7 @@ def test_backward(
         ref.float(),
         "fw pass",
         atol=op_fw.ERROR_ATOL[dtype],
-        rtol=op_fw.ERROR_RTOL.get(dtype, 1e-5),
+        rtol=op_fw.ERROR_RTOL[dtype],
     )
 
     del out
@@ -1098,7 +1109,7 @@ def test_cuda_streams(
 @parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs
 def test_custom_scale(opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
     p = 0.0
-    scale = 1.0
+    scale = 0.1
 
     (
         op_bw,

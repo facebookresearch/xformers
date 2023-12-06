@@ -399,10 +399,15 @@ class AttentionFwOpBase(AttentionOpBase):
 
 
 class AttentionBwOpBase(AttentionOpBase):
+    # NOTE on tolerances: These are tested for `scales => (1/32)**0.5`
+    # In the BW pass, imprecisions accumulate in the Q@K.T recalculation
+    # These imprecisions are multiplied by the `scale` and then exponentiated
+    # So if the scale is too high, we get a lot of errors
+
     ERROR_ATOL: Mapping[torch.dtype, float] = {
-        torch.float: 6e-4,
-        torch.half: 9e-2,
-        torch.bfloat16: 0.7,
+        torch.float: 9e-4,
+        torch.half: 0.1,
+        torch.bfloat16: 0.9,
     }
     ERROR_RTOL: Mapping[torch.dtype, float] = {
         torch.float: 1e-4,

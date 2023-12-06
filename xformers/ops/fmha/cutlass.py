@@ -7,7 +7,7 @@
 from dataclasses import replace
 from enum import Enum
 from functools import partial
-from typing import Any, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, List, Optional, Set, Tuple, Union
 
 import torch
 
@@ -352,7 +352,7 @@ class BwOp(AttentionBwOpBase):
         torch.Tensor,
         LowerTriangularMask,
         LowerTriangularFromBottomRightMask,
-        # TODO: Still some bugs in the BW pass for
+        # TODO: Still some infs/nans in the BW pass for
         # local + causal
         # LowerTriangularFromBottomRightLocalAttentionMask,
         # TODO: Fix handling of gradient through the fMHA autograd function
@@ -367,14 +367,6 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
     NAME = "cutlassB"
-
-    ERROR_ATOL: Mapping[torch.dtype, float] = {
-        torch.float: 5e-4,
-        # increased from 9e-2, more opportunities for numerical errors when bias is
-        # used, noticed in gK on SM80
-        torch.half: 1e-1,
-        torch.bfloat16: 7e-1,
-    }
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
