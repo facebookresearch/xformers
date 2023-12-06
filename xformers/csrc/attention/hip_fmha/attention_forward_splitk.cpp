@@ -183,7 +183,7 @@ at::Tensor& efficient_attention_forward_decoder_splitk_ck_out_impl(
             K_acc.stride(1),
             K_acc.stride(2),
             K_acc.stride(3),
-            O_acc.stride(2),
+            split_O_acc.stride(0),
             XQ_acc.size(1),
             XQ_acc.size(2),
             XQ_acc.size(3),
@@ -212,11 +212,10 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck_impl(
     const at::Tensor& cache_K, // [B, KV_M_MAX, G, H or 1, D]
     const at::Tensor& cache_V, // [B, KV_M_MAX, H or 1, D]
     at::optional<at::Tensor> seq_kv_lens, // [B]
-    int64_t split_k,
-    double qk_scale) {
+    double qk_scale,
+    int64_t split_k) {
   auto O = at::empty_like(XQ);
   constexpr auto splitk_dim = 0;
-  // auto O_unsqueeze = at::unsqueeze(O, splitk_dim);
   auto O_splits = at::stack(O, splitk_dim);
 
   TORCH_CHECK(XQ.dim() == 5);

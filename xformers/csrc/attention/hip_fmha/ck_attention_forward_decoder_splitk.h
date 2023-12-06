@@ -183,7 +183,7 @@ __global__ void efficient_attention_forward_decoder_splitk_reduce_ck_kernel(
   compute_t global_sumexp = 0;
   compute_t global_max = ck::NumericLimits<compute_t>::Lowest();
 
-  for (size_t split_idx = 0; split_idx < split_k; ++split_idx) {
+  for (int32_t split_idx = 0; split_idx < split_k; ++split_idx) {
     load_v<data_t, data_vec_t>(O_splits 
                                + b * O_stride_b 
                                + m * O_stride_m 
@@ -200,15 +200,10 @@ __global__ void efficient_attention_forward_decoder_splitk_reduce_ck_kernel(
     bool pick_new = local_max < global_max;
     compute_t log_alpha = -std::abs(local_max - global_max);
     compute_t alpha = isnan(log_alpha) ? compute_t{1} : ck::math::exp(log_alpha);
-    // assert(!isnan(alpha));
-    // assert(isnan(alpha));
     compute_t pick_current_coef = (1 + (1 - pick_new) * (alpha - 1));
-    // assert(!isnan(pick_current_coef));
     compute_t pick_new_coef = (1 + pick_new * (alpha - 1));
-    // assert(!isnan(pick_new_coef));
     global_sumexp = pick_current_coef * global_sumexp + pick_new_coef * local_sumexp;
-    // global_O_compute.vec = pick_current_coef * global_O_compute.vec + pick_new_coef * O_split_compute.vec;
-    global_O_compute.vec = O_split_compute.vec;
+    global_O_compute.vec = pick_current_coef * global_O_compute.vec + pick_new_coef * O_split_compute.vec;
     global_max = new_max;
   }
   global_O_compute.vec /= global_sumexp;
@@ -397,7 +392,9 @@ __global__ void efficient_attention_forward_decoder_splitk_ck_kernel(
   max_qk_acc =
       wavefrontReduce(max_qk_acc, [](auto a, auto b) { return a > b ? a : b; });
 
-  split_max[blockIdx.x * split_k + split_idx] = max_qk_acc;
+  if (wavefront_idx == 0 && lane_idx == 0) {
+    split_max[blockIdx.x * split_k + split_idx] = max_qk_acc;
+  }
 
   // each wavefront computes partial sum of exp.
   compute_t softmax_denominator = 0.0f;
@@ -420,13 +417,16 @@ __global__ void efficient_attention_forward_decoder_splitk_ck_kernel(
   softmax_denominator = wavefrontReduce(
       softmax_denominator, [](auto a, auto b) { return a + b; });
 
-  split_sumexp[blockIdx.x * split_k + split_idx] = softmax_denominator;
+  if (wavefront_idx == 0 && lane_idx == 0) {
+    split_sumexp[blockIdx.x * split_k + split_idx] = softmax_denominator;
+  }
   // or maybe after scaling?
   
-  const compute_t softmax_scale_factor = 1. / softmax_denominator;
+  // const compute_t softmax_scale_factor = 1. / softmax_denominator;
   // now, compute the normalization across all threads.
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
-    smem[t] = ck::math::exp(smem[t] - max_qk_acc) * softmax_scale_factor;
+    // smem[t] = ck::math::exp(smem[t] - max_qk_acc) * softmax_scale_factor;
+    smem[t] = ck::math::exp(smem[t] - max_qk_acc);
   }
   __syncthreads();
 
