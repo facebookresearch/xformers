@@ -220,7 +220,6 @@ template <
     int32_t n_loop_unroll = 16,
     int32_t n_loop_unroll_tail = 2,
     int32_t KV_M_MAX = 8192,
-    int32_t n_wavefronts_per_block = 16,
     typename compute_t = float>
 __global__ void efficient_attention_forward_decoder_splitk_ck_kernel(
     const scalar_t* __restrict__ XQ,
@@ -307,15 +306,40 @@ __global__ void efficient_attention_forward_decoder_splitk_ck_kernel(
 
   data_vec_t k_loads[n_loop_unroll] = {};
 
-  constexpr auto dtt = n_wavefronts_per_block * n_loop_unroll;
+  const auto dtt = wavefronts_per_block * n_loop_unroll;
   const auto n_unrolled_loops = t_max / dtt / split_k; // +1?
   const int32_t tt_low = wavefront_idx * n_loop_unroll + n_unrolled_loops * dtt * split_idx;
   const int32_t tt_high = wavefront_idx * n_loop_unroll + n_unrolled_loops * dtt * (split_idx + 1);
-  const int32_t dtt_tail = n_wavefronts_per_block * n_loop_unroll_tail;
-  const int32_t tt_tail_low = wavefront_idx * n_loop_unroll_tail + wavefront_idx * n_loop_unroll_tail + n_unrolled_loops * dtt * (split_idx + 1);
+  const int32_t dtt_tail = wavefronts_per_block * n_loop_unroll_tail;
+  const int32_t tt_tail_low = wavefront_idx * n_loop_unroll_tail + n_unrolled_loops * dtt * (split_idx + 1);
   const int32_t tt_tail_high = (split_idx == split_k - 1) ? t_max : tt_tail_low;
-  const int32_t t_max_unroll = (t_max / dtt) * dtt;
 
+  // if (lane_idx == 0)
+  //   printf("wavefront_idx: %d "
+  //          "t_max: %d " 
+  //          "(runtime) wavefronts_per_block: %d "
+  //          "n_loop_unroll: %d "
+  //          "n_loop_unroll_tail: %d "
+  //          "dtt: %d "
+  //          "n_unrolled_loops: %d "
+  //          "tt_low: %d "
+  //          "tt_high: %d "
+  //          "dtt_tail: %d "
+  //          "tt_tail_low: %d "
+  //          "tt_tail_high: %d "
+  //          "\n", 
+  //          wavefront_idx,
+  //          t_max, 
+  //          wavefronts_per_block,
+  //          n_loop_unroll,
+  //          n_loop_unroll_tail,
+  //          dtt,
+  //          n_unrolled_loops,
+  //          tt_low,
+  //          tt_high,
+  //          dtt_tail,
+  //          tt_tail_low,
+  //          tt_tail_high);
   for (auto tt = tt_low; tt < tt_high; tt += dtt) {
     if (lane_active_for_io) {
 #pragma unroll n_loop_unroll
