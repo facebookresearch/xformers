@@ -4,6 +4,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+
 #include <ATen/Dispatch.h>
 #include <ATen/Functions.h>
 #include <ATen/Tensor.h>
@@ -16,7 +17,7 @@ namespace {
 constexpr int32_t kThreadsPerWavefront = 64;
 constexpr int32_t kWavefrontsPerBlock  = 16;
 constexpr int32_t K_MAX                = 4 * kThreadsPerWavefront;
-}
+} // namespace
 
 namespace {
 
@@ -247,68 +248,78 @@ int main(int argc, char** argv)
     {
         do_correctness_check();
     }
-    const int32_t n_keys                 = std::stoi(args[0]);
-    const int32_t padding                = std::stoi(args[1]);
-    const int32_t batch_size             = std::stoi(args[2]);
-    const int32_t n_heads                = std::stoi(args[3]);
-    const int32_t n_groups               = 1;
-    const int32_t multiquery             = (args[4] == "mq");
-    const auto dtype                     = (args[5] == "f32")   ? torch::kFloat32
-                                           : (args[5] == "f16") ? torch::kFloat16
-                                                                : torch::kBFloat16;
-    const int32_t n_wavefronts_per_block = std::stoi(args[6]);
+    else
+    {
+        const auto args = std::vector<std::string>(argv + 1, argv + argc);
+        if(args.size() != 7)
+        {
+            std::cout << "Usage: ./a.out n_keys padding batch_size n_heads is_multiquery dtype "
+                         "n_wavefronts_per_block"
+                      << std::endl;
+            return 0;
+        }
+        const int32_t n_keys                 = std::stoi(args[0]);
+        const int32_t padding                = std::stoi(args[1]);
+        const int32_t batch_size             = std::stoi(args[2]);
+        const int32_t n_heads                = std::stoi(args[3]);
+        const int32_t n_groups               = 1;
+        const int32_t multiquery             = (args[4] == "mq");
+        const auto dtype                     = (args[5] == "f32")   ? torch::kFloat32
+                                               : (args[5] == "f16") ? torch::kFloat16
+                                                                    : torch::kBFloat16;
+        const int32_t n_wavefronts_per_block = std::stoi(args[6]);
 
-    const int32_t dim_per_head = 4 * kThreadsPerWavefront;
+        const int32_t dim_per_head = 4 * kThreadsPerWavefront;
 
-    const auto options = torch::TensorOptions()
-                             .dtype(dtype)
-                             .layout(torch::kStrided)
-                             .device(torch::kCUDA, 1)
-                             .requires_grad(false);
+        const auto options = torch::TensorOptions()
+                                 .dtype(dtype)
+                                 .layout(torch::kStrided)
+                                 .device(torch::kCUDA, 1)
+                                 .requires_grad(false);
 
-    const auto int_options = options.dtype(torch::kInt);
-    const auto Q           = at::rand({batch_size, 1, n_groups, n_heads, dim_per_head}, options);
-    const auto K           = multiquery
-                                 ? at::rand({batch_size, padding, n_groups, 1, dim_per_head}, options)
+        const auto int_options = options.dtype(torch::kInt);
+        const auto Q = at::rand({batch_size, 1, n_groups, n_heads, dim_per_head}, options);
+        const auto K =
+            multiquery ? at::rand({batch_size, padding, n_groups, 1, dim_per_head}, options)
                              .expand({batch_size, padding, n_groups, n_heads, dim_per_head})
-                                 : at::rand({batch_size, padding, n_groups, n_heads, dim_per_head}, options);
-    const auto V           = at::rand_like(K);
-    auto O                 = at::empty_like(Q);
+                       : at::rand({batch_size, padding, n_groups, n_heads, dim_per_head}, options);
+        const auto V = at::rand_like(K);
+        auto O       = at::empty_like(Q);
 
-    const auto seq        = at::randint(1, n_keys, {batch_size}, int_options);
-    const double qk_scale = 1. / sqrt(dim_per_head);
-    auto call_ptr =
-        decltype(&efficient_attention_forward_decoder_ck_out_impl<kThreadsPerWavefront,
-                                                                  kWavefrontsPerBlock>){};
+        const auto seq        = at::randint(1, n_keys, {batch_size}, int_options);
+        const double qk_scale = 1. / sqrt(dim_per_head);
+        auto call_ptr =
+            decltype(&efficient_attention_forward_decoder_ck_out_impl<kThreadsPerWavefront,
+                                                                      kWavefrontsPerBlock>){};
 
 #define SWITCH_CASE_SET_CALLPTR(n)                                                              \
     case(n):                                                                                    \
         call_ptr = &efficient_attention_forward_decoder_ck_out_impl<kThreadsPerWavefront, (n)>; \
         break;
 
-    switch(n_wavefronts_per_block)
-    {
-        SWITCH_CASE_SET_CALLPTR(1);
-        SWITCH_CASE_SET_CALLPTR(2);
-        SWITCH_CASE_SET_CALLPTR(4);
-        SWITCH_CASE_SET_CALLPTR(8);
-        SWITCH_CASE_SET_CALLPTR(16);
+        switch(n_wavefronts_per_block)
+        {
+            SWITCH_CASE_SET_CALLPTR(1);
+            SWITCH_CASE_SET_CALLPTR(2);
+            SWITCH_CASE_SET_CALLPTR(4);
+            SWITCH_CASE_SET_CALLPTR(8);
+            SWITCH_CASE_SET_CALLPTR(16);
 
-    default: call_ptr = nullptr; break;
-    }
+        default: call_ptr = nullptr; break;
+        }
 #undef SWITCH_CASE_SET_CALLPTR
 
-    if(call_ptr)
-    {
-        call_ptr(Q, K, V, seq, qk_scale, O);
+        if(call_ptr)
+        {
+            call_ptr(Q, K, V, seq, qk_scale, O);
+        }
+        else
+        {
+            std::cout << "Warning: no kernel was found for wavefronts_per_block="
+                      << n_wavefronts_per_block << std::endl;
+        }
     }
-    else
-    {
-        std::cout << "Warning: no kernel was found for wavefronts_per_block="
-                  << n_wavefronts_per_block << std::endl;
-    }
-}
-return 0;
+    return 0;
 }
 
 #endif // MAIN
