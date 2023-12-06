@@ -120,7 +120,7 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
         K_CHOICES = [8 * i for i in range(1, 256 // 8)]
         r = random.Random(0)
         found_count = 0
-        while found_count < 20:
+        while found_count < 200:
             B = r.randint(1, 400)
             Mq = r.randint(1, 500)
             Mkv = r.randint(1, 500)

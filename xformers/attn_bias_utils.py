@@ -68,8 +68,8 @@ def create_attn_bias(
                 dtype=dtype,
             )
 
-            # make sure it also works if the first columns are partially masked out
-            attn_bias[0, 0, 0, q_len - 1 :, : num_heads - 2] = -math.inf
+            # make sure it also works if the first columns/rows are partially masked out
+            attn_bias[0, 0, 0, : q_len - 1, : kv_len - 1] = -math.inf
             if fmt in ["BMK", "BMHK"]:
                 attn_bias = attn_bias[:, 0]
 
