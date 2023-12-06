@@ -20,6 +20,7 @@ from .attn_bias import (
     BlockDiagonalCausalMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalMask,
+    LocalAttentionFromBottomRightMask,
     LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
@@ -61,7 +62,8 @@ try:
         "Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, Tensor? seqused_k, "
         "int max_seqlen_q, int max_seqlen_k, "
         "float p, float softmax_scale, "
-        "bool is_causal, int window_size, bool return_softmax) -> (Tensor, Tensor, Tensor)"
+        "bool is_causal, int window_left, "
+        "int window_right, bool return_softmax) -> (Tensor, Tensor, Tensor)"
     )
 
     _flash_lib.define(
@@ -69,7 +71,8 @@ try:
         "Tensor out, Tensor softmax_lse_, Tensor dq, Tensor dk, Tensor dv, "
         "Tensor cu_seqlens_q, Tensor cu_seqlens_k, "
         "int max_seqlen_q, int max_seqlen_k, "
-        "float p, float softmax_scale, bool is_causal, int window_size, Tensor rng_state) -> (Tensor, Tensor, Tensor)"
+        "float p, float softmax_scale, bool is_causal, "
+        "int window_left, int window_right, Tensor rng_state) -> (Tensor, Tensor, Tensor)"
     )
 
     def _flash_fwd(
@@ -84,7 +87,8 @@ try:
         p,
         softmax_scale,
         is_causal,
-        window_size,
+        window_left,
+        window_right,
         return_softmax,
     ):
         if cu_seq_lens_q is None:
@@ -107,8 +111,8 @@ try:
                 p,
                 softmax_scale,
                 is_causal,
-                window_size - 1,  # window_size_left
-                -1,  # window_size_right
+                window_left,  # window_size_left
+                window_right,  # window_size_right
                 return_softmax,
                 None,  # rng
             )
@@ -137,8 +141,8 @@ try:
                 softmax_scale,
                 False,
                 is_causal,
-                window_size - 1,  # window_size_left
-                -1,  # window_size_right
+                window_left,
+                window_right,
                 return_softmax,
                 None,
             )
@@ -161,7 +165,8 @@ try:
         p,
         softmax_scale,
         is_causal,
-        window_size,
+        window_left,
+        window_right,
         rng_state,
     ):
         if cu_seq_lens_k is None:
@@ -179,8 +184,8 @@ try:
                 p,
                 softmax_scale,
                 is_causal,
-                window_size - 1,  # window_size_left
-                -1,  # window_size_right
+                window_left,
+                window_right,
                 None,
                 rng_state,
             )
@@ -203,8 +208,8 @@ try:
                 softmax_scale,
                 False,  # zero_tensors
                 is_causal,
-                window_size - 1,  # window_size_left
-                -1,  # window_size_right
+                window_left,
+                window_right,
                 None,
                 rng_state,
             )
@@ -328,17 +333,24 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
     )
 
 
-def _window_size(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int:
+def _window_size(
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
+) -> Tuple[int, int]:
+    win_left = -1
+    win_right = -1
     if isinstance(
         attn_bias,
-        (BlockDiagonalCausalLocalAttentionMask,),
+        (
+            BlockDiagonalCausalLocalAttentionMask,
+            BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+            LowerTriangularFromBottomRightLocalAttentionMask,
+        ),
     ):
-        return attn_bias._window_size or 0
-    if isinstance(attn_bias, BlockDiagonalCausalLocalAttentionFromBottomRightMask):
-        return attn_bias._window_size
-    if isinstance(attn_bias, LowerTriangularFromBottomRightLocalAttentionMask):
-        return attn_bias._window_size
-    return 0
+        win_left = attn_bias._window_size - 1
+    if isinstance(attn_bias, LocalAttentionFromBottomRightMask):
+        win_left = attn_bias.window_left
+        win_right = attn_bias.window_right
+    return (win_left, win_right)
 
 
 def _check_needs_no_topleft(d: Inputs, reasons: List[str]) -> None:
@@ -404,6 +416,7 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
         BlockDiagonalCausalFromBottomRightMask,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        LocalAttentionFromBottomRightMask,
     }
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
@@ -441,6 +454,7 @@ class FwOp(AttentionFwOpBase):
             seqused_k,
         ) = _convert_input_format(inp, supports_mqa=True)
         if inp.query.numel() > 0 and inp.key.numel() > 0:
+            win_left, win_right = _window_size(inp.attn_bias)
             out, softmax_lse, rng_state = cls.OPERATOR(
                 inp.query,
                 inp.key,
@@ -453,8 +467,9 @@ class FwOp(AttentionFwOpBase):
                 inp.p,
                 inp.scale_float,
                 _is_causal(inp.attn_bias),
-                _window_size(inp.attn_bias),
-                return_softmax,
+                window_left=win_left,
+                window_right=win_right,
+                return_softmax=return_softmax,
             )
             out = out.reshape(out_shape)
         else:
@@ -612,6 +627,7 @@ class BwOp(AttentionBwOpBase):
         if grads.dv.numel() == 0:
             grads.dq.zero_()
         if grads.dq.numel() and grads.dk.numel():
+            win_left, win_right = _window_size(inp.attn_bias)
             cls.OPERATOR(
                 grad.reshape(kernel_out_shape).contiguous(),
                 inp.query,
@@ -629,8 +645,9 @@ class BwOp(AttentionBwOpBase):
                 inp.p,
                 inp.scale_float,
                 _is_causal(inp.attn_bias),
-                _window_size(inp.attn_bias),
-                ctx.rng_state,
+                window_left=win_left,
+                window_right=win_right,
+                rng_state=ctx.rng_state,
             )
         grads.dq = grads.dq.reshape(dq_shape)
         grads.dk = grads.dk.reshape(dk_shape)

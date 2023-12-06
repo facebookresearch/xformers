@@ -352,6 +352,7 @@ def create_tensors(
             fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
             fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask,
             fmha.attn_bias.BlockDiagonalCausalLocalAttentionMask,
+            fmha.attn_bias.LocalAttentionFromBottomRightMask,
         ),
     )
     if mask_is_bottom_right and q_len > kv_len:
@@ -2161,6 +2162,19 @@ def test_empty_tensors_empty_b(
     value.requires_grad_(True)
     out = xformers.ops.memory_efficient_attention(query, key, value, op=(opFW, None))
     out.backward(out)
+
+
+def test_local_attn_bias() -> None:
+    mask = (
+        fmha.attn_bias.LocalAttentionFromBottomRightMask(window_left=1, window_right=2)
+        .materialize(shape=(4, 4))
+        .exp()
+    )
+
+    expected = torch.tensor(
+        [[1, 1, 1, 0], [1, 1, 1, 1], [0, 1, 1, 1], [0, 0, 1, 1]], dtype=torch.float32
+    )
+    assert (mask == expected).all().item()
 
 
 # end of file

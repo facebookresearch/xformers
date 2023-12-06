@@ -161,6 +161,11 @@ def create_attn_bias(
             )
         )
         return g_block_diag
+    if bias_type == fmha.attn_bias.LocalAttentionFromBottomRightMask:
+        return bias_type(
+            window_left=r.randint(0, 5),
+            window_right=r.randint(0, 5),
+        )
 
     assert False, f"Unsupported bias type: {bias_type}"
 
