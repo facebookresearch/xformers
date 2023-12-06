@@ -576,10 +576,6 @@ def test_forward(
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 
-    if bias_type is not None and bias_type is not type(None):
-        if bias_type is not torch.Tensor and bias_type is not fmha.attn_bias.BlockDiagonalMask:
-            pytest.skip("only three bias types are supported by ck-tiled!")
-
     if dtype is torch.bfloat16:
         pytest.skip("bfloat16 is currently not supported by ck-tiled!")
 
