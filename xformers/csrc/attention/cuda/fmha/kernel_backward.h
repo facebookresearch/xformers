@@ -890,7 +890,7 @@ struct AttentionBackwardKernel {
       return num_batches * num_heads * workspace_strideBH() * sizeof(float);
     }
     CUTLASS_HOST_DEVICE bool should_zero_workspace() const {
-      return num_splits_key > 1;
+      return num_splits_key > 1 || window_size > 0;
     }
   };
 
@@ -2132,14 +2132,20 @@ struct AttentionBackwardKernel {
             p.grad_query_ptr + query_start * p.gQ_strideM() + col,
             {problem_size.m(), problem_size.n()},
             thread_id);
-        bool storage_contains_zeros = kNeedsAccumGradQ || key_start == 0 ||
+        // if `direct_store` is True, we store to gmem (`*gmem = accum`)
+        // otherwise, we accumulate in gmem (`*gmem = *gmem + accum`)
+        // If we know ahead of time when we will write for the first time
+        // we can:
+        // (1) Avoid an additional memory read
+        // (2) Avoid the cost of initializing memory to 0
+        bool direct_store = kNeedsAccumGradQ || key_start == 0 ||
             (p.num_splits_key_device() > 1);
         accumulateInGmem<MatmulGradQ>(
             isLastColumn ? shared_storage.gradQ_epilogue_lastIter()
                          : shared_storage.gradQ_epilogue(),
             accum,
             output_it,
-            storage_contains_zeros,
+            direct_store,
             warp_id,
             lane_id);
       }
