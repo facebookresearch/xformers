@@ -425,11 +425,11 @@ struct FmhaFwdKernel
         const index_t i_m0 = __builtin_amdgcn_readfirstlane(i_tile_m * FmhaPipeline::kM0);
         const index_t i_n1 = __builtin_amdgcn_readfirstlane(i_tile_n * FmhaPipeline::kN1);
 
-        index_t batch_offset_q    = 0;
-        index_t batch_offset_k    = 0;
-        index_t batch_offset_v    = 0;
-        index_t batch_offset_bias = 0;
-        index_t batch_offset_o    = 0;
+        long_index_t batch_offset_q    = 0;
+        long_index_t batch_offset_k    = 0;
+        long_index_t batch_offset_v    = 0;
+        long_index_t batch_offset_bias = 0;
+        long_index_t batch_offset_o    = 0;
 
         if constexpr(kIsGroupMode)
         {
@@ -437,25 +437,26 @@ struct FmhaFwdKernel
             const index_t query_start = kargs.seqstart_q_ptr[i_batch];
             const index_t key_start   = kargs.seqstart_k_ptr[i_batch];
 
-            batch_offset_q = query_start * kargs.stride_q;
-            batch_offset_k = key_start * kargs.stride_k;
+            batch_offset_q = static_cast<long_index_t>(query_start) * kargs.stride_q;
+            batch_offset_k = static_cast<long_index_t>(key_start) * kargs.stride_k;
             if constexpr(ck::is_same_v<VLayout, ck::tensor_layout::gemm::RowMajor>)
             {
-                batch_offset_v = key_start * kargs.stride_v;
+                batch_offset_v = static_cast<long_index_t>(key_start) * kargs.stride_v;
             }
             else
             {
-                batch_offset_v = key_start;
+                batch_offset_v = static_cast<long_index_t>(key_start);
             }
             if constexpr(kSupportsBias)
             {
-                batch_offset_bias = query_start * kargs.stride_bias + key_start;
+                batch_offset_bias =
+                    static_cast<long_index_t>(query_start) * kargs.stride_bias + key_start;
             }
             else
             {
-                batch_offset_bias = key_start;
+                batch_offset_bias = static_cast<long_index_t>(key_start);
             }
-            batch_offset_o = query_start * kargs.stride_o;
+            batch_offset_o = static_cast<long_index_t>(query_start) * kargs.stride_o;
 
             // get real # queries & # keys under group mode
             const auto adjusted_seqstart_q_ptr = kargs.seqstart_q_ptr + i_batch;
@@ -476,21 +477,28 @@ struct FmhaFwdKernel
         }
         else
         {
-            batch_offset_q = i_batch * kargs.batch_stride_q;
-            batch_offset_k = i_batch * kargs.batch_stride_k;
-            batch_offset_v = i_batch * kargs.batch_stride_v;
+            batch_offset_q = static_cast<long_index_t>(i_batch) * kargs.batch_stride_q;
+            batch_offset_k = static_cast<long_index_t>(i_batch) * kargs.batch_stride_k;
+            batch_offset_v = static_cast<long_index_t>(i_batch) * kargs.batch_stride_v;
             if constexpr(kSupportsBias)
             {
-                batch_offset_bias = i_batch * kargs.batch_stride_bias;
+                batch_offset_bias = static_cast<long_index_t>(i_batch) * kargs.batch_stride_bias;
             }
-            batch_offset_o = i_batch * kargs.batch_stride_o;
+            batch_offset_o = static_cast<long_index_t>(i_batch) * kargs.batch_stride_o;
         }
 
         // for simplicity, batch stride we just modify the pointer
-        const QDataType* q_ptr = kargs.q_ptr + i_nhead * kargs.nhead_stride_q + batch_offset_q;
-        const KDataType* k_ptr = kargs.k_ptr + i_nhead * kargs.nhead_stride_k + batch_offset_k;
-        const VDataType* v_ptr = kargs.v_ptr + i_nhead * kargs.nhead_stride_v + batch_offset_v;
-        ODataType* o_ptr       = kargs.o_ptr + i_nhead * kargs.nhead_stride_o + batch_offset_o;
+        const QDataType* q_ptr = kargs.q_ptr +
+                                 static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q +
+                                 batch_offset_q;
+        const KDataType* k_ptr = kargs.k_ptr +
+                                 static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_k +
+                                 batch_offset_k;
+        const VDataType* v_ptr = kargs.v_ptr +
+                                 static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_v +
+                                 batch_offset_v;
+        ODataType* o_ptr = kargs.o_ptr + static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_o +
+                           batch_offset_o;
 
         // Q/K/V DRAM and DRAM window
         const auto q_dram = [&]() {
