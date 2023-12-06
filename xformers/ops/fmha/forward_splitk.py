@@ -150,7 +150,9 @@ class FwOp(AttentionFwOpBase):
         print(f"{q.shape=} {k.shape=} {v.shape=}")
 
         out = cls.OPERATOR(query=q, key=k, value=v, seq_positions=seq_len, scale=qk_scale, split_k=split_k)
-
+        
+        print(f"{out.shape=}")
+        
         return out, None
 
 
