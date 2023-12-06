@@ -12,7 +12,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>xformers.ops.fmha.attn_bias | xFormers 0.0.23 documentation</title>
+  <title>xformers.ops.fmha.attn_bias | xFormers 0.0.24 documentation</title>
   
   <script src="../../../../_static/js/ga.js"></script>
   <script src="../../../../_static/js/redirect.js"></script>
@@ -22,7 +22,7 @@
   
   <link rel="canonical" href="https://facebookresearch.github.io/xformers_modules/xformers/ops/fmha/attn_bias.html" />
   
-  <meta property="og:title" content="xformers.ops.fmha.attn_bias | xFormers 0.0.23 documentation">
+  <meta property="og:title" content="xformers.ops.fmha.attn_bias | xFormers 0.0.24 documentation">
   <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
@@ -309,6 +309,89 @@
         <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="n">diagonal</span><span class="o">=</span><span class="n">shift</span> <span class="o">-</span> <span class="n">window_size</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
     <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="LocalAttentionFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.LocalAttentionFromBottomRightMask">[docs]</a><span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">LocalAttentionFromBottomRightMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A local attention mask</span>
+
+<span class="sd">    The query at position :math:`q` can attend the key at position :math:`k` if</span>
+<span class="sd">    :math:`q - window\\_left &lt;= k + s &lt;= q + window\\_right`</span>
+
+<span class="sd">    With :math:`s = num\\_queries - num\\_keys`</span>
+
+<span class="sd">    :Example:</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">        import torch</span>
+<span class="sd">        from xformers.ops import fmha</span>
+
+<span class="sd">        bias = fmha.attn_bias.LocalAttentionFromBottomRightMask(window_left=1, window_right=2)</span>
+<span class="sd">        print(bias.materialize(shape=(4, 4)).exp())</span>
+<span class="sd">        print(bias.materialize(shape=(4, 5)).exp())</span>
+
+<span class="sd">    .. code-block:: text</span>
+
+<span class="sd">        # 4x4</span>
+<span class="sd">        tensor([[1., 1., 1., 0.],</span>
+<span class="sd">                [1., 1., 1., 1.],</span>
+<span class="sd">                [0., 1., 1., 1.],</span>
+<span class="sd">                [0., 0., 1., 1.]])</span>
+
+<span class="sd">        # 4x5</span>
+<span class="sd">        tensor([[1., 1., 1., 1., 0.],</span>
+<span class="sd">                [0., 1., 1., 1., 1.],</span>
+<span class="sd">                [0., 0., 1., 1., 1.],</span>
+<span class="sd">                [0., 0., 0., 1., 1.]])</span>
+
+<span class="sd">    :Illustration:</span>
+
+<span class="sd">    .. figure:: /_static/local_attn.png</span>
+<span class="sd">        :width: 240px</span>
+
+<span class="sd">        The total window size is :math:`window\\_left + 1 + window\\_right`</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">window_left</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">window_right</span><span class="p">:</span> <span class="nb">int</span>
+
+    <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">window_left</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Invalid window value passed to &quot;</span>
+                <span class="s2">&quot;`LocalAttentionFromBottomRightMask`: expected&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;`window_left &gt; 0` but got window_left=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">window_left</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">window_right</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Invalid window value passed to &quot;</span>
+                <span class="s2">&quot;`LocalAttentionFromBottomRightMask`: expected&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;`window_right &gt; 0` but got window_right=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">window_right</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="n">create_as</span> <span class="o">=</span> <span class="n">dtype</span> <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span> <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span>  <span class="c1"># type: ignore</span>
+            <span class="n">shape</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">create_as</span><span class="p">,</span>
+            <span class="n">fill_value</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">num_queries</span><span class="p">,</span> <span class="n">num_keys</span> <span class="o">=</span> <span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:]</span>
+        <span class="n">shift</span> <span class="o">=</span> <span class="n">num_keys</span> <span class="o">-</span> <span class="n">num_queries</span>
+
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="n">diagonal</span><span class="o">=</span><span class="n">shift</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">window_left</span><span class="p">)</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="n">diagonal</span><span class="o">=</span><span class="n">shift</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">window_right</span><span class="p">)</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="LowerTriangularMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.LowerTriangularMask">[docs]</a><span class="k">class</span> <span class="nc">LowerTriangularMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>

@@ -12,7 +12,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>xformers.ops.fmha.common | xFormers 0.0.23 documentation</title>
+  <title>xformers.ops.fmha.common | xFormers 0.0.24 documentation</title>
   
   <script src="../../../../_static/js/ga.js"></script>
   <script src="../../../../_static/js/redirect.js"></script>
@@ -22,7 +22,7 @@
   
   <link rel="canonical" href="https://facebookresearch.github.io/xformers_modules/xformers/ops/fmha/common.html" />
   
-  <meta property="og:title" content="xformers.ops.fmha.common | xFormers 0.0.23 documentation">
+  <meta property="og:title" content="xformers.ops.fmha.common | xFormers 0.0.24 documentation">
   <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
@@ -622,10 +622,15 @@
 
 
 <span class="k">class</span> <span class="nc">AttentionBwOpBase</span><span class="p">(</span><span class="n">AttentionOpBase</span><span class="p">):</span>
+    <span class="c1"># NOTE on tolerances: These are tested for `scales =&gt; (1/32)**0.5`</span>
+    <span class="c1"># In the BW pass, imprecisions accumulate in the Q@K.T recalculation</span>
+    <span class="c1"># These imprecisions are multiplied by the `scale` and then exponentiated</span>
+    <span class="c1"># So if the scale is too high, we get a lot of errors</span>
+
     <span class="n">ERROR_ATOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">6e-4</span><span class="p">,</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">9e-2</span><span class="p">,</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">0.7</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">9e-4</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">0.9</span><span class="p">,</span>
     <span class="p">}</span>
     <span class="n">ERROR_RTOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">1e-4</span><span class="p">,</span>

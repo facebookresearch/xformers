@@ -13,7 +13,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>xFormers optimized operators | xFormers 0.0.23 documentation</title>
+  <title>xFormers optimized operators | xFormers 0.0.24 documentation</title>
   
   <script src="../_static/js/ga.js"></script>
   <script src="../_static/js/redirect.js"></script>
@@ -23,7 +23,7 @@
   
   <link rel="canonical" href="https://facebookresearch.github.io/xformerscomponents/ops.html" />
   
-  <meta property="og:title" content="xFormers optimized operators | xFormers 0.0.23 documentation">
+  <meta property="og:title" content="xFormers optimized operators | xFormers 0.0.24 documentation">
   <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
@@ -513,6 +513,51 @@ and we don’t attempt to make it fast. Only use for debugging/testing.</p>
 </dd></dl>
 
 <dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.fmha.attn_bias.LocalAttentionFromBottomRightMask">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.attn_bias.</span></span><span class="sig-name descname"><span class="pre">LocalAttentionFromBottomRightMask</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">window_left</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">window_right</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/functions.html#int" title="(in Python v3.6)"><span class="pre">int</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#LocalAttentionFromBottomRightMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.LocalAttentionFromBottomRightMask" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#xformers.ops.fmha.attn_bias.AttentionBias" title="xformers.ops.fmha.attn_bias.AttentionBias"><code class="xref py py-class docutils literal notranslate"><span class="pre">AttentionBias</span></code></a></p>
+<p>A local attention mask</p>
+<p>The query at position <span class="math notranslate nohighlight">\(q\)</span> can attend the key at position <span class="math notranslate nohighlight">\(k\)</span> if
+<span class="math notranslate nohighlight">\(q - window\_left &lt;= k + s &lt;= q + window\_right\)</span></p>
+<p>With <span class="math notranslate nohighlight">\(s = num\_queries - num\_keys\)</span></p>
+<dl class="field-list simple">
+<dt class="field-odd">Example</dt>
+<dd class="field-odd"><p></p></dd>
+</dl>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">from</span> <span class="nn">xformers.ops</span> <span class="kn">import</span> <span class="n">fmha</span>
+
+<span class="n">bias</span> <span class="o">=</span> <span class="n">fmha</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">LocalAttentionFromBottomRightMask</span><span class="p">(</span><span class="n">window_left</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">window_right</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">bias</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span><span class="o">.</span><span class="n">exp</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">bias</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span><span class="o">.</span><span class="n">exp</span><span class="p">())</span>
+</pre></div>
+</div>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span># 4x4
+tensor([[1., 1., 1., 0.],
+        [1., 1., 1., 1.],
+        [0., 1., 1., 1.],
+        [0., 0., 1., 1.]])
+
+# 4x5
+tensor([[1., 1., 1., 1., 0.],
+        [0., 1., 1., 1., 1.],
+        [0., 0., 1., 1., 1.],
+        [0., 0., 0., 1., 1.]])
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Illustration</dt>
+<dd class="field-odd"><p></p></dd>
+</dl>
+<figure class="align-default" id="id4">
+<a class="reference internal image-reference" href="../_images/local_attn.png"><img alt="../_images/local_attn.png" src="../_images/local_attn.png" style="width: 240px;" /></a>
+<figcaption>
+<p><span class="caption-text">The total window size is <span class="math notranslate nohighlight">\(window\_left + 1 + window\_right\)</span></span><a class="headerlink" href="#id4" title="Permalink to this image">¶</a></p>
+</figcaption>
+</figure>
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="xformers.ops.fmha.attn_bias.LowerTriangularMask">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.attn_bias.</span></span><span class="sig-name descname"><span class="pre">LowerTriangularMask</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">tensor_args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">tensor_kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#LowerTriangularMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.LowerTriangularMask" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="#xformers.ops.fmha.attn_bias.AttentionBias" title="xformers.ops.fmha.attn_bias.AttentionBias"><code class="xref py py-class docutils literal notranslate"><span class="pre">AttentionBias</span></code></a></p>
@@ -541,12 +586,12 @@ it is a triangular mask shifted so that the last query can attend to
 the last key.
 In other words, a query Q cannot attend to a key which is nearer the
 final key than Q is to the final query.</p>
-<figure class="align-default" id="id4">
+<figure class="align-default" id="id5">
 <img alt="../_images/causal_bottom_right.png" src="../_images/causal_bottom_right.png" />
 <figcaption>
 <p><span class="caption-text">The difference between <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularMask" title="xformers.ops.fmha.attn_bias.LowerTriangularMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularMask</span></code></a> (left) and
 <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask" title="xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularFromBottomRightMask</span></code></a> (right). They become
-equivalent if the number of queries equals the number of keys.</span><a class="headerlink" href="#id4" title="Permalink to this image">¶</a></p>
+equivalent if the number of queries equals the number of keys.</span><a class="headerlink" href="#id5" title="Permalink to this image">¶</a></p>
 </figcaption>
 </figure>
 <dl class="py method">
@@ -570,11 +615,11 @@ whose distance to the final key is either of:</p>
 <li><p>less than X (i.e. “causal attention”, same as <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask" title="xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularFromBottomRightMask</span></code></a>)</p></li>
 <li><p>greater than X + window_size (i.e. “local attention”)</p></li>
 </ul>
-<figure class="align-default" id="id5">
+<figure class="align-default" id="id6">
 <img alt="../_images/causal_bottom_right_local.png" src="../_images/causal_bottom_right_local.png" />
 <figcaption>
 <p><span class="caption-text">The mask from <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightLocalAttentionMask" title="xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightLocalAttentionMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularFromBottomRightLocalAttentionMask</span></code></a>.
-The green area is calculated, and the grey area is masked out.</span><a class="headerlink" href="#id5" title="Permalink to this image">¶</a></p>
+The green area is calculated, and the grey area is masked out.</span><a class="headerlink" href="#id6" title="Permalink to this image">¶</a></p>
 </figcaption>
 </figure>
 </dd></dl>
@@ -594,11 +639,11 @@ The green area is calculated, and the grey area is masked out.</span><a class="h
 argument to <a class="reference internal" href="#xformers.ops.memory_efficient_attention" title="xformers.ops.memory_efficient_attention"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.memory_efficient_attention</span></code></a>.</p>
 <p>Queries and Keys are each divided into the same number of blocks.
 Queries in block i only attend to keys in block i.</p>
-<figure class="align-default" id="id6">
+<figure class="align-default" id="id7">
 <img alt="../_images/block_diag_bias.png" src="../_images/block_diag_bias.png" />
 <figcaption>
 <p><span class="caption-text">This bias can be used to handle a batch of sequences of
-different lengths, via <a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list" title="xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BlockDiagonalMask.from_tensor_list</span></code></a></span><a class="headerlink" href="#id6" title="Permalink to this image">¶</a></p>
+different lengths, via <a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list" title="xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BlockDiagonalMask.from_tensor_list</span></code></a></span><a class="headerlink" href="#id7" title="Permalink to this image">¶</a></p>
 </figcaption>
 </figure>
 <dl class="field-list simple">
@@ -655,11 +700,11 @@ different lengths, via <a class="reference internal" href="#xformers.ops.fmha.at
 <em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_tensor_list</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tensors</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Sequence" title="(in Python v3.6)"><span class="pre">Sequence</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (2.1.0a0+gitbe0b12e ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Tuple" title="(in Python v3.6)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask" title="xformers.ops.fmha.attn_bias.BlockDiagonalMask"><span class="pre">BlockDiagonalMask</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (2.1.0a0+gitbe0b12e ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#BlockDiagonalMask.from_tensor_list"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list" title="Permalink to this definition">¶</a></dt>
 <dd><p>Creates a <a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask" title="xformers.ops.fmha.attn_bias.BlockDiagonalMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BlockDiagonalMask</span></code></a> from a list of tensors, and returns the tensors
 concatenated on the sequence length dimension</p>
-<figure class="align-default" id="id7">
+<figure class="align-default" id="id8">
 <img alt="../_images/block_diag_cat_split.png" src="../_images/block_diag_cat_split.png" />
 <figcaption>
 <p><span class="caption-text">See also <a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask.split" title="xformers.ops.fmha.attn_bias.BlockDiagonalMask.split"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BlockDiagonalMask.split</span></code></a> to split the returned
-<code class="xref py py-attr docutils literal notranslate"><span class="pre">torch.Tensor</span></code> back to a list of tensors of varying sequence length</span><a class="headerlink" href="#id7" title="Permalink to this image">¶</a></p>
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">torch.Tensor</span></code> back to a list of tensors of varying sequence length</span><a class="headerlink" href="#id8" title="Permalink to this image">¶</a></p>
 </figcaption>
 </figure>
 <dl class="field-list simple">
@@ -910,6 +955,7 @@ See <code class="xref py py-attr docutils literal notranslate"><span class="pre"
   <script src="../_static/underscore.js"></script>
   <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script src="../_static/doctools.js"></script>
+  <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
   
 
   

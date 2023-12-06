@@ -12,7 +12,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>xformers.ops.fmha.cutlass | xFormers 0.0.23 documentation</title>
+  <title>xformers.ops.fmha.cutlass | xFormers 0.0.24 documentation</title>
   
   <script src="../../../../_static/js/ga.js"></script>
   <script src="../../../../_static/js/redirect.js"></script>
@@ -22,7 +22,7 @@
   
   <link rel="canonical" href="https://facebookresearch.github.io/xformers_modules/xformers/ops/fmha/cutlass.html" />
   
-  <meta property="og:title" content="xformers.ops.fmha.cutlass | xFormers 0.0.23 documentation">
+  <meta property="og:title" content="xformers.ops.fmha.cutlass | xFormers 0.0.24 documentation">
   <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
@@ -230,7 +230,7 @@
 <span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">replace</span>
 <span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
 <span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">partial</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
@@ -575,7 +575,8 @@
         <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">LowerTriangularMask</span><span class="p">,</span>
         <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
-        <span class="c1"># TODO: Still some bugs in the BW pass for that one</span>
+        <span class="c1"># TODO: Still some infs/nans in the BW pass for</span>
+        <span class="c1"># local + causal</span>
         <span class="c1"># LowerTriangularFromBottomRightLocalAttentionMask,</span>
         <span class="c1"># TODO: Fix handling of gradient through the fMHA autograd function</span>
         <span class="c1"># LowerTriangularMaskWithTensorBias,</span>
@@ -589,14 +590,6 @@
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_CUSTOM_SCALE</span>
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span>
     <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;cutlassB&quot;</span>
-
-    <span class="n">ERROR_ATOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">5e-4</span><span class="p">,</span>
-        <span class="c1"># increased from 9e-2, more opportunities for numerical errors when bias is</span>
-        <span class="c1"># used, noticed in gK on SM80</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">1e-1</span><span class="p">,</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">7e-1</span><span class="p">,</span>
-    <span class="p">}</span>
 
     <span class="n">_TEST_K</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
         <span class="mi">32</span><span class="p">,</span>  <span class="c1"># 64x64 kernel</span>
