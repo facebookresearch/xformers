@@ -434,29 +434,29 @@ struct FmhaFwdKernel
         if constexpr(kIsGroupMode)
         {
             // get starting offset for each batch
-            const index_t query_start = kargs.seqstart_q_ptr[i_batch];
-            const index_t key_start   = kargs.seqstart_k_ptr[i_batch];
+            const long_index_t query_start =
+                static_cast<long_index_t>(kargs.seqstart_q_ptr[i_batch]);
+            const long_index_t key_start = static_cast<long_index_t>(kargs.seqstart_k_ptr[i_batch]);
 
-            batch_offset_q = static_cast<long_index_t>(query_start) * kargs.stride_q;
-            batch_offset_k = static_cast<long_index_t>(key_start) * kargs.stride_k;
+            batch_offset_q = query_start * kargs.stride_q;
+            batch_offset_k = key_start * kargs.stride_k;
             if constexpr(ck::is_same_v<VLayout, ck::tensor_layout::gemm::RowMajor>)
             {
-                batch_offset_v = static_cast<long_index_t>(key_start) * kargs.stride_v;
+                batch_offset_v = key_start * kargs.stride_v;
             }
             else
             {
-                batch_offset_v = static_cast<long_index_t>(key_start);
+                batch_offset_v = key_start;
             }
             if constexpr(kSupportsBias)
             {
-                batch_offset_bias =
-                    static_cast<long_index_t>(query_start) * kargs.stride_bias + key_start;
+                batch_offset_bias = query_start * kargs.stride_bias + key_start;
             }
             else
             {
-                batch_offset_bias = static_cast<long_index_t>(key_start);
+                batch_offset_bias = key_start;
             }
-            batch_offset_o = static_cast<long_index_t>(query_start) * kargs.stride_o;
+            batch_offset_o = query_start * kargs.stride_o;
 
             // get real # queries & # keys under group mode
             const auto adjusted_seqstart_q_ptr = kargs.seqstart_q_ptr + i_batch;
