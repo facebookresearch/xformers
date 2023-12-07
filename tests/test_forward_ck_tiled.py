@@ -209,6 +209,26 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
 
 
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None):
+    if q.ndim == 5:
+        def attn_bias_group(group: int):
+            if isinstance(attn_bias, torch.Tensor):
+                return attn_bias[:, group]
+            if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
+                return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
+                    attn_bias._bias[:, group]
+                )
+            return attn_bias
+
+        return torch.stack(
+            [
+                ref_attention_bmhk(
+                    q[:, :, g], k[:, :, g], v[:, :, g], attn_bias=attn_bias_group(g), dtype=dtype
+                )
+                for g in range(q.shape[2])
+            ],
+            dim=2,
+        )
+     
     if q.ndim == 4:
         assert p == 0.0
         return ref_attention_bmhk(q, k, v, attn_bias=attn_bias, dtype=dtype)
@@ -582,10 +602,14 @@ def test_forward(
     if not (k == kv and (kv == 64 or kv == 128)):
         pytest.skip("only head-dim size 64 or 128 supported by ck-tiled!")
 
+    if kv > 128:
+        pytest.skip("kv > 128 is not supported by CK-FlashAttention")
+
     if packed and not (k == kv and q_len == kv_len):
         pytest.skip(
             f"packed incompatible with `k ({k}) != kv ({kv})` or `q_len ({q_len}) != kv_len ({kv_len})`"
         )
+
     if fmt == "BMK" and not fmha.common._is_bias_type_supported_in_BMK(bias_type):
         pytest.skip("BMK incompatible with this bias")
 
@@ -637,3 +661,4 @@ def test_forward(
         atol=op.ERROR_ATOL[dtype],
         rtol=op.ERROR_RTOL.get(dtype, 1e-5),
     )
+
