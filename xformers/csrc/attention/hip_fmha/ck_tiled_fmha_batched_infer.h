@@ -171,10 +171,11 @@ struct batched_infer_masktype_attnbias_dispatched
                     param.k_ptr,
                     param.v_ptr,
                     param.out_ptr,
-                    param.M,  // seqlen_q
-                    param.N,  // seqlen_k
-                    param.K,  // hdim_q
-                    param.Kv, // hdim_v
+                    param.M,              // seqlen_q
+                    param.N,              // seqlen_k
+                    param.K,              // hdim_q
+                    param.Kv,             // hdim_v
+                    param.Hq / param.Hkv, // nhead_ratio_qk
                     param.scale,
                     param.q_strides[1], // q, k, v, out tensor seq-dim stride
                     param.k_strides[1],
@@ -197,10 +198,11 @@ struct batched_infer_masktype_attnbias_dispatched
                     param.k_ptr,
                     param.v_ptr,
                     param.out_ptr,
-                    param.M,  // seqlen_q
-                    param.N,  // seqlen_k
-                    param.K,  // hdim_q
-                    param.Kv, // hdim_v
+                    param.M,              // seqlen_q
+                    param.N,              // seqlen_k
+                    param.K,              // hdim_q
+                    param.Kv,             // hdim_v
+                    param.Hq / param.Hkv, // nhead_ratio_qk
                     param.scale,
                     param.q_strides[1], // q, k, v, out tensor seq-dim stride
                     param.k_strides[1],

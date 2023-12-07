@@ -143,8 +143,9 @@ struct grouped_infer_masktype_attnbias_dispatched
                     param.seqstart_q_dev_ptr,
                     param.seqstart_k_dev_ptr,
                     param.seqlen_k_dev_ptr,
-                    param.K,  // hdim_q
-                    param.Kv, // hdim_v
+                    param.K,              // hdim_q
+                    param.Kv,             // hdim_v
+                    param.Hq / param.Hkv, // nhead_ratio_qk
                     param.scale,
                     param.q_strides[0], // q, k, v, out tensor seq-dim stride
                     param.k_strides[0],
@@ -166,8 +167,9 @@ struct grouped_infer_masktype_attnbias_dispatched
                     param.seqstart_q_dev_ptr,
                     param.seqstart_k_dev_ptr,
                     param.seqlen_k_dev_ptr,
-                    param.K,  // hdim_q
-                    param.Kv, // hdim_v
+                    param.K,              // hdim_q
+                    param.Kv,             // hdim_v
+                    param.Hq / param.Hkv, // nhead_ratio_qk
                     param.scale,
                     param.q_strides[0], // q, k, v, out tensor seq-dim stride
                     param.k_strides[0],
