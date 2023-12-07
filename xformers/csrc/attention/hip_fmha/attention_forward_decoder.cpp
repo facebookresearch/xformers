@@ -258,15 +258,15 @@ int main(int argc, char** argv)
                       << std::endl;
             return 0;
         }
-        const int32_t n_keys                 = std::stoi(args[0]);
-        const int32_t padding                = std::stoi(args[1]);
-        const int32_t batch_size             = std::stoi(args[2]);
-        const int32_t n_heads                = std::stoi(args[3]);
-        const int32_t n_groups               = 1;
-        const int32_t multiquery             = (args[4] == "mq");
-        const auto dtype                     = (args[5] == "f32")   ? torch::kFloat32
-                                               : (args[5] == "f16") ? torch::kFloat16
-                                                                    : torch::kBFloat16;
+        const int32_t n_keys     = std::stoi(args[0]);
+        const int32_t padding    = std::stoi(args[1]);
+        const int32_t batch_size = std::stoi(args[2]);
+        const int32_t n_heads    = std::stoi(args[3]);
+        const int32_t n_groups   = 1;
+        const int32_t multiquery = (args[4] == "mq");
+        const auto dtype         = (args[5] == "f32")
+                               ? torch::kFloat32
+                               : (args[5] == "f16") ? torch::kFloat16 : torch::kBFloat16;
         const int32_t n_wavefronts_per_block = std::stoi(args[6]);
 
         const int32_t dim_per_head = 4 * kThreadsPerWavefront;
