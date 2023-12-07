@@ -19,6 +19,8 @@ def assert_allclose(
     assert out is not None, f"{msg}: output Tensor is None"
     assert ref is not None, f"{msg}: reference Tensor is None"
     assert out.shape == ref.shape, f"Shape: {out.shape} (expected: {ref.shape})"
+    if out.dtype != ref.dtype:
+        assert False, f"out dtype: {out.dtype}, ref dtype: {ref.dtype}"
     if out.numel() == 0:
         return
     flatten_diff = ((out - ref).abs() - atol - ref.abs() * rtol).flatten()

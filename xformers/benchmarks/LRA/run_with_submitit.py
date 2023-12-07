@@ -70,7 +70,7 @@ def get_init_file():
     return init_file
 
 
-class Trainer(object):
+class Trainer:
     def __init__(self, args):
         self.args = args
 

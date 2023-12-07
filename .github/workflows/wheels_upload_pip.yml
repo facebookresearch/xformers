@@ -1,0 +1,101 @@
+name: wheels_upload_pip
+
+on:
+  workflow_call:
+    secrets:
+      twine_password:
+        required: true
+    inputs:
+      twine_username:
+        required: true
+        type: string
+      pypirc:
+        required: false
+        type: string
+      filter:
+        required: true
+        type: string
+        description: Filter which runs to upload. Example '*+cu121*'
+      execute:
+        required: true
+        type: boolean
+        description: Actually upload the wheels. Dry-run if false
+      artifact_tag:
+        default: "facebookresearch"
+        type: string
+
+env:
+  TWINE_USERNAME: __token__
+
+jobs:
+  wheels_upload_pip:
+    name: wheels_upload_pip
+    runs-on: ubuntu-20.04
+
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Recursive checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          path: "."
+          fetch-depth: 0 # for tags
+
+      - name: Setup twine config
+        if: inputs.pypirc
+        run: |
+          echo "${{ inputs.pypirc }}" > ~/.pypirc
+          cat ~/.pypirc
+
+      - uses: actions/download-artifact@v3
+        with:
+          path: dist
+
+      # Filter builds (eg vN+cu118 for instance)
+      - run: ls -R dist/
+      - name: Extract builds to upload
+        run: |
+          set -ex
+          mv dist all-dist
+          mkdir dist
+          for f in all-dist/${{ inputs.filter }}_${{ inputs.artifact_tag }}/*.whl; do
+            cp $f dist/
+          done;
+      - run: ls -R dist/
+
+      - name: Setup venv
+        run: |
+          python3 -m venv venv
+          . ./venv/bin/activate
+          which pip
+          # (we need pytorch to create a source distr...)
+          pip install torch packaging twine
+          echo "PY=$(which python)" >> ${GITHUB_ENV}
+          echo "PATH=$PATH" >> ${GITHUB_ENV}
+
+      - name: Create source distribution
+        env:
+          VERSION_SOURCE: ${{ github.ref_type == 'tag' && 'tag' || 'dev'  }}
+        run: |
+          version=`$PY packaging/compute_wheel_version.py --source $VERSION_SOURCE`
+          echo $version > version.txt
+          cat version.txt
+
+          (cd third_party/flash-attention && \
+            git describe --tags --always > version.txt && \
+            echo "Flash-Attention version" && \
+            cat version.txt
+          )
+
+          BUILD_VERSION=$version $PY setup.py sdist -d sdist/
+
+      - run: ls -R sdist/
+      - name: Upload wheel to PyPi
+        if: inputs.execute
+        run: $PY -m twine upload --skip-existing dist/*.whl sdist/*
+        env:
+          TWINE_USERNAME: ${{ inputs.twine_username }}
+          TWINE_PASSWORD: ${{ secrets.twine_password }}

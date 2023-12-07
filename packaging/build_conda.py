@@ -6,41 +6,12 @@ import argparse
 import os
 import shutil
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
-
-import compute_wheel_version
+from typing import List
 
 THIS_PATH = Path(__file__).resolve()
 SOURCE_ROOT_DIR = THIS_PATH.parents[1]
-
-PYTHON_VERSIONS = ["3.9", "3.10"]
-PYTORCH_TO_CUDA_VERSIONS = {
-    "1.11.0": ["10.2", "11.1", "11.3", "11.5"],
-    "1.12.0": ["10.2", "11.3", "11.6"],
-    "1.12.1": ["10.2", "11.3", "11.6"],
-    "1.13": ["11.6", "11.7"],
-}
-
-
-def conda_docker_image_for_cuda(cuda_version: str) -> str:
-    """
-    Given a cuda version, return a docker image we could
-    build in.
-    """
-
-    if cuda_version in ("10.1", "10.2", "11.1"):
-        return "pytorch/conda-cuda"
-    if cuda_version == "11.3":
-        return "pytorch/conda-builder:cuda113"
-    if cuda_version == "11.5":
-        return "pytorch/conda-builder:cuda115"
-    if cuda_version == "11.6":
-        return "pytorch/conda-builder:cuda116"
-    if cuda_version == "11.7":
-        return "pytorch/conda-builder:cuda117"
-    raise ValueError(f"Unknown cuda version {cuda_version}")
 
 
 @dataclass
@@ -67,25 +38,15 @@ class Build:
     conda_debug: bool = False
     conda_dirty: bool = False
     build_inside_tree: bool = False
-    tagged_version: Optional[str] = field(
-        default_factory=compute_wheel_version.get_tagged_version
-    )
-
-    def _get_build_version(self) -> str:
-        if self.tagged_version is not None:
-            return self.tagged_version
-        git_hash = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], text=True
-        ).strip()
-        dev_version = compute_wheel_version.get_dev_version()
-        return f"{dev_version}+git.{git_hash}"
 
     def _set_env_for_build(self) -> None:
         """
         NOTE: Variables set here won't be visible in `setup.py`
         UNLESS they are also specified in meta.yaml
         """
-        os.environ["BUILD_VERSION"] = self._get_build_version()
+        assert (
+            "BUILD_VERSION" in os.environ
+        ), "BUILD_VERSION must be set as env variable"
         tag = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
         ).strip()

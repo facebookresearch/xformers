@@ -8,7 +8,7 @@ import copy
 import functools
 import linecache
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import triton
 
@@ -166,3 +166,8 @@ def unroll_varargs(kernel, N: int):
     jitted_fn = triton.jit(fn)
     jitted_fn.src = new_src
     return jitted_fn
+
+
+# Note: just import this to make mypy happy
+# when annotating variables with `VAR_ARGS_ARRAY`
+VAR_ARGS_ARRAY = List[Any]

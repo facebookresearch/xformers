@@ -6,7 +6,6 @@
 import itertools
 import json
 import math
-import os
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import partial
@@ -508,12 +507,7 @@ class DetectSlowOpsProfiler(DispatcherWithoutBrokenFuncs):
                 )
             )
 
-        filename = os.path.abspath(
-            os.path.join(
-                self.main_profiler.output_dir,
-                f"{self.main_profiler.worker_name}_ops.json",
-            )
-        )
-        self.main_profiler.summary.append(("OpsSummary", filename))
+        filename = self.main_profiler._create_output_filename("ops.json")
+        self.main_profiler.summary.append(("OpsSummary", str(filename)))
         with open(filename, "w+") as f:
             json.dump(all_data, f)

@@ -60,14 +60,12 @@ def _setup_test(
 class AttentionDecodingFlashDecoding:
     OP: Any = xops.fmha.flash.FwOp
 
-    label = "flash_decoding"
-
     def __init__(
         self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
     ) -> None:
         dtype = torch.float16
         self.sub_label = f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K}"
-
+        self.label = "attn_decoding"
         self.shapes = (B, Mq, Mkv, Hq, Hkv, K)
 
         assert Hkv <= Hq
@@ -98,10 +96,6 @@ class AttentionDecodingFlashDecoding:
             print(f"Runtime error: {e}")
 
 
-# class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
-#     OP = xops.fmha.triton_splitk.FwOp
-
-
 class AttentionDecodingCK(AttentionDecodingFlashDecoding):
     OP = xops.fmha.ck.FwOp
 
@@ -110,8 +104,11 @@ class AttentionDecodingCKDecoder(AttentionDecodingFlashDecoding):
     OP = xops.fmha.ck_decoder.FwOp
 
 
-class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
+class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
+    OP = xops.fmha.triton_splitk.FwOp
 
+
+class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
     def fw(self) -> None:
         B, Mq, Mkv, Hq, Hkv, K = self.shapes
         scale = 1 / K**0.5
@@ -124,10 +121,10 @@ class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
 
 BENCHMARKS = {
     "pytorch": AttentionDecodingPyTorchRepeat,
-    #"flash-decoding": AttentionDecodingFlashDecoding,
-    # "triton_splitK": AttentionDecodingSplitKV,
     "ck": AttentionDecodingCK,
     "ck-decoder": AttentionDecodingCKDecoder,
+    "flash-decoding": AttentionDecodingFlashDecoding,
+    "triton_splitK": AttentionDecodingSplitKV,
 }
 
 

@@ -23,21 +23,24 @@
 
 xFormers is:
 - **Customizable building blocks**: Independent/customizable building blocks that can be used without boilerplate code. The components are domain-agnostic and xFormers is used by researchers in vision, NLP and more.
-- **Research first**: xFormers contains bleeding-edge components, that are not yet available in mainstream libraries like pytorch.
+- **Research first**: xFormers contains bleeding-edge components, that are not yet available in mainstream libraries like PyTorch.
 - **Built with efficiency in mind**: Because speed of iteration matters, components are as fast and memory-efficient as possible. xFormers contains its own CUDA kernels, but dispatches to other libraries when relevant.
 
 ## Installing xFormers
 
-* **(RECOMMENDED, linux) Install latest stable with conda**: Requires [PyTorch 1.12.1, 1.13.1 or 2.0.1 installed with conda](https://pytorch.org/get-started/locally/)
+* **(RECOMMENDED, linux) Install latest stable with conda**: Requires [PyTorch 2.1.1 installed with conda](https://pytorch.org/get-started/locally/)
 
 ```bash
 conda install xformers -c xformers
 ```
 
-* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.0.1](https://pytorch.org/get-started/locally/)
+* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.1.1](https://pytorch.org/get-started/locally/)
 
 ```bash
-pip install -U xformers
+# cuda 11.8 version
+pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu118
+# cuda 12.1 version
+pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu121
 ```
 
 * **Development binaries**:
@@ -88,7 +91,7 @@ Let's start from a classical overview of the Transformer architecture (illustrat
   <img src="./docs/assets/Transformer_arch_Lin_et_al.png" width=600>
 </p>
 
-You'll find the key repository boundaries in this illustration: a Transformer is generally made of a collection of attention mechanisms, embeddings to encode some positional information, feed-forward blocks and a residual path (typically referred to as pre- or post- layer norm). These boundaries do not work for all models, but we found in practice that given some accomodations it could capture most of the state of the art.
+You'll find the key repository boundaries in this illustration: a Transformer is generally made of a collection of attention mechanisms, embeddings to encode some positional information, feed-forward blocks and a residual path (typically referred to as pre- or post- layer norm). These boundaries do not work for all models, but we found in practice that given some accommodations it could capture most of the state of the art.
 
 Models are thus not implemented in monolithic files, which are typically complicated to handle and modify. Most of the concepts present in the above illustration correspond to an abstraction level, and when variants are present for a given sub-block it should always be possible to select any of them. You can focus on a given encapsulation level and modify it as needed.
 
@@ -214,10 +217,10 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
    7. fused dropout(activation(x+bias))
    8. fused SwiGLU
 3. Benchmarking and testing tools
-   1. [micro benchnmarks](BENCHMARKS.md)
+   1. [micro benchmarks](BENCHMARKS.md)
    2. transformer block benchmark
    3. [LRA](xformers/benchmarks/LRA/README.md), with SLURM support
-4. Programatic and sweep friendly layer and model construction
+4. Programmatic and sweep friendly layer and model construction
    1. Compatible with hierarchical Transformers, like Swin or Metaformer
 5. Hackable
    1. Not using monolithic CUDA kernels, composable building blocks
@@ -229,9 +232,9 @@ Patrick et al., 2021](https://arxiv.org/abs/2106.05392)*
 
 * NVCC and the current CUDA runtime match. Depending on your setup, you may be able to change the CUDA runtime with `module unload cuda; module load cuda/xx.x`, possibly also `nvcc`
 * the version of GCC that you're using matches the current NVCC capabilities
-* the `TORCH_CUDA_ARCH_LIST` env variable is set to the architures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6"`
+* the `TORCH_CUDA_ARCH_LIST` env variable is set to the architectures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6"`
 * If the build from source OOMs, it's possible to reduce the parallelism of ninja with `MAX_JOBS` (eg `MAX_JOBS=2`)
-* If you encounter [`UnsatisfiableError`](https://github.com/facebookresearch/xformers/issues/390#issuecomment-1315020700) when installing with conda, make sure you have pytorch installed in your conda environment, and that your setup (pytorch version, cuda version, python version, OS) match [an existing binary for xFormers](https://anaconda.org/xformers/xformers/files)
+* If you encounter [`UnsatisfiableError`](https://github.com/facebookresearch/xformers/issues/390#issuecomment-1315020700) when installing with conda, make sure you have PyTorch installed in your conda environment, and that your setup (PyTorch version, cuda version, python version, OS) match [an existing binary for xFormers](https://anaconda.org/xformers/xformers/files)
 
 
 ### License

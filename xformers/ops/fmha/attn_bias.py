@@ -38,6 +38,7 @@ class AttentionBias:
     See:
 
     - :attr:`xformers.ops.fmha.attn_bias.LowerTriangularMask`
+    - :attr:`xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask`
     - :attr:`xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias`
     - :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`
     - :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`
@@ -59,12 +60,126 @@ class AttentionBias:
         raise NotImplementedError()
 
 
+def _materialize_causal_mask(
+    shape: Tuple[int, ...],
+    dtype: torch.dtype = torch.float32,
+    device: Union[str, torch.device] = "cpu",
+    *,
+    window_size: Optional[int] = None,
+    from_bottomright: bool = False,
+) -> torch.Tensor:
+    create_as = dtype if dtype is not torch.bfloat16 else torch.float32
+    tensor = torch.full(  # type: ignore
+        shape,
+        dtype=create_as,
+        fill_value=1,
+        device=device,
+    )
+
+    num_queries, num_keys = shape[-2:]
+    shift = 0
+    if from_bottomright:
+        shift = num_keys - num_queries
+
+    mask = torch.tril(tensor, diagonal=shift).to(dtype)  # type: ignore
+    if window_size is not None:
+        mask = torch.triu(mask, diagonal=shift - window_size + 1)
+    mask = torch.log(mask)
+    return mask.to(dtype)
+
+
+@dataclass
+class LocalAttentionFromBottomRightMask(AttentionBias):
+    """
+    A local attention mask
+
+    The query at position :math:`q` can attend the key at position :math:`k` if
+    :math:`q - window\\_left <= k + s <= q + window\\_right`
+
+    With :math:`s = num\\_queries - num\\_keys`
+
+    :Example:
+
+    .. code-block:: python
+
+        import torch
+        from xformers.ops import fmha
+
+        bias = fmha.attn_bias.LocalAttentionFromBottomRightMask(window_left=1, window_right=2)
+        print(bias.materialize(shape=(4, 4)).exp())
+        print(bias.materialize(shape=(4, 5)).exp())
+
+    .. code-block:: text
+
+        # 4x4
+        tensor([[1., 1., 1., 0.],
+                [1., 1., 1., 1.],
+                [0., 1., 1., 1.],
+                [0., 0., 1., 1.]])
+
+        # 4x5
+        tensor([[1., 1., 1., 1., 0.],
+                [0., 1., 1., 1., 1.],
+                [0., 0., 1., 1., 1.],
+                [0., 0., 0., 1., 1.]])
+
+    :Illustration:
+
+    .. figure:: /_static/local_attn.png
+        :width: 240px
+
+        The total window size is :math:`window\\_left + 1 + window\\_right`
+    """
+
+    window_left: int
+    window_right: int
+
+    def __post_init__(self) -> None:
+        if self.window_left < 0:
+            raise ValueError(
+                "Invalid window value passed to "
+                "`LocalAttentionFromBottomRightMask`: expected"
+                f"`window_left > 0` but got window_left={self.window_left}"
+            )
+        if self.window_right < 0:
+            raise ValueError(
+                "Invalid window value passed to "
+                "`LocalAttentionFromBottomRightMask`: expected"
+                f"`window_right > 0` but got window_right={self.window_right}"
+            )
+
+    def materialize(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
+        mask = torch.full(  # type: ignore
+            shape,
+            dtype=create_as,
+            fill_value=1,
+            device=device,
+        )
+
+        num_queries, num_keys = shape[-2:]
+        shift = num_keys - num_queries
+
+        mask = torch.triu(mask, diagonal=shift - self.window_left)
+        mask = torch.tril(mask, diagonal=shift + self.window_right)
+        mask = torch.log(mask)
+        return mask.to(dtype)
+
+
 class LowerTriangularMask(AttentionBias):
     """
     A lower-triangular (aka causal) mask
 
     A query Q cannot attend to a key which is farther from the
     initial key than Q is from the initial query.
+
+    See also :attr:`LowerTriangularFromBottomRightMask` if the number
+    of queries is not equal to the number of keys/values.
     """
 
     def __init__(self, *tensor_args, **tensor_kwargs) -> None:
@@ -77,17 +192,98 @@ class LowerTriangularMask(AttentionBias):
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
-        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
-        tensor = torch.full(  # type: ignore
-            shape,
-            dtype=create_as,
-            fill_value=float("-inf"),
-            device=device,
-        )
-        return torch.triu(tensor, diagonal=1).to(dtype)  # type: ignore
+        return _materialize_causal_mask(shape, dtype=dtype, device=device)
 
     def add_bias(self, bias: torch.Tensor) -> "LowerTriangularMaskWithTensorBias":
+        """
+        Creates a new causal mask with an arbitrary ``torch.Tensor`` bias
+        """
         return LowerTriangularMaskWithTensorBias(bias)
+
+
+class LowerTriangularFromBottomRightMask(AttentionBias):
+    """
+    A causal masking.
+
+    This mask is exactly the same as :attr:`LowerTriangularMask` when there is
+    the same number of queries and keys.
+    When the number of queries is different from the number of keys,
+    it is a triangular mask shifted so that the last query can attend to
+    the last key.
+    In other words, a query Q cannot attend to a key which is nearer the
+    final key than Q is to the final query.
+
+
+    .. figure:: /_static/causal_bottom_right.png
+
+        The difference between :attr:`LowerTriangularMask` (left) and
+        :attr:`LowerTriangularFromBottomRightMask` (right). They become
+        equivalent if the number of queries equals the number of keys.
+    """
+
+    def materialize(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        return _materialize_causal_mask(
+            shape, dtype=dtype, device=device, from_bottomright=True
+        )
+
+    def make_local_attention(
+        self, window_size: int
+    ) -> "LowerTriangularFromBottomRightLocalAttentionMask":
+        """
+        Create a new bias which combines local + causal attention.
+
+        See :attr:`LowerTriangularFromBottomRightLocalAttentionMask`
+        """
+        return LowerTriangularFromBottomRightLocalAttentionMask(window_size)
+
+
+@dataclass
+class LowerTriangularFromBottomRightLocalAttentionMask(
+    LowerTriangularFromBottomRightMask
+):
+    """
+    A mask that combines both :attr:`LowerTriangularFromBottomRightMask` and
+    local attention.
+
+    A query whose distance from the final query is X cannot attend to a key
+    whose distance to the final key is either of:
+
+    * less than X (i.e. "causal attention", same as :attr:`LowerTriangularFromBottomRightMask`)
+    * greater than X + window_size (i.e. "local attention")
+
+
+    .. figure:: /_static/causal_bottom_right_local.png
+
+        The mask from :attr:`LowerTriangularFromBottomRightLocalAttentionMask`.
+        The green area is calculated, and the grey area is masked out.
+    """
+
+    _window_size: int
+
+    def __post_init__(self) -> None:
+        if self._window_size <= 0:
+            raise ValueError(
+                f"Expected `window_size > 0`, but window_size={self._window_size}"
+            )
+
+    def materialize(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        return _materialize_causal_mask(
+            shape,
+            dtype=dtype,
+            device=device,
+            window_size=self._window_size,
+            from_bottomright=True,
+        )
 
 
 class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
@@ -470,6 +666,28 @@ class BlockDiagonalMask(AttentionBias):
             _batch_sizes=self._batch_sizes,
         )
 
+    def make_local_attention(
+        self, window_size: int
+    ) -> "BlockDiagonalCausalLocalAttentionMask":
+        """Experimental: Makes each block causal with local attention"""
+        return BlockDiagonalCausalLocalAttentionMask(
+            q_seqinfo=self.q_seqinfo,
+            k_seqinfo=self.k_seqinfo,
+            _batch_sizes=self._batch_sizes,
+            _window_size=window_size,
+        )
+
+    def make_local_attention_from_bottomright(
+        self, window_size: int
+    ) -> "BlockDiagonalCausalLocalAttentionFromBottomRightMask":
+        """Experimental: Makes each block causal with local attention, start from bottom right"""
+        return BlockDiagonalCausalLocalAttentionFromBottomRightMask(
+            q_seqinfo=self.q_seqinfo,
+            k_seqinfo=self.k_seqinfo,
+            _batch_sizes=self._batch_sizes,
+            _window_size=window_size,
+        )
+
 
 @dataclass
 class BlockDiagonalCausalMask(BlockDiagonalMask):
@@ -530,15 +748,9 @@ class BlockDiagonalCausalFromBottomRightMask(BlockDiagonalMask):
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
-        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
-        tensor = torch.full(  # type: ignore
-            shape,
-            dtype=create_as,
-            fill_value=float("-inf"),
-            device=device,
+        return LowerTriangularFromBottomRightMask().materialize(
+            shape=shape, dtype=dtype, device=device
         )
-        num_queries, num_keys = shape[-2:]
-        return torch.triu(tensor, diagonal=num_keys - num_queries + 1).to(dtype)  # type: ignore
 
 
 @dataclass
@@ -571,15 +783,9 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
-        create_as = dtype if dtype is not torch.bfloat16 else torch.float32
-        tensor = torch.full(  # type: ignore
-            shape,
-            dtype=create_as,
-            fill_value=float("-inf"),
-            device=device,
+        return LowerTriangularFromBottomRightMask().materialize(
+            shape=shape, dtype=dtype, device=device
         )
-        num_queries, num_keys = shape[-2:]
-        return torch.triu(tensor, diagonal=1 + num_keys - num_queries).to(dtype)  # type: ignore
 
     def materialize(
         self,
@@ -635,3 +841,92 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
         k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(kv_seqlen, kv_padding)
         return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo)
+
+
+@dataclass
+class BlockDiagonalCausalLocalAttentionMask(BlockDiagonalCausalMask):
+    """
+    (Experimental feature)
+    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.
+    This makes the mask "local" and the attention pattern banded.
+
+    Query i only attends to keys in its block and cannot attend keys further than "window_size"
+    from it.
+    """
+
+    _window_size: int = 0  # forced due to inheritance and default arguments
+
+    def __post_init__(self):
+        if self._window_size <= 0:
+            raise ValueError(
+                f"Expected `window_size > 0`, but window_size={self._window_size}"
+            )
+        q_seqlen = [
+            y - x
+            for x, y in zip(
+                self.q_seqinfo.seqstart_py[:-1], self.q_seqinfo.seqstart_py[1:]
+            )
+        ]
+        kv_seqlen = [
+            y - x
+            for x, y in zip(
+                self.k_seqinfo.seqstart_py[:-1], self.k_seqinfo.seqstart_py[1:]
+            )
+        ]
+        for q, k in zip(q_seqlen, kv_seqlen):
+            if q - self._window_size >= k:
+                # Each query only attends to keys no further than window_size back.
+                # When q > k + window_size, there will be a query for which the window doesn't reach any key.
+                raise RuntimeError(
+                    f"No keys are attended in q_seqlen {q} k_seqlen {k} with sliding window {self._window_size}"
+                )
+
+    def _create_block_mask(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        return _materialize_causal_mask(
+            shape,
+            dtype=dtype,
+            device=device,
+            window_size=self._window_size,
+        )
+
+
+@dataclass
+class BlockDiagonalCausalLocalAttentionFromBottomRightMask(
+    BlockDiagonalCausalFromBottomRightMask
+):
+    """
+    (Experimental feature)
+    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.
+    This makes the mask "local" and the attention pattern banded.
+
+    Query i only attends to keys in its block and cannot attend keys further than "window_size"
+    from it.
+    """
+
+    _window_size: int = 0  # forced due to inheritance and default arguments
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self._window_size <= 0:
+            raise ValueError(
+                f"Expected `window_size > 0`, but window_size={self._window_size}"
+            )
+
+    def _create_block_mask(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        return _materialize_causal_mask(
+            shape,
+            dtype=dtype,
+            device=device,
+            window_size=self._window_size,
+            from_bottomright=True,
+        )
