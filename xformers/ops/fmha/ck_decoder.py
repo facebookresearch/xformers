@@ -27,10 +27,6 @@ class FwOp(AttentionFwOpBase):
 
         attn_bias = d.attn_bias
         if isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
-            # If we don't get here, we've an error elsewhere
-            if d.query.ndim != 4 or d.key.ndim != 4:
-                reasons.append("Inputs must be BMHK. BMK not supported")
-
             if d.query.shape[0] != 1:
                 reasons.append(f"One formal batch element expected; got {d.query.shape[0]}")
 
@@ -75,35 +71,35 @@ class FwOp(AttentionFwOpBase):
         if needs_gradient:
             raise NotImplementedError("backward pass is not supported")
         attn_bias = inp.attn_bias
-
+        q, k, v = inp.get_qkv_in_bmghk()
         if attn_bias is not None:
-            attn_bias.k_seqinfo.to(inp.key.device)
-            attn_bias.q_seqinfo.to(inp.query.device)
+            attn_bias.k_seqinfo.to(k.device)
+            attn_bias.q_seqinfo.to(q.device)
             padding = attn_bias.k_seqinfo.padding
             seq_positions_gpu = attn_bias.k_seqinfo.seqlen
         else:
-            padding = inp.key.shape[1]
+            padding = k.shape[1]
             seq_positions_gpu = None
 
         if attn_bias is not None:
-            # key: (1, B * padding, 1 if multiquery else Hkv, D)
+            # key: (1, B * padding, G, 1 if multiquery else Hkv, D)
             # value: like key
-            # query: (1, B * q_seqlen, Hq, D)
-            multiquery = inp.key.stride(2) == 0
+            # query: (1, B * q_seqlen, G, Hq, D)
+            multiquery = k.stride(3) == 0
             if multiquery:
-                key = inp.key[0, :, :1].unflatten(0, (-1, padding))
-                value = inp.value[0, :, :1].unflatten(0, (-1, padding))
+                key = k[0, :, :, :1].unflatten(0, (-1, padding))
+                value = v[0, :, :, :1].unflatten(0, (-1, padding))
             else:
-                key = inp.key[0].unflatten(0, (-1, padding))
-                value = inp.value[0].unflatten(0, (-1, padding))
-            query = inp.query[0].unflatten(0, (key.shape[0], -1))    
+                key = k[0].unflatten(0, (-1, padding))
+                value = v[0].unflatten(0, (-1, padding))
+            query = q[0].unflatten(0, (key.shape[0], -1))    
         else:
-            # key: (B, padding, 1 if multiquery else Hkv, D)
+            # key: (B, padding, G, 1 if multiquery else Hkv, D)
             # value: like key
-            # query: (B, q_seqlen, Hq, D)
-            key = inp.key
-            query = inp.query
-            value = inp.value
+            # query: (B, q_seqlen, G, Hq, D)
+            key = k
+            query = q
+            value = v
 
         if inp.scale is not None:
             qk_scale = inp.scale
