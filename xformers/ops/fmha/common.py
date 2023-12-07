@@ -3,9 +3,10 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+from functools import partial
 import math
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Optional, Set, Tuple, Type, Union
+from typing import Any, Callable, List, Mapping, Optional, Set, Tuple, Type, Union
 
 import torch
 
@@ -26,6 +27,17 @@ def _is_bias_type_supported_in_BMK(attn_bias_type: Any) -> bool:
     if attn_bias_type in [LowerTriangularMask, torch.Tensor]:
         return True
     return False
+
+
+def _attn_bias_apply(
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]],
+    op: Callable[[torch.Tensor], torch.Tensor],
+) -> Optional[Union[torch.Tensor, AttentionBias]]:
+    if isinstance(attn_bias, torch.Tensor):
+        return op(attn_bias)
+    if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
+        return LowerTriangularMaskWithTensorBias(op(attn_bias._bias))
+    return attn_bias
 
 
 @dataclass
@@ -49,14 +61,34 @@ class Inputs:
     def scale_float(self) -> float:
         return self.query.shape[-1] ** (-0.5) if self.scale is None else self.scale
 
+    def get_qkv_in_bmghk(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if self.query.ndim == 5:
+            return self.query, self.key, self.value
+        if self.query.ndim == 4:
+            return (
+                self.query.unsqueeze(2),
+                self.key.unsqueeze(2),
+                self.value.unsqueeze(2),
+            )
+        if self.value.ndim == 3:
+            return (
+                self.query[:, :, None, None],
+                self.key[:, :, None, None],
+                self.value[:, :, None, None],
+            )
+        assert False
+
     def normalize_bmhk(self) -> Tuple[int, ...]:
-        if self.query.ndim not in [3, 4]:
+        if self.query.ndim not in [3, 4, 5]:
             raise ValueError(
                 f"Invalid shape for query: {self.query.shape}. "
-                "Expected shape [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
+                "Expected shape [batch, seqlen, head_groups, num_heads_per_group, K]"
+                ", [batch, seqlen, num_heads, K], or [batch, seqlen, K]."
             )
         if self.value.dtype == torch.int32:
-            # Quantized K/V case, in which the last dims of Q and K/V are different
+            # Quantized K/V case, in which the last dims of Q and K are different.
+            # NB we currently don't have any implementations for quantized KV with
+            # SUPPORTS_DIFFERENT_VALUE_EMBED.
             output_shape = tuple(self.query.shape)
         else:
             output_shape = (self.query.shape[:-1]) + (self.value.shape[-1],)
@@ -65,19 +97,18 @@ class Inputs:
             self.query = self.query.unsqueeze(2)
             self.key = self.key.unsqueeze(2)
             self.value = self.value.unsqueeze(2)
-            if isinstance(self.attn_bias, torch.Tensor):
-                if self.attn_bias.ndim != 3:
-                    raise ValueError(
-                        f"Expected BMK format for attn_bias, but got {self.attn_bias.shape}"
-                    )
-                self.attn_bias = self.attn_bias.unsqueeze(1)
+            self.attn_bias = _attn_bias_apply(
+                self.attn_bias, partial(torch.unsqueeze, dim=1)
+            )
         return output_shape
 
     def validate_inputs(self) -> None:
         qkv = (self.query, self.key, self.value)
-        if self.query.ndim not in (3, 4) or any(x.ndim != self.query.ndim for x in qkv):
+        if self.query.ndim not in (3, 4, 5) or any(
+            x.ndim != self.query.ndim for x in qkv
+        ):
             raise ValueError(
-                f"Query/Key/Value should all have BMHK or BMK shape.\n"
+                f"Query/Key/Value should all have BMGHK, BMHK or BMK shape.\n"
                 f"  query.shape: {self.query.shape}\n"
                 f"  key.shape  : {self.key.shape}\n"
                 f"  value.shape: {self.value.shape}"
