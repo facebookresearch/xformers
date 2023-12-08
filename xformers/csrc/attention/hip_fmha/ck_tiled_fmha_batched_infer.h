@@ -157,74 +157,38 @@ struct batched_infer_masktype_attnbias_dispatched
     static void RunWithKernel(BatchedForwardParams& param, hipStream_t stream)
     {
         const auto kargs = [&] {
-            if constexpr(FmhaKernel::kSupportsBias)
-            {
-                std::optional<std::tuple<const void*, ck::index_t, ck::index_t, ck::index_t>> bias;
-
-                bias = std::make_tuple(param.attn_bias_ptr,
-                                       param.attn_bias_strides[2],
-                                       param.attn_bias_strides[1],
-                                       param.attn_bias_strides[0]);
-
-                return FmhaKernel::MakeKargs(
-                    param.q_ptr,
-                    param.k_ptr,
-                    param.v_ptr,
-                    param.out_ptr,
-                    param.M,              // seqlen_q
-                    param.N,              // seqlen_k
-                    param.K,              // hdim_q
-                    param.Kv,             // hdim_v
-                    param.Hq / param.Hkv, // nhead_ratio_qk
-                    param.scale,
-                    param.q_strides[1], // q, k, v, out tensor seq-dim stride
-                    param.k_strides[1],
-                    param.v_strides[1],
-                    param.out_strides[1],
-                    param.q_strides[2], // q, k, v, out tensor head-dim stride
-                    param.k_strides[2],
-                    param.v_strides[2],
-                    param.out_strides[2],
-                    param.q_strides[0], // q, k, v, out tensor batch-dim stride
-                    param.k_strides[0],
-                    param.v_strides[0],
-                    param.out_strides[0],
-                    bias);
-            }
-            else
-            {
-                return FmhaKernel::MakeKargs(
-                    param.q_ptr,
-                    param.k_ptr,
-                    param.v_ptr,
-                    param.out_ptr,
-                    param.M,              // seqlen_q
-                    param.N,              // seqlen_k
-                    param.K,              // hdim_q
-                    param.Kv,             // hdim_v
-                    param.Hq / param.Hkv, // nhead_ratio_qk
-                    param.scale,
-                    param.q_strides[1], // q, k, v, out tensor seq-dim stride
-                    param.k_strides[1],
-                    param.v_strides[1],
-                    param.out_strides[1],
-                    param.q_strides[2], // q, k, v, out tensor head-dim stride
-                    param.k_strides[2],
-                    param.v_strides[2],
-                    param.out_strides[2],
-                    param.q_strides[0], // q, k, v, out tensor batch-dim stride
-                    param.k_strides[0],
-                    param.v_strides[0],
-                    param.out_strides[0]);
-            };
+            return FmhaKernel::MakeKargs(
+                param.q_ptr,
+                param.k_ptr,
+                param.v_ptr,
+                param.attn_bias_ptr,
+                param.out_ptr,
+                param.M,              // seqlen_q
+                param.N,              // seqlen_k
+                param.K,              // hdim_q
+                param.Kv,             // hdim_v
+                param.Hq / param.Hkv, // nhead_ratio_qk
+                param.scale,
+                param.q_strides[1], // q, k, v, bias, out tensor seq-dim stride
+                param.k_strides[1],
+                param.v_strides[1],
+                param.attn_bias_strides[2],
+                param.out_strides[1],
+                param.q_strides[2], // q, k, v, bias, out tensor head-dim stride
+                param.k_strides[2],
+                param.v_strides[2],
+                param.attn_bias_strides[1],
+                param.out_strides[2],
+                param.q_strides[0], // q, k, v, bias, out tensor batch-dim stride
+                param.k_strides[0],
+                param.v_strides[0],
+                param.attn_bias_strides[0],
+                param.out_strides[0]);
         }();
 
         dim3 kGridSize            = FmhaKernel::GridSize(param.B, param.Hq, param.M, param.Kv);
         constexpr dim3 kBlockSize = FmhaKernel::BlockSize();
-
-        constexpr ck::index_t kWarpPerCu    = 8; // 2 warps per SIMD
-        constexpr ck::index_t kWarpPerBlock = kBlockSize.x / warpSize;
-        constexpr ck::index_t kBlockPerCu   = kWarpPerCu / kWarpPerBlock;
+        constexpr ck::index_t kBlockPerCu = FmhaKernel::kBlockPerCu;
 
         (void)launch_kernel<kBlockSize.x, kBlockPerCu>(
             StreamConfig{stream, false}, FmhaKernel{}, kGridSize, kBlockSize, 0, kargs);
