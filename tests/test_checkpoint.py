@@ -11,7 +11,12 @@ import torch
 from torch import nn
 
 import xformers.ops
-from xformers import checkpoint, list_operators
+from xformers.checkpoint import (
+    _optimize_runtime_with_given_memory,
+    checkpoint,
+    get_optimal_checkpoint_policy,
+    list_operators,
+)
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cpu"]
@@ -182,3 +187,118 @@ def test_list_operators():
         "aten.detach.default",
     ]
     assert operators_str == ref
+
+
+@pytest.mark.parametrize(
+    "max_memory,optimal_soln",
+    [
+        (0, torch.tensor([1, 0, 0, 0, 0, 0, 0, 0], dtype=torch.float64)),
+        (100, torch.tensor([1, 0, 0, 0, 0, 1, 0, 1], dtype=torch.float64)),
+        (120, torch.tensor([1, 0, 0, 1, 0, 0, 0, 0], dtype=torch.float64)),
+        (200, torch.tensor([1, 0, 1, 0, 0, 1, 0, 1], dtype=torch.float64)),
+        (220, torch.tensor([1, 0, 0, 1, 0, 1, 0, 1], dtype=torch.float64)),
+        (320, torch.tensor([1, 0, 1, 1, 0, 1, 0, 1], dtype=torch.float64)),
+        (420, torch.tensor([1, 1, 1, 1, 0, 1, 0, 1], dtype=torch.float64)),
+    ],
+)
+def test_optimize_runtime_with_given_memory(max_memory, optimal_soln):
+    data = [
+        ("aten.copy_", 5, 0),
+        ("aten.add", 5, 100),
+        ("aten.div", 8, 100),
+        ("aten.mm", 15, 120),
+        ("aten.native_dropout", 15, 0),
+        ("aten.linear", 9, 100),
+        ("aten.t", 1, 0),
+        ("aten.relu_", 5, 0),
+    ]
+
+    inplace_ops = [(0, 0), (7, 5)]
+    view_like_ops = [6]
+    rand_ops = [4]
+
+    runtimes = torch.tensor([x[1] for x in data], dtype=torch.float64)
+    memory = torch.tensor([x[2] for x in data], dtype=torch.float64)
+
+    out = _optimize_runtime_with_given_memory(
+        memory, runtimes, max_memory, view_like_ops, inplace_ops, rand_ops
+    )
+    torch.testing.assert_close(optimal_soln, out)
+
+
+def _get_model_blocks(num_layers, dtype, device, inplace, random, first_inplace):
+    modules = []
+
+    class Add_(torch.nn.Module):
+        def forward(self, x):
+            return x.add_(1)
+
+    for _ in range(num_layers):
+        mods = [
+            nn.Linear(10, 10),
+            nn.CELU(inplace=inplace),
+        ]
+        if first_inplace:
+            mods.insert(0, Add_())
+        if random:
+            mods.append(nn.Dropout())
+        mods.append(nn.Linear(10, 10))
+        if random:
+            mods.append(nn.Dropout())
+        mods.append(nn.CELU(inplace=inplace))
+
+        modules.append(nn.Sequential(*mods).to(device).to(dtype))
+    return modules
+
+
+class _Model(torch.nn.Module):
+    def __init__(self, blocks, policy_fn):
+        super().__init__()
+        self.blocks = torch.nn.ModuleList(blocks)
+        self.policy_fn = policy_fn
+
+    def forward(self, x):
+        for b in self.blocks:
+            x = checkpoint(b, x, policy_fn=self.policy_fn)
+        return x
+
+
+@pytest.mark.skipif(torch.__version__ < "2.1", reason="Only new PyTorch supported")
+@cuda_only
+@pytest.mark.parametrize("device", ["cuda"])
+@pytest.mark.parametrize("memory_budget", [0, 0.03, 0.05, 0.1, 0.3, 0.5, 0.8, 1.0])
+@pytest.mark.parametrize("inplace", [True, False])
+@pytest.mark.parametrize("random", [True, False])
+@pytest.mark.parametrize("first_inplace", [True, False])
+def test_optimal_checkpoint_policy(
+    device, memory_budget, inplace, random, first_inplace
+):
+    if first_inplace and inplace:
+        pytest.skip("This case is degenerate and doesn't work with vanilla PyTorch")
+    torch.manual_seed(42)
+    dtype = torch.float16
+    modules = _get_model_blocks(
+        3, dtype, device, inplace=inplace, random=random, first_inplace=first_inplace
+    )
+    inputs = torch.rand(32, 128, 10, dtype=dtype, device=device)
+
+    policy_fn = get_optimal_checkpoint_policy(
+        modules[0], inputs, memory_budget=memory_budget
+    )
+    model = _Model(modules, policy_fn)
+    model_ref = torch.nn.Sequential(*deepcopy(modules))
+
+    grad = torch.rand_like(inputs)
+
+    torch.manual_seed(42)
+    out = model(inputs.clone())
+    out.backward(grad)
+
+    torch.manual_seed(42)
+    out_ref = model_ref(inputs.clone())
+    out_ref.backward(grad)
+
+    torch.testing.assert_close(out, out_ref)
+
+    for p, p_ref in zip(model.parameters(), model_ref.parameters()):
+        torch.testing.assert_close(p.grad, p_ref.grad)

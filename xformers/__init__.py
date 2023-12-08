@@ -9,7 +9,12 @@ import os
 import torch
 
 from . import _cpp_lib
-from .checkpoint import checkpoint, list_operators  # noqa: E402, F401
+from .checkpoint import (  # noqa: E402, F401
+    checkpoint,
+    get_optimal_checkpoint_policy,
+    list_operators,
+    selective_checkpoint_wrapper,
+)
 
 try:
     from .version import __version__  # noqa: F401
