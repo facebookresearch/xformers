@@ -221,7 +221,7 @@ def mem_eff_attention_fw(shape, num_threads: int, attn_bias_cfg, dropout_p, dtyp
         torch.float: "f32",
     }[dtype]
     sub_label = (
-        f"{dtype_str} {B}-{M}-{Hq}-{Hkv}-{K}, p={dropout_p}, "
+        f"{dtype_str} {B}-{M}-{N}-{Hq}-{Hkv}-{K}, p={dropout_p}, "
         f"BiasT={attn_bias_type.__name__}"
     )
 
