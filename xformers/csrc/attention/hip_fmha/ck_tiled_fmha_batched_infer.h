@@ -21,6 +21,7 @@
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qkvs.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qkvs_default_policy.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs.hpp>
+#include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_async.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_default_policy.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
 #include <ck/tile_program/tile/tile_fmha_traits.hpp>
@@ -115,7 +116,7 @@ struct batched_infer_masktype_attnbias_dispatched
                 using FmhaTraits = ck::tile_program::TileFmhaTraits<false, false, has_attn_bias>;
                 using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaShape>;
                 using FmhaPipeline =
-                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+                    ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>;
                 using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
                 RunWithKernel<FmhaKernel>(param, stream);
