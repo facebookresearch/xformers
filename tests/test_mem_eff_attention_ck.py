@@ -1807,6 +1807,10 @@ def _kv_heads_label(kv_heads: Optional[int]) -> str:
 @pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)])
 @pytest.mark.parametrize("padding", [32, 4096])
 @pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
+# @pytest.mark.parametrize("dtype", ["f16"])
+# @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
+# @pytest.mark.parametrize("n_heads", [16])
+# @pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1)])
 def test_decoder(
     op,
     n_heads: int,
