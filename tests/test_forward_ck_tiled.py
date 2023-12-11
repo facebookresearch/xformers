@@ -608,9 +608,6 @@ def test_forward(
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 
-    if dtype is torch.bfloat16:
-        pytest.skip("bfloat16 is currently not supported by ck-tiled!")
-
     if not (k == kv and (kv == 64 or kv == 128)):
         pytest.skip("only head-dim size 64 or 128 supported by ck-tiled!")
 
@@ -678,7 +675,7 @@ def test_forward(
 @pytest.mark.parametrize("nhead_q,nhead_kv", [(8, 1), (8, 2), (12, 4), (4, 4)])
 @pytest.mark.parametrize("seqlen_q,seqlen_kv", [(100, 128), (128, 100), (200, 1000), (400, 300)])
 @pytest.mark.parametrize("batches", [100, 64, 1])
-@pytest.mark.parametrize("dtype", [torch.float16])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("attn_bias_type", [type(None), torch.Tensor, fmha.attn_bias.LowerTriangularMask])
 @pytest.mark.parametrize("op", [fmha.ck.FwOp])
 def test_mqa_forward(
@@ -704,9 +701,6 @@ def test_mqa_forward(
     print("Hq=", Hq, "Hkv=", Hkv)
 
     device = torch.device("cuda")
-
-    if dtype is torch.bfloat16:
-        pytest.skip("bfloat16 is currently not supported by ck-tiled!")
 
     if not (K == Kv and (Kv == 64 or Kv == 128)):
         pytest.skip("only head-dim size 64 or 128 supported by ck-tiled!")

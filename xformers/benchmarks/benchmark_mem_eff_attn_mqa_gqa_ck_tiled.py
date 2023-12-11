@@ -168,7 +168,7 @@ CASES = list(
         num_threads=NUM_THREADS,
         dropout_p=[0.0],
         attn_bias_cfg=[(type(None), False)],
-        dtype=[torch.half],
+        dtype=[torch.half, torch.bfloat16],
     )
 )
 
