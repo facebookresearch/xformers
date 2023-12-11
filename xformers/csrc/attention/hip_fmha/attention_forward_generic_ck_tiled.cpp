@@ -37,11 +37,9 @@ extern void grouped_forward_bp16(
 */
 
 extern void batched_infer_fp16(BatchedForwardParams& param, hipStream_t stream);
-// extern void batched_infer_bp16(BatchedForwardParams& param, hipStream_t
-// stream);
+extern void batched_infer_bp16(BatchedForwardParams& param, hipStream_t stream);
 extern void grouped_infer_fp16(GroupedForwardParams& param, hipStream_t stream);
-// extern void grouped_infer_bp16(GroupedForwardParams& param, hipStream_t
-// stream);
+extern void grouped_infer_bp16(GroupedForwardParams& param, hipStream_t stream);
 
 namespace {
 
@@ -380,8 +378,7 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
             }
             else if(inDataType == at::ScalarType::BFloat16)
             {
-                // batched_infer_bp16(batched_forward_params, stream);
-                throw std::runtime_error("input data-type is not supported!");
+                batched_infer_bp16(batched_forward_params, stream);
             }
             else
                 throw std::runtime_error("input data-type is not supported!");
@@ -414,8 +411,7 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
             }
             else if(inDataType == at::ScalarType::BFloat16)
             {
-                // grouped_infer_bp16(grouped_forward_params, stream);
-                throw std::runtime_error("input data-type is not supported!");
+                grouped_infer_bp16(grouped_forward_params, stream);
             }
             else
                 throw std::runtime_error("input data-type is not supported!");
