@@ -18,7 +18,9 @@
 // P[seqlen_q, seqlen_k] = Softmax(S[seqlen_q, seqlen_k])
 // O[seqlen_q, hdim_v] = P[seqlen_q, seqlen_k] * V[hdim_v, seqlen_k]
 
+#ifndef C_LOG2E
 #define C_LOG2E 1.44269504088896340736 // log2(e)
+#endif
 
 template <typename TilePartitioner_, typename FmhaPipeline_, typename EpiloguePipeline_>
 struct FmhaFwdKernel
@@ -550,28 +552,12 @@ struct FmhaFwdKernel
             make_tile_window(v_dram,
                              make_tuple(Number<FmhaPipeline::kN1>{}, Number<FmhaPipeline::kK1>{}),
                              {i_n1, 0});
-
-        const auto run_pipeline_with = [&](auto bias_dram_window) {
-            C0MatrixMask casual_mask{kargs.seqlen_q, kargs.seqlen_k};
-
-            return FmhaPipeline{}(q_dram_window,
-                                  k_dram_window,
-                                  v_dram_window,
-                                  bias_dram_window,
-                                  casual_mask,
-                                  kargs.scale,
-                                  ck::math::integer_divide_ceil(kargs.seqlen_k, FmhaPipeline::kN0),
-                                  ck::math::integer_divide_ceil(kargs.hdim_q, FmhaPipeline::kK0),
-                                  smem_ptr);
-        };
-
         /// FIXME: Before C++20, capturing structured binding variables is not supported. Remove
         /// following copy capture of the 'i_nhead'
         ///        if compiled in C++20
-        auto o_acc_tile = [&, i_nhead_ = i_nhead]() {
+        const auto bias_dram_window = [&, i_nhead_ = i_nhead]() {
             constexpr auto bias_dram_window_lengths =
                 make_tuple(Number<FmhaPipeline::kM0>{}, Number<FmhaPipeline::kN0>{});
-
             if constexpr(kHasBias)
             {
                 const BiasDataType* bias_ptr =
@@ -591,18 +577,26 @@ struct FmhaFwdKernel
                                            Sequence<kM0NeedPadding, kN0K1NeedPadding>{});
                 }();
 
-                const auto bias_dram_window =
-                    make_tile_window(bias_dram, bias_dram_window_lengths, {i_m0, 0});
-
-                return run_pipeline_with(bias_dram_window);
+                return make_tile_window(bias_dram, bias_dram_window_lengths, {i_m0, 0});
             }
             else
             {
-                const auto dummy_bias_dram_window = make_null_tile_window(bias_dram_window_lengths);
-
-                return run_pipeline_with(dummy_bias_dram_window);
+                return make_null_tile_window(bias_dram_window_lengths);
             }
         }();
+
+        C0MatrixMask casual_mask{kargs.seqlen_q, kargs.seqlen_k};
+
+        auto o_acc_tile =
+            FmhaPipeline{}(q_dram_window,
+                           k_dram_window,
+                           v_dram_window,
+                           bias_dram_window,
+                           casual_mask,
+                           kargs.scale,
+                           ck::math::integer_divide_ceil(kargs.seqlen_k, FmhaPipeline::kN0),
+                           ck::math::integer_divide_ceil(kargs.hdim_q, FmhaPipeline::kK0),
+                           smem_ptr);
 
         // O DRAM and O DRAM window
         auto o_dram = [&]() {
