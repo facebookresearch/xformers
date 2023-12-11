@@ -336,6 +336,8 @@ def get_extensions():
                     f"--offload-arch={os.getenv('HIP_ARCHITECTURES', 'native')}",
                     "-U__CUDA_NO_HALF_OPERATORS__",
                     "-U__CUDA_NO_HALF_CONVERSIONS__",
+                    "-DCK_FMHA_FWD_FAST_EXP2=1",
+                    "-fgpu-flush-denormals-to-zero",
                 ]
                 + generator_flag
                 + cc_flag
