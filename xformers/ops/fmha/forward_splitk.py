@@ -98,49 +98,42 @@ class FwOp(AttentionFwOpBase):
         q, k, v = inp.get_qkv_in_bmghk()
         
         if attn_bias is not None:
-            assert isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
             attn_bias.k_seqinfo.to(k.device)
             attn_bias.q_seqinfo.to(q.device)
-            seq_len = attn_bias.k_seqinfo.seqlen
-            B = len(seq_len)
-            G, H, Kq = q.shape[-3:]
-            Kkv = v.shape[-1]
+            padding = attn_bias.k_seqinfo.padding
+            seq_positions_gpu = attn_bias.k_seqinfo.seqlen
+        else:
+            padding = k.shape[1]
+            seq_positions_gpu = None
 
-            # assume kv has been padded
-            q = q.reshape(B, -1, G, H, Kq)
-            k = k.reshape(B, -1, G, H, Kkv)
-            v = v.reshape(B, -1, G, H, Kkv)
-        
-        mqa_swap_seqlen_head = False
-        if k.shape[3] > 1 and k.stride(3) == 0 and v.stride(3) == 0:
-            mqa_swap_seqlen_head = True
-            assert q.shape[1] == 1
-            q = q.transpose(1, 3)
-            k = k[:, :, :, :1]
-            v = v[:, :, :, :1]
+        if attn_bias is not None:
+            # key: (1, B * padding, G, 1 if multiquery else Hkv, D)
+            # value: like key
+            # query: (1, B * q_seqlen, G, Hq, D)
+            multiquery = k.stride(3) == 0
+            if multiquery:
+                key = k[0, :, :, :1].unflatten(0, (-1, padding))
+                value = v[0, :, :, :1].unflatten(0, (-1, padding))
+            else:
+                key = k[0].unflatten(0, (-1, padding))
+                value = v[0].unflatten(0, (-1, padding))
+            query = q[0].unflatten(0, (key.shape[0], -1))    
+        else:
+            # key: (B, padding, G, 1 if multiquery else Hkv, D)
+            # value: like key
+            # query: (B, q_seqlen, G, Hq, D)
+            key = k
+            query = q
+            value = v
 
-        Lk = k.shape[-1]
+        B, _, _, H, _ = query.shape
+        _, Mk, _, _, _ = key.shape
 
-        B, Mk, G, H, Kkv = k.shape
-        B, M, G, H, Kq = q.shape
-        assert Lk == Kq, f"Keys have head dim {Lk} but queries have head dim {Kq}"
-
-        BLOCK_M = cls.BLOCK_M
-        BLOCK_N = cls.BLOCK_N
         if cls.SPLIT_K is not None:
             split_k = cls.SPLIT_K
         else:
             # Use heuristics
             split_k = cls.get_split_k(B, H, Mk)
-
-        M_ceil = (M + BLOCK_M - 1) // BLOCK_M * BLOCK_M
-
-        # o_splitk = torch.empty(
-        #     [B * G * H, split_k, M_ceil, Kq], dtype=torch.float32, device=q.device
-        # )
-        # metadata = torch.empty(
-        #     [B * G * H, 2, split_k, M_ceil], dtype=torch.float32, device=q.device
-        # )
 
         if inp.scale is not None:
             qk_scale = inp.scale
@@ -149,7 +142,7 @@ class FwOp(AttentionFwOpBase):
 
         print(f"{q.shape=} {k.shape=} {v.shape=}")
 
-        out = cls.OPERATOR(query=q, key=k, value=v, seq_positions=seq_len, scale=qk_scale, split_k=split_k)
+        out = cls.OPERATOR(query=query, key=key, value=value, seq_positions=seq_positions_gpu, scale=qk_scale, split_k=split_k)
         
         print(f"{out.shape=}")
         

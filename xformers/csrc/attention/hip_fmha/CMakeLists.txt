@@ -7,6 +7,9 @@ message("CMAKE_CXX_COMPILER: ${CMAKE_CXX_COMPILER} (need hipcc)")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_FLAGS "-Wall")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
+set(CMAKE_VERBOSE_MAKEFILE on)
 
 set(exe_name attention_forward_decoder_main)
 set(splitk_exe_name attention_forward_splitk_decoder_main)
@@ -42,6 +45,8 @@ target_compile_options(${splitk_exe_name} PUBLIC
   -fno-gpu-rdc
   $<$<CONFIG:Debug>:
   --save-temps
+  -g
+  -O0
   >
 )
 

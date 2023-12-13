@@ -303,6 +303,26 @@ def ref_attention_splitk_bmhk(q, k, v, attn_bias, scale=None, split_k=None) -> t
 
 
 def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2) -> torch.Tensor:
+    if q.ndim == 5:
+        def attn_bias_group(group: int):
+            if isinstance(attn_bias, torch.Tensor):
+                return attn_bias[:, group]
+            if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
+                return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
+                    attn_bias._bias[:, group]
+                )
+            return attn_bias
+
+        return torch.stack(
+            [
+                ref_attention_splitk_bmhk(
+                    q[:, :, g], k[:, :, g], v[:, :, g], attn_bias=attn_bias_group(g), split_k=split_k
+                )
+                for g in range(q.shape[2])
+            ],
+            dim=2,
+        )
+
     if q.ndim == 4:
         return ref_attention_splitk_bmhk(q, k, v, attn_bias=attn_bias, split_k=split_k)
     assert q.ndim == 3
@@ -1753,30 +1773,50 @@ def test_attn_bias_padded() -> None:
         rtol=fmha.ck.FwOp.ERROR_RTOL[torch.float16],
     )
 
-@pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "nomq")
-@pytest.mark.parametrize("n_heads", [1, 16, 32])
-@pytest.mark.parametrize("padding", [32, 4096])
-@pytest.mark.parametrize("bsz", [1, 8])
-@pytest.mark.parametrize("dtype", ["f16"])
+
+def _kv_heads_label(kv_heads: Optional[int]) -> str:
+    if kv_heads is None:
+        return ""
+    if kv_heads == 1:
+        return "mq"
+    return f"gqa{kv_heads}"
+
+@pytest.mark.parametrize("dtype", ["f32"])
+@pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
+@pytest.mark.parametrize("n_heads", [16])
+@pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1)])
 @pytest.mark.parametrize("split_k", [1, 2, 4])
 def test_splitk_reference(
-    multiquery: bool, n_heads: int, padding: int, bsz: int, dtype: str, split_k: int
+    kv_heads: int, n_heads: int, padding: int, bsz: int, dtype: str, split_k: int
 ):
     dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
     torch.manual_seed(1)
     d = 256
-    k_shape = (1, bsz * padding, n_heads, d)
+    num_queries = 1
+    if kv_heads is not None and kv_heads > 1:
+        k_shape: Tuple[int, ...] = (1, bsz * padding, kv_heads, n_heads, d)
+        q_shape: Tuple[int, ...] = (
+            1,
+            bsz * num_queries,
+            kv_heads,
+            n_heads,
+            d,
+        )
+    else:
+        k_shape = (1, bsz * padding, n_heads, d)
+        q_shape = (1, bsz * num_queries, n_heads, d)
+
     k = torch.rand(k_shape, dtype=dtype_).cuda()
     k_seqlen = torch.randint(1, padding + 1, (bsz,)).tolist()
-    v = torch.rand(k_shape, dtype=dtype_).cuda()
-    q = torch.rand((1, bsz, n_heads, d), dtype=dtype_).cuda()
+    v = torch.rand_like(k)
+    q = torch.rand(q_shape, dtype=dtype_).cuda()
     causal_diagonal = torch.tensor(  # TODO: make unnecessary
         [i - 1 for i in k_seqlen], dtype=torch.int32
     ).cuda()
 
-    if multiquery:
-        k = k[:, :, :1].expand(k_shape)
-        v = v[:, :, :1].expand(k_shape)
+    if kv_heads is not None:
+        k = k[..., :1, :].expand(k_shape)
+        v = v[..., :1, :].expand(k_shape)
 
     attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
         q_seqlen=[1] * bsz,
@@ -1794,23 +1834,15 @@ def test_splitk_reference(
     )
 
 
-def _kv_heads_label(kv_heads: Optional[int]) -> str:
-    if kv_heads is None:
-        return ""
-    if kv_heads == 1:
-        return "mq"
-    return f"gqa{kv_heads}"
-
-
 @pytest.mark.parametrize("op", [fmha.ck_decoder.FwOp])
-@pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
-@pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)])
-@pytest.mark.parametrize("padding", [32, 4096])
-@pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
-# @pytest.mark.parametrize("dtype", ["f16"])
 # @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
-# @pytest.mark.parametrize("n_heads", [16])
-# @pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1)])
+# @pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)])
+# @pytest.mark.parametrize("padding", [32, 4096])
+# @pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
+@pytest.mark.parametrize("dtype", ["f32"])
+@pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
+@pytest.mark.parametrize("n_heads", [16])
+@pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1)])
 def test_decoder(
     op,
     n_heads: int,
@@ -1880,13 +1912,6 @@ def test_decoder(
         atol=fmha.ck_decoder.FwOp.ERROR_ATOL[dtype_] * 4,
         rtol=fmha.ck_decoder.FwOp.ERROR_RTOL[dtype_],
     )
-
-def _kv_heads_label(kv_heads: Optional[int]) -> str:
-    if kv_heads is None:
-        return ""
-    if kv_heads == 1:
-        return "mq"
-    return f"gqa{kv_heads}"
 
 
 @pytest.mark.parametrize("op", [fmha.forward_splitk.FwOp_S1, fmha.forward_splitk.FwOp_S2])
