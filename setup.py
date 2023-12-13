@@ -210,6 +210,7 @@ def get_extensions():
     source_cuda += glob.glob(os.path.join(extensions_dir, "swiglu", "**", "*.cu"), recursive=True)
 
     source_hip = glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_test.cpp"), recursive=False)
+    source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_decoder.cpp"), recursive=False)
     
     if os.getenv("FORCE_CK_TILED_KERNEL", "0") == "1":
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_generic_ck_tiled.cpp"), recursive=False)
@@ -217,7 +218,6 @@ def get_extensions():
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_grouped_infer_*.cpp"), recursive=False)
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "instances_tiled", "ck_tiled_fmha_*.cpp"), recursive=False)
     else:
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_decoder.cpp"), recursive=False)
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_generic.cpp"), recursive=False)
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_backward_generic.cpp"), recursive=False)
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_ck_rand_uniform.cpp"), recursive=False)

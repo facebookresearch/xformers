@@ -12,6 +12,7 @@
 #include <ck/utility/data_type.hpp>
 #include <ck/utility/inner_product.hpp>
 #include <ck/utility/math.hpp>
+#include <ck/utility/math_v2.hpp>
 
 namespace {
 
