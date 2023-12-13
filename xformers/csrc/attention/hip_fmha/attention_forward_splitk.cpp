@@ -203,9 +203,6 @@ at::Tensor& efficient_attention_forward_decoder_splitk_ck_out_impl(
   return O;
 }
 
-#undef AT_DISPATCH_CASE_3
-#undef AT_DISPATCH_SWITCH_3
-
 template <int32_t ThreadsPerWavefront, int32_t WavefrontsPerBlock>
 at::Tensor efficient_attention_forward_decoder_splitk_ck_impl(
     const at::Tensor& XQ, // [B, 1, G, H, D]
@@ -216,12 +213,13 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck_impl(
     int64_t split_k) {
   auto O = at::empty_like(XQ);
   constexpr auto splitk_dim = 0;
+  constexpr auto rank = 5;
   auto O_splits = at::stack(O, splitk_dim);
 
-  TORCH_CHECK(XQ.dim() == 5);
-  TORCH_CHECK(cache_K.dim() == 5);
-  TORCH_CHECK(cache_V.dim() == 5);
-  TORCH_CHECK(O_splits.dim() == 6);
+  TORCH_CHECK(XQ.dim() == rank);
+  TORCH_CHECK(cache_K.dim() == rank);
+  TORCH_CHECK(cache_V.dim() == rank);
+  TORCH_CHECK(O_splits.dim() == 1 + rank);
 
   auto B = XQ.size(0);
   auto M = XQ.size(1);
@@ -257,9 +255,6 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
       TORCH_FN(efficient_attention_forward_decoder_splitk_ck));
 }
 
-#undef AT_DISPATCH_CASE_3
-#undef AT_DISPATCH_SWITCH_3
-
 #ifdef ATTN_FWD_SPLITK_DECODER_MAIN
 
 #include <torch/torch.h>
@@ -293,39 +288,524 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 
 // clang-format on
 
+static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_torch(
+  const at::Tensor& Q,
+  const at::Tensor& K,
+  const at::Tensor& V,
+  const at::Tensor& k_seqlens
+) {
+  auto Q_scaled = Q / sqrt(Q.size(-1));
+  auto S = at::einsum("bmghk, bnghk -> bmghn", {Q_scaled, K}, at::nullopt);
+
+  auto m = std::get<0>(at::max(S, /* dim */ 1, /* keepdim */ true));
+  auto s = at::exp(at::sub(S, m));
+  
+  // causal mask
+  for (size_t b = 0; b < k_seqlens.numel(); ++b) {
+    auto seqlen = k_seqlens[b].item<int64_t>();
+    at::slice(s[b], /* dim */ -1, /* start */ seqlen, /* end */ -1).zero_();
+  }
+
+  auto l = at::sum(s, /* dim */ -1, /* keepdim */ true);
+  auto O = at::einsum("bmghn, bnghk -> bmghk", {s, V}, at::nullopt);
+  return std::make_tuple(O, m, l);
+}
+
+namespace ck {
+namespace tensor_operation {
+namespace device {
+template <typename scalar_t, typename compute_t = float>
+struct FMHADecoderSplit1DeviceOp : public BaseOperator {
+  using DeviceOp = FMHADecoderSplit1DeviceOp;
+  struct Argument : public BaseArgument {
+    const scalar_t* __restrict__ XQ;
+    const scalar_t* __restrict__ cache_K;
+    const scalar_t* __restrict__ cache_V;
+    scalar_t* __restrict__ O;
+    scalar_t* __restrict__ split_O;
+    compute_t* __restrict__ split_max;
+    compute_t* __restrict__ split_sumexp;
+    const int32_t* __restrict__ seq_kv_lens;
+    const ptrdiff_t XQ_stride_b;
+    const ptrdiff_t XQ_stride_m;
+    const ptrdiff_t XQ_stride_g;
+    const ptrdiff_t XQ_stride_h;
+    const ptrdiff_t K_stride_b;
+    const ptrdiff_t K_stride_m;
+    const ptrdiff_t K_stride_g;
+    const ptrdiff_t K_stride_h;
+    const ptrdiff_t O_stride_split;
+    const int32_t Q_size_m;
+    const int32_t Q_size_g;
+    const int32_t Q_size_h;
+    const int32_t Q_size_k;
+    const int32_t K_size_m;
+    const bool multiquery;
+    const float qk_scale;
+    const int32_t split_k;
+
+    const dim3 grid_dim;
+    const dim3 block_dim;
+    const size_t lds_bytes;
+
+    Argument(
+        const scalar_t* __restrict__ XQ,
+        const scalar_t* __restrict__ cache_K,
+        const scalar_t* __restrict__ cache_V,
+        scalar_t* __restrict__ O,
+        scalar_t* __restrict__ split_O,
+        compute_t* __restrict__ split_max,
+        compute_t* __restrict__ split_sumexp,
+        const int32_t* __restrict__ seq_kv_lens,
+        const ptrdiff_t XQ_stride_b,
+        const ptrdiff_t XQ_stride_m,
+        const ptrdiff_t XQ_stride_g,
+        const ptrdiff_t XQ_stride_h,
+        const ptrdiff_t K_stride_b,
+        const ptrdiff_t K_stride_m,
+        const ptrdiff_t K_stride_g,
+        const ptrdiff_t K_stride_h,
+        const ptrdiff_t O_stride_split,
+        const int32_t Q_size_m,
+        const int32_t Q_size_g,
+        const int32_t Q_size_h,
+        const int32_t Q_size_k,
+        const int32_t K_size_m,
+        const bool multiquery,
+        const float qk_scale,
+        const int32_t split_k,
+        // launch params
+        const dim3 grid_dim,
+        const dim3 block_dim,
+        const size_t lds_bytes)
+        : XQ(XQ),
+          cache_K(cache_K),
+          cache_V(cache_V),
+          O(O),
+          split_O(split_O),
+          split_max(split_max),
+          split_sumexp(split_sumexp),
+          seq_kv_lens(seq_kv_lens),
+          XQ_stride_b(XQ_stride_b),
+          XQ_stride_m(XQ_stride_m),
+          XQ_stride_g(XQ_stride_g),
+          XQ_stride_h(XQ_stride_h),
+          K_stride_b(K_stride_b),
+          K_stride_m(K_stride_m),
+          K_stride_g(K_stride_g),
+          K_stride_h(K_stride_h),
+          O_stride_split(O_stride_split),
+          Q_size_m(Q_size_m),
+          Q_size_g(Q_size_g),
+          Q_size_h(Q_size_h),
+          Q_size_k(Q_size_k),
+          K_size_m(K_size_m),
+          multiquery(multiquery),
+          qk_scale(qk_scale),
+          split_k(split_k),
+          // launch params
+          grid_dim(grid_dim),
+          block_dim(block_dim),
+          lds_bytes(lds_bytes) {}
+  };
+
+  struct Invoker : public BaseInvoker {
+    using Argument = DeviceOp::Argument;
+    float Run(
+        const Argument& arg,
+        const StreamConfig& stream_config = StreamConfig{}) {
+      auto threads_per_wavefront = arg.block_dim.x;
+
+      auto Q_size_k_alignment_necessary = 0;
+
+      for (auto vec_size : {4, 2, 1}) {
+        if (arg.Q_size_k <= vec_size * threads_per_wavefront) {
+          Q_size_k_alignment_necessary = vec_size;
+        }
+      }
+
+      if (!Q_size_k_alignment_necessary) {
+        throw std::runtime_error("Unsupported Q_size_k");
+      }
+
+      if (arg.Q_size_k % Q_size_k_alignment_necessary) {
+        throw std::runtime_error("Unsupported alignment for Q_size_k");
+      }
+
+      float split_attention_result = launch_and_time_kernel(
+          stream_config,
+          Q_size_k_alignment_necessary == 4
+              ? efficient_attention_forward_decoder_splitk_ck_kernel<scalar_t, 4>
+              : Q_size_k_alignment_necessary == 2
+              ? efficient_attention_forward_decoder_splitk_ck_kernel<scalar_t, 2>
+              : Q_size_k_alignment_necessary == 1
+              ? efficient_attention_forward_decoder_splitk_ck_kernel<scalar_t, 1>
+              : nullptr,
+          arg.grid_dim,
+          arg.block_dim,
+          arg.lds_bytes,
+          arg.XQ,
+          arg.cache_K,
+          arg.cache_V,
+          arg.split_O,
+          arg.split_max,
+          arg.split_sumexp,
+          arg.seq_kv_lens,
+          arg.XQ_stride_b,
+          arg.XQ_stride_m,
+          arg.XQ_stride_g,
+          arg.XQ_stride_h,
+          arg.K_stride_b,
+          arg.K_stride_m,
+          arg.K_stride_g,
+          arg.K_stride_h,
+          arg.O_stride_split,
+          arg.Q_size_m,
+          arg.Q_size_g,
+          arg.Q_size_h,
+          arg.Q_size_k,
+          arg.K_size_m,
+          arg.multiquery,
+          arg.qk_scale,
+          arg.split_k);
+
+        return split_attention_result;
+    }
+  };
+};
+
+template <typename scalar_t, typename compute_t = float>
+struct FMHADecoderReduceDeviceOp : public BaseOperator {
+  using DeviceOp = FMHADecoderReduceDeviceOp;
+  struct Argument : public BaseArgument {
+    const scalar_t* __restrict__ XQ;
+    const scalar_t* __restrict__ cache_K;
+    const scalar_t* __restrict__ cache_V;
+    scalar_t* __restrict__ O;
+    scalar_t* __restrict__ split_O;
+    compute_t* __restrict__ split_max;
+    compute_t* __restrict__ split_sumexp;
+    const int32_t* __restrict__ seq_kv_lens;
+    const ptrdiff_t XQ_stride_b;
+    const ptrdiff_t XQ_stride_m;
+    const ptrdiff_t XQ_stride_g;
+    const ptrdiff_t XQ_stride_h;
+    const ptrdiff_t K_stride_b;
+    const ptrdiff_t K_stride_m;
+    const ptrdiff_t K_stride_g;
+    const ptrdiff_t K_stride_h;
+    const ptrdiff_t O_stride_split;
+    const int32_t Q_size_m;
+    const int32_t Q_size_g;
+    const int32_t Q_size_h;
+    const int32_t Q_size_k;
+    const int32_t K_size_m;
+    const bool multiquery;
+    const float qk_scale;
+    const int32_t split_k;
+
+    const dim3 grid_dim;
+    const dim3 block_dim;
+    const size_t lds_bytes;
+
+    Argument(
+        const scalar_t* __restrict__ XQ,
+        const scalar_t* __restrict__ cache_K,
+        const scalar_t* __restrict__ cache_V,
+        scalar_t* __restrict__ O,
+        scalar_t* __restrict__ split_O,
+        compute_t* __restrict__ split_max,
+        compute_t* __restrict__ split_sumexp,
+        const int32_t* __restrict__ seq_kv_lens,
+        const ptrdiff_t XQ_stride_b,
+        const ptrdiff_t XQ_stride_m,
+        const ptrdiff_t XQ_stride_g,
+        const ptrdiff_t XQ_stride_h,
+        const ptrdiff_t K_stride_b,
+        const ptrdiff_t K_stride_m,
+        const ptrdiff_t K_stride_g,
+        const ptrdiff_t K_stride_h,
+        const ptrdiff_t O_stride_split,
+        const int32_t Q_size_m,
+        const int32_t Q_size_g,
+        const int32_t Q_size_h,
+        const int32_t Q_size_k,
+        const int32_t K_size_m,
+        const bool multiquery,
+        const float qk_scale,
+        const int32_t split_k,
+        // launch params
+        const dim3 grid_dim,
+        const dim3 block_dim,
+        const size_t lds_bytes)
+        : XQ(XQ),
+          cache_K(cache_K),
+          cache_V(cache_V),
+          O(O),
+          split_O(split_O),
+          split_max(split_max),
+          split_sumexp(split_sumexp),
+          seq_kv_lens(seq_kv_lens),
+          XQ_stride_b(XQ_stride_b),
+          XQ_stride_m(XQ_stride_m),
+          XQ_stride_g(XQ_stride_g),
+          XQ_stride_h(XQ_stride_h),
+          K_stride_b(K_stride_b),
+          K_stride_m(K_stride_m),
+          K_stride_g(K_stride_g),
+          K_stride_h(K_stride_h),
+          O_stride_split(O_stride_split),
+          Q_size_m(Q_size_m),
+          Q_size_g(Q_size_g),
+          Q_size_h(Q_size_h),
+          Q_size_k(Q_size_k),
+          K_size_m(K_size_m),
+          multiquery(multiquery),
+          qk_scale(qk_scale),
+          split_k(split_k),
+          // launch params
+          grid_dim(grid_dim),
+          block_dim(block_dim),
+          lds_bytes(lds_bytes) {}
+  };
+
+  struct Invoker : public BaseInvoker {
+    using Argument = DeviceOp::Argument;
+    float Run(
+        const Argument& arg,
+        const StreamConfig& stream_config = StreamConfig{}) {
+      auto threads_per_wavefront = arg.block_dim.x;
+
+      auto Q_size_k_alignment_necessary = 0;
+
+      for (auto vec_size : {4, 2, 1}) {
+        if (arg.Q_size_k <= vec_size * threads_per_wavefront) {
+          Q_size_k_alignment_necessary = vec_size;
+        }
+      }
+
+      if (!Q_size_k_alignment_necessary) {
+        throw std::runtime_error("Unsupported Q_size_k");
+      }
+
+      if (arg.Q_size_k % Q_size_k_alignment_necessary) {
+        throw std::runtime_error("Unsupported alignment for Q_size_k");
+      }
+
+      const dim3 reduce_gridsize = {arg.grid_dim.x};
+      const dim3 reduce_blocksize = {arg.block_dim.x};
+      constexpr int32_t reduce_lds_bytes = 0;
+      float reduce_result = launch_and_time_kernel(
+        stream_config,
+        Q_size_k_alignment_necessary == 4
+            ? efficient_attention_forward_decoder_splitk_reduce_ck_kernel<scalar_t, 4>
+            : Q_size_k_alignment_necessary == 2
+            ? efficient_attention_forward_decoder_splitk_reduce_ck_kernel<scalar_t, 2>
+            : Q_size_k_alignment_necessary == 1
+            ? efficient_attention_forward_decoder_splitk_reduce_ck_kernel<scalar_t, 1>
+            : nullptr,
+        reduce_gridsize,
+        reduce_blocksize,
+        reduce_lds_bytes, 
+        arg.split_O,
+        arg.split_max,
+        arg.split_sumexp,
+        arg.O,
+        arg.Q_size_m,
+        arg.Q_size_g,
+        arg.Q_size_h,
+        arg.Q_size_k,
+        arg.O_stride_split,
+        arg.XQ_stride_b,
+        arg.XQ_stride_m,
+        arg.XQ_stride_g,
+        arg.XQ_stride_h,
+        arg.split_k
+      );
+      return reduce_result;
+    }
+  };
+};
+} // namespace device
+} // namespace tensor_operation
+} // namespace ck
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor> 
+split1_attention(const at::Tensor& XQ, const at::Tensor& K, const at::Tensor& V, const at::Tensor& seqlen) {
+  auto B = XQ.size(0);
+  auto M = XQ.size(1);
+  auto G = XQ.size(2);
+  auto H = XQ.size(3);
+  auto D = XQ.size(4);
+
+  double qk_scale = 1. / sqrt(D);
+  constexpr auto split_k = 1;
+
+  auto O = at::empty_like(XQ);
+  constexpr auto splitk_dim = 0;
+  constexpr auto rank = 5;
+  auto split_O = at::stack(O, splitk_dim);
+  auto split_max = at::empty({B, M, G, H, split_k}, XQ.options().dtype(at::kFloat));
+  auto split_sumexp = at::empty_like(split_max);
+
+  dim3 blocks(B * H * M * G, split_k);
+  dim3 threads(kThreadsPerWavefront, kWavefrontsPerBlock);
+
+  constexpr int32_t KV_M_MAX = 8192;
+  constexpr int32_t K_MAX = 4 * kThreadsPerWavefront;
+
+  int32_t smem_softmax = KV_M_MAX * sizeof(float) + threads.y * sizeof(float);
+  int32_t smem_output = K_MAX * sizeof(float) *
+      threads.y; // 4 * threadsPerBlock * sizeof(float) == sizeof(O[b][0][h][:])
+  const size_t lds_bytes = max(smem_softmax, smem_output);
+  auto stream = at::cuda::getCurrentHIPStream().stream();
+
+  AT_DISPATCH_SWITCH_3(
+      at::ScalarType::Half,
+      at::ScalarType::BFloat16,
+      at::ScalarType::Float,
+      XQ.scalar_type(),
+      "efficient_attention_forward_decoder_split1_ck_test",
+      [&] {
+        using ck_data_t = c10_to_data_t<scalar_t>::type;
+        using device_op_t =
+            ck::tensor_operation::device::FMHADecoderSplit1DeviceOp<ck_data_t>;
+        auto op = device_op_t{};
+
+        auto XQ_acc =
+            XQ.packed_accessor32<scalar_t, rank, at::RestrictPtrTraits>();
+        auto K_acc =
+            K.packed_accessor64<scalar_t, rank, at::RestrictPtrTraits>();
+        auto V_acc =
+            V.packed_accessor64<scalar_t, rank, at::RestrictPtrTraits>();
+        auto split_O_acc = split_O.packed_accessor32<scalar_t, 1 + rank, at::RestrictPtrTraits>();
+        auto O_acc = O.packed_accessor32<scalar_t, rank, at::RestrictPtrTraits>();
+        auto seq_acc = seqlen.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>().data();
+        auto split_max_acc = split_max.packed_accessor32<float, rank, at::RestrictPtrTraits>();
+        auto split_sumexp_acc = split_sumexp.packed_accessor32<float, rank, at::RestrictPtrTraits>();
+        auto arg = device_op_t::Argument(
+            reinterpret_cast<const ck_data_t* __restrict__>(XQ_acc.data()),
+            reinterpret_cast<const ck_data_t* __restrict__>(K_acc.data()),
+            reinterpret_cast<const ck_data_t* __restrict__>(V_acc.data()),
+            reinterpret_cast<ck_data_t* __restrict__>(O_acc.data()),
+            reinterpret_cast<ck_data_t* __restrict__>(split_O_acc.data()),
+            split_max_acc.data(),
+            split_sumexp_acc.data(),
+            seq_acc,
+            XQ_acc.stride(0),
+            XQ_acc.stride(1),
+            XQ_acc.stride(2),
+            XQ_acc.stride(3),
+            K_acc.stride(0),
+            K_acc.stride(1),
+            K_acc.stride(2),
+            K_acc.stride(3),
+            split_O_acc.stride(0),
+            XQ_acc.size(1),
+            XQ_acc.size(2),
+            XQ_acc.size(3),
+            XQ_acc.size(4),
+            K_acc.size(1),
+            K_acc.size(3) == 1,
+            qk_scale,
+            split_k,
+            blocks,
+            threads,
+            lds_bytes);
+
+        auto invoker = device_op_t::Invoker{};
+        (void)invoker.Run(arg, {stream});
+      });
+  return std::make_tuple(split_O[splitk_dim], split_max, split_sumexp);
+}
+
+static void test_split1_attention() {
+  const int32_t D = 4 * kThreadsPerWavefront;
+  const int32_t B = 1;
+  const int32_t Hq = 16;
+  const int32_t Hkv = 16;
+  const int32_t G = Hq / Hkv;
+  const int32_t padding = 4096;
+  const int32_t num_queries = 1;
+  const auto scalar_type = torch::kFloat32;
+  auto options = torch::TensorOptions()
+                     .dtype(scalar_type)
+                     .layout(torch::kStrided)
+                     .device(torch::kCUDA, 1)
+                     .requires_grad(false);
+  auto int_options = options.dtype(torch::kInt);
+  auto XQ = at::randn({B, num_queries, G, Hq, D}, options);
+  auto K = at::randn({B, padding, G, G == 1 ? Hkv : 1, D}, options);
+  auto V = at::randn({B, padding, G, G == 1 ? Hkv : 1, D}, options);
+  auto seqlen = at::randint(1062, 1063, {B}, int_options);
+  
+  printf("Run libtorch split1_attention:\n");
+  auto reference_result = split1_attention_torch(XQ, K, V, seqlen);
+
+  printf("Run hip split1_attention:\n");
+  auto hip_result = split1_attention(XQ, K, V, seqlen);
+
+  printf("Do comparison for split1_attention:\n");
+
+  auto O_match_mask = at::isclose(std::get<0>(reference_result), std::get<0>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
+  auto m_match_mask = at::isclose(std::get<1>(reference_result), std::get<1>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
+  auto l_match_mask = at::isclose(std::get<2>(reference_result), std::get<2>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
+
+  auto O_percent_match = at::sum(O_match_mask.to(torch::kFloat32)) / O_match_mask.numel();
+  auto m_percent_match = at::sum(m_match_mask.to(torch::kFloat32)) / m_match_mask.numel();
+  auto l_percent_match = at::sum(l_match_mask.to(torch::kFloat32)) / l_match_mask.numel();
+
+  printf(
+      "Mismatched split_O elements percentage: %.2f\n",
+      1. - O_percent_match.item<float>());
+
+  printf(
+      "Mismatched split_max elements percentage: %.2f\n",
+      1. - m_percent_match.item<float>());
+
+  printf(
+      "Mismatched split_sumexp elements percentage: %.2f\n",
+      1. - m_percent_match.item<float>());
+}
+
 static void do_correctness_check() {
   const int32_t D = 4 * kThreadsPerWavefront;
   const int32_t B = 1;
-  const int32_t H = 4;
-  const int32_t G = 1;
+  const int32_t H = 16;
+  const int32_t G = 2;
+  const int32_t padding = 4096;
+  const int32_t num_queries = 1;
   auto options = torch::TensorOptions()
                      .dtype(torch::kFloat32)
                      .layout(torch::kStrided)
                      .device(torch::kCUDA, 1)
                      .requires_grad(false);
   auto int_options = options.dtype(torch::kInt);
-  auto XQ = at::randn({B, 1, G, H, D}, options);
-  auto K = at::randn({B, 4096, G, H, D}, options);
-  auto V = at::randn({B, 4096, G, H, D}, options);
-  auto seq = at::randint(63, 128, {B}, int_options);
+  auto XQ = at::randn({B, num_queries, G, H, D}, options);
+  auto K = at::randn({B, padding, G, H, D}, options);
+  auto V = at::randn({B, padding, G, H, D}, options);
+  auto seqlen = at::randint(1062, 1063, {B}, int_options);
   double qk_scale = 1. / sqrt(D);
   constexpr auto split_k = 1;
 
   auto result = efficient_attention_forward_decoder_splitk_ck_impl<64, 1>(
-      XQ, K, V, seq, qk_scale, split_k);
-  auto gold_result = efficient_attention_forward_decoder_splitk_ck_impl<64, 2>(
-      XQ, K, V, seq, qk_scale, split_k);
+      XQ, K, V, seqlen, qk_scale, split_k);
+  auto gold_result = efficient_attention_forward_decoder_splitk_ck_impl<64, 16>(
+      XQ, K, V, seqlen, qk_scale, split_k);
   auto mask = at::isclose(
       result, gold_result, /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
   auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
   printf(
       "Mismatched elements percentage: %.2f\n",
       1. - percent_match.item<float>());
+  printf("k_seqlen: %d\n", seqlen.item<int32_t>());
 }
 
 int main(int argc, char** argv) {
   if (argc == 1) {
     do_correctness_check();
+
+    test_split1_attention();
   } else {
     const auto args = std::vector<std::string>(argv + 1, argv + argc);
     if (args.size() != 7) {
@@ -406,3 +886,6 @@ int main(int argc, char** argv) {
 }
 
 #endif // MAIN
+
+#undef AT_DISPATCH_CASE_3
+#undef AT_DISPATCH_SWITCH_3
