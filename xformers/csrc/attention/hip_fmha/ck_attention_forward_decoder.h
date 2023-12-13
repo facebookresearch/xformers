@@ -13,42 +13,6 @@
 #include <ck/utility/inner_product.hpp>
 #include <ck/utility/math.hpp>
 
-namespace ck {
-template <>
-__device__ void inner_product<bhalf_t, bhalf_t, float>(const bhalf_t& a, const bhalf_t& b, float& c)
-{
-    inner_product(type_convert<float>(a), type_convert<float>(b), c);
-}
-
-template <>
-__device__ void inner_product<half_t, half_t, float>(const half_t& a, const half_t& b, float& c)
-{
-    inner_product(type_convert<float>(a), type_convert<float>(b), c);
-}
-
-template <>
-__device__ void
-inner_product<bhalf2_t, bhalf2_t, float>(const bhalf2_t& a, const bhalf2_t& b, float& c)
-{
-    const vector_type<bhalf_t, 2> a_vector{a};
-    const vector_type<bhalf_t, 2> b_vector{b};
-    ck::static_for<0, 2, 1>{}([&](auto i) {
-        inner_product(a_vector.AsType<bhalf_t>()[i], b_vector.AsType<bhalf_t>()[i], c);
-    });
-}
-
-template <>
-__device__ void
-inner_product<bhalf4_t, bhalf4_t, float>(const bhalf4_t& a, const bhalf4_t& b, float& c)
-{
-    const vector_type<bhalf_t, 4> a_vector{a};
-    const vector_type<bhalf_t, 4> b_vector{b};
-    ck::static_for<0, 4, 1>{}([&](auto i) {
-        inner_product(a_vector.AsType<bhalf_t>()[i], b_vector.AsType<bhalf_t>()[i], c);
-    });
-}
-} // namespace ck
-
 namespace {
 
 template <typename data_t, int32_t vec_size>
