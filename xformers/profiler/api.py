@@ -14,7 +14,7 @@ from .profiler import (
     PyTorchProfiler_CUDAOnly,
     _Profiler,
 )
-from .profiler_dcgm import DCGMProfiler
+from .profiler_dcgm import DCGMProfiler  # noqa: F401
 from .slow_ops_profiler import DetectSlowOpsProfiler  # noqa: F401
 
 DEFAULT_SCHEDULE = (
@@ -22,7 +22,9 @@ DEFAULT_SCHEDULE = (
     (NsightProfiler, 4, 6),
     (PyTorchProfiler, 6, 7),
     (PyTorchProfiler_CUDAOnly, 7, 8),
-    (DCGMProfiler, 9, 11),
+    # TODO: Found issues where this can take minutes to
+    # start, as it flushes previous values
+    # (DCGMProfiler, 9, 11),
     # TODO: There are some issues in PyTorch stable
     # which are now fixed on main, but might break this profiler
     # https://github.com/pytorch/pytorch/issues/94403
