@@ -10,6 +10,7 @@ import torch
 
 from . import __version__, _cpp_lib, _is_opensource, _is_triton_available, ops
 from .ops.common import OPERATORS_REGISTRY
+from .profiler.profiler_dcgm import DCGM_PROFILER_AVAILABLE
 
 
 def get_features_status() -> Dict[str, str]:
@@ -35,6 +36,10 @@ def print_info():
         features["gpu.name"] = torch.cuda.get_device_name(device)
     else:
         features["pytorch.cuda"] = "not available"
+
+    features["dcgm_profiler"] = (
+        "available" if DCGM_PROFILER_AVAILABLE else "unavailable"
+    )
 
     build_info = _cpp_lib._build_metadata
     if build_info is None and isinstance(

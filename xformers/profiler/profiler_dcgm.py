@@ -8,10 +8,13 @@ import sys
 
 from .profiler import _Profiler, logger
 
+DCGM_PROFILER_AVAILABLE = False
 try:
     DCGM_PYTHON_PATH: str = "/usr/local/dcgm/bindings/python3"
     sys.path.insert(0, DCGM_PYTHON_PATH)
     from .profiler_dcgm_impl import DCGMProfiler
+
+    DCGM_PROFILER_AVAILABLE = True
 except ModuleNotFoundError:
     logger.warning(
         f"Unable to find python bindings at {DCGM_PYTHON_PATH}. "
