@@ -13,7 +13,7 @@ https://github.com/ROCmSoftwarePlatform/triton/blob/670ae8054da008424097989a5b6e
 """
 
 from dataclasses import replace
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, List, Mapping, Optional, Set, Tuple
 
 import torch
 
