@@ -283,7 +283,7 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None, dtype=None) -> torch.Tens
     return out.permute((0, 2, 1, 3))
 
 
-def ref_attention_splitk_bmhk(q, k, v, attn_bias, scale=None, split_k=None) -> torch.Tensor:
+def ref_attention_splitk_bmhk(q, k, v, attn_bias, scale=None, split_k=None, dtype=None) -> torch.Tensor:
     assert q.ndim == 4
 
     def T(t):
@@ -297,12 +297,12 @@ def ref_attention_splitk_bmhk(q, k, v, attn_bias, scale=None, split_k=None) -> t
             device=q.device,
             dtype=torch.float32,
         ).reshape([q.shape[0] * q.shape[2], q.shape[1], k.shape[1]])
-    out = ref_attention_splitk(T(q), T(k), T(v), attn_bias, scale=scale, split_k=split_k)
+    out = ref_attention_splitk(T(q), T(k), T(v), attn_bias, scale=scale, split_k=split_k, dtype=dtype)
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
 
 
-def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2) -> torch.Tensor:
+def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) -> torch.Tensor:
     if q.ndim == 5:
         def attn_bias_group(group: int):
             if isinstance(attn_bias, torch.Tensor):
@@ -316,7 +316,7 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2) -> torch.Ten
         return torch.stack(
             [
                 ref_attention_splitk_bmhk(
-                    q[:, :, g], k[:, :, g], v[:, :, g], attn_bias=attn_bias_group(g), split_k=split_k
+                    q[:, :, g], k[:, :, g], v[:, :, g], attn_bias=attn_bias_group(g), split_k=split_k, dtype=dtype
                 )
                 for g in range(q.shape[2])
             ],
@@ -324,11 +324,13 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2) -> torch.Ten
         )
 
     if q.ndim == 4:
-        return ref_attention_splitk_bmhk(q, k, v, attn_bias=attn_bias, split_k=split_k)
+        return ref_attention_splitk_bmhk(q, k, v, attn_bias=attn_bias, split_k=split_k, dtype=dtype)
     assert q.ndim == 3
-    q = q.float()
-    k = k.float()
-    v = v.float()
+    if dtype is None:
+        dtype = torch.float32
+    q = q.to(dtype=dtype)
+    k = k.to(dtype=dtype)
+    v = v.to(dtype=dtype)
 
     if scale is None:
         scale = q.shape[-1] ** -.5
@@ -391,6 +393,10 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2) -> torch.Ten
     out = torch.zeros_like(q)
 
     # reduce out over split-k slices
+
+    # return slices[0]["row_max"].repeat_interleave(256, -1)
+
+    # return slices[0]["attn_slice"]
 
     m_current_max = torch.zeros_like(slices[0]["row_max"]).fill_(float("-inf"))
     l_current_sum = torch.zeros_like(slices[0]["row_lse"])
@@ -1899,12 +1905,13 @@ def test_decoder(
     decoder_output = fmha.memory_efficient_attention_forward(
         q, k, v, attn_bias, op=op
     )
-    
-    print(f"{decoder_output.shape=}")
-    nans_in_result = torch.sum(torch.isnan(decoder_output))
-    print(f"{nans_in_result=}")
 
-    ref_output = ref_attention(q, k, v, attn_bias, dtype=dtype_)
+    # attn_bias_tensor = attn_bias.materialize(shape=(q.shape[0], 1, q.shape[1], k.shape[1]), device=q.device, dtype=dtype_)
+    # print(f"{k_seqlen=}")
+    # torch.set_printoptions(threshold=None, edgeitems=256)
+    # print(f"{attn_bias_tensor.shape=} {attn_bias_tensor=}")
+
+    ref_output = ref_attention_splitk(q, k, v, attn_bias, dtype=dtype_, split_k=1)
 
     assert_allclose(
         decoder_output,
@@ -1918,7 +1925,11 @@ def test_decoder(
 @pytest.mark.parametrize("dtype", ["f16"])
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
 @pytest.mark.parametrize("n_heads", [16])
-@pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1)])
+@pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1), (32, 1), (4096, 8)])
+# @pytest.mark.parametrize("dtype", ["f16"])
+# @pytest.mark.parametrize("kv_heads", [None], ids=_kv_heads_label)
+# @pytest.mark.parametrize("n_heads", [16])
+# @pytest.mark.parametrize("padding, bsz", [(32, 8),])
 def test_splitk_decoder(
     op,
     kv_heads: Optional[int],
