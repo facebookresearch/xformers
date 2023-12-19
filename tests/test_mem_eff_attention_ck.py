@@ -395,7 +395,7 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
     # reduce out over split-k slices
 
     # return slices[0]["row_max"].repeat_interleave(256, -1)
-
+    # return slices[0]["row_lse"].repeat_interleave(256, -1)
     # return slices[0]["attn_slice"]
 
     m_current_max = torch.zeros_like(slices[0]["row_max"]).fill_(float("-inf"))
@@ -1902,6 +1902,10 @@ def test_decoder(
     if (not_supported_reasons := op.not_supported_reasons(inp)):
         pytest.skip(f"{not_supported_reasons=}")
 
+    ref_output = ref_attention_splitk(q, k, v, attn_bias, dtype=dtype_, split_k=1)
+
+    print(f"{ref_output.shape=}")
+
     decoder_output = fmha.memory_efficient_attention_forward(
         q, k, v, attn_bias, op=op
     )
@@ -1911,7 +1915,6 @@ def test_decoder(
     # torch.set_printoptions(threshold=None, edgeitems=256)
     # print(f"{attn_bias_tensor.shape=} {attn_bias_tensor=}")
 
-    ref_output = ref_attention_splitk(q, k, v, attn_bias, dtype=dtype_, split_k=1)
 
     assert_allclose(
         decoder_output,

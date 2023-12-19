@@ -21,9 +21,9 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_torch(
   auto Q_scaled = at::div(Q, sqrt(Q.size(-1)));
   auto S = at::einsum("mghk, nghk -> mghn", {Q_scaled.flatten(0, 1), K.flatten(0, 1)}, /* einsum eval path */ at::nullopt);
 
-  for (size_t i = 0; i < S.dim(); ++i) {
-    std::cout << "S.dim" << i << "=" << S.size(i) << std::endl; 
-  }
+  // for (size_t i = 0; i < S.dim(); ++i) {
+  //   std::cout << "S.dim" << i << "=" << S.size(i) << std::endl; 
+  // }
 
   // causal mask
   auto neg_inf = at::tensor(-99.).item();
@@ -31,7 +31,7 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_torch(
     auto seqlen = k_seqlens[b].item<int64_t>();
     at::slice(S[b], /* dim */ -1, /* start */ 0, /* end */ b * K.size(1)).fill_(neg_inf);
     at::slice(S[b], /* dim */ -1, /* start */ b * K.size(1) + seqlen, /* end */ S.size(-1)).fill_(neg_inf);
-    std::cout << "batch" << b << " ; masked QK^T dim " << S[b].dim() << " values at h0 " << S[b].slice(1, 0, 1) << std::endl;
+    // std::cout << "batch" << b << " ; masked QK^T dim " << S[b].dim() << " values at h0 " << S[b].slice(1, 0, 1) << std::endl;
   }
 
   auto m = std::get<0>(at::max(S, /* dim */ -1, /* keepdim */ true));
@@ -46,7 +46,7 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_torch(
 
   auto l = at::sum(s, /* dim */ -1, /* keepdim */ true);
   auto O = at::einsum("mghn, nghk -> mghk", {s, V.flatten(0, 1)}, /* einsum eval path */ at::nullopt);
-  return std::make_tuple(O.reshape_as(Q), m, l);
+  return std::make_tuple(O, m, l);
 }
 
 static at::Tensor split1_reduce_torch(
@@ -54,7 +54,7 @@ static at::Tensor split1_reduce_torch(
   const at::Tensor& m,
   const at::Tensor& l
 ) {
-  return at::div(O_splits[0], l);
+  return at::div(O_splits, l);
 }
 
 namespace {
@@ -280,6 +280,18 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck_impl(
   return O;
 }
 
+at::Tensor efficient_attention_forward_decoder_split1_torch(
+  const at::Tensor& XQ, // [B, 1, G, H, D]
+  const at::Tensor& cache_K, // [B, KV_M_MAX, G, H or 1, D]
+  const at::Tensor& cache_V, // [B, KV_M_MAX, G, H or 1, D]
+  at::optional<at::Tensor> seq_kv_lens, // [B]
+  double qk_scale
+) {
+  auto [O_split, m, l] = split1_attention_torch(XQ, cache_K, cache_V, *seq_kv_lens);
+  auto O = split1_reduce_torch(O_split, m, l);
+  return O.reshape_as(XQ);
+}
+
 at::Tensor efficient_attention_forward_decoder_splitk_ck(
     const at::Tensor& XQ, // [B, 1, G, H, D]
     const at::Tensor& cache_K, // [B, KV_M_MAX, G, H or 1, D]
@@ -288,10 +300,7 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck(
     double qk_scale,
     int64_t split_k) {
 
-  auto [O_split, m, l] = split1_attention_torch(XQ, cache_K, cache_V, *seq_kv_lens);
-  // return at::repeat_interleave(m, 256, -1);
-  // return O_split[0];
-  return split1_reduce_torch(O_split, m, l);
+  return efficient_attention_forward_decoder_split1_torch(XQ, cache_K, cache_V, seq_kv_lens, qk_scale);
 
   return efficient_attention_forward_decoder_splitk_ck_impl<
       kThreadsPerWavefront,
