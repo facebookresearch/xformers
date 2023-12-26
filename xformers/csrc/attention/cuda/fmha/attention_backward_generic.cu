@@ -48,15 +48,13 @@ mem_efficient_attention_backward_cutlass(
     const c10::optional<double> scale,
     // how many parallel blocks across the keys dimension. Use `-1` to
     // determine automatically
-    int64_t num_splits_key) {
+    int64_t num_splits_key,
+    const c10::optional<int64_t> window_size) {
 #ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD
   TORCH_CHECK(
       false,
       "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD");
 #else
-  at::globalContext().alertNotDeterministic(
-      "mem_efficient_attention_backward_cutlass");
-
   // ndim
   TORCH_CHECK(query.dim() == grad_out_.dim());
   TORCH_CHECK(query.dim() == key.dim());
@@ -142,6 +140,7 @@ mem_efficient_attention_backward_cutlass(
     grad_k = at::empty(key.sizes(), key.options());
     grad_v = at::empty(value.sizes(), value.options());
   }
+
   if (bias_requires_grad) {
     // force alignment for the last dim
     std::vector<int64_t> sz = bias->sizes().vec();
@@ -238,6 +237,10 @@ mem_efficient_attention_backward_cutlass(
       p.cu_seqlens_k_ptr = (int32_t*)cu_seqlens_k->data_ptr();
     }
 
+    if (window_size.has_value()) {
+      p.window_size = *window_size;
+    }
+
     ASSIGN_CHECK_OVERFLOW(p.lse_strideB, logsumexp.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.lse_strideH, logsumexp.stride(1));
     ASSIGN_CHECK_OVERFLOW(p.gO_strideB, grad_out.stride(0));
@@ -316,9 +319,11 @@ mem_efficient_attention_backward_cutlass(
     auto parallelism_without_split_key =
         p.getBlocksGrid().x * p.getBlocksGrid().y * p.getBlocksGrid().z;
     p.num_splits_key = cutlass::ceil_div(p.num_keys, Kernel::kBlockSizeJ);
-    p.num_splits_key = std::max<int64_t>(p.num_splits_key, num_splits_key);
-    if (num_splits_key <
-        1) { // Skip heuristic, if user provided an explicit value
+    if (num_splits_key > 0) {
+      p.num_splits_key = std::min<int64_t>(p.num_splits_key, num_splits_key);
+    } else {
+      // Keys splitting heuristic
+
       // If we already have enough parallelism, split-keys can help
       // better use L2 cache.
       // This is negligible when the seqlen is too small tho
@@ -350,6 +355,15 @@ mem_efficient_attention_backward_cutlass(
       if (p.should_zero_workspace()) {
         workspace.zero_();
       }
+    }
+
+    // Handle the edge-cases where some tensors are empty
+    if (p.num_queries == 0 || p.num_keys == 0 || p.num_batches == 0 ||
+        p.num_heads == 0) {
+      grad_k.zero_();
+      grad_v.zero_();
+      grad_q.zero_();
+      return;
     }
     Kernel::check_supported(p);
 
@@ -429,6 +443,67 @@ bool has_cutlassB_kernel_for(
   }
   return found;
 }
+
+using IterationDataOutput =
+    std::tuple<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
+
+IterationDataOutput _cutlassB_iteration_data(
+    at::ScalarType dtype,
+    int64_t cc,
+    int64_t maxK,
+    int64_t num_queries,
+    int64_t num_keys,
+    int64_t num_splits_key,
+    int64_t window_size,
+    int64_t custom_mask_type,
+    int64_t query_start,
+    int64_t key_start) {
+  bool found = false;
+
+  IterationDataOutput output;
+  auto callback = [&](auto kernelCls, auto kernelFn) {
+    using Kernel = decltype(kernelCls);
+
+    if (found) {
+      return;
+    }
+    if (Kernel::kMaxK < maxK) {
+      return;
+    }
+    found = true;
+
+    typename Kernel::Params p;
+    p.num_queries = num_queries;
+    p.num_keys = num_keys;
+    p.num_splits_key = num_splits_key;
+    p.window_size = window_size;
+    p.custom_mask_type = custom_mask_type;
+
+    int32_t new_query_start, new_key_start, num_parallel_blocks,
+        smallest_query_for_key;
+    num_parallel_blocks = Kernel::getNumParallelBlocksForQuery(p, query_start);
+    smallest_query_for_key = Kernel::getSmallestQueryForKey(p, key_start);
+    Kernel::incrIteration(
+        p, query_start, key_start, new_query_start, new_key_start);
+    output = std::make_tuple(
+        Kernel::kBlockSizeI,
+        Kernel::kBlockSizeJ,
+        smallest_query_for_key,
+        new_query_start,
+        new_key_start,
+        int64_t(num_parallel_blocks));
+  };
+  if (dtype == at::ScalarType::Float) {
+    dispatch_cutlassB<float>(callback, cc);
+  } else if (dtype == at::ScalarType::Half) {
+    dispatch_cutlassB<cutlass::half_t>(callback, cc);
+  } else {
+    TORCH_CHECK(dtype == at::ScalarType::BFloat16, "Valid data type");
+    dispatch_cutlassB<cutlass::bfloat16_t>(callback, cc);
+  }
+  TORCH_CHECK(found, "No kernel found");
+  return output;
+}
 } // namespace
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
@@ -443,4 +518,12 @@ TORCH_LIBRARY_FRAGMENT(xformers, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::_has_cutlassB_kernel_for"),
       TORCH_FN(has_cutlassB_kernel_for));
+  m.def(TORCH_SELECTIVE_SCHEMA(
+      "xformers::_cutlassB_iteration_data("
+      "ScalarType dtype, int cc, int maxK, "
+      "int num_queries=0, int num_keys=0, int num_splits_key=1, int window_size=0, int custom_mask_type=0, "
+      "int query_start=0, int key_start=0) -> (int, int, int, int, int, int)"));
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::_cutlassB_iteration_data"),
+      TORCH_FN(_cutlassB_iteration_data));
 }

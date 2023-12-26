@@ -4,10 +4,10 @@
 
 # Tools for static checking.
 black == 22.3.0
-flake8 == 3.8.4
+flake8 == 6.1.0
 flake8-copyright
 isort == 5.7.0
-mypy == 0.982
+mypy == 1.5.1
 pyre-check == 0.9.16
 pyre-extensions == 0.0.29
 click == 8.0.4
@@ -30,5 +30,4 @@ scipy >= 1.7
 # Dependency for fused layers, optional
 cmake
 --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/
-triton-nightly
-networkx
+triton-nightly<=2.1.0.post20231125000000

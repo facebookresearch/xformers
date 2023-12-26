@@ -9,13 +9,15 @@ import pytest
 import torch
 
 import xformers.ops as xops
+from xformers.ops import indexing
 
 from .utils import assert_allclose
 
-cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 
-
-@cuda_only
+@pytest.mark.skipif(
+    not indexing.ScaledIndexAddFw.is_available(), reason="not available"
+)
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 @pytest.mark.parametrize("with_scaling", [False, True])
 @pytest.mark.parametrize(
     "out_shape", [(48, 1, 257 * 1536), (48, 257, 1536), (192, 50, 1536)]
@@ -30,19 +32,17 @@ def test_scaled_index_add(out_shape, with_scaling: bool) -> None:
     inp = torch.randn([B_out, M, D], device="cuda", dtype=dtype, requires_grad=True)
     src = torch.randn([B_src, M, D], device="cuda", dtype=dtype, requires_grad=True)
     TENSORS = {"inp": inp, "src": src}
-    if with_scaling:
-        scaling = torch.randn([D], device="cuda", dtype=dtype, requires_grad=True)
-        TENSORS["scaling"] = scaling
-    else:
-        scaling = torch.Tensor()
 
     index_py = [i for i in range(src.shape[0])]
     random.Random(B_out).shuffle(index_py)
     index = torch.tensor(index_py, dtype=torch.int64, device="cuda")
 
     if with_scaling:
+        scaling = torch.randn([D], device="cuda", dtype=dtype, requires_grad=True)
+        TENSORS["scaling"] = scaling
         ref_src_scaled = scaling.float() * src.float()
     else:
+        scaling = None
         ref_src_scaled = src.float()
     ref_out = torch.index_add(
         inp.float(), dim=0, source=ref_src_scaled, index=index, alpha=alpha
@@ -55,11 +55,11 @@ def test_scaled_index_add(out_shape, with_scaling: bool) -> None:
 
     # Test FW
     out = xops.scaled_index_add(
-        input=inp.clone(),
-        index=index,
-        source=src,
-        scaling=scaling if with_scaling else None,
-        alpha=alpha,
+        inp.clone(),
+        index,
+        src,
+        scaling,
+        alpha,
     )
     assert_allclose(out, ref_out, "fw", atol=4e-3, rtol=1e-3)
     # Test BW
@@ -73,35 +73,32 @@ def test_scaled_index_add(out_shape, with_scaling: bool) -> None:
         assert_allclose(v.grad, ref_grads[k], f"{k}.grad", atol=atol, rtol=rtol)  # type: ignore
 
 
-@cuda_only
+@pytest.mark.skipif(not indexing.IndexSelect.is_available(), reason="not available")
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 @pytest.mark.parametrize("D", [1536])
-def test_index_select_cat(D) -> None:
+@pytest.mark.parametrize("batches", [((48, 25), (192, 50))])
+def test_index_select_cat(D, batches) -> None:
     torch.manual_seed(0)
     dtype = torch.float16
-    srcs = [
-        torch.randn([48, 25 * D]),
-        torch.randn([192, 50 * D]),
-    ]
-    src = torch.cat([s.view([-1, D]) for s in srcs], dim=0).cuda().to(dtype)
-    src.requires_grad_(True)
 
+    num_rows = 0
+    for B, seqlen in batches:
+        num_rows += B * seqlen
+
+    src = torch.randn([num_rows, D], device="cuda", dtype=dtype, requires_grad=True)
     indices = []
     sources = []
-    elements_i = 0
-    for source_i in srcs:
-        index = [i for i in range(source_i.shape[0])]
-        random.Random(source_i.shape[0]).shuffle(index)
+    rows_begin = 0
+    for B, seqlen in batches:
+        index = [i for i in range(B)]
+        random.Random(B).shuffle(index)
         indices.append(
-            torch.tensor(
-                index[: int(0.6 * source_i.shape[0])], dtype=torch.int64, device="cuda"
-            )
+            torch.tensor(index[: int(0.6 * B)], dtype=torch.int64, device="cuda")
         )
         sources.append(
-            src[
-                elements_i : elements_i + source_i.shape[0] * source_i.shape[1] // D
-            ].reshape(source_i.shape)
+            src[rows_begin : rows_begin + B * seqlen].reshape([B, seqlen * D])
         )
-        elements_i += source_i.shape[0] * source_i.shape[1] // D
+        rows_begin += B * seqlen
 
     # PT implem
     ref_out = torch.cat([s[i].flatten() for s, i in zip(sources, indices)], dim=0)

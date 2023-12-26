@@ -91,10 +91,17 @@
     std::cerr << #PTR " is not correctly aligned\n"; \
     return false;                                    \
   }
-#define XFORMERS_CHECK(COND, ERR)                       \
-  if (!(COND)) {                                        \
-    std::cerr << "'" #COND "' failed: " << ERR << "\n"; \
-    return false;                                       \
+
+template <typename... Args>
+void print_check_args(const Args&... args) {
+  (std::cerr << ... << args) << std::endl;
+}
+
+#define XFORMERS_CHECK(COND, ...)        \
+  if (!(COND)) {                         \
+    std::cerr << "'" #COND "' failed: "; \
+    print_check_args(__VA_ARGS__);       \
+    return false;                        \
   }
 #endif
 

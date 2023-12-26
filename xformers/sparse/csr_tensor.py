@@ -101,7 +101,7 @@ class SparseCSRTensor(torch.Tensor):
 
     @classmethod
     def _bmm(cls, arg0, arg1):
-        if not (isinstance(arg0, cls) and type(arg1) == torch.Tensor):
+        if not (isinstance(arg0, cls) and type(arg1) is torch.Tensor):
             return NotImplemented
 
         assert arg0.ndim == 3
@@ -176,7 +176,7 @@ class SparseCSRTensor(torch.Tensor):
 
     @classmethod
     def _masked_matmul(cls, a, b, mask):
-        if not (type(a) == torch.Tensor and type(b) == torch.Tensor):
+        if not (type(a) is torch.Tensor and type(b) is torch.Tensor):
             return NotImplemented
         assert mask.shape[1] == a.shape[1]
         assert mask.shape[2] == b.shape[2]
