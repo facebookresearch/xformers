@@ -8,10 +8,10 @@
 import datetime
 import distutils.command.clean
 import glob
-import importlib.util
 import json
 import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -48,6 +48,9 @@ def fetch_requirements():
 
 
 def get_local_version_suffix() -> str:
+    if not (Path(__file__).parent / ".git").is_dir():
+        # Most likely installing from a source distribution
+        return ""
     date_suffix = datetime.datetime.now().strftime("%Y%m%d")
     git_hash = subprocess.check_output(
         ["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).parent
@@ -55,14 +58,27 @@ def get_local_version_suffix() -> str:
     return f"+{git_hash}.d{date_suffix}"
 
 
-def write_version_file(version: str):
-    version_path = os.path.join(this_dir, "xformers", "version.py")
-    with open(version_path, "w") as f:
-        f.write("# noqa: C801\n")
-        f.write(f'__version__ = "{version}"\n')
-        tag = os.getenv("GIT_TAG")
-        if tag is not None:
-            f.write(f'git_tag = "{tag}"\n')
+def get_flash_version() -> str:
+    flash_dir = Path(__file__).parent / "third_party" / "flash-attention"
+    try:
+        return subprocess.check_output(
+            ["git", "describe", "--tags", "--always"],
+            cwd=flash_dir,
+        ).decode("ascii")[:-1]
+    except subprocess.CalledProcessError:
+        version = flash_dir / "version.txt"
+        if version.is_file():
+            return version.read_text().strip()
+        return "v?"
+
+
+def generate_version_py(version: str) -> str:
+    content = "# noqa: C801\n"
+    content += f'__version__ = "{version}"\n'
+    tag = os.getenv("GIT_TAG")
+    if tag is not None:
+        content += f'git_tag = "{tag}"\n'
+    return content
 
 
 def symlink_package(name: str, path: Path, is_building_wheel: bool) -> None:
@@ -104,9 +120,9 @@ def get_cuda_version(cuda_dir) -> int:
 
 
 def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
-    # XXX: Not supported on windows yet
+    # XXX: Not supported on windows for cuda<12
     # https://github.com/Dao-AILab/flash-attention/issues/345
-    if platform.system() != "Linux":
+    if platform.system() != "Linux" and cuda_version < 1200:
         return []
     # Figure out default archs to target
     DEFAULT_ARCHS_LIST = ""
@@ -122,22 +138,30 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     if os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") != "0":
         return []
 
+    # Supports `9.0`, `9.0+PTX`, `9.0a+PTX` etc...
+    PARSE_CUDA_ARCH_RE = re.compile(
+        r"(?P<major>[0-9]+)\.(?P<minor>[0-9])(?P<suffix>[a-zA-Z]{0,1})(?P<ptx>\+PTX){0,1}"
+    )
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST", DEFAULT_ARCHS_LIST)
     nvcc_archs_flags = []
     for arch in archs_list.replace(" ", ";").split(";"):
-        assert len(arch) >= 3, f"Invalid sm version: {arch}"
-
-        arch_arr = arch.split(".")
-        num = 10 * int(arch_arr[0]) + int(arch_arr[1].partition("+")[0])
+        match = PARSE_CUDA_ARCH_RE.match(arch)
+        assert match is not None, f"Invalid sm version: {arch}"
+        num = 10 * int(match.group("major")) + int(match.group("minor"))
         # Need at least Sm80
         if num < 80:
             continue
         # Sm90 requires nvcc 11.8+
         if num >= 90 and cuda_version < 1108:
             continue
-        nvcc_archs_flags.append(f"-gencode=arch=compute_{num},code=sm_{num}")
-        if arch.endswith("+PTX"):
-            nvcc_archs_flags.append(f"-gencode=arch=compute_{num},code=compute_{num}")
+        suffix = match.group("suffix")
+        nvcc_archs_flags.append(
+            f"-gencode=arch=compute_{num}{suffix},code=sm_{num}{suffix}"
+        )
+        if match.group("ptx") is not None:
+            nvcc_archs_flags.append(
+                f"-gencode=arch=compute_{num}{suffix},code=compute_{num}{suffix}"
+            )
     if not nvcc_archs_flags:
         return []
 
@@ -243,7 +267,7 @@ def get_extensions():
 
     define_macros = []
 
-    extra_compile_args = {"cxx": ["-O3"]}
+    extra_compile_args = {"cxx": ["-O3", "-std=c++17"]}
     if sys.platform == "win32":
         define_macros += [("xformers_EXPORTS", None)]
         extra_compile_args["cxx"].extend(["/MP", "/Zc:lambda", "/Zc:preprocessor"])
@@ -270,6 +294,7 @@ def get_extensions():
             "-U__CUDA_NO_HALF_CONVERSIONS__",
             "--extended-lambda",
             "-D_ENABLE_EXTENDED_ALIGNED_STORAGE",
+            "-std=c++17",
         ] + get_extra_nvcc_flags_for_build_type()
         if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
             nvcc_flags.append("-DNDEBUG")
@@ -283,7 +308,6 @@ def get_extensions():
             ]
         if sys.platform == "win32":
             nvcc_flags += [
-                "-std=c++17",
                 "-Xcompiler",
                 "/Zc:lambda",
                 "-Xcompiler",
@@ -296,10 +320,7 @@ def get_extensions():
         )
 
         if flash_extensions:
-            flash_version = subprocess.check_output(
-                ["git", "describe", "--tags", "--always"],
-                cwd=Path(__file__).parent / "third_party" / "flash-attention",
-            ).decode("ascii")[:-1]
+            flash_version = get_flash_version()
         ext_modules += flash_extensions
 
         # NOTE: This should not be applied to Flash-Attention
@@ -389,74 +410,44 @@ class clean(distutils.command.clean.clean):  # type: ignore
         distutils.command.clean.clean.run(self)
 
 
-class BuildExtensionWithMetadata(BuildExtension):
+class BuildExtensionWithExtraFiles(BuildExtension):
     def __init__(self, *args, **kwargs) -> None:
-        self.xformers_build_metadata = kwargs.pop("xformers_build_metadata")
+        self.xformers_build_metadata = kwargs.pop("extra_files")
         self.pkg_name = "xformers"
-        self.metadata_json = "cpp_lib.json"
         super().__init__(*args, **kwargs)
 
-    @staticmethod
-    def _join_cuda_home(*paths) -> str:
-        """
-        Hackfix to support custom `nvcc` binary (eg ccache)
-        TODO: Remove once we use PT 2.1.0 (https://github.com/pytorch/pytorch/pull/96987)
-        """
-        if paths == ("bin", "nvcc") and "PYTORCH_NVCC" in os.environ:
-            return os.environ["PYTORCH_NVCC"]
-        if CUDA_HOME is None:
-            raise EnvironmentError(
-                "CUDA_HOME environment variable is not set. "
-                "Please set it to your CUDA install root."
-            )
-        return os.path.join(CUDA_HOME, *paths)
-
     def build_extensions(self) -> None:
-        torch.utils.cpp_extension._join_cuda_home = (
-            BuildExtensionWithMetadata._join_cuda_home
-        )
         super().build_extensions()
-        with open(
-            os.path.join(self.build_lib, self.pkg_name, self.metadata_json), "w+"
-        ) as fp:
-            json.dump(self.xformers_build_metadata, fp)
+        for filename, content in self.xformers_build_metadata.items():
+            with open(
+                os.path.join(self.build_lib, self.pkg_name, filename), "w+"
+            ) as fp:
+                fp.write(content)
 
-    def copy_extensions_to_source(self):
+    def copy_extensions_to_source(self) -> None:
         """
         Used for `pip install -e .`
         Copies everything we built back into the source repo
         """
         build_py = self.get_finalized_command("build_py")
         package_dir = build_py.get_package_dir(self.pkg_name)
-        inplace_file = os.path.join(package_dir, self.metadata_json)
-        regular_file = os.path.join(self.build_lib, self.pkg_name, self.metadata_json)
-        self.copy_file(regular_file, inplace_file, level=self.verbose)
+
+        for filename in self.xformers_build_metadata.keys():
+            inplace_file = os.path.join(package_dir, filename)
+            regular_file = os.path.join(self.build_lib, self.pkg_name, filename)
+            self.copy_file(regular_file, inplace_file, level=self.verbose)
         super().copy_extensions_to_source()
 
 
 if __name__ == "__main__":
 
-    try:
-        # when installing as a source distribution, the version module should exist
-        # Let's import it manually to not trigger the load of the C++
-        # library - which does not exist yet, and creates a WARNING
-        spec = importlib.util.spec_from_file_location(
-            "xformers_version", os.path.join(this_dir, "xformers", "version.py")
-        )
-        if spec is None or spec.loader is None:
-            raise FileNotFoundError()
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        version = module.__version__
-    except FileNotFoundError:
-        if os.getenv("BUILD_VERSION"):  # In CI
-            version = os.getenv("BUILD_VERSION", "0.0.0")
-        else:
-            version_txt = os.path.join(this_dir, "version.txt")
-            with open(version_txt) as f:
-                version = f.readline().strip()
-            version += get_local_version_suffix()
-        write_version_file(version)
+    if os.getenv("BUILD_VERSION"):  # In CI
+        version = os.getenv("BUILD_VERSION", "0.0.0")
+    else:
+        version_txt = os.path.join(this_dir, "version.txt")
+        with open(version_txt) as f:
+            version = f.readline().strip()
+        version += get_local_version_suffix()
 
     is_building_wheel = "bdist_wheel" in sys.argv
     # Embed a fixed version of flash_attn
@@ -475,13 +466,15 @@ if __name__ == "__main__":
         description="XFormers: A collection of composable Transformer building blocks.",
         version=version,
         install_requires=fetch_requirements(),
-        packages=setuptools.find_packages(
-            exclude=("tests*", "benchmarks*", "experimental*")
-        ),
+        packages=setuptools.find_packages(exclude=("tests*", "benchmarks*")),
         ext_modules=extensions,
         cmdclass={
-            "build_ext": BuildExtensionWithMetadata.with_options(
-                no_python_abi_suffix=True, xformers_build_metadata=extensions_metadata
+            "build_ext": BuildExtensionWithExtraFiles.with_options(
+                no_python_abi_suffix=True,
+                extra_files={
+                    "cpp_lib.json": json.dumps(extensions_metadata),
+                    "version.py": generate_version_py(version),
+                },
             ),
             "clean": clean,
         },

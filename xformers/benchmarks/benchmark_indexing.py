@@ -4,25 +4,15 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import itertools
 import random
 
 import torch
-from torch.utils import benchmark
-from xformers.benchmarks.utils import benchmark_main_helper
+from utils import DTYPE2STR, benchmark_main_helper2, product_dict
 
 import xformers.ops as xops
 
-min_run_time = 0.5
+min_run_time = 0.2
 device = torch.device("cuda")
-
-
-def product_dict(**kwargs):
-    keys = kwargs.keys()
-    vals = kwargs.values()
-    for instance in itertools.product(*vals):
-        yield dict(zip(keys, instance))
-
 
 CASES_IADD = list(
     product_dict(
@@ -55,36 +45,6 @@ CASES_ISELECT = list(
         dtype=[torch.half],
     )
 )
-
-DTYPE2STR = {
-    torch.bfloat16: "b16",
-    torch.half: "f16",
-    torch.float32: "f32",
-}
-
-
-def _setup_test(functions, fw: bool = False, bw: bool = False, **kwargs):
-    for k, benchmark_cls in functions.items():
-        benchmark_object = benchmark_cls(**kwargs, bw=bw)
-        label = benchmark_object.label
-        label += "fw" if fw else ""
-        label += "bw" if bw else ""
-
-        def run_one():
-            if fw:
-                benchmark_object.fw()
-            if bw:
-                benchmark_object.bw()
-
-        yield benchmark.Timer(
-            stmt="fn()",
-            globals={
-                "fn": run_one,
-            },
-            label=label,
-            description=k,
-            sub_label=benchmark_object.sub_label,
-        )
 
 
 class ScaledIndexAddBenchmark:
@@ -143,65 +103,37 @@ class ScaledIndexAddBenchmarkBaseline(ScaledIndexAddBenchmark):
         )
 
 
-def scaled_index_add_fw(**kwargs):
-    yield from _setup_test(
-        **kwargs,
-        fw=True,
-        functions={
-            "xformers": ScaledIndexAddBenchmark,
-            "pytorch": ScaledIndexAddBenchmarkBaseline,
-        },
-    )
-
-
-def scaled_index_add_fwbw(**kwargs):
-    yield from _setup_test(
-        **kwargs,
-        fw=True,
-        bw=True,
-        functions={
-            "xformers": ScaledIndexAddBenchmark,
-            "pytorch": ScaledIndexAddBenchmarkBaseline,
-        },
-    )
-
-
 class IndexSelectBenchmark:
     def __init__(self, dtype, batches, D, keep_ratio, bw: bool) -> None:
         dtype_str = DTYPE2STR.get(dtype, dtype)
         self.sub_label = f"{dtype_str} D={D} batches={batches} keep={keep_ratio}"
         self.label = "index_select"
-        srcs = [torch.randn([B, seqlen * D]) for (B, seqlen) in batches]
-        src = torch.cat([s.view([-1, D]) for s in srcs], dim=0).cuda().to(dtype)
-        src.requires_grad_(True)
 
         indices = []
         sources = []
-        elements_i = 0
-        for source_i in srcs:
-            index = [i for i in range(source_i.shape[0])]
-            random.Random(source_i.shape[0]).shuffle(index)
+        for (B, seqlen) in batches:
+            index = [i for i in range(B)]
+            random.Random(B).shuffle(index)
             indices.append(
-                torch.tensor(
-                    index[: int(keep_ratio * source_i.shape[0])],
+                torch.zeros(
+                    index[int(keep_ratio * B)],
                     dtype=torch.int64,
                     device="cuda",
                 )
             )
-            sources.append(
-                src[
-                    elements_i : elements_i + source_i.shape[0] * source_i.shape[1] // D
-                ].reshape(source_i.shape)
+            source_i = torch.randn(
+                [B, seqlen * D], dtype=dtype, device="cuda", requires_grad=bw
             )
-            elements_i += source_i.shape[0] * source_i.shape[1] // D
-        self.indices, self.sources, self.src = indices, sources, src
+            sources.append(source_i)
+        self.indices, self.sources = indices, sources
         self.out = torch.Tensor()
 
     def fw(self) -> None:
         self.out = xops.index_select_cat(self.sources, self.indices)
 
     def bw(self):
-        self.src.grad = None
+        for src in self.sources:
+            src.grad = None
         self.out.backward(self.out, retain_graph=True)
 
 
@@ -212,30 +144,48 @@ class IndexSelectBenchmarkBaseline(IndexSelectBenchmark):
         )
 
 
-def index_select_fw(**kwargs):
-    yield from _setup_test(
-        **kwargs,
-        fw=True,
-        functions={
-            "xformers": IndexSelectBenchmark,
-            "pytorch": IndexSelectBenchmarkBaseline,
-        },
-    )
+benchmark_main_helper2(
+    "scaled_index_add_fw",
+    fw=True,
+    functions={
+        "xformers": ScaledIndexAddBenchmark,
+        "pytorch": ScaledIndexAddBenchmarkBaseline,
+    },
+    cases=CASES_IADD,
+    min_run_time=min_run_time,
+)
 
+benchmark_main_helper2(
+    "scaled_index_add_fwbw",
+    fw=True,
+    bw=True,
+    functions={
+        "xformers": ScaledIndexAddBenchmark,
+        "pytorch": ScaledIndexAddBenchmarkBaseline,
+    },
+    cases=CASES_IADD,
+    min_run_time=min_run_time,
+)
 
-def index_select_fwbw(**kwargs):
-    yield from _setup_test(
-        **kwargs,
-        fw=True,
-        bw=True,
-        functions={
-            "xformers": IndexSelectBenchmark,
-            "pytorch": IndexSelectBenchmarkBaseline,
-        },
-    )
+benchmark_main_helper2(
+    "index_select_fw",
+    fw=True,
+    functions={
+        "xformers": IndexSelectBenchmark,
+        "pytorch": IndexSelectBenchmarkBaseline,
+    },
+    cases=CASES_ISELECT,
+    min_run_time=min_run_time,
+)
 
-
-benchmark_main_helper(scaled_index_add_fw, CASES_IADD, min_run_time=min_run_time)
-benchmark_main_helper(scaled_index_add_fwbw, CASES_IADD, min_run_time=min_run_time)
-benchmark_main_helper(index_select_fw, CASES_ISELECT, min_run_time=min_run_time)
-benchmark_main_helper(index_select_fwbw, CASES_ISELECT, min_run_time=min_run_time)
+benchmark_main_helper2(
+    "index_select_fwbw",
+    fw=True,
+    bw=True,
+    functions={
+        "xformers": IndexSelectBenchmark,
+        "pytorch": IndexSelectBenchmarkBaseline,
+    },
+    cases=CASES_ISELECT,
+    min_run_time=min_run_time,
+)

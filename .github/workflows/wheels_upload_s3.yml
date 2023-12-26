@@ -1,0 +1,87 @@
+name: wheels_upload_s3
+
+on:
+  workflow_call:
+    inputs:
+      aws_role:
+        required: true
+        type: string
+      s3_path:
+        required: true
+        type: string
+        description: Example 's3://bucket/path/xformers/'
+      aws_s3_cp_extra_args:
+        required: false
+        type: string
+        default: ''
+        description: Example '--acl public-read'
+      filter:
+        required: true
+        type: string
+        description: Filter which runs to upload. Example '*+cu121*'
+      execute:
+        required: true
+        type: boolean
+        description: Actually upload the wheels. Dry-run if false
+      artifact_tag:
+        default: "facebookresearch"
+        type: string
+
+jobs:
+  wheels_upload_s3:
+    permissions:
+      id-token: write # Needed to assume AWS role
+      pull-requests: read
+      contents: read
+    name: ${{ inputs.s3_path }}
+    runs-on: ubuntu-20.04
+
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Recursive checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          path: "."
+          fetch-depth: 0 # for tags
+
+      - uses: actions/download-artifact@v3
+        with:
+          path: dist
+      # Filter builds (eg vN+cu118 for instance)
+      - run: ls -R dist/
+      - name: Extract builds to upload
+        run: |
+          set -ex
+          mv dist all-dist
+          mkdir dist
+          for f in all-dist/${{ inputs.filter }}_${{ inputs.artifact_tag }}/*.whl; do
+            cp $f dist/
+          done;
+      - run: ls -R dist/
+
+      - name: configure aws credentials
+        if: inputs.execute
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: ${{ inputs.aws_role }}
+          role-session-name: GitHub_CI
+          aws-region: "us-east-1"
+
+      - name: Sts GetCallerIdentity
+        if: inputs.execute
+        run: |
+          aws sts get-caller-identity
+
+      - name: Upload wheels to ${{ inputs.s3_path }}
+        if: inputs.execute
+        run: |
+          set -ex
+          for f in dist/*.whl; do
+            echo $f;
+            aws s3 cp $f ${{ inputs.s3_path }} ${{ inputs.aws_s3_cp_extra_args }}
+          done;
+          aws s3 ls ${{ inputs.s3_path }}

@@ -4,13 +4,14 @@ on:
   pull_request:
     paths:
       - "xformers/csrc/**"
+      - "third-party/**"
       - ".github/workflows/win-build.yml"
       - "setup.py"
       - "requirements*.txt"
 
 env:
   FORCE_CUDA: 1
-  MAX_JOBS: 4
+  MAX_JOBS: 6
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
 
@@ -23,7 +24,7 @@ jobs:
           - "8.0"
           - "7.0"
     name: win-build-${{ matrix.arch }}
-    runs-on: windows-2019
+    runs-on: windows-8-core
     env:
       PY: python3
       TORCH_CUDA_ARCH_LIST: ${{ matrix.arch }}
@@ -42,12 +43,13 @@ jobs:
       - name: Setup Runner
         uses: ./.github/actions/setup-windows-runner
         with:
-          cuda: "11.6.2"
+          # (FAv2 requires cuda 12+)
+          cuda: "12.1.0"
           python: "3.8"
 
       - name: Install build dependencies
         run: |
-          $PY -m pip install wheel setuptools ninja torch==2.0.1 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu117
+          $PY -m pip install wheel setuptools ninja torch==2.1.0 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
           git config --global --add safe.directory "*"
           $PY -c "import torch; print('torch', torch.__version__)"
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"
@@ -59,4 +61,6 @@ jobs:
         run: $PY -m pip install -v dist/*
 
       - name: Info
-        run: $PY -m xformers.info
+        run: |
+          cd ../../  # So we don't have a folder named `xformers`
+          XFORMERS_MORE_DETAILS=1 $PY -m xformers.info

@@ -30,9 +30,10 @@ class GEMMShapeDispatcher(TorchDispatchMode):
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         if kwargs is None:
             kwargs = {}
-        compute_flops = flop_mapping[func._overloadpacket]
-        if isinstance(compute_flops, GemmOpComputeFlops):
-            self.mnk = compute_flops._get_mnk(args)
+        if func._overloadpacket in flop_mapping:
+            compute_flops = flop_mapping[func._overloadpacket]
+            if isinstance(compute_flops, GemmOpComputeFlops):
+                self.mnk = compute_flops._get_mnk(args)
         return func(*args)
 
 

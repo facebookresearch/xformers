@@ -19,6 +19,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), BlockDiagonalCausalWithOffsetPaddedKeysMask}
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
+    SUPPORTS_BMGHK = True
     NAME = "ck_decoderF"
 
     @classmethod

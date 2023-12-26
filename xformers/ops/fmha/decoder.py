@@ -33,6 +33,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {BlockDiagonalCausalWithOffsetPaddedKeysMask}
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
+    SUPPORTS_BMGHK = True
     NAME = "decoderF"
 
     @classmethod
@@ -42,9 +43,6 @@ class FwOp(AttentionFwOpBase):
         attn_bias = d.attn_bias
         if isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
             # If we don't get here, we've an error elsewhere
-            if d.query.ndim != 4 or d.key.ndim != 4:
-                reasons.append("Inputs must be BMHK. BMK not supported")
-
             if d.query.shape[0] != 1:
                 reasons.append("One formal batch element expected")
 
@@ -81,17 +79,12 @@ class FwOp(AttentionFwOpBase):
         attn_bias.q_seqinfo.to(inp.query.device)
 
         padding = attn_bias.k_seqinfo.padding
-        multiquery = inp.key.stride(2) == 0
-        if multiquery:
-            key = inp.key[0, :, :1].unflatten(0, (-1, padding))
-            value = inp.value[0, :, :1].unflatten(0, (-1, padding))
-        else:
-            key = inp.key[0].unflatten(0, (-1, padding))
-            value = inp.value[0].unflatten(0, (-1, padding))
+        query, key, value = inp.get_qkv_in_bmghk()
+        query = query[0, :, None]
+        key = key[0].unflatten(0, (-1, padding))
+        value = value[0].unflatten(0, (-1, padding))
 
         seq_positions = attn_bias.k_seqinfo.seqlen
-
-        query = inp.query[0, :, None]
 
         if inp.scale is not None:
             qk_scale = inp.scale

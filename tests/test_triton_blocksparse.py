@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import functools
+
 import pytest
 import torch
 
@@ -11,6 +13,21 @@ from xformers.components import MultiHeadDispatch
 from xformers.components.attention import build_attention
 from xformers.components.attention.attention_patterns import block_sparsify_tensor
 from xformers.triton.utils import get_current_cuda_device
+
+
+def catch_oor(fn):
+    @functools.wraps(fn)
+    def fn_and_catch_oor(*args, **kwargs):
+        from triton import OutOfResources
+
+        try:
+            return fn(*args, **kwargs)
+        except OutOfResources as e:
+            pytest.skip(str(e))
+            return None
+
+    return fn_and_catch_oor
+
 
 # CREDITS:
 # Tests from, very lightly changed
@@ -23,7 +40,7 @@ _matmul_types = []
 
 if _triton_available:
     try:
-        import triton
+        import triton  # noqa: F401
         from triton.ops.blocksparse import matmul as blocksparse_matmul
         from triton.ops.blocksparse import softmax as blocksparse_softmax
 
@@ -56,6 +73,7 @@ def mask_tensor(x, mask, block, value=0):
 @pytest.mark.parametrize("TRANS_B", [False, True])
 @pytest.mark.parametrize("BLOCK", [16, 32, 64])
 @pytest.mark.parametrize("DTYPE", [torch.float16])
+@catch_oor
 def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K=256):
     # set seed
     torch.random.manual_seed(0)
@@ -85,7 +103,7 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
     )
     ra = block_sparsify_tensor(a, layout, BLOCK) if MODE == "dsd" else a
     rb = block_sparsify_tensor(b, layout, BLOCK) if MODE == "dds" else b
-    rc = triton.testing.catch_oor(lambda: op(ra, rb), pytest)
+    rc = op(ra, rb)
 
     # torch result
     ta = mask_tensor(a, layout, BLOCK) if MODE == "dsd" else a

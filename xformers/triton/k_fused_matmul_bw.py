@@ -121,8 +121,8 @@ def fused_matmul_backward(
     if not grad_out.is_contiguous():
         grad_out = grad_out.contiguous()
 
-    grad_out_ = grad_out if grad_out.ndim == 2 else grad_out.flatten(0, 1)
-    inputs_ = inputs if inputs.ndim == 2 else inputs.flatten(0, 1)
+    grad_out_ = grad_out if grad_out.ndim == 2 else grad_out.flatten(0, -2)
+    inputs_ = inputs if inputs.ndim == 2 else inputs.flatten(0, -2)
 
     assert grad_out_.shape[1] == weight.shape[0], "Incompatible dimensions in between grad_out and weight"
 

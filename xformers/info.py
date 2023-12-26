@@ -8,14 +8,7 @@ from typing import Dict
 
 import torch
 
-from . import (
-    __version__,
-    _cpp_lib,
-    _is_functorch_available,
-    _is_opensource,
-    _is_triton_available,
-    ops,
-)
+from . import __version__, _cpp_lib, _is_opensource, _is_triton_available, ops
 from .ops.common import OPERATORS_REGISTRY
 
 
@@ -27,7 +20,6 @@ def get_features_status() -> Dict[str, str]:
     for k, v in ops.swiglu_op._info().items():
         features[f"swiglu.{k}"] = v
     features["is_triton_available"] = str(_is_triton_available())
-    features["is_functorch_available"] = str(_is_functorch_available)
     return features
 
 
