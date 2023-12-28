@@ -13,7 +13,6 @@ from utils import benchmark_main_helper
 
 import xformers.ops
 import xformers.ops.fmha as fmha
-import xformers.profiler.slow_ops_profiler
 
 torch.backends.cuda.matmul.allow_tf32 = False
 
