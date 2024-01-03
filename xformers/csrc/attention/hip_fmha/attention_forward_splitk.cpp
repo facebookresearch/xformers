@@ -91,55 +91,6 @@ struct c10_to_data_t<c10::BFloat16> {
 
 namespace {
 
-// at::Tensor efficient_attention_forward_decoder_splitk_ck(
-//     const at::Tensor& XQ, // [B, 1, G, H, D]
-//     const at::Tensor& cache_K, // [B, KV_M_MAX, G, H or 1, D]
-//     const at::Tensor& cache_V, // [B, KV_M_MAX, G, H or 1, D]
-//     at::optional<at::Tensor> seq_kv_lens, // [B]
-//     double qk_scale,
-//     at::Tensor& O,
-//     int64_t split_k) {
-    
-//     at::OptionalDeviceGuard guard(XQ.device());
-
-//     TORCH_CHECK(XQ.is_cuda());
-//     TORCH_CHECK(cache_K.is_cuda());
-//     TORCH_CHECK(cache_V.is_cuda());
-
-//     TORCH_CHECK(seq_positions.is_cuda());
-
-//     auto M = XQ.size(1);
-//     auto B = XQ.size(0);
-//     auto G = XQ.size(2);
-//     auto H = XQ.size(3);
-//     auto K_q = XQ.size(4);
-//     auto M_k = cache_K.size(1);
-
-//     constexpr auto BLOCK_M = 16;
-//     auto M_ceil = (M + BLOCK_M - 1) / BLOCK_M * BLOCK_M;
-
-//     constexpr auto kThreadsPerWarp = 64;
-//     constexpr auto kWarpsPerBlock = 2; // original uses 2 warps
-
-//     const auto options = at::TensorOptions()
-//                              .dtype(XQ.dtype())
-//                              .layout(at::kStrided)
-//                              .device(XQ.device())
-//                              .requires_grad(false);
-
-//     auto O_splitk = at::empty({B * G * H, split_k, M_ceil, K_q}, options);
-//     auto metadata = at::empty({B * G * H, 2, split_k, M_ceil}, options);
-
-//     dim3 attention_grid = {static_cast<uint32_t>(M / BLOCK_M), static_cast<uint32_t>(B * G * H), static_cast<uint32_t>(split_k)};
-//     dim3 reduce_grid = {static_cast<uint32_t>(B * G * H), static_cast<uint32_t>(M)};
-
-//     dim3 threads = {kThreadsPerWarp * kWarpsPerBlock};
-    
-//     auto O = at::empty_like(XQ);
-
-//     return O;
-// }
-
 template <int32_t ThreadsPerWavefront, int32_t WavefrontsPerBlock,
           int32_t KV_M_MAX = 8192,
           int32_t K_MAX = 256>
@@ -347,37 +298,6 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 */
 
 // clang-format on
-
-// static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_torch(
-//   const at::Tensor& Q,
-//   const at::Tensor& K,
-//   const at::Tensor& V,
-//   const at::Tensor& k_seqlens
-// ) {
-//   auto Q_scaled = Q / sqrt(Q.size(-1));
-//   auto S = at::einsum("bmghk, bnghk -> bmghn", {Q_scaled, K}, at::nullopt);
-
-//   auto m = std::get<0>(at::max(S, /* dim */ 1, /* keepdim */ true));
-//   auto s = at::exp(at::sub(S, m));
-  
-//   // causal mask
-//   for (size_t b = 0; b < k_seqlens.numel(); ++b) {
-//     auto seqlen = k_seqlens[b].item<int64_t>();
-//     at::slice(s[b], /* dim */ -1, /* start */ seqlen, /* end */ -1).zero_();
-//   }
-
-//   auto l = at::sum(s, /* dim */ -1, /* keepdim */ true);
-//   auto O = at::einsum("bmghn, bnghk -> bmghk", {s, V}, at::nullopt);
-//   return std::make_tuple(O, m, l);
-// }
-
-// static at::Tensor split1_reduce_torch(
-//   const at::Tensor& O_splits,
-//   const at::Tensor& m,
-//   const at::Tensor& l
-// ) {
-//   return at::div(O_splits[0], l);
-// }
 
 namespace ck {
 namespace tensor_operation {
