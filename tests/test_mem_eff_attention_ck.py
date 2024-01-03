@@ -401,10 +401,6 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
 
     # reduce out over split-k slices
 
-    # return slices[0]["row_max"].repeat_interleave(256, -1)
-    # return slices[0]["row_lse"].repeat_interleave(256, -1)
-    # return slices[0]["attn_slice"]
-
     m_current_max = torch.zeros_like(slices[0]["row_max"]).fill_(float("-inf"))
     l_current_sum = torch.zeros_like(slices[0]["row_lse"])
 
@@ -1755,14 +1751,10 @@ def test_splitk_reference(
 
 
 @pytest.mark.parametrize("op", [fmha.ck_decoder.FwOp])
-# @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
-# @pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)])
-# @pytest.mark.parametrize("padding", [32, 4096])
-# @pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
-@pytest.mark.parametrize("dtype", ["f32"])
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
-@pytest.mark.parametrize("n_heads", [16])
-@pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1)])
+@pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)])
+@pytest.mark.parametrize("padding", [32, 4096])
+@pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
 def test_decoder(
     op,
     n_heads: int,
@@ -1816,18 +1808,9 @@ def test_decoder(
     if (not_supported_reasons := op.not_supported_reasons(inp)):
         pytest.skip(f"{not_supported_reasons=}")
 
-    ref_output = ref_attention_splitk(q, k, v, attn_bias, dtype=dtype_, split_k=1)
-
-    print(f"{ref_output.shape=}")
-
     decoder_output = fmha.memory_efficient_attention_forward(
         q, k, v, attn_bias, op=op
     )
-
-    # attn_bias_tensor = attn_bias.materialize(shape=(q.shape[0], 1, q.shape[1], k.shape[1]), device=q.device, dtype=dtype_)
-    # print(f"{k_seqlen=}")
-    # torch.set_printoptions(threshold=None, edgeitems=256)
-    # print(f"{attn_bias_tensor.shape=} {attn_bias_tensor=}")
 
     ref_output = ref_attention(q, k, v, attn_bias)
 
@@ -1844,10 +1827,6 @@ def test_decoder(
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
 @pytest.mark.parametrize("n_heads", [16])
 @pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1), (32, 1), (4096, 8)])
-# @pytest.mark.parametrize("dtype", ["f16"])
-# @pytest.mark.parametrize("kv_heads", [None], ids=_kv_heads_label)
-# @pytest.mark.parametrize("n_heads", [16])
-# @pytest.mark.parametrize("padding, bsz", [(32, 8),])
 def test_splitk_decoder(
     op,
     kv_heads: Optional[int],
