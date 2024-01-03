@@ -25,6 +25,7 @@
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_default_policy.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
 #include <ck/tile_program/tile/tile_fmha_traits.hpp>
+#include <ck/tile_program/block_tile/block_masking.hpp>
 
 #include "ck_tiled_fmha_forward_kernel.h"
 #include "ck_tiled_fmha_fwd_epilogue.h"
@@ -32,8 +33,10 @@
 #include "ck_tiled_fmha_params.h"
 #include "ck_tiled_fmha_definitions.h"
 
-template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
-struct batched_infer_masktype_attnbias_dispatched
+#include "ck_tiled_bool_switch.h"
+
+template <typename scalar_t, bool has_causal_mask, bool has_attn_bias>
+struct batched_infer_causalmask_attnbias_dispatched
 {
     using QDataType           = scalar_t;
     using KDataType           = scalar_t;
@@ -46,9 +49,6 @@ struct batched_infer_masktype_attnbias_dispatched
     using ODataType           = scalar_t;
 
     using VLayout = ck::tensor_layout::gemm::RowMajor;
-
-    static constexpr auto masktype = static_cast<CausalMaskType>(custom_mask_type);
-    using FmhaCausalMask           = typename CausalMaskPredicate<masktype>::predicate;
 
     using FmhaBlockTileHdim64  = ck::Sequence<128, 64, 32, 64, 32, 64>;
     using FmhaBlockTileHdim128 = ck::Sequence<128, 128, 32, 128, 32, 128>;
@@ -89,7 +89,7 @@ struct batched_infer_masktype_attnbias_dispatched
     }()
 #endif
 
-    template <typename FmhaTraits, typename FmhaShape>
+    template <typename FmhaTraits, typename FmhaShape, typename FmhaMask>
     using FmhaPipelineProblemTemp =
         ck::tile_program::block::BlockFmhaPipelineProblem<QDataType,
                                                           KDataType,
@@ -103,54 +103,73 @@ struct batched_infer_masktype_attnbias_dispatched
                                                           256, // BlockSize
                                                           FmhaShape,
                                                           false, // kIsGroupMode
-                                                          FmhaCausalMask,
+                                                          FmhaMask,
                                                           FmhaTraits>;
 
     static void Run(BatchedForwardParams& param, hipStream_t stream)
     {
-        BATCHED_INFER_HEADDIM_SWITCH(param.K, param.Kv, [&] {
-            using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
+        const bool has_local_attention = (param.window_size > 0) ? true : false;
 
-            if(param.M % FmhaShape::kM0 == 0 && param.N % FmhaShape::kN0 == 0)
-            {
-                using FmhaTraits = ck::tile_program::TileFmhaTraits<false, false, has_attn_bias>;
-                using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaShape>;
-                using FmhaPipeline =
-                    ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>;
-                using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+        BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
+            constexpr bool has_masking = has_causal_mask || USE_LOCAL_ATTENTION;
 
-                RunWithKernel<FmhaKernel>(param, stream);
-            }
-            else if(param.M % FmhaShape::kM0 == 0 && param.N % FmhaShape::kN0 != 0)
-            {
-                using FmhaTraits = ck::tile_program::TileFmhaTraits<false, true, has_attn_bias>;
-                using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaShape>;
-                using FmhaPipeline =
-                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
-                using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+            using FmhaMask =
+                ck::tile_program::block::GenericAttentionMask<has_masking, USE_LOCAL_ATTENTION>;
 
-                RunWithKernel<FmhaKernel>(param, stream);
-            }
-            else if(param.M % FmhaShape::kM0 != 0 && param.N % FmhaShape::kN0 == 0)
-            {
-                using FmhaTraits = ck::tile_program::TileFmhaTraits<true, false, has_attn_bias>;
-                using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaShape>;
-                using FmhaPipeline =
-                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
-                using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+            BATCHED_INFER_HEADDIM_SWITCH(param.K, param.Kv, [&] {
+                using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
 
-                RunWithKernel<FmhaKernel>(param, stream);
-            }
-            else if(param.M % FmhaShape::kM0 != 0 && param.N % FmhaShape::kN0 != 0)
-            {
-                using FmhaTraits = ck::tile_program::TileFmhaTraits<true, true, has_attn_bias>;
-                using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaShape>;
-                using FmhaPipeline =
-                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
-                using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+                if(param.M % FmhaShape::kM0 == 0 && param.N % FmhaShape::kN0 == 0)
+                {
+                    using FmhaTraits =
+                        ck::tile_program::TileFmhaTraits<false, false, has_attn_bias>;
 
-                RunWithKernel<FmhaKernel>(param, stream);
-            };
+                    using FmhaPipelineProblem =
+                        FmhaPipelineProblemTemp<FmhaTraits, FmhaShape, FmhaMask>;
+                    using FmhaPipeline =
+                        ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>;
+                    using FmhaKernel =
+                        FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+                    RunWithKernel<FmhaKernel>(param, stream);
+                }
+                else if(param.M % FmhaShape::kM0 == 0 && param.N % FmhaShape::kN0 != 0)
+                {
+                    using FmhaTraits = ck::tile_program::TileFmhaTraits<false, true, has_attn_bias>;
+                    using FmhaPipelineProblem =
+                        FmhaPipelineProblemTemp<FmhaTraits, FmhaShape, FmhaMask>;
+                    using FmhaPipeline =
+                        ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+                    using FmhaKernel =
+                        FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+                    RunWithKernel<FmhaKernel>(param, stream);
+                }
+                else if(param.M % FmhaShape::kM0 != 0 && param.N % FmhaShape::kN0 == 0)
+                {
+                    using FmhaTraits = ck::tile_program::TileFmhaTraits<true, false, has_attn_bias>;
+                    using FmhaPipelineProblem =
+                        FmhaPipelineProblemTemp<FmhaTraits, FmhaShape, FmhaMask>;
+                    using FmhaPipeline =
+                        ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+                    using FmhaKernel =
+                        FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+                    RunWithKernel<FmhaKernel>(param, stream);
+                }
+                else if(param.M % FmhaShape::kM0 != 0 && param.N % FmhaShape::kN0 != 0)
+                {
+                    using FmhaTraits = ck::tile_program::TileFmhaTraits<true, true, has_attn_bias>;
+                    using FmhaPipelineProblem =
+                        FmhaPipelineProblemTemp<FmhaTraits, FmhaShape, FmhaMask>;
+                    using FmhaPipeline =
+                        ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+                    using FmhaKernel =
+                        FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+                    RunWithKernel<FmhaKernel>(param, stream);
+                };
+            });
         });
     };
 
@@ -184,7 +203,9 @@ struct batched_infer_masktype_attnbias_dispatched
                 param.k_strides[0],
                 param.v_strides[0],
                 param.attn_bias_strides[0],
-                param.out_strides[0]);
+                param.out_strides[0],
+                static_cast<CausalMaskType>(param.custom_mask_type),
+                param.window_size);
         }();
 
         dim3 kGridSize            = FmhaKernel::GridSize(param.B, param.Hq, param.M, param.Kv);
@@ -196,9 +217,10 @@ struct batched_infer_masktype_attnbias_dispatched
     };
 };
 
-template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
-void run_batched_infer_masktype_attnbias_dispatched(BatchedForwardParams& param, hipStream_t stream)
+template <typename scalar_t, bool has_causal_mask, bool has_attn_bias>
+void run_batched_infer_causalmask_attnbias_dispatched(BatchedForwardParams& param,
+                                                      hipStream_t stream)
 {
-    batched_infer_masktype_attnbias_dispatched<scalar_t, custom_mask_type, has_attn_bias>::Run(
+    batched_infer_causalmask_attnbias_dispatched<scalar_t, has_causal_mask, has_attn_bias>::Run(
         param, stream);
 };

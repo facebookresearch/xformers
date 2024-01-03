@@ -65,7 +65,8 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
     bool compute_logsumexp,
     int64_t custom_mask_type,
     c10::optional<double> scale,
-    const c10::optional<at::Tensor>& seqlen_k)
+    const c10::optional<at::Tensor>& seqlen_k,
+    const c10::optional<int64_t> window_size)
 {
     TORCH_CHECK(query.dim() == 4);
     TORCH_CHECK(key.dim() == 4);
@@ -206,6 +207,7 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
             p.has_attn_bias = false;
 
         p.custom_mask_type = custom_mask_type;
+        p.window_size      = window_size.has_value() ? (*window_size > 0 ? *window_size : 0) : 0;
 
         p.use_dropout       = use_dropout;
         p.philox_seed       = philox_seed;
@@ -287,6 +289,7 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
             p.has_attn_bias = false;
 
         p.custom_mask_type = custom_mask_type;
+        p.window_size      = window_size.has_value() ? (*window_size > 0 ? *window_size : 0) : 0;
 
         // max_seqlen_q is used to create logsumexp tensor
         p.max_seqlen_q = *max_seqlen_q_;

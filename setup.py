@@ -346,7 +346,10 @@ def get_extensions():
        else:
            include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel' / 'include']
            
-       generator_flag = []
+       if os.getenv("FORCE_CK_TILED_KERNEL", "0") == "1":
+           generator_flag = ["-DUSE_CK_TILED_KERNEL"]
+       else:
+           generator_flag = []
        cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
        extra_compile_args={
             "cxx": ["-O3", "-std=c++17"] + generator_flag,

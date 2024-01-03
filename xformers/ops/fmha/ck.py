@@ -181,6 +181,7 @@ class FwOp(AttentionFwOpBase):
             seqlen_k=inp.attn_bias.k_seqinfo.seqlen_cpu
             if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
             else None,
+            window_size=0,
         )
         ctx: Optional[Context] = None
         if needs_gradient:
