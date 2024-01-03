@@ -300,7 +300,7 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck(
     double qk_scale,
     int64_t split_k) {
 
-  return efficient_attention_forward_decoder_split1_torch(XQ, cache_K, cache_V, seq_kv_lens, qk_scale);
+  // return efficient_attention_forward_decoder_split1_torch(XQ, cache_K, cache_V, seq_kv_lens, qk_scale);
 
   return efficient_attention_forward_decoder_splitk_ck_impl<
       kThreadsPerWavefront,
