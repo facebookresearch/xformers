@@ -652,6 +652,11 @@ void launch_attention(
   dim3 grid(ceil_div(M, int64_t(TILE_SIZE)), B);
   dim3 block(WARP_SIZE, TILE_SIZE / kBlockSizeQ);
 
+  if (grid.x * grid.y * grid.z == 0 || key.numel() == 0) {
+    res.zero_();
+    return;
+  }
+
   using scalar_t = float;
 
   auto attn_bias_packed = _packed_tensor_accessor_or_dummy<scalar_t>(attn_bias);
@@ -1100,6 +1105,9 @@ void launch_attention_backward(
   dim3 grid(
       ceil_div(M, int64_t(TILE_SIZEQ)), ceil_div(N, int64_t(TILE_SIZEK)), B);
   dim3 block(TILE_SIZEQ / kBlockSizeQ, TILE_SIZEK / kBlockSizeK);
+  if (grid.x * grid.y * grid.z == 0) {
+    return;
+  }
 
   // the bounds checking in device code is very expensive, making the code
   // around 25% slower. So let's skip those checks if possible.
@@ -1444,10 +1452,11 @@ at::Tensor _dropout_mask(at::Tensor output, double p) {
   // invert from drop probability to keep probability
   p = 1.0 - p;
 
-  dropout_kernel<scalar_t, scalar_t, kBlockSizeK, kBlockSizeQ, WARP_SIZE>
-      <<<grid, block, 0, stream>>>(
-          output.packed_accessor<scalar_t, 3>(), p, rng_engine_inputs);
-
+  if (grid.x * grid.y * grid.z > 0) {
+    dropout_kernel<scalar_t, scalar_t, kBlockSizeK, kBlockSizeQ, WARP_SIZE>
+        <<<grid, block, 0, stream>>>(
+            output.packed_accessor<scalar_t, 3>(), p, rng_engine_inputs);
+  }
   return output;
 }
 

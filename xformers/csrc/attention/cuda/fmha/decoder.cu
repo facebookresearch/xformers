@@ -208,10 +208,10 @@ template <
     // Never nonzero in Python xformers library.
     int seq_positions_shift = 0>
 __global__ void mqa_attn_kernel(
-    at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> XQ,
-    at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_K,
-    at::PackedTensorAccessor64<scalar_t, 4, at::RestrictPtrTraits> cache_V,
-    at::PackedTensorAccessor32<scalar_t, 4, at::RestrictPtrTraits> O,
+    at::PackedTensorAccessor32<scalar_t, 5, at::RestrictPtrTraits> XQ,
+    at::PackedTensorAccessor64<scalar_t, 5, at::RestrictPtrTraits> cache_K,
+    at::PackedTensorAccessor64<scalar_t, 5, at::RestrictPtrTraits> cache_V,
+    at::PackedTensorAccessor32<scalar_t, 5, at::RestrictPtrTraits> O,
     at::PackedTensorAccessor32<int32_t, 1, at::RestrictPtrTraits> seq_positions,
     float qk_scale) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
@@ -223,7 +223,8 @@ __global__ void mqa_attn_kernel(
 
   // Each block handles a single batch and head
   int32_t b = blockIdx.x;
-  int32_t h = blockIdx.y;
+  int32_t g = blockIdx.y;
+  int32_t h = blockIdx.z;
 
   // Note: this is decoding case where we attent to current and all previous
   // tokens.
@@ -232,11 +233,10 @@ __global__ void mqa_attn_kernel(
   int32_t warp_idx = threadIdx.y;
   // need kWarpsPerBlock == blockDim.y;
   // Need D_H == 128
-  auto* q_ = &(XQ[b][0][h][0]);
+  auto* q_ = &(XQ[b][0][g][h][0]);
 
-  bool multiquery = cache_K.size(2) == 1;
-  auto* cache_K_base = &cache_K[b][0][multiquery ? 0 : h][0];
-  auto* cache_V_base = &cache_V[b][0][multiquery ? 0 : h][0];
+  auto* cache_K_base = &cache_K[b][0][g][h][0];
+  auto* cache_V_base = &cache_V[b][0][g][h][0];
 
   // Load Q into registers in all warps.
   // Each thread handles 4 D dimensions
@@ -409,7 +409,7 @@ __global__ void mqa_attn_kernel(
       r = fx4_acc(r, partial_r);
     }
     // write output D row
-    auto* o_ = (&O[b][0][h][0]);
+    auto* o_ = (&O[b][0][g][h][0]);
     auto bf_r = fx4_to_scalar4<scalar_t>(r);
     *(reinterpret_cast<whole_int_t*>(o_) + threadIdx.x) =
         *reinterpret_cast<const whole_int_t*>(&bf_r);
@@ -420,9 +420,9 @@ __global__ void mqa_attn_kernel(
 }
 
 at::Tensor mqa_attn(
-    at::Tensor XQ, // [B, 1, H, D]
-    at::Tensor cache_K, // [B, T_MAX, H or 1, D]
-    at::Tensor cache_V, // [B, T_MAX, H or 1, D]
+    at::Tensor XQ, // [B, 1, G, H, D]
+    at::Tensor cache_K, // [B, T_MAX, G, H, D]
+    at::Tensor cache_V, // [B, T_MAX, G, H, D]
     at::Tensor seq_positions, // [B]
     double qk_scale) {
   at::OptionalDeviceGuard guard(XQ.device());
@@ -433,12 +433,13 @@ at::Tensor mqa_attn(
   TORCH_CHECK(seq_positions.is_cuda());
 
   TORCH_CHECK(cache_K.size(1) <= T_MAX);
-  TORCH_CHECK(cache_K.size(3) == D_H);
+  TORCH_CHECK(cache_K.size(4) == D_H);
 
   auto O = at::empty_like(XQ);
   auto B = XQ.size(0);
-  auto H = XQ.size(2);
-  dim3 blocks(B, H);
+  auto G = XQ.size(2);
+  auto H = XQ.size(3);
+  dim3 blocks(B, G, H);
   dim3 threads(kThreadsPerWarp, kWarpsPerBlock);
 
   int32_t smem_softmax = T_MAX * sizeof(float) + kWarpsPerBlock * sizeof(float);
@@ -454,10 +455,10 @@ at::Tensor mqa_attn(
     }
     mqa_attn_kernel<at::Half>
         <<<blocks, threads, smem, at::cuda::getCurrentCUDAStream()>>>(
-            XQ.packed_accessor32<at::Half, 4, at::RestrictPtrTraits>(),
-            cache_K.packed_accessor64<at::Half, 4, at::RestrictPtrTraits>(),
-            cache_V.packed_accessor64<at::Half, 4, at::RestrictPtrTraits>(),
-            O.packed_accessor32<at::Half, 4, at::RestrictPtrTraits>(),
+            XQ.packed_accessor32<at::Half, 5, at::RestrictPtrTraits>(),
+            cache_K.packed_accessor64<at::Half, 5, at::RestrictPtrTraits>(),
+            cache_V.packed_accessor64<at::Half, 5, at::RestrictPtrTraits>(),
+            O.packed_accessor32<at::Half, 5, at::RestrictPtrTraits>(),
             seq_positions
                 .packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(),
             qk_scale);
@@ -471,10 +472,10 @@ at::Tensor mqa_attn(
     }
     mqa_attn_kernel<at::BFloat16>
         <<<blocks, threads, smem, at::cuda::getCurrentCUDAStream()>>>(
-            XQ.packed_accessor32<at::BFloat16, 4, at::RestrictPtrTraits>(),
-            cache_K.packed_accessor64<at::BFloat16, 4, at::RestrictPtrTraits>(),
-            cache_V.packed_accessor64<at::BFloat16, 4, at::RestrictPtrTraits>(),
-            O.packed_accessor32<at::BFloat16, 4, at::RestrictPtrTraits>(),
+            XQ.packed_accessor32<at::BFloat16, 5, at::RestrictPtrTraits>(),
+            cache_K.packed_accessor64<at::BFloat16, 5, at::RestrictPtrTraits>(),
+            cache_V.packed_accessor64<at::BFloat16, 5, at::RestrictPtrTraits>(),
+            O.packed_accessor32<at::BFloat16, 5, at::RestrictPtrTraits>(),
             seq_positions
                 .packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(),
             qk_scale);
@@ -491,10 +492,10 @@ at::Tensor mqa_attn(
     }
     mqa_attn_kernel<float>
         <<<blocks, threads, smem, at::cuda::getCurrentCUDAStream()>>>(
-            XQ.packed_accessor32<float, 4, at::RestrictPtrTraits>(),
-            cache_K.packed_accessor64<float, 4, at::RestrictPtrTraits>(),
-            cache_V.packed_accessor64<float, 4, at::RestrictPtrTraits>(),
-            O.packed_accessor32<float, 4, at::RestrictPtrTraits>(),
+            XQ.packed_accessor32<float, 5, at::RestrictPtrTraits>(),
+            cache_K.packed_accessor64<float, 5, at::RestrictPtrTraits>(),
+            cache_V.packed_accessor64<float, 5, at::RestrictPtrTraits>(),
+            O.packed_accessor32<float, 5, at::RestrictPtrTraits>(),
             seq_positions
                 .packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(),
             qk_scale);

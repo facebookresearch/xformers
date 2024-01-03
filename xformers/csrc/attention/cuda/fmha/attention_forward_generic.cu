@@ -47,7 +47,8 @@ efficient_attention_forward_cutlass(
     bool compute_logsumexp,
     int64_t custom_mask_type,
     c10::optional<double> scale,
-    const c10::optional<at::Tensor>& seqlen_k) {
+    const c10::optional<at::Tensor>& seqlen_k,
+    const c10::optional<int64_t> window_size) {
 #ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
   TORCH_CHECK(
       false,
@@ -213,6 +214,10 @@ efficient_attention_forward_cutlass(
       p.seqlen_k_ptr = (int32_t*)seqlen_k->data_ptr();
     }
 
+    if (window_size.has_value()) {
+      p.window_size = *window_size;
+    }
+
     if (scale.has_value()) {
       p.scale = float(*scale);
     } else {
@@ -274,8 +279,13 @@ efficient_attention_forward_cutlass(
           " kb)");
       AT_CUDA_CHECK(err);
     }
+    auto blocks = p.getBlocksGrid();
+    if (blocks.x * blocks.y * blocks.z == 0 || key.size(1) == 0) {
+      res.zero_();
+      return;
+    }
     Kernel::check_supported(p);
-    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
+    kernel_fn<<<blocks, p.getThreadsGrid(), smem_bytes, stream>>>(p);
   };
 
   // Dispatch to the right kernel

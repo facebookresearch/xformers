@@ -26,6 +26,8 @@
       * test_unsupported_stride_alignment
       * test_cuda_streams
       * test_dropout
+      * test_backward
+      * test_decoder
 
    4. verify testing for memory_efficient_attention forward (with dropout)
 

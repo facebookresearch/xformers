@@ -3,31 +3,39 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 from typing import Optional, Sequence
 
 import torch
 
-from .common import BaseOperator, get_xformers_operator, register_operator
+from xformers.ops._triton import (
+    index_select_cat_bwd,
+    index_select_cat_fwd,
+    scaled_index_add_bwd,
+    scaled_index_add_fwd,
+)
+
+from .common import BaseOperator, register_operator
 
 
+# Keeping these operator registry here so that
+# it's easy to check if they are available
 @register_operator
 class ScaledIndexAddFw(BaseOperator):
-    OPERATOR = get_xformers_operator("scaled_index_addF")
+    OPERATOR = scaled_index_add_fwd
     OPERATOR_CATEGORY = "indexing"
     NAME = "scaled_index_addF"
 
 
 @register_operator
 class ScaledIndexAddBw(BaseOperator):
-    OPERATOR = get_xformers_operator("scaled_index_addB")
+    OPERATOR = scaled_index_add_bwd
     OPERATOR_CATEGORY = "indexing"
     NAME = "scaled_index_addB"
 
 
 @register_operator
 class IndexSelect(BaseOperator):
-    OPERATOR = get_xformers_operator("index_select")
+    OPERATOR = index_select_cat_fwd
     OPERATOR_CATEGORY = "indexing"
     NAME = "index_select"
 
@@ -37,57 +45,59 @@ class _ScaledIndexAdd(torch.autograd.Function):
     # type: ignore
     def forward(
         ctx,
-        input: torch.Tensor,
+        x: torch.Tensor,
         index: torch.Tensor,
         source: torch.Tensor,
         scaling: Optional[torch.Tensor],
         alpha: float,
     ) -> torch.Tensor:
-        ScaledIndexAddFw.OPERATOR(
-            output=input,  # in-place
-            input=input,
-            source=source,
-            index=index,
-            source_scaling=scaling,
-            alpha=alpha,
-        )
-        ctx.mark_dirty(input)
+        if scaled_index_add_fwd is not None:
+            scaled_index_add_fwd(x, index, source, scaling, alpha)
+        else:
+            raise RuntimeError(
+                "Triton is needed for forward pass but it is not available!"
+            )
+
+        ctx.mark_dirty(x)
         ctx.save_for_backward(index, scaling, source)
         ctx.source_shape = source.shape
         ctx.alpha = alpha
-        return input
+        return x
 
     @staticmethod
     @torch.autograd.function.once_differentiable
     def backward(ctx, grad_output):
         index, scaling, source = ctx.saved_tensors
-        grad_source = torch.empty_like(grad_output[: index.shape[0]])
-        grad_source_scaling = (
-            torch.empty(
-                ctx.source_shape,
-                dtype=scaling.dtype,
-                device=scaling.device,
+        grad_source = torch.empty_like(source)
+        grad_scaling = (
+            None
+            if scaling is None
+            else torch.empty(
+                ctx.source_shape, dtype=scaling.dtype, device=scaling.device
             )
-            if scaling is not None
-            else None
         )
-        ScaledIndexAddBw.OPERATOR(
-            grad_source=grad_source,
-            grad_source_scaling=grad_source_scaling,
-            grad_output=grad_output,
-            source=source,
-            index=index,
-            source_scaling=scaling,
-            alpha=ctx.alpha,
-        )
-        if grad_source_scaling is not None:
-            grad_source_scaling = grad_source_scaling.sum((0, 1))
+
+        if scaled_index_add_bwd is not None:
+            scaled_index_add_bwd(
+                grad_output,
+                grad_source,
+                grad_scaling,
+                source,
+                scaling,
+                index,
+                ctx.alpha,
+            )
+        else:
+            raise RuntimeError(
+                "Triton is needed for backward pass but it is not available!"
+            )
+
         return (
-            grad_output,  # input
-            None,  # index
-            grad_source,  # source
-            grad_source_scaling,  # scaling
-            None,  # alpha
+            grad_output,  # gradient of input
+            None,  # gradient of index
+            grad_source,  # gradient of source
+            grad_scaling,  # gradient of scaling
+            None,  # gradient of alpha
         )
 
 
@@ -103,27 +113,20 @@ def scaled_index_add(
 
     Indices in ``index`` are assumed to be unique
 
+    The max index in ``index`` is assumed to be less than the size of dim0 of ``input``.
+
     :Note:
 
         The FW pass is done in-place (``input`` is modified)
-
-    :Note:
-
-        This is experimental and has only been optimized for a few shapes
 
     :Equivalent pytorch code:
 
     .. code-block:: python
 
-        return torch.index_add(inp, dim=0, source=scaling * src, index=indices, alpha=alpha)
+        return torch.index_add(input, dim=0, source=scaling * src, index=indices, alpha=alpha)
     """
-    return _ScaledIndexAdd.apply(
-        input,
-        index,
-        source,
-        scaling,
-        alpha,
-    )
+
+    return _ScaledIndexAdd.apply(input, index, source, scaling, alpha)
 
 
 class _IndexSelectCat(torch.autograd.Function):
@@ -136,62 +139,76 @@ class _IndexSelectCat(torch.autograd.Function):
         assert len(args) % 2 == 0
         sources = args[: len(args) // 2]
         indices = args[len(args) // 2 :]
-        output_shape = 0
-        total_source_elements = 0
+
+        output_numel = 0
         for source, index in zip(sources, indices):
-            output_shape += index.shape[0] * source.shape[1]
-            total_source_elements += source.shape[0] * source.shape[1]
+            num_rows, num_cols = source.shape
+            num_indices = index.shape[0]
+            output_numel += num_indices * num_cols
+
         output = torch.empty(
-            [output_shape], dtype=sources[0].dtype, device=sources[0].device
+            [output_numel], dtype=sources[0].dtype, device=sources[0].device
         )
-        output_i = 0
+
+        processed_numel = 0
         for source, index in zip(sources, indices):
-            elements_here = index.shape[0] * source.shape[1]
-            IndexSelect.OPERATOR(
-                output=output[output_i : output_i + elements_here].view(
-                    [index.shape[0], source.shape[1]]
-                ),
-                source=source,
-                index=index,
-            )
-            output_i += elements_here
+            num_indices = index.shape[0]
+            num_cols = source.shape[1]
+
+            if index_select_cat_fwd is not None:
+                index_select_cat_fwd(
+                    output[
+                        processed_numel : processed_numel + num_indices * num_cols
+                    ].view([num_indices, num_cols]),
+                    source,
+                    index,
+                )
+            else:
+                raise RuntimeError(
+                    "Triton is needed for forward pass but it is not available!"
+                )
+
+            processed_numel += num_indices * num_cols
+
         ctx.save_for_backward(*indices)
-        ctx.total_source_elements = total_source_elements
-        ctx.source_shapes = [s.shape for s in sources]
+        ctx.source_shapes = [source.shape for source in sources]
+
         return output
 
     @staticmethod
     @torch.autograd.function.once_differentiable
     def backward(ctx, grad_output):
         indices = ctx.saved_tensors
-        grad_sources = torch.zeros(
-            [ctx.total_source_elements],
-            dtype=grad_output.dtype,
-            device=grad_output.device,
-        )
-        grad_sources_i = 0
-        grad_output_i = 0
+
         gradients = []
+        processed_numel = 0
         for source_shape, index in zip(ctx.source_shapes, indices):
+            num_rows, num_cols = source_shape
+            num_indices = index.shape[0]
+
             grad_output_slice = grad_output[
-                grad_output_i : grad_output_i + index.shape[0] * source_shape[1]
-            ].reshape([index.shape[0], source_shape[1]])
-            grad_output_i += index.shape[0] * source_shape[1]
+                processed_numel : processed_numel + num_indices * num_cols
+            ].reshape([num_indices, num_cols])
+            processed_numel += num_indices * num_cols
 
-            gradient_source = grad_sources[
-                grad_sources_i : grad_sources_i + source_shape[0] * source_shape[1]
-            ].reshape(source_shape)
-            grad_sources_i += source_shape[0] * source_shape[1]
-
-            ScaledIndexAddFw.OPERATOR(
-                output=gradient_source.unsqueeze(1),
-                input=None,
-                source=grad_output_slice.unsqueeze(1),
-                index=index,
-                source_scaling=None,
-                alpha=1.0,
+            grad_source_slice = torch.zeros(
+                [num_rows, num_cols],
+                dtype=grad_output.dtype,
+                device=grad_output.device,
             )
-            gradients.append(gradient_source)
+
+            if index_select_cat_bwd is not None:
+                index_select_cat_bwd(
+                    grad_source_slice,
+                    index,
+                    grad_output_slice,
+                )
+            else:
+                raise RuntimeError(
+                    "Triton is needed for backward pass but it is not available!"
+                )
+            gradients.append(grad_source_slice)
+
         return (*gradients, *([None] * len(gradients)))
 
 
@@ -200,10 +217,7 @@ def index_select_cat(
 ) -> torch.Tensor:
     """
     Indices in ``index`` are assumed to be unique
-
-    :Note:
-
-        This is experimental and has only been optimized for a few shapes
+    In each (index, source) pair, the max index in ``index`` is assumed to be less than the size of dim0 of ``source``
 
     :Example:
 

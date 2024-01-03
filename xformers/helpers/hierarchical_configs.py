@@ -8,6 +8,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from xformers._deprecation_warning import deprecated_function
 from xformers.components.residual import ResidualNormStyle
 
 
@@ -39,6 +40,7 @@ def get_hierarchical_configuration(
     Contrary to more "classical" Transformer architectures, which conserve the sequence/context
     length across layers, hierarchical Transformers trade the sequence length for the embedding dimension
     """
+    deprecated_function(get_hierarchical_configuration)
 
     base_config: Dict[str, Any] = {
         "block_type": "encoder",

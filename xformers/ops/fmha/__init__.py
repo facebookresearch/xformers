@@ -7,7 +7,8 @@ from typing import Any, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
-from . import cutlass, decoder, flash, small_k, triton, ck, forward_splitk, ck_decoder
+
+from . import attn_bias, cutlass, decoder, flash, small_k, triton, triton_splitk, forward_splitk, ck, ck_decoder
 from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
@@ -135,6 +136,8 @@ def memory_efficient_attention(
 
     - If inputs have dimension 3, it is assumed that the dimensions are ``[B, M, K]`` and ``H=1``
 
+    - Inputs can also be of dimension 5 with GQA - see note below
+
     - Inputs can be non-contiguous - we only require the last dimension's stride to be 1
 
 
@@ -172,6 +175,34 @@ def memory_efficient_attention(
     :Supported hardware:
 
         NVIDIA GPUs with compute capability above 6.0 (P100+), datatype ``f16``, ``bf16`` and ``f32``.
+
+    :EXPERIMENTAL: Using with Multi Query Attention (MQA) and Grouped Query Attention (GQA):
+
+        MQA/GQA is an experimental feature supported only for the forward pass.
+        If you have 16 heads in query, and 2 in key/value, you can provide 5-dim tensors
+        in the ``[B, M, G, H, K]`` format, where ``G`` is the number of head groups (here 2), and
+        ``H`` is the number of heads per group (8 in the example).
+
+        Please note that xFormers will not automatically broadcast the inputs, so you will need
+        to broadcast it manually before calling `memory_efficient_attention`.
+
+    :GQA/MQA example:
+
+    .. code-block:: python
+
+        import torch
+        import xformers.ops as xops
+
+        B, M, K = 3, 32, 128
+        kwargs = dict(device="cuda", dtype=torch.float16)
+        q = torch.randn([B, M, 8, K], **kwargs)
+        k = torch.randn([B, M, 2, K], **kwargs)
+        v = torch.randn([B, M, 2, K], **kwargs)
+        out_gqa = xops.memory_efficient_attention(
+            q.reshape([B, M, 2, 4, K]),
+            k.reshape([B, M, 2, 1, K]).expand([B, M, 2, 4, K]),
+            v.reshape([B, M, 2, 1, K]).expand([B, M, 2, 4, K]),
+        )
 
     Raises:
         NotImplementedError: if there is no operator available to compute the MHA
@@ -391,6 +422,7 @@ ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
     flash.FwOp,
     triton.FwOp,
     small_k.FwOp,
+    triton_splitk.FwOp,
 ]
 
 ALL_BW_OPS: Sequence[Type[AttentionBwOpBase]] = [
@@ -417,4 +449,5 @@ __all__ = [
     "MemoryEfficientAttentionCkDecoderOp",
     "ALL_FW_OPS",
     "ALL_BW_OPS",
+    "attn_bias",
 ]

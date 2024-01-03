@@ -20,7 +20,7 @@ on:
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
   TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0+PTX"
-  MAX_JOBS: 2  # Avoids OOMs
+  MAX_JOBS: 3  # Avoids OOMs
   XFORMERS_BUILD_TYPE: "Release"
   XFORMERS_PACKAGE_FROM: "conda-${{ github.ref_name }}"
 
@@ -33,32 +33,20 @@ jobs:
           - "3.9"
           - "3.10"
         config:
-          - torch_version: "2.1.0"
-            torch_channel: "pytorch-nightly"
-            cuda_version: "11.8.0"
-            cuda_dep_runtime: ">=11.7,<11.9"
-            cuda_short_version: "118"
+          - torch_version: "2.1.1"
+            torch_channel: "pytorch"
+            cuda_version: "12.1.0"
+            cuda_dep_runtime: ">=12.0,<13.0"
+            cuda_short_version: "121"
 
-          - torch_version: "2.0.1"
+          - torch_version: "2.1.1"
             torch_channel: "pytorch"
             cuda_version: "11.8.0"
             cuda_dep_runtime: ">=11.7,<11.9"
             cuda_short_version: "118"
-
-          - torch_version: "1.13.1"
-            torch_channel: "pytorch"
-            cuda_version: "11.7.1"
-            cuda_dep_runtime: ">=11.6,<11.8"
-            cuda_short_version: "116"
-
-          - torch_version: "1.12.1"
-            torch_channel: "pytorch"
-            cuda_version: "11.6.2"
-            cuda_dep_runtime: ">=11.3,<11.7"
-            cuda_short_version: "116"
 
     name: py${{ matrix.python }}-torch${{ matrix.config.torch_version }}-cu${{ matrix.config.cuda_version }}
-    runs-on: 4-core-ubuntu  # 16GB RAM, 4 vCPUs
+    runs-on: 8-core-ubuntu  # 32GB RAM, 8 vCPUs
 
     container:
       image: pytorch/conda-builder:cuda${{ matrix.config.cuda_short_version }}
@@ -73,6 +61,8 @@ jobs:
     steps:
       - name: System info
         run: |
+          pwd
+          df -h
           ldd --version
           $PY --version
           echo "Memory and swap:"
@@ -111,11 +101,13 @@ jobs:
           path: "."
           fetch-depth: 0 # for tags
       - name: Define version
+        env:
+          VERSION_SOURCE: ${{ github.ref_type == 'tag' && 'tag' || 'dev'  }}
         run: |
           set -Eeuo pipefail
           git config --global --add safe.directory "*"
           $PY -m pip install packaging
-          version=`$PY packaging/compute_wheel_version.py`
+          version=`$PY packaging/compute_wheel_version.py --source $VERSION_SOURCE`
           echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}
           cat ${GITHUB_ENV}
       - name: Build & store/upload

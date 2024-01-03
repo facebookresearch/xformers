@@ -25,6 +25,8 @@ from .fmha import (
     memory_efficient_attention_forward_requires_grad,
 )
 from .indexing import index_select_cat, scaled_index_add
+from .rmsnorm import RMSNorm
+from .rope_padded import rope_padded
 from .swiglu_op import (
     SwiGLU,
     SwiGLUEagerOp,
@@ -80,6 +82,7 @@ __all__ = [
     "memory_efficient_attention_backward",
     "memory_efficient_attention_forward",
     "memory_efficient_attention_forward_requires_grad",
+    "RMSNorm",
     "SwiGLU",
     "SwiGLUEagerOp",
     "SwiGLUFusedOp",
@@ -94,4 +97,6 @@ __all__ = [
     "masked_matmul",
     "scaled_index_add",
     "index_select_cat",
+    "rope_padded",
+    "attn_bias",
 ]

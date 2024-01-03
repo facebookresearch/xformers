@@ -14,29 +14,9 @@ from xformers.benchmarks.utils import benchmark_main_helper
 
 import xformers.ops
 import xformers.ops.fmha as fmha
+from xformers.attn_bias_utils import create_attn_bias
 
 torch.backends.cuda.matmul.allow_tf32 = False
-
-
-def create_attn_bias(
-    bias_type,
-    batch_size: int,
-    num_heads: int,
-    q_len: int,
-    kv_len: int,
-    device,
-    dtype,
-    bias_requires_grad: bool = False,
-):
-    NoneType = type(None)
-    if bias_type is NoneType:
-        return None
-    if bias_type is torch.Tensor:
-        attn_bias = torch.randn((1, 1, q_len, kv_len), device=device, dtype=dtype)
-        return attn_bias.expand(batch_size, num_heads, q_len, kv_len)
-    if bias_type is xformers.ops.LowerTriangularMask:
-        return bias_type()
-    assert False, f"Unsupported bias type: {bias_type}"
 
 
 def ref_attention_bmk(q, k, v, attn_bias=None, p=0.0):
@@ -158,6 +138,12 @@ for c in CASES.copy():
                 {"attn_bias_cfg": (torch.Tensor, False)},
                 {"attn_bias_cfg": (torch.Tensor, True)},
                 {"attn_bias_cfg": (xformers.ops.LowerTriangularMask, False)},
+                {
+                    "attn_bias_cfg": (
+                        xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+                        False,
+                    )
+                },
                 {"dtype": torch.bfloat16},
                 {"dtype": torch.float},
             ]
@@ -166,32 +152,40 @@ for c in CASES.copy():
     CASES.append(c)
 
 
-def create_tensors(shape, dtype, requires_grad=False):
-    B, M, H, K = shape
+def create_tensors(shape, dtype, requires_grad=False, packed=True, multiquery=False):
+    stacked_shape = list(shape)  # B, M, H, K
+    stacked_dim = 2 if packed else 0
+    stacked_shape.insert(stacked_dim, 3)
     qkv = torch.rand(
-        [B, M, 3, H, K], device=device, dtype=dtype, requires_grad=requires_grad
+        stacked_shape, device=device, dtype=dtype, requires_grad=requires_grad
     )
-    q, k, v = xformers.ops.unbind(qkv, 2)
+    q = torch.rand(shape, device=device, dtype=dtype, requires_grad=requires_grad)
+    shape_kv = (shape[0], shape[1], 1 if multiquery else shape[2], shape[3])
+    k = torch.rand(
+        shape_kv, device=device, dtype=dtype, requires_grad=requires_grad
+    ).expand(shape)
+    v = torch.rand(
+        shape_kv, device=device, dtype=dtype, requires_grad=requires_grad
+    ).expand(shape)
     return qkv, q, k, v
 
 
-def mem_eff_attention_fw(shape, num_threads: int, attn_bias_cfg, dropout_p, dtype):
+def mem_eff_attention_fw(
+    shape,
+    num_threads: int,
+    attn_bias_cfg,
+    dropout_p,
+    dtype,
+    packed=True,
+    multiquery=False,
+):
     B, M, H, K = shape
-    _, q, k, v = create_tensors(shape, dtype)
+    _, q, k, v = create_tensors(
+        shape, dtype, requires_grad=False, packed=packed, multiquery=multiquery
+    )
     attn_bias_type, attn_bias_requires_grad = attn_bias_cfg
     if attn_bias_requires_grad:
         return
-    bias = create_attn_bias(
-        attn_bias_type,
-        batch_size=B,
-        num_heads=H,
-        q_len=M,
-        kv_len=M,
-        device=device,
-        dtype=dtype,
-        bias_requires_grad=attn_bias_requires_grad,
-    )
-    inp = fmha.Inputs(query=q, key=k, value=v, attn_bias=bias, p=dropout_p)
 
     dtype_str = {
         torch.bfloat16: "b16",
@@ -205,6 +199,28 @@ def mem_eff_attention_fw(shape, num_threads: int, attn_bias_cfg, dropout_p, dtyp
 
     has_run = False
     for fw_op, bw_op in OPS:
+        bias = create_attn_bias(
+            attn_bias_type,
+            batch_size=B,
+            num_heads=H,
+            num_heads_groups=1,
+            q_len=M,
+            kv_len=M,
+            dtype=dtype,
+            device=device,
+            requires_grad=attn_bias_requires_grad,
+            fmt="BMHK",
+            op=fw_op,
+        )
+        inp = fmha.Inputs(query=q, key=k, value=v, attn_bias=bias, p=dropout_p)
+        if isinstance(
+            bias,
+            (
+                fmha.attn_bias.BlockDiagonalMask,
+                fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            ),
+        ):
+            q, k, v = [x.reshape([1, -1, *x.shape[2:]]) for x in [q, k, v]]
         if not fw_op.supports(inp):
             continue
 
@@ -252,17 +268,6 @@ def mem_eff_attention_bw(shape, num_threads: int, attn_bias_cfg, dropout_p, dtyp
     qkv, q, k, v = create_tensors(shape, dtype, requires_grad=True)
 
     attn_bias_type, attn_bias_requires_grad = attn_bias_cfg
-    bias = create_attn_bias(
-        attn_bias_type,
-        batch_size=B,
-        num_heads=H,
-        q_len=M,
-        kv_len=M,
-        device=device,
-        dtype=dtype,
-        bias_requires_grad=attn_bias_requires_grad,
-    )
-    inp = fmha.Inputs(query=q, key=k, value=v, attn_bias=bias, p=dropout_p)
 
     dtype_str = {
         torch.bfloat16: "b16",
@@ -276,6 +281,21 @@ def mem_eff_attention_bw(shape, num_threads: int, attn_bias_cfg, dropout_p, dtyp
 
     has_run = False
     for fw_op, bw_op in OPS:
+        bias = create_attn_bias(
+            attn_bias_type,
+            batch_size=B,
+            num_heads=H,
+            num_heads_groups=1,
+            q_len=M,
+            kv_len=M,
+            dtype=dtype,
+            device=device,
+            requires_grad=attn_bias_requires_grad,
+            fmt="BMHK",
+            op=bw_op,
+        )
+        inp = fmha.Inputs(query=q, key=k, value=v, attn_bias=bias, p=dropout_p)
+
         if not fw_op.supports(inp) or not bw_op.supports(inp):
             continue
         has_run = True
@@ -312,5 +332,10 @@ def mem_eff_attention_bw(shape, num_threads: int, attn_bias_cfg, dropout_p, dtyp
     )
 
 
-benchmark_main_helper(mem_eff_attention_fw, CASES, min_run_time=min_run_time)
-benchmark_main_helper(mem_eff_attention_bw, CASES, min_run_time=min_run_time)
+def main():
+    benchmark_main_helper(mem_eff_attention_fw, CASES, min_run_time=min_run_time)
+    benchmark_main_helper(mem_eff_attention_bw, CASES, min_run_time=min_run_time)
+
+
+if __name__ == "__main__":
+    main()

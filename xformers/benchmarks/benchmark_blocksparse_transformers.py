@@ -100,7 +100,7 @@ def get_sparsity(mask):
 
 
 @dataclass
-class Configuration(object):
+class Configuration:
     batch_size: int = 32
     num_heads: int = 12
     seq_length: int = 2048
@@ -126,7 +126,7 @@ class Configuration(object):
         return ",".join(desc)
 
 
-class AttentionMask(object):
+class AttentionMask:
     def __init__(self, config=None):
         super().__init__()
         if config is None:
@@ -353,7 +353,7 @@ class LocalAttentionMask(AttentionMask):
 ##############################################
 
 
-class Experiment(object):
+class Experiment:
     def __init__(self, mode, dtype, do_accuracy_check, profile_sputnik):
         self.mode = mode
         self.dtype = dtype

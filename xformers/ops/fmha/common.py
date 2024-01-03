@@ -6,6 +6,7 @@
 from functools import partial
 import math
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Callable, List, Mapping, Optional, Set, Tuple, Type, Union
 
 import torch
@@ -164,6 +165,44 @@ class Inputs:
                 )
         if self.p < 0.0 or self.p > 1.0:
             raise ValueError(f"Invalid dropout probability: p={self.p}")
+        # Check that shapes match between inputs
+        B, Mq = self.query.shape[:2]
+        K = self.query.shape[-1]
+        B, Mkv = self.key.shape[:2]
+        Kv = self.value.shape[-1]
+        quantized_kv_cache = self.value.dtype == torch.int32
+        key_embed_dim = Kv if quantized_kv_cache else K
+
+        valid_shapes = True
+        if self.query.ndim == 3:  # BMK
+            valid_shapes = (
+                self.query.shape == (B, Mq, K)
+                and self.key.shape == (B, Mkv, K)
+                and self.value.shape == (B, Mkv, Kv)
+            )
+        H = self.query.shape[-2]
+        if self.query.ndim == 4:  # BMHK
+            valid_shapes = (
+                self.query.shape == (B, Mq, H, K)
+                and self.key.shape == (B, Mkv, H, key_embed_dim)
+                and self.value.shape == (B, Mkv, H, Kv)
+            )
+        G = self.query.shape[2]
+        if self.query.ndim == 5:  # BMNHK
+            valid_shapes = (
+                self.query.shape == (B, Mq, G, H, K)
+                and self.key.shape == (B, Mkv, G, H, key_embed_dim)
+                and self.value.shape == (B, Mkv, G, H, Kv)
+            )
+        if not valid_shapes:
+            raise ValueError(
+                f"Incompatible shapes for attention inputs:\n"
+                f"  query.shape: {self.query.shape}\n"
+                f"  key.shape  : {self.key.shape}\n"
+                f"  value.shape: {self.value.shape}\n"
+                "HINT: We don't support broadcasting, please use `expand` "
+                "yourself before calling `memory_efficient_attention` if you need to"
+            )
 
 
 @dataclass
@@ -220,6 +259,7 @@ class AttentionOpBase(BaseOperator):
     SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
     IS_DETERMINISTIC: bool = True
+    SUPPORTS_BMGHK: bool = False
     NAME: str
     OPERATOR_CATEGORY = "memory_efficient_attention"
 
@@ -253,7 +293,7 @@ class AttentionOpBase(BaseOperator):
             Mq=d.query.shape[1],
             Mkv=d.key.shape[1],
             K=d.query.shape[-1],
-            Kv=d.query.shape[-1],
+            Kv=d.value.shape[-1],
         )
         device_type = d.query.device.type
         dtype = d.query.dtype
@@ -292,6 +332,8 @@ class AttentionOpBase(BaseOperator):
             reasons.append(
                 "operator is non-deterministic, but `torch.use_deterministic_algorithms` is set"
             )
+        if not cls.SUPPORTS_BMGHK and d.query.ndim == 5:
+            reasons.append("operator does not support BMGHK format")
         return reasons
 
 
@@ -358,10 +400,15 @@ class AttentionFwOpBase(AttentionOpBase):
 
 
 class AttentionBwOpBase(AttentionOpBase):
+    # NOTE on tolerances: These are tested for `scales => (1/32)**0.5`
+    # In the BW pass, imprecisions accumulate in the Q@K.T recalculation
+    # These imprecisions are multiplied by the `scale` and then exponentiated
+    # So if the scale is too high, we get a lot of errors
+
     ERROR_ATOL: Mapping[torch.dtype, float] = {
-        torch.float: 5e-4,
-        torch.half: 9e-2,
-        torch.bfloat16: 0.7,
+        torch.float: 9e-4,
+        torch.half: 0.1,
+        torch.bfloat16: 0.9,
     }
     ERROR_RTOL: Mapping[torch.dtype, float] = {
         torch.float: 1e-4,
@@ -483,9 +530,9 @@ class AttentionOpDispatch:
 def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
     if tensor.ndim == 4:
         return tensor
-    return tensor.reshape([-1, num_heads, tensor.shape[1], tensor.shape[2]]).permute(
-        (0, 2, 1, 3)
-    )
+    return tensor.reshape(
+        [tensor.shape[0] // num_heads, num_heads, tensor.shape[1], tensor.shape[2]]
+    ).permute((0, 2, 1, 3))
 
 
 def check_lastdim_alignment_stride1(

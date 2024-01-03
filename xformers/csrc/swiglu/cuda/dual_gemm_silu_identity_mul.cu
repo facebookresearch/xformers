@@ -80,6 +80,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
       cutlass::layout::RowMajor,
       scalar_t,
       cutlass::layout::ColumnMajor,
+      cutlass::layout::ColumnMajor,
       ElementOutput,
       cutlass::layout::RowMajor,
       ElementAccumulator,
@@ -106,8 +107,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
   int split_k_slices = DualGemm::kSplitKSerial ? 2 : 1;
   using RefA = typename cutlass::
       TensorRef<typename DualGemm::ElementA, typename DualGemm::LayoutA>;
-  using RefB = typename cutlass::
-      TensorRef<typename DualGemm::ElementB, typename DualGemm::LayoutB>;
+  using RefB0 = typename cutlass::
+      TensorRef<typename DualGemm::ElementB, typename DualGemm::LayoutB0>;
+  using RefB1 = typename cutlass::
+      TensorRef<typename DualGemm::ElementB, typename DualGemm::LayoutB1>;
   using RefC = typename cutlass::
       TensorRef<typename DualGemm::ElementC, typename DualGemm::LayoutC>;
   RefC ref_b0, ref_b1;
@@ -120,20 +123,21 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
         RefC{(scalar_t*)b1->data_ptr(), typename DualGemm::LayoutC::Stride(0)};
   }
   typename DualGemm::Arguments arguments{
+      cutlass::gemm::DualGemmMode::kGemm,
       problem_size,
       RefA{
           (scalar_t*)x.data_ptr(),
           typename DualGemm::LayoutA::Stride(x.stride(0))},
-      RefB{
+      RefB0{
           (scalar_t*)w0.data_ptr(),
-          typename DualGemm::LayoutB::Stride(w0.stride(0))},
+          typename DualGemm::LayoutB0::Stride(w0.stride(0))},
       ref_b0,
       RefC{
           (scalar_t*)d0.data_ptr(),
           typename DualGemm::LayoutC::Stride(d0.stride(0))},
-      RefB{
+      RefB1{
           (scalar_t*)w1.data_ptr(),
-          typename DualGemm::LayoutB::Stride(w1.stride(0))},
+          typename DualGemm::LayoutB1::Stride(w1.stride(0))},
       ref_b1,
       RefC{
           (scalar_t*)d1.data_ptr(),

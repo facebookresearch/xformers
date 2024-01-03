@@ -178,7 +178,7 @@ class SwiGLUOp:
         return all(c(op) for c in self.constraints)
 
     def __call__(self, *args: Optional[torch.Tensor]) -> torch.Tensor:
-        pass
+        raise NotImplementedError()
 
     def __str__(self) -> str:
         return f"SwiGLUOp:{self.NAME}"
@@ -319,7 +319,7 @@ def swiglu(
     w3: torch.Tensor,
     b3: Optional[torch.Tensor],
     *,
-    op: SwiGLUOp = None,
+    op: Optional[SwiGLUOp] = None,
 ) -> torch.Tensor:
     """
     Computes a SwiGLU block given the weights/bias of the 3
@@ -439,7 +439,16 @@ class SwiGLU(nn.Module):
         """
         return swiglu(x, *self._ordered_params(), op=self.op)
 
-    def _ordered_params(self):
+    def _ordered_params(
+        self,
+    ) -> Tuple[
+        torch.Tensor,
+        Optional[torch.Tensor],
+        torch.Tensor,
+        Optional[torch.Tensor],
+        torch.Tensor,
+        Optional[torch.Tensor],
+    ]:
         """Used for testing - returns ordered arguments for operators"""
         b1: Optional[torch.Tensor]
         b2: Optional[torch.Tensor]
@@ -457,11 +466,11 @@ class SwiGLU(nn.Module):
         else:
             w1, w2 = self.w1.weight, self.w2.weight
             b1, b2 = self.w1.bias, self.w2.bias
-        return [
+        return (
             w1,
             b1,
             w2,
             b2,
             self.w3.weight,
             self.w3.bias,
-        ]
+        )
