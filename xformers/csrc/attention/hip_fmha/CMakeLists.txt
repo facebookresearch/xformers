@@ -11,6 +11,8 @@ set(CMAKE_CXX_FLAGS "-Wall")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 set(CMAKE_VERBOSE_MAKEFILE on)
 
+set(py_version 3.9)
+
 set(exe_name attention_forward_decoder_main)
 set(splitk_exe_name attention_forward_splitk_decoder_main)
 set(project_root_dir /xformers)
@@ -18,7 +20,7 @@ set(xformers_csrc ${project_root_dir}/xformers/csrc)
 set(sources ${xformers_csrc}/attention/hip_fmha/attention_forward_decoder.hip)
 set(splitk_sources ${xformers_csrc}/attention/hip_fmha/attention_forward_splitk.hip)
 set(ck_include ${project_root_dir}/third_party/composable_kernel/include/)
-set(torch_include /opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/include)
+set(torch_include /opt/conda/envs/py_${py_version}/lib/python${py_version}/site-packages/torch/include)
 
 set_source_files_properties(${sources} ${splitk_sources} PROPERTIES LANGUAGE HIP)
 add_executable(${exe_name} ${sources})
@@ -63,12 +65,12 @@ target_include_directories(${splitk_exe_name} PUBLIC
 )
 
 target_link_directories(${exe_name} PUBLIC
-  /opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib # c10, torch
+  /opt/conda/envs/py_${py_version}/lib/python${py_version}/site-packages/torch/lib # c10, torch
   /opt/rocm/hip/lib
 )
 
 target_link_directories(${splitk_exe_name} PUBLIC
-  /opt/conda/envs/py_3.8/lib/python3.8/site-packages/torch/lib # c10, torch
+  /opt/conda/envs/py_${py_version}/lib/python${py_version}/site-packages/torch/lib # c10, torch
   /opt/rocm/hip/lib
 )
 
