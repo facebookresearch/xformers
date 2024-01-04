@@ -591,6 +591,42 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator {
           grid_dim(grid_dim),
           block_dim(block_dim),
           lds_bytes(lds_bytes) {}
+
+      std::string str() const {
+        std::ostringstream oss;
+        oss << "Argument { " << std::endl <<
+        "    XQ: " << XQ << std::endl <<
+        "    cache_K: " << cache_K << std::endl <<
+        "    cache_V: " << cache_V << std::endl << 
+        "    O: " << O << std::endl <<
+        "    split_O: " << split_O << std::endl <<
+        "    split_max: " << split_max << std::endl <<
+        "    split_sumexp: " << split_sumexp << std::endl <<
+        "    seq_kv_lens: " << seq_kv_lens << std::endl <<
+        "    XQ_stride_b: " << XQ_stride_b << std::endl <<
+        "    XQ_stride_m: " << XQ_stride_m << std::endl <<
+        "    XQ_stride_g: " << XQ_stride_g << std::endl <<
+        "    XQ_stride_h: " << XQ_stride_h << std::endl <<
+        "    K_stride_b: " << K_stride_b << std::endl <<
+        "    K_stride_m: " << K_stride_m << std::endl <<
+        "    K_stride_g: " << K_stride_g << std::endl <<
+        "    K_stride_h: " << K_stride_h << std::endl <<
+        "    O_stride_split: " << O_stride_split << std::endl <<
+        "    Q_size_m: " << Q_size_m << std::endl <<
+        "    Q_size_g: " << Q_size_g << std::endl <<
+        "    Q_size_h: " << Q_size_h << std::endl <<
+        "    Q_size_k: " << Q_size_k << std::endl <<
+        "    K_size_m: " << K_size_m << std::endl <<
+        "    multiquery: " << multiquery << std::endl <<
+        "    qk_scale: " << qk_scale << std::endl <<
+        "    split_k: " << split_k << std::endl <<
+        std::endl <<
+        "    grid_dim: " << grid_dim.x << "." << grid_dim.y << "." << grid_dim.z << std::endl <<
+        "    block_dim: " << block_dim.x << "." << block_dim.y << "." << block_dim.z << std::endl <<
+        "    lds_bytes: " << lds_bytes << std::endl <<
+        "}";
+        return oss.str();
+      }
   };
 
   struct Invoker : public BaseInvoker {
@@ -598,6 +634,9 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator {
     float Run(
         const Argument& arg,
         const StreamConfig& stream_config = StreamConfig{}) {
+
+      // std::cout << arg.str() << std::endl << "stream_id: " << stream_config.stream_id_ << std::endl;
+
       auto threads_per_wavefront = arg.block_dim.x;
 
       auto Q_size_k_alignment_necessary = 0;

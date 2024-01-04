@@ -302,6 +302,7 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 namespace ck {
 namespace tensor_operation {
 namespace device {
+
 template <typename scalar_t, typename compute_t = float>
 struct FMHADecoderSplit1DeviceOp : public BaseOperator {
   using DeviceOp = FMHADecoderSplit1DeviceOp;
@@ -395,6 +396,42 @@ struct FMHADecoderSplit1DeviceOp : public BaseOperator {
           grid_dim(grid_dim),
           block_dim(block_dim),
           lds_bytes(lds_bytes) {}
+
+      std::string str() const {
+        std::ostringstream oss;
+        oss << "Argument { " << std::endl <<
+        "    XQ: " << XQ << std::endl <<
+        "    cache_K: " << cache_K << std::endl <<
+        "    cache_V: " << cache_V << std::endl << 
+        "    O: " << O << std::endl <<
+        "    split_O: " << split_O << std::endl <<
+        "    split_max: " << split_max << std::endl <<
+        "    split_sumexp: " << split_sumexp << std::endl <<
+        "    seq_kv_lens: " << seq_kv_lens << std::endl <<
+        "    XQ_stride_b: " << XQ_stride_b << std::endl <<
+        "    XQ_stride_m: " << XQ_stride_m << std::endl <<
+        "    XQ_stride_g: " << XQ_stride_g << std::endl <<
+        "    XQ_stride_h: " << XQ_stride_h << std::endl <<
+        "    K_stride_b: " << K_stride_b << std::endl <<
+        "    K_stride_m: " << K_stride_m << std::endl <<
+        "    K_stride_g: " << K_stride_g << std::endl <<
+        "    K_stride_h: " << K_stride_h << std::endl <<
+        "    O_stride_split: " << O_stride_split << std::endl <<
+        "    Q_size_m: " << Q_size_m << std::endl <<
+        "    Q_size_g: " << Q_size_g << std::endl <<
+        "    Q_size_h: " << Q_size_h << std::endl <<
+        "    Q_size_k: " << Q_size_k << std::endl <<
+        "    K_size_m: " << K_size_m << std::endl <<
+        "    multiquery: " << multiquery << std::endl <<
+        "    qk_scale: " << qk_scale << std::endl <<
+        "    split_k: " << split_k << std::endl <<
+        std::endl <<
+        "    grid_dim: " << grid_dim.x << "." << grid_dim.y << "." << grid_dim.z << std::endl <<
+        "    block_dim: " << block_dim.x << "." << block_dim.y << "." << block_dim.z << std::endl <<
+        "    lds_bytes: " << lds_bytes << std::endl <<
+        "}";
+        return oss.str();
+      }
   };
 
   struct Invoker : public BaseInvoker {
@@ -402,6 +439,9 @@ struct FMHADecoderSplit1DeviceOp : public BaseOperator {
     float Run(
         const Argument& arg,
         const StreamConfig& stream_config = StreamConfig{}) {
+
+      // std::cout << arg.str() << std::endl << "stream_id: " << stream_config.stream_id_ << std::endl;
+
       auto threads_per_wavefront = arg.block_dim.x;
 
       auto Q_size_k_alignment_necessary = 0;
@@ -623,6 +663,9 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_hip(
   const at::Tensor& K, 
   const at::Tensor& V, 
   const at::Tensor& seqlen) {
+
+  at::OptionalDeviceGuard guard(XQ.device());
+
   auto B = XQ.size(0);
   auto M = XQ.size(1);
   auto G = XQ.size(2);
@@ -732,23 +775,13 @@ static void test_split1_attention() {
   auto V = at::randn_like(K);
   auto seqlen = at::randint(1062, 1063, {B}, int_options);
   
-  // printf("Run libtorch split1_attention:\n");
-  // auto reference_result = split1_attention_torch(XQ, K, V, seqlen);
+  auto reference_result = split1_attention_torch(XQ, K, V, seqlen);
 
-  printf("Run hip split1_attention:\n");
   auto hip_result = split1_attention_hip(XQ, K, V, seqlen);
 
-  printf("Do comparison for split1_attention:\n");
-
-  // auto O_match_mask = at::isclose(std::get<0>(reference_result), std::get<0>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
-  // auto m_match_mask = at::isclose(std::get<1>(reference_result), std::get<1>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
-  // auto l_match_mask = at::isclose(std::get<2>(reference_result), std::get<2>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
-  // auto O_match_mask = at::isclose(std::get<0>(reference_result), std::get<0>(reference_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
-  // auto m_match_mask = at::isclose(std::get<1>(reference_result), std::get<1>(reference_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
-  // auto l_match_mask = at::isclose(std::get<2>(reference_result), std::get<2>(reference_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
-  auto O_match_mask = at::isclose(std::get<0>(hip_result), std::get<0>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
-  auto m_match_mask = at::isclose(std::get<1>(hip_result), std::get<1>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
-  auto l_match_mask = at::isclose(std::get<2>(hip_result), std::get<2>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
+  auto O_match_mask = at::isclose(std::get<0>(reference_result), std::get<0>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
+  auto m_match_mask = at::isclose(std::get<1>(reference_result), std::get<1>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
+  auto l_match_mask = at::isclose(std::get<2>(reference_result), std::get<2>(hip_result), /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
 
   auto O_percent_match = at::sum(O_match_mask.to(torch::kFloat32)) / O_match_mask.numel();
   auto m_percent_match = at::sum(m_match_mask.to(torch::kFloat32)) / m_match_mask.numel();
@@ -768,25 +801,48 @@ static void test_split1_attention() {
 }
 
 static void do_correctness_check() {
+  // const int32_t D = 4 * kThreadsPerWavefront;
+  // const int32_t B = 1;
+  // const int32_t H = 16;
+  // const int32_t G = 2;
+  // const int32_t padding = 4096;
+  // const int32_t num_queries = 1;
+  // auto options = torch::TensorOptions()
+  //                    .dtype(torch::kFloat32)
+  //                    .layout(torch::kStrided)
+  //                    .device(torch::kCUDA, 1)
+  //                    .requires_grad(false);
+  // auto int_options = options.dtype(torch::kInt);
+  // auto XQ = at::randn({B, num_queries, G, H, D}, options);
+  // auto K = at::randn({B, padding, G, H, D}, options);
+  // auto V = at::randn({B, padding, G, H, D}, options);
+  // auto seqlen = at::randint(1062, 1063, {B}, int_options);
+  // double qk_scale = 1. / sqrt(D);
+  // constexpr auto split_k = 1;
+
   const int32_t D = 4 * kThreadsPerWavefront;
   const int32_t B = 1;
-  const int32_t H = 16;
-  const int32_t G = 2;
+  const int32_t Hq = 16;
+  const int32_t Hkv = 16;
+  const int32_t G = Hq / Hkv;
   const int32_t padding = 4096;
   const int32_t num_queries = 1;
+  const auto scalar_type = torch::kFloat32;
   auto options = torch::TensorOptions()
-                     .dtype(torch::kFloat32)
+                     .dtype(scalar_type)
                      .layout(torch::kStrided)
                      .device(torch::kCUDA, 1)
                      .requires_grad(false);
   auto int_options = options.dtype(torch::kInt);
-  auto XQ = at::randn({B, num_queries, G, H, D}, options);
-  auto K = at::randn({B, padding, G, H, D}, options);
-  auto V = at::randn({B, padding, G, H, D}, options);
+  auto XQ = at::randn({B, num_queries, G, Hq, D}, options);
+  auto K = (G == 1) 
+    ? at::randn({B, padding, G, Hkv, D}, options) 
+    : at::randn({B, padding, G, 1, D}, options).expand({B, padding, G, Hq, D});
+  auto V = at::randn_like(K);
   auto seqlen = at::randint(1062, 1063, {B}, int_options);
   double qk_scale = 1. / sqrt(D);
   constexpr auto split_k = 1;
-
+  
   auto result = efficient_attention_forward_decoder_splitk_ck_impl<64, 1>(
       XQ, K, V, seqlen, qk_scale, split_k);
   auto gold_result = efficient_attention_forward_decoder_splitk_ck_impl<64, 16>(
