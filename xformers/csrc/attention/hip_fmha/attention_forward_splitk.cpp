@@ -753,17 +753,13 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_hip(
   return std::make_tuple(split_O[splitk_dim], split_max, split_sumexp);
 }
 
-static void test_split1_attention() {
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> generate_inputs(const int32_t padding, const int32_t B, const int32_t Hq, const int32_t Hkv, const decltype(torch::kFloat32) dtype = torch::kFloat32) {
   const int32_t D = 4 * kThreadsPerWavefront;
-  const int32_t B = 1;
-  const int32_t Hq = 16;
-  const int32_t Hkv = 16;
   const int32_t G = Hq / Hkv;
-  const int32_t padding = 4096;
   const int32_t num_queries = 1;
-  const auto scalar_type = torch::kFloat32;
+
   auto options = torch::TensorOptions()
-                     .dtype(scalar_type)
+                     .dtype(dtype)
                      .layout(torch::kStrided)
                      .device(torch::kCUDA, 1)
                      .requires_grad(false);
@@ -774,6 +770,12 @@ static void test_split1_attention() {
     : at::randn({B, padding, G, 1, D}, options).expand({B, padding, G, Hq, D});
   auto V = at::randn_like(K);
   auto seqlen = at::randint(1062, 1063, {B}, int_options);
+
+  return std::make_tuple(XQ, K, V, seqlen);
+}
+
+static void test_split1_attention() {
+  auto [XQ, K, V, seqlen] = generate_inputs(4096, 1, 16, 16);
   
   auto reference_result = split1_attention_torch(XQ, K, V, seqlen);
 
@@ -801,46 +803,9 @@ static void test_split1_attention() {
 }
 
 static void do_correctness_check() {
-  // const int32_t D = 4 * kThreadsPerWavefront;
-  // const int32_t B = 1;
-  // const int32_t H = 16;
-  // const int32_t G = 2;
-  // const int32_t padding = 4096;
-  // const int32_t num_queries = 1;
-  // auto options = torch::TensorOptions()
-  //                    .dtype(torch::kFloat32)
-  //                    .layout(torch::kStrided)
-  //                    .device(torch::kCUDA, 1)
-  //                    .requires_grad(false);
-  // auto int_options = options.dtype(torch::kInt);
-  // auto XQ = at::randn({B, num_queries, G, H, D}, options);
-  // auto K = at::randn({B, padding, G, H, D}, options);
-  // auto V = at::randn({B, padding, G, H, D}, options);
-  // auto seqlen = at::randint(1062, 1063, {B}, int_options);
-  // double qk_scale = 1. / sqrt(D);
-  // constexpr auto split_k = 1;
+  auto [XQ, K, V, seqlen] = generate_inputs(4096, 1, 16, 16);
 
-  const int32_t D = 4 * kThreadsPerWavefront;
-  const int32_t B = 1;
-  const int32_t Hq = 16;
-  const int32_t Hkv = 16;
-  const int32_t G = Hq / Hkv;
-  const int32_t padding = 4096;
-  const int32_t num_queries = 1;
-  const auto scalar_type = torch::kFloat32;
-  auto options = torch::TensorOptions()
-                     .dtype(scalar_type)
-                     .layout(torch::kStrided)
-                     .device(torch::kCUDA, 1)
-                     .requires_grad(false);
-  auto int_options = options.dtype(torch::kInt);
-  auto XQ = at::randn({B, num_queries, G, Hq, D}, options);
-  auto K = (G == 1) 
-    ? at::randn({B, padding, G, Hkv, D}, options) 
-    : at::randn({B, padding, G, 1, D}, options).expand({B, padding, G, Hq, D});
-  auto V = at::randn_like(K);
-  auto seqlen = at::randint(1062, 1063, {B}, int_options);
-  double qk_scale = 1. / sqrt(D);
+  double qk_scale = 1. / sqrt(XQ.size(-1));
   constexpr auto split_k = 1;
   
   auto result = efficient_attention_forward_decoder_splitk_ck_impl<64, 1>(
@@ -858,54 +823,37 @@ static void do_correctness_check() {
 
 int main(int argc, char** argv) {
   if (argc == 1) {
-    // do_correctness_check();
+    do_correctness_check();
 
-    test_split1_attention();
+    // test_split1_attention();
   } else {
     const auto args = std::vector<std::string>(argv + 1, argv + argc);
-    if (args.size() != 7) {
+    if (args.size() != 6) {
       std::cout
-          << "Usage: ./a.out n_keys padding batch_size n_heads is_multiquery dtype n_wavefronts_per_block"
+          << "Usage: ./a.out padding batch_size nq_heads nkv_heads dtype n_wavefronts_per_block"
           << std::endl;
       return 0;
     }
-    const int32_t n_keys = std::stoi(args[0]);
-    const int32_t padding = std::stoi(args[1]);
-    const int32_t batch_size = std::stoi(args[2]);
-    const int32_t n_heads = std::stoi(args[3]);
-    const int32_t n_groups = 1;
-    const int32_t multiquery = (args[4] == "mq");
-    const auto dtype = (args[5] == "f32") ? torch::kFloat32
-        : (args[5] == "f16")              ? torch::kFloat16
+    const int32_t padding = std::stoi(args[0]);
+    const int32_t batch_size = std::stoi(args[1]);
+    const int32_t nq_heads = std::stoi(args[2]);
+    const int32_t nkv_heads = std::stoi(args[3]);
+    const auto dtype = (args[4] == "f32") ? torch::kFloat32
+        : (args[4] == "f16")              ? torch::kFloat16
                                           : torch::kBFloat16;
-    const int32_t n_wavefronts_per_block = std::stoi(args[6]);
+    const int32_t n_wavefronts_per_block = std::stoi(args[5]);
 
-    const int32_t dim_per_head = 4 * kThreadsPerWavefront;
-
-    const auto options = torch::TensorOptions()
-                             .dtype(dtype)
-                             .layout(torch::kStrided)
-                             .device(torch::kCUDA, 1)
-                             .requires_grad(false);
-
-    const auto int_options = options.dtype(torch::kInt);
-    const auto Q = at::rand({batch_size, 1, n_groups, n_heads, dim_per_head}, options);
-    const auto K = multiquery
-        ? at::rand({batch_size, padding, n_groups, 1, dim_per_head}, options)
-              .expand({batch_size, padding, n_groups, n_heads, dim_per_head})
-        : at::rand({batch_size, padding, n_groups, n_heads, dim_per_head}, options);
-    const auto V = at::rand_like(K);
+    auto [Q, K, V, seq] = generate_inputs(padding, batch_size, nq_heads, nkv_heads, dtype);
     auto O = at::empty_like(Q);
 
     constexpr auto splitk_dim = 0;
     constexpr auto split_k = 1;
     auto O_splits = at::stack(O, splitk_dim);
 
-    auto split_max = at::empty({batch_size, padding, n_groups, n_heads, split_k}, options.dtype(at::kFloat));
+    auto split_max = at::empty({batch_size, padding, Q.size(2), Q.size(3), split_k}, Q.options().dtype(at::kFloat));
     auto split_sumexp = at::empty_like(split_max);
 
-    const auto seq = at::randint(1, n_keys, {batch_size}, int_options);
-    const double qk_scale = 1. / sqrt(dim_per_head);
+    const double qk_scale = 1. / sqrt(Q.size(-1));
     auto call_ptr = decltype(&efficient_attention_forward_decoder_splitk_ck_out_impl<
                              kThreadsPerWavefront,
                              kWavefrontsPerBlock>){};
