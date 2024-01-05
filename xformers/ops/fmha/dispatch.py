@@ -66,14 +66,20 @@ def _run_priority_list(name: str, priority_list: Sequence[T], inp: Inputs) -> T:
 def _dispatch_fw_priority_list(
     inp: Inputs, needs_gradient: bool
 ) -> Sequence[Type[AttentionFwOpBase]]:
-    priority_list_ops = deque(
-        [
-            flash.FwOp,
-            triton.FwOp,
-            cutlass.FwOp,
-            small_k.FwOp,
-        ]
-    )
+    if torch.version.cuda:
+        priority_list_ops = deque(
+           [
+              flash.FwOp,
+              triton.FwOp,
+              cutlass.FwOp,
+              small_k.FwOp,
+           ])
+    else:
+        priority_list_ops = deque(
+           [
+              triton.FwOp,
+              ck.FwOp,
+           ])
     if _is_cutlass_fwd_faster_than_flash(inp):
         priority_list_ops.remove(cutlass.FwOp)
         priority_list_ops.appendleft(cutlass.FwOp)
