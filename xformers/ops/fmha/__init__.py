@@ -28,8 +28,8 @@ MemoryEfficientAttentionDecoderOp = (decoder.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionTritonFwdFlashBwOp = (triton.FwOp, flash.BwOp)
 MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
 MemoryEfficientAttentionOp = (small_k.FwOp, small_k.BwOp)
-TritonFlashAttentionOp = (triton.FwOp, triton.BwOp)
-MemoryEfficientAttentionCkOp = (ck.FwOp, ck.BwOp) 
+TritonFlashAttentionOp = (triton.FwOp, cutlass.BwOp if torch.version.cuda else ck.BwOp)
+MemoryEfficientAttentionCkOp = (ck.FwOp, ck.BwOp)
 MemoryEfficientAttentionCkDecoderOp = (ck_decoder.FwOp, ck.BwOp)
 
 class _fMHA(torch.autograd.Function):
@@ -416,7 +416,7 @@ def _memory_efficient_attention_backward(
 
 
 ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
-    cutlass.FwOp,
+    cutlass.FwOp if torch.version.cuda else ck.FwOp,
     flash.FwOp,
     triton.FwOp,
     small_k.FwOp,
@@ -424,9 +424,8 @@ ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
 ]
 
 ALL_BW_OPS: Sequence[Type[AttentionBwOpBase]] = [
-    cutlass.BwOp,
+    cutlass.BwOp if torch.version.cuda else ck.BwOp,
     flash.BwOp,
-    triton.BwOp,
     small_k.BwOp,
 ]
 

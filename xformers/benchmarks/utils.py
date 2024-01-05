@@ -567,7 +567,7 @@ def benchmark_run_and_compare(
             # pbar.write(f"Skipped (NotImplementedError)")
             continue
         except RuntimeError as e:
-            if "CUDA out of memory" not in str(e):
+            if not _is_oom_error(e):
                 raise
             if not quiet:
                 pbar.write("Skipped (OOM)")
@@ -612,7 +612,7 @@ def benchmark_run_and_compare(
                     memory = torch.cuda.max_memory_allocated() / 2**20 - mem_begin
                     measurement.mem_use = memory
                 except RuntimeError as e:
-                    if "CUDA out of memory" not in str(e):
+                    if not _is_oom_error(e):
                         raise
                     if not quiet:
                         pbar.write("Skipped (OOM)")
@@ -621,7 +621,7 @@ def benchmark_run_and_compare(
                 if not quiet:
                     pbar.write(f"{name}: memory used: {memory} MB")
         except RuntimeError as e:
-            if "CUDA out of memory" not in str(e):
+            if not _is_oom_error(e):
                 raise
             if not quiet:
                 pbar.write("Skipped (OOM)")
@@ -662,6 +662,8 @@ def benchmark_run_and_compare(
             results, reference=results_compare_to, atol_s=atol_s, rtol=rtol
         )
 
+def _is_oom_error(e):
+    return isinstance(e, (torch.cuda.OutOfMemoryError, triton.runtime.autotuner.OutOfResources))
 
 def _fail_if_regressions(
     results: List[Any], reference: List[Any], atol_s: float, rtol: float
