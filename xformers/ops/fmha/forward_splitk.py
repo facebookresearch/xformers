@@ -12,6 +12,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DTYPES = {
         torch.half,
         torch.bfloat16,
+        torch.float
     }  # Those are dtypes of Q. In the quantized case K/V has dtype int32
     SUPPORTED_MAX_K = 256
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {

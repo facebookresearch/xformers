@@ -1814,6 +1814,11 @@ def test_decoder(
 
     ref_output = ref_attention(q, k, v, attn_bias)
 
+    # print(f"{torch.where(decoder_output.isnan())=}")
+    # print(f"{torch.sum(decoder_output.isnan())} nans out of {decoder_output.numel()}")
+    # print(f"{torch.sum(decoder_output.isinf())} infs out of {decoder_output.numel()}")
+    # print(f"{k_seqlen=}")
+
     assert_allclose(
         decoder_output.float(),
         ref_output,
@@ -1823,7 +1828,7 @@ def test_decoder(
 
 
 @pytest.mark.parametrize("op", [fmha.forward_splitk.FwOp_S1, fmha.forward_splitk.FwOp_S2])
-@pytest.mark.parametrize("dtype", ["f16"])
+@pytest.mark.parametrize("dtype", ["f32"])
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
 @pytest.mark.parametrize("n_heads", [16])
 @pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1), (32, 1), (4096, 8)])
