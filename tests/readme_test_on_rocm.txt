@@ -4,6 +4,7 @@
    2. verify testing for memory_efficient_attention inference 
 
       pytest tests/test_mem_eff_attention_ck.py::test_forward
+      pytest tests/test_mem_eff_attention.py::test_forward -k ckF 
 
    3. The following tests in tests/memory_eff_attention_ck.py have passed
 
