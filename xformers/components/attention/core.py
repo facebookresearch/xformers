@@ -20,10 +20,10 @@ if _has_cpp_library:
 
 if _is_triton_available():
     from xformers.triton.softmax import softmax as triton_softmax
-    from xformers.triton.utils import gpu_capabilities_older_than_70
+    from xformers.triton.utils import gpu_capabilities_older_than_80
 
 _is_blocksparse_available = (
-    _is_triton_available() and not gpu_capabilities_older_than_70()
+    _is_triton_available() and not gpu_capabilities_older_than_80()
 )
 
 if _is_blocksparse_available:

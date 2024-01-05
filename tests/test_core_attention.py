@@ -15,10 +15,10 @@ from xformers.components.attention.attention_mask import AttentionMask
 from xformers.components.attention.core import scaled_dot_product_attention
 
 if _is_triton_available():
-    from xformers.triton.utils import gpu_capabilities_older_than_70
+    from xformers.triton.utils import gpu_capabilities_older_than_80
 
 _is_blocksparse_available = (
-    _is_triton_available() and not gpu_capabilities_older_than_70()
+    _is_triton_available() and not gpu_capabilities_older_than_80()
 )
 
 
@@ -165,9 +165,6 @@ def test_switch_blocksparse(device, data_type):
     m_sparse = SparseCS(m_custom_bool, device)
     # Mask with causal flag
     m_att_mask = AttentionMask.make_causal(s, s, device, dtype=a.dtype)
-
-    def kernel():
-        return scaled_dot_product_attention(a, a, a, m_att_mask)
 
     # Check that a switch to blocksparse is only triggered by causal flag
     with torch.cuda.amp.autocast():

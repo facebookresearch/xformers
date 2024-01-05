@@ -23,10 +23,10 @@ if _is_blocksparse_available:
     from triton.ops.blocksparse import matmul as blocksparse_matmul  # type: ignore
     from triton.ops.blocksparse import softmax as blocksparse_softmax  # type: ignore
 
-    from xformers.triton.utils import gpu_capabilities_older_than_70
+    from xformers.triton.utils import gpu_capabilities_older_than_80
 
-    # Blocksparse requires Tensor cores
-    if gpu_capabilities_older_than_70():
+    # Blocksparse requires Tensor cores, but we also disable it on V100 because of Triton issues
+    if gpu_capabilities_older_than_80():
         logger.warning(
             "Blocksparse is not available: the current GPU does not expose Tensor cores"
         )

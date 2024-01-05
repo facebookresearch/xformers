@@ -12,7 +12,6 @@ import xformers
 from xformers.components import MultiHeadDispatch
 from xformers.components.attention import build_attention
 from xformers.components.attention.attention_patterns import block_sparsify_tensor
-from xformers.triton.utils import get_current_cuda_device
 
 
 def catch_oor(fn):
@@ -45,9 +44,9 @@ if _triton_available:
         from triton.ops.blocksparse import softmax as blocksparse_softmax
 
         from xformers.components.attention import BlockSparseAttention
-        from xformers.triton.utils import gpu_capabilities_older_than_70
+        from xformers.triton.utils import gpu_capabilities_older_than_80
 
-        _triton_available = not gpu_capabilities_older_than_70()
+        _triton_available = not gpu_capabilities_older_than_80()
         _matmul_types = ["sdd", "dsd", "dds"]
     except (ImportError, ModuleNotFoundError) as e:
         import logging
@@ -64,10 +63,6 @@ def mask_tensor(x, mask, block, value=0):
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
-@pytest.mark.skipif(
-    not _triton_available or get_current_cuda_device() == "T4",
-    reason="FIXME - blocksparse matmuls are slightly off on T4s",
-)
 @pytest.mark.parametrize("MODE", _matmul_types)
 @pytest.mark.parametrize("TRANS_A", [False, True])
 @pytest.mark.parametrize("TRANS_B", [False, True])
