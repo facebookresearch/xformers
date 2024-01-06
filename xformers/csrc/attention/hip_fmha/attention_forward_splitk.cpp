@@ -8,7 +8,7 @@
 
 namespace {
   constexpr int32_t kThreadsPerWavefront = 64;
-  constexpr int32_t kWavefrontsPerBlock = 16;
+  constexpr int32_t kWavefrontsPerBlock = 1;
   constexpr int32_t K_MAX = 4 * kThreadsPerWavefront;
 }
 
@@ -228,6 +228,13 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck_impl(
   efficient_attention_forward_decoder_splitk_ck_out_impl<
       ThreadsPerWavefront,
       WavefrontsPerBlock>(XQ, cache_K, cache_V, seq_kv_lens, qk_scale, split_k, split_max, split_sumexp, O_splits, O);
+  
+  auto nan_count = at::sum(at::isnan(O_splits));
+  auto numel = O_splits.numel();
+  auto inf_count = at::sum(at::isinf(O_splits));
+
+  // std::cout << "O_splits numel: " << numel << "O_splits nans: " << nan_count << "O_splits infs: " << inf_count << std::endl;
+
   return O;
 }
 
@@ -769,7 +776,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> generate_inputs(const
     ? at::randn({B, padding, G, Hkv, D}, options) 
     : at::randn({B, padding, G, 1, D}, options).expand({B, padding, G, Hq, D});
   auto V = at::randn_like(K);
-  auto seqlen = at::randint(1062, 1063, {B}, int_options);
+  // auto seqlen = at::randint(1, padding + 1, {B}, int_options);
+  // auto seqlen = at::tensor({1062}, int_options);
+  auto seqlen = at::tensor({6, 12, 13, 9, 32, 10, 12, 6}, int_options);
 
   return std::make_tuple(XQ, K, V, seqlen);
 }
@@ -803,22 +812,27 @@ static void test_split1_attention() {
 }
 
 static void do_correctness_check() {
-  auto [XQ, K, V, seqlen] = generate_inputs(4096, 1, 16, 16);
+  auto [XQ, K, V, seqlen] = generate_inputs(32, 8, 16, 16);
 
   double qk_scale = 1. / sqrt(XQ.size(-1));
-  constexpr auto split_k = 1;
+  constexpr auto split_k = 2;
   
   auto result = efficient_attention_forward_decoder_splitk_ck_impl<64, 1>(
       XQ, K, V, seqlen, qk_scale, split_k);
-  auto gold_result = efficient_attention_forward_decoder_splitk_ck_impl<64, 16>(
-      XQ, K, V, seqlen, qk_scale, split_k);
+  auto gold_result = efficient_attention_forward_decoder_split1_torch(
+      XQ, K, V, seqlen, qk_scale);
   auto mask = at::isclose(
       result, gold_result, /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
   auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
+  auto nan_count = at::sum(at::isnan(result));
+  auto numel = result.numel();
+  auto inf_count = at::sum(at::isinf(result));
   printf(
       "Mismatched elements percentage: %.2f\n",
       1. - percent_match.item<float>());
-  printf("k_seqlen: %d\n", seqlen.item<int32_t>());
+  // printf("k_seqlen: %d\n", seqlen.item<int32_t>());
+  std::cout << "numel: " << numel << " nan count: " << nan_count << " inf count: " << inf_count << std::endl;
+  std::cout << "k_seqlen: " << seqlen << std::endl;
 }
 
 int main(int argc, char** argv) {

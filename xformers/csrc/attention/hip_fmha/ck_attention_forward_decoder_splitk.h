@@ -173,8 +173,8 @@ __global__ void efficient_attention_forward_decoder_splitk_reduce_ck_kernel(
 template <
     typename scalar_t,
     int32_t vec_size = 4,
-    int32_t n_loop_unroll = 16,
-    int32_t n_loop_unroll_tail = 2,
+    int32_t n_loop_unroll = 1,
+    int32_t n_loop_unroll_tail = 1,
     int32_t KV_M_MAX = 8192,
     typename compute_t = float>
 __global__ void efficient_attention_forward_decoder_splitk_ck_kernel(
@@ -202,7 +202,8 @@ __global__ void efficient_attention_forward_decoder_splitk_ck_kernel(
     const bool multiquery,
     const float qk_scale,
     const int32_t split_k) {
-  static_assert(n_loop_unroll_tail < n_loop_unroll, "");
+  static_assert(n_loop_unroll_tail < n_loop_unroll || n_loop_unroll_tail == 1, 
+     "tail unroll must be smaller than main loop untoll; pragma unroll 0 is illegal (and tail is no-op)");
 
   // Each block handles a single batch and head and query and group
   const int32_t b = blockIdx.x / (Q_size_m * Q_size_g * Q_size_h);
