@@ -17,10 +17,23 @@ bool is_ck_fmha_available(double val)
     return (true);
 };
 
+// For checking if ck-tiled kernel is used
+bool is_ck_tiled_used()
+{
+#if defined(USE_CK_TILED_KERNEL)
+    return (true);
+#else
+    return (false);
+#endif
+};
+
 } // namespace
 
 TORCH_LIBRARY_FRAGMENT(xformers, m)
 {
     m.def(TORCH_SELECTIVE_SCHEMA("xformers::is_ck_fmha_available(float val) -> bool"));
     m.impl(TORCH_SELECTIVE_NAME("xformers::is_ck_fmha_available"), TORCH_FN(is_ck_fmha_available));
+
+    m.def(TORCH_SELECTIVE_SCHEMA("xformers::is_ck_tiled_used() -> bool"));
+    m.impl(TORCH_SELECTIVE_NAME("xformers::is_ck_tiled_used"), TORCH_FN(is_ck_tiled_used));
 }
