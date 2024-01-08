@@ -208,19 +208,19 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck_impl(
     double qk_scale,
     int64_t split_k) {
   auto O = at::empty_like(XQ);
-  constexpr auto splitk_dim = 0;
   constexpr auto rank = 5;
-  auto O_splits = at::stack(O, splitk_dim);
 
   TORCH_CHECK(XQ.dim() == rank);
   TORCH_CHECK(cache_K.dim() == rank);
   TORCH_CHECK(cache_V.dim() == rank);
-  TORCH_CHECK(O_splits.dim() == 1 + rank);
 
   auto B = XQ.size(0);
   auto M = XQ.size(1);
   auto G = XQ.size(2);
   auto H = XQ.size(3);
+  auto K = XQ.size(4);
+  
+  auto O_splits = at::empty({split_k, B, M, G, H, K}, XQ.options());
 
   auto split_max = at::empty({B, M, G, H, split_k}, XQ.options().dtype(at::kFloat));
   auto split_sumexp = at::empty_like(split_max);
@@ -234,6 +234,10 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck_impl(
   auto inf_count = at::sum(at::isinf(O_splits));
 
   // std::cout << "O_splits numel: " << numel << "O_splits nans: " << nan_count << "O_splits infs: " << inf_count << std::endl;
+
+  // std::cout << "O splits at (0,0,0,0,0): " << O_splits[0][0][0][0][0][0] << " " << O_splits[1][0][0][0][0][0] << std::endl <<
+  //           "split_max: " << split_max[0][0][0][0][0] << " " << split_max[0][0][0][0][1] << std::endl <<
+  //           "split_sumexp: " << split_sumexp[0][0][0][0][0] << " " << split_sumexp[0][0][0][0][1] << std::endl;
 
   return O;
 }
