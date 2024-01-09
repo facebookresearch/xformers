@@ -181,11 +181,13 @@ class Inputs:
                 and self.value.shape == (B, Mkv, Kv)
             )
         H = self.query.shape[-2]
+        Hkv = self.key.shape[-2]
         if self.query.ndim == 4:  # BMHK
             valid_shapes = (
                 self.query.shape == (B, Mq, H, K)
-                and self.key.shape == (B, Mkv, H, key_embed_dim)
-                and self.value.shape == (B, Mkv, H, Kv)
+                and self.key.shape == (B, Mkv, Hkv, key_embed_dim)
+                and self.value.shape == (B, Mkv, Hkv, Kv)
+                and H % Hkv == 0
             )
         G = self.query.shape[2]
         if self.query.ndim == 5:  # BMNHK

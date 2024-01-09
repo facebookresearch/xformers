@@ -35,6 +35,7 @@ struct BatchedInferParams
     const void* attn_bias_ptr;
 
     uint8_t custom_mask_type;
+    int window_size; // local-attention
 
     void* out_ptr;
 };
@@ -86,6 +87,7 @@ struct GroupedInferParams
     const void* attn_bias_ptr;
 
     uint8_t custom_mask_type;
+    int window_size; // local-attention
 
     void* out_ptr;
 };

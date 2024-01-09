@@ -1306,6 +1306,8 @@ def test_grad_checkpointing(
         k,
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
+    if op is fmha.triton.FwOp:
+        pytest.skip("Triton Flash Attention 2 doesn't support backward pass yet")
     bias_type = None
     opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = (
         op,

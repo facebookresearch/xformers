@@ -207,11 +207,43 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
     **_generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(ALL_BW_OPS, max_shapes_per_op=1),
 )
 
-
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None):
     if q.ndim == 4:
-        assert p == 0.0
-        return ref_attention_bmhk(q, k, v, attn_bias=attn_bias, dtype=dtype)
+        B, M, Hq, K = q.shape
+        _, N, Hkv, Kv = v.shape
+        nhead_ratio_qk = Hq // Hkv
+
+        def attn_bias_head(head: int):
+            if isinstance(attn_bias, torch.Tensor):
+                assert attn_bias.ndim == 4
+                _, H, _, _ = attn_bias.shape        
+                assert H == Hq
+                bias_bghmn = attn_bias.reshape(B, Hkv, nhead_ratio_qk, M, N)
+                return bias_bghmn[:, :, head]
+            if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
+                assert attn_bias._bias.ndim == 4
+                _, H, _, _ = attn_bias._bias.shape        
+                assert H == Hq
+                bias_bghmn = attn_bias._bias.reshape(B, Hkv, nhead_ratio_qk, M, N)
+
+                return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
+                    bias_bghmn[:, :, head]
+                )
+            return attn_bias
+
+        q_bmghk = q.reshape((B, M, Hkv, nhead_ratio_qk, K))
+
+        return torch.stack(
+            [
+                ref_attention_bmhk(
+                    q_bmghk[:, :, :, h], k, v, attn_bias=attn_bias_head(h), dtype=dtype
+                )
+                for h in range(q_bmghk.shape[3])
+            ],
+            dim=3,
+        ).reshape((B, M, Hq, Kv))
+     
+    assert q.ndim == 3
     if dtype is None:
         dtype = torch.float32
     q = q.to(dtype=dtype)
@@ -576,20 +608,17 @@ def test_forward(
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 
-    if bias_type is not None and bias_type is not type(None):
-        if bias_type is not torch.Tensor and bias_type is not fmha.attn_bias.BlockDiagonalMask:
-            pytest.skip("only three bias types are supported by ck-tiled!")
-
-    if dtype is torch.bfloat16:
-        pytest.skip("bfloat16 is currently not supported by ck-tiled!")
-
     if not (k == kv and (kv == 64 or kv == 128)):
         pytest.skip("only head-dim size 64 or 128 supported by ck-tiled!")
+
+    if kv > 128:
+        pytest.skip("kv > 128 is not supported by CK-FlashAttention")
 
     if packed and not (k == kv and q_len == kv_len):
         pytest.skip(
             f"packed incompatible with `k ({k}) != kv ({kv})` or `q_len ({q_len}) != kv_len ({kv_len})`"
         )
+
     if fmt == "BMK" and not fmha.common._is_bias_type_supported_in_BMK(bias_type):
         pytest.skip("BMK incompatible with this bias")
 
@@ -641,3 +670,89 @@ def test_forward(
         atol=op.ERROR_ATOL[dtype],
         rtol=op.ERROR_RTOL.get(dtype, 1e-5),
     )
+
+@pytest.mark.parametrize("hdim_k,hdim_v", [(64, 64), (128, 128)])
+@pytest.mark.parametrize("nhead_q,nhead_kv", [(8, 1), (8, 2), (12, 4), (4, 4)])
+@pytest.mark.parametrize("seqlen_q,seqlen_kv", [(100, 128), (128, 100), (200, 1000), (400, 300)])
+@pytest.mark.parametrize("batches", [100, 64, 1])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("attn_bias_type", [type(None), torch.Tensor, fmha.attn_bias.LowerTriangularMask])
+@pytest.mark.parametrize("op", [fmha.ck.FwOp])
+def test_mqa_forward(
+    op,
+    attn_bias_type,
+    dtype, 
+    batches: int, 
+    seqlen_kv: int, 
+    seqlen_q: int, 
+    nhead_kv: int, 
+    nhead_q: int, 
+    hdim_v: int, 
+    hdim_k: int, 
+):
+    B = batches
+    M = seqlen_q
+    N = seqlen_kv
+    Hq = nhead_q
+    Hkv = nhead_kv
+    K = hdim_k
+    Kv = hdim_v
+
+    print("Hq=", Hq, "Hkv=", Hkv)
+
+    device = torch.device("cuda")
+
+    if not (K == Kv and (Kv == 64 or Kv == 128)):
+        pytest.skip("only head-dim size 64 or 128 supported by ck-tiled!")
+
+    if Kv > 128:
+        pytest.skip("kv > 128 is not supported by CK-FlashAttention")
+
+    scale = 3
+    query = torch.randn((B, M, Hq, K), device=device, dtype=dtype).mul_(scale)
+    key = torch.randn((B, N, Hkv, K), device=device, dtype=dtype).mul_(scale)
+    value = torch.randn((B, N, Hkv, Kv), device=device, dtype=dtype).mul_(scale)
+
+    attn_bias = None
+    if attn_bias_type is not None:
+        attn_bias = create_attn_bias(
+            attn_bias_type,
+            batch_size=B,
+            num_heads=Hq,
+            q_len=M,
+            kv_len=N,
+            dtype=dtype,
+            device=device,
+            requires_grad=False,
+            fmt="BMHK",
+            op=op,
+        )
+
+    inputs = fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias)
+    reasons = op.not_supported_reasons(inputs)
+    if reasons:
+        err_msg = f"{op.NAME}: unsupported ({'/'.join(reasons)})"
+        # Ensure we free memory to avoid OOMs
+        del query, key, value, attn_bias, inputs
+
+    out = xformers.ops.memory_efficient_attention_forward(
+        query, key, value, attn_bias, op=op
+    )
+    assert not out.isnan().any(), ("Output has NaNs", attn_bias)
+    out2 = xformers.ops.memory_efficient_attention_forward(
+        query, key, value, attn_bias, op=op
+    )
+    assert torch.allclose(out, out2, atol=0.0, rtol=0.0), (
+        "Non-deterministic behavior",
+        attn_bias,
+    )
+
+    ref = ref_attention(query, key, value, attn_bias)
+    assert out.shape == ref.shape, out.shape
+    assert_allclose(
+        out.float(),
+        ref,
+        atol=op.ERROR_ATOL[dtype],
+        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
+    )
+

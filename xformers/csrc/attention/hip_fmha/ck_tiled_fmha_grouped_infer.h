@@ -24,6 +24,8 @@
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_default_policy.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
+#include <ck/tile_program/tile/tile_fmha_traits.hpp>
+#include <ck/tile_program/block_tile/block_masking.hpp>
 
 #include "ck_tiled_fmha_forward_kernel.h"
 #include "ck_tiled_fmha_fwd_epilogue.h"
@@ -31,8 +33,10 @@
 #include "ck_tiled_fmha_params.h"
 #include "ck_tiled_fmha_definitions.h"
 
-template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
-struct grouped_infer_masktype_attnbias_dispatched
+#include "ck_tiled_bool_switch.h"
+
+template <typename scalar_t, bool has_causal_mask, bool has_attn_bias>
+struct grouped_infer_causalmask_attnbias_dispatched
 {
     using QDataType           = scalar_t;
     using KDataType           = scalar_t;
@@ -45,9 +49,6 @@ struct grouped_infer_masktype_attnbias_dispatched
     using ODataType           = scalar_t;
 
     using VLayout = ck::tensor_layout::gemm::RowMajor;
-
-    static constexpr auto masktype = static_cast<CausalMaskType>(custom_mask_type);
-    using FmhaCausalMask           = typename CausalMaskPredicate<masktype>::predicate;
 
     using FmhaBlockTileHdim64  = ck::Sequence<128, 64, 32, 64, 32, 64>;
     using FmhaBlockTileHdim128 = ck::Sequence<128, 128, 32, 128, 32, 128>;
@@ -95,32 +96,40 @@ struct grouped_infer_masktype_attnbias_dispatched
 
     static void Run(GroupedForwardParams& param, hipStream_t stream)
     {
-        GROUPED_INFER_HEADDIM_SWITCH(param.K, param.Kv, [&] {
-            using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
-            using FmhaPipelineProblem =
-                ck::tile_program::block::BlockFmhaPipelineProblem<QDataType,
-                                                                  KDataType,
-                                                                  VDataType,
-                                                                  SaccDataType,
-                                                                  SMPLComputeDataType,
-                                                                  BiasDataType,
-                                                                  PDataType,
-                                                                  OaccDataType,
-                                                                  ODataType,
-                                                                  256, // BlockSize
-                                                                  FmhaShape,
-                                                                  true, // IsGroupMode
-                                                                  true, // kM0NeedPadding
-                                                                  true, // kN0K1Needpadding
-                                                                  has_attn_bias,
-                                                                  FmhaCausalMask>;
+        const bool has_local_attention = (param.window_size > 0) ? true : false;
 
-            using FmhaPipeline =
-                ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+        BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
+            constexpr bool has_masking = has_causal_mask || USE_LOCAL_ATTENTION;
 
-            using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+            using FmhaMask =
+                ck::tile_program::block::GenericAttentionMask<has_masking, USE_LOCAL_ATTENTION>;
 
-            RunWithKernel<FmhaKernel>(param, stream);
+            GROUPED_INFER_HEADDIM_SWITCH(param.K, param.Kv, [&] {
+                using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
+                using FmhaTraits = ck::tile_program::TileFmhaTraits<true, true, has_attn_bias>;
+                using FmhaPipelineProblem =
+                    ck::tile_program::block::BlockFmhaPipelineProblem<QDataType,
+                                                                      KDataType,
+                                                                      VDataType,
+                                                                      SaccDataType,
+                                                                      SMPLComputeDataType,
+                                                                      BiasDataType,
+                                                                      PDataType,
+                                                                      OaccDataType,
+                                                                      ODataType,
+                                                                      256, // BlockSize
+                                                                      FmhaShape,
+                                                                      true, // IsGroupMode
+                                                                      FmhaMask,
+                                                                      FmhaTraits>;
+
+                using FmhaPipeline =
+                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+
+                using FmhaKernel = FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+                RunWithKernel<FmhaKernel>(param, stream);
+            });
         });
     };
 
@@ -128,74 +137,47 @@ struct grouped_infer_masktype_attnbias_dispatched
     static void RunWithKernel(GroupedForwardParams& param, hipStream_t stream)
     {
         const auto kargs = [&] {
-            if constexpr(FmhaKernel::kSupportsBias)
-            {
-                std::optional<std::tuple<const void*, ck::index_t, ck::index_t>> bias;
-
-                bias = std::make_tuple(
-                    param.attn_bias_ptr, param.attn_bias_strides[2], param.attn_bias_strides[1]);
-
-                return FmhaKernel::MakeKargs(
-                    param.q_ptr,
-                    param.k_ptr,
-                    param.v_ptr,
-                    param.out_ptr,
-                    param.seqstart_q_dev_ptr,
-                    param.seqstart_k_dev_ptr,
-                    param.seqlen_k_dev_ptr,
-                    param.K,  // hdim_q
-                    param.Kv, // hdim_v
-                    param.scale,
-                    param.q_strides[0], // q, k, v, out tensor seq-dim stride
-                    param.k_strides[0],
-                    param.v_strides[0],
-                    param.out_strides[0],
-                    param.q_strides[1], // q, k, v, out tensor head-dim stride
-                    param.k_strides[1],
-                    param.v_strides[1],
-                    param.out_strides[1],
-                    bias);
-            }
-            else
-            {
-                return FmhaKernel::MakeKargs(
-                    param.q_ptr,
-                    param.k_ptr,
-                    param.v_ptr,
-                    param.out_ptr,
-                    param.seqstart_q_dev_ptr,
-                    param.seqstart_k_dev_ptr,
-                    param.seqlen_k_dev_ptr,
-                    param.K,  // hdim_q
-                    param.Kv, // hdim_v
-                    param.scale,
-                    param.q_strides[0], // q, k, v, out tensor seq-dim stride
-                    param.k_strides[0],
-                    param.v_strides[0],
-                    param.out_strides[0],
-                    param.q_strides[1], // q, k, v, out tensor head-dim stride
-                    param.k_strides[1],
-                    param.v_strides[1],
-                    param.out_strides[1]);
-            };
+            return FmhaKernel::MakeKargs(
+                param.q_ptr,
+                param.k_ptr,
+                param.v_ptr,
+                param.attn_bias_ptr,
+                param.out_ptr,
+                param.seqstart_q_dev_ptr,
+                param.seqstart_k_dev_ptr,
+                param.seqlen_k_dev_ptr,
+                param.K,              // hdim_q
+                param.Kv,             // hdim_v
+                param.Hq / param.Hkv, // nhead_ratio_qk
+                param.scale,
+                param.q_strides[0], // q, k, v, bias, out tensor seq-dim stride
+                param.k_strides[0],
+                param.v_strides[0],
+                param.attn_bias_strides[2],
+                param.out_strides[0],
+                param.q_strides[1], // q, k, v, bias, out tensor head-dim stride
+                param.k_strides[1],
+                param.v_strides[1],
+                param.attn_bias_strides[1],
+                param.out_strides[1],
+                static_cast<CausalMaskType>(param.custom_mask_type),
+                param.window_size);
         }();
 
         dim3 kGridSize =
             FmhaKernel::GridSize(param.num_batches, param.Hq, param.max_seqlen_q, param.Kv);
-        constexpr dim3 kBlockSize = FmhaKernel::BlockSize();
-
-        constexpr ck::index_t kWarpPerCu    = 8; // 2 warps per SIMD
-        constexpr ck::index_t kWarpPerBlock = kBlockSize.x / warpSize;
-        constexpr ck::index_t kBlockPerCu   = kWarpPerCu / kWarpPerBlock;
+        constexpr dim3 kBlockSize         = FmhaKernel::BlockSize();
+        constexpr ck::index_t kBlockPerCu = FmhaKernel::kBlockPerCu;
 
         (void)launch_kernel<kBlockSize.x, kBlockPerCu>(
             StreamConfig{stream, false}, FmhaKernel{}, kGridSize, kBlockSize, 0, kargs);
     };
 };
 
-template <typename scalar_t, int32_t custom_mask_type, bool has_attn_bias>
-void run_grouped_infer_masktype_attnbias_dispatched(GroupedForwardParams& param, hipStream_t stream)
+template <typename scalar_t, bool has_causal_mask, bool has_attn_bias>
+void run_grouped_infer_causalmask_attnbias_dispatched(GroupedForwardParams& param,
+                                                      hipStream_t stream)
 {
-    grouped_infer_masktype_attnbias_dispatched<scalar_t, custom_mask_type, has_attn_bias>::Run(
+    grouped_infer_causalmask_attnbias_dispatched<scalar_t, has_causal_mask, has_attn_bias>::Run(
         param, stream);
 };

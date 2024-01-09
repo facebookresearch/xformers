@@ -6,7 +6,7 @@
  */
 #pragma once
 
-#include <ck/tile_program/block_tile/block_masking_specialization.hpp>
+//#include <ck/tile_program/block_tile/block_masking_specialization.hpp>
 
 enum struct CausalMaskType
 {
@@ -15,6 +15,7 @@ enum struct CausalMaskType
     MaskUpperTriangleFromBottomRight
 };
 
+/*
 template <CausalMaskType type>
 struct CausalMaskPredicate;
 
@@ -35,3 +36,4 @@ struct CausalMaskPredicate<CausalMaskType::MaskUpperTriangleFromBottomRight>
 {
     using predicate = ck::tile_program::block::MaskUpperTriangleFromBottomRightPredicate;
 };
+*/

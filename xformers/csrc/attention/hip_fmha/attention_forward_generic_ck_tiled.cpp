@@ -37,11 +37,9 @@ extern void grouped_forward_bp16(
 */
 
 extern void batched_infer_fp16(BatchedForwardParams& param, hipStream_t stream);
-// extern void batched_infer_bp16(BatchedForwardParams& param, hipStream_t
-// stream);
+extern void batched_infer_bp16(BatchedForwardParams& param, hipStream_t stream);
 extern void grouped_infer_fp16(GroupedForwardParams& param, hipStream_t stream);
-// extern void grouped_infer_bp16(GroupedForwardParams& param, hipStream_t
-// stream);
+extern void grouped_infer_bp16(GroupedForwardParams& param, hipStream_t stream);
 
 namespace {
 
@@ -67,7 +65,8 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
     bool compute_logsumexp,
     int64_t custom_mask_type,
     c10::optional<double> scale,
-    const c10::optional<at::Tensor>& seqlen_k)
+    const c10::optional<at::Tensor>& seqlen_k,
+    const c10::optional<int64_t> window_size)
 {
     TORCH_CHECK(query.dim() == 4);
     TORCH_CHECK(key.dim() == 4);
@@ -208,6 +207,7 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
             p.has_attn_bias = false;
 
         p.custom_mask_type = custom_mask_type;
+        p.window_size      = window_size.has_value() ? (*window_size > 0 ? *window_size : 0) : 0;
 
         p.use_dropout       = use_dropout;
         p.philox_seed       = philox_seed;
@@ -289,6 +289,7 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
             p.has_attn_bias = false;
 
         p.custom_mask_type = custom_mask_type;
+        p.window_size      = window_size.has_value() ? (*window_size > 0 ? *window_size : 0) : 0;
 
         // max_seqlen_q is used to create logsumexp tensor
         p.max_seqlen_q = *max_seqlen_q_;
@@ -380,8 +381,7 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
             }
             else if(inDataType == at::ScalarType::BFloat16)
             {
-                // batched_infer_bp16(batched_forward_params, stream);
-                throw std::runtime_error("input data-type is not supported!");
+                batched_infer_bp16(batched_forward_params, stream);
             }
             else
                 throw std::runtime_error("input data-type is not supported!");
@@ -414,8 +414,7 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
             }
             else if(inDataType == at::ScalarType::BFloat16)
             {
-                // grouped_infer_bp16(grouped_forward_params, stream);
-                throw std::runtime_error("input data-type is not supported!");
+                grouped_infer_bp16(grouped_forward_params, stream);
             }
             else
                 throw std::runtime_error("input data-type is not supported!");
