@@ -141,11 +141,7 @@ class FwOp(AttentionFwOpBase):
         else:
             qk_scale = torch.rsqrt(torch.tensor(k.shape[-1], dtype=torch.float32))
 
-        print(f"{q.shape=} {k.shape=} {v.shape=}")
-
         out = cls.OPERATOR(query=query, key=key, value=value, seq_positions=seq_positions_gpu, scale=qk_scale, split_k=split_k)
-        
-        print(f"{out.shape=}")
         
         return out, None
 

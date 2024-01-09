@@ -220,24 +220,14 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck_impl(
   auto H = XQ.size(3);
   auto K = XQ.size(4);
   
-  auto O_splits = at::empty({split_k, B, M, G, H, K}, XQ.options());
+  auto O_splits = at::zeros({split_k, B, M, G, H, K}, XQ.options());
 
-  auto split_max = at::empty({B, M, G, H, split_k}, XQ.options().dtype(at::kFloat));
-  auto split_sumexp = at::empty_like(split_max);
+  auto split_max = at::empty({B, M, G, H, split_k}, XQ.options().dtype(at::kFloat)).fill_(ck::NumericLimits<float>::Lowest());
+  auto split_sumexp = at::zeros_like(split_max);
 
   efficient_attention_forward_decoder_splitk_ck_out_impl<
       ThreadsPerWavefront,
       WavefrontsPerBlock>(XQ, cache_K, cache_V, seq_kv_lens, qk_scale, split_k, split_max, split_sumexp, O_splits, O);
-  
-  auto nan_count = at::sum(at::isnan(O_splits));
-  auto numel = O_splits.numel();
-  auto inf_count = at::sum(at::isinf(O_splits));
-
-  // std::cout << "O_splits numel: " << numel << "O_splits nans: " << nan_count << "O_splits infs: " << inf_count << std::endl;
-
-  // std::cout << "O splits at (0,0,0,0,0): " << O_splits[0][0][0][0][0][0] << " " << O_splits[1][0][0][0][0][0] << std::endl <<
-  //           "split_max: " << split_max[0][0][0][0][0] << " " << split_max[0][0][0][0][1] << std::endl <<
-  //           "split_sumexp: " << split_sumexp[0][0][0][0][0] << " " << split_sumexp[0][0][0][0][1] << std::endl;
 
   return O;
 }

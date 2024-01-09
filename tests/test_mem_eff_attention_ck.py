@@ -1755,6 +1755,7 @@ def test_splitk_reference(
 @pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)])
 @pytest.mark.parametrize("padding", [32, 4096])
 @pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
+@pytest.mark.parametrize("d", [256])
 def test_decoder(
     op,
     n_heads: int,
@@ -1762,9 +1763,9 @@ def test_decoder(
     padding: int,
     bsz: int,
     dtype: str,
+    d: int,
     dequant: bool = False,
     num_queries: int = 1,
-    d = 256,
 ) -> None:
     # kv_heads = 1: multiquery
     # kv_heads = None: neither MQA nor GQA
@@ -1814,11 +1815,6 @@ def test_decoder(
 
     ref_output = ref_attention(q, k, v, attn_bias)
 
-    # print(f"{torch.where(decoder_output.isnan())=}")
-    # print(f"{torch.sum(decoder_output.isnan())} nans out of {decoder_output.numel()}")
-    # print(f"{torch.sum(decoder_output.isinf())} infs out of {decoder_output.numel()}")
-    # print(f"{k_seqlen=}")
-
     assert_allclose(
         decoder_output.float(),
         ref_output,
@@ -1827,10 +1823,11 @@ def test_decoder(
     )
 
 
-@pytest.mark.parametrize("op", [fmha.forward_splitk.FwOp_S1, fmha.forward_splitk.FwOp_S2])
+@pytest.mark.parametrize("op", [fmha.forward_splitk.FwOp_S1, fmha.forward_splitk.FwOp_S2, fmha.forward_splitk.FwOp_S4])
 @pytest.mark.parametrize("dtype", ["f32"])
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
 @pytest.mark.parametrize("n_heads", [16])
+@pytest.mark.parametrize("d", [256])
 @pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1), (32, 1), (4096, 8)])
 def test_splitk_decoder(
     op,
@@ -1839,6 +1836,7 @@ def test_splitk_decoder(
     padding: int,
     bsz: int,
     dtype: str,
+    d: int
 ) -> None:
     # no quantized impl compared to cuda
     test_decoder(
@@ -1848,6 +1846,7 @@ def test_splitk_decoder(
         padding=padding,
         bsz=bsz,
         dtype=dtype,
+        d=d,
     )
 
 

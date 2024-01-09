@@ -271,32 +271,6 @@ __global__ void efficient_attention_forward_decoder_splitk_ck_kernel(
   const int32_t tt_tail_low = wavefront_idx * n_loop_unroll_tail + n_unrolled_loops * dtt * (split_idx + 1);
   const int32_t tt_tail_high = (split_idx == split_k - 1) ? t_max : tt_tail_low;
 
-  // if (lane_idx == 0)
-  //   printf("wavefront_idx: %d "
-  //          "t_max: %d " 
-  //          "(runtime) wavefronts_per_block: %d "
-  //          "n_loop_unroll: %d "
-  //          "n_loop_unroll_tail: %d "
-  //          "dtt: %d "
-  //          "n_unrolled_loops: %d "
-  //          "tt_low: %d "
-  //          "tt_high: %d "
-  //          "dtt_tail: %d "
-  //          "tt_tail_low: %d "
-  //          "tt_tail_high: %d "
-  //          "\n", 
-  //          wavefront_idx,
-  //          t_max, 
-  //          wavefronts_per_block,
-  //          n_loop_unroll,
-  //          n_loop_unroll_tail,
-  //          dtt,
-  //          n_unrolled_loops,
-  //          tt_low,
-  //          tt_high,
-  //          dtt_tail,
-  //          tt_tail_low,
-  //          tt_tail_high);
   for (auto tt = tt_low; tt < tt_high; tt += dtt) {
     if (lane_active_for_io) {
 #pragma unroll n_loop_unroll
@@ -380,7 +354,9 @@ __global__ void efficient_attention_forward_decoder_splitk_ck_kernel(
   // each wavefront computes partial sum of exp.
   compute_t softmax_denominator = 0.0f;
   for (int32_t t = thread_linear_idx; t < t_max; t += threads_per_block) {
-    softmax_denominator += ck::math::exp(smem[t] - max_qk_acc);
+    if (t >= tt_low && t < tt_tail_high) {
+      softmax_denominator += ck::math::exp(smem[t] - max_qk_acc);
+    }
   }
   softmax_denominator = wavefrontReduce(
       softmax_denominator, [](auto a, auto b) { return a + b; });
@@ -635,8 +611,6 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator {
     float Run(
         const Argument& arg,
         const StreamConfig& stream_config = StreamConfig{}) {
-
-      // std::cout << arg.str() << std::endl << "stream_id: " << stream_config.stream_id_ << std::endl;
 
       auto threads_per_wavefront = arg.block_dim.x;
 
