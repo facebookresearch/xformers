@@ -522,24 +522,21 @@ struct FmhaFwdKernel
                 {
                     if(kargs.mask_type == CausalMaskType::MaskDisabled)
                     {
-                        ck::index_t lr_size = kargs.window_size / 2;
+                        ck::index_t left_size  = kargs.window_size / 2;
+                        ck::index_t right_size = kargs.window_size - 1 - left_size;
 
                         res = ck::make_generic_attention_mask_coordinates_from_lr_window(
-                            lr_size, lr_size, kargs.seqlen_q, kargs.seqlen_k);
+                            left_size, right_size, kargs.seqlen_q, kargs.seqlen_k);
                     }
                     else if(kargs.mask_type == CausalMaskType::MaskUpperTriangleFromTopLeft)
                     {
-                        ck::index_t lr_size = kargs.window_size / 2;
-
                         res = ck::make_generic_attention_mask_coordinates_from_lr_window(
-                            lr_size, 0, kargs.seqlen_q, kargs.seqlen_k, true);
+                            kargs.window_size - 1, 0, kargs.seqlen_q, kargs.seqlen_k, true);
                     }
                     else if(kargs.mask_type == CausalMaskType::MaskUpperTriangleFromBottomRight)
                     {
-                        ck::index_t lr_size = kargs.window_size / 2;
-
                         res = ck::make_generic_attention_mask_coordinates_from_lr_window(
-                            lr_size, 0, kargs.seqlen_q, kargs.seqlen_k, false);
+                            kargs.window_size - 1, 0, kargs.seqlen_q, kargs.seqlen_k, false);
                     }
                 }
                 else

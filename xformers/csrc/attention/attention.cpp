@@ -35,20 +35,11 @@ TORCH_LIBRARY_FRAGMENT(xformers, m)
     m.def(TORCH_SELECTIVE_SCHEMA("xformers::_cutlass_rand_uniform(float p, Tensor out) -> Tensor"));
 #endif
 #if defined(USE_ROCM)
-
-#if defined(USE_CK_TILED_KERNEL)
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_forward_ck(Tensor query, "
           "Tensor key, Tensor value, Tensor? attn_bias, Tensor? seqstart_q, "
           "Tensor? seqstart_k, int? max_seqlen_q, float dropout_p, "
           "bool compute_logsumexp, int custom_mask_type, float? scale, Tensor? seqlen_k, int? window_size) -> (Tensor, Tensor, int, int)"));
-#else
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::efficient_attention_forward_ck(Tensor query, "
-          "Tensor key, Tensor value, Tensor? attn_bias, Tensor? seqstart_q, "
-          "Tensor? seqstart_k, int? max_seqlen_q, float dropout_p, "
-          "bool compute_logsumexp, int custom_mask_type, float? scale, Tensor? seqlen_k) -> (Tensor, Tensor, int, int)"));
-#endif
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_forward_decoder_ck(Tensor query, "
           "Tensor key, Tensor value, Tensor? seq_positions, float scale) -> Tensor"));
