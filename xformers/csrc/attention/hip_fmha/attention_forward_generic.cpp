@@ -6,6 +6,7 @@
  */
 #include <cmath>
 #include <mutex>
+#include <tuple>
 
 #include <ATen/Context.h>
 #include <ATen/ScalarOps.h>
@@ -57,8 +58,11 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
     bool compute_logsumexp,
     int64_t custom_mask_type,
     c10::optional<double> scale,
-    const c10::optional<at::Tensor>& seqlen_k)
+    const c10::optional<at::Tensor>& seqlen_k,
+    const c10::optional<int64_t> window_size)
 {
+    std::ignore = window_size;
+
     TORCH_CHECK(query.dim() == 4);
     TORCH_CHECK(key.dim() == 4);
     TORCH_CHECK(value.dim() == 4);
