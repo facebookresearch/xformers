@@ -370,7 +370,7 @@ class BwOp(AttentionBwOpBase):
         type(None),
         torch.Tensor,
         LowerTriangularMask,
-        LowerTriangularFromBottomRightMask,
+        ##LowerTriangularFromBottomRightMask,
         # TODO: Still some infs/nans in the BW pass for
         # local + causal
         # LowerTriangularFromBottomRightLocalAttentionMask,
@@ -379,7 +379,7 @@ class BwOp(AttentionBwOpBase):
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
-        attn_bias.BlockDiagonalCausalLocalAttentionMask,
+        ##attn_bias.BlockDiagonalCausalLocalAttentionMask,
     }
     SUPPORTS_ATTN_BIAS_GRAD = True
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
@@ -431,7 +431,7 @@ class BwOp(AttentionBwOpBase):
         if type(inp.attn_bias) not in BwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
 
-        seqstart_k, seqstart_q, max_seqlen_q, max_seqlen_k = _get_seqlen_info(inp)
+        seqstart_k, seqstart_q, max_seqlen_q = _get_seqlen_info(inp)
         dtype = inp.query.dtype
 
         rng_seed = rng_offset = 0
