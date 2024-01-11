@@ -25,7 +25,7 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_torch(
     // }
 
     // causal mask
-    auto neg_inf = at::tensor(-99.).item();
+    auto neg_inf = at::tensor(-1001.).item();
     for(size_t b = 0; b < k_seqlens.numel(); ++b)
     {
         auto seqlen = k_seqlens[b].item<int64_t>();
@@ -789,6 +789,8 @@ generate_inputs(const int32_t padding,
     const int32_t G           = Hq / Hkv;
     const int32_t num_queries = 1;
 
+    at::manual_seed(1);
+
     auto options = torch::TensorOptions()
                        .dtype(dtype)
                        .layout(torch::kStrided)
@@ -840,33 +842,35 @@ static void test_split1_attention()
            1. - l_percent_match.item<float>());
 }
 
-static void do_correctness_check()
+static void test_splitk_decoder_e2e_correctness(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k)
 {
-    auto [XQ, K, V, seqlen] = generate_inputs(4096, 8, 16, 16);
+    auto [XQ, K, V, seqlen] = generate_inputs(padding, batch_size, Hq, Hkv);
 
     double qk_scale        = 1. / sqrt(XQ.size(-1));
-    constexpr auto split_k = 2;
 
     auto result = efficient_attention_forward_decoder_splitk_ck_impl</* threads_per_wavefront */ 64, /* wavefronts_per_block */ 1>(
         XQ, K, V, seqlen, qk_scale, split_k);
     auto gold_result = efficient_attention_forward_decoder_split1_torch(XQ, K, V, seqlen, qk_scale);
     auto mask = at::isclose(result, gold_result, /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
     auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
-    // auto nan_count     = at::sum(at::isnan(result));
-    // auto numel         = result.numel();
-    // auto inf_count     = at::sum(at::isinf(result));
-    printf("Mismatched elements percentage: %.2f\n", 1. - percent_match.item<float>());
-    // printf("k_seqlen: %d\n", seqlen.item<int32_t>());
-    // std::cout << "numel: " << numel << " nan count: " << nan_count << " inf count: " << inf_count
-    //           << std::endl;
-    std::cout << "k_seqlen: " << seqlen << std::endl;
+    printf("Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f\n", padding, batch_size, Hq, Hkv, split_k, 1. - percent_match.item<float>());
 }
 
 int main(int argc, char** argv)
 {
     if(argc == 1)
     {
-        do_correctness_check();
+        for (auto padding : {32, 4096}) {
+            for (auto batch_size : {1, 8}) {
+                for (auto Hq : { 16 }) {
+                    for (auto Hkv : { 16 }) {
+                        for (auto split_k : {1, 2, 4}) {
+                            test_splitk_decoder_e2e_correctness(padding, batch_size, Hq, Hkv, split_k);
+                        }
+                    }
+                }
+            }
+        }
 
         // test_split1_attention();
     }
