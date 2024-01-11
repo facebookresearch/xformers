@@ -685,10 +685,12 @@ struct FMHADecoderReduceDeviceOp : public BaseOperator
 } // namespace tensor_operation
 } // namespace ck
 
-static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_hip(const at::Tensor& XQ,
+static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_hip(const at::Tensor& XQ,
                                                                            const at::Tensor& K,
                                                                            const at::Tensor& V,
-                                                                           const at::Tensor& seqlen)
+                                                                           const at::Tensor& seqlen,
+                                                                           const int32_t split_k,
+                                                                           const int32_t wavefronts_per_block)
 {
 
     at::OptionalDeviceGuard guard(XQ.device());
@@ -700,17 +702,15 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_hip(const
     auto D = XQ.size(4);
 
     double qk_scale        = 1. / sqrt(D);
-    constexpr auto split_k = 1;
 
     auto O                    = at::empty_like(XQ);
-    constexpr auto splitk_dim = 0;
     constexpr auto rank       = 5;
-    auto split_O              = at::stack(O, splitk_dim);
-    auto split_max            = at::empty({B, M, G, H, split_k}, XQ.options().dtype(at::kFloat));
-    auto split_sumexp         = at::empty_like(split_max);
+    auto split_O              = at::zeros({split_k, B, M, G, H, D}, XQ.options());
+    auto split_max            = at::empty({B, M, G, H, split_k}, XQ.options().dtype(at::kFloat)).fill_(ck::NumericLimits<float>::Lowest());
+    auto split_sumexp         = at::zeros_like(split_max);
 
     dim3 blocks(B * H * M * G, split_k);
-    dim3 threads(kThreadsPerWavefront, kWavefrontsPerBlock);
+    dim3 threads(kThreadsPerWavefront, wavefronts_per_block);
 
     constexpr int32_t KV_M_MAX = 8192;
     constexpr int32_t K_MAX    = 4 * kThreadsPerWavefront;
@@ -775,7 +775,7 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_hip(const
             auto invoker = device_op_t::Invoker{};
             (void)invoker.Run(arg, {stream});
         });
-    return std::make_tuple(split_O[splitk_dim], split_max, split_sumexp);
+    return std::make_tuple(split_O, split_max, split_sumexp);
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor>
@@ -799,33 +799,31 @@ generate_inputs(const int32_t padding,
     auto K           = (G == 1) ? at::randn({B, padding, G, Hkv, D}, options)
                       : at::randn({B, padding, G, 1, D}, options).expand({B, padding, G, Hq, D});
     auto V = at::randn_like(K);
-    // auto seqlen = at::randint(1, padding + 1, {B}, int_options);
-    // auto seqlen = at::tensor({1062}, int_options);
-    auto seqlen = at::tensor({6, 12, 13, 9, 32, 10, 12, 6}, int_options);
+    auto seqlen = at::randint(num_queries, padding + 1, {B}, int_options);
 
     return std::make_tuple(XQ, K, V, seqlen);
 }
 
 static void test_split1_attention()
 {
-    auto [XQ, K, V, seqlen] = generate_inputs(4096, 1, 16, 16);
+    auto [XQ, K, V, seqlen] = generate_inputs(4096, 8, 16, 16);
 
-    auto reference_result = split1_attention_torch(XQ, K, V, seqlen);
+    auto [O_ref, m_ref, l_ref] = split1_attention_torch(XQ, K, V, seqlen);
 
-    auto hip_result = split1_attention_hip(XQ, K, V, seqlen);
+    auto [O_hip, m_hip, l_hip] = split_attention_hip(XQ, K, V, seqlen, /* split_k */ 1, /* wavefronts_per_block */ 1);
 
-    auto O_match_mask = at::isclose(std::get<0>(reference_result),
-                                    std::get<0>(hip_result),
+    auto O_match_mask = at::isclose(O_ref,
+                                    O_hip,
                                     /*atol*/ 1e-3,
                                     /*rtol*/ 1e-5,
                                     /*equal_nan*/ false);
-    auto m_match_mask = at::isclose(std::get<1>(reference_result),
-                                    std::get<1>(hip_result),
+    auto m_match_mask = at::isclose(m_ref,
+                                    m_hip,
                                     /*atol*/ 1e-3,
                                     /*rtol*/ 1e-5,
                                     /*equal_nan*/ false);
-    auto l_match_mask = at::isclose(std::get<2>(reference_result),
-                                    std::get<2>(hip_result),
+    auto l_match_mask = at::isclose(l_ref,
+                                    l_hip,
                                     /*atol*/ 1e-3,
                                     /*rtol*/ 1e-5,
                                     /*equal_nan*/ false);
@@ -839,28 +837,28 @@ static void test_split1_attention()
     printf("Mismatched split_max elements percentage: %.2f\n", 1. - m_percent_match.item<float>());
 
     printf("Mismatched split_sumexp elements percentage: %.2f\n",
-           1. - m_percent_match.item<float>());
+           1. - l_percent_match.item<float>());
 }
 
 static void do_correctness_check()
 {
-    auto [XQ, K, V, seqlen] = generate_inputs(32, 8, 16, 16);
+    auto [XQ, K, V, seqlen] = generate_inputs(4096, 8, 16, 16);
 
     double qk_scale        = 1. / sqrt(XQ.size(-1));
     constexpr auto split_k = 2;
 
-    auto result = efficient_attention_forward_decoder_splitk_ck_impl<64, 1>(
+    auto result = efficient_attention_forward_decoder_splitk_ck_impl</* threads_per_wavefront */ 64, /* wavefronts_per_block */ 1>(
         XQ, K, V, seqlen, qk_scale, split_k);
     auto gold_result = efficient_attention_forward_decoder_split1_torch(XQ, K, V, seqlen, qk_scale);
     auto mask = at::isclose(result, gold_result, /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
     auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
-    auto nan_count     = at::sum(at::isnan(result));
-    auto numel         = result.numel();
-    auto inf_count     = at::sum(at::isinf(result));
+    // auto nan_count     = at::sum(at::isnan(result));
+    // auto numel         = result.numel();
+    // auto inf_count     = at::sum(at::isinf(result));
     printf("Mismatched elements percentage: %.2f\n", 1. - percent_match.item<float>());
     // printf("k_seqlen: %d\n", seqlen.item<int32_t>());
-    std::cout << "numel: " << numel << " nan count: " << nan_count << " inf count: " << inf_count
-              << std::endl;
+    // std::cout << "numel: " << numel << " nan count: " << nan_count << " inf count: " << inf_count
+    //           << std::endl;
     std::cout << "k_seqlen: " << seqlen << std::endl;
 }
 
