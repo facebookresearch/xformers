@@ -16,42 +16,32 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_torch(
     const at::Tensor& Q, const at::Tensor& K, const at::Tensor& V, const at::Tensor& k_seqlens)
 {
     auto Q_scaled = at::div(Q, sqrt(Q.size(-1)));
-    auto S        = at::einsum("mghk, nghk -> mghn",
-                        {Q_scaled.flatten(0, 1), K.flatten(0, 1)},
+
+    std::vector<at::Tensor> O_batch;
+    std::vector<at::Tensor> m_batch;
+    std::vector<at::Tensor> l_batch;
+
+    for(size_t b = 0; b < k_seqlens.numel(); ++b) {
+        auto seqlen = k_seqlens[b].item<int64_t>();
+
+        auto S        = at::einsum("mghk, nghk -> mghn",
+                        {Q_scaled[b], at::slice(K[b], /*dim*/ 0, /*start*/ 0, /*end*/ seqlen)},
                         /* einsum eval path */ at::nullopt);
-
-    // for (size_t i = 0; i < S.dim(); ++i) {
-    //   std::cout << "S.dim" << i << "=" << S.size(i) << std::endl;
-    // }
-
-    // causal mask
-    auto neg_inf = at::tensor(-1001.).item();
-    for(size_t b = 0; b < k_seqlens.numel(); ++b)
-    {
-        auto seqlen = k_seqlens[b].item<int64_t>();
-        at::slice(S[b], /* dim */ -1, /* start */ 0, /* end */ b * K.size(1)).fill_(neg_inf);
-        at::slice(S[b], /* dim */ -1, /* start */ b * K.size(1) + seqlen, /* end */ S.size(-1))
-            .fill_(neg_inf);
-        // std::cout << "batch" << b << " ; masked QK^T dim " << S[b].dim() << " values at h0 " <<
-        // S[b].slice(1, 0, 1) << std::endl;
+        auto m = std::get<0>(at::max(S, /* dim */ -1, /* keepdim */ true));
+        auto s = at::exp(at::sub(S, m));
+        auto l = at::sum(s, /* dim */ -1, /* keepdim */ true);
+        auto O =
+        at::einsum("mghn, nghk -> mghk", {s, at::slice(V[b], /*dim*/ 0, /*start*/ 0, /*end*/ seqlen)}, /* einsum eval path */ at::nullopt);
+        O_batch.push_back(O);
+        m_batch.push_back(m);
+        l_batch.push_back(l);
     }
 
-    auto m = std::get<0>(at::max(S, /* dim */ -1, /* keepdim */ true));
-    auto s = at::exp(at::sub(S, m));
+    auto O_cat = at::stack(O_batch);
+    auto m_cat = at::stack(m_batch);
+    auto l_cat = at::stack(l_batch);
 
-    // causal mask
-    for(size_t b = 0; b < k_seqlens.numel(); ++b)
-    {
-        auto seqlen = k_seqlens[b].item<int64_t>();
-        at::slice(s[b], /* dim */ -1, /* start */ 0, /* end */ b * K.size(1)).zero_();
-        at::slice(s[b], /* dim */ -1, /* start */ b * K.size(1) + seqlen, /* end */ s.size(-1))
-            .zero_();
-    }
-
-    auto l = at::sum(s, /* dim */ -1, /* keepdim */ true);
-    auto O =
-        at::einsum("mghn, nghk -> mghk", {s, V.flatten(0, 1)}, /* einsum eval path */ at::nullopt);
-    return std::make_tuple(O, m, l);
+    return std::make_tuple(O_cat, m_cat, l_cat);
 }
 
 static at::Tensor
@@ -806,9 +796,9 @@ generate_inputs(const int32_t padding,
     return std::make_tuple(XQ, K, V, seqlen);
 }
 
-static void test_split1_attention()
+static void test_split1_attention(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv)
 {
-    auto [XQ, K, V, seqlen] = generate_inputs(4096, 8, 16, 16);
+    auto [XQ, K, V, seqlen] = generate_inputs(padding, batch_size, Hq, Hkv);
 
     auto [O_ref, m_ref, l_ref] = split1_attention_torch(XQ, K, V, seqlen);
 
@@ -834,12 +824,15 @@ static void test_split1_attention()
     auto m_percent_match = at::sum(m_match_mask.to(torch::kFloat32)) / m_match_mask.numel();
     auto l_percent_match = at::sum(l_match_mask.to(torch::kFloat32)) / l_match_mask.numel();
 
-    printf("Mismatched split_O elements percentage: %.2f\n", 1. - O_percent_match.item<float>());
+    printf("Padding=%d BS=%d Hq=%d Hkv=%d Mismatched split_O elements percentage: %.2f Mismatched split_max elements percentage: %.2f Mismatched split_sumexp elements percentage: %.2f\n", 
+            padding,
+            batch_size,
+            Hq,
+            Hkv,
+            1. - O_percent_match.item<float>(),
+            1. - m_percent_match.item<float>(),
+            1. - l_percent_match.item<float>());
 
-    printf("Mismatched split_max elements percentage: %.2f\n", 1. - m_percent_match.item<float>());
-
-    printf("Mismatched split_sumexp elements percentage: %.2f\n",
-           1. - l_percent_match.item<float>());
 }
 
 static void test_splitk_decoder_e2e_correctness(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k)
@@ -872,7 +865,15 @@ int main(int argc, char** argv)
             }
         }
 
-        // test_split1_attention();
+        for (auto padding : {32, 4096}) {
+            for (auto batch_size : {1, 8}) {
+                for (auto Hq : { 16 }) {
+                    for (auto Hkv : { 16 }) {
+                        test_split1_attention(padding, batch_size, Hq, Hkv);
+                    }
+                }
+            }
+        }
     }
     else
     {
