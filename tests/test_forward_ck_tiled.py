@@ -437,11 +437,8 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 
-    if not (k == kv and (kv == 64 or kv == 128)):
-        pytest.skip("only head-dim size 64 or 128 supported by ck-tiled!")
-
-    if kv > 128:
-        pytest.skip("kv > 128 is not supported by CK-FlashAttention")
+    if k > 128 or kv > 128:
+        pytest.skip("k or kv bigger than 128 is not supported by CK-FlashAttention")
 
     if packed and not (k == kv and q_len == kv_len):
         pytest.skip(
