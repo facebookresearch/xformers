@@ -57,8 +57,8 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_torch(
     }
 
     auto O_cat = at::stack(O_splits);
-    auto m_cat = at::stack(m_splits);
-    auto l_cat = at::stack(l_splits);
+    auto m_cat = at::transpose(at::stack(m_splits), 0, -1);
+    auto l_cat = at::transpose(at::stack(l_splits), 0, -1);
 
     return std::make_tuple(O_cat, m_cat, l_cat);
 }
@@ -66,7 +66,7 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_torch(
 static at::Tensor
 split1_reduce_torch(const at::Tensor& O_splits, const at::Tensor& m, const at::Tensor& l)
 {
-    return at::div(O_splits, l);
+    return at::div(O_splits, at::transpose(l, 0, -1));
 }
 
 namespace {
