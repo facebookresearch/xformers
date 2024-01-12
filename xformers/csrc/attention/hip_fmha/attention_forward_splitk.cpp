@@ -12,34 +12,53 @@ constexpr int32_t kWavefrontsPerBlock  = 1;
 constexpr int32_t K_MAX                = 4 * kThreadsPerWavefront;
 } // namespace
 
-static std::tuple<at::Tensor, at::Tensor, at::Tensor> split1_attention_torch(
-    const at::Tensor& Q, const at::Tensor& K, const at::Tensor& V, const at::Tensor& k_seqlens)
+static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_torch(
+    const at::Tensor& Q, const at::Tensor& K, const at::Tensor& V, const at::Tensor& k_seqlens, const int32_t split_k)
 {
     auto Q_scaled = at::div(Q, sqrt(Q.size(-1)));
 
-    std::vector<at::Tensor> O_batch;
-    std::vector<at::Tensor> m_batch;
-    std::vector<at::Tensor> l_batch;
+    std::vector<at::Tensor> O_splits;
+    std::vector<at::Tensor> m_splits;
+    std::vector<at::Tensor> l_splits;
 
-    for(size_t b = 0; b < k_seqlens.numel(); ++b) {
-        auto seqlen = k_seqlens[b].item<int64_t>();
+    for (int32_t split_idx = 0; split_idx < split_k; ++split_idx) {
+        std::vector<at::Tensor> O_batch;
+        std::vector<at::Tensor> m_batch;
+        std::vector<at::Tensor> l_batch;
 
-        auto S        = at::einsum("mghk, nghk -> mghn",
-                        {Q_scaled[b], at::slice(K[b], /*dim*/ 0, /*start*/ 0, /*end*/ seqlen)},
-                        /* einsum eval path */ at::nullopt);
-        auto m = std::get<0>(at::max(S, /* dim */ -1, /* keepdim */ true));
-        auto s = at::exp(at::sub(S, m));
-        auto l = at::sum(s, /* dim */ -1, /* keepdim */ true);
-        auto O =
-        at::einsum("mghn, nghk -> mghk", {s, at::slice(V[b], /*dim*/ 0, /*start*/ 0, /*end*/ seqlen)}, /* einsum eval path */ at::nullopt);
-        O_batch.push_back(O);
-        m_batch.push_back(m);
-        l_batch.push_back(l);
+        for(size_t b = 0; b < k_seqlens.numel(); ++b) {
+            auto seqlen = k_seqlens[b].item<int64_t>();
+            const int64_t t_low = split_idx * (seqlen / split_k);
+            const int64_t t_high = (split_idx + 1 < split_k) 
+                                 ? (1 + split_idx) * (seqlen / split_k)
+                                 : seqlen;
+
+            auto S        = at::einsum("mghk, nghk -> mghn",
+                            {Q_scaled[b], at::slice(K[b], /*dim*/ 0, /*start*/ t_low, /*end*/ t_high)},
+                            /* einsum eval path */ at::nullopt);
+            auto m = std::get<0>(at::max(S, /* dim */ -1, /* keepdim */ true));
+            auto s = at::exp(at::sub(S, m));
+            auto l = at::sum(s, /* dim */ -1, /* keepdim */ true);
+            auto O        = at::einsum("mghn, nghk -> mghk", 
+                            {s, at::slice(V[b], /*dim*/ 0, /*start*/ t_low, /*end*/ t_high)}, 
+                            /* einsum eval path */ at::nullopt);
+            O_batch.push_back(O);
+            m_batch.push_back(m);
+            l_batch.push_back(l);
+        }
+
+        auto O_cat = at::stack(O_batch);
+        auto m_cat = at::stack(m_batch);
+        auto l_cat = at::stack(l_batch);
+
+        O_splits.push_back(O_cat);
+        m_splits.push_back(m_cat);
+        l_splits.push_back(l_cat);
     }
 
-    auto O_cat = at::stack(O_batch);
-    auto m_cat = at::stack(m_batch);
-    auto l_cat = at::stack(l_batch);
+    auto O_cat = at::stack(O_splits);
+    auto m_cat = at::stack(m_splits);
+    auto l_cat = at::stack(l_splits);
 
     return std::make_tuple(O_cat, m_cat, l_cat);
 }
@@ -235,7 +254,7 @@ at::Tensor efficient_attention_forward_decoder_split1_torch(
     at::optional<at::Tensor> seq_kv_lens, // [B]
     double qk_scale)
 {
-    auto [O_split, m, l] = split1_attention_torch(XQ, cache_K, cache_V, *seq_kv_lens);
+    auto [O_split, m, l] = split_attention_torch(XQ, cache_K, cache_V, *seq_kv_lens, /*split_k*/ 1);
     auto O               = split1_reduce_torch(O_split, m, l);
     return O.reshape_as(XQ);
 }
@@ -248,10 +267,6 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck(
     double qk_scale,
     int64_t split_k)
 {
-
-    // return efficient_attention_forward_decoder_split1_torch(XQ, cache_K, cache_V, seq_kv_lens,
-    // qk_scale);
-
     return efficient_attention_forward_decoder_splitk_ck_impl<kThreadsPerWavefront,
                                                               kWavefrontsPerBlock>(
         XQ, cache_K, cache_V, seq_kv_lens, qk_scale, split_k);
@@ -796,13 +811,13 @@ generate_inputs(const int32_t padding,
     return std::make_tuple(XQ, K, V, seqlen);
 }
 
-static void test_split1_attention(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv)
+static void test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k)
 {
     auto [XQ, K, V, seqlen] = generate_inputs(padding, batch_size, Hq, Hkv);
 
-    auto [O_ref, m_ref, l_ref] = split1_attention_torch(XQ, K, V, seqlen);
+    auto [O_ref, m_ref, l_ref] = split_attention_torch(XQ, K, V, seqlen, split_k);
 
-    auto [O_hip, m_hip, l_hip] = split_attention_hip(XQ, K, V, seqlen, /* split_k */ 1, /* wavefronts_per_block */ 1);
+    auto [O_hip, m_hip, l_hip] = split_attention_hip(XQ, K, V, seqlen, split_k, /* wavefronts_per_block */ 1);
 
     auto O_match_mask = at::isclose(O_ref,
                                     O_hip,
@@ -824,11 +839,12 @@ static void test_split1_attention(int32_t padding, int32_t batch_size, int32_t H
     auto m_percent_match = at::sum(m_match_mask.to(torch::kFloat32)) / m_match_mask.numel();
     auto l_percent_match = at::sum(l_match_mask.to(torch::kFloat32)) / l_match_mask.numel();
 
-    printf("Padding=%d BS=%d Hq=%d Hkv=%d Mismatched split_O elements percentage: %.2f Mismatched split_max elements percentage: %.2f Mismatched split_sumexp elements percentage: %.2f\n", 
+    printf("Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched split_O elements percentage: %.2f Mismatched split_max elements percentage: %.2f Mismatched split_sumexp elements percentage: %.2f\n", 
             padding,
             batch_size,
             Hq,
             Hkv,
+            split_k,
             1. - O_percent_match.item<float>(),
             1. - m_percent_match.item<float>(),
             1. - l_percent_match.item<float>());
@@ -869,7 +885,9 @@ int main(int argc, char** argv)
             for (auto batch_size : {1, 8}) {
                 for (auto Hq : { 16 }) {
                     for (auto Hkv : { 16 }) {
-                        test_split1_attention(padding, batch_size, Hq, Hkv);
+                        for (auto split_k : {1, 2}) {
+                            test_split_attention(padding, batch_size, Hq, Hkv, split_k);
+                        }
                     }
                 }
             }
