@@ -123,12 +123,29 @@ struct batched_infer_causalmask_attnbias_dispatched
 
                         using FmhaPipelineProblem =
                             FmhaPipelineProblemTemp<FmhaTraits, HDim, FmhaMask>;
-                        using FmhaPipeline =
-                            ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
-                        using FmhaKernel =
-                            FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
-                        RunWithKernel<FmhaKernel>(param, stream);
+                        constexpr bool no_any_padding =
+                            !(kM0NeedPadding || kN0K1NeedPadding || kK0N1NeedPadding);
+
+                        if constexpr(no_any_padding)
+                        {
+                            using FmhaPipeline =
+                                ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
+                                    FmhaPipelineProblem>;
+                            using FmhaKernel =
+                                FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+                            RunWithKernel<FmhaKernel>(param, stream);
+                        }
+                        else
+                        {
+                            using FmhaPipeline = ck::tile_program::block::BlockFmhaPipelineQRKSVS<
+                                FmhaPipelineProblem>;
+                            using FmhaKernel =
+                                FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+                            RunWithKernel<FmhaKernel>(param, stream);
+                        };
                     });
             });
         });
