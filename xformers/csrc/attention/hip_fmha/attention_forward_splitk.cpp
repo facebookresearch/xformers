@@ -64,9 +64,30 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_torch(
 }
 
 static at::Tensor
-split1_reduce_torch(const at::Tensor& O_splits, const at::Tensor& m, const at::Tensor& l)
-{
-    return at::div(O_splits, at::transpose(l, 0, -1));
+split_reduce_torch(const at::Tensor& O_splits, const at::Tensor& m_splits, const at::Tensor& l_splits, int32_t split_k)
+{   
+    auto O = at::zeros_like(at::slice(O_splits, 0, 0, 1));
+    auto m_current_max = at::empty_like(at::slice(m_splits, -1, 0, 1)).fill_(-65535.);
+    auto l_current_sum = at::zeros_like(m_current_max);
+
+    for (int32_t split_idx = 0; split_idx < split_k; ++split_idx) {
+        auto O_slice = at::slice(O_splits, 0, split_idx, split_idx + 1);
+        auto m_slice = at::slice(m_splits, -1, split_idx, split_idx + 1);
+        auto l_slice = at::slice(l_splits, -1, split_idx, split_idx + 1);
+
+        auto m_new = at::max(m_slice, m_current_max);
+
+        auto pick_new = at::less(m_slice, m_current_max);
+        auto pick_our = at::logical_not(pick_new);
+
+        auto log_alpha = at::neg(at::abs(at::sub(m_slice, m_current_max)));
+        auto alpha = at::exp(log_alpha);
+
+        O = at::add(O, at::add(O_slice, at::mul(at::add(at::mul(pick_our, O), at::mul(pick_new, O_slice)), at::sub(alpha, 1))));
+        l_current_sum = at::add(l_current_sum, at::add(l_slice, at::mul(at::add(at::mul(pick_our, l_current_sum), at::mul(pick_new, l_slice)), at::sub(alpha, 1))));
+    }
+    
+    return at::div(O, l_current_sum);
 }
 
 namespace {
@@ -255,7 +276,7 @@ at::Tensor efficient_attention_forward_decoder_split1_torch(
     double qk_scale)
 {
     auto [O_split, m, l] = split_attention_torch(XQ, cache_K, cache_V, *seq_kv_lens, /*split_k*/ 1);
-    auto O               = split1_reduce_torch(O_split, m, l);
+    auto O               = split_reduce_torch(O_split, m, l, /*split_k*/ 1);
     return O.reshape_as(XQ);
 }
 
