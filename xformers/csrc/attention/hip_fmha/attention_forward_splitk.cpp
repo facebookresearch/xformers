@@ -338,9 +338,9 @@ namespace tensor_operation {
 namespace device {
 
 template <typename scalar_t, typename compute_t = float>
-struct FMHADecoderSplit1DeviceOp : public BaseOperator
+struct FMHADecoderSplitAttentionDeviceOp : public BaseOperator
 {
-    using DeviceOp = FMHADecoderSplit1DeviceOp;
+    using DeviceOp = FMHADecoderSplitAttentionDeviceOp;
     struct Argument : public BaseArgument
     {
         const scalar_t* __restrict__ XQ;
@@ -548,94 +548,65 @@ struct FMHADecoderSplit1DeviceOp : public BaseOperator
 };
 
 template <typename scalar_t, typename compute_t = float>
-struct FMHADecoderReduceDeviceOp : public BaseOperator
+struct FMHADecoderSplitReduceDeviceOp : public BaseOperator
 {
-    using DeviceOp = FMHADecoderReduceDeviceOp;
+    using DeviceOp = FMHADecoderSplitReduceDeviceOp;
     struct Argument : public BaseArgument
     {
-        const scalar_t* __restrict__ XQ;
-        const scalar_t* __restrict__ cache_K;
-        const scalar_t* __restrict__ cache_V;
+        const scalar_t* __restrict__ split_O;
+        const compute_t* __restrict__ split_max;
+        const compute_t* __restrict__ split_sumexp;
         scalar_t* __restrict__ O;
-        scalar_t* __restrict__ split_O;
-        compute_t* __restrict__ split_max;
-        compute_t* __restrict__ split_sumexp;
-        const int32_t* __restrict__ seq_kv_lens;
-        const ptrdiff_t XQ_stride_b;
-        const ptrdiff_t XQ_stride_m;
-        const ptrdiff_t XQ_stride_g;
-        const ptrdiff_t XQ_stride_h;
-        const ptrdiff_t K_stride_b;
-        const ptrdiff_t K_stride_m;
-        const ptrdiff_t K_stride_g;
-        const ptrdiff_t K_stride_h;
+
+        const int32_t O_size_m;
+        const int32_t O_size_g;
+        const int32_t O_size_h;
+        const int32_t O_size_k;
+
         const ptrdiff_t O_stride_split;
-        const int32_t Q_size_m;
-        const int32_t Q_size_g;
-        const int32_t Q_size_h;
-        const int32_t Q_size_k;
-        const int32_t K_size_m;
-        const bool multiquery;
-        const float qk_scale;
+        const ptrdiff_t O_stride_b;
+        const ptrdiff_t O_stride_m;
+        const ptrdiff_t O_stride_g;
+        const ptrdiff_t O_stride_h;
+
         const int32_t split_k;
 
         const dim3 grid_dim;
         const dim3 block_dim;
         const size_t lds_bytes;
 
-        Argument(const scalar_t* __restrict__ XQ,
-                 const scalar_t* __restrict__ cache_K,
-                 const scalar_t* __restrict__ cache_V,
+        Argument(const scalar_t* __restrict__ split_O,
+                 const compute_t* __restrict__ split_max,
+                 const compute_t* __restrict__ split_sumexp,
                  scalar_t* __restrict__ O,
-                 scalar_t* __restrict__ split_O,
-                 compute_t* __restrict__ split_max,
-                 compute_t* __restrict__ split_sumexp,
-                 const int32_t* __restrict__ seq_kv_lens,
-                 const ptrdiff_t XQ_stride_b,
-                 const ptrdiff_t XQ_stride_m,
-                 const ptrdiff_t XQ_stride_g,
-                 const ptrdiff_t XQ_stride_h,
-                 const ptrdiff_t K_stride_b,
-                 const ptrdiff_t K_stride_m,
-                 const ptrdiff_t K_stride_g,
-                 const ptrdiff_t K_stride_h,
+                 const int32_t O_size_m,
+                 const int32_t O_size_g,
+                 const int32_t O_size_h,
+                 const int32_t O_size_k,
                  const ptrdiff_t O_stride_split,
-                 const int32_t Q_size_m,
-                 const int32_t Q_size_g,
-                 const int32_t Q_size_h,
-                 const int32_t Q_size_k,
-                 const int32_t K_size_m,
-                 const bool multiquery,
-                 const float qk_scale,
+                 const ptrdiff_t O_stride_b,
+                 const ptrdiff_t O_stride_m,
+                 const ptrdiff_t O_stride_g,
+                 const ptrdiff_t O_stride_h,
                  const int32_t split_k,
                  // launch params
                  const dim3 grid_dim,
                  const dim3 block_dim,
                  const size_t lds_bytes)
-            : XQ(XQ),
-              cache_K(cache_K),
-              cache_V(cache_V),
-              O(O),
+            : 
               split_O(split_O),
               split_max(split_max),
               split_sumexp(split_sumexp),
-              seq_kv_lens(seq_kv_lens),
-              XQ_stride_b(XQ_stride_b),
-              XQ_stride_m(XQ_stride_m),
-              XQ_stride_g(XQ_stride_g),
-              XQ_stride_h(XQ_stride_h),
-              K_stride_b(K_stride_b),
-              K_stride_m(K_stride_m),
-              K_stride_g(K_stride_g),
-              K_stride_h(K_stride_h),
+              O(O),              
+              O_size_m(O_size_m),
+              O_size_g(O_size_g),
+              O_size_h(O_size_h),
+              O_size_k(O_size_k),
               O_stride_split(O_stride_split),
-              Q_size_m(Q_size_m),
-              Q_size_g(Q_size_g),
-              Q_size_h(Q_size_h),
-              Q_size_k(Q_size_k),
-              K_size_m(K_size_m),
-              multiquery(multiquery),
-              qk_scale(qk_scale),
+              O_stride_b(O_stride_b),
+              O_stride_m(O_stride_m),
+              O_stride_g(O_stride_g),
+              O_stride_h(O_stride_h),
               split_k(split_k),
               // launch params
               grid_dim(grid_dim),
@@ -652,22 +623,22 @@ struct FMHADecoderReduceDeviceOp : public BaseOperator
         {
             auto threads_per_wavefront = arg.block_dim.x;
 
-            auto Q_size_k_alignment_necessary = 0;
+            auto O_size_k_alignment_necessary = 0;
 
             for(auto vec_size : {4, 2, 1})
             {
-                if(arg.Q_size_k <= vec_size * threads_per_wavefront)
+                if(arg.O_size_k <= vec_size * threads_per_wavefront)
                 {
-                    Q_size_k_alignment_necessary = vec_size;
+                    O_size_k_alignment_necessary = vec_size;
                 }
             }
 
-            if(!Q_size_k_alignment_necessary)
+            if(!O_size_k_alignment_necessary)
             {
                 throw std::runtime_error("Unsupported Q_size_k");
             }
 
-            if(arg.Q_size_k % Q_size_k_alignment_necessary)
+            if(arg.O_size_k % O_size_k_alignment_necessary)
             {
                 throw std::runtime_error("Unsupported alignment for Q_size_k");
             }
@@ -677,11 +648,11 @@ struct FMHADecoderReduceDeviceOp : public BaseOperator
             constexpr int32_t reduce_lds_bytes = 0;
             float reduce_result                = launch_and_time_kernel(
                 stream_config,
-                Q_size_k_alignment_necessary == 4
+                O_size_k_alignment_necessary == 4
                     ? efficient_attention_forward_decoder_splitk_reduce_ck_kernel<scalar_t, 4>
-                    : Q_size_k_alignment_necessary == 2
+                    : O_size_k_alignment_necessary == 2
                           ? efficient_attention_forward_decoder_splitk_reduce_ck_kernel<scalar_t, 2>
-                          : Q_size_k_alignment_necessary == 1
+                          : O_size_k_alignment_necessary == 1
                                 ? efficient_attention_forward_decoder_splitk_reduce_ck_kernel<
                                       scalar_t,
                                       1>
@@ -693,15 +664,15 @@ struct FMHADecoderReduceDeviceOp : public BaseOperator
                 arg.split_max,
                 arg.split_sumexp,
                 arg.O,
-                arg.Q_size_m,
-                arg.Q_size_g,
-                arg.Q_size_h,
-                arg.Q_size_k,
+                arg.O_size_m,
+                arg.O_size_g,
+                arg.O_size_h,
+                arg.O_size_k,
                 arg.O_stride_split,
-                arg.XQ_stride_b,
-                arg.XQ_stride_m,
-                arg.XQ_stride_g,
-                arg.XQ_stride_h,
+                arg.O_stride_b,
+                arg.O_stride_m,
+                arg.O_stride_g,
+                arg.O_stride_h,
                 arg.split_k);
             return reduce_result;
         }
@@ -752,10 +723,10 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_hip(const 
         at::ScalarType::BFloat16,
         at::ScalarType::Float,
         XQ.scalar_type(),
-        "efficient_attention_forward_decoder_split1_ck_test",
+        "efficient_attention_forward_decoder_split_attention_ck_test",
         [&] {
             using ck_data_t   = c10_to_data_t<scalar_t>::type;
-            using device_op_t = ck::tensor_operation::device::FMHADecoderSplit1DeviceOp<ck_data_t>;
+            using device_op_t = ck::tensor_operation::device::FMHADecoderSplitAttentionDeviceOp<ck_data_t>;
             auto op           = device_op_t{};
 
             auto XQ_acc = XQ.packed_accessor32<scalar_t, rank, at::RestrictPtrTraits>();
@@ -802,6 +773,76 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_hip(const 
             (void)invoker.Run(arg, {stream});
         });
     return std::make_tuple(split_O, split_max, split_sumexp);
+}
+
+static
+at::Tensor split_reduce_hip(const at::Tensor& split_O, const at::Tensor& split_max, const at::Tensor& split_sumexp, const int32_t split_k) {
+    at::OptionalDeviceGuard guard(split_O.device());
+
+    auto B = split_O.size(1);
+    auto M = split_O.size(2);
+    auto G = split_O.size(3);
+    auto H = split_O.size(4);
+    auto D = split_O.size(5);
+
+    TORCH_CHECK_EQ(split_k, split_O.size(0));
+    TORCH_CHECK_EQ(split_k, split_max.size(-1));
+    TORCH_CHECK_EQ(split_k, split_sumexp.size(-1));
+
+    constexpr auto rank       = 5;
+
+    TORCH_CHECK_EQ(split_O.dim(), 1 + rank);
+    TORCH_CHECK_EQ(split_max.dim(), rank);
+    TORCH_CHECK_EQ(split_sumexp.dim(), rank);
+
+    auto O = at::empty({B, M, G, H, D}, split_O.options());
+
+    auto stream            = at::cuda::getCurrentHIPStream().stream();
+    auto lds_bytes = 0;
+
+    dim3 blocks(B * H * M * G);
+    dim3 threads(kThreadsPerWavefront);
+
+    AT_DISPATCH_SWITCH_3(
+        at::ScalarType::Half,
+        at::ScalarType::BFloat16,
+        at::ScalarType::Float,
+        O.scalar_type(),
+        "efficient_attention_forward_decoder_split_reduce_ck_test",
+        [&] {
+            using ck_data_t   = c10_to_data_t<scalar_t>::type;
+            using device_op_t = ck::tensor_operation::device::FMHADecoderSplitReduceDeviceOp<ck_data_t>;
+            auto op           = device_op_t{};
+
+            auto split_O_acc =
+                split_O.packed_accessor32<scalar_t, 1 + rank, at::RestrictPtrTraits>();
+            auto O_acc   = O.packed_accessor32<scalar_t, rank, at::RestrictPtrTraits>();
+            auto split_max_acc = split_max.packed_accessor32<float, rank, at::RestrictPtrTraits>();
+            auto split_sumexp_acc =
+                split_sumexp.packed_accessor32<float, rank, at::RestrictPtrTraits>();
+            auto arg = device_op_t::Argument(
+                reinterpret_cast<const ck_data_t* __restrict__>(split_O_acc.data()),
+                split_max_acc.data(),
+                split_sumexp_acc.data(),
+                reinterpret_cast<ck_data_t* __restrict__>(O_acc.data()),
+                O_acc.size(1),
+                O_acc.size(2),
+                O_acc.size(3),
+                O_acc.size(4),
+                split_O_acc.stride(0),
+                split_O_acc.stride(1),
+                split_O_acc.stride(2),
+                split_O_acc.stride(3),
+                split_O_acc.stride(4),
+                split_k,
+                blocks,
+                threads,
+                lds_bytes);
+
+            auto invoker = device_op_t::Invoker{};
+            (void)invoker.Run(arg, {stream});
+        });
+    return O;
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor>
@@ -860,7 +901,7 @@ static void test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq
     auto m_percent_match = at::sum(m_match_mask.to(torch::kFloat32)) / m_match_mask.numel();
     auto l_percent_match = at::sum(l_match_mask.to(torch::kFloat32)) / l_match_mask.numel();
 
-    printf("Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched split_O elements percentage: %.2f Mismatched split_max elements percentage: %.2f Mismatched split_sumexp elements percentage: %.2f\n", 
+    printf("[Test split attention] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched split_O elements percentage: %.2f Mismatched split_max elements percentage: %.2f Mismatched split_sumexp elements percentage: %.2f\n", 
             padding,
             batch_size,
             Hq,
@@ -870,6 +911,19 @@ static void test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq
             1. - m_percent_match.item<float>(),
             1. - l_percent_match.item<float>());
 
+}
+
+static void test_split_reduce(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k) {
+    auto [XQ, K, V, seqlen] = generate_inputs(padding, batch_size, Hq, Hkv);
+
+    auto [O_ref, m_ref, l_ref] = split_attention_torch(XQ, K, V, seqlen, split_k);
+
+    auto O_torch = split_reduce_torch(O_ref, m_ref, l_ref, split_k);
+    auto O_hip = split_reduce_hip(O_ref, m_ref.squeeze(0), l_ref.squeeze(0), split_k);
+
+    auto mask = at::isclose(O_torch, O_hip, /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
+    auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
+    printf("[Test split reduce] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f\n", padding, batch_size, Hq, Hkv, split_k, 1. - percent_match.item<float>());
 }
 
 static void test_splitk_decoder_e2e_correctness(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k)
@@ -883,7 +937,7 @@ static void test_splitk_decoder_e2e_correctness(int32_t padding, int32_t batch_s
     auto gold_result = efficient_attention_forward_decoder_split1_torch(XQ, K, V, seqlen, qk_scale);
     auto mask = at::isclose(result, gold_result, /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
     auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
-    printf("Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f\n", padding, batch_size, Hq, Hkv, split_k, 1. - percent_match.item<float>());
+    printf("[Test e2e split-k decoder] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f\n", padding, batch_size, Hq, Hkv, split_k, 1. - percent_match.item<float>());
 }
 
 int main(int argc, char** argv)
@@ -908,6 +962,18 @@ int main(int argc, char** argv)
                     for (auto Hkv : { 16 }) {
                         for (auto split_k : {1, 2}) {
                             test_split_attention(padding, batch_size, Hq, Hkv, split_k);
+                        }
+                    }
+                }
+            }
+        }
+
+        for (auto padding : {32, 4096}) {
+            for (auto batch_size : {1, 8}) {
+                for (auto Hq : { 16 }) {
+                    for (auto Hkv : { 16 }) {
+                        for (auto split_k : {1, 2}) {
+                            test_split_reduce(padding, batch_size, Hq, Hkv, split_k);
                         }
                     }
                 }
