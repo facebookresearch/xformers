@@ -312,7 +312,6 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
         }
     }
 
-    // NB: the length of the tail is <= (wavefronts_per_block * n_loop_unroll)
     for(auto tt = tt_tail_low; tt < tt_tail_high; tt += dtt_tail)
     {
         if(lane_active_for_io)
@@ -465,8 +464,6 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
             }
         }
     }
-    // now, each thread has partial sums. Write to smem and get accumulated
-    // results back.
     __syncthreads();
 
     // NB: needs sizeof(smem) >= `vec_size` * (sizeof(float)==4) * threadsPerBlock
