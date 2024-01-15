@@ -405,8 +405,11 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
     // now, compute the normalization across all threads.
     for(int32_t t = thread_linear_idx; t < t_max; t += threads_per_block)
     {
-        // softmax scale by sumexp will happen in the reduction kernel
-        smem[t] = ck::math::exp(smem[t] - max_qk_acc);
+        if (t >= tt_low && t < tt_tail_high)
+        {
+            // softmax scale by sumexp will happen in the reduction kernel
+            smem[t] = ck::math::exp(smem[t] - max_qk_acc);
+        }
     }
     __syncthreads();
 
