@@ -82,6 +82,7 @@ split_reduce_torch(const at::Tensor& O_splits, const at::Tensor& m_splits, const
 
         auto log_alpha = at::neg(at::abs(at::sub(m_slice, m_current_max)));
         auto alpha = at::exp(log_alpha);
+        alpha.nan_to_num_(1.);
 
         O = at::add(O, at::add(O_slice, at::mul(at::add(at::mul(pick_our, O), at::mul(pick_new, O_slice)), at::sub(alpha, 1))));
         l_current_sum = at::add(l_current_sum, at::add(l_slice, at::mul(at::add(at::mul(pick_our, l_current_sum), at::mul(pick_new, l_slice)), at::sub(alpha, 1))));
@@ -795,7 +796,7 @@ at::Tensor split_reduce_hip(const at::Tensor& split_O, const at::Tensor& split_m
     TORCH_CHECK_EQ(split_max.dim(), rank);
     TORCH_CHECK_EQ(split_sumexp.dim(), rank);
 
-    auto O = at::empty({B, M, G, H, D}, split_O.options());
+    auto O = at::zeros({B, M, G, H, D}, split_O.options());
 
     auto stream            = at::cuda::getCurrentHIPStream().stream();
     auto lds_bytes = 0;
@@ -873,6 +874,12 @@ generate_inputs(const int32_t padding,
     return std::make_tuple(XQ, K, V, seqlen);
 }
 
+static float percent_mismatch(const at::Tensor& a, const at::Tensor& b) {
+    auto mask = at::isclose(a, b, /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
+    auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
+    return 1. - percent_match.item<float>();
+}
+
 static void test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k)
 {
     auto [XQ, K, V, seqlen] = generate_inputs(padding, batch_size, Hq, Hkv);
@@ -881,25 +888,9 @@ static void test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq
 
     auto [O_hip, m_hip, l_hip] = split_attention_hip(XQ, K, V, seqlen, split_k, /* wavefronts_per_block */ 1);
 
-    auto O_match_mask = at::isclose(O_ref,
-                                    O_hip,
-                                    /*atol*/ 1e-3,
-                                    /*rtol*/ 1e-5,
-                                    /*equal_nan*/ false);
-    auto m_match_mask = at::isclose(m_ref,
-                                    m_hip,
-                                    /*atol*/ 1e-3,
-                                    /*rtol*/ 1e-5,
-                                    /*equal_nan*/ false);
-    auto l_match_mask = at::isclose(l_ref,
-                                    l_hip,
-                                    /*atol*/ 1e-3,
-                                    /*rtol*/ 1e-5,
-                                    /*equal_nan*/ false);
-
-    auto O_percent_match = at::sum(O_match_mask.to(torch::kFloat32)) / O_match_mask.numel();
-    auto m_percent_match = at::sum(m_match_mask.to(torch::kFloat32)) / m_match_mask.numel();
-    auto l_percent_match = at::sum(l_match_mask.to(torch::kFloat32)) / l_match_mask.numel();
+    auto O_percent_mismatch = percent_mismatch(O_ref, O_hip);
+    auto m_percent_mismatch = percent_mismatch(m_ref, m_hip);
+    auto l_percent_mismatch = percent_mismatch(l_ref, l_hip);
 
     printf("[Test split attention] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched split_O elements percentage: %.2f Mismatched split_max elements percentage: %.2f Mismatched split_sumexp elements percentage: %.2f\n", 
             padding,
@@ -907,10 +898,9 @@ static void test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq
             Hq,
             Hkv,
             split_k,
-            1. - O_percent_match.item<float>(),
-            1. - m_percent_match.item<float>(),
-            1. - l_percent_match.item<float>());
-
+            O_percent_mismatch,
+            m_percent_mismatch,
+            l_percent_mismatch);
 }
 
 static void test_split_reduce(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k) {
@@ -921,9 +911,15 @@ static void test_split_reduce(int32_t padding, int32_t batch_size, int32_t Hq, i
     auto O_torch = split_reduce_torch(O_ref, m_ref, l_ref, split_k);
     auto O_hip = split_reduce_hip(O_ref, m_ref.squeeze(0), l_ref.squeeze(0), split_k);
 
-    auto mask = at::isclose(O_torch, O_hip, /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
-    auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
-    printf("[Test split reduce] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f\n", padding, batch_size, Hq, Hkv, split_k, 1. - percent_match.item<float>());
+    double qk_scale = 1. / sqrt(XQ.size(-1));
+    auto gold_result = efficient_attention_forward_decoder_splitk_ck_impl</* threads_per_wavefront */ 64, /* wavefronts_per_block */ 1>(
+        XQ, K, V, seqlen, qk_scale, split_k);
+
+    auto hip_gold_mismatch = percent_mismatch(O_hip, gold_result);
+    auto torch_gold_mismatch = percent_mismatch(O_torch, gold_result);
+    auto hip_torch_mismatch = percent_mismatch(O_hip, O_torch);
+    printf("[Test split reduce] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f hip_gold: %.2f torch_gold: %.2f \n", 
+        padding, batch_size, Hq, Hkv, split_k, hip_torch_mismatch, hip_gold_mismatch, torch_gold_mismatch);
 }
 
 static void test_splitk_decoder_e2e_correctness(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k)
@@ -935,9 +931,8 @@ static void test_splitk_decoder_e2e_correctness(int32_t padding, int32_t batch_s
     auto result = efficient_attention_forward_decoder_splitk_ck_impl</* threads_per_wavefront */ 64, /* wavefronts_per_block */ 1>(
         XQ, K, V, seqlen, qk_scale, split_k);
     auto gold_result = efficient_attention_forward_decoder_split1_torch(XQ, K, V, seqlen, qk_scale);
-    auto mask = at::isclose(result, gold_result, /*atol*/ 1e-3, /*rtol*/ 1e-5, /*equal_nan*/ false);
-    auto percent_match = at::sum(mask.to(torch::kFloat32)) / mask.numel();
-    printf("[Test e2e split-k decoder] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f\n", padding, batch_size, Hq, Hkv, split_k, 1. - percent_match.item<float>());
+    auto e2e_mismatch = percent_mismatch(result, gold_result);
+    printf("[Test e2e split-k decoder] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f\n", padding, batch_size, Hq, Hkv, split_k, e2e_mismatch);
 }
 
 int main(int argc, char** argv)
