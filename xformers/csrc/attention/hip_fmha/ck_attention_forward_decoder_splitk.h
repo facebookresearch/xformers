@@ -293,24 +293,19 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
                 load_v<data_t, data_vec_t>(cache_K_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
             }
         }
-        compute_t qk_accs[n_loop_unroll] = {};
 #pragma unroll n_loop_unroll
         for(auto ttt = 0; ttt < n_loop_unroll; ++ttt)
         {
+            compute_t qk_acc = 0;
             ck::inner_product<data_vec_t, data_vec_t, compute_t>(
-                q_thread, k_loads[ttt], qk_accs[ttt]);
-            qk_accs[ttt] *= qk_scale;
+                q_thread, k_loads[ttt], qk_acc);
+            qk_acc  *= qk_scale;
 
-            qk_accs[ttt] = wavefrontReduce(qk_accs[ttt], [](auto a, auto b) { return a + b; });
-            max_qk_acc   = ck::math::max(qk_accs[ttt], max_qk_acc);
-        }
-        if(lane_idx == 0)
-        {
-            auto* __restrict__ smem_base = smem + tt;
-#pragma unroll n_loop_unroll
-            for(auto ttt = 0; ttt < n_loop_unroll; ++ttt)
+            qk_acc = wavefrontReduce(qk_acc, [](auto a, auto b) { return a + b; });
+            max_qk_acc   = ck::math::max(qk_acc, max_qk_acc);
+            if(lane_idx == 0)
             {
-                smem_base[ttt] = qk_accs[ttt];
+                smem[tt + ttt] = qk_acc;
             }
         }
     }
