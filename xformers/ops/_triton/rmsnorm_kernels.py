@@ -19,7 +19,7 @@ def _rms_norm_kernel(
     w_ptr,
     eps,
     stride,
-    N_COLS,
+    N_COLS: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
     INCLUDE_WEIGHT: tl.constexpr,
 ):
@@ -56,7 +56,7 @@ def _rms_norm_add_kernel(
     w_ptr,
     eps,
     stride,
-    N_COLS,
+    N_COLS: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
     INCLUDE_WEIGHT: tl.constexpr,
 ):
@@ -105,7 +105,7 @@ def _rms_norm_forward(x, attn_norm_weights, eps):
     MAX_FUSED_SIZE = 65536 // x.element_size()
     BLOCK_SIZE = min(MAX_FUSED_SIZE, triton.next_power_of_2(N))
     BLOCK_SIZE = max(BLOCK_SIZE, 128)
-    BLOCK_SIZE = min(BLOCK_SIZE, 4096)
+    BLOCK_SIZE = min(BLOCK_SIZE, 8192)
     # heuristics for number of warps
     num_warps = min(max(BLOCK_SIZE // 256, 1), 8)
     _rms_norm_kernel[(M,)](
@@ -140,7 +140,7 @@ def _rms_norm_add_forward(x, y, attn_norm_weights, eps):
     MAX_FUSED_SIZE = 65536 // x.element_size()
     BLOCK_SIZE = min(MAX_FUSED_SIZE, triton.next_power_of_2(N))
     BLOCK_SIZE = max(BLOCK_SIZE, 128)
-    BLOCK_SIZE = min(BLOCK_SIZE, 4096)
+    BLOCK_SIZE = min(BLOCK_SIZE, 8192)
     # heuristics for number of warps
     num_warps = min(max(BLOCK_SIZE // 256, 1), 8)
     _rms_norm_add_kernel[(M,)](
