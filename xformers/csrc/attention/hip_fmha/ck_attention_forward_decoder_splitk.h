@@ -272,6 +272,8 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
     data_vec_t k_loads[n_loop_unroll] = {};
 
     const auto dtt              = wavefronts_per_block * n_loop_unroll;
+    // only last split gets the tail.
+    // the first (split_k - 1) splits have a number of iterations divisible by `dtt`
     const auto n_unrolled_loops = t_max / dtt / split_k; // +1?
     const int32_t tt_low = wavefront_idx * n_loop_unroll + n_unrolled_loops * dtt * split_idx;
     const int32_t tt_high =
