@@ -227,6 +227,8 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
 
     const int32_t lane_idx              = threadIdx.x;
     const int32_t wavefront_idx         = threadIdx.y;
+    // TODO: `threads_per_wavefront` and `wavefronts_per_block` may be compile time constants;
+    // investigate when optimizing
     const int32_t threads_per_wavefront = blockDim.x;
     const int32_t wavefronts_per_block  = blockDim.y;
     const int32_t threads_per_block     = threads_per_wavefront * wavefronts_per_block;
