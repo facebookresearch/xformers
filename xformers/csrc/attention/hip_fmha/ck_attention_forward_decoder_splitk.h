@@ -309,7 +309,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
             max_qk_acc   = ck::math::max(qk_acc, max_qk_acc);
             if(lane_idx == 0)
             {
-                smem[tt + ttt] = qk_acc;
+                smem[tt + ttt - tt_low] = qk_acc;
             }
         }
     }
@@ -347,7 +347,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
                 // write accumulated sums to smem.
                 if(lane_idx == 0)
                 {
-                    smem[t] = qk_acc;
+                    smem[t - tt_low] = qk_acc;
                 }
             }
         }
@@ -378,7 +378,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
     {
         if(t >= tt_low && t < tt_tail_high)
         {
-            softmax_denominator += ck::math::exp(smem[t] - max_qk_acc);
+            softmax_denominator += ck::math::exp(smem[t - tt_low] - max_qk_acc);
         }
     }
     softmax_denominator =
@@ -410,7 +410,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
         if (t >= tt_low && t < tt_tail_high)
         {
             // softmax scale by sumexp will happen in the reduction kernel
-            smem[t] = ck::math::exp(smem[t] - max_qk_acc);
+            smem[t - tt_low] = ck::math::exp(smem[t - tt_low] - max_qk_acc);
         }
     }
     __syncthreads();
@@ -432,7 +432,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
                 // load the V[b][t][g][h|0][:] row into registers, reusing K register
                 // storage
                 load_v<data_t, data_vec_t>(cache_V_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
-                ps[ttt] = smem[t];
+                ps[ttt] = smem[t - tt_low];
             }
 
 #pragma unroll n_loop_unroll
@@ -454,7 +454,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
                     // storage
                     load_v<data_t, data_vec_t>(
                         cache_V_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
-                    ps[ttt] = smem[t];
+                    ps[ttt] = smem[t - tt_low];
                 }
             }
 
@@ -657,7 +657,8 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator
         using Argument = DeviceOp::Argument;
         float Run(const Argument& arg, const StreamConfig& stream_config = StreamConfig{})
         {
-
+            // std::cout << arg.str() << std::endl << "stream_id: " << stream_config.stream_id_ << std::endl;
+            
             auto threads_per_wavefront = arg.block_dim.x;
 
             auto Q_size_k_alignment_necessary = 0;

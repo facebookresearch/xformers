@@ -615,6 +615,34 @@ struct FMHADecoderSplitReduceDeviceOp : public BaseOperator
               lds_bytes(lds_bytes)
         {
         }
+
+        std::string str() const
+        {
+            std::ostringstream oss;
+            oss << "Argument { " << std::endl
+                << "    O: " << O << std::endl
+                << "    split_O: " << split_O << std::endl
+                << "    split_max: " << split_max << std::endl
+                << "    split_sumexp: " << split_sumexp << std::endl
+                << "    O_stride_b: " << O_stride_b << std::endl
+                << "    O_stride_m: " << O_stride_m << std::endl
+                << "    O_stride_g: " << O_stride_g << std::endl
+                << "    O_stride_h: " << O_stride_h << std::endl
+                << "    O_stride_split: " << O_stride_split << std::endl
+                << "    O_size_m: " << O_size_m << std::endl
+                << "    O_size_g: " << O_size_g << std::endl
+                << "    O_size_h: " << O_size_h << std::endl
+                << "    O_size_k: " << O_size_k << std::endl
+                << "    split_k: " << split_k << std::endl
+                << std::endl
+                << "    grid_dim: " << grid_dim.x << "." << grid_dim.y << "." << grid_dim.z
+                << std::endl
+                << "    block_dim: " << block_dim.x << "." << block_dim.y << "." << block_dim.z
+                << std::endl
+                << "    lds_bytes: " << lds_bytes << std::endl
+                << "}";
+            return oss.str();
+        }
     };
 
     struct Invoker : public BaseInvoker
@@ -623,6 +651,9 @@ struct FMHADecoderSplitReduceDeviceOp : public BaseOperator
         float Run(const Argument& arg, const StreamConfig& stream_config = StreamConfig{})
         {
             auto threads_per_wavefront = arg.block_dim.x;
+
+            // std::cout << arg.str() << std::endl << "stream_id: " << stream_config.stream_id_ <<
+            // std::endl;
 
             auto O_size_k_alignment_necessary = 0;
 
@@ -831,10 +862,10 @@ at::Tensor split_reduce_hip(const at::Tensor& split_O, const at::Tensor& split_m
                 O_acc.size(3),
                 O_acc.size(4),
                 split_O_acc.stride(0),
-                split_O_acc.stride(1),
-                split_O_acc.stride(2),
-                split_O_acc.stride(3),
-                split_O_acc.stride(4),
+                O_acc.stride(0),
+                O_acc.stride(1),
+                O_acc.stride(2),
+                O_acc.stride(3),
                 split_k,
                 blocks,
                 threads,
@@ -914,12 +945,14 @@ static void test_split_reduce(int32_t padding, int32_t batch_size, int32_t Hq, i
     double qk_scale = 1. / sqrt(XQ.size(-1));
     auto gold_result = efficient_attention_forward_decoder_splitk_ck_impl</* threads_per_wavefront */ 64, /* wavefronts_per_block */ 1>(
         XQ, K, V, seqlen, qk_scale, split_k);
+    auto torch1_result = efficient_attention_forward_decoder_split1_torch(XQ, K, V, seqlen, qk_scale);
 
     auto hip_gold_mismatch = percent_mismatch(O_hip, gold_result);
     auto torch_gold_mismatch = percent_mismatch(O_torch, gold_result);
     auto hip_torch_mismatch = percent_mismatch(O_hip, O_torch);
-    printf("[Test split reduce] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f hip_gold: %.2f torch_gold: %.2f \n", 
-        padding, batch_size, Hq, Hkv, split_k, hip_torch_mismatch, hip_gold_mismatch, torch_gold_mismatch);
+    auto gold_torch1_mismatch = percent_mismatch(gold_result, torch1_result);
+    printf("[Test split reduce] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f hip_gold: %.2f torch_gold: %.2f torch1_gold: %.2f \n", 
+        padding, batch_size, Hq, Hkv, split_k, hip_torch_mismatch, hip_gold_mismatch, torch_gold_mismatch, gold_torch1_mismatch);
 }
 
 static void test_splitk_decoder_e2e_correctness(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k)
