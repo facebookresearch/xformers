@@ -938,22 +938,14 @@ static void test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq
 static void test_split_reduce(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k) {
     auto [XQ, K, V, seqlen] = generate_inputs(padding, batch_size, Hq, Hkv);
 
-    auto [O_ref, m_ref, l_ref] = split_attention_torch(XQ, K, V, seqlen, split_k);
+    auto [O_ref, m_ref, l_ref] = split_attention_hip(XQ, K, V, seqlen, split_k, /* wavefronts_per_block */ 1);
 
-    auto O_torch = split_reduce_torch(O_ref, m_ref, l_ref, split_k);
-    auto O_hip = split_reduce_hip(O_ref, m_ref.squeeze(0), l_ref.squeeze(0), split_k);
+    auto O_torch = split_reduce_torch(O_ref, m_ref.unsqueeze(0), l_ref.unsqueeze(0), split_k);
+    auto O_hip = split_reduce_hip(O_ref, m_ref, l_ref, split_k);
 
-    double qk_scale = 1. / sqrt(XQ.size(-1));
-    auto gold_result = efficient_attention_forward_decoder_splitk_ck_impl</* threads_per_wavefront */ 64, /* wavefronts_per_block */ 1>(
-        XQ, K, V, seqlen, qk_scale, split_k);
-    auto torch1_result = efficient_attention_forward_decoder_split1_torch(XQ, K, V, seqlen, qk_scale);
-
-    auto hip_gold_mismatch = percent_mismatch(O_hip, gold_result);
-    auto torch_gold_mismatch = percent_mismatch(O_torch, gold_result);
     auto hip_torch_mismatch = percent_mismatch(O_hip, O_torch);
-    auto gold_torch1_mismatch = percent_mismatch(gold_result, torch1_result);
-    printf("[Test split reduce] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f hip_gold: %.2f torch_gold: %.2f torch1_gold: %.2f \n", 
-        padding, batch_size, Hq, Hkv, split_k, hip_torch_mismatch, hip_gold_mismatch, torch_gold_mismatch, gold_torch1_mismatch);
+    printf("[Test split reduce] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f \n", 
+        padding, batch_size, Hq, Hkv, split_k, hip_torch_mismatch);
 }
 
 static void test_splitk_decoder_e2e_correctness(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k)
