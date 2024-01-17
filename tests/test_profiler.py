@@ -88,6 +88,7 @@ def test_profiler_dispatcher_stream_workaround() -> None:
             xformers.profiler.step()
 
 
+@cuda_only
 @pytest.mark.parametrize(
     "device_bs_mm",
     [("cpu", 512, 1)]

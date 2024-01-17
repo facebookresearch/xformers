@@ -93,7 +93,7 @@ install_dep: &install_dep
         source $BASH_ENV
 
         # check if we have restored venv cache (/home/circleci/venv) correctly, if so, just skip
-        if [ -f /home/circleci/venv/check_version.py ]; then $CONDA_PYTHON /home/circleci/venv/check_version.py torch gt 1.11 && exit 0; fi
+        if [ -f /home/circleci/venv/check_version.py ]; then $CONDA_PYTHON /home/circleci/venv/check_version.py torch gt 2.1 && exit 0; fi
 
         # start installing
         source activate /home/circleci/venv
@@ -102,7 +102,7 @@ install_dep: &install_dep
         conda install ninja
         echo "Ninja version $(ninja --version)"
 
-        conda install pytorch=1.13 torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia -q
+        conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia -q
 
         $CONDA_PYTHON -m pip install cmake
         $CONDA_PYTHON -m pip install -r requirements-benchmark.txt --progress-bar off
@@ -211,21 +211,21 @@ commands:
         # Cache the venv directory that contains dependencies
         - restore_cache:
             keys:
-              - cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
+              - cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/continue_config.yml" }}
 
         - <<: *setup_conda
         - <<: *install_dep
 
         - check_torch:
-            major: 1
-            minor: 11
+            major: 2
+            minor: 1
 
         - save_cache:
             paths:
               - ~/miniconda
               - ~/venv
 
-            key: cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt"}}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml"}}
+            key: cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt"}}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/continue_config.yml"}}
 
         - <<: *install_repo
         - <<: *run_coverage
@@ -262,22 +262,22 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/continue_config.yml" }}
 
       - <<: *setup_conda
 
       - <<: *install_dep
 
       - check_torch:
-          major: 1
-          minor: 11
+          major: 2
+          minor: 1
 
       - save_cache:
           paths:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
+          key: cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/continue_config.yml" }}
 
       - <<: *install_repo
       - <<: *run_unittests
