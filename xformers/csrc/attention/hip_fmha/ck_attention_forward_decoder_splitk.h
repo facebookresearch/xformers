@@ -119,25 +119,6 @@ __global__ void efficient_attention_forward_decoder_splitk_reduce_ck_kernel(
         return;
     }
 
-    // for s in slices:
-    //       attn_slice = s["attn_slice"]
-    //       m = s["row_max"]
-    //       l = s["row_lse"]
-    //       m_new = torch.max(m, m_current_max)
-    //       assert not m_new.isnan().any(), "m_new is nan"
-    //       pick_new = m < m_current_max
-    //       pick_our = torch.logical_not(pick_new)
-
-    //       log_alpha = -torch.abs(m - m_current_max)
-    //       log_alpha[log_alpha.isnan()] = 0
-    //       alpha = torch.exp(log_alpha)
-    //       assert not alpha.isnan().any(), "alpha is nan"
-    //       out = out + attn_slice + (pick_our * out + pick_new * attn_slice) * (torch.sub(alpha,
-    //       1)) assert not out.isnan().any(), "out acc is nan" l_current_sum = l_current_sum + l +
-    //       (pick_our * l_current_sum + pick_new * l) * (torch.sub(alpha, 1)) assert not
-    //       l_current_sum.isnan().any(), "l acc is nan" m_current_max = m_new
-    //   out /= l_current_sum
-
     compute_t global_sumexp = 0;
     compute_t global_max    = ck::NumericLimits<compute_t>::Lowest();
 
