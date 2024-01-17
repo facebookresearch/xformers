@@ -566,15 +566,13 @@ struct FmhaFwdKernel
                         res = ck::make_generic_attention_mask_coordinates_from_lr_window(
                             left_size, right_size, kargs.seqlen_q, kargs.seqlen_k);
                     }
-                    else if(kargs.mask_type == CausalMaskType::MaskUpperTriangleFromTopLeft)
+                    else
                     {
+                        bool is_topleft =
+                            (kargs.mask_type == CausalMaskType::MaskUpperTriangleFromTopLeft);
+
                         res = ck::make_generic_attention_mask_coordinates_from_lr_window(
-                            kargs.window_size - 1, 0, kargs.seqlen_q, kargs.seqlen_k, true);
-                    }
-                    else if(kargs.mask_type == CausalMaskType::MaskUpperTriangleFromBottomRight)
-                    {
-                        res = ck::make_generic_attention_mask_coordinates_from_lr_window(
-                            kargs.window_size - 1, 0, kargs.seqlen_q, kargs.seqlen_k, false);
+                            kargs.window_size - 1, 0, kargs.seqlen_q, kargs.seqlen_k, is_topleft);
                     }
                 }
                 else
@@ -584,15 +582,13 @@ struct FmhaFwdKernel
                         res = ck::make_generic_attention_mask_coordinates_from_lr_window(
                             -1, -1, kargs.seqlen_q, kargs.seqlen_k);
                     }
-                    else if(kargs.mask_type == CausalMaskType::MaskUpperTriangleFromTopLeft)
+                    else
                     {
+                        bool is_topleft =
+                            (kargs.mask_type == CausalMaskType::MaskUpperTriangleFromTopLeft);
+
                         res = ck::make_generic_attention_mask_coordinates_from_lr_window(
-                            -1, 0, kargs.seqlen_q, kargs.seqlen_k, true);
-                    }
-                    else if(kargs.mask_type == CausalMaskType::MaskUpperTriangleFromBottomRight)
-                    {
-                        res = ck::make_generic_attention_mask_coordinates_from_lr_window(
-                            -1, 0, kargs.seqlen_q, kargs.seqlen_k, false);
+                            -1, 0, kargs.seqlen_q, kargs.seqlen_k, is_topleft);
                     }
                 }
 
