@@ -668,12 +668,12 @@ struct FMHADecoderSplitReduceDeviceOp : public BaseOperator
 
             if(!O_size_k_alignment_necessary)
             {
-                throw std::runtime_error("Unsupported Q_size_k");
+                throw std::runtime_error("Unsupported O_size_k");
             }
 
             if(arg.O_size_k % O_size_k_alignment_necessary)
             {
-                throw std::runtime_error("Unsupported alignment for Q_size_k");
+                throw std::runtime_error("Unsupported alignment for O_size_k");
             }
 
             const dim3 reduce_gridsize         = {arg.grid_dim.x};
