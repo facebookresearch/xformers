@@ -449,15 +449,6 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
                     load_v<data_t, data_vec_t>(
                         cache_V_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
                     ps[ttt] = smem[t - tt_low];
-                }
-            }
-
-#pragma unroll n_loop_unroll_tail
-            for(auto ttt = 0; ttt < n_loop_unroll_tail; ++ttt)
-            {
-                const int32_t t = tt + ttt;
-                if(t < t_max)
-                {
                     o_acc = scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
                 }
             }
