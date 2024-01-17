@@ -308,7 +308,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
             max_qk_acc   = ck::math::max(qk_acc, max_qk_acc);
             if(lane_idx == 0)
             {
-                smem[tt + ttt - tt_low] = qk_acc;
+                smem[tt + ttt - n_unrolled_loops * dtt * split_idx] = qk_acc;
             }
         }
     }
@@ -346,7 +346,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
                 // write accumulated sums to smem.
                 if(lane_idx == 0)
                 {
-                    smem[t - tt_low] = qk_acc;
+                    smem[t - n_unrolled_loops * dtt * split_idx] = qk_acc;
                 }
             }
         }
@@ -375,7 +375,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
     compute_t softmax_denominator = 0.0f;
     for(int32_t t = tt_low + thread_linear_idx; t < tt_tail_high; t += threads_per_block)
     {
-        softmax_denominator += ck::math::exp(smem[t - tt_low] - max_qk_acc);
+        softmax_denominator += ck::math::exp(smem[t - n_unrolled_loops * dtt * split_idx] - max_qk_acc);
     }
     softmax_denominator =
         wavefrontReduce(softmax_denominator, [](auto a, auto b) { return a + b; });
@@ -404,7 +404,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
     for(int32_t t = tt_low + thread_linear_idx; t < tt_tail_high; t += threads_per_block)
     {
         // softmax scale by sumexp will happen in the reduction kernel
-        smem[t - tt_low] = ck::math::exp(smem[t - tt_low] - max_qk_acc);
+        smem[t - n_unrolled_loops * dtt * split_idx] = ck::math::exp(smem[t - n_unrolled_loops * dtt * split_idx] - max_qk_acc);
     }
     __syncthreads();
 
@@ -425,7 +425,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
                 // load the V[b][t][g][h|0][:] row into registers, reusing K register
                 // storage
                 load_v<data_t, data_vec_t>(cache_V_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
-                ps[ttt] = smem[t - tt_low];
+                ps[ttt] = smem[t - n_unrolled_loops * dtt * split_idx];
             }
 
 #pragma unroll n_loop_unroll
@@ -447,7 +447,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
                     // storage
                     load_v<data_t, data_vec_t>(
                         cache_V_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
-                    ps[ttt] = smem[t - tt_low];
+                    ps[ttt] = smem[t - n_unrolled_loops * dtt * split_idx];
                     o_acc = scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
                 }
             }
