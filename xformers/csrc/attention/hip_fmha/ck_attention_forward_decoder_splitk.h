@@ -138,7 +138,6 @@ __global__ void efficient_attention_forward_decoder_splitk_reduce_ck_kernel(
     //       l_current_sum.isnan().any(), "l acc is nan" m_current_max = m_new
     //   out /= l_current_sum
 
-    compute_t new_max       = 0;
     compute_t global_sumexp = 0;
     compute_t global_max    = ck::NumericLimits<compute_t>::Lowest();
 
@@ -155,12 +154,12 @@ __global__ void efficient_attention_forward_decoder_splitk_reduce_ck_kernel(
         }
         compute_t local_max         = *(split_max + blockIdx.x * split_k + split_idx);
         compute_t local_sumexp      = *(split_sumexp + blockIdx.x * split_k + split_idx);
-        new_max                     = ck::math::max(local_max, global_max);
+        compute_t new_max           = ck::math::max(local_max, global_max);
         bool pick_new               = local_max < global_max;
         compute_t log_alpha         = -std::abs(local_max - global_max);
-        compute_t alpha             = isnan(log_alpha) ? compute_t{1} : ck::math::exp(log_alpha);
-        compute_t pick_current_coef = (1 + (1 - pick_new) * (alpha - 1));
-        compute_t pick_new_coef     = (1 + pick_new * (alpha - 1));
+        compute_t alpha             = isnan(log_alpha) ? compute_t{1.} : ck::math::exp(log_alpha);
+        compute_t pick_current_coef = pick_new ? 1. : alpha;
+        compute_t pick_new_coef     = pick_new ? alpha : 1.;
         global_sumexp = pick_current_coef * global_sumexp + pick_new_coef * local_sumexp;
         global_O_compute.vec =
             pick_current_coef * global_O_compute.vec + pick_new_coef * O_split_compute.vec;

@@ -78,14 +78,15 @@ split_reduce_torch(const at::Tensor& O_splits, const at::Tensor& m_splits, const
         auto m_new = at::max(m_slice, m_current_max);
 
         auto pick_new = at::less(m_slice, m_current_max);
-        auto pick_our = at::logical_not(pick_new);
 
         auto log_alpha = at::neg(at::abs(at::sub(m_slice, m_current_max)));
         auto alpha = at::exp(log_alpha);
         alpha.nan_to_num_(1.);
-
-        O = at::add(O, at::add(O_slice, at::mul(at::add(at::mul(pick_our, O), at::mul(pick_new, O_slice)), at::sub(alpha, 1))));
-        l_current_sum = at::add(l_current_sum, at::add(l_slice, at::mul(at::add(at::mul(pick_our, l_current_sum), at::mul(pick_new, l_slice)), at::sub(alpha, 1))));
+        auto pick_current_coef = at::where(pick_new, 1., alpha);
+        auto pick_new_coef = at::where(pick_new, alpha, 1.);
+        O = at::add(at::mul(pick_current_coef, O), at::mul(pick_new_coef, O_slice));
+        l_current_sum = at::add(at::mul(pick_current_coef, l_current_sum), at::mul(pick_new_coef, l_slice));
+        m_current_max = m_new;
     }
     
     return at::div(O, l_current_sum);
