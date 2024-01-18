@@ -397,7 +397,6 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
         local_out = s["attn_slice"]
         local_max = s["row_max"]
         local_sumexp = s["row_lse"]
-        new_max = torch.max(local_max, global_max)
 
         log_alpha = -torch.abs(local_max - global_max)
         alpha = torch.exp(log_alpha)
@@ -409,7 +408,7 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
 
         out = out * curr_coef + local_out * new_coef
         global_sumexp = global_sumexp * curr_coef + local_sumexp * new_coef
-        global_max = new_max
+        global_max = torch.max(local_max, global_max)
     out /= global_sumexp
     return out
 

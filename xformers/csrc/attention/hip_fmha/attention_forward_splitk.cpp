@@ -304,18 +304,17 @@ split_reduce_torch(const at::Tensor& O_splits, const at::Tensor& m_splits, const
         auto local_max = at::slice(m_splits, -1, split_idx, split_idx + 1);
         auto local_sumexp = at::slice(l_splits, -1, split_idx, split_idx + 1);
 
-        auto new_max = at::max(local_max, global_max);
-
-        auto pick_new = at::less(local_max, global_max);
-
         auto log_alpha = at::neg(at::abs(at::sub(local_max, global_max)));
         auto alpha = at::exp(log_alpha);
         alpha.nan_to_num_(1.);
+
+        auto pick_new = at::less(local_max, global_max);
         auto pick_current_coef = at::where(pick_new, 1., alpha);
         auto pick_new_coef = at::where(pick_new, alpha, 1.);
+        
         O = at::add(at::mul(pick_current_coef, O), at::mul(pick_new_coef, local_O));
         global_sumexp = at::add(at::mul(pick_current_coef, global_sumexp), at::mul(pick_new_coef, local_sumexp));
-        global_max = new_max;
+        global_max = at::max(local_max, global_max);
     }
     
     return at::div(O, global_sumexp);

@@ -135,16 +135,18 @@ __global__ void efficient_attention_forward_decoder_splitk_reduce_ck_kernel(
         }
         compute_t local_max         = *(split_max + blockIdx.x * split_k + split_idx);
         compute_t local_sumexp      = *(split_sumexp + blockIdx.x * split_k + split_idx);
-        compute_t new_max           = ck::math::max(local_max, global_max);
-        bool pick_new               = local_max < global_max;
+        
         compute_t log_alpha         = -std::abs(local_max - global_max);
         compute_t alpha             = isnan(log_alpha) ? compute_t{1.} : ck::math::exp(log_alpha);
+        
+        bool pick_new               = local_max < global_max;
         compute_t pick_current_coef = pick_new ? 1. : alpha;
         compute_t pick_new_coef     = pick_new ? alpha : 1.;
+        
         global_sumexp = pick_current_coef * global_sumexp + pick_new_coef * local_sumexp;
         global_O_compute.vec =
             pick_current_coef * global_O_compute.vec + pick_new_coef * O_split_compute.vec;
-        global_max = new_max;
+        global_max = ck::math::max(local_max, global_max);
     }
     global_O_compute.vec /= global_sumexp;
 #pragma unroll
