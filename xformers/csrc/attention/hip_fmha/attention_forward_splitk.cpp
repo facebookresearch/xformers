@@ -262,15 +262,22 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_torch(
                                  ? (1 + split_idx) * (seqlen / split_k / block_size) * block_size
                                  : seqlen;
 
+            const bool empty = t_low == t_high;
+
             auto S        = at::einsum("mghk, nghk -> mghn",
                             {Q_scaled[b], at::slice(K[b], /*dim*/ 0, /*start*/ t_low, /*end*/ t_high)},
                             /* einsum eval path */ at::nullopt);
-            auto m = S.numel() > 0 ? std::get<0>(at::max(S, /* dim */ -1, /* keepdim */ true)) : at::empty_like(at::slice(S, -1, 0, 1)).fill_(ck::NumericLimits<float>::Lowest());
+            auto m = empty ? at::empty_like(S) : std::get<0>(at::max(S, /* dim */ -1, /* keepdim */ true));
             auto s = at::exp(at::sub(S, m));
-            auto l = s.numel() > 0 ? at::sum(s, /* dim */ -1, /* keepdim */ true) : at::zeros_like(m);
+            auto l = at::sum(s, /* dim */ -1, /* keepdim */ true);
             auto O        = at::einsum("mghn, nghk -> mghk", 
                             {s, at::slice(V[b], /*dim*/ 0, /*start*/ t_low, /*end*/ t_high)}, 
                             /* einsum eval path */ at::nullopt);
+            if (empty) {
+                m = at::empty_like(at::slice(O, -1, 0, 1));
+                l = at::zeros_like(m);
+                m.fill_(ck::NumericLimits<float>::Lowest());
+            }
             O_batch.push_back(O);
             m_batch.push_back(m);
             l_batch.push_back(l);
@@ -281,8 +288,8 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_torch(
         auto l_cat = at::stack(l_batch);
 
         O_splits.push_back(O_cat);
-        m_splits.push_back(m_cat.numel() > 0 ? m_cat : at::empty_like(at::slice(O_cat, -1, 0, 1)).fill_(ck::NumericLimits<float>::Lowest()));
-        l_splits.push_back(l_cat.numel() > 0 ? l_cat : at::zeros_like(at::slice(O_cat, -1, 0, 1)));
+        m_splits.push_back(m_cat);
+        l_splits.push_back(l_cat);
     }
 
     auto O_cat = at::stack(O_splits);
@@ -924,6 +931,10 @@ static void test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq
     auto m_percent_mismatch = percent_mismatch(m_ref, m_hip);
     auto l_percent_mismatch = percent_mismatch(l_ref, l_hip);
 
+    // if (m_percent_mismatch > 0) {
+    //     std::cout << "ref: " << m_ref << std::endl << "hip: " << m_hip << std::endl;
+    // }
+
     printf("[Test split attention] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched split_O elements percentage: %.2f Mismatched split_max elements percentage: %.2f Mismatched split_sumexp elements percentage: %.2f\n", 
             padding,
             batch_size,
@@ -969,7 +980,7 @@ int main(int argc, char** argv)
             for (auto batch_size : {1, 8}) {
                 for (auto Hq : { 16 }) {
                     for (auto Hkv : { 16 }) {
-                        for (auto split_k : {1, 2, 4}) {
+                        for (auto split_k : {1, 2, 4, 8, 16}) {
                             test_splitk_decoder_e2e_correctness(padding, batch_size, Hq, Hkv, split_k);
                         }
                     }
@@ -981,7 +992,7 @@ int main(int argc, char** argv)
             for (auto batch_size : {1, 8}) {
                 for (auto Hq : { 16 }) {
                     for (auto Hkv : { 16 }) {
-                        for (auto split_k : {1, 2}) {
+                        for (auto split_k : {1, 2, 4, 8, 16}) {
                             test_split_attention(padding, batch_size, Hq, Hkv, split_k);
                         }
                     }
