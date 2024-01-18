@@ -258,11 +258,9 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck_impl(
     auto H = XQ.size(3);
     auto K = XQ.size(4);
 
-    auto O_splits = at::zeros({split_k, B, M, G, H, K}, XQ.options());
-
-    auto split_max = at::empty({B, M, G, H, split_k}, XQ.options().dtype(at::kFloat))
-                         .fill_(ck::NumericLimits<float>::Lowest());
-    auto split_sumexp = at::zeros_like(split_max);
+    auto O_splits = at::empty({split_k, B, M, G, H, K}, XQ.options());
+    auto split_max = at::empty({B, M, G, H, split_k}, XQ.options().dtype(at::kFloat));
+    auto split_sumexp = at::empty_like(split_max);
 
     efficient_attention_forward_decoder_splitk_ck_out_impl<ThreadsPerWavefront, WavefrontsPerBlock>(
         XQ, cache_K, cache_V, seq_kv_lens, qk_scale, split_k, split_max, split_sumexp, O_splits, O);
