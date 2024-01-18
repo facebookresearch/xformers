@@ -112,7 +112,7 @@ at::Tensor& efficient_attention_forward_decoder_splitk_ck_out_impl(
             auto split_O_acc =
                 split_O.packed_accessor32<scalar_t, 1 + rank, at::RestrictPtrTraits>();
             auto O_acc = O.packed_accessor32<scalar_t, rank, at::RestrictPtrTraits>();
-            auto seq_acc =
+            auto seq_acc_ptr =
                 seq_kv_lens
                     ? seq_kv_lens->packed_accessor32<int32_t, 1, at::RestrictPtrTraits>().data()
                     : nullptr;
@@ -127,7 +127,7 @@ at::Tensor& efficient_attention_forward_decoder_splitk_ck_out_impl(
                 reinterpret_cast<ck_data_t* __restrict__>(split_O_acc.data()),
                 split_max_acc.data(),
                 split_sumexp_acc.data(),
-                seq_acc,
+                seq_acc_ptr,
                 XQ_acc.stride(0),
                 XQ_acc.stride(1),
                 XQ_acc.stride(2),
@@ -311,7 +311,7 @@ split_reduce_torch(const at::Tensor& O_splits, const at::Tensor& m_splits, const
         auto pick_new = at::less(local_max, global_max);
         auto pick_current_coef = at::where(pick_new, 1., alpha);
         auto pick_new_coef = at::where(pick_new, alpha, 1.);
-        
+
         O = at::add(at::mul(pick_current_coef, O), at::mul(pick_new_coef, local_O));
         global_sumexp = at::add(at::mul(pick_current_coef, global_sumexp), at::mul(pick_new_coef, local_sumexp));
         global_max = at::max(local_max, global_max);
@@ -767,7 +767,7 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_hip(const 
             auto split_O_acc =
                 split_O.packed_accessor32<scalar_t, 1 + rank, at::RestrictPtrTraits>();
             auto O_acc   = O.packed_accessor32<scalar_t, rank, at::RestrictPtrTraits>();
-            auto seq_acc = seqlen.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>().data();
+            auto seq_acc = seqlen.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>();
             auto split_max_acc = split_max.packed_accessor32<float, rank, at::RestrictPtrTraits>();
             auto split_sumexp_acc =
                 split_sumexp.packed_accessor32<float, rank, at::RestrictPtrTraits>();
@@ -779,7 +779,7 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_hip(const 
                 reinterpret_cast<ck_data_t* __restrict__>(split_O_acc.data()),
                 split_max_acc.data(),
                 split_sumexp_acc.data(),
-                seq_acc,
+                seq_acc.data(),
                 XQ_acc.stride(0),
                 XQ_acc.stride(1),
                 XQ_acc.stride(2),
