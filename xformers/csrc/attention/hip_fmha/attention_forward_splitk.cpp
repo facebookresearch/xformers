@@ -12,86 +12,6 @@ constexpr int32_t kWavefrontsPerBlock  = 1;
 constexpr int32_t K_MAX                = 4 * kThreadsPerWavefront;
 } // namespace
 
-static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_torch(
-    const at::Tensor& Q, const at::Tensor& K, const at::Tensor& V, const at::Tensor& k_seqlens, const int32_t split_k)
-{
-    auto Q_scaled = at::div(Q, sqrt(Q.size(-1)));
-
-    std::vector<at::Tensor> O_splits;
-    std::vector<at::Tensor> m_splits;
-    std::vector<at::Tensor> l_splits;
-
-    for (int32_t split_idx = 0; split_idx < split_k; ++split_idx) {
-        std::vector<at::Tensor> O_batch;
-        std::vector<at::Tensor> m_batch;
-        std::vector<at::Tensor> l_batch;
-
-        for(size_t b = 0; b < k_seqlens.numel(); ++b) {
-            auto seqlen = k_seqlens[b].item<int64_t>();
-            const int64_t t_low = split_idx * (seqlen / split_k);
-            const int64_t t_high = (split_idx + 1 < split_k) 
-                                 ? (1 + split_idx) * (seqlen / split_k)
-                                 : seqlen;
-
-            auto S        = at::einsum("mghk, nghk -> mghn",
-                            {Q_scaled[b], at::slice(K[b], /*dim*/ 0, /*start*/ t_low, /*end*/ t_high)},
-                            /* einsum eval path */ at::nullopt);
-            auto m = std::get<0>(at::max(S, /* dim */ -1, /* keepdim */ true));
-            auto s = at::exp(at::sub(S, m));
-            auto l = at::sum(s, /* dim */ -1, /* keepdim */ true);
-            auto O        = at::einsum("mghn, nghk -> mghk", 
-                            {s, at::slice(V[b], /*dim*/ 0, /*start*/ t_low, /*end*/ t_high)}, 
-                            /* einsum eval path */ at::nullopt);
-            O_batch.push_back(O);
-            m_batch.push_back(m);
-            l_batch.push_back(l);
-        }
-
-        auto O_cat = at::stack(O_batch);
-        auto m_cat = at::stack(m_batch);
-        auto l_cat = at::stack(l_batch);
-
-        O_splits.push_back(O_cat);
-        m_splits.push_back(m_cat);
-        l_splits.push_back(l_cat);
-    }
-
-    auto O_cat = at::stack(O_splits);
-    auto m_cat = at::transpose(at::stack(m_splits), 0, -1);
-    auto l_cat = at::transpose(at::stack(l_splits), 0, -1);
-
-    return std::make_tuple(O_cat, m_cat, l_cat);
-}
-
-static at::Tensor
-split_reduce_torch(const at::Tensor& O_splits, const at::Tensor& m_splits, const at::Tensor& l_splits, int32_t split_k)
-{   
-    auto O = at::zeros_like(at::slice(O_splits, 0, 0, 1));
-    auto m_current_max = at::empty_like(at::slice(m_splits, -1, 0, 1)).fill_(-65535.);
-    auto l_current_sum = at::zeros_like(m_current_max);
-
-    for (int32_t split_idx = 0; split_idx < split_k; ++split_idx) {
-        auto O_slice = at::slice(O_splits, 0, split_idx, split_idx + 1);
-        auto m_slice = at::slice(m_splits, -1, split_idx, split_idx + 1);
-        auto l_slice = at::slice(l_splits, -1, split_idx, split_idx + 1);
-
-        auto m_new = at::max(m_slice, m_current_max);
-
-        auto pick_new = at::less(m_slice, m_current_max);
-
-        auto log_alpha = at::neg(at::abs(at::sub(m_slice, m_current_max)));
-        auto alpha = at::exp(log_alpha);
-        alpha.nan_to_num_(1.);
-        auto pick_current_coef = at::where(pick_new, 1., alpha);
-        auto pick_new_coef = at::where(pick_new, alpha, 1.);
-        O = at::add(at::mul(pick_current_coef, O), at::mul(pick_new_coef, O_slice));
-        l_current_sum = at::add(at::mul(pick_current_coef, l_current_sum), at::mul(pick_new_coef, l_slice));
-        m_current_max = m_new;
-    }
-    
-    return at::div(O, l_current_sum);
-}
-
 namespace {
 
 template <typename c10_t>
@@ -268,18 +188,6 @@ at::Tensor efficient_attention_forward_decoder_splitk_ck_impl(
     return O;
 }
 
-at::Tensor efficient_attention_forward_decoder_split1_torch(
-    const at::Tensor& XQ,                 // [B, 1, G, H, D]
-    const at::Tensor& cache_K,            // [B, KV_M_MAX, G, H or 1, D]
-    const at::Tensor& cache_V,            // [B, KV_M_MAX, G, H or 1, D]
-    at::optional<at::Tensor> seq_kv_lens, // [B]
-    double qk_scale)
-{
-    auto [O_split, m, l] = split_attention_torch(XQ, cache_K, cache_V, *seq_kv_lens, /*split_k*/ 1);
-    auto O               = split_reduce_torch(O_split, m, l, /*split_k*/ 1);
-    return O.reshape_as(XQ);
-}
-
 at::Tensor efficient_attention_forward_decoder_splitk_ck(
     const at::Tensor& XQ,                 // [B, 1, G, H, D]
     const at::Tensor& cache_K,            // [B, KV_M_MAX, G, H or 1, D]
@@ -332,6 +240,100 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m)
 */
 
 // clang-format on
+
+static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_torch(
+    const at::Tensor& Q, const at::Tensor& K, const at::Tensor& V, const at::Tensor& k_seqlens, const int32_t split_k)
+{
+    auto Q_scaled = at::div(Q, sqrt(Q.size(-1)));
+
+    std::vector<at::Tensor> O_splits;
+    std::vector<at::Tensor> m_splits;
+    std::vector<at::Tensor> l_splits;
+
+    for (int32_t split_idx = 0; split_idx < split_k; ++split_idx) {
+        std::vector<at::Tensor> O_batch;
+        std::vector<at::Tensor> m_batch;
+        std::vector<at::Tensor> l_batch;
+
+        for(size_t b = 0; b < k_seqlens.numel(); ++b) {
+            auto seqlen = k_seqlens[b].item<int64_t>();
+            const int64_t t_low = split_idx * (seqlen / split_k);
+            const int64_t t_high = (split_idx + 1 < split_k) 
+                                 ? (1 + split_idx) * (seqlen / split_k)
+                                 : seqlen;
+
+            auto S        = at::einsum("mghk, nghk -> mghn",
+                            {Q_scaled[b], at::slice(K[b], /*dim*/ 0, /*start*/ t_low, /*end*/ t_high)},
+                            /* einsum eval path */ at::nullopt);
+            auto m = std::get<0>(at::max(S, /* dim */ -1, /* keepdim */ true));
+            auto s = at::exp(at::sub(S, m));
+            auto l = at::sum(s, /* dim */ -1, /* keepdim */ true);
+            auto O        = at::einsum("mghn, nghk -> mghk", 
+                            {s, at::slice(V[b], /*dim*/ 0, /*start*/ t_low, /*end*/ t_high)}, 
+                            /* einsum eval path */ at::nullopt);
+            O_batch.push_back(O);
+            m_batch.push_back(m);
+            l_batch.push_back(l);
+        }
+
+        auto O_cat = at::stack(O_batch);
+        auto m_cat = at::stack(m_batch);
+        auto l_cat = at::stack(l_batch);
+
+        O_splits.push_back(O_cat);
+        m_splits.push_back(m_cat);
+        l_splits.push_back(l_cat);
+    }
+
+    auto O_cat = at::stack(O_splits);
+    auto m_cat = at::transpose(at::stack(m_splits), 0, -1);
+    auto l_cat = at::transpose(at::stack(l_splits), 0, -1);
+
+    return std::make_tuple(O_cat, m_cat, l_cat);
+}
+
+static at::Tensor
+split_reduce_torch(const at::Tensor& O_splits, const at::Tensor& m_splits, const at::Tensor& l_splits, int32_t split_k)
+{   
+    auto O = at::zeros_like(at::slice(O_splits, 0, 0, 1));
+    auto global_max = at::empty_like(at::slice(m_splits, -1, 0, 1)).fill_(-65535.);
+    auto global_sumexp = at::zeros_like(global_max);
+
+    for (int32_t split_idx = 0; split_idx < split_k; ++split_idx) {
+        auto local_O = at::slice(O_splits, 0, split_idx, split_idx + 1);
+        auto local_max = at::slice(m_splits, -1, split_idx, split_idx + 1);
+        auto local_sumexp = at::slice(l_splits, -1, split_idx, split_idx + 1);
+
+        auto new_max = at::max(local_max, global_max);
+
+        auto pick_new = at::less(local_max, global_max);
+
+        auto log_alpha = at::neg(at::abs(at::sub(local_max, global_max)));
+        auto alpha = at::exp(log_alpha);
+        alpha.nan_to_num_(1.);
+        auto pick_current_coef = at::where(pick_new, 1., alpha);
+        auto pick_new_coef = at::where(pick_new, alpha, 1.);
+        O = at::add(at::mul(pick_current_coef, O), at::mul(pick_new_coef, local_O));
+        global_sumexp = at::add(at::mul(pick_current_coef, global_sumexp), at::mul(pick_new_coef, local_sumexp));
+        global_max = new_max;
+    }
+    
+    return at::div(O, global_sumexp);
+}
+
+static at::Tensor 
+efficient_attention_forward_decoder_splitk_torch(
+    const at::Tensor& XQ,                 // [B, 1, G, H, D]
+    const at::Tensor& cache_K,            // [B, KV_M_MAX, G, H or 1, D]
+    const at::Tensor& cache_V,            // [B, KV_M_MAX, G, H or 1, D]
+    at::optional<at::Tensor> seq_kv_lens, // [B]
+    double qk_scale,
+    int32_t split_k)
+{
+    auto [O_split, m, l] = split_attention_torch(XQ, cache_K, cache_V, *seq_kv_lens, split_k);
+    auto O               = split_reduce_torch(O_split, m, l, split_k);
+    return O.reshape_as(XQ);
+}
 
 namespace ck {
 namespace tensor_operation {
@@ -954,7 +956,7 @@ static void test_splitk_decoder_e2e_correctness(int32_t padding, int32_t batch_s
 
     auto result = efficient_attention_forward_decoder_splitk_ck_impl</* threads_per_wavefront */ 64, /* wavefronts_per_block */ 1>(
         XQ, K, V, seqlen, qk_scale, split_k);
-    auto gold_result = efficient_attention_forward_decoder_split1_torch(XQ, K, V, seqlen, qk_scale);
+    auto gold_result = efficient_attention_forward_decoder_splitk_torch(XQ, K, V, seqlen, qk_scale, /* split_k */ 1);
     auto e2e_mismatch = percent_mismatch(result, gold_result);
     printf("[Test e2e split-k decoder] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f\n", padding, batch_size, Hq, Hkv, split_k, e2e_mismatch);
 }
