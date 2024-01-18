@@ -368,25 +368,14 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
     attn_bias_split = torch.split(attn_bias_tensor, dim=-1, split_size_or_sections=split_size)
     
     def compute_attention_split(q_whole, k_slice, v_slice, attn_bias_slice):
-        assert not q_whole.isnan().any(), "q_whole is nan"
-        assert not k_slice.isnan().any(), "k_slice is nan"
         p_slice = q_whole @ k_slice.transpose(-2, -1)
-        assert not p_slice.isnan().any(), "p_slice is nan"
-        assert not p_slice.isinf().any(), "p_slice is inf"
         p_slice += attn_bias_slice
-        assert not p_slice.isnan().any(), "p_slice is nan after bias add"
         m = torch.max(p_slice, dim = -1, keepdim=True).values
-        assert not m.isnan().any(), "m is nan"
         p_slice_scaled = p_slice - m
         p_slice_scaled[p_slice_scaled.isnan()] = float("-inf")
-        assert not p_slice_scaled.isnan().any(), f"p_slice_scaled is nan: {p_slice_scaled.isnan().sum()} of {p_slice_scaled.numel()} values"
         s = torch.exp(p_slice_scaled)
-        assert s.shape == p_slice.shape
-        assert not s.isnan().any(), f"s is nan: {s.isnan().sum()} of {s.numel()} values"
         l = torch.sum(s, dim=-1, keepdim=True)
-        assert not l.isnan().any(), "l is nan"
         attn_slice = s @ v_slice
-        assert not attn_slice.isnan().any(), "attn_slice is nan"
         return {
             "attn_slice": attn_slice,
             "row_max": m,
@@ -401,29 +390,27 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
 
     # reduce out over split-k slices
 
-    m_current_max = torch.zeros_like(slices[0]["row_max"]).fill_(float("-inf"))
-    l_current_sum = torch.zeros_like(slices[0]["row_lse"])
+    global_max = torch.zeros_like(slices[0]["row_max"]).fill_(float("-inf"))
+    global_sumexp = torch.zeros_like(slices[0]["row_lse"])
 
     for s in slices:
-        attn_slice = s["attn_slice"]
-        m = s["row_max"]
-        l = s["row_lse"]
-        m_new = torch.max(m, m_current_max)
-        assert not m_new.isnan().any(), "m_new is nan"
-        pick_new = m < m_current_max
-        pick_our = torch.logical_not(pick_new)
+        local_out = s["attn_slice"]
+        local_max = s["row_max"]
+        local_sumexp = s["row_lse"]
+        new_max = torch.max(local_max, global_max)
 
-        log_alpha = -torch.abs(m - m_current_max)
-        log_alpha[log_alpha.isnan()] = 0
+        log_alpha = -torch.abs(local_max - global_max)
         alpha = torch.exp(log_alpha)
-        assert not alpha.isnan().any(), "alpha is nan"
-        out = out + attn_slice + (pick_our * out + pick_new * attn_slice) * (torch.sub(alpha, 1))
-        assert not out.isnan().any(), "out acc is nan"
-        l_current_sum = l_current_sum + l + (pick_our * l_current_sum + pick_new * l) * (torch.sub(alpha, 1))
-        assert not l_current_sum.isnan().any(), "l acc is nan"
-        m_current_max = m_new
-    out /= l_current_sum
-    assert not out.isnan().any(), "final out is nan"
+        alpha.nan_to_num_(1.)
+
+        pick_new = local_max < global_max
+        new_coef = torch.where(pick_new, alpha, 1.)
+        curr_coef = torch.where(pick_new, 1., alpha)
+
+        out = out * curr_coef + local_out * new_coef
+        global_sumexp = global_sumexp * curr_coef + local_sumexp * new_coef
+        global_max = new_max
+    out /= global_sumexp
     return out
 
 
