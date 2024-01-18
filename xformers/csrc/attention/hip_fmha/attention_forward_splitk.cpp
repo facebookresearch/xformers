@@ -242,7 +242,7 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m)
 // clang-format on
 
 static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_torch(
-    const at::Tensor& Q, const at::Tensor& K, const at::Tensor& V, const at::Tensor& k_seqlens, const int32_t split_k)
+    const at::Tensor& Q, const at::Tensor& K, const at::Tensor& V, const at::Tensor& k_seqlens, const int32_t split_k, const int32_t block_size)
 {
     auto Q_scaled = at::div(Q, sqrt(Q.size(-1)));
 
@@ -257,17 +257,17 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_torch(
 
         for(size_t b = 0; b < k_seqlens.numel(); ++b) {
             auto seqlen = k_seqlens[b].item<int64_t>();
-            const int64_t t_low = split_idx * (seqlen / split_k);
+            const int64_t t_low = split_idx * (seqlen / split_k / block_size) * block_size;
             const int64_t t_high = (split_idx + 1 < split_k) 
-                                 ? (1 + split_idx) * (seqlen / split_k)
+                                 ? (1 + split_idx) * (seqlen / split_k / block_size) * block_size
                                  : seqlen;
 
             auto S        = at::einsum("mghk, nghk -> mghn",
                             {Q_scaled[b], at::slice(K[b], /*dim*/ 0, /*start*/ t_low, /*end*/ t_high)},
                             /* einsum eval path */ at::nullopt);
-            auto m = std::get<0>(at::max(S, /* dim */ -1, /* keepdim */ true));
+            auto m = S.numel() > 0 ? std::get<0>(at::max(S, /* dim */ -1, /* keepdim */ true)) : at::empty_like(at::slice(S, -1, 0, 1)).fill_(ck::NumericLimits<float>::Lowest());
             auto s = at::exp(at::sub(S, m));
-            auto l = at::sum(s, /* dim */ -1, /* keepdim */ true);
+            auto l = s.numel() > 0 ? at::sum(s, /* dim */ -1, /* keepdim */ true) : at::zeros_like(m);
             auto O        = at::einsum("mghn, nghk -> mghk", 
                             {s, at::slice(V[b], /*dim*/ 0, /*start*/ t_low, /*end*/ t_high)}, 
                             /* einsum eval path */ at::nullopt);
@@ -281,8 +281,8 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_torch(
         auto l_cat = at::stack(l_batch);
 
         O_splits.push_back(O_cat);
-        m_splits.push_back(m_cat);
-        l_splits.push_back(l_cat);
+        m_splits.push_back(m_cat.numel() > 0 ? m_cat : at::empty_like(at::slice(O_cat, -1, 0, 1)).fill_(ck::NumericLimits<float>::Lowest()));
+        l_splits.push_back(l_cat.numel() > 0 ? l_cat : at::zeros_like(at::slice(O_cat, -1, 0, 1)));
     }
 
     auto O_cat = at::stack(O_splits);
@@ -327,9 +327,10 @@ efficient_attention_forward_decoder_splitk_torch(
     const at::Tensor& cache_V,            // [B, KV_M_MAX, G, H or 1, D]
     at::optional<at::Tensor> seq_kv_lens, // [B]
     double qk_scale,
-    int32_t split_k)
+    int32_t split_k,
+    int32_t block_size)
 {
-    auto [O_split, m, l] = split_attention_torch(XQ, cache_K, cache_V, *seq_kv_lens, split_k);
+    auto [O_split, m, l] = split_attention_torch(XQ, cache_K, cache_V, *seq_kv_lens, split_k, block_size);
     auto O               = split_reduce_torch(O_split, m, l, split_k);
     return O.reshape_as(XQ);
 }
@@ -915,7 +916,7 @@ static void test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq
 {
     auto [XQ, K, V, seqlen] = generate_inputs(padding, batch_size, Hq, Hkv);
 
-    auto [O_ref, m_ref, l_ref] = split_attention_torch(XQ, K, V, seqlen, split_k);
+    auto [O_ref, m_ref, l_ref] = split_attention_torch(XQ, K, V, seqlen, split_k, /* block_size */ 16);
 
     auto [O_hip, m_hip, l_hip] = split_attention_hip(XQ, K, V, seqlen, split_k, /* wavefronts_per_block */ 1);
 
@@ -955,7 +956,7 @@ static void test_splitk_decoder_e2e_correctness(int32_t padding, int32_t batch_s
 
     auto result = efficient_attention_forward_decoder_splitk_ck_impl</* threads_per_wavefront */ 64, /* wavefronts_per_block */ 1>(
         XQ, K, V, seqlen, qk_scale, split_k);
-    auto gold_result = efficient_attention_forward_decoder_splitk_torch(XQ, K, V, seqlen, qk_scale, /* split_k */ 1);
+    auto gold_result = efficient_attention_forward_decoder_splitk_torch(XQ, K, V, seqlen, qk_scale, /* split_k */ 1, /* block_size */ 1);
     auto e2e_mismatch = percent_mismatch(result, gold_result);
     printf("[Test e2e split-k decoder] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched elements percentage: %.2f\n", padding, batch_size, Hq, Hkv, split_k, e2e_mismatch);
 }
