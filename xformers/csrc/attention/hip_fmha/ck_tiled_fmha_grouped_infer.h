@@ -34,14 +34,14 @@
 #include "ck_tiled_bool_switch.h"
 #include "ck_tiled_headdim_switch.h"
 
-template <typename scalar_t, bool has_causal_mask, bool has_attn_bias>
+template <typename scalar_t, bool has_causal_mask, bool has_attn_bias, ck::index_t HDim>
 struct grouped_infer_causalmask_attnbias_dispatched
 {
     using FmhaEpilogue =
         FmhaFwdEpilogue<FmhaFwdEpilogueProblem<typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
                                                typename FmhaFwdTypeConfig<scalar_t>::ODataType>>;
 
-    template <typename FmhaTraits, ck::index_t HDim, typename FmhaMask>
+    template <typename FmhaTraits, typename FmhaMask>
     using FmhaPipelineProblemTemp = ck::tile_program::block::BlockFmhaPipelineProblem<
         typename FmhaFwdTypeConfig<scalar_t>::QDataType,
         typename FmhaFwdTypeConfig<scalar_t>::KDataType,
@@ -69,46 +69,44 @@ struct grouped_infer_causalmask_attnbias_dispatched
             using FmhaMask =
                 ck::tile_program::block::GenericAttentionMask<has_masking, USE_LOCAL_ATTENTION>;
 
-            FMHA_FWD_HEADDIM_SWITCH(param.K, param.Kv, HDim, [&] {
-                using FmhaShape                 = FmhaFwdShape<HDim>;
-                using FmhaTilePartitioner       = FmhaFwdTilePartitioner<FmhaShape>;
-                constexpr ck::index_t occupancy = (HDim == 64) ? 3 : 2;
+            using FmhaShape                 = FmhaFwdShape<HDim>;
+            using FmhaTilePartitioner       = FmhaFwdTilePartitioner<FmhaShape>;
+            constexpr ck::index_t occupancy = (HDim == 64) ? 3 : 2;
 
-                bool k0n1_need_padding =
-                    !(param.K % FmhaShape::kK0BlockLength == 0 && param.Kv % FmhaShape::kN1 == 0);
+            bool k0n1_need_padding =
+                !(param.K % FmhaShape::kK0BlockLength == 0 && param.Kv % FmhaShape::kN1 == 0);
 
-                constexpr bool kM0NeedPadding   = true;
-                constexpr bool kN0K1NeedPadding = true;
+            constexpr bool kM0NeedPadding   = true;
+            constexpr bool kN0K1NeedPadding = true;
 
-                BOOL_SWITCH(k0n1_need_padding, kK0N1NeedPadding, [&] {
-                    using FmhaTraits = ck::tile_program::TileFmhaTraits<kM0NeedPadding,
-                                                                        kN0K1NeedPadding,
-                                                                        kK0N1NeedPadding,
-                                                                        has_attn_bias,
-                                                                        false, // kStoreLSE
-                                                                        occupancy>;
+            BOOL_SWITCH(k0n1_need_padding, kK0N1NeedPadding, [&] {
+                using FmhaTraits = ck::tile_program::TileFmhaTraits<kM0NeedPadding,
+                                                                    kN0K1NeedPadding,
+                                                                    kK0N1NeedPadding,
+                                                                    has_attn_bias,
+                                                                    false, // kStoreLSE
+                                                                    occupancy>;
 
-                    using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, HDim, FmhaMask>;
+                using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-                    if constexpr(HDim == 256)
-                    {
-                        using FmhaPipeline =
-                            ck::tile_program::block::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>;
-                        using FmhaKernel =
-                            FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+                if constexpr(HDim == 256)
+                {
+                    using FmhaPipeline =
+                        ck::tile_program::block::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>;
+                    using FmhaKernel =
+                        FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
-                        RunWithKernel<FmhaKernel>(param, stream);
-                    }
-                    else
-                    {
-                        using FmhaPipeline =
-                            ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
-                        using FmhaKernel =
-                            FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+                    RunWithKernel<FmhaKernel>(param, stream);
+                }
+                else
+                {
+                    using FmhaPipeline =
+                        ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+                    using FmhaKernel =
+                        FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
-                        RunWithKernel<FmhaKernel>(param, stream);
-                    }
-                });
+                    RunWithKernel<FmhaKernel>(param, stream);
+                }
             });
         });
     };
@@ -156,10 +154,10 @@ struct grouped_infer_causalmask_attnbias_dispatched
     };
 };
 
-template <typename scalar_t, bool has_causal_mask, bool has_attn_bias>
+template <typename scalar_t, bool has_causal_mask, bool has_attn_bias, ck::index_t HDim>
 void run_grouped_infer_causalmask_attnbias_dispatched(GroupedForwardParams& param,
                                                       hipStream_t stream)
 {
-    grouped_infer_causalmask_attnbias_dispatched<scalar_t, has_causal_mask, has_attn_bias>::Run(
-        param, stream);
+    grouped_infer_causalmask_attnbias_dispatched<scalar_t, has_causal_mask, has_attn_bias, HDim>::
+        Run(param, stream);
 };
