@@ -18,11 +18,9 @@
 #include <ck/tensor/tensor_view.hpp>
 
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_problem.hpp>
-#include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qkvs.hpp>
-#include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qkvs_default_policy.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_async.hpp>
-#include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_default_policy.hpp>
+#include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qs_ks_vs.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
 #include <ck/tile_program/tile/tile_fmha_traits.hpp>
 #include <ck/tile_program/block_tile/block_masking.hpp>
@@ -60,6 +58,11 @@ struct batched_infer_causalmask_attnbias_dispatched
             constexpr ck::index_t CONST_NAME = 128;                         \
             __VA_ARGS__();                                                  \
         }                                                                   \
+        else if(HEAD_DIM1 <= 256 && HEAD_DIM2 <= 256)                       \
+        {                                                                   \
+            constexpr ck::index_t CONST_NAME = 256;                         \
+            __VA_ARGS__();                                                  \
+        }                                                                   \
         else                                                                \
         {                                                                   \
             throw std::runtime_error("Head-dim sizes not supported!");      \
@@ -75,6 +78,7 @@ struct batched_infer_causalmask_attnbias_dispatched
         typename FmhaFwdTypeConfig<scalar_t>::SaccDataType,
         typename FmhaFwdTypeConfig<scalar_t>::SMPLComputeDataType,
         typename FmhaFwdTypeConfig<scalar_t>::BiasDataType,
+        typename FmhaFwdTypeConfig<scalar_t>::LSEDataType,
         typename FmhaFwdTypeConfig<scalar_t>::PDataType,
         typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
         typename FmhaFwdTypeConfig<scalar_t>::ODataType,
@@ -119,19 +123,16 @@ struct batched_infer_causalmask_attnbias_dispatched
                                                                             kN0K1NeedPadding,
                                                                             kK0N1NeedPadding,
                                                                             has_attn_bias,
+                                                                            false, // kStoreLSE
                                                                             occupancy>;
 
                         using FmhaPipelineProblem =
                             FmhaPipelineProblemTemp<FmhaTraits, HDim, FmhaMask>;
 
-                        constexpr bool no_any_padding =
-                            !(kM0NeedPadding || kN0K1NeedPadding || kK0N1NeedPadding);
-
-                        if constexpr(no_any_padding)
+                        if constexpr(HDim == 256)
                         {
-                            using FmhaPipeline =
-                                ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
-                                    FmhaPipelineProblem>;
+                            using FmhaPipeline = ck::tile_program::block::BlockFmhaPipelineQSKSVS<
+                                FmhaPipelineProblem>;
                             using FmhaKernel =
                                 FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
@@ -139,12 +140,29 @@ struct batched_infer_causalmask_attnbias_dispatched
                         }
                         else
                         {
-                            using FmhaPipeline = ck::tile_program::block::BlockFmhaPipelineQRKSVS<
-                                FmhaPipelineProblem>;
-                            using FmhaKernel =
-                                FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+                            constexpr bool no_any_padding =
+                                !(kM0NeedPadding || kN0K1NeedPadding || kK0N1NeedPadding);
 
-                            RunWithKernel<FmhaKernel>(param, stream);
+                            if constexpr(no_any_padding)
+                            {
+                                using FmhaPipeline =
+                                    ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
+                                        FmhaPipelineProblem>;
+                                using FmhaKernel =
+                                    FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+                                RunWithKernel<FmhaKernel>(param, stream);
+                            }
+                            else
+                            {
+                                using FmhaPipeline =
+                                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<
+                                        FmhaPipelineProblem>;
+                                using FmhaKernel =
+                                    FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+                                RunWithKernel<FmhaKernel>(param, stream);
+                            };
                         };
                     });
             });
@@ -160,6 +178,7 @@ struct batched_infer_causalmask_attnbias_dispatched
                 param.k_ptr,
                 param.v_ptr,
                 param.attn_bias_ptr,
+                nullptr, // lse_ptr
                 param.out_ptr,
                 param.M,              // seqlen_q
                 param.N,              // seqlen_k
@@ -172,15 +191,17 @@ struct batched_infer_causalmask_attnbias_dispatched
                 param.v_strides[1],
                 param.attn_bias_strides[2],
                 param.out_strides[1],
-                param.q_strides[2], // q, k, v, bias, out tensor head-dim stride
+                param.q_strides[2], // q, k, v, bias, lse, out tensor head-dim stride
                 param.k_strides[2],
                 param.v_strides[2],
                 param.attn_bias_strides[1],
+                0, // nhead_stride_lse
                 param.out_strides[2],
-                param.q_strides[0], // q, k, v, bias, out tensor batch-dim stride
+                param.q_strides[0], // q, k, v, bias, lse, out tensor batch-dim stride
                 param.k_strides[0],
                 param.v_strides[0],
                 param.attn_bias_strides[0],
+                0, // batch_stride_lse
                 param.out_strides[0],
                 static_cast<CausalMaskType>(param.custom_mask_type),
                 param.window_size);

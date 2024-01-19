@@ -19,10 +19,8 @@
 #include <ck/tensor/tensor_view.hpp>
 
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_problem.hpp>
-#include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qkvs.hpp>
-#include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qkvs_default_policy.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs.hpp>
-#include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_default_policy.hpp>
+#include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qs_ks_vs.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
 #include <ck/tile_program/tile/tile_fmha_traits.hpp>
 #include <ck/tile_program/block_tile/block_masking.hpp>
@@ -60,6 +58,11 @@ struct grouped_infer_causalmask_attnbias_dispatched
             constexpr ck::index_t CONST_NAME = 128;                         \
             __VA_ARGS__();                                                  \
         }                                                                   \
+        else if(HEAD_DIM1 <= 256 && HEAD_DIM2 <= 256)                       \
+        {                                                                   \
+            constexpr ck::index_t CONST_NAME = 256;                         \
+            __VA_ARGS__();                                                  \
+        }                                                                   \
         else                                                                \
         {                                                                   \
             throw std::runtime_error("Head-dim sizes not supported!");      \
@@ -75,6 +78,7 @@ struct grouped_infer_causalmask_attnbias_dispatched
         typename FmhaFwdTypeConfig<scalar_t>::SaccDataType,
         typename FmhaFwdTypeConfig<scalar_t>::SMPLComputeDataType,
         typename FmhaFwdTypeConfig<scalar_t>::BiasDataType,
+        typename FmhaFwdTypeConfig<scalar_t>::LSEDataType,
         typename FmhaFwdTypeConfig<scalar_t>::PDataType,
         typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
         typename FmhaFwdTypeConfig<scalar_t>::ODataType,
@@ -110,15 +114,29 @@ struct grouped_infer_causalmask_attnbias_dispatched
                                                                         kN0K1NeedPadding,
                                                                         kK0N1NeedPadding,
                                                                         has_attn_bias,
+                                                                        false, // kStoreLSE
                                                                         occupancy>;
 
                     using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, HDim, FmhaMask>;
-                    using FmhaPipeline =
-                        ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
-                    using FmhaKernel =
-                        FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
-                    RunWithKernel<FmhaKernel>(param, stream);
+                    if constexpr(HDim == 256)
+                    {
+                        using FmhaPipeline =
+                            ck::tile_program::block::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>;
+                        using FmhaKernel =
+                            FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+                        RunWithKernel<FmhaKernel>(param, stream);
+                    }
+                    else
+                    {
+                        using FmhaPipeline =
+                            ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+                        using FmhaKernel =
+                            FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+                        RunWithKernel<FmhaKernel>(param, stream);
+                    }
                 });
             });
         });
@@ -133,6 +151,7 @@ struct grouped_infer_causalmask_attnbias_dispatched
                 param.k_ptr,
                 param.v_ptr,
                 param.attn_bias_ptr,
+                nullptr, // lse_ptr
                 param.out_ptr,
                 param.seqstart_q_dev_ptr,
                 param.seqstart_k_dev_ptr,
@@ -146,10 +165,11 @@ struct grouped_infer_causalmask_attnbias_dispatched
                 param.v_strides[0],
                 param.attn_bias_strides[2],
                 param.out_strides[0],
-                param.q_strides[1], // q, k, v, bias, out tensor head-dim stride
+                param.q_strides[1], // q, k, v, bias, lse, out tensor head-dim stride
                 param.k_strides[1],
                 param.v_strides[1],
                 param.attn_bias_strides[1],
+                0, // nhead_stride_lse
                 param.out_strides[1],
                 static_cast<CausalMaskType>(param.custom_mask_type),
                 param.window_size);
