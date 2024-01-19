@@ -32,6 +32,7 @@
 #include "ck_tiled_fmha_definitions.h"
 
 #include "ck_tiled_bool_switch.h"
+#include "ck_tiled_headdim_switch.h"
 
 template <typename scalar_t, bool has_causal_mask, bool has_attn_bias>
 struct batched_infer_causalmask_attnbias_dispatched
@@ -39,36 +40,6 @@ struct batched_infer_causalmask_attnbias_dispatched
     using FmhaEpilogue =
         FmhaFwdEpilogue<FmhaFwdEpilogueProblem<typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
                                                typename FmhaFwdTypeConfig<scalar_t>::ODataType>>;
-
-#ifndef BATCHED_INFER_HEADDIM_SWITCH
-#define BATCHED_INFER_HEADDIM_SWITCH(HEAD_DIM1, HEAD_DIM2, CONST_NAME, ...) \
-    [&] {                                                                   \
-        if(HEAD_DIM1 <= 32 && HEAD_DIM2 <= 32)                              \
-        {                                                                   \
-            constexpr ck::index_t CONST_NAME = 32;                          \
-            __VA_ARGS__();                                                  \
-        }                                                                   \
-        else if(HEAD_DIM1 <= 64 && HEAD_DIM2 <= 64)                         \
-        {                                                                   \
-            constexpr ck::index_t CONST_NAME = 64;                          \
-            __VA_ARGS__();                                                  \
-        }                                                                   \
-        else if(HEAD_DIM1 <= 128 && HEAD_DIM2 <= 128)                       \
-        {                                                                   \
-            constexpr ck::index_t CONST_NAME = 128;                         \
-            __VA_ARGS__();                                                  \
-        }                                                                   \
-        else if(HEAD_DIM1 <= 256 && HEAD_DIM2 <= 256)                       \
-        {                                                                   \
-            constexpr ck::index_t CONST_NAME = 256;                         \
-            __VA_ARGS__();                                                  \
-        }                                                                   \
-        else                                                                \
-        {                                                                   \
-            throw std::runtime_error("Head-dim sizes not supported!");      \
-        }                                                                   \
-    }()
-#endif
 
     template <typename FmhaTraits, ck::index_t HDim, typename FmhaMask>
     using FmhaPipelineProblemTemp = ck::tile_program::block::BlockFmhaPipelineProblem<
@@ -98,7 +69,7 @@ struct batched_infer_causalmask_attnbias_dispatched
             using FmhaMask =
                 ck::tile_program::block::GenericAttentionMask<has_masking, USE_LOCAL_ATTENTION>;
 
-            BATCHED_INFER_HEADDIM_SWITCH(param.K, param.Kv, HDim, [&] {
+            FMHA_FWD_HEADDIM_SWITCH(param.K, param.Kv, HDim, [&] {
                 using FmhaShape                 = FmhaFwdShape<HDim>;
                 using FmhaTilePartitioner       = FmhaFwdTilePartitioner<FmhaShape>;
                 constexpr ck::index_t occupancy = (HDim == 64) ? 3 : 2;
