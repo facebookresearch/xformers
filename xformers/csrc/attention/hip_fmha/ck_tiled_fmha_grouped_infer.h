@@ -73,41 +73,57 @@ struct grouped_infer_causalmask_attnbias_dispatched
             using FmhaTilePartitioner       = FmhaFwdTilePartitioner<FmhaShape>;
             constexpr ck::index_t occupancy = (HDim == 64) ? 3 : 2;
 
-            bool k0n1_need_padding =
-                !(param.K % FmhaShape::kK0BlockLength == 0 && param.Kv % FmhaShape::kN1 == 0);
-
             constexpr bool kM0NeedPadding   = true;
             constexpr bool kN0K1NeedPadding = true;
 
-            BOOL_SWITCH(k0n1_need_padding, kK0N1NeedPadding, [&] {
-                using FmhaTraits = ck::tile_program::TileFmhaTraits<kM0NeedPadding,
-                                                                    kN0K1NeedPadding,
-                                                                    kK0N1NeedPadding,
-                                                                    has_attn_bias,
-                                                                    false, // kStoreLSE
-                                                                    occupancy>;
+            if constexpr(HDim == 256)
+            {
+                // BlockFmhaPipelineQSKSVS uses kQLoadOnce == false
+                bool k0n1_need_padding =
+                    !(param.K % FmhaShape::kK0 == 0 && param.Kv % FmhaShape::kN1 == 0);
 
-                using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+                BOOL_SWITCH(k0n1_need_padding, kK0N1NeedPadding, [&] {
+                    using FmhaTraits = ck::tile_program::TileFmhaTraits<kM0NeedPadding,
+                                                                        kN0K1NeedPadding,
+                                                                        kK0N1NeedPadding,
+                                                                        has_attn_bias,
+                                                                        false, // kStoreLSE
+                                                                        occupancy>;
 
-                if constexpr(HDim == 256)
-                {
+                    using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+
                     using FmhaPipeline =
                         ck::tile_program::block::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>;
                     using FmhaKernel =
                         FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
                     RunWithKernel<FmhaKernel>(param, stream);
-                }
-                else
-                {
+                });
+            }
+            else
+            {
+                // BlockFmhaPipelineQRKSVS uses kQLoadOnce == true
+                bool k0n1_need_padding =
+                    !(param.K % FmhaShape::kK0BlockLength == 0 && param.Kv % FmhaShape::kN1 == 0);
+
+                BOOL_SWITCH(k0n1_need_padding, kK0N1NeedPadding, [&] {
+                    using FmhaTraits = ck::tile_program::TileFmhaTraits<kM0NeedPadding,
+                                                                        kN0K1NeedPadding,
+                                                                        kK0N1NeedPadding,
+                                                                        has_attn_bias,
+                                                                        false, // kStoreLSE
+                                                                        occupancy>;
+
+                    using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+
                     using FmhaPipeline =
                         ck::tile_program::block::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
                     using FmhaKernel =
                         FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
                     RunWithKernel<FmhaKernel>(param, stream);
-                }
-            });
+                });
+            };
         });
     };
 

@@ -76,39 +76,60 @@ struct batched_infer_causalmask_attnbias_dispatched
             bool m0_need_padding   = !(param.M % FmhaShape::kM0 == 0);
             bool n0k1_need_padding = !(param.N % FmhaShape::kN0 == 0);
 
-            // ToDO: current pipelines all assume kQLoadOnce, which read whole k0
-            // (kK0BlockLength)
-            bool k0n1_need_padding =
-                !(param.K % FmhaShape::kK0BlockLength == 0 && param.Kv % FmhaShape::kN1 == 0);
+            if constexpr(HDim == 256)
+            {
+                // BlockFmhaPipelineQSKSVS uses kQLoadOnce == false
+                bool k0n1_need_padding =
+                    !(param.K % FmhaShape::kK0 == 0 && param.Kv % FmhaShape::kN1 == 0);
 
-            BOOL_SWITCH_3(
-                m0_need_padding,
-                kM0NeedPadding,
-                n0k1_need_padding,
-                kN0K1NeedPadding,
-                k0n1_need_padding,
-                kK0N1NeedPadding,
-                [&] {
-                    using FmhaTraits = ck::tile_program::TileFmhaTraits<kM0NeedPadding,
-                                                                        kN0K1NeedPadding,
-                                                                        kK0N1NeedPadding,
-                                                                        has_attn_bias,
-                                                                        false, // kStoreLSE
-                                                                        occupancy>;
+                BOOL_SWITCH_3(
+                    m0_need_padding,
+                    kM0NeedPadding,
+                    n0k1_need_padding,
+                    kN0K1NeedPadding,
+                    k0n1_need_padding,
+                    kK0N1NeedPadding,
+                    [&] {
+                        using FmhaTraits = ck::tile_program::TileFmhaTraits<kM0NeedPadding,
+                                                                            kN0K1NeedPadding,
+                                                                            kK0N1NeedPadding,
+                                                                            has_attn_bias,
+                                                                            false, // kStoreLSE
+                                                                            occupancy>;
 
-                    using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+                        using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-                    if constexpr(HDim == 256)
-                    {
                         using FmhaPipeline =
                             ck::tile_program::block::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>;
                         using FmhaKernel =
                             FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
                         RunWithKernel<FmhaKernel>(param, stream);
-                    }
-                    else
-                    {
+                    });
+            }
+            else
+            {
+                // BlockFmhaPipelineQRKSVS uses kQLoadOnce == true
+                bool k0n1_need_padding =
+                    !(param.K % FmhaShape::kK0BlockLength == 0 && param.Kv % FmhaShape::kN1 == 0);
+
+                BOOL_SWITCH_3(
+                    m0_need_padding,
+                    kM0NeedPadding,
+                    n0k1_need_padding,
+                    kN0K1NeedPadding,
+                    k0n1_need_padding,
+                    kK0N1NeedPadding,
+                    [&] {
+                        using FmhaTraits = ck::tile_program::TileFmhaTraits<kM0NeedPadding,
+                                                                            kN0K1NeedPadding,
+                                                                            kK0N1NeedPadding,
+                                                                            has_attn_bias,
+                                                                            false, // kStoreLSE
+                                                                            occupancy>;
+
+                        using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+
                         constexpr bool no_any_padding =
                             !(kM0NeedPadding || kN0K1NeedPadding || kK0N1NeedPadding);
 
@@ -131,8 +152,8 @@ struct batched_infer_causalmask_attnbias_dispatched
 
                             RunWithKernel<FmhaKernel>(param, stream);
                         };
-                    };
-                });
+                    });
+            };
         });
     };
 
