@@ -240,6 +240,8 @@ def get_extensions():
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_generic_ck_tiled.cpp"), recursive=False)
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_batched_infer_*.cpp"), recursive=False)
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_grouped_infer_*.cpp"), recursive=False)
+        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_batched_forward_*.cpp"), recursive=False)
+        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_grouped_forward_*.cpp"), recursive=False)
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "instances_tiled", "ck_tiled_fmha_*.cpp"), recursive=False)
     else:
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_generic.cpp"), recursive=False)

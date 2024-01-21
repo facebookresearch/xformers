@@ -102,7 +102,7 @@ struct GroupedForwardParams : public GroupedInferParams
     int64_t philox_offset;
 
     // completely contiguous
-    std::vector<void*> logsumexp_ptrs;
+    void* logsumexp_ptr;
 
     // TODO: need remove this after dev-op fix
     std::vector<void*> randvals_ptrs;
