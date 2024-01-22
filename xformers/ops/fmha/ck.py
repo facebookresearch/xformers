@@ -157,7 +157,7 @@ class FwOp(AttentionFwOpBase):
     OPERATOR = get_xformers_operator("efficient_attention_forward_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
-    SUPPORTED_MAX_K = 65536
+    SUPPORTED_MAX_K = 256 
     
     if use_ck_tiled: 
         SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
