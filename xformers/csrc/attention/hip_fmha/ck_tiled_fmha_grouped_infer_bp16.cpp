@@ -11,31 +11,60 @@
 #include "ck_tiled_bool_switch.h"
 #include "ck_tiled_fmha_grouped_infer.h"
 
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, false, true>(
+// clang-format off
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, 32>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, 32>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 32>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, 32>(
     GroupedForwardParams& param, hipStream_t stream);
 
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, false, false>(
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, 64>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, 64>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 64>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, 64>(
     GroupedForwardParams& param, hipStream_t stream);
 
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, true>(
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, 128>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, 128>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 128>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, 128>(
     GroupedForwardParams& param, hipStream_t stream);
 
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, false>(
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, 256>(
     GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, 256>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 256>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, 256>(
+    GroupedForwardParams& param, hipStream_t stream);
+// clang-format on
 
 void grouped_infer_bp16(GroupedForwardParams& param, hipStream_t stream)
 {
     BOOL_SWITCH(param.has_attn_bias, HAS_ATTN_BIAS, [&] {
-        if(param.custom_mask_type == 0)
-            run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, false, HAS_ATTN_BIAS>(
-                param, stream);
-        else if(param.custom_mask_type == 1)
-            run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, HAS_ATTN_BIAS>(
-                param, stream);
-        else if(param.custom_mask_type == 2)
-            run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, HAS_ATTN_BIAS>(
-                param, stream);
-        else
-            throw std::runtime_error("Invalid custom_mask_type value");
+        FMHA_FWD_HEADDIM_SWITCH(param.K, param.Kv, HDim, [&] {
+            if(param.custom_mask_type == 0)
+                run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t,
+                                                                 false,
+                                                                 HAS_ATTN_BIAS,
+                                                                 HDim>(param, stream);
+            else if(param.custom_mask_type == 1 || param.custom_mask_type == 2)
+                run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t,
+                                                                 true,
+                                                                 HAS_ATTN_BIAS,
+                                                                 HDim>(param, stream);
+            else
+                throw std::runtime_error("Invalid custom_mask_type value");
+        });
     });
 };

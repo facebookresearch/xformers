@@ -38,7 +38,7 @@ struct FmhaFwdTilePartitioner
         using namespace ck;
 
         // const index_t num_tile_m0 = seqlen_q / kM0;
-        const index_t num_tile_n1 = hdim_v / kN1;
+        const index_t num_tile_n1 = ck::math::integer_divide_ceil(hdim_v, kN1);
 
         const index_t i_block = blockIdx.x;
         const index_t i_nhead = blockIdx.y;

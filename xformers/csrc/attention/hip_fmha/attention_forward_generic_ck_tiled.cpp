@@ -21,20 +21,10 @@
 #include "ck_fmha_util.h"
 #include "ck_tiled_fmha_params.h"
 
-/*
-extern void batched_forward_fp16(
-    BatchedForwardParams& param,
-    hipStream_t stream);
-extern void batched_forward_bp16(
-    BatchedForwardParams& param,
-    hipStream_t stream);
-extern void grouped_forward_fp16(
-    GroupedForwardParams& param,
-    hipStream_t stream);
-extern void grouped_forward_bp16(
-    GroupedForwardParams& param,
-    hipStream_t stream);
-*/
+extern void batched_forward_fp16(BatchedForwardParams& param, hipStream_t stream);
+extern void batched_forward_bp16(BatchedForwardParams& param, hipStream_t stream);
+extern void grouped_forward_fp16(GroupedForwardParams& param, hipStream_t stream);
+extern void grouped_forward_bp16(GroupedForwardParams& param, hipStream_t stream);
 
 extern void batched_infer_fp16(BatchedForwardParams& param, hipStream_t stream);
 extern void batched_infer_bp16(BatchedForwardParams& param, hipStream_t stream);
@@ -225,10 +215,8 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
 
         if(p.compute_logsumexp)
         {
-            /*
-            logsumexp = at::empty({B, Hq, M}, opts.dtype(at::kFloat));
+            logsumexp       = at::empty({B, Hq, M}, opts.dtype(at::kFloat));
             p.logsumexp_ptr = logsumexp.data_ptr();
-            */
             throw std::runtime_error("compute logsumexp is currently not implemented by ck-tiled!");
         }
         else
@@ -348,21 +336,11 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
 
         if(p.compute_logsumexp)
         {
-            /*
-            logsumexp = at::empty(
-                {p.num_batches, Hq, p.max_seqlen_q}, opts.dtype(at::kFloat));
-            char* logsumexp_ptr = reinterpret_cast<char*>(logsumexp.data_ptr());
-
-            for (int i = 0; i < p.num_batches; i++) {
-              size_t tmp_logsumexp_offset = get_size_in_bytes(
-                  static_cast<size_t>(i) * Hq * p.max_seqlen_q,
-                  logsumexp.scalar_type());
-              p.logsumexp_ptrs.push_back(
-                  reinterpret_cast<void*>(&logsumexp_ptr[tmp_logsumexp_offset]));
-            };
-            */
-            throw std::runtime_error("compute logsumexp is currently not implemented by ck-tiled!");
-        };
+            logsumexp = at::empty({p.num_batches, Hq, p.max_seqlen_q}, opts.dtype(at::kFloat));
+            p.logsumexp_ptr = logsumexp.data_ptr();
+        }
+        else
+            p.logsumexp_ptr = nullptr;
     };
 
     auto inDataType = query.scalar_type();
@@ -388,14 +366,17 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
         }
         else
         {
-            /*
-            if (inDataType == at::ScalarType::Half) {
-              batched_forward_fp16(batched_forward_params, stream);
-            } else if (inDataType == at::ScalarType::BFloat16) {
-              batched_forward_bp16(batched_forward_params, stream);
-            } else
-              throw std::runtime_error("input data-type is not supported!");
-            */
+            if(inDataType == at::ScalarType::Half)
+            {
+                batched_forward_fp16(batched_forward_params, stream);
+            }
+            else if(inDataType == at::ScalarType::BFloat16)
+            {
+                batched_forward_bp16(batched_forward_params, stream);
+            }
+            else
+                throw std::runtime_error("input data-type is not supported!");
+
             throw std::runtime_error(
                 "drop-out and compuate logsumexp currently not implemented by ck-tiled!");
         };
@@ -421,14 +402,17 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
         }
         else
         {
-            /*
-            if (inDataType == at::ScalarType::Half) {
-              grouped_forward_fp16(grouped_forward_params, stream);
-            } else if (inDataType == at::ScalarType::BFloat16) {
-              grouped_forward_bp16(grouped_forward_params, stream);
-            } else
-              throw std::runtime_error("input data-type is not supported!");
-            */
+            if(inDataType == at::ScalarType::Half)
+            {
+                grouped_forward_fp16(grouped_forward_params, stream);
+            }
+            else if(inDataType == at::ScalarType::BFloat16)
+            {
+                grouped_forward_bp16(grouped_forward_params, stream);
+            }
+            else
+                throw std::runtime_error("input data-type is not supported!");
+
             throw std::runtime_error(
                 "drop-out and compuate logsumexp currently not implemented by ck-tiled!");
         };
