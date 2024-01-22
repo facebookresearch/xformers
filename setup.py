@@ -31,9 +31,15 @@ from torch.utils.cpp_extension import (
 this_dir = os.path.dirname(__file__)
 
 
-def get_extra_nvcc_flags_for_build_type() -> List[str]:
+def get_extra_nvcc_flags_for_build_type(cuda_version: int) -> List[str]:
     build_type = os.environ.get("XFORMERS_BUILD_TYPE", "RelWithDebInfo").lower()
     if build_type == "relwithdebinfo":
+        if cuda_version >= 1201 and cuda_version < 1202:
+            print(
+                "Looks like we are using CUDA 12.1 which segfaults when provided with"
+                " the -generate-line-info flag. Disabling it."
+            )
+            return []
         return ["--generate-line-info"]
     elif build_type == "release":
         return []
@@ -201,7 +207,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                 ]
                 + nvcc_archs_flags
                 + nvcc_windows_flags
-                + get_extra_nvcc_flags_for_build_type(),
+                + get_extra_nvcc_flags_for_build_type(cuda_version),
             },
             include_dirs=[
                 p.absolute()
@@ -252,6 +258,7 @@ def get_extensions():
         or os.getenv("FORCE_CUDA", "0") == "1"
         or os.getenv("TORCH_CUDA_ARCH_LIST", "") != ""
     ):
+        cuda_version = get_cuda_version(CUDA_HOME)
         extension = CUDAExtension
         sources += source_cuda
         include_dirs += [sputnik_dir, cutlass_dir, cutlass_examples_dir]
@@ -263,11 +270,10 @@ def get_extensions():
             "--extended-lambda",
             "-D_ENABLE_EXTENDED_ALIGNED_STORAGE",
             "-std=c++17",
-        ] + get_extra_nvcc_flags_for_build_type()
+        ] + get_extra_nvcc_flags_for_build_type(cuda_version)
         if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
             nvcc_flags.append("-DNDEBUG")
         nvcc_flags += shlex.split(os.getenv("NVCC_FLAGS", ""))
-        cuda_version = get_cuda_version(CUDA_HOME)
         if cuda_version >= 1102:
             nvcc_flags += [
                 "--threads",
