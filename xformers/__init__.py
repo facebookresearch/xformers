@@ -51,9 +51,10 @@ def _is_triton_available():
         from xformers.triton.softmax import softmax as triton_softmax  # noqa
 
         return True
-    except (ImportError, AttributeError) as e:
+    except (ImportError, AttributeError):
         logger.warning(
-            f"A matching Triton is not available, some optimizations will not be enabled.\nError caught was: {e}"
+            "A matching Triton is not available, some optimizations will not be enabled",
+            exc_info=True,
         )
         return False
 
