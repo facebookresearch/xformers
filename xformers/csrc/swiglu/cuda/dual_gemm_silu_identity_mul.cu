@@ -16,6 +16,28 @@
 #include <45_dual_gemm/thread/left_silu_and_mul.h>
 
 namespace {
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_META(
+    const at::Tensor& x,
+    const at::Tensor& w0,
+    const c10::optional<at::Tensor>& b0,
+    const at::Tensor& w1,
+    const c10::optional<at::Tensor>& b1) {
+  TORCH_CHECK(x.sym_stride(-1) == 1);
+  TORCH_CHECK(w0.sym_stride(-1) == 1);
+  TORCH_CHECK(w1.sym_stride(-1) == 1);
+
+  at::SymInt B = x.sym_size(0);
+  at::SymInt I = x.sym_size(1);
+  at::SymInt H = w0.sym_size(0);
+
+  at::Tensor d0 = at::empty_symint({B, H}, x.options());
+  at::Tensor d1 = at::empty_symint({B, H}, x.options());
+  at::Tensor d2 = at::empty_symint({B, H}, x.options());
+
+  return std::make_tuple(d0, d1, d2);
+}
+
 template <typename scalar_t>
 std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
     const at::Tensor& x,
@@ -23,12 +45,15 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
     const c10::optional<at::Tensor>& b0,
     const at::Tensor& w1,
     const c10::optional<at::Tensor>& b1) {
+  TORCH_CHECK(x.dim() == 2);
+  TORCH_CHECK(w0.dim() == 2);
+  TORCH_CHECK(w1.dim() == 2);
+
   TORCH_CHECK(x.stride(-1) == 1);
   TORCH_CHECK(w0.stride(-1) == 1);
   TORCH_CHECK(w1.stride(-1) == 1);
 
   at::cuda::CUDAGuard device_guard(x.device());
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   int64_t B = x.size(0);
   int64_t I = x.size(1);
@@ -37,6 +62,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
   at::Tensor d0 = at::empty({B, H}, x.options());
   at::Tensor d1 = at::empty({B, H}, x.options());
   at::Tensor d2 = at::empty({B, H}, x.options());
+
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   // templati-ze the cutlass kernel
   cutlass::gemm::GemmCoord problem_size(B, H, I);
@@ -149,6 +176,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
       typename DualGemm::EpilogueOutputOp1::Params{alpha1, beta1},
       typename DualGemm::EpilogueOutputOp2::Params{},
       split_k_slices};
+
   DualGemm dual_gemm;
   at::Tensor workspace = at::empty(
       {int64_t(dual_gemm.get_workspace_size(arguments))},
@@ -158,10 +186,12 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
       status == cutlass::Status::kSuccess,
       "`dual_gemm_silu_identity_mul` does not support this input: ",
       cutlass::cutlassGetStatusString(status));
+
   status = dual_gemm.initialize(arguments, (uint8_t*)workspace.data_ptr());
   TORCH_CHECK(status == cutlass::Status::kSuccess, "kernel initialize failed");
   status = dual_gemm(stream);
   TORCH_CHECK(status == cutlass::Status::kSuccess, "kernel run failed");
+
   return std::make_tuple(d0, d1, d2);
 }
 
@@ -177,7 +207,6 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul(
   TORCH_CHECK(w1.dim() == 2);
 
 #define FWD_PARAMS x, w0, b0, w1, b1
-
   if (x.scalar_type() == at::ScalarType::Half) {
     return dual_gemm_silu_identity_mul_<cutlass::half_t>(FWD_PARAMS);
   } else {
@@ -210,6 +239,12 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::dual_gemm_silu_identity_mul"),
       TORCH_FN(dual_gemm_silu_identity_mul));
+}
+
+TORCH_LIBRARY_IMPL(xformers, Meta, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::dual_gemm_silu_identity_mul"),
+      TORCH_FN(dual_gemm_silu_identity_mul_META));
 }
 
 TORCH_LIBRARY_IMPL(xformers, Autocast, m) {

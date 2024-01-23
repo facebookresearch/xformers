@@ -387,6 +387,46 @@ def swiglu(
     return op(x, w1w2, b1b2, w3, b3).reshape([*batch_shape, -1])
 
 
+def swiglu_packed(
+    x: torch.Tensor,
+    w1w2: torch.Tensor,
+    b1b2: Optional[torch.Tensor],
+    w3: torch.Tensor,
+    b3: Optional[torch.Tensor],
+    *,
+    op: SwiGLUOp,
+) -> torch.Tensor:
+    """
+    Computes a SwiGLU block given the weights/bias of the 3
+    linear layers.
+
+    :Equivalent pytorch code:
+
+    .. code-block:: python
+
+        x1 = F.linear(x, w1, b1)
+        x2 = F.linear(x, w2, b2)
+        hidden = F.silu(x1) * x2
+        return F.linear(hidden, w3, b3)
+
+    :Supported hardware:
+
+    This operator is only optimized on A100+ on ``torch.half`` or ``torch.bfloat16`` \
+        (autocast is supported), and will fallback to a functional pytorch \
+        implementation otherwise.
+    """
+    batch_shape = x.shape[:-1]
+    x = x.reshape([-1, x.shape[-1]])
+
+    if b3 is not None:
+        if b3.ndim != 1 or b3.shape[0] != w3.shape[0]:
+            raise ValueError(f"Invalid shapes for w3: {w3.shape} / b3: {b3.shape}")
+
+    assert op.PACKED_WEIGHTS, "Not implemented PACKED_WEIGHTS"
+
+    return op(x, w1w2, b1b2, w3, b3).reshape([*batch_shape, -1])
+
+
 class SwiGLU(nn.Module):
     """
     A Module that encapsulates the call to :attr:`xformers.ops.swiglu`,
@@ -426,7 +466,7 @@ class SwiGLU(nn.Module):
         self.hidden_features = hidden_features
         self.out_features = out_features
         self.in_features = in_features
-        self.op = None
+        self.op: Optional[SwiGLUOp] = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Computes :attr:`swiglu` with the module's weights
@@ -437,6 +477,13 @@ class SwiGLU(nn.Module):
         Returns:
             torch.Tensor: A Tensor of shape ``[..., out_features]``
         """
+        if self.w12 is not None:
+            if self.op is not None:
+                assert (
+                    self.op.PACKED_WEIGHTS
+                ), "_pack_weights and self.op.PACKED_WEIGHTS should match"
+                return swiglu_packed(x, *self._packed_ordered_params(), op=self.op)
+
         return swiglu(x, *self._ordered_params(), op=self.op)
 
     def _ordered_params(
@@ -466,11 +513,39 @@ class SwiGLU(nn.Module):
         else:
             w1, w2 = self.w1.weight, self.w2.weight
             b1, b2 = self.w1.bias, self.w2.bias
+
         return (
             w1,
             b1,
             w2,
             b2,
+            self.w3.weight,
+            self.w3.bias,
+        )
+
+    def _packed_ordered_params(
+        self,
+    ) -> Tuple[
+        torch.Tensor,
+        Optional[torch.Tensor],
+        torch.Tensor,
+        Optional[torch.Tensor],
+    ]:
+        assert self.w12 is not None, "Packed weights are only available when using w12"
+
+        """Used for testing - returns ordered arguments for packed operators"""
+        w1w2 = self.w12.weight
+        b1b2_param = self.w12.bias
+
+        w1w2 = w1w2.view([2, w1w2.shape[0] // 2, w1w2.shape[1]])
+
+        b1b2: Optional[torch.Tensor] = None
+        if b1b2_param is not None:
+            b1b2 = b1b2_param.view([2, b1b2_param.shape[0] // 2])
+
+        return (
+            w1w2,
+            b1b2,
             self.w3.weight,
             self.w3.bias,
         )

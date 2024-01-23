@@ -12,6 +12,7 @@ from typing import ContextManager, Optional, Sequence, cast
 import pytest
 import torch
 
+import xformers
 import xformers.ops.swiglu_op as xsw
 
 torch.backends.cuda.matmul.allow_tf32 = False
@@ -22,7 +23,11 @@ if torch.cuda.is_available():
 else:
     _devices = []
     _is_sm80 = False
-sm80_only = pytest.mark.skipif(not _is_sm80, reason="requires sm80")
+cuda_sm80_only = pytest.mark.skipif(not _is_sm80, reason="requires sm80+")
+
+torch_compile_tests = pytest.mark.skipif(
+    torch.__version__ < "2.2.0.dev20231122", reason="requires PyTorch 2.2+"
+)
 
 
 def assert_allclose(
@@ -102,10 +107,25 @@ def generate_test_shapes():
     return shapes
 
 
+# Switch between these shape initialisations ...
 _test_shapes = list(generate_test_shapes())
 _test_shapes_ids = [str(s) for s in _test_shapes]
 _dtypes = [torch.bfloat16, torch.float16]
 _ops: Sequence[xsw.SwiGLUOp] = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
+
+FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-2, torch.bfloat16: 1e-2}
+FORWARD_RTOL = {torch.float: 1e-5, torch.half: 4e-3, torch.bfloat16: 4e-3}
+
+BACKWARD_ATOL = {
+    torch.float: 3e-4,
+    torch.half: 0.5,
+    torch.bfloat16: 4.0,  # !!
+}
+BACKWARD_RTOL = {
+    torch.float: 2e-3,
+    torch.half: 1e-2,
+    torch.bfloat16: 4e-2,
+}
 
 
 @functools.lru_cache(maxsize=1)
@@ -134,18 +154,6 @@ def test_forward_backward(
     bias: bool,
 ):
     torch.manual_seed(shape[0] * shape[1] * shape[2])
-    FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-2, torch.bfloat16: 1e-2}
-    FORWARD_RTOL = {torch.float: 1e-5, torch.half: 4e-3, torch.bfloat16: 4e-3}
-    BACKWARD_ATOL = {
-        torch.float: 3e-4,
-        torch.half: 0.5,
-        torch.bfloat16: 4.0,  # !!
-    }
-    BACKWARD_RTOL = {
-        torch.float: 2e-3,
-        torch.half: 1e-2,
-        torch.bfloat16: 4e-2,
-    }
 
     if not op.supports(
         xsw.SwiGLUOpDispatch(
@@ -230,3 +238,228 @@ def test_forward_backward(
         )
         # Ensure `gout >> atol`, so that the test is meaningful
         assert gout.norm(2) > BACKWARD_ATOL[dtype] / BACKWARD_RTOL[dtype]
+
+
+@torch_compile_tests
+@cuda_sm80_only
+@pytest.mark.parametrize("device", _devices)
+@pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
+@pytest.mark.parametrize("bias", [False, True], ids=["nobias", "bias"])
+def test_swiglu_compile(
+    device,
+    dtype,
+    bias: bool,
+):
+    op = xsw.SwiGLUPackedFusedOp
+    shape = [2048, 2048, 5632]
+
+    # Eager
+    mod = copy.deepcopy(
+        create_module_cached(
+            in_features=shape[1],
+            hidden_features=shape[2],
+            bias=bias,
+            _pack_weights=True,
+        )
+    )
+    mod = cast(xsw.SwiGLU, mod)
+    mod.op = op
+    mod = mod.to(device).to(dtype)
+
+    # Torch compile
+    mod_c = cast(xsw.SwiGLU, torch.compile(mod, fullgraph=True, dynamic=True))
+
+    assert mod.w12 is not None
+    assert mod_c.w12 is not None
+
+    x = torch.randn(shape[:2], device=device, dtype=dtype, requires_grad=True)
+    x_c = x.detach().requires_grad_()
+    grad = torch.randn(shape[:2], device=device, dtype=dtype, requires_grad=False) * 0.1
+
+    # Forward passes
+    output = mod(x)
+    output_c = mod_c(x_c)
+
+    # Backward passes
+    output.backward(grad)
+    output_c.backward(grad)
+
+    assert_allclose(
+        output, output_c, msg="fw", atol=FORWARD_ATOL[dtype], rtol=FORWARD_RTOL[dtype]
+    )
+
+    assert x_c.grad is not None and x.grad is not None
+    assert_allclose(
+        x_c.grad,
+        x.grad,
+        msg="grad",
+        atol=BACKWARD_ATOL[dtype],
+        rtol=BACKWARD_RTOL[dtype],
+    )
+
+    assert mod.w12.weight.grad is not None and mod_c.w12.weight.grad is not None
+    assert_allclose(
+        mod.w12.weight.grad,
+        mod_c.w12.weight.grad,
+        msg="w12.grad",
+        atol=BACKWARD_ATOL[dtype],
+        rtol=BACKWARD_RTOL[dtype],
+    )
+
+    assert mod.w3.weight.grad is not None and mod_c.w3.weight.grad is not None
+    assert_allclose(
+        mod.w3.weight.grad,
+        mod_c.w3.weight.grad,
+        msg="w3.grad",
+        atol=BACKWARD_ATOL[dtype],
+        rtol=BACKWARD_RTOL[dtype],
+    )
+
+    if bias:
+        assert mod.w12.bias.grad is not None and mod_c.w12.bias.grad is not None
+        assert_allclose(
+            mod.w12.bias.grad,
+            mod_c.w12.bias.grad,
+            msg="w12.bias.grad",
+            atol=BACKWARD_ATOL[dtype],
+            rtol=BACKWARD_RTOL[dtype],
+        )
+
+        assert mod.w3.bias.grad is not None and mod_c.w3.bias.grad is not None
+        assert_allclose(
+            mod.w3.bias.grad,
+            mod_c.w3.bias.grad,
+            msg="w12.bias.grad",
+            atol=BACKWARD_ATOL[dtype],
+            rtol=BACKWARD_RTOL[dtype],
+        )
+
+
+@torch.inference_mode()
+@torch_compile_tests
+@cuda_sm80_only
+@pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
+@pytest.mark.parametrize("device", _devices)
+@pytest.mark.parametrize("bias", [False, True], ids=["nobias", "bias"])
+def test_dual_gemm_silu_identity_mul_compile(dtype, device, bias) -> None:
+    N, M, H = (2048, 2048, 5632)
+
+    x = torch.randn([N, M], device=device, dtype=dtype, requires_grad=False)
+    w1 = torch.randn([H, M], device=device, dtype=dtype, requires_grad=False)
+    w2 = torch.randn([H, M], device=device, dtype=dtype, requires_grad=False)
+
+    b1: Optional[torch.Tensor] = None
+    b2: Optional[torch.Tensor] = None
+
+    if bias:
+        b1 = torch.randn([H], device=device, dtype=dtype, requires_grad=False)
+        b2 = torch.randn([H], device=device, dtype=dtype, requires_grad=False)
+
+    DualGemmSiluOp = xformers.ops.common.get_xformers_operator(
+        "dual_gemm_silu_identity_mul"
+    )
+
+    def fn(x):
+        x1, x2, x4 = DualGemmSiluOp(x, w1, b1, w2, b2)
+        return [x1, x2, x4]
+
+    # Eager
+    output = fn(x)
+
+    # Torch compile
+    opt_output = torch.compile(fn, fullgraph=True, dynamic=True)(x)
+
+    for a, b in zip(output, opt_output):
+        assert_allclose(
+            a, b, msg="fw", atol=FORWARD_ATOL[dtype], rtol=FORWARD_RTOL[dtype]
+        )
+
+
+@torch.inference_mode()
+@cuda_sm80_only
+@torch_compile_tests
+@pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
+@pytest.mark.parametrize("device", _devices)
+def test_gemm_fused_operand_sum_compile(dtype, device) -> None:
+    shape = [2048, 2048, 5632]
+    x = torch.randn(
+        [shape[0], shape[2]], device=device, dtype=dtype, requires_grad=False
+    )
+    dy = torch.randn(shape[:2], device=device, dtype=dtype, requires_grad=False)
+    db = torch.empty([dy.shape[1]], dtype=dy.dtype, device=dy.device)
+    dw = torch.empty([dy.shape[1], x.shape[1]], dtype=dy.dtype, device=dy.device)
+
+    GemmFusedSumOp = xformers.ops.common.get_xformers_operator("gemm_fused_operand_sum")
+
+    def fn(x):
+        GemmFusedSumOp(dy.transpose(-2, -1), x, dw, db)
+        return [dw, db]
+
+    # Eager
+    output = fn(x)
+
+    # Torch compile
+    opt_output = torch.compile(fn, fullgraph=True, dynamic=True)(x)
+
+    for a, b in zip(output, opt_output):
+        assert_allclose(
+            a, b, msg="fw", atol=FORWARD_ATOL[dtype], rtol=FORWARD_RTOL[dtype]
+        )
+
+
+@torch.inference_mode()
+@torch_compile_tests
+@pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
+@pytest.mark.parametrize("device", _devices)
+def test_silu_bw_fused_compile(dtype, device) -> None:
+    shape = [2048, 2048]
+    x1 = torch.randn(shape, device=device, dtype=dtype, requires_grad=False)
+    x2 = torch.randn(shape, device=device, dtype=dtype, requires_grad=False)
+    dx4 = torch.randn(shape, device=device, dtype=dtype, requires_grad=False)
+
+    SiluBWFusedOp = xformers.ops.common.get_xformers_operator("silu_bw_fused")
+
+    def fn(x1, x2, dx4):
+        dx1dx2, x4 = SiluBWFusedOp(x1, x2, dx4)
+        return [dx1dx2, x4]
+
+    # Eager
+    with torch.autocast("cuda", dtype=dtype):
+        output = fn(x1, x2, dx4)
+
+    # Torch compile
+    opt_output = torch.compile(fn, fullgraph=True, dynamic=True)(x1, x2, dx4)
+
+    for a, b in zip(output, opt_output):
+        assert_allclose(
+            a, b, msg="fw", atol=FORWARD_ATOL[dtype], rtol=FORWARD_RTOL[dtype]
+        )
+
+
+@cuda_only
+@cuda_sm80_only
+def test_autocast_silu_bw_fused_compile() -> None:
+    shape = [2048, 2048]
+    device = "cuda"
+    dtype = torch.float32
+
+    x1 = torch.randn(shape, device=device, dtype=dtype)
+    x2 = torch.randn(shape, device=device, dtype=dtype)
+    dx4 = torch.randn(shape, device=device, dtype=dtype)
+
+    SiluBWFusedOp = xformers.ops.common.get_xformers_operator("silu_bw_fused")
+
+    def fn(x1, x2, dx4):
+        dx1dx2, x4 = SiluBWFusedOp(x1, x2, dx4)
+        return [dx1dx2, x4]
+
+    output = fn(x1, x2, dx4)
+
+    # Autocast
+    with torch.autocast("cuda", dtype=dtype):
+        output_ac = fn(x1, x2, dx4)
+
+    for a, b in zip(output, output_ac):
+        assert_allclose(
+            a, b, msg="fw", atol=FORWARD_ATOL[dtype], rtol=FORWARD_RTOL[dtype]
+        )

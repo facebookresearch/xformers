@@ -202,6 +202,7 @@ void gemm_fused_operand_sum_(
   TORCH_CHECK(status == cutlass::Status::kSuccess, "kernel run failed");
 }
 
+template <bool kIsMeta = false>
 std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum(
     const at::Tensor& a,
     const at::Tensor& b,
@@ -211,24 +212,27 @@ std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum(
   TORCH_CHECK(a.dim() == 2);
   TORCH_CHECK(b.dim() == 2);
   TORCH_CHECK(out_mm.dim() == 2);
-  TORCH_CHECK(out_mm.size(0) == a.size(0));
-  TORCH_CHECK(out_mm.size(1) == b.size(1));
+  TORCH_CHECK(out_mm.sym_size(0) == a.sym_size(0));
+  TORCH_CHECK(out_mm.sym_size(1) == b.sym_size(1));
   TORCH_CHECK(out_sum.dim() == 1);
 
 #define FWD_PARAMS a, b, out_mm, out_sum
 
-  if (a.scalar_type() == at::ScalarType::Half) {
-    TORCH_CHECK(b.scalar_type() == at::ScalarType::Half);
-    TORCH_CHECK(out_mm.scalar_type() == at::ScalarType::Half);
-    TORCH_CHECK(out_sum.scalar_type() == at::ScalarType::Half);
-    gemm_fused_operand_sum_<cutlass::half_t>(FWD_PARAMS);
-  } else {
-    TORCH_CHECK(
-        a.scalar_type() == at::ScalarType::BFloat16, "Only supports bf16/f16");
-    TORCH_CHECK(b.scalar_type() == at::ScalarType::BFloat16);
-    TORCH_CHECK(out_mm.scalar_type() == at::ScalarType::BFloat16);
-    TORCH_CHECK(out_sum.scalar_type() == at::ScalarType::BFloat16);
-    gemm_fused_operand_sum_<cutlass::bfloat16_t>(FWD_PARAMS);
+  if (!kIsMeta) {
+    if (a.scalar_type() == at::ScalarType::Half) {
+      TORCH_CHECK(b.scalar_type() == at::ScalarType::Half);
+      TORCH_CHECK(out_mm.scalar_type() == at::ScalarType::Half);
+      TORCH_CHECK(out_sum.scalar_type() == at::ScalarType::Half);
+      gemm_fused_operand_sum_<cutlass::half_t>(FWD_PARAMS);
+    } else {
+      TORCH_CHECK(
+          a.scalar_type() == at::ScalarType::BFloat16,
+          "Only supports bf16/f16");
+      TORCH_CHECK(b.scalar_type() == at::ScalarType::BFloat16);
+      TORCH_CHECK(out_mm.scalar_type() == at::ScalarType::BFloat16);
+      TORCH_CHECK(out_sum.scalar_type() == at::ScalarType::BFloat16);
+      gemm_fused_operand_sum_<cutlass::bfloat16_t>(FWD_PARAMS);
+    }
   }
   return std::make_tuple(out_mm, out_sum);
 }
@@ -251,7 +255,13 @@ std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum_autocast(
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::gemm_fused_operand_sum"),
-      TORCH_FN(gemm_fused_operand_sum));
+      TORCH_FN(gemm_fused_operand_sum<false>));
+}
+
+TORCH_LIBRARY_IMPL(xformers, Meta, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::gemm_fused_operand_sum"),
+      TORCH_FN(gemm_fused_operand_sum<true>));
 }
 
 TORCH_LIBRARY_IMPL(xformers, Autocast, m) {

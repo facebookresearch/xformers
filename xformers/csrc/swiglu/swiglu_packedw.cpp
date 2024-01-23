@@ -236,3 +236,7 @@ TORCH_LIBRARY_IMPL(xformers, Autocast, m) {
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl("swiglu_packedw", swiglu_packedw_cuda);
 }
+
+TORCH_LIBRARY_IMPL(xformers, Meta, m) {
+  m.impl("swiglu_packedw", swiglu_packedw_cuda);
+}
