@@ -8,7 +8,7 @@
 
 namespace {
 constexpr int32_t kThreadsPerWavefront = 64;
-constexpr int32_t kWavefrontsPerBlock  = 8;
+constexpr int32_t kWavefrontsPerBlock  = 16;
 constexpr int32_t K_MAX                = 4 * kThreadsPerWavefront;
 } // namespace
 
@@ -72,7 +72,7 @@ at::Tensor& efficient_attention_forward_decoder_splitk_ck_out_impl(
 
     TORCH_CHECK(!seq_kv_lens || seq_kv_lens->is_cuda());
 
-    TORCH_CHECK(cache_K.size(1) <= KV_M_MAX);
+    TORCH_CHECK(cache_K.size(1) / split_k <= KV_M_MAX);
     TORCH_CHECK(cache_K.size(4) <= K_MAX);
 
     constexpr auto rank = 5;
