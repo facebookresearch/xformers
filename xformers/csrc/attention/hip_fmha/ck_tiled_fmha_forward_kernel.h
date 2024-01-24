@@ -472,56 +472,13 @@ struct FmhaFwdKernel
                     transform_tensor_view(v_dram_naive,
                                           make_tuple(make_pass_through_transform(kargs.seqlen_k),
                                                      make_pass_through_transform(kargs.hdim_v)),
-                                          make_tuple(Sequence<1>{}, Sequence<0>{}),
-                                          make_tuple(Sequence<0>{}, Sequence<1>{}));
+                                          make_tuple(Sequence<0>{}, Sequence<1>{}),
+                                          make_tuple(Sequence<1>{}, Sequence<0>{}));
 
-                /// FIXME: The return value of v_dram_naive.GetTensorDescriptor().GetLength() is
-                /// same as
-                ///   v_dram_transposed.GetTensorDescriptor().GetLength(). Replace following
-                ///   if-clause by pad_tensor_view() call after fixing this issue.
-                if constexpr(kK0N1NeedPadding || kN0K1NeedPadding)
-                {
-                    const auto transform_n1 = [&] {
-                        if constexpr(kK0N1NeedPadding)
-                        {
-                            const index_t n1_pad_length =
-                                FmhaPipeline::kN1 *
-                                    ck::math::integer_divide_ceil(kargs.hdim_v, FmhaPipeline::kN1) -
-                                kargs.hdim_v;
-
-                            return make_right_pad_transform(kargs.hdim_v, n1_pad_length);
-                        }
-                        else
-                        {
-                            return make_pass_through_transform(kargs.hdim_v);
-                        }
-                    }();
-
-                    const auto transform_k1 = [&] {
-                        if constexpr(kN0K1NeedPadding)
-                        {
-                            const index_t k1_pad_length =
-                                FmhaPipeline::kK1 * ck::math::integer_divide_ceil(
-                                                        kargs.seqlen_k, FmhaPipeline::kK1) -
-                                kargs.seqlen_k;
-
-                            return make_right_pad_transform(kargs.seqlen_k, k1_pad_length);
-                        }
-                        else
-                        {
-                            return make_pass_through_transform(kargs.seqlen_k);
-                        }
-                    }();
-
-                    return transform_tensor_view(v_dram_transposed,
-                                                 make_tuple(transform_n1, transform_k1),
-                                                 make_tuple(Sequence<0>{}, Sequence<1>{}),
-                                                 make_tuple(Sequence<0>{}, Sequence<1>{}));
-                }
-                else
-                {
-                    return v_dram_transposed;
-                }
+                return pad_tensor_view(
+                    v_dram_transposed,
+                    make_tuple(Number<FmhaPipeline::kN1>{}, Number<FmhaPipeline::kK1>{}),
+                    Sequence<kK0N1NeedPadding, kN0K1NeedPadding>{});
             }
             else
             {
