@@ -133,16 +133,16 @@ __global__ void efficient_attention_forward_decoder_splitk_reduce_ck_kernel(
         {
             O_split_compute.arr[i] = ck::type_convert<compute_t>(O_split_data.arr[i]);
         }
-        compute_t local_max         = *(split_max + blockIdx.x * split_k + split_idx);
-        compute_t local_sumexp      = *(split_sumexp + blockIdx.x * split_k + split_idx);
-        
-        compute_t log_alpha         = -std::abs(local_max - global_max);
-        compute_t alpha             = isnan(log_alpha) ? compute_t{1.} : ck::math::exp(log_alpha);
-        
+        compute_t local_max    = *(split_max + blockIdx.x * split_k + split_idx);
+        compute_t local_sumexp = *(split_sumexp + blockIdx.x * split_k + split_idx);
+
+        compute_t log_alpha = -std::abs(local_max - global_max);
+        compute_t alpha     = isnan(log_alpha) ? compute_t{1.} : ck::math::exp(log_alpha);
+
         bool pick_new               = local_max < global_max;
         compute_t pick_current_coef = pick_new ? 1. : alpha;
         compute_t pick_new_coef     = pick_new ? alpha : 1.;
-        
+
         global_sumexp = pick_current_coef * global_sumexp + pick_new_coef * local_sumexp;
         global_O_compute.vec =
             pick_current_coef * global_O_compute.vec + pick_new_coef * O_split_compute.vec;
@@ -207,8 +207,8 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
     // tokens.
     const int32_t t_max = seq_kv_lens ? seq_kv_lens[b] : K_size_m;
 
-    const int32_t lane_idx              = threadIdx.x;
-    const int32_t wavefront_idx         = threadIdx.y;
+    const int32_t lane_idx      = threadIdx.x;
+    const int32_t wavefront_idx = threadIdx.y;
     // TODO: `threads_per_wavefront` and `wavefronts_per_block` may be compile time constants;
     // investigate when optimizing
     const int32_t threads_per_wavefront = blockDim.x;
@@ -255,7 +255,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
 
     data_vec_t k_loads[n_loop_unroll] = {};
 
-    const auto dtt              = wavefronts_per_block * n_loop_unroll;
+    const auto dtt = wavefronts_per_block * n_loop_unroll;
     // only last split gets the tail.
     // the first (split_k - 1) splits have a number of iterations divisible by `dtt`
     const auto n_unrolled_loops = t_max / dtt / split_k; // +1?
@@ -283,12 +283,11 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
         for(auto ttt = 0; ttt < n_loop_unroll; ++ttt)
         {
             compute_t qk_acc = 0;
-            ck::inner_product<data_vec_t, data_vec_t, compute_t>(
-                q_thread, k_loads[ttt], qk_acc);
-            qk_acc  *= qk_scale;
+            ck::inner_product<data_vec_t, data_vec_t, compute_t>(q_thread, k_loads[ttt], qk_acc);
+            qk_acc *= qk_scale;
 
-            qk_acc = wavefrontReduce(qk_acc, [](auto a, auto b) { return a + b; });
-            max_qk_acc   = ck::math::max(qk_acc, max_qk_acc);
+            qk_acc     = wavefrontReduce(qk_acc, [](auto a, auto b) { return a + b; });
+            max_qk_acc = ck::math::max(qk_acc, max_qk_acc);
             if(lane_idx == 0)
             {
                 smem[tt + ttt - n_unrolled_loops * dtt * split_idx] = qk_acc;
@@ -356,47 +355,44 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
 
     // each wavefront computes partial sum of exp.
     { // softmax reduce begin
-    compute_t softmax_denominator = 0.0f;
-    const int32_t t_low = n_unrolled_loops * dtt * split_idx;
-    const int32_t t_high = (split_idx + 1 < split_k) ? n_unrolled_loops * dtt * (split_idx + 1) : t_max;
-    for(int32_t t = t_low + thread_linear_idx; 
-        t < t_high; 
-        t += threads_per_block)
-    {
-        softmax_denominator += ck::math::exp(smem[t - t_low] - max_qk_acc);
-    }
-    softmax_denominator =
-        wavefrontReduce(softmax_denominator, [](auto a, auto b) { return a + b; });
+        compute_t softmax_denominator = 0.0f;
+        const int32_t t_low           = n_unrolled_loops * dtt * split_idx;
+        const int32_t t_high =
+            (split_idx + 1 < split_k) ? n_unrolled_loops * dtt * (split_idx + 1) : t_max;
+        for(int32_t t = t_low + thread_linear_idx; t < t_high; t += threads_per_block)
+        {
+            softmax_denominator += ck::math::exp(smem[t - t_low] - max_qk_acc);
+        }
+        softmax_denominator =
+            wavefrontReduce(softmax_denominator, [](auto a, auto b) { return a + b; });
 
-    if(lane_idx == 0)
-    {
-        smem[KV_M_MAX + wavefront_idx] = softmax_denominator;
-    }
-    __syncthreads();
+        if(lane_idx == 0)
+        {
+            smem[KV_M_MAX + wavefront_idx] = softmax_denominator;
+        }
+        __syncthreads();
 
-    // now, compute sum of exp(x - max(x)) over all intermediate results.
-    softmax_denominator = 0.0;
-    if(lane_idx < wavefronts_per_block)
-    {
-        softmax_denominator = smem[KV_M_MAX + lane_idx];
-    }
-    softmax_denominator =
-        wavefrontReduce(softmax_denominator, [](auto a, auto b) { return a + b; });
+        // now, compute sum of exp(x - max(x)) over all intermediate results.
+        softmax_denominator = 0.0;
+        if(lane_idx < wavefronts_per_block)
+        {
+            softmax_denominator = smem[KV_M_MAX + lane_idx];
+        }
+        softmax_denominator =
+            wavefrontReduce(softmax_denominator, [](auto a, auto b) { return a + b; });
 
-    if(wavefront_idx == 0 && lane_idx == 0)
-    {
-        split_sumexp[blockIdx.x * split_k + split_idx] = softmax_denominator;
-    }
+        if(wavefront_idx == 0 && lane_idx == 0)
+        {
+            split_sumexp[blockIdx.x * split_k + split_idx] = softmax_denominator;
+        }
 
-    // now, compute the normalization across all threads.
-    for(int32_t t = t_low + thread_linear_idx; 
-        t < t_high;
-        t += threads_per_block)
-    {
-        // softmax scale by sumexp will happen in the reduction kernel
-        smem[t - t_low] = ck::math::exp(smem[t - t_low] - max_qk_acc);
-    }
-    __syncthreads();
+        // now, compute the normalization across all threads.
+        for(int32_t t = t_low + thread_linear_idx; t < t_high; t += threads_per_block)
+        {
+            // softmax scale by sumexp will happen in the reduction kernel
+            smem[t - t_low] = ck::math::exp(smem[t - t_low] - max_qk_acc);
+        }
+        __syncthreads();
     } // softmax reduce end
 
     // Split T across wavefronts in a block
@@ -439,7 +435,7 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
                     load_v<data_t, data_vec_t>(
                         cache_V_base + t * K_stride_m, lane_idx, &k_loads[ttt]);
                     ps[ttt] = smem[t - n_unrolled_loops * dtt * split_idx];
-                    o_acc = scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
+                    o_acc   = scalar_scale_acc<data_t, vec_size>(o_acc, k_loads[ttt], ps[ttt]);
                 }
             }
         }
@@ -632,8 +628,9 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator
         using Argument = DeviceOp::Argument;
         float Run(const Argument& arg, const StreamConfig& stream_config = StreamConfig{})
         {
-            // std::cout << arg.str() << std::endl << "stream_id: " << stream_config.stream_id_ << std::endl;
-            
+            // std::cout << arg.str() << std::endl << "stream_id: " << stream_config.stream_id_ <<
+            // std::endl;
+
             auto threads_per_wavefront = arg.block_dim.x;
 
             auto Q_size_k_alignment_necessary = 0;
