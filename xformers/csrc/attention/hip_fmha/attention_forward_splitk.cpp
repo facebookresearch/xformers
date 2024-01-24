@@ -8,7 +8,7 @@
 
 namespace {
 constexpr int32_t kThreadsPerWavefront = 64;
-constexpr int32_t kWavefrontsPerBlock  = 1;
+constexpr int32_t kWavefrontsPerBlock  = 8;
 constexpr int32_t K_MAX                = 4 * kThreadsPerWavefront;
 } // namespace
 

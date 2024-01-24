@@ -355,10 +355,15 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
     }
 
     // each wavefront computes partial sum of exp.
+    { // softmax reduce begin
     compute_t softmax_denominator = 0.0f;
-    for(int32_t t = n_unrolled_loops * dtt * split_idx + thread_linear_idx; t < tt_tail_high; t += threads_per_block)
+    const int32_t t_low = n_unrolled_loops * dtt * split_idx;
+    const int32_t t_high = (split_idx + 1 < split_k) ? n_unrolled_loops * dtt * (split_idx + 1) : t_max;
+    for(int32_t t = t_low + thread_linear_idx; 
+        t < t_high; 
+        t += threads_per_block)
     {
-        softmax_denominator += ck::math::exp(smem[t - n_unrolled_loops * dtt * split_idx] - max_qk_acc);
+        softmax_denominator += ck::math::exp(smem[t - t_low] - max_qk_acc);
     }
     softmax_denominator =
         wavefrontReduce(softmax_denominator, [](auto a, auto b) { return a + b; });
@@ -384,12 +389,15 @@ efficient_attention_forward_decoder_splitk_ck_kernel(const scalar_t* __restrict_
     }
 
     // now, compute the normalization across all threads.
-    for(int32_t t = n_unrolled_loops * dtt * split_idx + thread_linear_idx; t < tt_tail_high; t += threads_per_block)
+    for(int32_t t = t_low + thread_linear_idx; 
+        t < t_high;
+        t += threads_per_block)
     {
         // softmax scale by sumexp will happen in the reduction kernel
-        smem[t - n_unrolled_loops * dtt * split_idx] = ck::math::exp(smem[t - n_unrolled_loops * dtt * split_idx] - max_qk_acc);
+        smem[t - t_low] = ck::math::exp(smem[t - t_low] - max_qk_acc);
     }
     __syncthreads();
+    } // softmax reduce end
 
     // Split T across wavefronts in a block
     // each wavefront compute sum(t_subset) P[t] * V[t_subset, d]
