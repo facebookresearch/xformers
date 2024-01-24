@@ -923,9 +923,9 @@ static void test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq
 {
     auto [XQ, K, V, seqlen] = generate_inputs(padding, batch_size, Hq, Hkv);
 
-    auto [O_ref, m_ref, l_ref] = split_attention_torch(XQ, K, V, seqlen, split_k, /* block_size */ 16);
+    auto [O_ref, m_ref, l_ref] = split_attention_torch(XQ, K, V, seqlen, split_k, /* block_size */ kWavefrontsPerBlock * 16);
 
-    auto [O_hip, m_hip, l_hip] = split_attention_hip(XQ, K, V, seqlen, split_k, /* wavefronts_per_block */ 1);
+    auto [O_hip, m_hip, l_hip] = split_attention_hip(XQ, K, V, seqlen, split_k, kWavefrontsPerBlock);
 
     auto O_percent_mismatch = percent_mismatch(O_ref, O_hip);
     auto m_percent_mismatch = percent_mismatch(m_ref, m_hip);
@@ -949,7 +949,7 @@ static void test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq
 static void test_split_reduce(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hkv, int32_t split_k) {
     auto [XQ, K, V, seqlen] = generate_inputs(padding, batch_size, Hq, Hkv);
 
-    auto [O_ref, m_ref, l_ref] = split_attention_hip(XQ, K, V, seqlen, split_k, /* wavefronts_per_block */ 1);
+    auto [O_ref, m_ref, l_ref] = split_attention_hip(XQ, K, V, seqlen, split_k, kWavefrontsPerBlock);
 
     auto O_torch = split_reduce_torch(O_ref, m_ref.unsqueeze(0), l_ref.unsqueeze(0), split_k);
     auto O_hip = split_reduce_hip(O_ref, m_ref, l_ref, split_k);
@@ -965,7 +965,7 @@ static void test_splitk_decoder_e2e_correctness(int32_t padding, int32_t batch_s
 
     double qk_scale        = 1. / sqrt(XQ.size(-1));
 
-    auto result = efficient_attention_forward_decoder_splitk_ck_impl</* threads_per_wavefront */ 64, /* wavefronts_per_block */ 1>(
+    auto result = efficient_attention_forward_decoder_splitk_ck_impl<kThreadsPerWavefront, kWavefrontsPerBlock>(
         XQ, K, V, seqlen, qk_scale, split_k);
     auto gold_result = efficient_attention_forward_decoder_splitk_torch(XQ, K, V, seqlen, qk_scale, /* split_k */ 1, /* block_size */ 1);
     auto e2e_mismatch = percent_mismatch(result, gold_result);
