@@ -628,11 +628,7 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator
         using Argument = DeviceOp::Argument;
         float Run(const Argument& arg, const StreamConfig& stream_config = StreamConfig{})
         {
-            // std::cout << arg.str() << std::endl << "stream_id: " << stream_config.stream_id_ <<
-            // std::endl;
-
             auto threads_per_wavefront = arg.block_dim.x;
-
             auto Q_size_k_alignment_necessary = 0;
 
             for(auto vec_size : {4, 2, 1})

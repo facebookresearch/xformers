@@ -503,12 +503,7 @@ struct FMHADecoderSplitAttentionDeviceOp : public BaseOperator
         using Argument = DeviceOp::Argument;
         float Run(const Argument& arg, const StreamConfig& stream_config = StreamConfig{})
         {
-
-            // std::cout << arg.str() << std::endl << "stream_id: " << stream_config.stream_id_ <<
-            // std::endl;
-
             auto threads_per_wavefront = arg.block_dim.x;
-
             auto Q_size_k_alignment_necessary = 0;
 
             for(auto vec_size : {4, 2, 1})
@@ -673,10 +668,6 @@ struct FMHADecoderSplitReduceDeviceOp : public BaseOperator
         float Run(const Argument& arg, const StreamConfig& stream_config = StreamConfig{})
         {
             auto threads_per_wavefront = arg.block_dim.x;
-
-            // std::cout << arg.str() << std::endl << "stream_id: " << stream_config.stream_id_ <<
-            // std::endl;
-
             auto O_size_k_alignment_necessary = 0;
 
             for(auto vec_size : {4, 2, 1})
@@ -955,10 +946,6 @@ test_split_attention(int32_t padding, int32_t batch_size, int32_t Hq, int32_t Hk
     auto O_percent_mismatch = percent_mismatch(O_ref, O_hip);
     auto m_percent_mismatch = percent_mismatch(m_ref, m_hip);
     auto l_percent_mismatch = percent_mismatch(l_ref, l_hip);
-
-    // if (m_percent_mismatch > 0) {
-    //     std::cout << "ref: " << m_ref << std::endl << "hip: " << m_hip << std::endl;
-    // }
 
     printf("[Test split attention] Padding=%d BS=%d Hq=%d Hkv=%d split_k=%d Mismatched split_O "
            "elements percentage: %.2f Mismatched split_max elements percentage: %.2f Mismatched "
