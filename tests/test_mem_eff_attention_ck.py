@@ -11,7 +11,6 @@ from typing import List, Optional, Sequence, Tuple, Type, TypeVar
 import pytest
 import torch
 import torch.nn.functional as F
-from scipy.stats import binomtest
 from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
@@ -939,6 +938,8 @@ def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
 @pytest.mark.parametrize("op", ALL_FW_OPS, ids=list(map(lambda t: t.NAME, ALL_FW_OPS)))
 @pytest.mark.parametrize("dtype", [torch.half, torch.bfloat16])
 def test_dropout(dtype, op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
+    from scipy.stats import binomtest
+
     device = "cuda"
     scale = 0.05 
     query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
