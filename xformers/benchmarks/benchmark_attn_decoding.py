@@ -108,6 +108,10 @@ class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
     OP = xops.fmha.triton_splitk.FwOp
 
 
+class AttentionDecodingCKSplitKV(AttentionDecodingFlashDecoding):
+    OP = xops.fmha.forward_splitk.FwOp
+ 
+
 class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
     def fw(self) -> None:
         B, Mq, Mkv, Hq, Hkv, K = self.shapes
@@ -125,6 +129,7 @@ BENCHMARKS = {
     "ck-decoder": AttentionDecodingCKDecoder,
     "flash-decoding": AttentionDecodingFlashDecoding,
     "triton_splitK": AttentionDecodingSplitKV,
+    "ck_splitK": AttentionDecodingCKSplitKV,
 }
 
 
