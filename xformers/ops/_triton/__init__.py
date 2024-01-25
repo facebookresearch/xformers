@@ -4,6 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 
+# One reason this module is called `_triton` instead of just `triton` is this:
+# https://github.com/openai/triton/commit/c6040bcbd8a046785462481b2830b3fff5fc4aab
+
 from typing import TYPE_CHECKING
 
 import xformers
