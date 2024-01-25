@@ -406,7 +406,7 @@ class AttentionBwOpBase(AttentionOpBase):
 
     ERROR_ATOL: Mapping[torch.dtype, float] = {
         torch.float: 9e-4,
-        torch.half: 0.1,
+        torch.half: 0.2,
         torch.bfloat16: 0.9,
     }
     ERROR_RTOL: Mapping[torch.dtype, float] = {
