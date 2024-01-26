@@ -54,7 +54,7 @@ def sequence_parallel_leading_matmul_bwd(
     fuse: bool,
     process_group: torch.distributed.ProcessGroup,
 ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
-    mp_size = torch.distributed.get_world_size(process_group)
+    mp_size = process_group.size()
 
     if fuse:
         grad_scattered_input = torch.empty_like(scattered_input)
@@ -206,7 +206,7 @@ def sequence_parallel_trailing_matmul_bwd(
     fuse: bool,
     process_group: torch.distributed.ProcessGroup,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    mp_size = torch.distributed.get_world_size(process_group)
+    mp_size = process_group.size()
 
     if fuse:
         grad_gathered_input = torch.empty_like(gathered_input)

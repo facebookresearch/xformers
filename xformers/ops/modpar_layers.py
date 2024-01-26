@@ -25,8 +25,8 @@ def _init_2d_weight(
     # The reason we initialize the full unpartitioned/gathered weight is so that
     # different ranks get different initial values and thus "break the symmetry"
     # and in order to achieve the same init for any value of model parallelism.
-    rank = torch.distributed.get_rank(process_group)
-    world_size = torch.distributed.get_world_size(process_group)
+    rank = process_group.rank()
+    world_size = process_group.size()
 
     nrows, ncols = weight.shape
     if partition_dim == 0:
@@ -77,7 +77,7 @@ class ColumnParallelLinear(torch.nn.Module):
         self.sequence_parallel = sequence_parallel
         self.fuse_sequence_parallel = fuse_sequence_parallel
         self.process_group = process_group
-        mp_size = torch.distributed.get_world_size(process_group)
+        mp_size = process_group.size()
         assert all(dim % mp_size == 0 for dim in out_features)
         self.my_out_features = [dim // mp_size for dim in out_features]
 
@@ -136,7 +136,7 @@ class RowParallelLinear(torch.nn.Module):
         self.sequence_parallel = sequence_parallel
         self.fuse_sequence_parallel = fuse_sequence_parallel
         self.process_group = process_group
-        mp_size = torch.distributed.get_world_size(process_group)
+        mp_size = process_group.size()
         assert in_features % mp_size == 0
         self.my_in_features = in_features // mp_size
 

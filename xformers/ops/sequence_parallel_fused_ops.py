@@ -104,7 +104,7 @@ def _exchange_addresses(
     group: dist.ProcessGroup,
     device: torch.device,
 ) -> List[List[str]]:
-    world_size = dist.get_world_size(group=group)
+    world_size = group.size()
     my_addresses: List[str] = []
     for listener in listeners:
         addr = listener.address
@@ -179,8 +179,8 @@ class _FusedSequenceParallel:
     ):
         self.my_device = device
         self.dtype = dtype
-        self.my_rank = dist.get_rank(group=group)
-        self.world_size = dist.get_world_size(group=group)
+        self.my_rank = group.rank()
+        self.world_size = group.size()
         self.num_stripes = num_stripes
         self.my_device_capability = torch.cuda.get_device_capability(self.my_device)
 
@@ -670,13 +670,13 @@ def _can_ranks_communicate_all_to_all_over_nvlink(group: dist.ProcessGroup) -> b
     #   visible? maybe just trying to exchange IPC handles and catching errors
     #   would work? note that in any case some ranks might succeed while some
     #   might fail so we need a barrier to have them all make the same decision)
-    return dist.get_world_size(group=group) <= 8
+    return group.size() <= 8
 
 
 def _lazy_init(
     device: torch.device, dtype: torch.dtype, group: dist.ProcessGroup, num_stripes: int
 ) -> Optional[_FusedSequenceParallel]:
-    world_size = dist.get_world_size(group=group)
+    world_size = group.size()
     try:
         obj = CACHE[id(group)]
     except KeyError:
@@ -766,7 +766,7 @@ def fused_allgather_and_linear(
     memory for speed. This can be controlled using the num_stripes argument.
 
     """
-    world_size = dist.get_world_size(group=group)
+    world_size = group.size()
     weights = weight if isinstance(weight, list) else [weight]
     assert all(w.ndim == 2 for w in weights)
     assert scattered_input.ndim >= 2
@@ -828,7 +828,7 @@ def fused_allgather_and_anything(
     timeout_s: int = 60 * 60,
     **private_args_DO_NOT_USE,
 ) -> None:
-    world_size = dist.get_world_size(group=group)
+    world_size = group.size()
 
     if len(scattered_inputs) == 0:
         for src_rank in range(world_size):
@@ -928,7 +928,7 @@ def fused_linear_and_reducescatter(
     dist.reduce_scatter_tensor(scattered_output, gathered_output, group=group)
 
     """
-    world_size = dist.get_world_size(group=group)
+    world_size = group.size()
     weights = weight if isinstance(weight, list) else [weight]
     assert all(w.ndim == 2 for w in weights)
     assert gathered_input.ndim >= 2
@@ -996,7 +996,7 @@ def fused_anything_and_reducescatter(
     timeout_s: int = 60 * 60,
     **private_args_DO_NOT_USE,
 ) -> None:
-    world_size = dist.get_world_size(group=group)
+    world_size = group.size()
 
     if len(scattered_outputs) == 0:
         for dst_rank in range(world_size):
