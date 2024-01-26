@@ -97,23 +97,23 @@ def inner_seqpar(
         ).round()
         weight1, weight2 = [
             torch.testing.make_tensor(
-                (inner_dim, outer_dim),
+                (inner_dim * (idx + 1), outer_dim),
                 dtype=dtype,
                 device="cuda",
                 low=0,
                 high=1,
             ).round()
-            for _ in range(2)
+            for idx in range(2)
         ]
         gradient1, gradient2 = [
             torch.testing.make_tensor(
-                batch_dims + (inner_dim,),
+                batch_dims + (inner_dim * (idx + 1),),
                 dtype=dtype,
                 device="cuda",
                 low=0,
                 high=1,
             ).round()
-            for _ in range(2)
+            for idx in range(2)
         ]
 
         # Non-fused reference code
