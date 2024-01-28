@@ -849,9 +849,7 @@ def fused_allgather_and_linear(
                 else:
                     torch.matmul(inputs[0], w.t(), out=go[src_rank])
 
-    _is_regular_matmul = all(
-        [not _is_fp8_dtype(w.dtype) for w in weights]
-    )
+    _is_regular_matmul = all([not _is_fp8_dtype(w.dtype) for w in weights])
     fused_allgather_and_anything(
         [scattered_input],
         my_matmul,
@@ -1041,9 +1039,7 @@ def fused_linear_and_reducescatter(
         scattered_outputs = [
             gathered_input.new_empty(
                 sos,
-                dtype=out_dtype
-                if out_dtype is not None
-                else gathered_input.dtype,
+                dtype=out_dtype if out_dtype is not None else gathered_input.dtype,
             )
             for sos in scattered_output_shapes
         ]
@@ -1068,9 +1064,7 @@ def fused_linear_and_reducescatter(
                 else:
                     torch.matmul(gathered_input[dst_rank], w.t(), out=o)
 
-    _is_regular_matmul = all(
-        [not _is_fp8_dtype(w.dtype) for w in weights]
-    )
+    _is_regular_matmul = all([not _is_fp8_dtype(w.dtype) for w in weights])
     fused_anything_and_reducescatter(
         my_matmul,
         scattered_outputs,
