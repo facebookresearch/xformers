@@ -6,6 +6,7 @@
 #include <ck/utility/data_type.hpp>
 #include <ck/utility/inner_product.hpp>
 #include <ck/utility/math.hpp>
+#include <ck/utility/math_v2.hpp>
 
 namespace {
 
@@ -628,7 +629,7 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator
         using Argument = DeviceOp::Argument;
         float Run(const Argument& arg, const StreamConfig& stream_config = StreamConfig{})
         {
-            auto threads_per_wavefront = arg.block_dim.x;
+            auto threads_per_wavefront        = arg.block_dim.x;
             auto Q_size_k_alignment_necessary = 0;
 
             for(auto vec_size : {4, 2, 1})
