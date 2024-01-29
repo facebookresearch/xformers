@@ -5,10 +5,11 @@
 
 
 import textwrap
+import torch
 from collections import deque
 from typing import List, Sequence, Type, TypeVar
 
-from . import attn_bias, cutlass, decoder, flash, small_k, triton, triton_splitk
+from . import attn_bias, cutlass, decoder, flash, small_k, triton, triton_splitk, ck, ck_decoder, ck_splitk
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 
@@ -93,7 +94,7 @@ def _dispatch_fw_priority_list(
         if not mqa_or_gqa:
             # With multiquery, cutlass is sometimes faster than decoder
             # but it's not currently clear when.
-            priority_list_ops.appendleft(decoder.FwOp)
+            priority_list_ops.appendleft(decoder.FwOp if torch.version.cuda else ck_decoder.FwOp)
         # Split-KV is useful with MQA
         # for short Q-seqlen / long K-seqlen
         if mqa_or_gqa and inp.query.shape[1] <= 32 and inp.key.shape[1] >= 256:
@@ -105,6 +106,7 @@ def _dispatch_fw_priority_list(
             elif inp.query.ndim == 5:  # BMGHK
                 parallelism_BH = inp.query.shape[0] * inp.query.shape[2]
             if parallelism_BH > 0 and parallelism_BH < 64:
+                priority_list_ops.appendleft(ck_splitk.FwOp)
                 priority_list_ops.appendleft(triton_splitk.FwOp)
                 # Without variable seqlen flash is fastest
                 if not isinstance(inp.attn_bias, attn_bias.BlockDiagonalMask):

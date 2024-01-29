@@ -1769,7 +1769,7 @@ def test_decoder(
     )
 
 
-@pytest.mark.parametrize("op", [fmha.forward_splitk.FwOp_S1, fmha.forward_splitk.FwOp_S2, fmha.forward_splitk.FwOp_S4])
+@pytest.mark.parametrize("op", [fmha.ck_splitk.FwOp_S1, fmha.ck_splitk.FwOp_S2, fmha.ck_splitk.FwOp_S4])
 @pytest.mark.parametrize("dtype", ["f32"])
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
 @pytest.mark.parametrize("n_heads", [16])
