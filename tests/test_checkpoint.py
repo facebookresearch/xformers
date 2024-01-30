@@ -16,6 +16,7 @@ from xformers.checkpoint import (
     checkpoint,
     get_optimal_checkpoint_policy,
     list_operators,
+    selective_checkpoint_wrapper,
 )
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
@@ -305,3 +306,46 @@ def test_optimal_checkpoint_policy(
 
     for p, p_ref in zip(model.parameters(), model_ref.parameters()):
         torch.testing.assert_close(p.grad, p_ref.grad)
+
+
+@pytest.mark.skipif(torch.__version__ < "2.3", reason="Only new PyTorch supported")
+@cuda_only
+@pytest.mark.parametrize("device", ["cuda"])
+@pytest.mark.parametrize("memory_budget", [0, 0.1, 0.3, 1.0])
+@pytest.mark.parametrize("inplace", [False])
+@pytest.mark.parametrize("random", [False])
+@torch._dynamo.config.patch(  # type: ignore
+    "_experimental_support_context_fn_in_torch_utils_checkpoint", True
+)
+def test_selective_checkpoint_wrapper_compile(device, memory_budget, inplace, random):
+    torch.manual_seed(42)
+    dtype = torch.float16
+    modules = _get_model_blocks(
+        3, dtype, device, inplace=inplace, random=random, first_inplace=False
+    )
+    inputs = torch.rand(32, 128, 10, dtype=dtype, device=device)
+
+    model = torch.nn.Sequential(
+        *[selective_checkpoint_wrapper(b, memory_budget=memory_budget) for b in modules]
+    )
+    model = torch.compile(model)
+    model_ref = torch.nn.Sequential(*deepcopy(modules))
+
+    grad = torch.rand_like(inputs)
+
+    torch.manual_seed(42)
+    out = model(inputs.clone())
+    out.backward(grad)
+
+    torch.manual_seed(42)
+    out_ref = model_ref(inputs.clone())
+    out_ref.backward(grad)
+
+    atol = 3e-4
+    rtol = 1e-3
+    torch.testing.assert_close(out, out_ref, atol=atol, rtol=rtol)
+
+    for p, p_ref in zip(model.parameters(), model_ref.parameters()):
+        atol = 4e-4
+        rtol = 2e-3
+        torch.testing.assert_close(p.grad, p_ref.grad, atol=atol, rtol=rtol)

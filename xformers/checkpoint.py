@@ -54,6 +54,7 @@ except ImportError:
 _additional_ignored_ops = {
     torch.ops.aten.lift_fresh.default,
     torch.ops.profiler._record_function_exit._RecordFunction,
+    torch.ops.aten.clone.default,  # seems needed for torch.compile
 }
 OPS_TO_ALWAYS_SKIP = _ignored_ops | _additional_ignored_ops
 
@@ -445,26 +446,36 @@ class SelectiveCheckpointWrapper(ActivationWrapper):
         self.memory_budget = memory_budget
         self.policy_fn = policy_fn
 
-    def forward(self, *args, **kwargs):
-        if self.policy_fn is None:
-            # if policy is not specified, initialize policy for a given memory budget
-            self.policy_fn = get_optimal_checkpoint_policy(
+    @torch.compiler.disable
+    def _get_policy_fn(self, *args, **kwargs):
+        # if policy is not specified, initialize policy for a given memory budget
+        with torch.random.fork_rng():
+            policy_fn = get_optimal_checkpoint_policy(
                 self._checkpoint_wrapped_module,
                 *args,
                 **kwargs,
                 memory_budget=self.memory_budget,
             )
-            if (
-                torch.distributed.is_available()
-                and torch.distributed.is_initialized()
-                and torch.distributed.get_world_size() > 1
-            ):
-                # use the same policy across different GPUs
-                objects = [self.policy_fn]
-                torch.distributed.broadcast_object_list(objects, src=0)
-                self.policy_fn = objects[0]
+        if (
+            torch.distributed.is_available()
+            and torch.distributed.is_initialized()
+            and torch.distributed.get_world_size() > 1
+        ):
+            # use the same policy across different GPUs
+            objects = [policy_fn]
+            torch.distributed.broadcast_object_list(objects, src=0)
+            policy_fn = objects[0]
+        return policy_fn
+
+    def get_policy_fn(self, *args, **kwargs):
+        if self.policy_fn is None:
+            self.policy_fn = self._get_policy_fn(*args, **kwargs)
+        return self.policy_fn
+
+    def forward(self, *args, **kwargs):
+        policy_fn = self.get_policy_fn(*args, **kwargs)
         return checkpoint(
-            self._checkpoint_wrapped_module, *args, **kwargs, policy_fn=self.policy_fn
+            self._checkpoint_wrapped_module, *args, **kwargs, policy_fn=policy_fn
         )
 
 
