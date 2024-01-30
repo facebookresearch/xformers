@@ -48,8 +48,6 @@ struct FmhaFwdTypeConfig<ck::bhalf_t>
     using ODataType           = ck::bhalf_t;
 };
 
-using FmhaFwdVLayout = ck::tensor_layout::gemm::RowMajor;
-
 template <ck::index_t HDim>
 struct FmhaFwdBlockTile;
 
@@ -80,6 +78,8 @@ struct FmhaFwdBlockTile<256>
 using FmhaFwdBlockWarps = ck::Sequence<4, 1, 1>;
 using FmhaFwdWarpTile   = ck::Sequence<32, 32, 16>;
 
+static constexpr bool IsVLayoutRowMajor = true;
+
 template <ck::index_t HDim>
 struct FmhaFwdShape;
 
@@ -89,7 +89,7 @@ struct FmhaFwdShape<32> : ck::tile_program::TileFmhaShape<typename FmhaFwdBlockT
                                                           FmhaFwdWarpTile,
                                                           ck::Sequence<2, 1, 1>,
                                                           FmhaFwdWarpTile,
-                                                          FmhaFwdVLayout>
+                                                          IsVLayoutRowMajor>
 {
 };
 
@@ -99,7 +99,7 @@ struct FmhaFwdShape<64> : ck::tile_program::TileFmhaShape<typename FmhaFwdBlockT
                                                           FmhaFwdWarpTile,
                                                           FmhaFwdBlockWarps,
                                                           FmhaFwdWarpTile,
-                                                          FmhaFwdVLayout>
+                                                          IsVLayoutRowMajor>
 {
 };
 
@@ -109,7 +109,7 @@ struct FmhaFwdShape<128> : ck::tile_program::TileFmhaShape<typename FmhaFwdBlock
                                                            FmhaFwdWarpTile,
                                                            FmhaFwdBlockWarps,
                                                            FmhaFwdWarpTile,
-                                                           FmhaFwdVLayout>
+                                                           IsVLayoutRowMajor>
 {
 };
 
@@ -119,6 +119,6 @@ struct FmhaFwdShape<256> : ck::tile_program::TileFmhaShape<typename FmhaFwdBlock
                                                            FmhaFwdWarpTile,
                                                            FmhaFwdBlockWarps,
                                                            FmhaFwdWarpTile,
-                                                           FmhaFwdVLayout>
+                                                           IsVLayoutRowMajor>
 {
 };
