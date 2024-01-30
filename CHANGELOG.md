@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.24] - TBD
 ### Added
 - Added components for model/sequence parallelism, as near-drop-in replacements for FairScale/Megatron Column&RowParallelLinear modules. They support fusing communication and computation for sequence parallelism, thus making the communication effectively free.
+- Added kernels for training models with 2:4-sparsity. We introduced a very fast kernel for converting a matrix A into 24-sparse format, which can be used during training to sparsify weights dynamically, activations etc... xFormers also provides an API that is compatible with torch-compile, see `xformers.ops.sparsify24`.
 ### Improved
 - Make selective activation checkpointing be compatible with torch.compile.
 ### Removed

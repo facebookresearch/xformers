@@ -33,6 +33,7 @@ from .sequence_parallel_fused_ops import (
     fused_anything_and_reducescatter,
     fused_linear_and_reducescatter,
 )
+from .sp24 import Sparse24Tensor, sparsify24, sparsify24_like
 from .swiglu_op import (
     SwiGLU,
     SwiGLUEagerOp,
@@ -121,6 +122,10 @@ __all__ = [
     "get_stack_strides",
     "stack_or_none",
     "unbind",
+    # sp24
+    "sparsify24",
+    "sparsify24_like",
+    "Sparse24Tensor",
     # .
     "masked_matmul",
 ]
