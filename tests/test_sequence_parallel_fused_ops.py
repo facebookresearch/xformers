@@ -11,6 +11,7 @@ from typing import Tuple
 import pytest
 import torch
 
+from xformers import _is_triton_available
 from xformers.ops import fused_allgather_and_linear, fused_linear_and_reducescatter
 
 from .multiprocessing_utils import launch_subprocesses
@@ -24,6 +25,17 @@ cuda_sm70_only = pytest.mark.skipif(
 at_least_2_gpus = pytest.mark.skipif(
     torch.cuda.device_count() < 2, reason="needs at least 2 GPUs"
 )
+
+
+# We care about correctness, not performance, hence let's "disable" the
+# expensive autotuning by removing all configs except one (the first one).
+if _is_triton_available():
+    from xformers.ops._triton.sequence_parallel_fused_kernels import (
+        _xformers_seqpar_matmul_kernel,
+    )
+
+    while len(_xformers_seqpar_matmul_kernel.configs) > 1:
+        _xformers_seqpar_matmul_kernel.configs.pop()
 
 
 def inner_sequence_parallel_fused(

@@ -10,6 +10,7 @@ from typing import Tuple
 import pytest
 import torch
 
+from xformers import _is_triton_available
 from xformers.ops import (
     sequence_parallel_leading_matmul,
     sequence_parallel_trailing_matmul,
@@ -26,6 +27,22 @@ cuda_sm70_only = pytest.mark.skipif(
 at_least_2_gpus = pytest.mark.skipif(
     torch.cuda.device_count() < 2, reason="needs at least 2 GPUs"
 )
+
+
+# We care about correctness, not performance, hence let's "disable" the
+# expensive autotuning by removing all configs except one (the first one).
+if _is_triton_available():
+    from xformers.ops._triton.sequence_parallel_fused_kernels import (
+        _xformers_seqpar_matmul_kernel,
+    )
+
+    while len(_xformers_seqpar_matmul_kernel.configs) > 1:
+        _xformers_seqpar_matmul_kernel.configs.pop()
+
+    from xformers.ops._triton.tiled_matmul_kernels import _xformers_tiled_matmul_kernel
+
+    while len(_xformers_tiled_matmul_kernel.configs) > 1:
+        _xformers_tiled_matmul_kernel.configs.pop()
 
 
 def reference_leading(input_, w1, w2):
