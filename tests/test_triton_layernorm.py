@@ -14,7 +14,6 @@ import xformers
 
 try:
     from xformers.triton import FusedLayerNorm
-    from xformers.triton.utils import gpu_capabilities_older_than_70
 
     _triton_available = xformers._is_triton_available()
 except ImportError:
@@ -36,10 +35,6 @@ SHAPES = [
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
-@pytest.mark.skipif(
-    not _triton_available or gpu_capabilities_older_than_70(),
-    reason="Triton requires a SM70+ GPU",
-)
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [True, False])
 def test_layernorm_parity(shape, amp):

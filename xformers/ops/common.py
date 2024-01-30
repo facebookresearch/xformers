@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import inspect
-import os
 from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Callable, Dict, List, Type, TypeVar, Union
@@ -12,6 +11,8 @@ from typing import Any, Callable, Dict, List, Type, TypeVar, Union
 import torch
 from torch.torch_version import TorchVersion
 from typing_extensions import Annotated, get_args, get_origin
+
+from .. import _is_triton_available
 
 
 def get_operator(library: str, name: str):
@@ -167,20 +168,8 @@ def turn_into_pytorch_op(fn: ClsT, dispatch_key: str) -> ClsT:
     return caller  # type: ignore
 
 
-def _has_a_version_of_triton():
-    if os.environ.get("XFORMERS_FORCE_DISABLE_TRITON", "0") == "1":
-        return False
-    if not torch.cuda.is_available():
-        return False
-    try:
-        import triton  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
 def _has_triton2():
-    if not _has_a_version_of_triton():
+    if not _is_triton_available():
         return False
     import triton
 
@@ -189,7 +178,7 @@ def _has_triton2():
 
 
 def _has_triton21():
-    if not _has_a_version_of_triton():
+    if not _is_triton_available():
         return False
     import triton
 

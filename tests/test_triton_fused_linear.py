@@ -20,7 +20,6 @@ if _triton_available:
         from xformers.triton import FusedLinear
         from xformers.triton.k_activations import get_triton_activation_index
         from xformers.triton.k_fused_matmul_fw import fused_matmul
-        from xformers.triton.utils import gpu_capabilities_older_than_70
 
     except ImportError:
         logging.warning(
@@ -32,10 +31,6 @@ SHAPES = [(128, 256), (8, 384, 128), (8, 784, 512)]
 
 
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
-@pytest.mark.skipif(
-    not _triton_available or gpu_capabilities_older_than_70(),
-    reason="Triton requires a SM70+ GPU",
-)
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("dtype", [torch.float16])
 def test_fused_matmul(shape, dtype):
@@ -92,10 +87,6 @@ def test_fused_matmul(shape, dtype):
         )
 
 
-@pytest.mark.skipif(
-    not _triton_available or gpu_capabilities_older_than_70(),
-    reason="Triton requires a SM70+ GPU",
-)
 @pytest.mark.parametrize("activation", [None] + [a.value for a in Activation])  # type: ignore
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("bias", [True, False])

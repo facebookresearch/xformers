@@ -44,9 +44,7 @@ if _triton_available:
         from triton.ops.blocksparse import softmax as blocksparse_softmax
 
         from xformers.components.attention import BlockSparseAttention
-        from xformers.triton.utils import gpu_capabilities_older_than_80
 
-        _triton_available = not gpu_capabilities_older_than_80()
         _matmul_types = ["sdd", "dsd", "dds"]
     except (ImportError, ModuleNotFoundError) as e:
         import logging

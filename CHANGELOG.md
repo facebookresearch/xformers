@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.24] - TBD
 ### Added
 - Added components for model/sequence parallelism, as near-drop-in replacements for FairScale/Megatron Column&RowParallelLinear modules. They support fusing communication and computation for sequence parallelism, thus making the communication effectively free.
+### Removed
+- Triton kernels now require a GPU with compute capability 8.0 at least (A100 or newer). This is due to newer versions of triton not supporting older GPUs correctly
 
 ## [0.0.23] - 2023-12-05
 Pre-built binary wheels require PyTorch 2.1.1

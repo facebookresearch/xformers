@@ -22,7 +22,6 @@ if _triton_available:
 
         from xformers.triton import dropout as triton_dropout
         from xformers.triton.dropout import FusedDropoutBias
-        from xformers.triton.utils import gpu_capabilities_older_than_70
 
         _triton_available = True
     except ImportError:
@@ -62,10 +61,6 @@ def test_dropout_cpu():
 
 @pytest.mark.skipif(not _gpu_available, reason="GPU is not available")
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
-@pytest.mark.skipif(
-    not _triton_available or gpu_capabilities_older_than_70(),
-    reason="Triton requires a SM70+ GPU",
-)
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [False, True])
 @pytest.mark.parametrize("bias", [False, True])
@@ -139,10 +134,6 @@ def test_dropout(shape, amp, bias, p):
 
 @pytest.mark.skipif(not _gpu_available, reason="GPU is not available")
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
-@pytest.mark.skipif(
-    not _triton_available or gpu_capabilities_older_than_70(),
-    reason="Triton requires a SM70+ GPU",
-)
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [False, True])
 @pytest.mark.parametrize("bias", [True, False])

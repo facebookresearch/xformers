@@ -18,16 +18,10 @@ from xformers.components.attention.attention_mask import AttentionMask
 if _has_cpp_library:
     from ._sputnik_sparse import SparseCS
 
-if _is_triton_available():
-    from xformers.triton.softmax import softmax as triton_softmax
-    from xformers.triton.utils import gpu_capabilities_older_than_80
-
-_is_blocksparse_available = (
-    _is_triton_available() and not gpu_capabilities_older_than_80()
-)
-
+_is_blocksparse_available = _is_triton_available()
 if _is_blocksparse_available:
     from xformers.components.attention.blocksparse import BlockSparseAttention
+    from xformers.triton.softmax import softmax as triton_softmax
 
 
 logger = logging.getLogger("xformers")
