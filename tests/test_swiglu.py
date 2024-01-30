@@ -110,7 +110,9 @@ def generate_test_shapes():
 # Switch between these shape initialisations ...
 _test_shapes = list(generate_test_shapes())
 _test_shapes_ids = [str(s) for s in _test_shapes]
-_dtypes = [torch.bfloat16, torch.float16]
+_dtypes = [torch.float16]
+if _is_sm80:
+    _dtypes += [torch.bfloat16]
 _ops: Sequence[xsw.SwiGLUOp] = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
 
 FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-2, torch.bfloat16: 1e-2}
