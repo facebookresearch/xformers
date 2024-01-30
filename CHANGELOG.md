@@ -5,6 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.0.24] - TBD
+Pre-built binary wheels require PyTorch 2.2.0
 ### Added
 - Added components for model/sequence parallelism, as near-drop-in replacements for FairScale/Megatron Column&RowParallelLinear modules. They support fusing communication and computation for sequence parallelism, thus making the communication effectively free.
 - Added kernels for training models with 2:4-sparsity. We introduced a very fast kernel for converting a matrix A into 24-sparse format, which can be used during training to sparsify weights dynamically, activations etc... xFormers also provides an API that is compatible with torch-compile, see `xformers.ops.sparsify24`.
@@ -12,9 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make selective activation checkpointing be compatible with torch.compile.
 ### Removed
 - Triton kernels now require a GPU with compute capability 8.0 at least (A100 or newer). This is due to newer versions of triton not supporting older GPUs correctly
+- Removed support for PyTorch version older than 2.1.0
 
 ## [0.0.23] - 2023-12-05
-Pre-built binary wheels require PyTorch 2.1.1
+Pre-built binary wheels require PyTorch 2.1.1 (xFormers `0.0.23`) or PyTorch 2.1.2 (xFormers `0.0.23.post1`).
 ### Fixed
 - fMHA: Fixed a bug in cutlass backend forward pass where the logsumexp was not correctly calculated, resulting in wrong results in the BW pass. This would happen with MQA when one sequence has a query with `length%64 == 1`
 - fMHA: Updated Flash-Attention to v2.3.6 - this fixes a performance regression in causal backward passes, and now supports `BlockDiagonalCausalWithOffsetPaddedKeysMask`
