@@ -75,13 +75,11 @@ struct grouped_infer_causalmask_attnbias_dispatched
             constexpr bool kPadSeqLenQ = true;
             constexpr bool kPadSeqLenK = true;
 
+            bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
             bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
 
             if constexpr(HDim == 256)
             {
-                // BlockFmhaPipelineQSKSVS uses kQLoadOnce == false
-                bool pad_headdim_q = !(param.K % FmhaShape::kK0 == 0);
-
                 BOOL_SWITCH_2(pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
                     using FmhaTraits = ck::tile_program::TileFmhaTraits<kPadSeqLenQ,
                                                                         kPadSeqLenK,
@@ -103,9 +101,6 @@ struct grouped_infer_causalmask_attnbias_dispatched
             }
             else
             {
-                // BlockFmhaPipelineQRKSVS uses kQLoadOnce == true
-                bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
-
                 BOOL_SWITCH_2(pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
                     using FmhaTraits = ck::tile_program::TileFmhaTraits<kPadSeqLenQ,
                                                                         kPadSeqLenK,

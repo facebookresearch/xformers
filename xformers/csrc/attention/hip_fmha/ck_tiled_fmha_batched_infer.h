@@ -75,12 +75,10 @@ struct batched_infer_causalmask_attnbias_dispatched
             bool pad_seqlen_q  = !(param.M % FmhaShape::kM0 == 0);
             bool pad_seqlen_k  = !(param.N % FmhaShape::kN0 == 0);
             bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
+            bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
 
             if constexpr(HDim == 256)
             {
-                // BlockFmhaPipelineQSKSVS uses kQLoadOnce == false
-                bool pad_headdim_q = !(param.K % FmhaShape::kK0 == 0);
-
                 BOOL_SWITCH_4(
                     pad_seqlen_q,
                     kPadSeqLenQ,
@@ -111,9 +109,6 @@ struct batched_infer_causalmask_attnbias_dispatched
             }
             else
             {
-                // BlockFmhaPipelineQRKSVS uses kQLoadOnce == true
-                bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
-
                 BOOL_SWITCH_4(
                     pad_seqlen_q,
                     kPadSeqLenQ,
