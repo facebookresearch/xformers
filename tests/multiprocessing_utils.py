@@ -6,6 +6,7 @@
 import concurrent
 import gc
 import multiprocessing
+import os
 import signal
 from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
 from typing import Dict, List, Tuple
@@ -84,8 +85,22 @@ def init_process_group(init_method: str, rank: int, world_size: int):
 
 
 def _launch_subprocesses_fn_wrapper(
-    init_method: str, rank: int, world_size: int, user_fn, args, kwargs
+    init_method: str,
+    rank: int,
+    world_size: int,
+    parent_env_vars: Dict[str, str],
+    user_fn,
+    args,
+    kwargs,
 ):
+    # This function initializes the environment for spawned subprocesses by capturing and applying the current
+    # environment variables from the parent process. By clearing and then updating `os.environ` with `parent_env_vars`,
+    # we ensure that each spawned subprocess starts with an environment that mirrors the parent process at the time
+    # of job submission. This approach guarantees consistency across subprocesses, reflecting the latest state of the
+    # parent's environment variables even/especially when reusing the subprocesses for subsequent job executions.
+    os.environ.clear()
+    os.environ.update(parent_env_vars)
+
     # Check if the process group is already initialized
     if not torch.distributed.is_initialized():
         init_process_group(init_method, rank, world_size)
@@ -183,6 +198,7 @@ def launch_subprocesses(world_size: int, fn, *args, **kwargs):
                 init_method=f"file://{manager.rdv.name}",
                 rank=rank,
                 world_size=world_size,
+                parent_env_vars=dict(os.environ),
                 user_fn=fn,
                 args=args,
                 kwargs=kwargs,
