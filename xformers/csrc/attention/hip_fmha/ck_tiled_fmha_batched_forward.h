@@ -53,7 +53,6 @@ struct batched_forward_causalmask_attnbias_dispatched
         typename FmhaFwdTypeConfig<scalar_t>::PDataType,
         typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
         typename FmhaFwdTypeConfig<scalar_t>::ODataType,
-        HDim == 32 ? 128 : 256, // BlockSize
         FmhaFwdShape<HDim>,
         false, // kIsGroupMode
         FmhaMask,
@@ -71,28 +70,29 @@ struct batched_forward_causalmask_attnbias_dispatched
 
             using FmhaShape                 = FmhaFwdShape<HDim>;
             using FmhaTilePartitioner       = FmhaFwdTilePartitioner<FmhaShape>;
-            constexpr ck::index_t occupancy = (HDim == 64) ? 3 : 2;
+            constexpr ck::index_t occupancy = (HDim == 64) ? 3 : ((HDim == 256) ? 1 : 2);
 
-            bool m0_need_padding   = !(param.M % FmhaShape::kM0 == 0);
-            bool n0k1_need_padding = !(param.N % FmhaShape::kN0 == 0);
+            bool pad_seqlen_q  = !(param.M % FmhaShape::kM0 == 0);
+            bool pad_seqlen_k  = !(param.N % FmhaShape::kN0 == 0);
+            bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
+            bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
 
             if constexpr(HDim == 256)
             {
-                // BlockFmhaPipelineQSKSVS uses kQLoadOnce == false
-                bool k0n1_need_padding =
-                    !(param.K % FmhaShape::kK0 == 0 && param.Kv % FmhaShape::kN1 == 0);
-
-                BOOL_SWITCH_3(
-                    m0_need_padding,
-                    kM0NeedPadding,
-                    n0k1_need_padding,
-                    kN0K1NeedPadding,
-                    k0n1_need_padding,
-                    kK0N1NeedPadding,
+                BOOL_SWITCH_4(
+                    pad_seqlen_q,
+                    kPadSeqLenQ,
+                    pad_seqlen_k,
+                    kPadSeqLenK,
+                    pad_headdim_q,
+                    kPadHeadDimQ,
+                    pad_headdim_v,
+                    kPadHeadDimV,
                     [&] {
-                        using FmhaTraits = ck::tile_program::TileFmhaTraits<kM0NeedPadding,
-                                                                            kN0K1NeedPadding,
-                                                                            kK0N1NeedPadding,
+                        using FmhaTraits = ck::tile_program::TileFmhaTraits<kPadSeqLenQ,
+                                                                            kPadSeqLenK,
+                                                                            kPadHeadDimQ,
+                                                                            kPadHeadDimV,
                                                                             has_attn_bias,
                                                                             true, // kStoreLSE
                                                                             occupancy>;
@@ -109,21 +109,20 @@ struct batched_forward_causalmask_attnbias_dispatched
             }
             else
             {
-                // BlockFmhaPipelineQRKSVS uses kQLoadOnce == true
-                bool k0n1_need_padding =
-                    !(param.K % FmhaShape::kK0BlockLength == 0 && param.Kv % FmhaShape::kN1 == 0);
-
-                BOOL_SWITCH_3(
-                    m0_need_padding,
-                    kM0NeedPadding,
-                    n0k1_need_padding,
-                    kN0K1NeedPadding,
-                    k0n1_need_padding,
-                    kK0N1NeedPadding,
+                BOOL_SWITCH_4(
+                    pad_seqlen_q,
+                    kPadSeqLenQ,
+                    pad_seqlen_k,
+                    kPadSeqLenK,
+                    pad_headdim_q,
+                    kPadHeadDimQ,
+                    pad_headdim_v,
+                    kPadHeadDimV,
                     [&] {
-                        using FmhaTraits = ck::tile_program::TileFmhaTraits<kM0NeedPadding,
-                                                                            kN0K1NeedPadding,
-                                                                            kK0N1NeedPadding,
+                        using FmhaTraits = ck::tile_program::TileFmhaTraits<kPadSeqLenQ,
+                                                                            kPadSeqLenK,
+                                                                            kPadHeadDimQ,
+                                                                            kPadHeadDimV,
                                                                             has_attn_bias,
                                                                             true, // kStoreLSE
                                                                             occupancy>;
@@ -131,7 +130,7 @@ struct batched_forward_causalmask_attnbias_dispatched
                         using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
                         constexpr bool no_any_padding =
-                            !(kM0NeedPadding || kN0K1NeedPadding || kK0N1NeedPadding);
+                            !(kPadSeqLenQ || kPadSeqLenK || kPadHeadDimQ || kPadHeadDimV);
 
                         if constexpr(no_any_padding)
                         {
