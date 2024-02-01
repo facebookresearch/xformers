@@ -14,6 +14,7 @@ from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
 from xformers.ops import fmha
+from xformers.ops.common import get_xformers_operator
 from xformers.ops.fmha.common import AttentionOpBase
 from xformers.attn_bias_utils import create_attn_bias
 
@@ -32,6 +33,10 @@ T = TypeVar(
 ALL_FW_OPS: Sequence[Type[fmha.common.AttentionFwOpBase]] = [
     fmha.ck.FwOp,
 ]
+
+### ck_check_op is temporarily used to check ck-tiled availability
+ck_check_op = get_xformers_operator("is_ck_tiled_used")
+use_ck_tiled = ck_check_op()
 
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None):
     if q.ndim == 4:
@@ -149,6 +154,9 @@ def test_mqa_forward(
     nhead_ratio_qk = Hq // Hkv
 
     device = torch.device("cuda")
+
+    if not use_ck_tiled:
+        pytest.skip("mqa/gqa is only supported with ck-tiled")
 
     torch.manual_seed(B * M + N * K + Hq*Hkv + Kv)
 
