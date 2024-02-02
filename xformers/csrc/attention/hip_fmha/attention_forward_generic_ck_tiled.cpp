@@ -217,7 +217,6 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
         {
             logsumexp       = at::empty({B, Hq, M}, opts.dtype(at::kFloat));
             p.logsumexp_ptr = logsumexp.data_ptr();
-            throw std::runtime_error("compute logsumexp is currently not implemented by ck-tiled!");
         }
         else
             p.logsumexp_ptr = nullptr;
