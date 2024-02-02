@@ -144,22 +144,25 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
         return int(_CustomMaskType.CausalFromBottomRight)
     return int(_CustomMaskType.NoCustomMask)
 
+# checking the availability of ck-tiled is necessary since ck-tiled does not
+# have the same functionalities as old-CK
+def is_using_ck_tiled() -> bool:
+    ### ck_check_op is temporarily used to check ck-tiled availability
+    ck_check_op = get_xformers_operator("is_ck_tiled_used")
+    use_ck_tiled = ck_check_op()
+    return use_ck_tiled
 
 @register_operator
 class FwOp(AttentionFwOpBase):
     """xFormers' MHA kernel based on Composable Kernel.
     """
 
-    ### ck_check_op is temporarily used to check ck-tiled availability
-    ck_check_op = get_xformers_operator("is_ck_tiled_used")
-    use_ck_tiled = ck_check_op()
- 
     OPERATOR = get_xformers_operator("efficient_attention_forward_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 256 
-    
-    if use_ck_tiled: 
+
+    if is_using_ck_tiled(): 
         SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
             type(None),
             torch.Tensor,
@@ -186,7 +189,7 @@ class FwOp(AttentionFwOpBase):
             attn_bias.BlockDiagonalCausalFromBottomRightMask,
          }
 
-    SUPPORTS_DROPOUT = True
+    SUPPORTS_DROPOUT = False if is_using_ck_tiled() else True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
     SUPPORTS_BMGHK = True
@@ -424,6 +427,8 @@ class BwOp(AttentionBwOpBase):
                     f"/ expected: {expected_bias_shape})"
                 )
         _check_large_shapes(reasons, d)
+        if is_using_ck_tiled():
+            reasons.append("Backward is currently not completely supported by ck-tiled!")
         return reasons
 
     @classmethod
