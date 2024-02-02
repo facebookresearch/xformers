@@ -109,7 +109,7 @@ class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
 
 
 class AttentionDecodingCKSplitKV(AttentionDecodingFlashDecoding):
-    OP = xops.fmha.forward_splitk.FwOp
+    OP = xops.fmha.ck_splitk.FwOp
  
 
 class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
