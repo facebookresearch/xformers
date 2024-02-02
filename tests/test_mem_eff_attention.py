@@ -432,7 +432,7 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
     out /= global_sumexp
     return out
 
-## this interface assumes the tensor is in BMHK, but q and k/v might has different number of heads
+## this interface assumes the tensor is in BMHK, but q and k/v might have different number of heads
 def ref_attention_mqa(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
     assert q.ndim == 4
 

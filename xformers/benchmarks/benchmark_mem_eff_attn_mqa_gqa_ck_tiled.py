@@ -15,31 +15,12 @@ from xformers.benchmarks.utils import benchmark_main_helper
 import xformers.ops
 import xformers.ops.fmha as fmha
 
+from xformers.attn_bias_utils import create_attn_bias
+
 torch.backends.cuda.matmul.allow_tf32 = False
 
-
-def create_attn_bias(
-    bias_type,
-    batch_size: int,
-    num_heads: int,
-    q_len: int,
-    kv_len: int,
-    device,
-    dtype,
-    bias_requires_grad: bool = False,
-):
-    NoneType = type(None)
-    if bias_type is NoneType:
-        return None
-    if bias_type is torch.Tensor:
-        attn_bias = torch.randn((1, 1, q_len, kv_len), device=device, dtype=dtype)
-        return attn_bias.expand(batch_size, num_heads, q_len, kv_len)
-    if bias_type is fmha.attn_bias.LowerTriangularMask:
-        return bias_type()
-    assert False, f"Unsupported bias type: {bias_type}"
-
-## ref_attention is completely the same as used by test_forward_ck_tiled.py
-def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None):
+## this interface assumes the tensor is in BMHK, but q and k/v might has different number of heads
+def ref_attention_mqa(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None):
     if q.ndim == 4:
         B, M, Hq, K = q.shape
         _, N, Hkv, Kv = v.shape
@@ -122,7 +103,7 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None, dtype=None) -> torch.Tens
             device=q.device,
             dtype=torch.float32,
         ).reshape([q.shape[0] * q.shape[2], q.shape[1], k.shape[1]])
-    out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale, dtype=dtype)
+    out = ref_attention_mqa(T(q), T(k), T(v), attn_bias, scale=scale, dtype=dtype)
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
 
@@ -147,11 +128,11 @@ SHAPES = [
 ]
 
 OPS = [
-    (xformers.ops.fmha.ck.FwOp, xformers.ops.fmha.ck.BwOp),
-    #(xformers.ops.fmha.flash.FwOp, xformers.ops.fmha.flash.BwOp),
+    xformers.ops.fmha.ck.FwOp,
+    xformers.ops.fmha.flash.FwOp,
     # TODO: Triton is not stable: it can trigger Illegal Memory Accesses
     # and its performance varies a lot between runs.
-    # (xformers.ops.fmha.triton.FwOp, xformers.ops.fmha.triton.BwOp),
+    ##xformers.ops.fmha.triton.FwOp,
 ]
 
 
@@ -167,7 +148,7 @@ CASES = list(
         shape=SHAPES,
         num_threads=NUM_THREADS,
         dropout_p=[0.0],
-        attn_bias_cfg=[(type(None), False)],
+        attn_bias_type=[type(None)],
         dtype=[torch.half, torch.bfloat16],
     )
 )
@@ -178,12 +159,8 @@ for c in CASES.copy():
     c.update(
         random.Random(str(c["shape"])).choice(
             [
-                ##{"dropout_p": 0.3},
-                {"attn_bias_cfg": (torch.Tensor, False)},
-                ##{"attn_bias_cfg": (torch.Tensor, True)},
-                {"attn_bias_cfg": (xformers.ops.LowerTriangularMask, False)},
-                ##{"dtype": torch.bfloat16},
-                ##{"dtype": torch.float},
+                {"attn_bias_type": torch.Tensor},
+                {"attn_bias_type": xformers.ops.LowerTriangularMask},
             ]
         )
     )
@@ -197,21 +174,22 @@ def create_tensors(shape, dtype, requires_grad=False):
     v = torch.rand([B, N, Hkv, K], device=device, dtype=dtype, requires_grad=requires_grad)
     return q, k, v
 
-def mem_eff_attention_fw(shape, num_threads: int, attn_bias_cfg, dropout_p, dtype):
+def mem_eff_attention_fw(shape, num_threads: int, attn_bias_type, dropout_p, dtype):
     B, M, N, Hq, Hkv, K = shape
+    nhead_ratio_qk = Hq // Hkv
     q, k, v = create_tensors(shape, dtype)
-    attn_bias_type, attn_bias_requires_grad = attn_bias_cfg
-    if attn_bias_requires_grad:
-        return
     bias = create_attn_bias(
         attn_bias_type,
         batch_size=B,
         num_heads=Hq,
+        num_heads_groups=nhead_ratio_qk,
         q_len=M,
         kv_len=N,
         device=device,
         dtype=dtype,
-        bias_requires_grad=attn_bias_requires_grad,
+        requires_grad=False,
+        fmt="BMHK",
+        op=fmha.ck.FwOp,  ## only required as a refer op by create_attn_bias
     )
     inp = fmha.Inputs(query=q, key=k, value=v, attn_bias=bias, p=dropout_p)
 
@@ -226,7 +204,7 @@ def mem_eff_attention_fw(shape, num_threads: int, attn_bias_cfg, dropout_p, dtyp
     )
 
     has_run = False
-    for fw_op, bw_op in OPS:
+    for fw_op in OPS:
         if not fw_op.supports(inp):
             continue
 
@@ -239,7 +217,7 @@ def mem_eff_attention_fw(shape, num_threads: int, attn_bias_cfg, dropout_p, dtyp
                 "attn_bias": inp.attn_bias,
                 "p": dropout_p,
                 "fn": partial(
-                    xformers.ops.memory_efficient_attention, op=(fw_op, bw_op)
+                    xformers.ops.memory_efficient_attention_forward, op=fw_op
                 ),
             },
             label=f"attention (attn_bias={attn_bias_type})",
@@ -260,7 +238,7 @@ def mem_eff_attention_fw(shape, num_threads: int, attn_bias_cfg, dropout_p, dtyp
             "v": v,
             "attn_bias": inp.attn_bias,
             "p": dropout_p,
-            "fn": ref_attention,
+            "fn": ref_attention_mqa,
         },
         label=f"attention (attn_bias={attn_bias_type})",
         description="eager",
