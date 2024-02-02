@@ -25,6 +25,7 @@ from .utils import assert_allclose
 
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+rocm_only = pytest.mark.skipif(not torch.cuda.is_available() or not torch.version.hip, reason="requires ROCM")
 compute_capability = (0, 0)
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability("cuda")
@@ -1549,7 +1550,7 @@ def _kv_heads_label(kv_heads: Optional[int]) -> str:
 @pytest.mark.parametrize(
     "op",
     [
-        fmha.decoder.FwOp,
+        fmha.decoder.FwOp if torch.version.cuda else fmha.ck_decoder.FwOp,
     ],
 )
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
@@ -1565,6 +1566,7 @@ def test_decoder(
     dtype: str,
     dequant: bool = False,
     num_queries: int = 1,
+    d: int = 128,
 ) -> None:
     # kv_heads = 1: multiquery
     # kv_heads = None: neither MQA nor GQA
@@ -1573,7 +1575,6 @@ def test_decoder(
         raise pytest.skip("BF16 is only supported on SM80+")
     dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
     torch.manual_seed(1)
-    d = 128
     if kv_heads is not None and kv_heads > 1:
         k_shape: Tuple[int, ...] = (1, bsz * padding, kv_heads, n_heads, d)
         q_shape: Tuple[int, ...] = (
@@ -1630,15 +1631,26 @@ def test_decoder(
         k = dequant_cache(k)
         v = dequant_cache(v)
 
-    cutlass_output = fmha.memory_efficient_attention_forward(
-        q, k, v, attn_bias, op=fmha.cutlass.FwOp
-    )
-    assert_allclose(
-        decoder_output,
-        cutlass_output,
-        atol=fmha.cutlass.FwOp.ERROR_ATOL[dtype_] * 4,
-        rtol=fmha.cutlass.FwOp.ERROR_RTOL[dtype_],
-    )
+    if torch.version.cuda:
+        cutlass_output = fmha.memory_efficient_attention_forward(
+             q, k, v, attn_bias, op=fmha.cutlass.FwOp
+        )
+
+        assert_allclose(
+            decoder_output,
+            cutlass_output,
+            atol=fmha.cutlass.FwOp.ERROR_ATOL[dtype_] * 4,
+            rtol=fmha.cutlass.FwOp.ERROR_RTOL[dtype_],
+        )
+    else:
+        ref_output = ref_attention(q, k, v, attn_bias)
+
+        assert_allclose(
+            decoder_output.float(),
+            ref_output,
+            atol=fmha.cutlass.FwOp.ERROR_ATOL[dtype_] * 4,
+            rtol=fmha.cutlass.FwOp.ERROR_RTOL[dtype_],
+        )
 
 
 @sm80_or_better_only
@@ -1686,6 +1698,32 @@ def test_triton_splitk_decoder(
         dequant=dequant,
     )
 
+@rocm_only
+@pytest.mark.parametrize("op", [fmha.ck_splitk.FwOp_S1, fmha.ck_splitk.FwOp_S2, fmha.ck_splitk.FwOp_S4])
+@pytest.mark.parametrize("dtype", ["f32"])
+@pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
+@pytest.mark.parametrize("n_heads", [16])
+@pytest.mark.parametrize("d", [128, 256])
+@pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1), (32, 1), (4096, 8)])
+def test_splitk_decoder(
+    op,
+    kv_heads: Optional[int],
+    n_heads: int,
+    padding: int,
+    bsz: int,
+    dtype: str,
+    d: int
+) -> None:
+    # no quantized impl compared to cuda
+    test_decoder(
+        op,
+        kv_heads=kv_heads,
+        n_heads=n_heads,
+        padding=padding,
+        bsz=bsz,
+        dtype=dtype,
+        d=d,
+    )
 
 def test_attn_bias_from_seqlens() -> None:
     bias = fmha.attn_bias.BlockDiagonalMask.from_seqlens([3, 5, 1])
