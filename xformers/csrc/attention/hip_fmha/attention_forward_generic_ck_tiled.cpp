@@ -85,8 +85,6 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
         TORCH_CHECK(seqstart_q->scalar_type() == at::ScalarType::Int);
         TORCH_CHECK(seqstart_k->scalar_type() == at::ScalarType::Int);
         TORCH_CHECK(seqstart_q->dim() == 1 && seqstart_k->dim() == 1);
-        CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqstart_q));
-        CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqstart_k));
         TORCH_CHECK(seqstart_q->size(0) == seqstart_k->size(0));
         TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
         TORCH_CHECK(max_seqlen_q_.has_value());
@@ -281,40 +279,58 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> efficient_attention_forward
         // max_seqlen_q is used to create logsumexp tensor
         p.max_seqlen_q = *max_seqlen_q_;
 
-        at::Tensor dev_seqstart_q = at::empty({p.num_batches + 1}, opts.dtype(at::kInt));
-        at::Tensor dev_seqstart_k = at::empty({p.num_batches + 1}, opts.dtype(at::kInt));
+        // interesting: the tensors have to be defined here, moving to more local scope will
+        // cause issue
+        at::Tensor dev_seqstart_q;
+        at::Tensor dev_seqstart_k;
         at::Tensor dev_seqlen_k;
 
-        p.seqstart_q_dev_ptr = dev_seqstart_q.data_ptr();
-        HIP_CALL_CHECK(hipMemcpyAsync(p.seqstart_q_dev_ptr,
-                                      seqstart_q->data_ptr(),
-                                      (p.num_batches + 1) * sizeof(int),
-                                      hipMemcpyHostToDevice,
-                                      stream));
+        if(seqstart_q->is_cpu())
+        {
+            dev_seqstart_q       = at::empty({p.num_batches + 1}, opts.dtype(at::kInt));
+            p.seqstart_q_dev_ptr = dev_seqstart_q.data_ptr();
+            HIP_CALL_CHECK(hipMemcpyAsync(p.seqstart_q_dev_ptr,
+                                          seqstart_q->data_ptr(),
+                                          (p.num_batches + 1) * sizeof(int),
+                                          hipMemcpyHostToDevice,
+                                          stream));
+        }
+        else
+            p.seqstart_q_dev_ptr = seqstart_q->data_ptr();
 
-        p.seqstart_k_dev_ptr = dev_seqstart_k.data_ptr();
-        HIP_CALL_CHECK(hipMemcpyAsync(p.seqstart_k_dev_ptr,
-                                      seqstart_k->data_ptr(),
-                                      (p.num_batches + 1) * sizeof(int),
-                                      hipMemcpyHostToDevice,
-                                      stream));
+        if(seqstart_k->is_cpu())
+        {
+            dev_seqstart_k = at::empty({p.num_batches + 1}, opts.dtype(at::kInt));
+
+            p.seqstart_k_dev_ptr = dev_seqstart_k.data_ptr();
+            HIP_CALL_CHECK(hipMemcpyAsync(p.seqstart_k_dev_ptr,
+                                          seqstart_k->data_ptr(),
+                                          (p.num_batches + 1) * sizeof(int),
+                                          hipMemcpyHostToDevice,
+                                          stream));
+        }
+        else
+            p.seqstart_k_dev_ptr = seqstart_k->data_ptr();
 
         if(seqlen_k.has_value())
         {
             TORCH_CHECK(seqlen_k->scalar_type() == at::ScalarType::Int);
             TORCH_CHECK(seqlen_k->dim() == 1);
             TORCH_CHECK(seqlen_k->size(0) == p.num_batches)
-            CHECK_NOSPARSE_CONTIGUOUS_CPU((*seqlen_k));
 
-            dev_seqlen_k = at::empty({p.num_batches}, opts.dtype(at::kInt));
+            if(seqlen_k->is_cpu())
+            {
+                dev_seqlen_k = at::empty({p.num_batches}, opts.dtype(at::kInt));
 
-            p.seqlen_k_dev_ptr = dev_seqlen_k.data_ptr();
-
-            HIP_CALL_CHECK(hipMemcpyAsync(p.seqlen_k_dev_ptr,
-                                          seqlen_k->data_ptr(),
-                                          p.num_batches * sizeof(int),
-                                          hipMemcpyHostToDevice,
-                                          stream));
+                p.seqlen_k_dev_ptr = dev_seqlen_k.data_ptr();
+                HIP_CALL_CHECK(hipMemcpyAsync(p.seqlen_k_dev_ptr,
+                                              seqlen_k->data_ptr(),
+                                              p.num_batches * sizeof(int),
+                                              hipMemcpyHostToDevice,
+                                              stream));
+            }
+            else
+                p.seqlen_k_dev_ptr = seqlen_k->data_ptr();
         }
         else
             p.seqlen_k_dev_ptr = nullptr;
