@@ -408,7 +408,6 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
     """
 
     seqlen: torch.Tensor
-    seqlen_cpu: torch.Tensor
     seqlen_py: Sequence[int]
     padding: int
     # From parent: seqstart[i] contains the start position
@@ -446,7 +445,6 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
         seqlen = torch.tensor(seqlens, dtype=torch.int32)
         return cls(
             seqlen=seqlen,
-            seqlen_cpu=seqlen.to(device=torch.device("cpu")) if torch.cuda.is_available() and torch.version.hip else None,
             seqlen_py=seqlens,
             max_seqlen=max(seqlens),
             min_seqlen=min(seqlens),

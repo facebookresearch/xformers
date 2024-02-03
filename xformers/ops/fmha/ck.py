@@ -146,11 +146,10 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
 
 # checking the availability of ck-tiled is necessary since ck-tiled does not
 # have the same functionalities as old-CK
-def is_using_ck_tiled() -> bool:
+def is_ck_tiled() -> bool:
     ### ck_check_op is temporarily used to check ck-tiled availability
     ck_check_op = get_xformers_operator("is_ck_tiled_used")
-    use_ck_tiled = ck_check_op()
-    return use_ck_tiled
+    return ck_check_op()
 
 @register_operator
 class FwOp(AttentionFwOpBase):
@@ -162,7 +161,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 256 
 
-    if is_using_ck_tiled(): 
+    if is_ck_tiled(): 
         SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
             type(None),
             torch.Tensor,
@@ -189,7 +188,7 @@ class FwOp(AttentionFwOpBase):
             attn_bias.BlockDiagonalCausalFromBottomRightMask,
          }
 
-    SUPPORTS_DROPOUT = False if is_using_ck_tiled() else True
+    SUPPORTS_DROPOUT = False if is_ck_tiled() else True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
     SUPPORTS_BMGHK = True
@@ -283,6 +282,8 @@ class FwOp(AttentionFwOpBase):
         if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
         seqstart_k, seqstart_q, max_seqlen_q = _get_seqlen_info(inp)
+        if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
+            seqlen_k=inp.attn_bias.k_seqinfo.seqlen if is_ck_tiled() else inp.attn_bias.k_seqinfo.seqlen.to(torch.device("cpu"))
         out, lse, rng_seed, rng_offset = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
@@ -295,7 +296,7 @@ class FwOp(AttentionFwOpBase):
             compute_logsumexp=needs_gradient,
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
-            seqlen_k=inp.attn_bias.k_seqinfo.seqlen_cpu
+            seqlen_k=seqlen_k
             if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
             else None,
             window_size=inp.attn_bias._window_size
@@ -427,7 +428,7 @@ class BwOp(AttentionBwOpBase):
                     f"/ expected: {expected_bias_shape})"
                 )
         _check_large_shapes(reasons, d)
-        if is_using_ck_tiled():
+        if is_ck_tiled():
             reasons.append("Backward is currently not completely supported by ck-tiled!")
         return reasons
 
