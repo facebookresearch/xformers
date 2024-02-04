@@ -11,4 +11,4 @@
 [submodule "third_party/composable_kernel_tiled"]
 	path = third_party/composable_kernel_tiled
 	url = https://github.com/ROCm/composable_kernel.git
-	branch = ck_tile/fmha_attemp_async_copy_unify
+	branch = ck_tile/dev
