@@ -211,6 +211,8 @@ class FwOp(AttentionFwOpBase):
         256,  # 64x128 with accumulation in gmem
     ]
 
+    IS_CK_TILED = is_ck_tiled()
+
     @classmethod
     def apply(
         cls, inp: Inputs, needs_gradient: bool
@@ -396,6 +398,8 @@ class BwOp(AttentionBwOpBase):
         128,  # 64x128/128x128 kernel
         256,  # 64x128 with accumulation in gmem
     ]
+
+    IS_CK_TILED = is_ck_tiled()
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:

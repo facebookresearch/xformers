@@ -17,7 +17,6 @@ from torch.utils.checkpoint import checkpoint
 import xformers.ops
 from xformers.attn_bias_utils import create_attn_bias
 from xformers.ops import fmha
-from xformers.ops.common import get_xformers_operator
 from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
 from xformers.ops.fmha.common import AttentionOpBase
 from xformers.ops.fmha.dispatch import _dispatch_fw_priority_list
@@ -711,12 +710,8 @@ def test_mqa_forward(
 
     device = torch.device("cuda")
 
-    ### ck_check_op is temporarily used to check ck-tiled availability
-    ck_check_op = get_xformers_operator("is_ck_tiled_used")
-    use_ck_tiled = ck_check_op()
-
-    if not use_ck_tiled:
-        pytest.skip("mqa/gqa is only supported with ck-tiled")
+    if op is fmha.ck.FwOp and not op.IS_CK_TILED:
+        pytest.skip("mqa/gqa is only supported with ck-tiled fmha")
 
     torch.manual_seed(B * M + N * K + Hq*Hkv + Kv)
 
@@ -813,6 +808,10 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
         k,
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
+
+    if op is fmha.ck.FwOp and op.IS_CK_TILED:
+        pytest.skip("logsumexp is not yet supported by ck-tiled fmha!")
+
     query, key, value, attn_bias = create_tensors(
         *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, fmt="BMK"
     )
@@ -1452,6 +1451,8 @@ def test_grad_checkpointing(
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
     if op is fmha.triton.FwOp:
         pytest.skip("Triton Flash Attention 2 doesn't support backward pass yet")
+    if op is fmha.ck.FwOp and op.IS_CK_TILED:
+        pytest.skip("ck-tiled FMHA doesn't supported backward pass yet")
     bias_type = None
     opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = (
         op,
@@ -2468,6 +2469,9 @@ def test_empty_tensors_empty_query(
         fmt="BMHK",
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
+
+    if op is fmha.ck.FwOp and op.IS_CK_TILED:
+        pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
 
     query = query[:, :0]
     query.requires_grad_(True)
