@@ -440,6 +440,9 @@ class BwOp(AttentionBwOpBase):
         seqstart_k, seqstart_q, max_seqlen_q = _get_seqlen_info(inp)
         dtype = inp.query.dtype
 
+        if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
+            seqlen_k=inp.attn_bias.k_seqinfo.seqlen if is_ck_tiled() else inp.attn_bias.k_seqinfo.seqlen.to(torch.device("cpu"))
+
         rng_seed = rng_offset = 0
         if inp.p != 0.0:
             if (
@@ -460,7 +463,7 @@ class BwOp(AttentionBwOpBase):
             seqstart_q=seqstart_q,
             seqstart_k=seqstart_k,
             max_seqlen_q=max_seqlen_q,
-            seqlen_k=inp.attn_bias.k_seqinfo.seqlen_cpu
+            seqlen_k=seqlen_k
             if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
             else None,
             logsumexp=ctx.lse,
