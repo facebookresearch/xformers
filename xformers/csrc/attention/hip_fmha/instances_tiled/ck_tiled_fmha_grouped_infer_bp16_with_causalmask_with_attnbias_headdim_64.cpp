@@ -8,5 +8,8 @@
 
 #include "ck_tiled_fmha_grouped_infer.h"
 
-template void run_grouped_infer_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 64>(
-    GroupedForwardParams& param, hipStream_t stream);
+template void run_grouped_infer_causalmask_attnbias_dispatched<
+    ck::bhalf_t,
+    true,
+    true,
+    64>(GroupedForwardParams& param, hipStream_t stream);

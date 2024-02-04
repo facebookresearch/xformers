@@ -8,5 +8,8 @@
 
 #include "ck_tiled_fmha_batched_forward.h"
 
-template void run_batched_forward_causalmask_attnbias_dispatched<ck::half_t, false, true, 64>(
-    BatchedForwardParams& param, hipStream_t stream);
+template void run_batched_forward_causalmask_attnbias_dispatched<
+    ck::half_t,
+    false,
+    true,
+    64>(BatchedForwardParams& param, hipStream_t stream);

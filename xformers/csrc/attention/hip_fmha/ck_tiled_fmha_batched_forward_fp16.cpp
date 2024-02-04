@@ -49,22 +49,23 @@ extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::half
     BatchedForwardParams& param, hipStream_t stream);
 // clang-format on
 
-void batched_forward_fp16(BatchedForwardParams& param, hipStream_t stream)
-{
-    BOOL_SWITCH(param.has_attn_bias, HAS_ATTN_BIAS, [&] {
-        FMHA_FWD_HEADDIM_SWITCH(param.K, param.Kv, HDim, [&] {
-            if(param.custom_mask_type == 0)
-                run_batched_forward_causalmask_attnbias_dispatched<ck::half_t,
-                                                                   false,
-                                                                   HAS_ATTN_BIAS,
-                                                                   HDim>(param, stream);
-            else if(param.custom_mask_type == 1 || param.custom_mask_type == 2)
-                run_batched_forward_causalmask_attnbias_dispatched<ck::half_t,
-                                                                   true,
-                                                                   HAS_ATTN_BIAS,
-                                                                   HDim>(param, stream);
-            else
-                throw std::runtime_error("Invalid custom_mask_type value");
-        });
+void batched_forward_fp16(BatchedForwardParams& param, hipStream_t stream) {
+  BOOL_SWITCH(param.has_attn_bias, HAS_ATTN_BIAS, [&] {
+    FMHA_FWD_HEADDIM_SWITCH(param.K, param.Kv, HDim, [&] {
+      if (param.custom_mask_type == 0)
+        run_batched_forward_causalmask_attnbias_dispatched<
+            ck::half_t,
+            false,
+            HAS_ATTN_BIAS,
+            HDim>(param, stream);
+      else if (param.custom_mask_type == 1 || param.custom_mask_type == 2)
+        run_batched_forward_causalmask_attnbias_dispatched<
+            ck::half_t,
+            true,
+            HAS_ATTN_BIAS,
+            HDim>(param, stream);
+      else
+        throw std::runtime_error("Invalid custom_mask_type value");
     });
+  });
 };

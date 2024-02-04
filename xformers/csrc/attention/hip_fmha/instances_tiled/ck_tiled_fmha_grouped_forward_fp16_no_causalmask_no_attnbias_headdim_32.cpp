@@ -8,5 +8,8 @@
 
 #include "ck_tiled_fmha_grouped_forward.h"
 
-template void run_grouped_forward_causalmask_attnbias_dispatched<ck::half_t, false, false, 32>(
-    GroupedForwardParams& param, hipStream_t stream);
+template void run_grouped_forward_causalmask_attnbias_dispatched<
+    ck::half_t,
+    false,
+    false,
+    32>(GroupedForwardParams& param, hipStream_t stream);
