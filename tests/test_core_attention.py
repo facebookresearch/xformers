@@ -21,6 +21,7 @@ _is_blocksparse_available = (
     _is_triton_available() and not gpu_capabilities_older_than_70()
 )
 
+disable_on_rocm = pytest.mark.skipif(not not torch.version.hip, reason="could not be done on ROCM")
 
 def catch_oor(fn):
     @functools.wraps(fn)
@@ -86,6 +87,7 @@ def test_core_attention_mask_types():
     r_dense_add = scaled_dot_product_attention(a, a, a, float_mask_add)
 
 
+@disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_amp_attention_dense_no_mask(device):
     b, s, d = 8, 64, 32
@@ -99,6 +101,7 @@ def test_amp_attention_dense_no_mask(device):
     assert r.dtype == expected_device
 
 
+@disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_amp_attention_dense(device):
     b, s, d = 8, 64, 32
@@ -114,6 +117,7 @@ def test_amp_attention_dense(device):
     assert r.dtype == expected_device
 
 
+@disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_amp_attention_sparse(device):
     b, s, d = 8, 64, 32
@@ -129,7 +133,7 @@ def test_amp_attention_sparse(device):
     expected_device = torch.float32
     assert r.dtype == expected_device
 
-
+@disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_amp_attention_sparsecs(device):
     b, s, d = 8, 64, 32
@@ -145,7 +149,7 @@ def test_amp_attention_sparsecs(device):
     expected_device = torch.float32
     assert r.dtype == expected_device
 
-
+@disable_on_rocm
 @pytest.mark.skipif(
     not _is_blocksparse_available, reason="Blocksparse is not available"
 )
