@@ -27,6 +27,8 @@ from .utils import assert_allclose
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 rocm_only = pytest.mark.skipif(not torch.cuda.is_available() or not torch.version.hip, reason="requires ROCM")
+disable_on_rocm = pytest.mark.skipif(not not torch.version.hip, reason="could not be done on ROCM")
+
 compute_capability = (0, 0)
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability("cuda")
@@ -1218,6 +1220,7 @@ def test_dropout_backward_cutlass(dt, q_len, kv_len, batch_size, k, p):
 
 
 @cuda_only
+@disable_on_rocm
 @pytest.mark.parametrize("k_len", [32])
 @pytest.mark.parametrize("batch_size", [1])
 @pytest.mark.parametrize("kv_len", [3 * 32])
@@ -1226,9 +1229,6 @@ def test_memory_efficient_attention_full_block_masked(q_len, kv_len, batch_size,
     device = "cuda"
     op_fw = fmha.small_k.FwOp
     op_bw = fmha.small_k.BwOp
-
-    if torch.version.hip:
-        pytest.skip("fmha.small_k is not supported on ROCM")
 
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device) * scale
@@ -2119,9 +2119,8 @@ class TestAttnBias:
         with pytest.raises((ValueError, RuntimeError)):
             fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
 
+    @disable_on_rocm
     def test_f32_biasf16(self) -> None:
-        if torch.version.hip:
-            pytest.skip("float32 is not supported by ck.FwOp/ck.BwOp currently, skipped")
         q, k, v, bias = self.create_tensors(torch.float32)
         fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
         bias = bias.to(torch.float16)
@@ -2185,6 +2184,7 @@ SM_AND_SHMEM_KBYTES = [
 
 
 @cuda_only
+@disable_on_rocm
 @pytest.mark.parametrize("dtype_str", ["f32", "f16", "bf16"])
 @pytest.mark.parametrize(
     "sm_shmem",
@@ -2196,9 +2196,6 @@ def test_has_kernel_for(sm_shmem: Tuple[int, int], dtype_str: str) -> None:
     sm, shmem_kbytes = sm_shmem
     if sm < 80 and dtype_str == "bf16":
         return
-
-    if torch.version.hip:
-        pytest.skip("_has_cutlassF_kernel is not supported on ROCM")
 
     for k in [16, 32, 64, 128, 256]:
         assert torch.ops.xformers._has_cutlassF_kernel_for(
@@ -2339,11 +2336,9 @@ def test_forward_gqa_one_group(opFW):
 
 
 @sm80_or_better_only
+@disable_on_rocm
 def test_flash_gqa_wrong_strides() -> None:
     op = (fmha.flash.FwOp, None)
-
-    if torch.version.hip:
-        pytest.skip("flash operation is not supported on ROCM!")
 
     device = "cuda"
     B, Mq, Mkv, G, H, K = 3, 1, 512, 2, 8, 128
@@ -2381,10 +2376,8 @@ def _dispatches_to_flash_decoding(q, kv):
         _dispatch_fw_priority_list(fmha.Inputs(q, kv, kv), False)[0] is fmha.flash.FwOp
     )
 
-
+@disable_on_rocm
 def test_dispatch_decoding_bmhk() -> None:
-    if torch.version.hip:
-        pytest.skip("dispatch testing currently ignored on ROCM")
     assert not _dispatches_to_splitK(
         torch.empty([1, 8, 1, 128]), torch.empty([1, 2048, 1, 128])
     ), "Should not use SplitK with 1 head (no tensorcores)"
@@ -2405,10 +2398,8 @@ def test_dispatch_decoding_bmhk() -> None:
         torch.empty([128, 2048, 1, 128]).expand(-1, -1, 32, -1),
     ), "Should not use SplitK if B is big"
 
-
+@disable_on_rocm
 def test_dispatch_decoding_bmghk() -> None:
-    if torch.version.hip:
-        pytest.skip("dispatch testing currently ignored on ROCM")
     assert not _dispatches_to_splitK(
         torch.empty([1, 8, 1, 1, 128]), torch.empty([1, 2048, 1, 1, 128])
     ), "Should not use SplitK with 1 head (no tensorcores)"
@@ -2600,6 +2591,7 @@ def test_local_attn_bias() -> None:
 
 
 @cuda_only
+@disable_on_rocm
 @pytest.mark.parametrize("cc", [60, 70, 80])
 @pytest.mark.parametrize("maxK", [32, 64, 128, 256])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
@@ -2650,9 +2642,6 @@ def test_cutlassB_iter_order(
         the same block of dQ
     .. and we test this across variable causal masks+local attention combinations
     """
-    if torch.version.hip:
-        pytest.skip("this test is only for cutlass/cuda environment")
-
     if (
         window_size > 0
         and custom_mask_type == fmha.cutlass._CustomMaskType.NoCustomMask
