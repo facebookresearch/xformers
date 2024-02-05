@@ -241,14 +241,7 @@ def get_extensions():
         *glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_splitk.cpp"), recursive=False)
     ]
 
-    if os.getenv("FORCE_CK_TILED_KERNEL", "0") == "1":
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_generic_ck_tiled.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_batched_infer_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_grouped_infer_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_batched_forward_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_grouped_forward_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "instances_tiled", "ck_tiled_fmha_*.cpp"), recursive=False)
-    else:
+    if os.getenv("FORCE_OLD_CK_KERNEL", "0") == "1":
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_generic.cpp"), recursive=False)
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_backward_generic.cpp"), recursive=False)
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_ck_rand_uniform.cpp"), recursive=False)
@@ -259,7 +252,14 @@ def get_extensions():
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_batched_backward_*.cpp"), recursive=False)
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_grouped_backward_*.cpp"), recursive=False)
         source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "instances", "ck_fmha_*.cpp"), recursive=False)
-        
+    else:
+        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_generic_ck_tiled.cpp"), recursive=False)
+        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_batched_infer_*.cpp"), recursive=False)
+        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_grouped_infer_*.cpp"), recursive=False)
+        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_batched_forward_*.cpp"), recursive=False)
+        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_grouped_forward_*.cpp"), recursive=False)
+        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "instances_tiled", "ck_tiled_fmha_*.cpp"), recursive=False)
+
     source_hip += source_hip_decoder
     
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
@@ -350,15 +350,15 @@ def get_extensions():
        sources += source_hip_cu
        include_dirs += [ Path(this_dir) / 'xformers' / 'csrc' / 'attention' / 'hip_fmha' ]
 
-       if os.getenv("FORCE_CK_TILED_KERNEL", "0") == "1":
-           include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel_tiled' / 'include']
-       else:
+       if os.getenv("FORCE_OLD_CK_KERNEL", "0") == "1":
            include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel' / 'include']
-           
-       if os.getenv("FORCE_CK_TILED_KERNEL", "0") == "1":
-           generator_flag = ["-DUSE_CK_TILED_KERNEL"]
        else:
+           include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel_tiled' / 'include']
+           
+       if os.getenv("FORCE_OLD_CK_KERNEL", "0") == "1":
            generator_flag = []
+       else:
+           generator_flag = ["-DUSE_CK_TILED_KERNEL"]
        cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
        extra_compile_args={
             "cxx": ["-O3", "-std=c++17"] + generator_flag,
