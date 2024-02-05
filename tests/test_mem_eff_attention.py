@@ -2067,6 +2067,9 @@ def test_attn_bias_blockdiag_doc() -> None:
 
     from xformers.ops import fmha
 
+    if torch.version.hip and fmha.ck.FwOp.IS_CK_TILED:
+        pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
+
     K = 16
     dtype = torch.float16
     device = "cuda"
@@ -2507,7 +2510,7 @@ def test_empty_tensors_empty_query(
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
 
-    if opFW is fmha.ck.FwOp and opFW.IS_CK_TILED:
+    if torch.version.hip and fmha.ck.FwOp.IS_CK_TILED:
         pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
 
     if opFW is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
@@ -2535,9 +2538,9 @@ def test_empty_tensors_empty_kv(
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
 
-    if opFW is fmha.ck.FwOp and opFW.IS_CK_TILED:
+    if torch.version.hip and fmha.ck.FwOp.IS_CK_TILED:
         pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
-
+        
     if opFW is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
         pytest.skip("triton_splitk requires python 3.9 or above!")
 
@@ -2563,7 +2566,7 @@ def test_empty_tensors_empty_b(
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
 
-    if opFW is fmha.ck.FwOp and opFW.IS_CK_TILED:
+    if torch.version.hip and fmha.ck.FwOp.IS_CK_TILED:
         pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
 
     if opFW is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
