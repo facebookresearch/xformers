@@ -75,15 +75,15 @@ def _dispatch_fw_priority_list(
               cutlass.FwOp,
               small_k.FwOp,
            ])
+        if _is_cutlass_fwd_faster_than_flash(inp):
+            priority_list_ops.remove(cutlass.FwOp)
+            priority_list_ops.appendleft(cutlass.FwOp)
     else:
         priority_list_ops = deque(
            [
               triton.FwOp,
               ck.FwOp,
            ])
-    if _is_cutlass_fwd_faster_than_flash(inp):
-        priority_list_ops.remove(cutlass.FwOp)
-        priority_list_ops.appendleft(cutlass.FwOp)
     if _is_triton_fwd_fastest(inp):
         priority_list_ops.remove(triton.FwOp)
         priority_list_ops.appendleft(triton.FwOp)

@@ -5,6 +5,7 @@
 
 import math
 import random
+import sys
 from functools import partial
 from typing import List, Optional, Sequence, Tuple, Type, TypeVar
 
@@ -17,7 +18,6 @@ from torch.utils.checkpoint import checkpoint
 import xformers.ops
 from xformers.attn_bias_utils import create_attn_bias
 from xformers.ops import fmha
-from xformers.ops.common import get_xformers_operator
 from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
 from xformers.ops.fmha.common import AttentionOpBase
 from xformers.ops.fmha.dispatch import _dispatch_fw_priority_list
@@ -616,8 +616,8 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 
-    if torch.version.hip and op is fmha.triton_splitk.FwOp:
-        pytest.skip("trition_splitk Fwd is not supported on ROCm!")
+    if op is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
 
     if packed and not (k == kv and q_len == kv_len):
         pytest.skip(
@@ -711,12 +711,8 @@ def test_mqa_forward(
 
     device = torch.device("cuda")
 
-    ### ck_check_op is temporarily used to check ck-tiled availability
-    ck_check_op = get_xformers_operator("is_ck_tiled_used")
-    use_ck_tiled = ck_check_op()
-
-    if not use_ck_tiled:
-        pytest.skip("mqa/gqa is only supported with ck-tiled")
+    if op is fmha.ck.FwOp and not op.IS_CK_TILED:
+        pytest.skip("mqa/gqa is only supported with ck-tiled fmha")
 
     torch.manual_seed(B * M + N * K + Hq*Hkv + Kv)
 
@@ -813,6 +809,13 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
         k,
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
+
+    if op is fmha.ck.FwOp and op.IS_CK_TILED:
+        pytest.skip("logsumexp is not yet supported by ck-tiled fmha!")
+
+    if op is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     query, key, value, attn_bias = create_tensors(
         *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, fmt="BMK"
     )
@@ -1224,6 +1227,9 @@ def test_memory_efficient_attention_full_block_masked(q_len, kv_len, batch_size,
     op_fw = fmha.small_k.FwOp
     op_bw = fmha.small_k.BwOp
 
+    if torch.version.hip:
+        pytest.skip("fmha.small_k is not supported on ROCM")
+
     scale = 3
     query = torch.randn((batch_size, q_len, k_len), device=device) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
@@ -1311,6 +1317,9 @@ def test_cuda_streams(
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
     if device != "cuda":
         pytest.skip("Not CUDA")
+    if op is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     bias_type = None
     opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = [
         op,
@@ -1452,6 +1461,11 @@ def test_grad_checkpointing(
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
     if op is fmha.triton.FwOp:
         pytest.skip("Triton Flash Attention 2 doesn't support backward pass yet")
+    if op is fmha.ck.FwOp and op.IS_CK_TILED:
+        pytest.skip("ck-tiled FMHA doesn't supported backward pass yet")
+    if op is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     bias_type = None
     opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = (
         op,
@@ -1523,6 +1537,10 @@ def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
     q = torch.empty([1, 1, 32, 4], device="cuda", dtype=torch.float16).permute(
         0, 3, 1, 2
     )
+
+    if op is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     try:
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
     except ValueError as e:
@@ -1538,6 +1556,10 @@ def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
 )
 def test_unsupported_stride_alignment(op: Type[fmha.AttentionFwOpBase]):
     q = torch.empty([1, 2, 1, 33], device="cuda", dtype=torch.float16)[:, :, :, :32]
+
+    if op is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     try:
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
     except ValueError as e:
@@ -1987,6 +2009,9 @@ def test_triton_splitk_decoder(
     if dequant:
         pytest.skip("dequant is not supported")
 
+    if (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     # We omit dequant with f16: it needs a very high tol
     test_decoder(
         op,
@@ -2095,6 +2120,8 @@ class TestAttnBias:
             fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
 
     def test_f32_biasf16(self) -> None:
+        if torch.version.hip:
+            pytest.skip("float32 is not supported by ck.FwOp/ck.BwOp currently, skipped")
         q, k, v, bias = self.create_tensors(torch.float32)
         fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
         bias = bias.to(torch.float16)
@@ -2103,7 +2130,10 @@ class TestAttnBias:
 
     @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
     def test_wrong_alignment(self, dtype) -> None:
-        op = fmha.cutlass.FwOp
+        op = fmha.cutlass.FwOp if torch.version.cuda else fmha.ck.FwOp
+        if torch.version.hip and dtype is torch.float32:
+            pytest.skip("float32 is not supported by fmha.ck.FwOp!")
+
         q, k, v, bias = self.create_tensors(dtype, Mq=7, Mkv=5)
         try:
             fmha.memory_efficient_attention(q, k, v, attn_bias=bias, op=(op, None))
@@ -2166,6 +2196,9 @@ def test_has_kernel_for(sm_shmem: Tuple[int, int], dtype_str: str) -> None:
     sm, shmem_kbytes = sm_shmem
     if sm < 80 and dtype_str == "bf16":
         return
+
+    if torch.version.hip:
+        pytest.skip("_has_cutlassF_kernel is not supported on ROCM")
 
     for k in [16, 32, 64, 128, 256]:
         assert torch.ops.xformers._has_cutlassF_kernel_for(
@@ -2287,6 +2320,9 @@ def test_forward_gqa_one_group(opFW):
     k = torch.randn([B, Mkv, 1, H, K], dtype=dtype, device="cuda") * 3
     v = torch.randn([B, Mkv, 1, H, K], dtype=dtype, device="cuda") * 3
 
+    if opFW is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     supported = opFW.supports(fmha.Inputs(q, k, v))
     if not supported:
         supported_bmhk = opFW.supports(fmha.Inputs(q[:, :, 0], k[:, :, 0], v[:, :, 0]))
@@ -2305,6 +2341,10 @@ def test_forward_gqa_one_group(opFW):
 @sm80_or_better_only
 def test_flash_gqa_wrong_strides() -> None:
     op = (fmha.flash.FwOp, None)
+
+    if torch.version.hip:
+        pytest.skip("flash operation is not supported on ROCM!")
+
     device = "cuda"
     B, Mq, Mkv, G, H, K = 3, 1, 512, 2, 8, 128
     q = torch.empty((B, Mq, G, H, K), dtype=torch.float16, device=device)
@@ -2343,6 +2383,8 @@ def _dispatches_to_flash_decoding(q, kv):
 
 
 def test_dispatch_decoding_bmhk() -> None:
+    if torch.version.hip:
+        pytest.skip("dispatch testing currently ignored on ROCM")
     assert not _dispatches_to_splitK(
         torch.empty([1, 8, 1, 128]), torch.empty([1, 2048, 1, 128])
     ), "Should not use SplitK with 1 head (no tensorcores)"
@@ -2365,6 +2407,8 @@ def test_dispatch_decoding_bmhk() -> None:
 
 
 def test_dispatch_decoding_bmghk() -> None:
+    if torch.version.hip:
+        pytest.skip("dispatch testing currently ignored on ROCM")
     assert not _dispatches_to_splitK(
         torch.empty([1, 8, 1, 1, 128]), torch.empty([1, 2048, 1, 1, 128])
     ), "Should not use SplitK with 1 head (no tensorcores)"
@@ -2447,6 +2491,9 @@ def test_mqa_decoding(op: Type[fmha.AttentionFwOpBase], dtype, B_Mkv_H_K):
     k = k.expand(-1, -1, H, -1)
     v = v.expand(-1, -1, H, -1)
 
+    if (sys.version_info.major, sys.version_info.minor) <= (3, 8): 
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     if not op.supports(fmha.Inputs(q, k, v)):
         pytest.skip("not supported")
     out = fmha.memory_efficient_attention_forward(q, k, v, op=op)
@@ -2468,6 +2515,12 @@ def test_empty_tensors_empty_query(
         fmt="BMHK",
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
+
+    if opFW is fmha.ck.FwOp and opFW.IS_CK_TILED:
+        pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
+
+    if opFW is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
 
     query = query[:, :0]
     query.requires_grad_(True)
@@ -2491,6 +2544,12 @@ def test_empty_tensors_empty_kv(
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
 
+    if opFW is fmha.ck.FwOp and opFW.IS_CK_TILED:
+        pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
+
+    if opFW is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     key = key[:, :0]
     value = value[:, :0]
     query.requires_grad_(True)
@@ -2512,6 +2571,12 @@ def test_empty_tensors_empty_b(
         fmt="BMHK",
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
+
+    if opFW is fmha.ck.FwOp and opFW.IS_CK_TILED:
+        pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
+
+    if opFW is fmha.triton_splitk.FwOp and (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
 
     query, key, value = query[:0], key[:0], value[:0]
     query.requires_grad_(True)
@@ -2585,6 +2650,9 @@ def test_cutlassB_iter_order(
         the same block of dQ
     .. and we test this across variable causal masks+local attention combinations
     """
+    if torch.version.hip:
+        pytest.skip("this test is only for cutlass/cuda environment")
+
     if (
         window_size > 0
         and custom_mask_type == fmha.cutlass._CustomMaskType.NoCustomMask

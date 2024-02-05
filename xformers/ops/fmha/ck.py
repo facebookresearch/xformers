@@ -211,6 +211,8 @@ class FwOp(AttentionFwOpBase):
         256,  # 64x128 with accumulation in gmem
     ]
 
+    IS_CK_TILED = is_ck_tiled()
+
     @classmethod
     def apply(
         cls, inp: Inputs, needs_gradient: bool
@@ -335,6 +337,9 @@ class FwOp(AttentionFwOpBase):
         check_lastdim_alignment_stride1(reasons, "value", d.value, matmul_alignment_mn)
         _check_bias_alignment(reasons, d.attn_bias)
         _check_large_shapes(reasons, d)
+        requires_grad = d.query.requires_grad or d.key.requires_grad or d.value.requires_grad
+        if is_ck_tiled() and requires_grad:
+            reasons.append("Gradience is currently not supported by ck-tiled!")
         return reasons
 
     @classmethod
@@ -397,6 +402,8 @@ class BwOp(AttentionBwOpBase):
         256,  # 64x128 with accumulation in gmem
     ]
 
+    IS_CK_TILED = is_ck_tiled()
+
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(BwOp, cls).not_supported_reasons(d)
@@ -429,7 +436,7 @@ class BwOp(AttentionBwOpBase):
                 )
         _check_large_shapes(reasons, d)
         if is_ck_tiled():
-            reasons.append("Backward is currently not completely supported by ck-tiled!")
+            reasons.append("Backward is currently not supported by ck-tiled!")
         return reasons
 
     @classmethod
