@@ -1867,6 +1867,7 @@ def test_window_size_materialize() -> None:
 
 
 @cuda_only
+@pytest.mark.parametrize("Mq", [1, 512])
 @pytest.mark.parametrize(
     "opFW_biasT",
     [
@@ -1875,10 +1876,16 @@ def test_window_size_materialize() -> None:
         for biasT in op.SUPPORTED_ATTN_BIAS_TYPES
         if op.SUPPORTS_BMGHK
     ],
+    ids=lambda o: f"{o[0].NAME}-{o[1].__name__}" if isinstance(o, tuple) else "",
 )
-def test_forward_gqa(opFW_biasT):
+def test_forward_gqa(opFW_biasT, Mq: int):
     opFW, biasT = opFW_biasT
-    B_Mq_Mkv_H_K_Kv = (3, 512, 512, 16, 128, 128)
+    if Mq < 512 and (
+        issubclass(biasT, fmha.attn_bias.LowerTriangularMask)
+        or issubclass(biasT, fmha.attn_bias.BlockDiagonalCausalMask)
+    ):
+        pytest.skip("undefined upper left")
+    B_Mq_Mkv_H_K_Kv = (3, Mq, 512, 16, 128, 128)
     test_forward(
         (
             opFW,
