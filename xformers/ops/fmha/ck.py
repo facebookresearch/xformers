@@ -7,7 +7,7 @@
 from dataclasses import replace
 from enum import Enum
 from functools import partial
-from typing import Any, List, Optional, Set, Tuple, Union, Mapping
+from typing import Any, List, Mapping, Optional, Set, Tuple, Union
 
 import torch
 
@@ -34,6 +34,7 @@ from .common import (
     _attn_bias_apply,
     check_lastdim_alignment_stride1,
 )
+
 
 def _minimum_gemm_alignment(inp: Inputs) -> int:
     return 1

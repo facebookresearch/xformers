@@ -13,10 +13,10 @@ from scipy.stats import binomtest
 from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
+from xformers.attn_bias_utils import create_attn_bias
 from xformers.ops import fmha
 from xformers.ops.common import get_xformers_operator
 from xformers.ops.fmha.common import AttentionOpBase
-from xformers.attn_bias_utils import create_attn_bias
 
 from .utils import assert_allclose
 

@@ -1,8 +1,16 @@
+from typing import Any, List, Optional, Set, Tuple
+
 import torch
-from typing import Any, List, Set, Tuple, Optional
+
 from xformers.ops.common import get_xformers_operator, register_operator
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalWithOffsetPaddedKeysMask
-from xformers.ops.fmha.common import AttentionFwOpBase, Context, Inputs, check_lastdim_alignment_stride1
+from xformers.ops.fmha.common import (
+    AttentionFwOpBase,
+    Context,
+    Inputs,
+    check_lastdim_alignment_stride1,
+)
+
 
 @register_operator
 class FwOp(AttentionFwOpBase):

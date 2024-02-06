@@ -1,10 +1,12 @@
 # TODO(max): add a proper copyright header
+from typing import Any, List, Optional, Set, Tuple
+
 import torch
 
-from typing import Any, Set, List, Tuple, Optional
+from ..common import get_xformers_operator, register_operator
 from .attn_bias import BlockDiagonalCausalWithOffsetPaddedKeysMask
 from .common import AttentionFwOpBase, Context, Inputs
-from ..common import get_xformers_operator, register_operator
+
 
 @register_operator
 class FwOp(AttentionFwOpBase):

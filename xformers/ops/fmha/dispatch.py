@@ -5,11 +5,23 @@
 
 
 import textwrap
-import torch
 from collections import deque
 from typing import List, Sequence, Type, TypeVar
 
-from . import attn_bias, cutlass, decoder, flash, small_k, triton, triton_splitk, ck, ck_decoder, ck_splitk
+import torch
+
+from . import (
+    attn_bias,
+    ck,
+    ck_decoder,
+    ck_splitk,
+    cutlass,
+    decoder,
+    flash,
+    small_k,
+    triton,
+    triton_splitk,
+)
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 

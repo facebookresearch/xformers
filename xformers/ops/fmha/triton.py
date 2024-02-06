@@ -16,18 +16,16 @@ from dataclasses import replace
 from typing import Any, List, Mapping, Optional, Set, Tuple
 
 import torch
-
 import triton
 import triton.language as tl
 
 from ..common import register_operator
-
 from .attn_bias import (
     BlockDiagonalCausalMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     LowerTriangularMask,
 )
-from .common import AttentionFwOpBase, check_lastdim_alignment_stride1, Context, Inputs
+from .common import AttentionFwOpBase, Context, Inputs, check_lastdim_alignment_stride1
 
 
 @triton.jit

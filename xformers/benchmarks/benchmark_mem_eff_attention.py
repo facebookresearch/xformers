@@ -10,11 +10,11 @@ from functools import partial
 
 import torch
 from torch.utils import benchmark
-from xformers.benchmarks.utils import benchmark_main_helper
 
 import xformers.ops
 import xformers.ops.fmha as fmha
 from xformers.attn_bias_utils import create_attn_bias
+from xformers.benchmarks.utils import benchmark_main_helper
 
 torch.backends.cuda.matmul.allow_tf32 = False
 
