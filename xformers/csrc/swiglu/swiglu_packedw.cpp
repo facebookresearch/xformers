@@ -221,8 +221,10 @@ at::Tensor swiglu_packedw_cuda(
 } // namespace
 
 TORCH_LIBRARY(xformers, m) {
+#if !defined(USE_ROCM)
   m.def(
       "swiglu_packedw(Tensor x, Tensor w1w2, Tensor? b1b2, Tensor w3, Tensor? b3) -> Tensor");
+#endif
 }
 
 TORCH_LIBRARY_IMPL(xformers, Autograd, m) {

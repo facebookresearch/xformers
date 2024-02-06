@@ -35,8 +35,10 @@ at::Tensor matmul_with_mask(
 }
 
 TORCH_LIBRARY_FRAGMENT(xformers, m) {
+#if !defined(USE_ROCM)
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::matmul_with_mask(Tensor a, Tensor b, Tensor mask) -> Tensor"));
+#endif
 }
 
 TORCH_LIBRARY_IMPL(xformers, CPU, m) {
