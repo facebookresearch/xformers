@@ -16,7 +16,6 @@ from torch.utils.checkpoint import checkpoint
 import xformers.ops
 from xformers.attn_bias_utils import create_attn_bias
 from xformers.ops import fmha
-from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
 from xformers.ops.fmha.common import AttentionOpBase
 from xformers.ops.fmha.dispatch import _dispatch_fw_priority_list
 
@@ -38,6 +37,7 @@ ALL_FW_OPS: Sequence[Type[fmha.common.AttentionFwOpBase]] = [
 ALL_BW_OPS: Sequence[Type[fmha.common.AttentionBwOpBase]] = [
     fmha.ck.BwOp,
 ]
+
 
 def sample_random_supported_fw(
     inp: fmha.Inputs, seed: int
@@ -289,7 +289,9 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
     return out.permute((0, 2, 1, 3))
 
 
-def ref_attention_splitk_bmhk(q, k, v, attn_bias, scale=None, split_k=None, dtype=None) -> torch.Tensor:
+def ref_attention_splitk_bmhk(
+    q, k, v, attn_bias, scale=None, split_k=None, dtype=None
+) -> torch.Tensor:
     assert q.ndim == 4
 
     def T(t):
@@ -303,13 +305,18 @@ def ref_attention_splitk_bmhk(q, k, v, attn_bias, scale=None, split_k=None, dtyp
             device=q.device,
             dtype=torch.float32,
         ).reshape([q.shape[0] * q.shape[2], q.shape[1], k.shape[1]])
-    out = ref_attention_splitk(T(q), T(k), T(v), attn_bias, scale=scale, split_k=split_k, dtype=dtype)
+    out = ref_attention_splitk(
+        T(q), T(k), T(v), attn_bias, scale=scale, split_k=split_k, dtype=dtype
+    )
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
 
 
-def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) -> torch.Tensor:
+def ref_attention_splitk(
+    q, k, v, attn_bias, scale=None, split_k=2, dtype=None
+) -> torch.Tensor:
     if q.ndim == 5:
+
         def attn_bias_group(group: int):
             if isinstance(attn_bias, torch.Tensor):
                 return attn_bias[:, group]
@@ -322,7 +329,12 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
         return torch.stack(
             [
                 ref_attention_splitk_bmhk(
-                    q[:, :, g], k[:, :, g], v[:, :, g], attn_bias=attn_bias_group(g), split_k=split_k, dtype=dtype
+                    q[:, :, g],
+                    k[:, :, g],
+                    v[:, :, g],
+                    attn_bias=attn_bias_group(g),
+                    split_k=split_k,
+                    dtype=dtype,
                 )
                 for g in range(q.shape[2])
             ],
@@ -330,7 +342,9 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
         )
 
     if q.ndim == 4:
-        return ref_attention_splitk_bmhk(q, k, v, attn_bias=attn_bias, split_k=split_k, dtype=dtype)
+        return ref_attention_splitk_bmhk(
+            q, k, v, attn_bias=attn_bias, split_k=split_k, dtype=dtype
+        )
     assert q.ndim == 3
     if dtype is None:
         dtype = torch.float32
@@ -339,7 +353,7 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
     v = v.to(dtype=dtype)
 
     if scale is None:
-        scale = q.shape[-1] ** -.5
+        scale = q.shape[-1] ** -0.5
     assert not q.isnan().any()
     q = q * scale
     assert not q.isnan().any()
@@ -361,30 +375,31 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
             )
 
     split_size = k.size(-2) // split_k
-    split_config = { "dim": -2, "split_size_or_sections": split_size}
+    split_config = {"dim": -2, "split_size_or_sections": split_size}
     k_split = torch.split(k, **split_config)
     v_split = torch.split(v, **split_config)
-    attn_bias_split = torch.split(attn_bias_tensor, dim=-1, split_size_or_sections=split_size)
-    
+    attn_bias_split = torch.split(
+        attn_bias_tensor, dim=-1, split_size_or_sections=split_size
+    )
+
     def compute_attention_split(q_whole, k_slice, v_slice, attn_bias_slice):
         p_slice = q_whole @ k_slice.transpose(-2, -1)
         p_slice += attn_bias_slice
-        m = torch.max(p_slice, dim = -1, keepdim=True).values
+        m = torch.max(p_slice, dim=-1, keepdim=True).values
         p_slice_scaled = p_slice - m
         p_slice_scaled[p_slice_scaled.isnan()] = float("-inf")
         s = torch.exp(p_slice_scaled)
-        l = torch.sum(s, dim=-1, keepdim=True)
+        l1 = torch.sum(s, dim=-1, keepdim=True)
         attn_slice = s @ v_slice
         return {
             "attn_slice": attn_slice,
             "row_max": m,
-            "row_lse": l, 
+            "row_lse": l1,
         }
-    
+
     splits = list(zip(k_split, v_split, attn_bias_split))
 
-    slices = list(map(lambda s: compute_attention_split(q, s[0], s[1], s[2]), 
-        splits))
+    slices = list(map(lambda s: compute_attention_split(q, s[0], s[1], s[2]), splits))
     out = torch.zeros_like(q)
 
     # reduce out over split-k slices
@@ -399,11 +414,11 @@ def ref_attention_splitk(q, k, v, attn_bias, scale=None, split_k=2, dtype=None) 
 
         log_alpha = -torch.abs(local_max - global_max)
         alpha = torch.exp(log_alpha)
-        alpha.nan_to_num_(1.)
+        alpha.nan_to_num_(1.0)
 
         pick_new = local_max < global_max
-        new_coef = torch.where(pick_new, alpha, 1.)
-        curr_coef = torch.where(pick_new, 1., alpha)
+        new_coef = torch.where(pick_new, alpha, 1.0)
+        curr_coef = torch.where(pick_new, 1.0, alpha)
 
         out = out * curr_coef + local_out * new_coef
         global_sumexp = global_sumexp * curr_coef + local_sumexp * new_coef
@@ -634,7 +649,9 @@ def test_key_query_all_ones(dtype, q_len, kv_len, batch_size, k_len):
     key = torch.ones((batch_size, kv_len, k_len), device=device, dtype=dtype)
     value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
 
-    out = xformers.ops.memory_efficient_attention(query, key, value, op=(fmha.ck.FwOp, None))
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, op=(fmha.ck.FwOp, None)
+    )
     # this should be equivalent to the average over value
     ref = value.mean(1, keepdim=True).expand_as(query)
 
@@ -642,6 +659,7 @@ def test_key_query_all_ones(dtype, q_len, kv_len, batch_size, k_len):
         assert_allclose(out, ref, atol=1e-5)
     else:
         assert_allclose(out, ref, atol=1e-2)
+
 
 def _block_diag_reshape_lse(
     lse: torch.Tensor, q_seqinfo: fmha.attn_bias._SeqLenInfo
@@ -748,18 +766,24 @@ def test_backward(
         kv,
     ) = opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 
-    ## ToDo: reopen bfloat16 for testing
+    # ToDo: reopen bfloat16 for testing
     if dtype is torch.bfloat16:
-        pytest.skip("Temporarily disabled bfloat16 as we are still improving the accuracy of the results")
+        pytest.skip(
+            "Temporarily disabled bfloat16 as we are still improving the accuracy of the results"
+        )
 
     if k > 128 or kv > 128:
-        pytest.skip("head-dim length bigger than 128 is not supported by CK-FlashAttention")
+        pytest.skip(
+            "head-dim length bigger than 128 is not supported by CK-FlashAttention"
+        )
 
     if k % 2 != 0:
-        pytest.skip("head-dim length must be an even value for CK-FlashAttention")    
+        pytest.skip("head-dim length must be an even value for CK-FlashAttention")
 
     if grad_out_contiguous is False:
-        pytest.skip("CK-FlashAttention requires grad_out and out have same lengths/strides")
+        pytest.skip(
+            "CK-FlashAttention requires grad_out and out have same lengths/strides"
+        )
 
     attn_bias_requires_grad = (
         random.Random(q_len + kv_len * batch_size).randint(0, 1) > 0
@@ -913,19 +937,21 @@ def _vec_binom_test(x, n, p):
     pval = np.minimum(1.0, pval)
     return pval
 
+
 def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
     if op == fmha.ck.FwOp:
         mask = torch.empty((batch_size, 1, q_len, kv_len), device=device)
-        ## rand_uniform is an int32 tensor
+        # rand_uniform is an int32 tensor
         rand_uniform = torch.ops.xformers._ck_rand_uniform(p, mask)
-        ##mask = (rand_uniform <= int((1.0-p)*65535.0)).to(torch.float32)
-        mask = (rand_uniform <= int((1.0-p)*255.0)).to(torch.float32)
+        # mask = (rand_uniform <= int((1.0-p)*65535.0)).to(torch.float32)
+        mask = (rand_uniform <= int((1.0 - p) * 255.0)).to(torch.float32)
         mask = mask.reshape(batch_size, q_len, kv_len)
     else:
         mask = torch.empty((batch_size, q_len, kv_len), device=device)
         mask = torch.ops.xformers._temp_dropout(mask, p)
 
     return mask
+
 
 @cuda_only
 @pytest.mark.parametrize("attn_bias", [None, fmha.attn_bias.LowerTriangularMask()])
@@ -941,7 +967,7 @@ def test_dropout(dtype, op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias
     from scipy.stats import binomtest
 
     device = "cuda"
-    scale = 0.05 
+    scale = 0.05
     query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
     value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
@@ -966,7 +992,9 @@ def test_dropout(dtype, op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias
     torch.manual_seed(seed)
     mask = _get_drop_mask(op, batch_size, q_len, kv_len, p, device)
     ref = ref_attention(query, key, value, attn_bias, mask, p)
-    assert_allclose(out.float(), ref, atol=3e-3, rtol=5e-4), f"{(out - ref).abs().max()}"
+    assert_allclose(
+        out.float(), ref, atol=3e-3, rtol=5e-4
+    ), f"{(out - ref).abs().max()}"
 
     num_trials = 1000
     p_val_tol = 1e-6
@@ -984,12 +1012,10 @@ def test_dropout(dtype, op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias
 
 
 def _test_dropout_backward(q_len, kv_len, batch_size, k, p, op, dtype):
-    if dtype is torch.bfloat16 and compute_capability < (8, 0):
-        pytest.skip("bf16 requires Sm80")
     if not op.is_available():
         pytest.skip()
 
-    scale = 3 
+    scale = 3
     device = "cuda"
     query = torch.randn((batch_size, q_len, k), device=device, dtype=dtype) * scale
     key = torch.randn((batch_size, kv_len, k), device=device, dtype=dtype) * scale
@@ -1415,6 +1441,7 @@ def test_unsupported_stride_alignment(op: Type[fmha.AttentionFwOpBase]):
         q = q.contiguous()
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
 
+
 def test_attn_bias_causal() -> None:
     m = -math.inf
     causal_mask = torch.tensor([[0, m], [0, 0], [0, 0]])
@@ -1643,6 +1670,7 @@ def _kv_heads_label(kv_heads: Optional[int]) -> str:
         return "mq"
     return f"gqa{kv_heads}"
 
+
 @pytest.mark.parametrize("dtype", ["f32"])
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
 @pytest.mark.parametrize("n_heads", [16])
@@ -1752,12 +1780,10 @@ def test_decoder(
         kv_padding=padding,
     )
     inp = fmha.Inputs(q, k, v, attn_bias=attn_bias)
-    if (not_supported_reasons := op.not_supported_reasons(inp)):
+    if not_supported_reasons := op.not_supported_reasons(inp):
         pytest.skip(f"{not_supported_reasons=}")
 
-    decoder_output = fmha.memory_efficient_attention_forward(
-        q, k, v, attn_bias, op=op
-    )
+    decoder_output = fmha.memory_efficient_attention_forward(q, k, v, attn_bias, op=op)
 
     ref_output = ref_attention(q, k, v, attn_bias)
 
@@ -1769,7 +1795,9 @@ def test_decoder(
     )
 
 
-@pytest.mark.parametrize("op", [fmha.ck_splitk.FwOp_S1, fmha.ck_splitk.FwOp_S2, fmha.ck_splitk.FwOp_S4])
+@pytest.mark.parametrize(
+    "op", [fmha.ck_splitk.FwOp_S1, fmha.ck_splitk.FwOp_S2, fmha.ck_splitk.FwOp_S4]
+)
 @pytest.mark.parametrize("dtype", ["f32"])
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
 @pytest.mark.parametrize("n_heads", [16])
@@ -1782,7 +1810,7 @@ def test_splitk_decoder(
     padding: int,
     bsz: int,
     dtype: str,
-    d: int
+    d: int,
 ) -> None:
     # no quantized impl compared to cuda
     test_decoder(
@@ -1826,7 +1854,9 @@ def test_attn_bias_blockdiag_doc() -> None:
     linear = torch.nn.Linear(K, K * 3).to(device=device, dtype=dtype)  # type: ignore
 
     q, k, v = linear(x).reshape([1, -1, 1, 3, K]).unbind(-2)
-    out = fmha.memory_efficient_attention(q, k, v, attn_bias=attn_bias, op=(fmha.ck.FwOp, None))
+    out = fmha.memory_efficient_attention(
+        q, k, v, attn_bias=attn_bias, op=(fmha.ck.FwOp, None)
+    )
     list_out = attn_bias.split(out)
     assert tuple(list_out[0].shape) == (1, 3, 1, K)
 
@@ -2072,7 +2102,8 @@ def test_forward_gqa_one_group(opFW):
         rtol=opFW.ERROR_RTOL.get(dtype, 1e-5),
     )
 
-'''
+
+"""
 @sm80_or_better_only
 def test_flash_gqa_wrong_strides() -> None:
     op = (fmha.flash.FwOp, None)
@@ -2098,7 +2129,8 @@ def test_flash_gqa_wrong_strides() -> None:
         :, :, :, :, :K
     ]
     fmha.memory_efficient_attention(q, kv, kv, op=op)
-'''
+"""
+
 
 def _dispatches_to_splitK(q, kv):
     return (

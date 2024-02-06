@@ -5,11 +5,23 @@
 
 
 import textwrap
-import torch
 from collections import deque
 from typing import List, Sequence, Type, TypeVar
 
-from . import attn_bias, cutlass, decoder, flash, small_k, triton, triton_splitk, ck, ck_decoder, ck_splitk
+import torch
+
+from . import (
+    attn_bias,
+    ck,
+    ck_decoder,
+    ck_splitk,
+    cutlass,
+    decoder,
+    flash,
+    small_k,
+    triton,
+    triton_splitk,
+)
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 
@@ -69,21 +81,23 @@ def _dispatch_fw_priority_list(
 ) -> Sequence[Type[AttentionFwOpBase]]:
     if torch.version.cuda:
         priority_list_ops = deque(
-           [
-              flash.FwOp,
-              triton.FwOp,
-              cutlass.FwOp,
-              small_k.FwOp,
-           ])
+            [
+                flash.FwOp,
+                triton.FwOp,
+                cutlass.FwOp,
+                small_k.FwOp,
+            ]
+        )
         if _is_cutlass_fwd_faster_than_flash(inp):
             priority_list_ops.remove(cutlass.FwOp)
             priority_list_ops.appendleft(cutlass.FwOp)
     else:
         priority_list_ops = deque(
-           [
-              triton.FwOp,
-              ck.FwOp,
-           ])
+            [
+                triton.FwOp,
+                ck.FwOp,
+            ]
+        )
     if _is_triton_fwd_fastest(inp):
         priority_list_ops.remove(triton.FwOp)
         priority_list_ops.appendleft(triton.FwOp)
@@ -94,7 +108,9 @@ def _dispatch_fw_priority_list(
         if not mqa_or_gqa:
             # With multiquery, cutlass is sometimes faster than decoder
             # but it's not currently clear when.
-            priority_list_ops.appendleft(decoder.FwOp if torch.version.cuda else ck_decoder.FwOp)
+            priority_list_ops.appendleft(
+                decoder.FwOp if torch.version.cuda else ck_decoder.FwOp
+            )
         # Split-KV is useful with MQA
         # for short Q-seqlen / long K-seqlen
         if mqa_or_gqa and inp.query.shape[1] <= 32 and inp.key.shape[1] >= 256:

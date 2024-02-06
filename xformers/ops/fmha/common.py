@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from functools import partial
 import math
 from dataclasses import dataclass
 from functools import partial
@@ -301,7 +300,11 @@ class AttentionOpBase(BaseOperator):
         dtype = d.query.dtype
         if device_type not in cls.SUPPORTED_DEVICES:
             reasons.append(f"device={device_type} (supported: {cls.SUPPORTED_DEVICES})")
-        if device_type == "cuda" and not _built_with_cuda and (torch.version.hip is None):
+        if (
+            device_type == "cuda"
+            and not _built_with_cuda
+            and (torch.version.hip is None)
+        ):
             reasons.append("xFormers wasn't build with CUDA support")
         if device_type == "cuda":
             device_capability = torch.cuda.get_device_capability(d.device)

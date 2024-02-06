@@ -1,10 +1,16 @@
-# TODO(max): add a proper copyright header
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+from typing import Any, List, Optional, Set, Tuple
+
 import torch
 
-from typing import Any, Set, List, Tuple, Optional
+from ..common import get_xformers_operator, register_operator
 from .attn_bias import BlockDiagonalCausalWithOffsetPaddedKeysMask
 from .common import AttentionFwOpBase, Context, Inputs
-from ..common import get_xformers_operator, register_operator
+
 
 @register_operator
 class FwOp(AttentionFwOpBase):
@@ -12,11 +18,15 @@ class FwOp(AttentionFwOpBase):
     An operator optimized for K=256 (so the contiguous dim fits into registers).
     Tested to work on MI250x.
     """
+
     OPERATOR = get_xformers_operator("efficient_attention_forward_decoder_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16, torch.float}
     SUPPORTED_MAX_K: int = 256
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), BlockDiagonalCausalWithOffsetPaddedKeysMask}
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+        type(None),
+        BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    }
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_BMGHK = True
@@ -29,23 +39,29 @@ class FwOp(AttentionFwOpBase):
         attn_bias = d.attn_bias
         if isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
             if d.query.shape[0] != 1:
-                reasons.append(f"One formal batch element expected; got {d.query.shape[0]}")
+                reasons.append(
+                    f"One formal batch element expected; got {d.query.shape[0]}"
+                )
 
             if d.query.shape[-1] > cls.SUPPORTED_MAX_K:
-                reasons.append(f"Got head_dim={d.query.shape[-1]}; only head_dim<={cls.SUPPORTED_MAX_K} is supported for now.")
+                reasons.append(
+                    f"Got head_dim={d.query.shape[-1]}; only head_dim<={cls.SUPPORTED_MAX_K} is supported for now."
+                )
 
-            threads_per_warp = 64 # TODO: ideally query the platform here
+            threads_per_warp = 64  # TODO: ideally query the platform here
             required_alignment = 0
             head_dim = d.query.shape[-1]
             for vec_size in (4, 2, 1):
                 if head_dim <= vec_size * threads_per_warp:
                     required_alignment = vec_size
-            
+
             if not required_alignment:
                 reasons.append(f"Got head_dim={head_dim} which is too large")
-            
+
             if head_dim % required_alignment != 0:
-                reasons.append(f"Got head_dim={head_dim}; it needs to be divisible by {required_alignment}")
+                reasons.append(
+                    f"Got head_dim={head_dim}; it needs to be divisible by {required_alignment}"
+                )
 
             if d.key.stride(-1) != 1:
                 reasons.append("expect keys to have last dim contiguous")
@@ -57,7 +73,7 @@ class FwOp(AttentionFwOpBase):
             padding = attn_bias.k_seqinfo.padding
             bsz = d.key.shape[1] // padding
             num_queries = d.query.shape[1] // bsz
-            
+
             if q_starts != list(range(0, 1 + bsz, num_queries)):
                 reasons.append("expect to have same num_queries in each batch")
             if bsz != len(q_starts) - 1:
@@ -96,7 +112,7 @@ class FwOp(AttentionFwOpBase):
             else:
                 key = k[0].unflatten(0, (-1, padding))
                 value = v[0].unflatten(0, (-1, padding))
-            query = q[0].unflatten(0, (key.shape[0], -1))    
+            query = q[0].unflatten(0, (key.shape[0], -1))
         else:
             # key: (B, padding, G, 1 if multiquery else Hkv, D)
             # value: like key

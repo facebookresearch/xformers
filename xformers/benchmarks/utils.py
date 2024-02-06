@@ -445,53 +445,6 @@ def benchmark_main_helper(benchmark_fn, cases: List[Dict[str, Any]], **kwargs) -
     )
 
 
-def benchmark_main_helper2(
-    name: str,
-    functions,
-    fw: bool = False,
-    bw: bool = False,
-    cuda_graph: bool = True,
-    **kwargs,
-) -> None:
-    assert fw or bw
-
-    def handle_case(**case) -> Iterator[benchmark.Timer]:
-        for k, benchmark_cls in functions.items():
-            benchmark_object = benchmark_cls(**case, bw=bw)
-            label = benchmark_object.label
-            label += "fw" if fw else ""
-            label += "bw" if bw else ""
-
-            def run_one():
-                if fw:
-                    benchmark_object.fw()
-                if bw:
-                    benchmark_object.bw()
-
-            if cuda_graph:
-                run_one()
-                benchmark_object = benchmark_cls(**case, bw=bw)
-                g = torch.cuda.CUDAGraph()
-                with torch.cuda.graph(g):
-                    run_one()
-
-                def run_one():
-                    g.replay()
-
-            yield benchmark.Timer(
-                stmt="fn()",
-                globals={
-                    "fn": run_one,
-                },
-                label=label,
-                description=k,
-                sub_label=benchmark_object.sub_label,
-            )
-
-    handle_case.__name__ = name
-    benchmark_main_helper(handle_case, **kwargs)
-
-
 def benchmark_run_and_compare(
     benchmark_fn,
     cases: List[Dict[str, Any]],
@@ -662,8 +615,12 @@ def benchmark_run_and_compare(
             results, reference=results_compare_to, atol_s=atol_s, rtol=rtol
         )
 
+
 def _is_oom_error(e):
-    return isinstance(e, (torch.cuda.OutOfMemoryError, triton.runtime.autotuner.OutOfResources))
+    return isinstance(
+        e, (torch.cuda.OutOfMemoryError, triton.runtime.autotuner.OutOfResources)
+    )
+
 
 def _fail_if_regressions(
     results: List[Any], reference: List[Any], atol_s: float, rtol: float

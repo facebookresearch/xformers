@@ -3,14 +3,11 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
 import random
 from typing import List, Optional, Sequence, Tuple, Type, TypeVar
 
 import pytest
 import torch
-from scipy.stats import binomtest
-from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
 from xformers.ops import fmha
@@ -35,6 +32,7 @@ ALL_FW_OPS: Sequence[Type[fmha.common.AttentionFwOpBase]] = [
 ALL_BW_OPS: Sequence[Type[fmha.common.AttentionBwOpBase]] = [
     fmha.ck.BwOp,
 ]
+
 
 def sample_random_supported_fw(
     inp: fmha.Inputs, seed: int
@@ -403,7 +401,8 @@ def create_attn_bias(
             # ToDo: need a fix in ck-flashAttn to avoid divided-by-zero when all-(-inf) occurred
             #       with the data read by one-thread
             # make sure it also works if the first columns are partially masked out
-            ## attn_bias[0, 0, q_len - 1 :, : num_heads - 2] = -math.inf
+            #
+            # attn_bias[0, 0, q_len - 1 :, : num_heads - 2] = -math.inf
 
         if requires_grad:
             attn_bias.requires_grad_(True)
@@ -646,7 +645,9 @@ def test_key_query_all_ones(dtype, device, q_len, kv_len, batch_size, k_len):
     key = torch.ones((batch_size, kv_len, k_len), device=device, dtype=dtype)
     value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
 
-    out = xformers.ops.memory_efficient_attention(query, key, value, op=(fmha.ck.FwOp, None))
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, op=(fmha.ck.FwOp, None)
+    )
     # this should be equivalent to the average over value
     ref = value.mean(1, keepdim=True).expand_as(query)
 
@@ -654,6 +655,7 @@ def test_key_query_all_ones(dtype, device, q_len, kv_len, batch_size, k_len):
         assert_allclose(out, ref, atol=1e-5)
     else:
         assert_allclose(out, ref, atol=1e-2)
+
 
 def _block_diag_reshape_lse(
     lse: torch.Tensor, q_seqinfo: fmha.attn_bias._SeqLenInfo
@@ -732,21 +734,28 @@ def test_backward(
     ) = opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 
     if k > 128 or kv > 128:
-        pytest.skip("head-dim length bigger than 128 is not supported by CK-FlashAttention-1")
+        pytest.skip(
+            "head-dim length bigger than 128 is not supported by CK-FlashAttention-1"
+        )
 
     if k % 8 != 0 or kv % 8 != 0:
         pytest.skip("head-dim length must be an even value for CK-FlashAttention-1")
 
-    ## BottomRightMask requires generate {m0,m1,...}, {n0,n1,...} where mi <= ni
-    if bias_type is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask and q_len <= kv_len:
-        pytest.skip("BlockDiagonalCausalFromBottomRightMask requires kv_len bigger than q_len")
+    # BottomRightMask requires generate {m0,m1,...}, {n0,n1,...} where mi <= ni
+    if (
+        bias_type is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask
+        and q_len <= kv_len
+    ):
+        pytest.skip(
+            "BlockDiagonalCausalFromBottomRightMask requires kv_len bigger than q_len"
+        )
 
     if k != kv:
         pytest.skip("k same as kv is not well tested by CK-FlashAttention-1")
 
-    ## attn_bias_requires_grad = (
-    ##    random.Random(q_len + kv_len * batch_size).randint(0, 1) > 0
-    ##)
+    # attn_bias_requires_grad = (
+    #    random.Random(q_len + kv_len * batch_size).randint(0, 1) > 0
+    # )
     attn_bias_requires_grad = False
 
     query, key, value, attn_bias = create_tensors(
@@ -787,10 +796,10 @@ def test_backward(
     )
 
     grad_out = torch.ones_like(out)
-    ##if grad_out_contiguous is False:
-    ##    grad_out = torch.tensor([1.0], dtype=query.dtype, device=device)[
-    ##        None, None, :
-    ##    ].expand_as(out)
+    # if grad_out_contiguous is False:
+    #    grad_out = torch.tensor([1.0], dtype=query.dtype, device=device)[
+    #        None, None, :
+    #    ].expand_as(out)
 
     out.backward(grad_out)
 
@@ -864,5 +873,3 @@ def test_backward(
             atol=atol,
             rtol=rtol,
         )
-
-

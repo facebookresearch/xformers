@@ -3,20 +3,15 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
-import random
-from typing import List, Optional, Sequence, Tuple, Type, TypeVar
+from typing import Sequence, Type, TypeVar
 
 import pytest
 import torch
-from scipy.stats import binomtest
-from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
+from xformers.attn_bias_utils import create_attn_bias
 from xformers.ops import fmha
 from xformers.ops.common import get_xformers_operator
-from xformers.ops.fmha.common import AttentionOpBase
-from xformers.attn_bias_utils import create_attn_bias
 
 from .utils import assert_allclose
 
@@ -34,11 +29,14 @@ ALL_FW_OPS: Sequence[Type[fmha.common.AttentionFwOpBase]] = [
     fmha.ck.FwOp,
 ]
 
-### ck_check_op is temporarily used to check ck-tiled availability
+# ck_check_op is temporarily used to check ck-tiled availability
 ck_check_op = get_xformers_operator("is_ck_tiled_used")
 use_ck_tiled = ck_check_op()
 
-def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None):
+
+def ref_attention(
+    q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None
+):
     if q.ndim == 4:
         B, M, Hq, K = q.shape
         _, N, Hkv, Kv = v.shape
@@ -47,13 +45,13 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dt
         def attn_bias_head(head: int):
             if isinstance(attn_bias, torch.Tensor):
                 assert attn_bias.ndim == 4
-                _, H, _, _ = attn_bias.shape        
+                _, H, _, _ = attn_bias.shape
                 assert H == Hq
                 bias_bghmn = attn_bias.reshape(B, Hkv, nhead_ratio_qk, M, N)
                 return bias_bghmn[:, :, head]
             if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
                 assert attn_bias._bias.ndim == 4
-                _, H, _, _ = attn_bias._bias.shape        
+                _, H, _, _ = attn_bias._bias.shape
                 assert H == Hq
                 bias_bghmn = attn_bias._bias.reshape(B, Hkv, nhead_ratio_qk, M, N)
 
@@ -73,7 +71,7 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dt
             ],
             dim=3,
         ).reshape((B, M, Hq, Kv))
-     
+
     assert q.ndim == 3
     if dtype is None:
         dtype = torch.float32
@@ -125,24 +123,27 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None, dtype=None) -> torch.Tens
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
 
+
 @pytest.mark.parametrize("hdim_k,hdim_v", [(64, 64), (128, 128)])
 @pytest.mark.parametrize("nhead_q,nhead_kv", [(8, 1), (8, 2), (12, 4), (4, 4)])
 @pytest.mark.parametrize("seqlen_q,seqlen_kv", [(100, 128), (128, 100), (200, 1000)])
 @pytest.mark.parametrize("batches", [100, 64, 1])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("attn_bias_type", [type(None), torch.Tensor, fmha.attn_bias.LowerTriangularMask])
+@pytest.mark.parametrize(
+    "attn_bias_type", [type(None), torch.Tensor, fmha.attn_bias.LowerTriangularMask]
+)
 @pytest.mark.parametrize("op", ALL_FW_OPS)
 def test_mqa_forward(
     op,
     attn_bias_type,
-    dtype, 
-    batches: int, 
-    seqlen_kv: int, 
-    seqlen_q: int, 
-    nhead_kv: int, 
-    nhead_q: int, 
-    hdim_v: int, 
-    hdim_k: int, 
+    dtype,
+    batches: int,
+    seqlen_kv: int,
+    seqlen_q: int,
+    nhead_kv: int,
+    nhead_q: int,
+    hdim_v: int,
+    hdim_k: int,
 ):
     B = batches
     M = seqlen_q
@@ -158,7 +159,7 @@ def test_mqa_forward(
     if not use_ck_tiled:
         pytest.skip("mqa/gqa is only supported with ck-tiled")
 
-    torch.manual_seed(B * M + N * K + Hq*Hkv + Kv)
+    torch.manual_seed(B * M + N * K + Hq * Hkv + Kv)
 
     scale = 3
     query = torch.randn((B, M, Hq, K), device=device, dtype=dtype).mul_(scale)
@@ -187,6 +188,7 @@ def test_mqa_forward(
         err_msg = f"{op.NAME}: unsupported ({'/'.join(reasons)})"
         # Ensure we free memory to avoid OOMs
         del query, key, value, attn_bias, inputs
+        assert False, err_msg
 
     out = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op
@@ -208,4 +210,3 @@ def test_mqa_forward(
         atol=op.ERROR_ATOL[dtype],
         rtol=op.ERROR_RTOL.get(dtype, 1e-5),
     )
-

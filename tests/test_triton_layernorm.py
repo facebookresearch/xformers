@@ -12,7 +12,9 @@ from torch.cuda.amp.autocast_mode import autocast
 
 import xformers
 
-disable_on_rocm = pytest.mark.skipif(not not torch.version.hip, reason="could not be done on ROCM")
+disable_on_rocm = pytest.mark.skipif(
+    not not torch.version.hip, reason="could not be done on ROCM"
+)
 
 try:
     from xformers.triton import FusedLayerNorm
@@ -35,6 +37,7 @@ SHAPES = [
     (2, 4096, 4096),
     (1, 2048, 12288),
 ]
+
 
 @disable_on_rocm
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
@@ -103,6 +106,7 @@ def test_layernorm_parity(shape, amp):
             f"Bias grad mismatch: {torch.norm(torch_layernorm.bias.grad)} vs."
             + f" {torch.norm(triton_layernorm.bias.grad)}"
         )
+
 
 @disable_on_rocm
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")

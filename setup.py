@@ -214,54 +214,199 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
         )
     ]
 
+
 def rename_cpp_cu(cpp_files):
     for entry in cpp_files:
-        shutil.copy(entry, os.path.splitext(entry)[0] + '.cu')
+        shutil.copy(entry, os.path.splitext(entry)[0] + ".cu")
+
 
 def get_extensions():
     extensions_dir = os.path.join("xformers", "csrc")
 
-    sources = glob.glob(os.path.join(extensions_dir, "attention", "*.cpp"), recursive=False)
-    sources += glob.glob(os.path.join(extensions_dir, "attention", "autograd", "**", "*.cpp"), recursive=True)
-    sources += glob.glob(os.path.join(extensions_dir, "attention", "cpu", "**", "*.cpp"), recursive=True)
-    sources += glob.glob(os.path.join(extensions_dir, "indexing", "**", "*.cpp"), recursive=True)
-    sources += glob.glob(os.path.join(extensions_dir, "swiglu", "**", "*.cpp"), recursive=True)
-    
-    ## avoid the temporary .cu file under xformers/csrc/attention/hip_fmha are included
-    source_cuda = glob.glob(os.path.join(extensions_dir, "*.cu"), recursive=False)
-    source_cuda += glob.glob(os.path.join(extensions_dir, "attention", "cuda", "**", "*.cu"), recursive=True)
-    source_cuda += glob.glob(os.path.join(extensions_dir, "indexing", "**", "*.cu"), recursive=True)
-    source_cuda += glob.glob(os.path.join(extensions_dir, "swiglu", "**", "*.cu"), recursive=True)
+    sources = glob.glob(
+        os.path.join(extensions_dir, "attention", "*.cpp"), recursive=False
+    )
+    sources += glob.glob(
+        os.path.join(extensions_dir, "attention", "autograd", "**", "*.cpp"),
+        recursive=True,
+    )
+    sources += glob.glob(
+        os.path.join(extensions_dir, "attention", "cpu", "**", "*.cpp"), recursive=True
+    )
+    sources += glob.glob(
+        os.path.join(extensions_dir, "indexing", "**", "*.cpp"), recursive=True
+    )
+    sources += glob.glob(
+        os.path.join(extensions_dir, "swiglu", "**", "*.cpp"), recursive=True
+    )
 
-    source_hip = glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_test.cpp"), recursive=False)
-    source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_decoder.cpp"), recursive=False)
-    
+    # avoid the temporary .cu file under xformers/csrc/attention/hip_fmha are included
+    source_cuda = glob.glob(os.path.join(extensions_dir, "*.cu"), recursive=False)
+    source_cuda += glob.glob(
+        os.path.join(extensions_dir, "attention", "cuda", "**", "*.cu"), recursive=True
+    )
+    source_cuda += glob.glob(
+        os.path.join(extensions_dir, "indexing", "**", "*.cu"), recursive=True
+    )
+    source_cuda += glob.glob(
+        os.path.join(extensions_dir, "swiglu", "**", "*.cu"), recursive=True
+    )
+
+    source_hip = glob.glob(
+        os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_test.cpp"),
+        recursive=False,
+    )
+    source_hip += glob.glob(
+        os.path.join(
+            extensions_dir, "attention", "hip_fmha", "attention_forward_decoder.cpp"
+        ),
+        recursive=False,
+    )
+
     source_hip_decoder = [
-        *glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_decoder.cpp"), recursive=False),
-        *glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_splitk.cpp"), recursive=False)
+        *glob.glob(
+            os.path.join(
+                extensions_dir, "attention", "hip_fmha", "attention_forward_decoder.cpp"
+            ),
+            recursive=False,
+        ),
+        *glob.glob(
+            os.path.join(
+                extensions_dir, "attention", "hip_fmha", "attention_forward_splitk.cpp"
+            ),
+            recursive=False,
+        ),
     ]
 
     if os.getenv("FORCE_OLD_CK_KERNEL", "0") == "1":
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_generic.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_backward_generic.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_ck_rand_uniform.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_batched_infer_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_grouped_infer_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_batched_forward_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_grouped_forward_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_batched_backward_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_grouped_backward_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "instances", "ck_fmha_*.cpp"), recursive=False)
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir, "attention", "hip_fmha", "attention_forward_generic.cpp"
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir,
+                "attention",
+                "hip_fmha",
+                "attention_backward_generic.cpp",
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir, "attention", "hip_fmha", "attention_ck_rand_uniform.cpp"
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir, "attention", "hip_fmha", "ck_fmha_batched_infer_*.cpp"
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir, "attention", "hip_fmha", "ck_fmha_grouped_infer_*.cpp"
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir, "attention", "hip_fmha", "ck_fmha_batched_forward_*.cpp"
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir, "attention", "hip_fmha", "ck_fmha_grouped_forward_*.cpp"
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir,
+                "attention",
+                "hip_fmha",
+                "ck_fmha_batched_backward_*.cpp",
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir,
+                "attention",
+                "hip_fmha",
+                "ck_fmha_grouped_backward_*.cpp",
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir, "attention", "hip_fmha", "instances", "ck_fmha_*.cpp"
+            ),
+            recursive=False,
+        )
     else:
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "attention_forward_generic_ck_tiled.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_batched_infer_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_grouped_infer_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_batched_forward_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "ck_tiled_fmha_grouped_forward_*.cpp"), recursive=False)
-        source_hip += glob.glob(os.path.join(extensions_dir, "attention", "hip_fmha", "instances_tiled", "ck_tiled_fmha_*.cpp"), recursive=False)
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir,
+                "attention",
+                "hip_fmha",
+                "attention_forward_generic_ck_tiled.cpp",
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir,
+                "attention",
+                "hip_fmha",
+                "ck_tiled_fmha_batched_infer_*.cpp",
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir,
+                "attention",
+                "hip_fmha",
+                "ck_tiled_fmha_grouped_infer_*.cpp",
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir,
+                "attention",
+                "hip_fmha",
+                "ck_tiled_fmha_batched_forward_*.cpp",
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir,
+                "attention",
+                "hip_fmha",
+                "ck_tiled_fmha_grouped_forward_*.cpp",
+            ),
+            recursive=False,
+        )
+        source_hip += glob.glob(
+            os.path.join(
+                extensions_dir,
+                "attention",
+                "hip_fmha",
+                "instances_tiled",
+                "ck_tiled_fmha_*.cpp",
+            ),
+            recursive=False,
+        )
 
     source_hip += source_hip_decoder
-    
+
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
     cutlass_examples_dir = os.path.join(this_dir, "third_party", "cutlass", "examples")
@@ -340,42 +485,46 @@ def get_extensions():
             "--ptxas-options=-O2",
             "--ptxas-options=-allow-expensive-optimizations=true",
         ]
-    elif torch.cuda.is_available() and torch.version.hip: 
-       rename_cpp_cu(source_hip)
-       source_hip_cu = []
-       for ff in source_hip:
-           source_hip_cu += [ff.replace(".cpp", ".cu")]
+    elif torch.cuda.is_available() and torch.version.hip:
+        rename_cpp_cu(source_hip)
+        source_hip_cu = []
+        for ff in source_hip:
+            source_hip_cu += [ff.replace(".cpp", ".cu")]
 
-       extension = CUDAExtension
-       sources += source_hip_cu
-       include_dirs += [ Path(this_dir) / 'xformers' / 'csrc' / 'attention' / 'hip_fmha' ]
+        extension = CUDAExtension
+        sources += source_hip_cu
+        include_dirs += [
+            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_fmha"
+        ]
 
-       if os.getenv("FORCE_OLD_CK_KERNEL", "0") == "1":
-           include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel' / 'include']
-       else:
-           include_dirs += [ Path(this_dir) / 'third_party' / 'composable_kernel_tiled' / 'include']
-           
-       if os.getenv("FORCE_OLD_CK_KERNEL", "0") == "1":
-           generator_flag = []
-       else:
-           generator_flag = ["-DUSE_CK_TILED_KERNEL"]
-       cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
-       extra_compile_args={
+        if os.getenv("FORCE_OLD_CK_KERNEL", "0") == "1":
+            include_dirs += [
+                Path(this_dir) / "third_party" / "composable_kernel" / "include"
+            ]
+        else:
+            include_dirs += [
+                Path(this_dir) / "third_party" / "composable_kernel_tiled" / "include"
+            ]
+
+        if os.getenv("FORCE_OLD_CK_KERNEL", "0") == "1":
+            generator_flag = []
+        else:
+            generator_flag = ["-DUSE_CK_TILED_KERNEL"]
+        cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
+        extra_compile_args = {
             "cxx": ["-O3", "-std=c++17"] + generator_flag,
-            "nvcc":
-                [
-                    "-O3",
-                    "-std=c++17",
-                    f"--offload-arch={os.getenv('HIP_ARCHITECTURES', 'native')}",
-                    "-U__CUDA_NO_HALF_OPERATORS__",
-                    "-U__CUDA_NO_HALF_CONVERSIONS__",
-                    "-DCK_FMHA_FWD_FAST_EXP2=1",
-                    "-fgpu-flush-denormals-to-zero",
-                ]
-                + generator_flag
-                + cc_flag
-            ,
-       } 
+            "nvcc": [
+                "-O3",
+                "-std=c++17",
+                f"--offload-arch={os.getenv('HIP_ARCHITECTURES', 'native')}",
+                "-U__CUDA_NO_HALF_OPERATORS__",
+                "-U__CUDA_NO_HALF_CONVERSIONS__",
+                "-DCK_FMHA_FWD_FAST_EXP2=1",
+                "-fgpu-flush-denormals-to-zero",
+            ]
+            + generator_flag
+            + cc_flag,
+        }
 
     ext_modules.append(
         extension(
@@ -405,6 +554,7 @@ def get_extensions():
             ]
         },
     }
+
 
 class clean(distutils.command.clean.clean):  # type: ignore
     def run(self):

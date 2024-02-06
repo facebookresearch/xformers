@@ -1,18 +1,31 @@
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
+from typing import Any, List, Optional, Set, Tuple
+
 import torch
-from typing import Any, List, Set, Tuple, Optional
+
 from xformers.ops.common import get_xformers_operator, register_operator
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalWithOffsetPaddedKeysMask
-from xformers.ops.fmha.common import AttentionFwOpBase, Context, Inputs, check_lastdim_alignment_stride1
+from xformers.ops.fmha.common import (
+    AttentionFwOpBase,
+    Context,
+    Inputs,
+    check_lastdim_alignment_stride1,
+)
+
 
 @register_operator
 class FwOp(AttentionFwOpBase):
-    
+
     OPERATOR = get_xformers_operator("efficient_attention_forward_decoder_splitk_ck")
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {
         torch.half,
         torch.bfloat16,
-        torch.float
+        torch.float,
     }  # Those are dtypes of Q. In the quantized case K/V has dtype int32
     SUPPORTED_MAX_K = 256
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
@@ -95,9 +108,8 @@ class FwOp(AttentionFwOpBase):
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         attn_bias = inp.attn_bias
-        seq_len = None
         q, k, v = inp.get_qkv_in_bmghk()
-        
+
         if attn_bias is not None:
             attn_bias.k_seqinfo.to(k.device)
             attn_bias.q_seqinfo.to(q.device)
@@ -118,7 +130,7 @@ class FwOp(AttentionFwOpBase):
             else:
                 key = k[0].unflatten(0, (-1, padding))
                 value = v[0].unflatten(0, (-1, padding))
-            query = q[0].unflatten(0, (key.shape[0], -1))    
+            query = q[0].unflatten(0, (key.shape[0], -1))
         else:
             # key: (B, padding, G, 1 if multiquery else Hkv, D)
             # value: like key
@@ -141,8 +153,15 @@ class FwOp(AttentionFwOpBase):
         else:
             qk_scale = torch.rsqrt(torch.tensor(k.shape[-1], dtype=torch.float32))
 
-        out = cls.OPERATOR(query=query, key=key, value=value, seq_positions=seq_positions_gpu, scale=qk_scale, split_k=split_k)
-        
+        out = cls.OPERATOR(
+            query=query,
+            key=key,
+            value=value,
+            seq_positions=seq_positions_gpu,
+            scale=qk_scale,
+            split_k=split_k,
+        )
+
         return out, None
 
 

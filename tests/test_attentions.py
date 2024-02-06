@@ -22,7 +22,9 @@ from xformers.components.attention import (
     build_attention,
 )
 
-disable_on_rocm = pytest.mark.skipif(not not torch.version.hip, reason="could not be done on ROCM")
+disable_on_rocm = pytest.mark.skipif(
+    not not torch.version.hip, reason="could not be done on ROCM"
+)
 
 DEVICES = (
     [torch.device("cpu")] if not torch.cuda.is_available() else [torch.device("cuda")]
@@ -91,6 +93,7 @@ def _get_multihead(
     ).to(device)
 
     return multi_head
+
 
 @disable_on_rocm
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.3])
@@ -162,6 +165,7 @@ def test_order_invariance(
             with torch.cuda.amp.autocast(enabled=True):
                 _ = multi_head(inputs, inputs_shuffled, inputs)
 
+
 @disable_on_rocm
 @pytest.mark.parametrize("heads", [1, 4])
 @pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
@@ -204,6 +208,7 @@ def test_kqv_ordering(
     # Flip qkv, and check that we invert the above check properly
     res_false = multi_head(query=v, key=k, value=q)
     assert torch.allclose(res_false[0, :, :], res_false[1, :, :])
+
 
 @disable_on_rocm
 @pytest.mark.parametrize("heads", [1, 4])
