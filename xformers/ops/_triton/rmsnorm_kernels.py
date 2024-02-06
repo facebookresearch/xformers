@@ -108,17 +108,18 @@ def _rms_norm_forward(x, attn_norm_weights, eps):
     BLOCK_SIZE = min(BLOCK_SIZE, 8192)
     # heuristics for number of warps
     num_warps = min(max(BLOCK_SIZE // 256, 1), 8)
-    _rms_norm_kernel[(M,)](
-        x_arg,
-        out,
-        attn_norm_weights,
-        eps,
-        x_arg.stride(0),
-        N,
-        BLOCK_SIZE=BLOCK_SIZE,
-        num_warps=num_warps,
-        INCLUDE_WEIGHT=attn_norm_weights is not None,
-    )
+    with torch.cuda.device(x.device):
+        _rms_norm_kernel[(M,)](
+            x_arg,
+            out,
+            attn_norm_weights,
+            eps,
+            x_arg.stride(0),
+            N,
+            BLOCK_SIZE=BLOCK_SIZE,
+            num_warps=num_warps,
+            INCLUDE_WEIGHT=attn_norm_weights is not None,
+        )
     return out
 
 
@@ -143,16 +144,17 @@ def _rms_norm_add_forward(x, y, attn_norm_weights, eps):
     BLOCK_SIZE = min(BLOCK_SIZE, 8192)
     # heuristics for number of warps
     num_warps = min(max(BLOCK_SIZE // 256, 1), 8)
-    _rms_norm_add_kernel[(M,)](
-        x_arg,
-        y_arg,
-        out,
-        attn_norm_weights,
-        eps,
-        x_arg.stride(0),
-        N,
-        BLOCK_SIZE=BLOCK_SIZE,
-        num_warps=num_warps,
-        INCLUDE_WEIGHT=attn_norm_weights is not None,
-    )
+    with torch.cuda.device(x.device):
+        _rms_norm_add_kernel[(M,)](
+            x_arg,
+            y_arg,
+            out,
+            attn_norm_weights,
+            eps,
+            x_arg.stride(0),
+            N,
+            BLOCK_SIZE=BLOCK_SIZE,
+            num_warps=num_warps,
+            INCLUDE_WEIGHT=attn_norm_weights is not None,
+        )
     return out
