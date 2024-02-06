@@ -414,16 +414,16 @@ def ref_attention_splitk(
     def compute_attention_split(q_whole, k_slice, v_slice, attn_bias_slice):
         p_slice = q_whole @ k_slice.transpose(-2, -1)
         p_slice += attn_bias_slice
-        m = torch.max(p_slice, dim=-1, keepdim=True).values
-        p_slice_scaled = p_slice - m
+        row_max = torch.max(p_slice, dim=-1, keepdim=True).values
+        p_slice_scaled = p_slice - row_max
         p_slice_scaled[p_slice_scaled.isnan()] = float("-inf")
         s = torch.exp(p_slice_scaled)
-        l = torch.sum(s, dim=-1, keepdim=True)
+        row_sumexp = torch.sum(s, dim=-1, keepdim=True)
         attn_slice = s @ v_slice
         return {
             "attn_slice": attn_slice,
-            "row_max": m,
-            "row_lse": l,
+            "row_max": row_max,
+            "row_sumexp": row_sumexp,
         }
 
     splits = list(zip(k_split, v_split, attn_bias_split))
@@ -434,12 +434,12 @@ def ref_attention_splitk(
     # reduce out over split-k slices
 
     global_max = torch.zeros_like(slices[0]["row_max"]).fill_(float("-inf"))
-    global_sumexp = torch.zeros_like(slices[0]["row_lse"])
+    global_sumexp = torch.zeros_like(slices[0]["row_sumexp"])
 
     for s in slices:
         local_out = s["attn_slice"]
         local_max = s["row_max"]
-        local_sumexp = s["row_lse"]
+        local_sumexp = s["row_sumexp"]
 
         log_alpha = -torch.abs(local_max - global_max)
         alpha = torch.exp(log_alpha)
@@ -456,7 +456,7 @@ def ref_attention_splitk(
     return out
 
 
-## this interface assumes the tensor is in BMHK, but q and k/v might have different number of heads
+# this interface assumes the tensor is in BMHK, but q and k/v might have different number of heads
 def ref_attention_mqa(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
     assert q.ndim == 4
 
@@ -777,6 +777,7 @@ def test_mqa_forward(
         err_msg = f"{op.NAME}: unsupported ({'/'.join(reasons)})"
         # Ensure we free memory to avoid OOMs
         del query, key, value, attn_bias, inputs
+        assert False, err_msg
 
     out = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op

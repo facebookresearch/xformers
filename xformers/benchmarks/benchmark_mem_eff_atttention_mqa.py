@@ -18,7 +18,8 @@ from xformers.benchmarks.utils import benchmark_main_helper
 
 torch.backends.cuda.matmul.allow_tf32 = False
 
-## this interface assumes the tensor is in BMHK, but q and k/v might has different number of heads
+
+# this interface assumes the tensor is in BMHK, but q and k/v might has different number of heads
 def ref_attention_mqa(
     q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None, dtype=None
 ):
@@ -90,7 +91,7 @@ def ref_attention_mqa(
     return attn @ v
 
 
-## ref_attention_bmhk is completely the same as used by test_forward_ck_tiled.py
+# ref_attention_bmhk is completely the same as used by test_forward_ck_tiled.py
 def ref_attention_bmhk(q, k, v, attn_bias, scale=None, dtype=None) -> torch.Tensor:
     assert q.ndim == 4
 
@@ -124,9 +125,9 @@ SHAPES = [
     (1, 1024, 1024, 64, 8, 64),
     (1, 1024, 1024, 8, 1, 64),
     (1, 1024, 1024, 4, 4, 64),
-    ##*sorted(itertools.product([1, 2], [2048, 4096], [2048, 4096], [4, 8], [1, 2], [128])),
-    ##*sorted(
-    ##    itertools.product([16], [128, 512], [512, 1024], [16], [2, 4], [64, 128])
+    # *sorted(itertools.product([1, 2], [2048, 4096], [2048, 4096], [4, 8], [1, 2], [128])),
+    # *sorted(
+    #    itertools.product([16], [128, 512], [512, 1024], [16], [2, 4], [64, 128])
     # ),
 ]
 
@@ -135,7 +136,8 @@ OPS = [
     xformers.ops.fmha.flash.FwOp,
     # TODO: Triton is not stable: it can trigger Illegal Memory Accesses
     # and its performance varies a lot between runs.
-    ##xformers.ops.fmha.triton.FwOp,
+    #
+    # xformers.ops.fmha.triton.FwOp,
 ]
 
 
@@ -199,7 +201,7 @@ def mem_eff_attention_fw(shape, num_threads: int, attn_bias_type, dropout_p, dty
         dtype=dtype,
         requires_grad=False,
         fmt="BMHK",
-        op=fmha.ck.FwOp,  ## only required as a refer op by create_attn_bias
+        op=fmha.ck.FwOp,  # only required as a refer op by create_attn_bias
     )
     inp = fmha.Inputs(query=q, key=k, value=v, attn_bias=bias, p=dropout_p)
 

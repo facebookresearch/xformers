@@ -3,20 +3,15 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
-import random
-from typing import List, Optional, Sequence, Tuple, Type, TypeVar
+from typing import Sequence, Type, TypeVar
 
 import pytest
 import torch
-from scipy.stats import binomtest
-from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
 from xformers.attn_bias_utils import create_attn_bias
 from xformers.ops import fmha
 from xformers.ops.common import get_xformers_operator
-from xformers.ops.fmha.common import AttentionOpBase
 
 from .utils import assert_allclose
 
@@ -34,7 +29,7 @@ ALL_FW_OPS: Sequence[Type[fmha.common.AttentionFwOpBase]] = [
     fmha.ck.FwOp,
 ]
 
-### ck_check_op is temporarily used to check ck-tiled availability
+# ck_check_op is temporarily used to check ck-tiled availability
 ck_check_op = get_xformers_operator("is_ck_tiled_used")
 use_ck_tiled = ck_check_op()
 
@@ -193,6 +188,7 @@ def test_mqa_forward(
         err_msg = f"{op.NAME}: unsupported ({'/'.join(reasons)})"
         # Ensure we free memory to avoid OOMs
         del query, key, value, attn_bias, inputs
+        assert False, err_msg
 
     out = xformers.ops.memory_efficient_attention_forward(
         query, key, value, attn_bias, op=op

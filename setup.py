@@ -240,7 +240,7 @@ def get_extensions():
         os.path.join(extensions_dir, "swiglu", "**", "*.cpp"), recursive=True
     )
 
-    ## avoid the temporary .cu file under xformers/csrc/attention/hip_fmha are included
+    # avoid the temporary .cu file under xformers/csrc/attention/hip_fmha are included
     source_cuda = glob.glob(os.path.join(extensions_dir, "*.cu"), recursive=False)
     source_cuda += glob.glob(
         os.path.join(extensions_dir, "attention", "cuda", "**", "*.cu"), recursive=True

@@ -103,7 +103,6 @@ class FwOp(AttentionFwOpBase):
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         attn_bias = inp.attn_bias
-        seq_len = None
         q, k, v = inp.get_qkv_in_bmghk()
 
         if attn_bias is not None:

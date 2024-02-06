@@ -47,17 +47,17 @@ def _get_seqlen_info(
     if isinstance(
         attn_bias, (BlockDiagonalMask, BlockDiagonalCausalWithOffsetPaddedKeysMask)
     ):
-        ##attn_bias.k_seqinfo.to(inp.query.device)
-        ##attn_bias.q_seqinfo.to(inp.query.device)
+        # attn_bias.k_seqinfo.to(inp.query.device)
+        # attn_bias.q_seqinfo.to(inp.query.device)
         seqstart_k = attn_bias.k_seqinfo.seqstart
         seqstart_q = attn_bias.q_seqinfo.seqstart
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
-        ##max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
+        # max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
     else:
         seqstart_k = None
         seqstart_q = None
         max_seqlen_q = -1
-        ##max_seqlen_k = -1
+        # max_seqlen_k = -1
 
     return (
         seqstart_k,
@@ -156,7 +156,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
 # checking the availability of ck-tiled is necessary since ck-tiled does not
 # have the same functionalities as old-CK
 def is_ck_tiled() -> bool:
-    ### ck_check_op is temporarily used to check ck-tiled availability
+    # ck_check_op is temporarily used to check ck-tiled availability
     ck_check_op = get_xformers_operator("is_ck_tiled_used")
     return ck_check_op()
 
@@ -394,7 +394,7 @@ class BwOp(AttentionBwOpBase):
         type(None),
         torch.Tensor,
         LowerTriangularMask,
-        ##LowerTriangularFromBottomRightMask,
+        # LowerTriangularFromBottomRightMask,
         # TODO: Still some infs/nans in the BW pass for
         # local + causal
         # LowerTriangularFromBottomRightLocalAttentionMask,
@@ -403,7 +403,7 @@ class BwOp(AttentionBwOpBase):
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
-        ##attn_bias.BlockDiagonalCausalLocalAttentionMask,
+        # attn_bias.BlockDiagonalCausalLocalAttentionMask,
     }
     SUPPORTS_ATTN_BIAS_GRAD = True
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT

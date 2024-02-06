@@ -16,7 +16,6 @@ from torch.utils.checkpoint import checkpoint
 import xformers.ops
 from xformers.attn_bias_utils import create_attn_bias
 from xformers.ops import fmha
-from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
 from xformers.ops.fmha.common import AttentionOpBase
 from xformers.ops.fmha.dispatch import _dispatch_fw_priority_list
 
@@ -390,12 +389,12 @@ def ref_attention_splitk(
         p_slice_scaled = p_slice - m
         p_slice_scaled[p_slice_scaled.isnan()] = float("-inf")
         s = torch.exp(p_slice_scaled)
-        l = torch.sum(s, dim=-1, keepdim=True)
+        l1 = torch.sum(s, dim=-1, keepdim=True)
         attn_slice = s @ v_slice
         return {
             "attn_slice": attn_slice,
             "row_max": m,
-            "row_lse": l,
+            "row_lse": l1,
         }
 
     splits = list(zip(k_split, v_split, attn_bias_split))
@@ -767,7 +766,7 @@ def test_backward(
         kv,
     ) = opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 
-    ## ToDo: reopen bfloat16 for testing
+    # ToDo: reopen bfloat16 for testing
     if dtype is torch.bfloat16:
         pytest.skip(
             "Temporarily disabled bfloat16 as we are still improving the accuracy of the results"
@@ -942,9 +941,9 @@ def _vec_binom_test(x, n, p):
 def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
     if op == fmha.ck.FwOp:
         mask = torch.empty((batch_size, 1, q_len, kv_len), device=device)
-        ## rand_uniform is an int32 tensor
+        # rand_uniform is an int32 tensor
         rand_uniform = torch.ops.xformers._ck_rand_uniform(p, mask)
-        ##mask = (rand_uniform <= int((1.0-p)*65535.0)).to(torch.float32)
+        # mask = (rand_uniform <= int((1.0-p)*65535.0)).to(torch.float32)
         mask = (rand_uniform <= int((1.0 - p) * 255.0)).to(torch.float32)
         mask = mask.reshape(batch_size, q_len, kv_len)
     else:
@@ -1013,8 +1012,6 @@ def test_dropout(dtype, op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias
 
 
 def _test_dropout_backward(q_len, kv_len, batch_size, k, p, op, dtype):
-    if dtype is torch.bfloat16 and compute_capability < (8, 0):
-        pytest.skip("bf16 requires Sm80")
     if not op.is_available():
         pytest.skip()
 
