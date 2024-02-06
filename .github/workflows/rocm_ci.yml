@@ -57,7 +57,7 @@ jobs:
 
     - name: Run python tests
       run: |
-        pytest -rpfs /xformers/tests/test_mem_eff_attention_ck.py | tee test_mem_eff_attention_ck.log
+        pytest -rpfs /xformers/tests/test_mem_eff_attention.py | tee test_mem_eff_attention.log
     
     - name: Archive logs
       uses: actions/upload-artifact@v3
