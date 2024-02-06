@@ -18,7 +18,8 @@ device = torch.device("cuda")
 
 CASES = [
     dict(B=max(1, 2 ** (16 - i)), Mq=1, Mkv=2**i, Hq=16, Hkv=hkv, K=128)
-    for i in range(8, 18) for hkv in (1, 2)
+    for i in range(8, 18)
+    for hkv in (1, 2)
 ]
 
 
@@ -110,7 +111,7 @@ class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
 
 class AttentionDecodingCKSplitKV(AttentionDecodingFlashDecoding):
     OP = xops.fmha.ck_splitk.FwOp
- 
+
 
 class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
     def fw(self) -> None:

@@ -24,7 +24,10 @@ else:
     _is_sm80 = False
 sm80_only = pytest.mark.skipif(not _is_sm80, reason="requires sm80")
 
-disable_on_rocm = pytest.mark.skipif(not not torch.version.hip, reason="could not be done on ROCM")
+disable_on_rocm = pytest.mark.skipif(
+    not not torch.version.hip, reason="could not be done on ROCM"
+)
+
 
 def assert_allclose(
     # The output of the tested function
@@ -112,6 +115,7 @@ _ops: Sequence[xsw.SwiGLUOp] = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
 @functools.lru_cache(maxsize=1)
 def create_module_cached(**kwargs) -> xsw.SwiGLU:
     return xsw.SwiGLU(**kwargs)
+
 
 @disable_on_rocm
 @pytest.mark.parametrize("autocast", [False, True], ids=["regular", "autocast"])

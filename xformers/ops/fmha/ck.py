@@ -39,6 +39,7 @@ from .common import (
 def _minimum_gemm_alignment(inp: Inputs) -> int:
     return 1
 
+
 def _get_seqlen_info(
     inp: Inputs,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], int, int]:
@@ -58,7 +59,11 @@ def _get_seqlen_info(
         max_seqlen_q = -1
         ##max_seqlen_k = -1
 
-    return seqstart_k, seqstart_q, max_seqlen_q,
+    return (
+        seqstart_k,
+        seqstart_q,
+        max_seqlen_q,
+    )
 
 
 def _get_tensor_bias(
@@ -98,19 +103,21 @@ Example: use `attn_bias = torch.zeros([1, 1, 5, 8])[:,:,:,:5]` instead of `torch
                 "you should call `.contiguous()` on the bias"
             )
 
+
 def _check_large_shapes(reasons: List[str], inp: Inputs) -> None:
     """CK kernel throws "Memory access fault by GPU node-2" when B * T >= 2**20, might be some index overflow.
     To reproduce, remove this function and run benchmark_mem_eff_attention with ParlAI model shape (256, 4096, 16, 64).
     This needs further debugging, for now let's not support such shapes.
     """
-    b_t_limit = 1024 ** 2
-    q_too_large = inp.query.shape[0] *  inp.query.shape[1] >= b_t_limit
-    k_too_large = inp.key.shape[0] *  inp.key.shape[1] >= b_t_limit
-    v_too_large = inp.value.shape[0] *  inp.value.shape[1] >= b_t_limit
+    b_t_limit = 1024**2
+    q_too_large = inp.query.shape[0] * inp.query.shape[1] >= b_t_limit
+    k_too_large = inp.key.shape[0] * inp.key.shape[1] >= b_t_limit
+    v_too_large = inp.value.shape[0] * inp.value.shape[1] >= b_t_limit
     if q_too_large or k_too_large or v_too_large:
         reasons.append(
             "Input is too large: product of first two dimensions of q/k/v must be < 2**20"
         )
+
 
 class _CustomMaskType(int, Enum):
     """
@@ -145,6 +152,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
         return int(_CustomMaskType.CausalFromBottomRight)
     return int(_CustomMaskType.NoCustomMask)
 
+
 # checking the availability of ck-tiled is necessary since ck-tiled does not
 # have the same functionalities as old-CK
 def is_ck_tiled() -> bool:
@@ -152,17 +160,17 @@ def is_ck_tiled() -> bool:
     ck_check_op = get_xformers_operator("is_ck_tiled_used")
     return ck_check_op()
 
+
 @register_operator
 class FwOp(AttentionFwOpBase):
-    """xFormers' MHA kernel based on Composable Kernel.
-    """
+    """xFormers' MHA kernel based on Composable Kernel."""
 
     OPERATOR = get_xformers_operator("efficient_attention_forward_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
-    SUPPORTED_MAX_K = 256 
+    SUPPORTED_MAX_K = 256
 
-    if is_ck_tiled(): 
+    if is_ck_tiled():
         SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
             type(None),
             torch.Tensor,
@@ -187,7 +195,7 @@ class FwOp(AttentionFwOpBase):
             BlockDiagonalCausalMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
             attn_bias.BlockDiagonalCausalFromBottomRightMask,
-         }
+        }
 
     SUPPORTS_DROPOUT = False if is_ck_tiled() else True
     SUPPORTS_CUSTOM_SCALE = True
@@ -286,7 +294,11 @@ class FwOp(AttentionFwOpBase):
             raise NotImplementedError("Unsupported attn_bias type")
         seqstart_k, seqstart_q, max_seqlen_q = _get_seqlen_info(inp)
         if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
-            seqlen_k=inp.attn_bias.k_seqinfo.seqlen if is_ck_tiled() else inp.attn_bias.k_seqinfo.seqlen.to(torch.device("cpu"))
+            seqlen_k = (
+                inp.attn_bias.k_seqinfo.seqlen
+                if is_ck_tiled()
+                else inp.attn_bias.k_seqinfo.seqlen.to(torch.device("cpu"))
+            )
         out, lse, rng_seed, rng_offset = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
@@ -338,7 +350,9 @@ class FwOp(AttentionFwOpBase):
         check_lastdim_alignment_stride1(reasons, "value", d.value, matmul_alignment_mn)
         _check_bias_alignment(reasons, d.attn_bias)
         _check_large_shapes(reasons, d)
-        requires_grad = d.query.requires_grad or d.key.requires_grad or d.value.requires_grad
+        requires_grad = (
+            d.query.requires_grad or d.key.requires_grad or d.value.requires_grad
+        )
         if is_ck_tiled() and requires_grad:
             reasons.append("Gradience is currently not supported by ck-tiled!")
         return reasons
@@ -449,7 +463,11 @@ class BwOp(AttentionBwOpBase):
         dtype = inp.query.dtype
 
         if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
-            seqlen_k=inp.attn_bias.k_seqinfo.seqlen if is_ck_tiled() else inp.attn_bias.k_seqinfo.seqlen.to(torch.device("cpu"))
+            seqlen_k = (
+                inp.attn_bias.k_seqinfo.seqlen
+                if is_ck_tiled()
+                else inp.attn_bias.k_seqinfo.seqlen.to(torch.device("cpu"))
+            )
 
         rng_seed = rng_offset = 0
         if inp.p != 0.0:
@@ -486,7 +504,6 @@ class BwOp(AttentionBwOpBase):
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
         )
-        
 
         # c++/CUDA implementation returns an uninitialized tensor if bias doesn't
         # require grad

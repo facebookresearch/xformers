@@ -38,7 +38,10 @@ class BaseOperator:
     @classmethod
     def is_available(cls) -> bool:
         # cls.OPERATOR can be either a kernel or a Triton Autotuner object, which doesn't have __name__
-        if cls.OPERATOR is None or getattr(cls.OPERATOR, "__name__", "") == "no_such_operator":
+        if (
+            cls.OPERATOR is None
+            or getattr(cls.OPERATOR, "__name__", "") == "no_such_operator"
+        ):
             return False
         return True
 

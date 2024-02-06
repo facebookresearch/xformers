@@ -17,7 +17,9 @@ from xformers.components.attention.core import (
 )
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-disable_on_rocm = pytest.mark.skipif(not not torch.version.hip, reason="could not be done on ROCM")
+disable_on_rocm = pytest.mark.skipif(
+    not not torch.version.hip, reason="could not be done on ROCM"
+)
 
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
@@ -133,6 +135,7 @@ def test_matmul_with_mask_backward(device, contiguous, is_sparse):
     compute_grads(fn_gt)
     assert torch.allclose(grad_a, a.grad)
     assert torch.allclose(grad_b, b.grad)
+
 
 @disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
@@ -253,6 +256,7 @@ def test_sddmm_coo(L, M, K, prob):
     assert res.dtype == res_gt.dtype
     assert torch.allclose(res, res_gt, atol=1e-6)
 
+
 @disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_sddmm_sputnik_backward(device):
@@ -331,6 +335,7 @@ def test_sparse_softmax_sputnik_backward(device):
     assert torch.allclose(
         grad_a, a.grad.coalesce().values().reshape_as(grad_a), atol=1e-7
     )
+
 
 @disable_on_rocm
 @pytest.mark.parametrize("device", _devices)

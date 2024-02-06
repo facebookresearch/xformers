@@ -21,7 +21,10 @@ _is_blocksparse_available = (
     _is_triton_available() and not gpu_capabilities_older_than_70()
 )
 
-disable_on_rocm = pytest.mark.skipif(not not torch.version.hip, reason="could not be done on ROCM")
+disable_on_rocm = pytest.mark.skipif(
+    not not torch.version.hip, reason="could not be done on ROCM"
+)
+
 
 def catch_oor(fn):
     @functools.wraps(fn)
@@ -133,6 +136,7 @@ def test_amp_attention_sparse(device):
     expected_device = torch.float32
     assert r.dtype == expected_device
 
+
 @disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_amp_attention_sparsecs(device):
@@ -148,6 +152,7 @@ def test_amp_attention_sparsecs(device):
 
     expected_device = torch.float32
     assert r.dtype == expected_device
+
 
 @disable_on_rocm
 @pytest.mark.skipif(

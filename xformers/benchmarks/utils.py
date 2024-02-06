@@ -662,8 +662,12 @@ def benchmark_run_and_compare(
             results, reference=results_compare_to, atol_s=atol_s, rtol=rtol
         )
 
+
 def _is_oom_error(e):
-    return isinstance(e, (torch.cuda.OutOfMemoryError, triton.runtime.autotuner.OutOfResources))
+    return isinstance(
+        e, (torch.cuda.OutOfMemoryError, triton.runtime.autotuner.OutOfResources)
+    )
+
 
 def _fail_if_regressions(
     results: List[Any], reference: List[Any], atol_s: float, rtol: float

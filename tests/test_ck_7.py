@@ -36,6 +36,7 @@ ALL_BW_OPS: Sequence[Type[fmha.common.AttentionBwOpBase]] = [
     fmha.ck.BwOp,
 ]
 
+
 def sample_random_supported_fw(
     inp: fmha.Inputs, seed: int
 ) -> Type[fmha.common.AttentionFwOpBase]:
@@ -646,7 +647,9 @@ def test_key_query_all_ones(dtype, device, q_len, kv_len, batch_size, k_len):
     key = torch.ones((batch_size, kv_len, k_len), device=device, dtype=dtype)
     value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
 
-    out = xformers.ops.memory_efficient_attention(query, key, value, op=(fmha.ck.FwOp, None))
+    out = xformers.ops.memory_efficient_attention(
+        query, key, value, op=(fmha.ck.FwOp, None)
+    )
     # this should be equivalent to the average over value
     ref = value.mean(1, keepdim=True).expand_as(query)
 
@@ -654,6 +657,7 @@ def test_key_query_all_ones(dtype, device, q_len, kv_len, batch_size, k_len):
         assert_allclose(out, ref, atol=1e-5)
     else:
         assert_allclose(out, ref, atol=1e-2)
+
 
 def _block_diag_reshape_lse(
     lse: torch.Tensor, q_seqinfo: fmha.attn_bias._SeqLenInfo
@@ -732,14 +736,21 @@ def test_backward(
     ) = opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 
     if k > 128 or kv > 128:
-        pytest.skip("head-dim length bigger than 128 is not supported by CK-FlashAttention-1")
+        pytest.skip(
+            "head-dim length bigger than 128 is not supported by CK-FlashAttention-1"
+        )
 
     if k % 8 != 0 or kv % 8 != 0:
         pytest.skip("head-dim length must be an even value for CK-FlashAttention-1")
 
     ## BottomRightMask requires generate {m0,m1,...}, {n0,n1,...} where mi <= ni
-    if bias_type is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask and q_len <= kv_len:
-        pytest.skip("BlockDiagonalCausalFromBottomRightMask requires kv_len bigger than q_len")
+    if (
+        bias_type is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask
+        and q_len <= kv_len
+    ):
+        pytest.skip(
+            "BlockDiagonalCausalFromBottomRightMask requires kv_len bigger than q_len"
+        )
 
     if k != kv:
         pytest.skip("k same as kv is not well tested by CK-FlashAttention-1")
@@ -864,5 +875,3 @@ def test_backward(
             atol=atol,
             rtol=rtol,
         )
-
-
