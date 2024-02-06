@@ -1,4 +1,8 @@
-# TODO(max): add a proper copyright header
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# This source code is licensed under the BSD license found in the
+# LICENSE file in the root directory of this source tree.
+
 from typing import Any, List, Optional, Set, Tuple
 
 import torch
@@ -69,7 +73,7 @@ class FwOp(AttentionFwOpBase):
             padding = attn_bias.k_seqinfo.padding
             bsz = d.key.shape[1] // padding
             num_queries = d.query.shape[1] // bsz
-            
+
             if q_starts != list(range(0, 1 + bsz, num_queries)):
                 reasons.append("expect to have same num_queries in each batch")
             if bsz != len(q_starts) - 1:
