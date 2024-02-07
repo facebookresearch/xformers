@@ -152,6 +152,7 @@ def benchmark_transformer(model_info, dtype) -> Iterator[benchmark.Timer]:
             sub_label=model_name,
         )
 
+
 if torch.version.hip:
     print("This benchmark could not be done on ROCM!")
 else:

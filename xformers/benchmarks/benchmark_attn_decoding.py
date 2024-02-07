@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import sys
-
 from typing import Any
 
 import torch
@@ -135,7 +134,7 @@ BENCHMARKS = {
 if torch.version.cuda:
     BENCHMARKS["flash-decoding"] = AttentionDecodingFlashDecoding
 
-if (sys.version_info.major, sys.version_info.minor) >= (3, 9): 
+if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
 
 try:
@@ -152,9 +151,9 @@ try:
                 v = v[:, :, :, 0]
             return flash_attn.flash_attn_func(q, k, v)
 
-    BENCHMARKS[
-        f"flash-attention@{flash_attn.__version__}"
-    ] = AttentionDecodingFlashAttention
+    BENCHMARKS[f"flash-attention@{flash_attn.__version__}"] = (
+        AttentionDecodingFlashAttention
+    )
 except ImportError:
     pass
 

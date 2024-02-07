@@ -106,9 +106,11 @@ def test_checkpoint_with_grad(policy_fn, input_requires_grad, grad_mode):
     "op",
     [
         xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
-        xformers.ops.MemoryEfficientAttentionCutlassOp
-        if torch.version.cuda
-        else xformers.ops.MemoryEfficientAttentionCkOp,
+        (
+            xformers.ops.MemoryEfficientAttentionCutlassOp
+            if torch.version.cuda
+            else xformers.ops.MemoryEfficientAttentionCkOp
+        ),
     ],
 )
 def test_checkpoint_attention(policy_fn, input_requires_grad, device, autocast, op):

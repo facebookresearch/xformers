@@ -113,9 +113,11 @@ OPS = [
     (xformers.ops.fmha.ck.FwOp, xformers.ops.fmha.ck.BwOp),
     (
         TritonFlashAttentionFwAutotuned,
-        xformers.ops.fmha.cutlass.BwOp
-        if torch.version.cuda
-        else xformers.ops.fmha.ck.BwOp,
+        (
+            xformers.ops.fmha.cutlass.BwOp
+            if torch.version.cuda
+            else xformers.ops.fmha.ck.BwOp
+        ),
     ),
 ]
 

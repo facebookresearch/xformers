@@ -111,7 +111,7 @@ class IndexSelectBenchmark:
 
         indices = []
         sources = []
-        for (B, seqlen) in batches:
+        for B, seqlen in batches:
             index = [i for i in range(B)]
             random.Random(B).shuffle(index)
             indices.append(

@@ -60,9 +60,11 @@ NUM_THREADS = [1] if device.type == "cuda" else [1, 40]
 
 OPS = [
     xformers.ops.fmha.cutlass.FwOp if torch.version.cuda else xformers.ops.fmha.ck.FwOp,
-    xformers.ops.fmha.decoder.FwOp
-    if torch.version.cuda
-    else xformers.ops.fmha.ck_decoder.FwOp,
+    (
+        xformers.ops.fmha.decoder.FwOp
+        if torch.version.cuda
+        else xformers.ops.fmha.ck_decoder.FwOp
+    ),
 ]
 
 KV_SHAPES = [

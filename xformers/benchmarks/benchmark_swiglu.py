@@ -155,6 +155,7 @@ def benchmark_swiglu_bw(shape, dtype, bias: bool):
         sub_label=sub_label,
     )
 
+
 if torch.version.hip:
     print("This benchmark could not be done on ROCM!")
 else:

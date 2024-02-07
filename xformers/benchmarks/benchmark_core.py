@@ -251,6 +251,7 @@ def bench_bmm():
     compare = benchmark.Compare(results)
     compare.print()
 
+
 if torch.version.hip:
     print("This benchmark could not be done on ROCM!")
 else:

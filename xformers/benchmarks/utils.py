@@ -263,9 +263,9 @@ def _benchmark_results_from_csv(filename: str) -> List[Tuple[Dict[str, Any], Any
             data.append(
                 (
                     {
-                        META_ALGORITHM: row["algorithm"]
-                        if row["algorithm"] != ""
-                        else None,
+                        META_ALGORITHM: (
+                            row["algorithm"] if row["algorithm"] != "" else None
+                        ),
                     },
                     measurement,
                 )
@@ -282,9 +282,11 @@ def _benchmark_results_to_csv(
             "label": r.task_spec.label,
             "num_threads": r.task_spec.num_threads,
             "algorithm": metadata.get(META_ALGORITHM, ""),
-            "description": r.task_spec.description
-            if r.task_spec.description in BASELINE_DESCRIPTIONS
-            else "",
+            "description": (
+                r.task_spec.description
+                if r.task_spec.description in BASELINE_DESCRIPTIONS
+                else ""
+            ),
             "runtime_us": int(1000 * 1000 * r.mean),
             "mem_use_mb": r.mem_use,
         }

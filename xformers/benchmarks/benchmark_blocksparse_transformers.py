@@ -60,7 +60,7 @@ def get_mask(MaskGenType, config, config_setter=[]):
 
     # Get the mask
     mask_generator = MaskGenType(mask_config)
-    for (key, value) in config_setter:
+    for key, value in config_setter:
         mask_generator.set_config_attr(key, value)
     if not mask_generator.is_valid_config():
         return None
@@ -73,7 +73,7 @@ def densify_mask(mask, config):
     seq_length = config.seq_length
     block_size = config.block_size
     dense_mask = torch.zeros(num_heads, seq_length, seq_length)
-    for (h, i, j) in zip(*mask.nonzero(as_tuple=True)):
+    for h, i, j in zip(*mask.nonzero(as_tuple=True)):
         dense_mask[
             h,
             i * block_size : (i + 1) * block_size,
