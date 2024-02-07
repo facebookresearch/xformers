@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import sys
 
 from typing import Any
 
@@ -128,11 +129,14 @@ BENCHMARKS = {
     "pytorch": AttentionDecodingPyTorchRepeat,
     "ck": AttentionDecodingCK,
     "ck-decoder": AttentionDecodingCKDecoder,
-    "flash-decoding": AttentionDecodingFlashDecoding,
-    "triton_splitK": AttentionDecodingSplitKV,
     "ck_splitK": AttentionDecodingCKSplitKV,
 }
 
+if torch.version.cuda:
+    BENCHMARKS["flash-decoding"] = AttentionDecodingFlashDecoding
+
+if (sys.version_info.major, sys.version_info.minor) >= (3, 9): 
+    BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
 
 try:
     import flash_attn

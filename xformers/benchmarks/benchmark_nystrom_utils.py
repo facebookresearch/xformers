@@ -93,7 +93,9 @@ def iterative_pinv_analysis(
                 break
 
 
-if __name__ == "__main__":
+if torch.version.hip:
+    print("This benchmark could not be done on ROCM!")
+else:
     iterative_pinv_analysis()
     bench_inverse(iterative_pinv)
     bench_inverse(torch.linalg.pinv)
