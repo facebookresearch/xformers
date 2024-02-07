@@ -745,7 +745,7 @@ def test_mqa_forward(
 
     device = torch.device("cuda")
 
-    if op is fmha.ck.FwOp and not op.IS_CK_TILED:
+    if op is fmha.ck.FwOp:
         pytest.skip("mqa/gqa is only supported with ck-tiled fmha")
 
     torch.manual_seed(B * M + N * K + Hq * Hkv + Kv)
@@ -845,7 +845,7 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 
-    if op is fmha.ck.FwOp and op.IS_CK_TILED:
+    if op is fmha.ck.FwOp:
         pytest.skip("logsumexp is not yet supported by ck-tiled fmha!")
 
     if op is fmha.triton_splitk.FwOp and (
@@ -1500,7 +1500,7 @@ def test_grad_checkpointing(
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
     if op is fmha.triton.FwOp:
         pytest.skip("Triton Flash Attention 2 doesn't support backward pass yet")
-    if op is fmha.ck.FwOp and op.IS_CK_TILED:
+    if op is fmha.ck.FwOp:
         pytest.skip("ck-tiled FMHA doesn't supported backward pass yet")
     if op is fmha.triton_splitk.FwOp and (
         sys.version_info.major,
@@ -2119,7 +2119,7 @@ def test_attn_bias_blockdiag_doc() -> None:
 
     from xformers.ops import fmha
 
-    if torch.version.hip and fmha.ck.FwOp.IS_CK_TILED:
+    if torch.version.hip:
         pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
 
     K = 16
@@ -2567,7 +2567,7 @@ def test_empty_tensors_empty_query(
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
 
-    if torch.version.hip and fmha.ck.FwOp.IS_CK_TILED:
+    if torch.version.hip:
         pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
 
     if opFW is fmha.triton_splitk.FwOp and (
@@ -2598,7 +2598,7 @@ def test_empty_tensors_empty_kv(
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
 
-    if torch.version.hip and fmha.ck.FwOp.IS_CK_TILED:
+    if torch.version.hip:
         pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
 
     if opFW is fmha.triton_splitk.FwOp and (
@@ -2629,7 +2629,7 @@ def test_empty_tensors_empty_b(
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
 
-    if torch.version.hip and fmha.ck.FwOp.IS_CK_TILED:
+    if torch.version.hip:
         pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
 
     if opFW is fmha.triton_splitk.FwOp and (

@@ -126,7 +126,7 @@ def test_checkpoint_attention(policy_fn, input_requires_grad, device, autocast, 
     ):
         pytest.skip("FlashAttentionOp is not supported on ROCM!")
 
-    if op is xformers.ops.MemoryEfficientAttentionCkOp and op[0].IS_CK_TILED:
+    if op is xformers.ops.MemoryEfficientAttentionCkOp:
         pytest.skip("Gradience is currently not supported by ck-tiled!")
 
     class Attn(nn.Module):

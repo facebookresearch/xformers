@@ -149,14 +149,6 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
     return int(_CustomMaskType.NoCustomMask)
 
 
-# checking the availability of ck-tiled is necessary since ck-tiled does not
-# have the same functionalities as old-CK
-def is_ck_tiled() -> bool:
-    # ck_check_op is temporarily used to check ck-tiled availability
-    ck_check_op = get_xformers_operator("is_ck_tiled_used")
-    return ck_check_op()
-
-
 @register_operator
 class FwOp(AttentionFwOpBase):
     """xFormers' MHA kernel based on Composable Kernel."""
@@ -166,34 +158,22 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 256
 
-    if is_ck_tiled():
-        SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
-            type(None),
-            torch.Tensor,
-            LowerTriangularMask,
-            LowerTriangularFromBottomRightMask,
-            LowerTriangularFromBottomRightLocalAttentionMask,
-            LowerTriangularMaskWithTensorBias,
-            BlockDiagonalMask,
-            BlockDiagonalCausalMask,
-            BlockDiagonalCausalWithOffsetPaddedKeysMask,
-            attn_bias.BlockDiagonalCausalFromBottomRightMask,
-            attn_bias.BlockDiagonalCausalLocalAttentionMask,
-            BlockDiagonalCausalLocalAttentionFromBottomRightMask,
-        }
-    else:
-        SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
-            type(None),
-            torch.Tensor,
-            LowerTriangularMask,
-            LowerTriangularMaskWithTensorBias,
-            BlockDiagonalMask,
-            BlockDiagonalCausalMask,
-            BlockDiagonalCausalWithOffsetPaddedKeysMask,
-            attn_bias.BlockDiagonalCausalFromBottomRightMask,
-        }
+    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+        type(None),
+        torch.Tensor,
+        LowerTriangularMask,
+        LowerTriangularFromBottomRightMask,
+        LowerTriangularFromBottomRightLocalAttentionMask,
+        LowerTriangularMaskWithTensorBias,
+        BlockDiagonalMask,
+        BlockDiagonalCausalMask,
+        BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        attn_bias.BlockDiagonalCausalFromBottomRightMask,
+        attn_bias.BlockDiagonalCausalLocalAttentionMask,
+        BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+    }
 
-    SUPPORTS_DROPOUT = False if is_ck_tiled() else True
+    SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
     SUPPORTS_BMGHK = True
@@ -215,8 +195,6 @@ class FwOp(AttentionFwOpBase):
         128,  # 64x128 kernel
         256,  # 64x128 with accumulation in gmem
     ]
-
-    IS_CK_TILED = is_ck_tiled()
 
     @classmethod
     def apply(
@@ -289,12 +267,6 @@ class FwOp(AttentionFwOpBase):
         if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
         seqstart_k, seqstart_q, max_seqlen_q = _get_seqlen_info(inp)
-        if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
-            seqlen_k = (
-                inp.attn_bias.k_seqinfo.seqlen
-                if is_ck_tiled()
-                else inp.attn_bias.k_seqinfo.seqlen.to(torch.device("cpu"))
-            )
         out, lse, rng_seed, rng_offset = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
@@ -307,19 +279,25 @@ class FwOp(AttentionFwOpBase):
             compute_logsumexp=needs_gradient,
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
-            seqlen_k=seqlen_k
-            if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
-            else None,
-            window_size=inp.attn_bias._window_size
-            if isinstance(
-                inp.attn_bias,
-                (
-                    BlockDiagonalCausalLocalAttentionMask,
-                    BlockDiagonalCausalLocalAttentionFromBottomRightMask,
-                    LowerTriangularFromBottomRightLocalAttentionMask,
-                ),
-            )
-            else None,
+            seqlen_k=(
+                inp.attn_bias.k_seqinfo.seqlen
+                if isinstance(
+                    inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask
+                )
+                else None
+            ),
+            window_size=(
+                inp.attn_bias._window_size
+                if isinstance(
+                    inp.attn_bias,
+                    (
+                        BlockDiagonalCausalLocalAttentionMask,
+                        BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+                        LowerTriangularFromBottomRightLocalAttentionMask,
+                    ),
+                )
+                else None
+            ),
         )
 
         ctx: Optional[Context] = None
@@ -349,7 +327,7 @@ class FwOp(AttentionFwOpBase):
         requires_grad = (
             d.query.requires_grad or d.key.requires_grad or d.value.requires_grad
         )
-        if is_ck_tiled() and requires_grad:
+        if requires_grad:
             reasons.append("Gradience is currently not supported by ck-tiled!")
         return reasons
 
@@ -413,8 +391,6 @@ class BwOp(AttentionBwOpBase):
         256,  # 64x128 with accumulation in gmem
     ]
 
-    IS_CK_TILED = is_ck_tiled()
-
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(BwOp, cls).not_supported_reasons(d)
@@ -446,8 +422,8 @@ class BwOp(AttentionBwOpBase):
                     f"/ expected: {expected_bias_shape})"
                 )
         _check_large_shapes(reasons, d)
-        if is_ck_tiled():
-            reasons.append("Backward is currently not supported by ck-tiled!")
+
+        reasons.append("Backward is currently not supported by ck-tiled!")
         return reasons
 
     @classmethod
@@ -457,13 +433,6 @@ class BwOp(AttentionBwOpBase):
 
         seqstart_k, seqstart_q, max_seqlen_q = _get_seqlen_info(inp)
         dtype = inp.query.dtype
-
-        if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
-            seqlen_k = (
-                inp.attn_bias.k_seqinfo.seqlen
-                if is_ck_tiled()
-                else inp.attn_bias.k_seqinfo.seqlen.to(torch.device("cpu"))
-            )
 
         rng_seed = rng_offset = 0
         if inp.p != 0.0:
@@ -485,9 +454,13 @@ class BwOp(AttentionBwOpBase):
             seqstart_q=seqstart_q,
             seqstart_k=seqstart_k,
             max_seqlen_q=max_seqlen_q,
-            seqlen_k=seqlen_k
-            if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
-            else None,
+            seqlen_k=(
+                inp.attn_bias.k_seqinfo.seqlen
+                if isinstance(
+                    inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask
+                )
+                else None
+            ),
             logsumexp=ctx.lse,
             output=ctx.out.to(dtype),
             dropout_p=inp.p,
