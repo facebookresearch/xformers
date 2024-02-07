@@ -11,9 +11,9 @@ from typing import Any
 
 import torch
 from torch.utils import benchmark
-from utils import benchmark_main_helper
 
 import xformers.ops.swiglu_op as xsw
+from xformers.benchmarks.utils import benchmark_main_helper
 
 min_run_time = 0.5
 device = torch.device("cuda")
@@ -156,5 +156,8 @@ def benchmark_swiglu_bw(shape, dtype, bias: bool):
     )
 
 
-benchmark_main_helper(benchmark_swiglu, CASES, min_run_time=min_run_time)
-benchmark_main_helper(benchmark_swiglu_bw, CASES, min_run_time=min_run_time)
+if torch.version.hip:
+    print("This benchmark could not be done on ROCM!")
+else:
+    benchmark_main_helper(benchmark_swiglu, CASES, min_run_time=min_run_time)
+    benchmark_main_helper(benchmark_swiglu_bw, CASES, min_run_time=min_run_time)

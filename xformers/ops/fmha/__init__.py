@@ -7,7 +7,18 @@ from typing import Any, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
-from . import attn_bias, cutlass, decoder, flash, small_k, triton, triton_splitk
+from . import (
+    attn_bias,
+    ck,
+    ck_decoder,
+    ck_splitk,
+    cutlass,
+    decoder,
+    flash,
+    small_k,
+    triton,
+    triton_splitk,
+)
 from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
@@ -28,7 +39,10 @@ MemoryEfficientAttentionDecoderOp = (decoder.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionTritonFwdFlashBwOp = (triton.FwOp, flash.BwOp)
 MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
 MemoryEfficientAttentionOp = (small_k.FwOp, small_k.BwOp)
-TritonFlashAttentionOp = (triton.FwOp, triton.BwOp)
+TritonFlashAttentionOp = (triton.FwOp, cutlass.BwOp if torch.version.cuda else ck.BwOp)
+MemoryEfficientAttentionCkOp = (ck.FwOp, ck.BwOp)
+MemoryEfficientAttentionCkDecoderOp = (ck_decoder.FwOp, ck.BwOp)
+MemoryEfficientAttentionSplitKCkOp = (ck_splitk.FwOp, ck.BwOp)
 
 
 class _fMHA(torch.autograd.Function):
@@ -415,7 +429,7 @@ def _memory_efficient_attention_backward(
 
 
 ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
-    cutlass.FwOp,
+    cutlass.FwOp if torch.version.cuda else ck.FwOp,
     flash.FwOp,
     triton.FwOp,
     small_k.FwOp,
@@ -423,9 +437,8 @@ ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
 ]
 
 ALL_BW_OPS: Sequence[Type[AttentionBwOpBase]] = [
-    cutlass.BwOp,
+    cutlass.BwOp if torch.version.cuda else ck.BwOp,
     flash.BwOp,
-    triton.BwOp,
     small_k.BwOp,
 ]
 
@@ -442,6 +455,8 @@ __all__ = [
     "MemoryEfficientAttentionOp",
     "TritonFlashAttentionOp",
     "memory_efficient_attention",
+    "MemoryEfficientAttentionCkOp",
+    "MemoryEfficientAttentionCkDecoderOp",
     "ALL_FW_OPS",
     "ALL_BW_OPS",
     "attn_bias",

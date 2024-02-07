@@ -109,9 +109,12 @@ vit_config = list(itertools.product(vit_sizes, SPARSITIES))
 
 results = []
 
-print("Swin Transformer")
-results += bench_sddmm(swin_t_config)
-print("ViT")
-results += bench_sddmm(vit_config)
-print("Basic cases")
-results += bench_sddmm(basic_config)
+if torch.version.hip:
+    print("This benchmark could not be done on ROCM!")
+else:
+    print("Swin Transformer")
+    results += bench_sddmm(swin_t_config)
+    print("ViT")
+    results += bench_sddmm(vit_config)
+    print("Basic cases")
+    results += bench_sddmm(basic_config)

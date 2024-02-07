@@ -13,6 +13,10 @@ from xformers.components import MultiHeadDispatch
 from xformers.components.attention import build_attention
 from xformers.components.attention.attention_patterns import block_sparsify_tensor
 
+disable_on_rocm = pytest.mark.skipif(
+    not not torch.version.hip, reason="could not be done on ROCM"
+)
+
 
 def catch_oor(fn):
     @functools.wraps(fn)
@@ -60,6 +64,7 @@ def mask_tensor(x, mask, block, value=0):
     return ret
 
 
+@disable_on_rocm
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
 @pytest.mark.parametrize("MODE", _matmul_types)
 @pytest.mark.parametrize("TRANS_A", [False, True])
@@ -111,6 +116,7 @@ def test_matmul(MODE, TRANS_A, TRANS_B, BLOCK, DTYPE, Z=32, H=2, M=512, N=384, K
     torch.testing.assert_close(rc, tc)
 
 
+@disable_on_rocm
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
 @pytest.mark.parametrize("BLOCK", [32, 128])
 @pytest.mark.parametrize("WIDTH", [256, 576, 1024, 1792])
@@ -141,6 +147,7 @@ def test_softmax(BLOCK, WIDTH, DTYPE):
     torch.testing.assert_close(ry, ty)
 
 
+@disable_on_rocm
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
 @pytest.mark.parametrize("block", [32, 43, 128])  # 16, 32,
 @pytest.mark.parametrize("dtype", [torch.float16])
@@ -214,6 +221,7 @@ def test_attention_fwd_bwd(
             )
 
 
+@disable_on_rocm
 @pytest.mark.skipif(not _triton_available, reason="Triton requires a recent CUDA gpu")
 @pytest.mark.parametrize("dtype", [torch.float16])
 def test_blocksparse_attention_parity(dtype):

@@ -5,6 +5,7 @@
 
 import math
 import random
+import sys
 from functools import partial
 from typing import List, Optional, Sequence, Tuple, Type, TypeVar
 
@@ -25,6 +26,13 @@ from .utils import assert_allclose
 
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+rocm_only = pytest.mark.skipif(
+    not torch.cuda.is_available() or not torch.version.hip, reason="requires ROCM"
+)
+disable_on_rocm = pytest.mark.skipif(
+    not not torch.version.hip, reason="could not be done on ROCM"
+)
+
 compute_capability = (0, 0)
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability("cuda")
@@ -310,6 +318,185 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
     return out.permute((0, 2, 1, 3))
 
 
+def ref_attention_splitk_bmhk(
+    q, k, v, attn_bias, scale=None, split_k=None, dtype=None
+) -> torch.Tensor:
+    assert q.ndim == 4
+
+    def T(t):
+        return t.permute((0, 2, 1, 3)).reshape(
+            [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
+        )
+
+    if isinstance(attn_bias, xformers.ops.AttentionBias):
+        attn_bias = attn_bias.materialize(
+            (q.shape[0], q.shape[2], q.shape[1], k.shape[1]),
+            device=q.device,
+            dtype=torch.float32,
+        ).reshape([q.shape[0] * q.shape[2], q.shape[1], k.shape[1]])
+    out = ref_attention_splitk(
+        T(q), T(k), T(v), attn_bias, scale=scale, split_k=split_k, dtype=dtype
+    )
+    out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
+    return out.permute((0, 2, 1, 3))
+
+
+def ref_attention_splitk(
+    q, k, v, attn_bias, scale=None, split_k=2, dtype=None
+) -> torch.Tensor:
+    if q.ndim == 5:
+
+        def attn_bias_group(group: int):
+            if isinstance(attn_bias, torch.Tensor):
+                return attn_bias[:, group]
+            if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
+                return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
+                    attn_bias._bias[:, group]
+                )
+            return attn_bias
+
+        return torch.stack(
+            [
+                ref_attention_splitk_bmhk(
+                    q[:, :, g],
+                    k[:, :, g],
+                    v[:, :, g],
+                    attn_bias=attn_bias_group(g),
+                    split_k=split_k,
+                    dtype=dtype,
+                )
+                for g in range(q.shape[2])
+            ],
+            dim=2,
+        )
+
+    if q.ndim == 4:
+        return ref_attention_splitk_bmhk(
+            q, k, v, attn_bias=attn_bias, split_k=split_k, dtype=dtype
+        )
+    assert q.ndim == 3
+    if dtype is None:
+        dtype = torch.float32
+    q = q.to(dtype=dtype)
+    k = k.to(dtype=dtype)
+    v = v.to(dtype=dtype)
+
+    if scale is None:
+        scale = q.shape[-1] ** -0.5
+    assert not q.isnan().any()
+    q = q * scale
+    assert not q.isnan().any()
+
+    if attn_bias is not None:
+        if isinstance(attn_bias, xformers.ops.AttentionBias):
+            # Always create in B,H,Mq,Mk format
+            attn_bias_tensor = attn_bias.materialize(
+                (q.shape[0], 1, q.shape[1], k.shape[1]),
+                device=q.device,
+                dtype=torch.float32,
+            )
+        else:
+            attn_bias_tensor = attn_bias
+        if attn_bias_tensor.ndim == 4:
+            assert q.shape[0] == attn_bias_tensor.shape[0] * attn_bias_tensor.shape[1]
+            attn_bias_tensor = attn_bias_tensor.reshape(
+                [-1, *attn_bias_tensor.shape[2:]]
+            )
+
+    split_size = k.size(-2) // split_k
+    split_config = {"dim": -2, "split_size_or_sections": split_size}
+    k_split = torch.split(k, **split_config)
+    v_split = torch.split(v, **split_config)
+    attn_bias_split = torch.split(
+        attn_bias_tensor, dim=-1, split_size_or_sections=split_size
+    )
+
+    def compute_attention_split(q_whole, k_slice, v_slice, attn_bias_slice):
+        p_slice = q_whole @ k_slice.transpose(-2, -1)
+        p_slice += attn_bias_slice
+        row_max = torch.max(p_slice, dim=-1, keepdim=True).values
+        p_slice_scaled = p_slice - row_max
+        p_slice_scaled[p_slice_scaled.isnan()] = float("-inf")
+        s = torch.exp(p_slice_scaled)
+        row_sumexp = torch.sum(s, dim=-1, keepdim=True)
+        attn_slice = s @ v_slice
+        return {
+            "attn_slice": attn_slice,
+            "row_max": row_max,
+            "row_sumexp": row_sumexp,
+        }
+
+    splits = list(zip(k_split, v_split, attn_bias_split))
+
+    slices = list(map(lambda s: compute_attention_split(q, s[0], s[1], s[2]), splits))
+    out = torch.zeros_like(q)
+
+    # reduce out over split-k slices
+
+    global_max = torch.zeros_like(slices[0]["row_max"]).fill_(float("-inf"))
+    global_sumexp = torch.zeros_like(slices[0]["row_sumexp"])
+
+    for s in slices:
+        local_out = s["attn_slice"]
+        local_max = s["row_max"]
+        local_sumexp = s["row_sumexp"]
+
+        log_alpha = -torch.abs(local_max - global_max)
+        alpha = torch.exp(log_alpha)
+        alpha.nan_to_num_(1.0)
+
+        pick_new = local_max < global_max
+        new_coef = torch.where(pick_new, alpha, 1.0)
+        curr_coef = torch.where(pick_new, 1.0, alpha)
+
+        out = out * curr_coef + local_out * new_coef
+        global_sumexp = global_sumexp * curr_coef + local_sumexp * new_coef
+        global_max = torch.max(local_max, global_max)
+    out /= global_sumexp
+    return out
+
+
+# this interface assumes the tensor is in BMHK, but q and k/v might have different number of heads
+def ref_attention_mqa(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
+    assert q.ndim == 4
+
+    B, M, Hq, K = q.shape
+    _, N, Hkv, Kv = v.shape
+    nhead_ratio_qk = Hq // Hkv
+
+    def attn_bias_head(head: int):
+        if isinstance(attn_bias, torch.Tensor):
+            assert attn_bias.ndim == 4
+            _, H, _, _ = attn_bias.shape
+            assert H == Hq
+            bias_bghmn = attn_bias.reshape(B, Hkv, nhead_ratio_qk, M, N)
+            return bias_bghmn[:, :, head]
+        if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
+            assert attn_bias._bias.ndim == 4
+            _, H, _, _ = attn_bias._bias.shape
+            assert H == Hq
+            bias_bghmn = attn_bias._bias.reshape(B, Hkv, nhead_ratio_qk, M, N)
+            return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
+                bias_bghmn[:, :, head]
+            )
+        return attn_bias
+
+    q_bmghk = q.reshape((B, M, Hkv, nhead_ratio_qk, K))
+
+    return torch.stack(
+        [
+            ref_attention_bmhk(
+                q_bmghk[:, :, :, h],
+                k,
+                v,
+                attn_bias=attn_bias_head(h),
+            )
+            for h in range(q_bmghk.shape[3])
+        ],
+        dim=3,
+    ).reshape((B, M, Hq, Kv))
+
+
 def _rand_partition(r: random.Random, total: int, n: int) -> List[int]:
     # returns list of n nonnegative integers summing to total
     idx = {0, total}
@@ -456,6 +643,13 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
         k,
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
+
+    if op is fmha.triton_splitk.FwOp and (
+        sys.version_info.major,
+        sys.version_info.minor,
+    ) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     if packed and not (k == kv and q_len == kv_len):
         pytest.skip(
             f"packed incompatible with `k ({k}) != kv ({kv})` or `q_len ({q_len}) != kv_len ({kv_len})`"
@@ -518,6 +712,95 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
     )
 
 
+@rocm_only
+@pytest.mark.parametrize("hdim_k,hdim_v", [(64, 64), (128, 128)])
+@pytest.mark.parametrize("nhead_q,nhead_kv", [(8, 1), (8, 2), (12, 4), (4, 4)])
+@pytest.mark.parametrize("seqlen_q,seqlen_kv", [(100, 128), (128, 100), (200, 1000)])
+@pytest.mark.parametrize("batches", [100, 64, 1])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize(
+    "attn_bias_type", [type(None), torch.Tensor, fmha.attn_bias.LowerTriangularMask]
+)
+@pytest.mark.parametrize("op", [fmha.ck.FwOp])
+def test_mqa_forward(
+    op,
+    attn_bias_type,
+    dtype,
+    batches: int,
+    seqlen_kv: int,
+    seqlen_q: int,
+    nhead_kv: int,
+    nhead_q: int,
+    hdim_v: int,
+    hdim_k: int,
+):
+    B = batches
+    M = seqlen_q
+    N = seqlen_kv
+    Hq = nhead_q
+    Hkv = nhead_kv
+    K = hdim_k
+    Kv = hdim_v
+    nhead_ratio_qk = Hq // Hkv
+
+    device = torch.device("cuda")
+
+    if op is fmha.ck.FwOp:
+        pytest.skip("mqa/gqa is only supported with ck-tiled fmha")
+
+    torch.manual_seed(B * M + N * K + Hq * Hkv + Kv)
+
+    scale = 3
+    query = torch.randn((B, M, Hq, K), device=device, dtype=dtype).mul_(scale)
+    key = torch.randn((B, N, Hkv, K), device=device, dtype=dtype).mul_(scale)
+    value = torch.randn((B, N, Hkv, Kv), device=device, dtype=dtype).mul_(scale)
+
+    attn_bias = None
+    if attn_bias_type is not None:
+        attn_bias = create_attn_bias(
+            attn_bias_type,
+            batch_size=B,
+            num_heads=Hq,
+            num_heads_groups=nhead_ratio_qk,
+            q_len=M,
+            kv_len=N,
+            dtype=dtype,
+            device=device,
+            requires_grad=False,
+            fmt="BMHK",
+            op=op,
+        )
+
+    inputs = fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias)
+    reasons = op.not_supported_reasons(inputs)
+    if reasons:
+        err_msg = f"{op.NAME}: unsupported ({'/'.join(reasons)})"
+        # Ensure we free memory to avoid OOMs
+        del query, key, value, attn_bias, inputs
+        assert False, err_msg
+
+    out = xformers.ops.memory_efficient_attention_forward(
+        query, key, value, attn_bias, op=op
+    )
+    assert not out.isnan().any(), ("Output has NaNs", attn_bias)
+    out2 = xformers.ops.memory_efficient_attention_forward(
+        query, key, value, attn_bias, op=op
+    )
+    assert torch.allclose(out, out2, atol=0.0, rtol=0.0), (
+        "Non-deterministic behavior",
+        attn_bias,
+    )
+
+    ref = ref_attention_mqa(query, key, value, attn_bias)
+    assert out.shape == ref.shape, out.shape
+    assert_allclose(
+        out.float(),
+        ref,
+        atol=op.ERROR_ATOL[dtype],
+        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
+    )
+
+
 @cuda_only
 @pytest.mark.parametrize("k_len", [5, 6, 32])
 @pytest.mark.parametrize("batch_size", [1, 4])
@@ -561,6 +844,16 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
         k,
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
+
+    if op is fmha.ck.FwOp:
+        pytest.skip("logsumexp is not yet supported by ck-tiled fmha!")
+
+    if op is fmha.triton_splitk.FwOp and (
+        sys.version_info.major,
+        sys.version_info.minor,
+    ) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     query, key, value, attn_bias = create_tensors(
         *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, fmt="BMK"
     )
@@ -963,6 +1256,7 @@ def test_dropout_backward_cutlass(dt, q_len, kv_len, batch_size, k, p):
 
 
 @cuda_only
+@disable_on_rocm
 @pytest.mark.parametrize("k_len", [32])
 @pytest.mark.parametrize("batch_size", [1])
 @pytest.mark.parametrize("kv_len", [3 * 32])
@@ -1059,6 +1353,12 @@ def test_cuda_streams(
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
     if device != "cuda":
         pytest.skip("Not CUDA")
+    if op is fmha.triton_splitk.FwOp and (
+        sys.version_info.major,
+        sys.version_info.minor,
+    ) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     bias_type = None
     opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = [
         op,
@@ -1198,6 +1498,16 @@ def test_grad_checkpointing(
         k,
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
+    if op is fmha.triton.FwOp:
+        pytest.skip("Triton Flash Attention 2 doesn't support backward pass yet")
+    if op is fmha.ck.FwOp:
+        pytest.skip("ck-tiled FMHA doesn't supported backward pass yet")
+    if op is fmha.triton_splitk.FwOp and (
+        sys.version_info.major,
+        sys.version_info.minor,
+    ) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     bias_type = None
     opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = (
         op,
@@ -1269,6 +1579,13 @@ def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
     q = torch.empty([1, 1, 32, 4], device="cuda", dtype=torch.float16).permute(
         0, 3, 1, 2
     )
+
+    if op is fmha.triton_splitk.FwOp and (
+        sys.version_info.major,
+        sys.version_info.minor,
+    ) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     try:
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
     except ValueError as e:
@@ -1284,6 +1601,13 @@ def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
 )
 def test_unsupported_stride_alignment(op: Type[fmha.AttentionFwOpBase]):
     q = torch.empty([1, 2, 1, 33], device="cuda", dtype=torch.float16)[:, :, :, :32]
+
+    if op is fmha.triton_splitk.FwOp and (
+        sys.version_info.major,
+        sys.version_info.minor,
+    ) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     try:
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
     except ValueError as e:
@@ -1539,11 +1863,64 @@ def _kv_heads_label(kv_heads: Optional[int]) -> str:
     return f"gqa{kv_heads}"
 
 
+@pytest.mark.parametrize("dtype", ["f32"])
+@pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
+@pytest.mark.parametrize("n_heads", [16])
+@pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1)])
+@pytest.mark.parametrize("split_k", [1, 2, 4])
+def test_splitk_reference(
+    kv_heads: int, n_heads: int, padding: int, bsz: int, dtype: str, split_k: int
+):
+    dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
+    torch.manual_seed(1)
+    d = 256
+    num_queries = 1
+    if kv_heads is not None and kv_heads > 1:
+        k_shape: Tuple[int, ...] = (1, bsz * padding, kv_heads, n_heads, d)
+        q_shape: Tuple[int, ...] = (
+            1,
+            bsz * num_queries,
+            kv_heads,
+            n_heads,
+            d,
+        )
+    else:
+        k_shape = (1, bsz * padding, n_heads, d)
+        q_shape = (1, bsz * num_queries, n_heads, d)
+
+    k = torch.rand(k_shape, dtype=dtype_).cuda()
+    k_seqlen = torch.randint(1, padding + 1, (bsz,)).tolist()
+    v = torch.rand_like(k)
+    q = torch.rand(q_shape, dtype=dtype_).cuda()
+    causal_diagonal = torch.tensor(  # TODO: make unnecessary
+        [i - 1 for i in k_seqlen], dtype=torch.int32
+    ).cuda()
+
+    if kv_heads is not None:
+        k = k[..., :1, :].expand(k_shape)
+        v = v[..., :1, :].expand(k_shape)
+
+    attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+        q_seqlen=[1] * bsz,
+        kv_seqlen=k_seqlen,
+        causal_diagonal=causal_diagonal,
+        kv_padding=padding,
+    )
+    ref_out = ref_attention(q, k, v, attn_bias)
+    splitk_out = ref_attention_splitk(q, k, v, attn_bias, None, split_k=split_k)
+    assert_allclose(
+        ref_out,
+        splitk_out,
+        atol=fmha.ck.FwOp.ERROR_ATOL[dtype_],
+        rtol=fmha.ck.FwOp.ERROR_RTOL[dtype_],
+    )
+
+
 @sm70_or_better_only
 @pytest.mark.parametrize(
     "op",
     [
-        fmha.decoder.FwOp,
+        fmha.decoder.FwOp if torch.version.cuda else fmha.ck_decoder.FwOp,
     ],
 )
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
@@ -1559,6 +1936,7 @@ def test_decoder(
     dtype: str,
     dequant: bool = False,
     num_queries: int = 1,
+    d: int = 128,
 ) -> None:
     # kv_heads = 1: multiquery
     # kv_heads = None: neither MQA nor GQA
@@ -1567,7 +1945,6 @@ def test_decoder(
         raise pytest.skip("BF16 is only supported on SM80+")
     dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
     torch.manual_seed(1)
-    d = 128
     if kv_heads is not None and kv_heads > 1:
         k_shape: Tuple[int, ...] = (1, bsz * padding, kv_heads, n_heads, d)
         q_shape: Tuple[int, ...] = (
@@ -1624,15 +2001,26 @@ def test_decoder(
         k = dequant_cache(k)
         v = dequant_cache(v)
 
-    cutlass_output = fmha.memory_efficient_attention_forward(
-        q, k, v, attn_bias, op=fmha.cutlass.FwOp
-    )
-    assert_allclose(
-        decoder_output,
-        cutlass_output,
-        atol=fmha.cutlass.FwOp.ERROR_ATOL[dtype_] * 4,
-        rtol=fmha.cutlass.FwOp.ERROR_RTOL[dtype_],
-    )
+    if torch.version.cuda:
+        cutlass_output = fmha.memory_efficient_attention_forward(
+            q, k, v, attn_bias, op=fmha.cutlass.FwOp
+        )
+
+        assert_allclose(
+            decoder_output,
+            cutlass_output,
+            atol=fmha.cutlass.FwOp.ERROR_ATOL[dtype_] * 4,
+            rtol=fmha.cutlass.FwOp.ERROR_RTOL[dtype_],
+        )
+    else:
+        ref_output = ref_attention(q, k, v, attn_bias)
+
+        assert_allclose(
+            decoder_output.float(),
+            ref_output,
+            atol=fmha.cutlass.FwOp.ERROR_ATOL[dtype_] * 4,
+            rtol=fmha.cutlass.FwOp.ERROR_RTOL[dtype_],
+        )
 
 
 @sm80_or_better_only
@@ -1669,6 +2057,9 @@ def test_triton_splitk_decoder(
     if dequant:
         pytest.skip("dequant is not supported")
 
+    if (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     # We omit dequant with f16: it needs a very high tol
     test_decoder(
         op,
@@ -1678,6 +2069,36 @@ def test_triton_splitk_decoder(
         bsz=bsz,
         dtype=dtype,
         dequant=dequant,
+    )
+
+
+@rocm_only
+@pytest.mark.parametrize(
+    "op", [fmha.ck_splitk.FwOp_S1, fmha.ck_splitk.FwOp_S2, fmha.ck_splitk.FwOp_S4]
+)
+@pytest.mark.parametrize("dtype", ["f32"])
+@pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
+@pytest.mark.parametrize("n_heads", [16])
+@pytest.mark.parametrize("d", [128, 256])
+@pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1), (32, 1), (4096, 8)])
+def test_splitk_decoder(
+    op,
+    kv_heads: Optional[int],
+    n_heads: int,
+    padding: int,
+    bsz: int,
+    dtype: str,
+    d: int,
+) -> None:
+    # no quantized impl compared to cuda
+    test_decoder(
+        op,
+        kv_heads=kv_heads,
+        n_heads=n_heads,
+        padding=padding,
+        bsz=bsz,
+        dtype=dtype,
+        d=d,
     )
 
 
@@ -1697,6 +2118,9 @@ def test_attn_bias_blockdiag_doc() -> None:
     import torch
 
     from xformers.ops import fmha
+
+    if torch.version.hip:
+        pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
 
     K = 16
     dtype = torch.float16
@@ -1750,6 +2174,7 @@ class TestAttnBias:
         with pytest.raises((ValueError, RuntimeError)):
             fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
 
+    @disable_on_rocm
     def test_f32_biasf16(self) -> None:
         q, k, v, bias = self.create_tensors(torch.float32)
         fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
@@ -1759,7 +2184,10 @@ class TestAttnBias:
 
     @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
     def test_wrong_alignment(self, dtype) -> None:
-        op = fmha.cutlass.FwOp
+        op = fmha.cutlass.FwOp if torch.version.cuda else fmha.ck.FwOp
+        if torch.version.hip and dtype is torch.float32:
+            pytest.skip("float32 is not supported by fmha.ck.FwOp!")
+
         q, k, v, bias = self.create_tensors(dtype, Mq=7, Mkv=5)
         try:
             fmha.memory_efficient_attention(q, k, v, attn_bias=bias, op=(op, None))
@@ -1811,6 +2239,7 @@ SM_AND_SHMEM_KBYTES = [
 
 
 @cuda_only
+@disable_on_rocm
 @pytest.mark.parametrize("dtype_str", ["f32", "f16", "bf16"])
 @pytest.mark.parametrize(
     "sm_shmem",
@@ -1950,6 +2379,12 @@ def test_forward_gqa_one_group(opFW):
     k = torch.randn([B, Mkv, 1, H, K], dtype=dtype, device="cuda") * 3
     v = torch.randn([B, Mkv, 1, H, K], dtype=dtype, device="cuda") * 3
 
+    if opFW is fmha.triton_splitk.FwOp and (
+        sys.version_info.major,
+        sys.version_info.minor,
+    ) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     supported = opFW.supports(fmha.Inputs(q, k, v))
     if not supported:
         supported_bmhk = opFW.supports(fmha.Inputs(q[:, :, 0], k[:, :, 0], v[:, :, 0]))
@@ -1966,8 +2401,10 @@ def test_forward_gqa_one_group(opFW):
 
 
 @sm80_or_better_only
+@disable_on_rocm
 def test_flash_gqa_wrong_strides() -> None:
     op = (fmha.flash.FwOp, None)
+
     device = "cuda"
     B, Mq, Mkv, G, H, K = 3, 1, 512, 2, 8, 128
     q = torch.empty((B, Mq, G, H, K), dtype=torch.float16, device=device)
@@ -2005,6 +2442,7 @@ def _dispatches_to_flash_decoding(q, kv):
     )
 
 
+@disable_on_rocm
 def test_dispatch_decoding_bmhk() -> None:
     assert not _dispatches_to_splitK(
         torch.empty([1, 8, 1, 128]), torch.empty([1, 2048, 1, 128])
@@ -2027,6 +2465,7 @@ def test_dispatch_decoding_bmhk() -> None:
     ), "Should not use SplitK if B is big"
 
 
+@disable_on_rocm
 def test_dispatch_decoding_bmghk() -> None:
     assert not _dispatches_to_splitK(
         torch.empty([1, 8, 1, 1, 128]), torch.empty([1, 2048, 1, 1, 128])
@@ -2110,6 +2549,9 @@ def test_mqa_decoding(op: Type[fmha.AttentionFwOpBase], dtype, B_Mkv_H_K):
     k = k.expand(-1, -1, H, -1)
     v = v.expand(-1, -1, H, -1)
 
+    if (sys.version_info.major, sys.version_info.minor) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     if not op.supports(fmha.Inputs(q, k, v)):
         pytest.skip("not supported")
     out = fmha.memory_efficient_attention_forward(q, k, v, op=op)
@@ -2131,6 +2573,15 @@ def test_empty_tensors_empty_query(
         fmt="BMHK",
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
+
+    if torch.version.hip:
+        pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
+
+    if opFW is fmha.triton_splitk.FwOp and (
+        sys.version_info.major,
+        sys.version_info.minor,
+    ) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
 
     query = query[:, :0]
     query.requires_grad_(True)
@@ -2154,6 +2605,15 @@ def test_empty_tensors_empty_kv(
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
 
+    if torch.version.hip:
+        pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
+
+    if opFW is fmha.triton_splitk.FwOp and (
+        sys.version_info.major,
+        sys.version_info.minor,
+    ) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
+
     key = key[:, :0]
     value = value[:, :0]
     query.requires_grad_(True)
@@ -2175,6 +2635,15 @@ def test_empty_tensors_empty_b(
         fmt="BMHK",
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
+
+    if torch.version.hip:
+        pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
+
+    if opFW is fmha.triton_splitk.FwOp and (
+        sys.version_info.major,
+        sys.version_info.minor,
+    ) <= (3, 8):
+        pytest.skip("triton_splitk requires python 3.9 or above!")
 
     query, key, value = query[:0], key[:0], value[:0]
     query.requires_grad_(True)
@@ -2198,6 +2667,7 @@ def test_local_attn_bias() -> None:
 
 
 @cuda_only
+@disable_on_rocm
 @pytest.mark.parametrize("cc", [60, 70, 80])
 @pytest.mark.parametrize("maxK", [32, 64, 128, 256])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])

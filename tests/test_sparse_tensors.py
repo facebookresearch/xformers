@@ -15,6 +15,10 @@ cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires C
 _devices = ["cpu", "cuda:0"] if torch.cuda.is_available() else ["cpu"]
 _tensor_types = [BlockSparseTensor, SparseCSRTensor]
 
+disable_on_rocm = pytest.mark.skipif(
+    not not torch.version.hip, reason="could not be done on ROCM"
+)
+
 
 def _create_blocksparse_tensor(
     device, block_size=32, Z=8, C=2, H=64, W=64, dtype=torch.float32
@@ -101,6 +105,7 @@ def test_sparse_binary_ops(func, device):
     assert torch.allclose(res, res_gt)
 
 
+@disable_on_rocm
 @pytest.mark.parametrize("tensor_type", _tensor_types)
 @pytest.mark.parametrize("device", _devices)
 def test_masked_matmul(tensor_type, device):
@@ -153,6 +158,7 @@ def test_masked_matmul(tensor_type, device):
     assert torch.allclose(b.grad, bb.grad, atol=atol)
 
 
+@disable_on_rocm
 @pytest.mark.parametrize("tensor_type", _tensor_types)
 @pytest.mark.parametrize("device", _devices)
 def test_bmm(tensor_type, device):
@@ -202,6 +208,7 @@ def test_bmm(tensor_type, device):
     ), f"{torch.max(torch.abs(a_grad-a_sparse.grad.to_dense()))}"
 
 
+@disable_on_rocm
 @pytest.mark.parametrize("tensor_type", _tensor_types)
 @pytest.mark.parametrize("device", _devices)
 def test_sparse_softmax(tensor_type, device):

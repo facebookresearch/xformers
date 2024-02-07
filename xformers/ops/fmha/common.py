@@ -108,7 +108,7 @@ class Inputs:
             x.ndim != self.query.ndim for x in qkv
         ):
             raise ValueError(
-                f"Query/Key/Value should all have BMGHK, BMHK, or BMK shape.\n"
+                f"Query/Key/Value should all have BMGHK, BMHK or BMK shape.\n"
                 f"  query.shape: {self.query.shape}\n"
                 f"  key.shape  : {self.key.shape}\n"
                 f"  value.shape: {self.value.shape}"
@@ -180,11 +180,13 @@ class Inputs:
                 and self.value.shape == (B, Mkv, Kv)
             )
         H = self.query.shape[-2]
+        Hkv = self.key.shape[-2]
         if self.query.ndim == 4:  # BMHK
             valid_shapes = (
                 self.query.shape == (B, Mq, H, K)
-                and self.key.shape == (B, Mkv, H, key_embed_dim)
-                and self.value.shape == (B, Mkv, H, Kv)
+                and self.key.shape == (B, Mkv, Hkv, key_embed_dim)
+                and self.value.shape == (B, Mkv, Hkv, Kv)
+                and H % Hkv == 0
             )
         G = self.query.shape[2]
         if self.query.ndim == 5:  # BMNHK
@@ -298,7 +300,11 @@ class AttentionOpBase(BaseOperator):
         dtype = d.query.dtype
         if device_type not in cls.SUPPORTED_DEVICES:
             reasons.append(f"device={device_type} (supported: {cls.SUPPORTED_DEVICES})")
-        if device_type == "cuda" and not _built_with_cuda:
+        if (
+            device_type == "cuda"
+            and not _built_with_cuda
+            and (torch.version.hip is None)
+        ):
             reasons.append("xFormers wasn't build with CUDA support")
         if device_type == "cuda":
             device_capability = torch.cuda.get_device_capability(d.device)

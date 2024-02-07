@@ -1,0 +1,71 @@
+name: ROCM_CI
+
+on: 
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+jobs:
+  build:
+    if: contains(github.event.label.name, 'rocm')
+    runs-on: rocm
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Get CPU info on Ubuntu
+      if: contains(runner.os, 'linux')
+      run: |
+        cat /proc/cpuinfo
+    - name: Get env vars
+      run: |
+        echo GITHUB_WORKFLOW   = $GITHUB_WORKFLOW
+        echo HOME              = $HOME
+        echo PWD               = $PWD
+        echo GITHUB_ACTION     = $GITHUB_ACTION
+        echo GITHUB_ACTIONS    = $GITHUB_ACTIONS
+        echo GITHUB_REPOSITORY = $GITHUB_REPOSITORY
+        echo GITHUB_EVENT_NAME = $GITHUB_EVENT_NAME
+        echo GITHUB_EVENT_PATH = $GITHUB_EVENT_PATH
+        echo GITHUB_WORKSPACE  = $GITHUB_WORKSPACE
+        echo GITHUB_SHA        = $GITHUB_SHA
+        echo GITHUB_REF        = $GITHUB_REF
+
+        export GIT_BRANCH=${GITHUB_BASE_REF:-${GITHUB_REF#refs/heads/}}
+        echo GIT_BRANCH        = $GIT_BRANCH
+        
+        export ROCM_PATH=/opt/rocm
+        echo ROCM_PATH         = $ROCM_PATH
+
+        export MAX_JOBS=64
+        echo MAX_JOBS          = $MAX_JOBS
+
+        hipcc --version
+        rocm-smi
+        rocminfo | grep "gfx"
+
+    - name: Build XFormers
+      run: |
+        git clone --recursive -b $GIT_BRANCH $GITHUB_REPOSITORY
+        docker run -it --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --device=/dev/kfd --device=/dev/dri --group-add video --ipc=host --shm-size 8G -v $PWD/xformers:/xformers  rocm/pytorch-nightly:latest
+
+        pip3 install --upgrade pip
+        pip3 uninstall -y xformers
+        MAX_JOBS=$MAX_JOBS pip3 install -e /xformers --verbose
+        pip3 install scipy==1.10
+
+        python3 -c "import torch; print(torch.__version__)"
+        python3 -m xformers.info
+
+    - name: Run python tests
+      run: |
+        pytest -rpfs /xformers/tests/test_mem_eff_attention.py | tee test_mem_eff_attention.log
+    
+    - name: Archive logs
+      uses: actions/upload-artifact@v3
+      with:
+        name: test results
+        path: test_mem_eff_attention_ck.log
+
+    - name: Process test results
+      run: |
+        echo "Processing test results TBD"
+      

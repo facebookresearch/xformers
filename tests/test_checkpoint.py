@@ -20,6 +20,9 @@ from xformers.checkpoint import (
 )
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+disable_on_rocm = pytest.mark.skipif(
+    not not torch.version.hip, reason="could not be done on ROCM"
+)
 _devices = ["cpu"]
 cuda_cap = (0, 0)
 
@@ -36,6 +39,7 @@ def _all_policy(func, *args, **kwargs):
     return True
 
 
+@disable_on_rocm
 @pytest.mark.skipif(torch.__version__ < "2.2", reason="Only new PyTorch supported")
 @pytest.mark.parametrize("policy_fn", [None, [], _relu_policy, _all_policy])
 @pytest.mark.parametrize("input_requires_grad", [True, False])
@@ -111,7 +115,11 @@ def test_checkpoint_with_grad(policy_fn, input_requires_grad, grad_mode):
     "op",
     [
         xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
-        xformers.ops.MemoryEfficientAttentionCutlassOp,
+        (
+            xformers.ops.MemoryEfficientAttentionCutlassOp
+            if torch.version.cuda
+            else xformers.ops.MemoryEfficientAttentionCkOp
+        ),
     ],
 )
 def test_checkpoint_attention(policy_fn, input_requires_grad, device, autocast, op):
@@ -120,6 +128,15 @@ def test_checkpoint_attention(policy_fn, input_requires_grad, device, autocast, 
         or op[1].CUDA_MINIMUM_COMPUTE_CAPABILITY > cuda_cap
     ):
         pytest.skip("skipping operator not supported in this arch")
+
+    if (
+        op is xformers.ops.MemoryEfficientAttentionFlashAttentionOp
+        and torch.version.hip
+    ):
+        pytest.skip("FlashAttentionOp is not supported on ROCM!")
+
+    if op is xformers.ops.MemoryEfficientAttentionCkOp:
+        pytest.skip("Gradience is currently not supported by ck-tiled!")
 
     class Attn(nn.Module):
         def forward(self, x):

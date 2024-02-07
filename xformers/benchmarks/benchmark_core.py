@@ -252,7 +252,10 @@ def bench_bmm():
     compare.print()
 
 
-bench_sddmm()
-bench_matmul_with_mask()
-bench_softmax()
-bench_bmm()
+if torch.version.hip:
+    print("This benchmark could not be done on ROCM!")
+else:
+    bench_sddmm()
+    bench_matmul_with_mask()
+    bench_softmax()
+    bench_bmm()
