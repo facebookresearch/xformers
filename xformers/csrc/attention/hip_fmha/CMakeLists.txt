@@ -19,7 +19,7 @@ set(project_root_dir /xformers)
 set(xformers_csrc ${project_root_dir}/xformers/csrc)
 set(sources ${xformers_csrc}/attention/hip_fmha/attention_forward_decoder.hip)
 set(splitk_sources ${xformers_csrc}/attention/hip_fmha/attention_forward_splitk.hip)
-set(ck_include ${project_root_dir}/third_party/composable_kernel/include/)
+set(ck_include ${project_root_dir}/third_party/composable_kernel_tiled/include/)
 set(torch_include /opt/conda/envs/py_${py_version}/lib/python${py_version}/site-packages/torch/include)
 
 set_source_files_properties(${sources} ${splitk_sources} PROPERTIES LANGUAGE HIP)

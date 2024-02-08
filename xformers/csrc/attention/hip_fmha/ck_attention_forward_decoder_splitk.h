@@ -152,11 +152,11 @@ __global__ void efficient_attention_forward_decoder_splitk_reduce_ck_kernel(
 
 template <
     typename scalar_t,
-    int32_t vec_size = 4,
-    int32_t n_loop_unroll = 16,
-    int32_t n_loop_unroll_tail = 2,
-    int32_t KV_M_MAX = 8192,
-    typename compute_t = float>
+    int32_t vec_size,
+    int32_t n_loop_unroll,
+    int32_t n_loop_unroll_tail,
+    int32_t KV_M_MAX,
+    typename compute_t>
 __global__ void efficient_attention_forward_decoder_splitk_ck_kernel(
     const scalar_t* __restrict__ XQ,
     const scalar_t* __restrict__ cache_K,
@@ -451,7 +451,12 @@ __global__ void efficient_attention_forward_decoder_splitk_ck_kernel(
 namespace ck {
 namespace tensor_operation {
 namespace device {
-template <typename scalar_t, typename compute_t = float>
+template <
+    typename scalar_t,
+    int32_t KV_M_MAX,
+    int32_t n_loop_unroll,
+    int32_t n_loop_unroll_tail,
+    typename compute_t>
 struct FMHADecoderSplitKDeviceOp : public BaseOperator {
   using DeviceOp = FMHADecoderSplitKDeviceOp;
   struct Argument : public BaseArgument {
@@ -611,16 +616,28 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator {
           Q_size_k_alignment_necessary == 4
               ? efficient_attention_forward_decoder_splitk_ck_kernel<
                     scalar_t,
-                    4>
+                    /* vec_size */ 4,
+                    n_loop_unroll,
+                    n_loop_unroll_tail,
+                    KV_M_MAX,
+                    compute_t>
               : Q_size_k_alignment_necessary == 2
-              ? efficient_attention_forward_decoder_splitk_ck_kernel<
-                    scalar_t,
-                    2>
-              : Q_size_k_alignment_necessary == 1
-              ? efficient_attention_forward_decoder_splitk_ck_kernel<
-                    scalar_t,
-                    1>
-              : nullptr,
+                  ? efficient_attention_forward_decoder_splitk_ck_kernel<
+                        scalar_t,
+                        /* vec_size */ 2,
+                        n_loop_unroll,
+                        n_loop_unroll_tail,
+                        KV_M_MAX,
+                        compute_t>
+                  : Q_size_k_alignment_necessary == 1
+                      ? efficient_attention_forward_decoder_splitk_ck_kernel<
+                            scalar_t,
+                            /* vec_size */ 1,
+                            n_loop_unroll,
+                            n_loop_unroll_tail,
+                            KV_M_MAX,
+                            compute_t>
+                      : nullptr,
           arg.grid_dim,
           arg.block_dim,
           arg.lds_bytes,
