@@ -334,7 +334,7 @@ def get_extensions():
             extensions_dir,
             "attention",
             "hip_fmha",
-            "instances_tiled",
+            "instances",
             "ck_tiled_fmha_*.cpp",
         ),
         recursive=False,
