@@ -111,6 +111,7 @@ class FwOp(AttentionFwOpBase):
         q, k, v = inp.get_qkv_in_bmghk()
 
         if attn_bias is not None:
+            assert isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
             attn_bias.k_seqinfo.to(k.device)
             attn_bias.q_seqinfo.to(q.device)
             padding = attn_bias.k_seqinfo.padding
@@ -151,7 +152,7 @@ class FwOp(AttentionFwOpBase):
         if inp.scale is not None:
             qk_scale = inp.scale
         else:
-            qk_scale = torch.rsqrt(torch.tensor(k.shape[-1], dtype=torch.float32))
+            qk_scale = torch.rsqrt(torch.tensor(k.shape[-1], dtype=torch.float32)).item()
 
         out = cls.OPERATOR(
             query=query,
