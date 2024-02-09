@@ -152,7 +152,9 @@ class FwOp(AttentionFwOpBase):
         if inp.scale is not None:
             qk_scale = inp.scale
         else:
-            qk_scale = torch.rsqrt(torch.tensor(k.shape[-1], dtype=torch.float32)).item()
+            qk_scale = torch.rsqrt(
+                torch.tensor(k.shape[-1], dtype=torch.float32)
+            ).item()
 
         out = cls.OPERATOR(
             query=query,
