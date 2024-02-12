@@ -73,8 +73,9 @@ struct grouped_forward_causalmask_attnbias_dispatched {
 
       using FmhaShape = FmhaFwdShape<HDim>;
       using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
-      constexpr ck::index_t occupancy =
-          (HDim == 64) ? 3 : (HDim == 256) ? 1 : 2;
+      constexpr ck::index_t occupancy = (HDim == 64) ? 3
+          : (HDim == 256)                            ? 1
+                                                     : 2;
 
       constexpr bool kPadSeqLenQ = true;
       constexpr bool kPadSeqLenK = true;

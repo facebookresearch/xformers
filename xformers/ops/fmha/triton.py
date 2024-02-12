@@ -565,6 +565,10 @@ class FwOp(AttentionFwOpBase):
             # q ~ [1, B*T, H, K]
             # TODO: do we really need to do this cast? seems fishy but
             # I just copied it from the split-k kernel
+            assert isinstance(
+                attn_bias,
+                (BlockDiagonalCausalWithOffsetPaddedKeysMask, BlockDiagonalCausalMask),
+            )
             attn_bias.k_seqinfo.to(inp.query.device)
             attn_bias.q_seqinfo.to(inp.query.device)
             seqstart_q = attn_bias.q_seqinfo.seqstart

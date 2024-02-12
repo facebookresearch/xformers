@@ -53,7 +53,7 @@ struct FmhaFwdKernel {
 
   template <ck::index_t I> // to avoid duplicated base class prblem, introduce
                            // an template arg
-                           struct FmhaFwdEmptyKargs {};
+  struct FmhaFwdEmptyKargs {};
 
   // kargs use aggregate initializer, so no constructor will provided
   // use inheritance to minimize karg size
