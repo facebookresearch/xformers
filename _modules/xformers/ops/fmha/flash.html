@@ -270,12 +270,16 @@
         <span class="kn">from</span> <span class="nn">flash_attn.flash_attn_interface</span> <span class="kn">import</span> <span class="n">flash_attn_cuda</span> <span class="k">as</span> <span class="n">_C_flashattention</span>
 
         <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">__version__</span>
+        <span class="n">WANTED_FLASH_VERSION</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
         <span class="n">flash_ver_parsed</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">FLASH_VERSION</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)[:</span><span class="mi">3</span><span class="p">])</span>
         <span class="k">if</span> <span class="p">(</span>
-            <span class="n">flash_ver_parsed</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
+            <span class="n">flash_ver_parsed</span> <span class="o">!=</span> <span class="n">WANTED_FLASH_VERSION</span>
             <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XFORMERS_IGNORE_FLASH_VERSION_CHECK&quot;</span><span class="p">,</span> <span class="s2">&quot;0&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">&quot;1&quot;</span>
         <span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="s2">&quot;Requires Flash attention 2.3.6 for varlen_fwd api&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Requires Flash attention </span><span class="si">{</span><span class="n">WANTED_FLASH_VERSION</span><span class="si">}</span><span class="s2"> for varlen_fwd api &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;but got </span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
 
     <span class="c1"># create library so that flash-attn goes through the PyTorch Dispatcher</span>
     <span class="n">_flash_lib</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">Library</span><span class="p">(</span><span class="s2">&quot;xformers_flash&quot;</span><span class="p">,</span> <span class="s2">&quot;DEF&quot;</span><span class="p">)</span>
@@ -331,6 +335,7 @@
                 <span class="n">key</span><span class="p">,</span>
                 <span class="n">value</span><span class="p">,</span>
                 <span class="kc">None</span><span class="p">,</span>  <span class="c1"># out</span>
+                <span class="kc">None</span><span class="p">,</span>  <span class="c1"># alibi_slopes</span>
                 <span class="n">p</span><span class="p">,</span>
                 <span class="n">softmax_scale</span><span class="p">,</span>
                 <span class="n">is_causal</span><span class="p">,</span>
@@ -340,7 +345,6 @@
                 <span class="kc">None</span><span class="p">,</span>  <span class="c1"># rng</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">out</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">new_empty</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
             <span class="p">(</span>
                 <span class="n">out</span><span class="p">,</span>
                 <span class="n">q_padded</span><span class="p">,</span>
@@ -354,10 +358,11 @@
                 <span class="n">query</span><span class="p">,</span>
                 <span class="n">key</span><span class="p">,</span>
                 <span class="n">value</span><span class="p">,</span>
-                <span class="n">out</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>
                 <span class="n">cu_seq_lens_q</span><span class="p">,</span>
                 <span class="n">cu_seq_lens_k</span><span class="p">,</span>
                 <span class="n">seqused_k</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>  <span class="c1"># alibi_slopes</span>
                 <span class="n">max_seq_len_q</span><span class="p">,</span>
                 <span class="n">max_seq_len_k</span><span class="p">,</span>
                 <span class="n">p</span><span class="p">,</span>
@@ -404,11 +409,13 @@
                 <span class="n">dq</span><span class="p">,</span>
                 <span class="n">dk</span><span class="p">,</span>
                 <span class="n">dv</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>  <span class="c1"># alibi_slopes</span>
                 <span class="n">p</span><span class="p">,</span>
                 <span class="n">softmax_scale</span><span class="p">,</span>
                 <span class="n">is_causal</span><span class="p">,</span>
                 <span class="n">window_left</span><span class="p">,</span>
                 <span class="n">window_right</span><span class="p">,</span>
+                <span class="kc">False</span><span class="p">,</span>  <span class="c1"># deterministic</span>
                 <span class="kc">None</span><span class="p">,</span>
                 <span class="n">rng_state</span><span class="p">,</span>
             <span class="p">)</span>
@@ -425,6 +432,7 @@
                 <span class="n">dv</span><span class="p">,</span>
                 <span class="n">cu_seq_lens_q</span><span class="p">,</span>
                 <span class="n">cu_seq_lens_k</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>  <span class="c1"># alibi_slopes</span>
                 <span class="n">max_seq_len_q</span><span class="p">,</span>
                 <span class="n">max_seq_len_k</span><span class="p">,</span>
                 <span class="n">p</span><span class="p">,</span>
@@ -433,6 +441,7 @@
                 <span class="n">is_causal</span><span class="p">,</span>
                 <span class="n">window_left</span><span class="p">,</span>
                 <span class="n">window_right</span><span class="p">,</span>
+                <span class="kc">False</span><span class="p">,</span>  <span class="c1"># deterministic</span>
                 <span class="kc">None</span><span class="p">,</span>
                 <span class="n">rng_state</span><span class="p">,</span>
             <span class="p">)</span>
@@ -756,19 +765,6 @@
     <span class="n">VERSION</span> <span class="o">=</span> <span class="n">FLASH_VERSION</span>
 
     <span class="n">MAX_HEADDIM_SM8x</span> <span class="o">=</span> <span class="mi">192</span>
-
-    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">shape_not_supported_reasons</span><span class="p">(</span>
-        <span class="bp">cls</span><span class="p">,</span> <span class="n">Mq</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Mkv</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">K</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Kv</span><span class="p">:</span> <span class="nb">int</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-        <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">shape_not_supported_reasons</span><span class="p">(</span><span class="n">Mq</span><span class="p">,</span> <span class="n">Mkv</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">Kv</span><span class="p">)</span>
-
-        <span class="c1"># In fbcode in mode/dev-nosan, we get nans from flash v2.1 if there</span>
-        <span class="c1"># is a strange embedding dimension.</span>
-        <span class="k">if</span> <span class="n">K</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">128</span><span class="p">,</span> <span class="mi">256</span><span class="p">}:</span>
-            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Embed dim </span><span class="si">{</span><span class="n">K</span><span class="si">}</span><span class="s2"> not supported&quot;</span><span class="p">)</span>
-
-        <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
