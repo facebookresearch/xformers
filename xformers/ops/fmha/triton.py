@@ -557,11 +557,10 @@ class FwOp(AttentionFwOpBase):
         k = inp.key
         v = inp.value
 
-        is_bt_h_m = isinstance(
+        if isinstance(
             attn_bias,
             (BlockDiagonalCausalWithOffsetPaddedKeysMask, BlockDiagonalCausalMask),
-        )
-        if is_bt_h_m:
+        ):
             # q ~ [1, B*T, H, K]
             # TODO: do we really need to do this cast? seems fishy but
             # I just copied it from the split-k kernel
