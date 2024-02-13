@@ -229,124 +229,19 @@ def rename_cpp_cu(cpp_files):
 def get_extensions():
     extensions_dir = os.path.join("xformers", "csrc")
 
-    sources = glob.glob(
-        os.path.join(extensions_dir, "attention", "*.cpp"), recursive=False
-    )
-    sources += glob.glob(
-        os.path.join(extensions_dir, "attention", "autograd", "**", "*.cpp"),
+    sources = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
+    source_cuda = glob.glob(os.path.join(extensions_dir, "**", "*.cu"), recursive=True)
+    source_hip = glob.glob(
+        os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cpp"),
         recursive=True,
     )
-    sources += glob.glob(
-        os.path.join(extensions_dir, "attention", "cpu", "**", "*.cpp"), recursive=True
+    source_hip_generated = glob.glob(
+        os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cu"),
+        recursive=True,
     )
-    sources += glob.glob(
-        os.path.join(extensions_dir, "indexing", "**", "*.cpp"), recursive=True
-    )
-    sources += glob.glob(
-        os.path.join(extensions_dir, "swiglu", "**", "*.cpp"), recursive=True
-    )
-    sources += glob.glob(
-        os.path.join(extensions_dir, "sparse24", "**", "*.cpp"), recursive=True
-    )
-
-    # avoid the temporary .cu file under xformers/csrc/attention/hip_fmha are included
-    source_cuda = glob.glob(os.path.join(extensions_dir, "*.cu"), recursive=False)
-    source_cuda += glob.glob(
-        os.path.join(extensions_dir, "attention", "cuda", "**", "*.cu"), recursive=True
-    )
-    source_cuda += glob.glob(
-        os.path.join(extensions_dir, "indexing", "**", "*.cu"), recursive=True
-    )
-    source_cuda += glob.glob(
-        os.path.join(extensions_dir, "swiglu", "**", "*.cu"), recursive=True
-    )
-    source_cuda += glob.glob(
-        os.path.join(extensions_dir, "sparse24", "**", "*.cu"), recursive=True
-    )
-
-    source_hip = glob.glob(
-        os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_test.cpp"),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir, "attention", "hip_fmha", "attention_forward_decoder.cpp"
-        ),
-        recursive=False,
-    )
-
-    source_hip_decoder = [
-        *glob.glob(
-            os.path.join(
-                extensions_dir, "attention", "hip_fmha", "attention_forward_decoder.cpp"
-            ),
-            recursive=False,
-        ),
-        *glob.glob(
-            os.path.join(
-                extensions_dir, "attention", "hip_fmha", "attention_forward_splitk.cpp"
-            ),
-            recursive=False,
-        ),
-    ]
-
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "attention_forward_generic_ck_tiled.cpp",
-        ),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "ck_tiled_fmha_batched_infer_*.cpp",
-        ),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "ck_tiled_fmha_grouped_infer_*.cpp",
-        ),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "ck_tiled_fmha_batched_forward_*.cpp",
-        ),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "ck_tiled_fmha_grouped_forward_*.cpp",
-        ),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "instances",
-            "ck_tiled_fmha_*.cpp",
-        ),
-        recursive=False,
-    )
-
-    source_hip += source_hip_decoder
+    # avoid the temporary .cu files generated under xformers/csrc/attention/hip_fmha
+    source_cuda = list(set(source_cuda) - set(source_hip_generated))
+    sources = list(set(sources) - set(source_hip))
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
