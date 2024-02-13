@@ -1868,8 +1868,15 @@ def _kv_heads_label(kv_heads: Optional[int]) -> str:
 @pytest.mark.parametrize("n_heads", [16])
 @pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1)])
 @pytest.mark.parametrize("split_k", [1, 2, 4])
+@pytest.mark.parametrize("device", ["cpu"])
 def test_splitk_reference(
-    kv_heads: int, n_heads: int, padding: int, bsz: int, dtype: str, split_k: int
+    kv_heads: int,
+    n_heads: int,
+    padding: int,
+    bsz: int,
+    dtype: str,
+    device: str,
+    split_k: int,
 ):
     dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
     torch.manual_seed(1)
@@ -1888,13 +1895,13 @@ def test_splitk_reference(
         k_shape = (1, bsz * padding, n_heads, d)
         q_shape = (1, bsz * num_queries, n_heads, d)
 
-    k = torch.rand(k_shape, dtype=dtype_).cuda()
+    k = torch.rand(k_shape, dtype=dtype_, device=device)
     k_seqlen = torch.randint(1, padding + 1, (bsz,)).tolist()
     v = torch.rand_like(k)
-    q = torch.rand(q_shape, dtype=dtype_).cuda()
+    q = torch.rand(q_shape, dtype=dtype_, device=device)
     causal_diagonal = torch.tensor(  # TODO: make unnecessary
-        [i - 1 for i in k_seqlen], dtype=torch.int32
-    ).cuda()
+        [i - 1 for i in k_seqlen], dtype=torch.int32, device=device
+    )
 
     if kv_heads is not None:
         k = k[..., :1, :].expand(k_shape)

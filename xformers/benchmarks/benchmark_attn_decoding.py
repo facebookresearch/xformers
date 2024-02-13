@@ -151,9 +151,9 @@ try:
                 v = v[:, :, :, 0]
             return flash_attn.flash_attn_func(q, k, v)
 
-    BENCHMARKS[f"flash-attention@{flash_attn.__version__}"] = (
-        AttentionDecodingFlashAttention
-    )
+    BENCHMARKS[
+        f"flash-attention@{flash_attn.__version__}"
+    ] = AttentionDecodingFlashAttention
 except ImportError:
     pass
 
