@@ -245,6 +245,9 @@ def get_extensions():
     sources += glob.glob(
         os.path.join(extensions_dir, "swiglu", "**", "*.cpp"), recursive=True
     )
+    sources += glob.glob(
+        os.path.join(extensions_dir, "sparse24", "**", "*.cpp"), recursive=True
+    )
 
     # avoid the temporary .cu file under xformers/csrc/attention/hip_fmha are included
     source_cuda = glob.glob(os.path.join(extensions_dir, "*.cu"), recursive=False)
@@ -256,6 +259,9 @@ def get_extensions():
     )
     source_cuda += glob.glob(
         os.path.join(extensions_dir, "swiglu", "**", "*.cu"), recursive=True
+    )
+    source_cuda += glob.glob(
+        os.path.join(extensions_dir, "sparse24", "**", "*.cu"), recursive=True
     )
 
     source_hip = glob.glob(
