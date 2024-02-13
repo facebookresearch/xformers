@@ -47,12 +47,16 @@ try:
         from flash_attn.flash_attn_interface import flash_attn_cuda as _C_flashattention
 
         FLASH_VERSION = flash_attn.__version__
+        WANTED_FLASH_VERSION = (2, 5, 2)
         flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
         if (
-            flash_ver_parsed != (2, 3, 6)
+            flash_ver_parsed != WANTED_FLASH_VERSION
             and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1"
         ):
-            raise ImportError("Requires Flash attention 2.3.6 for varlen_fwd api")
+            raise ImportError(
+                f"Requires Flash attention {WANTED_FLASH_VERSION} for varlen_fwd api "
+                f"but got {FLASH_VERSION}."
+            )
 
     # create library so that flash-attn goes through the PyTorch Dispatcher
     _flash_lib = torch.library.Library("xformers_flash", "DEF")
@@ -108,6 +112,7 @@ try:
                 key,
                 value,
                 None,  # out
+                None,  # alibi_slopes
                 p,
                 softmax_scale,
                 is_causal,
@@ -117,7 +122,6 @@ try:
                 None,  # rng
             )
         else:
-            out = query.new_empty(query.shape[0], query.shape[1], value.shape[2])
             (
                 out,
                 q_padded,
@@ -131,10 +135,11 @@ try:
                 query,
                 key,
                 value,
-                out,
+                None,
                 cu_seq_lens_q,
                 cu_seq_lens_k,
                 seqused_k,
+                None,  # alibi_slopes
                 max_seq_len_q,
                 max_seq_len_k,
                 p,
@@ -181,11 +186,13 @@ try:
                 dq,
                 dk,
                 dv,
+                None,  # alibi_slopes
                 p,
                 softmax_scale,
                 is_causal,
                 window_left,
                 window_right,
+                False,  # deterministic
                 None,
                 rng_state,
             )
@@ -202,6 +209,7 @@ try:
                 dv,
                 cu_seq_lens_q,
                 cu_seq_lens_k,
+                None,  # alibi_slopes
                 max_seq_len_q,
                 max_seq_len_k,
                 p,
@@ -210,6 +218,7 @@ try:
                 is_causal,
                 window_left,
                 window_right,
+                False,  # deterministic
                 None,
                 rng_state,
             )
@@ -533,19 +542,6 @@ class BwOp(AttentionBwOpBase):
     VERSION = FLASH_VERSION
 
     MAX_HEADDIM_SM8x = 192
-
-    @classmethod
-    def shape_not_supported_reasons(
-        cls, Mq: int, Mkv: int, K: int, Kv: int
-    ) -> List[str]:
-        reasons = super().shape_not_supported_reasons(Mq, Mkv, K, Kv)
-
-        # In fbcode in mode/dev-nosan, we get nans from flash v2.1 if there
-        # is a strange embedding dimension.
-        if K not in {8, 16, 32, 64, 128, 256}:
-            reasons.append(f"Embed dim {K} not supported")
-
-        return reasons
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:

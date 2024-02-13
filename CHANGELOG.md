@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.25] - TBD
 ### Added
 ### Improved
+- fMHA: Updated Flash-Attention to v2.5.2: this has a performance improvement for multiquery.
 ### Removed
 
 ## [0.0.24] - 2024-01-31
