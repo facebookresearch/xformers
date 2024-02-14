@@ -125,6 +125,17 @@ def get_cuda_version(cuda_dir) -> int:
     return bare_metal_major * 100 + bare_metal_minor
 
 
+def get_hip_version(rocm_dir) -> str:
+    hipcc_bin = "hipcc" if rocm_dir is None else os.path.join(rocm_dir, "bin", "hipcc")
+    raw_output = subprocess.check_output(
+        [hipcc_bin, "--version"], universal_newlines=True
+    )
+    for line in raw_output.split("\n"):
+        if "HIP version" in line:
+            return line.split()[-1]
+    return None
+
+
 def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     # XXX: Not supported on windows for cuda<12
     # https://github.com/Dao-AILab/flash-attention/issues/345
@@ -323,6 +334,9 @@ def get_extensions():
         ]
     elif torch.cuda.is_available() and torch.version.hip:
         rename_cpp_cu(source_hip)
+        rocm_home = os.getenv("ROCM_PATH")
+        hip_version = get_hip_version(rocm_home)
+
         source_hip_cu = []
         for ff in source_hip:
             source_hip_cu += [ff.replace(".cpp", ".cu")]
@@ -368,6 +382,7 @@ def get_extensions():
     return ext_modules, {
         "version": {
             "cuda": cuda_version,
+            "hip": hip_version,
             "torch": torch.__version__,
             "python": platform.python_version(),
             "flash": flash_version,
@@ -376,6 +391,7 @@ def get_extensions():
             k: os.environ.get(k)
             for k in [
                 "TORCH_CUDA_ARCH_LIST",
+                "PYTORCH_ROCM_ARCH",
                 "XFORMERS_BUILD_TYPE",
                 "XFORMERS_ENABLE_DEBUG_ASSERTIONS",
                 "NVCC_FLAGS",
