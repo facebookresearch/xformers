@@ -278,6 +278,7 @@ def get_extensions():
     include_dirs = [extensions_dir]
     ext_modules = []
     cuda_version = None
+    hip_version = None
     flash_version = "0.0.0"
 
     if (
