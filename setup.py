@@ -127,9 +127,13 @@ def get_cuda_version(cuda_dir) -> int:
 
 def get_hip_version(rocm_dir) -> str:
     hipcc_bin = "hipcc" if rocm_dir is None else os.path.join(rocm_dir, "bin", "hipcc")
-    raw_output = subprocess.check_output(
-        [hipcc_bin, "--version"], universal_newlines=True
-    )
+    try:
+        raw_output = subprocess.check_output(
+            [hipcc_bin, "--version"], universal_newlines=True
+        )
+    except Exception as e:
+        print(f"hip installation not found: {e} ROCM_PATH={os.environ.get('ROCM_PATH')}")
+        return None
     for line in raw_output.split("\n"):
         if "HIP version" in line:
             return line.split()[-1]
