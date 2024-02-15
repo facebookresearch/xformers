@@ -1500,13 +1500,10 @@ def test_grad_checkpointing(
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
     if op is fmha.triton.FwOp:
         pytest.skip("Triton Flash Attention 2 doesn't support backward pass yet")
+    if op is fmha.triton_splitk.FwOp:
+        pytest.skip("Triton Flash Decoding doesn't support backward pass yet")
     if op is fmha.ck.FwOp:
         pytest.skip("ck-tiled FMHA doesn't supported backward pass yet")
-    if op is fmha.triton_splitk.FwOp and (
-        sys.version_info.major,
-        sys.version_info.minor,
-    ) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
 
     bias_type = None
     opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = (
