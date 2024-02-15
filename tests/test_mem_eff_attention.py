@@ -2002,26 +2002,14 @@ def test_decoder(
         k = dequant_cache(k)
         v = dequant_cache(v)
 
-    if torch.version.cuda:
-        cutlass_output = fmha.memory_efficient_attention_forward(
-            q, k, v, attn_bias, op=fmha.cutlass.FwOp
-        )
+    ref_output = ref_attention(q, k, v, attn_bias)
 
-        assert_allclose(
-            decoder_output,
-            cutlass_output,
-            atol=fmha.cutlass.FwOp.ERROR_ATOL[dtype_] * 4,
-            rtol=fmha.cutlass.FwOp.ERROR_RTOL[dtype_],
-        )
-    else:
-        ref_output = ref_attention(q, k, v, attn_bias)
-
-        assert_allclose(
-            decoder_output.float(),
-            ref_output,
-            atol=fmha.cutlass.FwOp.ERROR_ATOL[dtype_] * 4,
-            rtol=fmha.cutlass.FwOp.ERROR_RTOL[dtype_],
-        )
+    assert_allclose(
+        decoder_output.to(ref_output.dtype),
+        ref_output,
+        atol=op.ERROR_ATOL[dtype_] * 4,
+        rtol=op.ERROR_RTOL[dtype_],
+    )
 
 
 @sm80_or_better_only
