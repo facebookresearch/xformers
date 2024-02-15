@@ -745,9 +745,6 @@ def test_mqa_forward(
 
     device = torch.device("cuda")
 
-    if op is fmha.ck.FwOp:
-        pytest.skip("mqa/gqa is only supported with ck-tiled fmha")
-
     torch.manual_seed(B * M + N * K + Hq * Hkv + Kv)
 
     scale = 3
