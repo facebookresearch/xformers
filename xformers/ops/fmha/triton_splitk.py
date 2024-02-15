@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import sys
 from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple
 
 import torch
@@ -454,6 +455,13 @@ else:
     _splitK_reduce = None
 
 
+def _is_cuda_at_least_sm80(device: torch.device) -> bool:
+    return torch.version.cuda and torch.cuda.get_device_capability(device) >= (
+        8,
+        0,
+    )
+
+
 @register_operator
 class FwOp(AttentionFwOpBase):
     """Flash-Attention with Split-K. Supports fused int-4 K/V quantization.
@@ -512,6 +520,8 @@ class FwOp(AttentionFwOpBase):
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(FwOp, cls).not_supported_reasons(d)
+        if (sys.version_info.major, sys.version_info.minor) < (3, 9):
+            reasons.append("triton_splitk requires python 3.9 or above!")
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
         if d.key.dtype != torch.int32:
             check_lastdim_alignment_stride1(reasons, "key", d.key, 8)
@@ -520,10 +530,11 @@ class FwOp(AttentionFwOpBase):
             reasons.append("triton is not available")
         if d.device.type == "cuda":
             # Has only been tested on 8.0 / 9.0.
-            if torch.cuda.get_device_capability(d.device) < (8, 0):
+            if not _is_cuda_at_least_sm80(d.device):
                 reasons.append(
-                    "requires GPU with sm80 minimum compute capacity, e.g., A100/H100/L4"
+                    "requires NVidia GPU with sm80 minimum compute capacity, e.g., A100/H100/L4"
                 )
+            # TODO: AMD GPU support matrix needs to be figured out. MI300X is tested to work.
 
         q_len = d.query.shape[1]
         if isinstance(d.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):

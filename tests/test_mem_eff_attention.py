@@ -2540,11 +2540,8 @@ def test_mqa_decoding(op: Type[fmha.AttentionFwOpBase], dtype, B_Mkv_H_K):
     k = k.expand(-1, -1, H, -1)
     v = v.expand(-1, -1, H, -1)
 
-    if (sys.version_info.major, sys.version_info.minor) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
-
-    if not op.supports(fmha.Inputs(q, k, v)):
-        pytest.skip("not supported")
+    if skip_reasons := op.not_supported_reasons(fmha.Inputs(q, k, v)):
+        pytest.skip("; ".join(skip_reasons))
     out = fmha.memory_efficient_attention_forward(q, k, v, op=op)
     ref = ref_attention(q, k, v)
     assert_allclose(
