@@ -2187,7 +2187,9 @@ class TestAttnBias:
     def test_wrong_alignment(self, dtype) -> None:
         op = fmha.cutlass.FwOp if torch.version.cuda else fmha.ck.FwOp
         if dtype not in op.SUPPORTED_DTYPES:
-            pytest.skip(f"{dtype=} is not supported by {op.__module__}.{op.__qualname__}")
+            pytest.skip(
+                f"{dtype=} is not supported by {op.__module__}.{op.__qualname__}"
+            )
 
         q, k, v, bias = self.create_tensors(dtype, Mq=7, Mkv=5)
         try:

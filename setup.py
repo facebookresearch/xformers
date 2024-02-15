@@ -132,7 +132,9 @@ def get_hip_version(rocm_dir) -> str:
             [hipcc_bin, "--version"], universal_newlines=True
         )
     except Exception as e:
-        print(f"hip installation not found: {e} ROCM_PATH={os.environ.get('ROCM_PATH')}")
+        print(
+            f"hip installation not found: {e} ROCM_PATH={os.environ.get('ROCM_PATH')}"
+        )
         return None
     for line in raw_output.split("\n"):
         if "HIP version" in line:
