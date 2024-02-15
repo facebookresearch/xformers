@@ -644,12 +644,6 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 
-    if op is fmha.triton_splitk.FwOp and (
-        sys.version_info.major,
-        sys.version_info.minor,
-    ) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
-
     if packed and not (k == kv and q_len == kv_len):
         pytest.skip(
             f"packed incompatible with `k ({k}) != kv ({kv})` or `q_len ({q_len}) != kv_len ({kv_len})`"
@@ -844,12 +838,6 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
 
     if op is fmha.ck.FwOp:
         pytest.skip("logsumexp is not yet supported by ck-tiled fmha!")
-
-    if op is fmha.triton_splitk.FwOp and (
-        sys.version_info.major,
-        sys.version_info.minor,
-    ) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
 
     query, key, value, attn_bias = create_tensors(
         *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, fmt="BMK"
@@ -1350,11 +1338,6 @@ def test_cuda_streams(
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
     if device != "cuda":
         pytest.skip("Not CUDA")
-    if op is fmha.triton_splitk.FwOp and (
-        sys.version_info.major,
-        sys.version_info.minor,
-    ) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
 
     bias_type = None
     opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = [
@@ -1574,11 +1557,8 @@ def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
         0, 3, 1, 2
     )
 
-    if op is fmha.triton_splitk.FwOp and (
-        sys.version_info.major,
-        sys.version_info.minor,
-    ) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
+    if skip_reasons := op.not_supported_reasons(fmha.Inputs(q, q, q)):
+        pytest.skip("; ".join(skip_reasons))
 
     try:
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
@@ -1596,11 +1576,8 @@ def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
 def test_unsupported_stride_alignment(op: Type[fmha.AttentionFwOpBase]):
     q = torch.empty([1, 2, 1, 33], device="cuda", dtype=torch.float16)[:, :, :, :32]
 
-    if op is fmha.triton_splitk.FwOp and (
-        sys.version_info.major,
-        sys.version_info.minor,
-    ) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
+    if skip_reasons := op.not_supported_reasons(fmha.Inputs(q, q, q)):
+        pytest.skip("; ".join(skip_reasons))
 
     try:
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
@@ -1978,6 +1955,9 @@ def test_decoder(
         k = k[..., :1, :].expand(k_shape)
         v = v[..., :1, :].expand(k_shape)
 
+    if skip_reasons := op.not_supported_reasons(fmha.Inputs(q, k, v)):
+        pytest.skip("; ".join(skip_reasons))
+
     attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
         q_seqlen=[num_queries] * bsz,
         kv_seqlen=k_seqlen,
@@ -2045,9 +2025,6 @@ def test_triton_splitk_decoder(
 ) -> None:
     if dequant:
         pytest.skip("dequant is not supported")
-
-    if (sys.version_info.major, sys.version_info.minor) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
 
     # We omit dequant with f16: it needs a very high tol
     test_decoder(
@@ -2370,12 +2347,6 @@ def test_forward_gqa_one_group(opFW):
     k = torch.randn([B, Mkv, 1, H, K], dtype=dtype, device="cuda") * 3
     v = torch.randn([B, Mkv, 1, H, K], dtype=dtype, device="cuda") * 3
 
-    if opFW is fmha.triton_splitk.FwOp and (
-        sys.version_info.major,
-        sys.version_info.minor,
-    ) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
-
     supported = opFW.supports(fmha.Inputs(q, k, v))
     if not supported:
         supported_bmhk = opFW.supports(fmha.Inputs(q[:, :, 0], k[:, :, 0], v[:, :, 0]))
@@ -2565,12 +2536,6 @@ def test_empty_tensors_empty_query(
     if torch.version.hip:
         pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
 
-    if opFW is fmha.triton_splitk.FwOp and (
-        sys.version_info.major,
-        sys.version_info.minor,
-    ) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
-
     query = query[:, :0]
     query.requires_grad_(True)
     key.requires_grad_(True)
@@ -2596,12 +2561,6 @@ def test_empty_tensors_empty_kv(
     if torch.version.hip:
         pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
 
-    if opFW is fmha.triton_splitk.FwOp and (
-        sys.version_info.major,
-        sys.version_info.minor,
-    ) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
-
     key = key[:, :0]
     value = value[:, :0]
     query.requires_grad_(True)
@@ -2626,12 +2585,6 @@ def test_empty_tensors_empty_b(
 
     if torch.version.hip:
         pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
-
-    if opFW is fmha.triton_splitk.FwOp and (
-        sys.version_info.major,
-        sys.version_info.minor,
-    ) <= (3, 8):
-        pytest.skip("triton_splitk requires python 3.9 or above!")
 
     query, key, value = query[:0], key[:0], value[:0]
     query.requires_grad_(True)
