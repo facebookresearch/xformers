@@ -455,8 +455,12 @@ else:
     _splitK_reduce = None
 
 
+def _is_cuda() -> bool:
+    return torch.version.cuda
+
+
 def _is_cuda_at_least_sm80(device: torch.device) -> bool:
-    return torch.version.cuda and torch.cuda.get_device_capability(device) >= (
+    return _is_cuda() and torch.cuda.get_device_capability(device) >= (
         8,
         0,
     )
@@ -530,7 +534,7 @@ class FwOp(AttentionFwOpBase):
             reasons.append("triton is not available")
         if d.device.type == "cuda":
             # Has only been tested on 8.0 / 9.0.
-            if not _is_cuda_at_least_sm80(d.device):
+            if _is_cuda() and not _is_cuda_at_least_sm80(d.device):
                 reasons.append(
                     "requires NVidia GPU with sm80 minimum compute capacity, e.g., A100/H100/L4"
                 )
