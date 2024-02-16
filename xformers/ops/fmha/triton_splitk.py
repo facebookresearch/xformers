@@ -456,7 +456,7 @@ else:
 
 
 def _is_cuda() -> bool:
-    return torch.version.cuda
+    return torch.version.cuda is not None
 
 
 def _is_cuda_at_least_sm80(device: torch.device) -> bool:
