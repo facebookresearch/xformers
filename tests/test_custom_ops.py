@@ -16,12 +16,9 @@ from xformers.components.attention.core import (
     _sparse_bmm,
 )
 
-cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-disable_on_rocm = pytest.mark.skipif(
-    not not torch.version.hip, reason="could not be done on ROCM"
-)
+cuda_only = pytest.mark.skipif(not torch.cuda.is_available() or not torch.version.cuda, reason="requires CUDA")
 
-_devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+_devices = ["cpu", "cuda"] if torch.cuda.is_available() and torch.version.cuda else ["cpu"]
 
 
 def _baseline_matmul_with_sparse_mask(
@@ -62,7 +59,6 @@ def _baseline_sparse_bmm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return torch.stack(out, dim=0)
 
 
-@disable_on_rocm
 @pytest.mark.parametrize("is_sparse", [True, False])
 @pytest.mark.parametrize("contiguous", [True, False])
 @pytest.mark.parametrize("device", _devices)
@@ -94,7 +90,6 @@ def test_matmul_with_mask(device, contiguous, is_sparse):
     assert torch.allclose(res, res_gt)
 
 
-@disable_on_rocm
 @pytest.mark.parametrize("is_sparse", [True, False])
 @pytest.mark.parametrize("contiguous", [True, False])
 @pytest.mark.parametrize("device", _devices)
@@ -137,7 +132,6 @@ def test_matmul_with_mask_backward(device, contiguous, is_sparse):
     assert torch.allclose(grad_b, b.grad)
 
 
-@disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_sddmm_sputnik(device):
     B, L, M, K = 8, 30, 16, 32
@@ -165,7 +159,6 @@ def test_sddmm_sputnik(device):
 
 
 @cuda_only
-@disable_on_rocm
 @pytest.mark.parametrize("prob", [0.5, 1])
 @pytest.mark.parametrize("K", [32, 17])
 @pytest.mark.parametrize("M", [30, 17])
@@ -196,7 +189,6 @@ def test_sddmm_csr(L, M, K, prob):
 
 
 @cuda_only
-@disable_on_rocm
 @pytest.mark.parametrize("nnz", [0, 4, 16, 20, 36])
 def test_sddmm_csr_per_nnz(nnz):
     device = torch.device("cuda")
@@ -224,7 +216,6 @@ def test_sddmm_csr_per_nnz(nnz):
 
 
 @cuda_only
-@disable_on_rocm
 @pytest.mark.parametrize("prob", [0.5, 1])
 @pytest.mark.parametrize("K", [32, 17])
 @pytest.mark.parametrize("M", [30, 17])
@@ -257,7 +248,6 @@ def test_sddmm_coo(L, M, K, prob):
     assert torch.allclose(res, res_gt, atol=1e-6)
 
 
-@disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_sddmm_sputnik_backward(device):
     contiguous = True
@@ -291,7 +281,6 @@ def test_sddmm_sputnik_backward(device):
     assert torch.allclose(grad_b, b.grad, atol=1e-7)
 
 
-@disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_sparse_softmax_sputnik(device):
     B, L = 8, 30
@@ -314,7 +303,6 @@ def test_sparse_softmax_sputnik(device):
     assert torch.allclose(res, res_gt)
 
 
-@disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_sparse_softmax_sputnik_backward(device):
     B, L = 8, 30
@@ -337,7 +325,6 @@ def test_sparse_softmax_sputnik_backward(device):
     )
 
 
-@disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_spmm_sputnik(device):
     B, L, K = 8, 30, 32
@@ -363,7 +350,6 @@ def test_spmm_sputnik(device):
     assert torch.allclose(res, res_gt)
 
 
-@disable_on_rocm
 @pytest.mark.parametrize("device", _devices)
 def test_spmm_sputnik_backward(device):
     B, M, L, K = 8, 16, 30, 32
