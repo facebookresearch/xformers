@@ -12,10 +12,6 @@ from torch.cuda.amp.autocast_mode import autocast
 
 import xformers
 
-disable_on_rocm = pytest.mark.skipif(
-    not not torch.version.hip, reason="could not be done on ROCM"
-)
-
 try:
     from xformers.triton import FusedLayerNorm
 
@@ -38,7 +34,6 @@ SHAPES = [
 ]
 
 
-@disable_on_rocm
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("amp", [True, False])
@@ -103,7 +98,6 @@ def test_layernorm_parity(shape, amp):
         )
 
 
-@disable_on_rocm
 @pytest.mark.skipif(not _triton_available, reason="Triton is not available")
 @pytest.mark.parametrize("dtype", [torch.float16, torch.float32, torch.bfloat16])
 def test_no_contiguous(dtype):
