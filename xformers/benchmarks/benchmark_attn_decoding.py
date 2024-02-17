@@ -126,13 +126,20 @@ class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
 
 BENCHMARKS = {
     "pytorch": AttentionDecodingPyTorchRepeat,
-    "ck": AttentionDecodingCK,
-    "ck-decoder": AttentionDecodingCKDecoder,
-    "ck_splitK": AttentionDecodingCKSplitKV,
 }
 
 if torch.version.cuda:
     BENCHMARKS["flash-decoding"] = AttentionDecodingFlashDecoding
+
+if torch.version.hip:
+    BENCHMARKS.update(
+        {
+            "ck": AttentionDecodingCK,
+            "ck-decoder": AttentionDecodingCKDecoder,
+            "ck_splitK": AttentionDecodingCKSplitKV,
+        }
+    )
+
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
