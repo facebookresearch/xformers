@@ -135,7 +135,7 @@ try:
                 query,
                 key,
                 value,
-                None,
+                None,  # out
                 cu_seq_lens_q,
                 cu_seq_lens_k,
                 seqused_k,
@@ -286,7 +286,7 @@ def _convert_input_format(
         max_seqlen_q = inp.query.shape[1]
         max_seqlen_k = inp.key.shape[1]
 
-    if query.ndim == 5:  # QGA
+    if query.ndim == 5:  # GQA
         assert supports_mqa
 
         # Fold the group/head_in_group dimensions together

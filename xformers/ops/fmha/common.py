@@ -288,11 +288,12 @@ class AttentionOpBase(BaseOperator):
         Returns a list of reasons why this is not supported.
         The kernel can run these inputs only if the returned list is empty
         """
+        query_shape = d.query.shape
         reasons = cls.shape_not_supported_reasons(
-            Mq=d.query.shape[1],
+            Mq=query_shape[1],
             Mkv=d.key.shape[1],
-            K=d.query.shape[-1],
-            Kv=d.value.shape[-1],
+            K=query_shape[-1],
+            Kv=query_shape[-1] if d.value.dtype == torch.int32 else d.value.shape[-1],
         )
         device_type = d.query.device.type
         dtype = d.query.dtype
