@@ -358,7 +358,7 @@
                 <span class="n">query</span><span class="p">,</span>
                 <span class="n">key</span><span class="p">,</span>
                 <span class="n">value</span><span class="p">,</span>
-                <span class="kc">None</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>  <span class="c1"># out</span>
                 <span class="n">cu_seq_lens_q</span><span class="p">,</span>
                 <span class="n">cu_seq_lens_k</span><span class="p">,</span>
                 <span class="n">seqused_k</span><span class="p">,</span>
@@ -509,7 +509,7 @@
         <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
         <span class="n">max_seqlen_k</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
 
-    <span class="k">if</span> <span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>  <span class="c1"># QGA</span>
+    <span class="k">if</span> <span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>  <span class="c1"># GQA</span>
         <span class="k">assert</span> <span class="n">supports_mqa</span>
 
         <span class="c1"># Fold the group/head_in_group dimensions together</span>
