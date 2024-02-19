@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import math
 import random
 from functools import partial
@@ -18,10 +19,10 @@ import xformers.ops
 from xformers.attn_bias_utils import create_attn_bias
 from xformers.ops import fmha
 from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
-from xformers.ops.fmha.common import AttentionOpBase
+from xformers.ops.fmha.common import AttentionFwOpBase, AttentionOpBase
 from xformers.ops.fmha.dispatch import _dispatch_fw_priority_list
 
-from .utils import assert_allclose
+from .utils import assert_allclose, pack_kv_cache
 
 torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
@@ -49,6 +50,8 @@ _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 T = TypeVar(
     "T", Type[fmha.common.AttentionFwOpBase], Type[fmha.common.AttentionBwOpBase]
 )
+
+logger = logging.getLogger("xformers")
 
 
 def _filter_unsupported_ops(ops: Sequence[T]) -> Sequence[T]:
@@ -183,10 +186,10 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                             fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask,
                         }:
                             Mq, Mkv = min(Mkv, Mq), max(Mkv, Mq) + 2
-                        elif (
-                            bias_type
-                            is fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask
-                        ):
+                        elif bias_type in {
+                            fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+                            fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+                        }:
                             Mq, Mkv = min(Mkv, Mq), max(Mkv, Mq)
                         shape = (B, Mq, Mkv, H, K, Kv)
                     combination.append((op, device, dtype, bias_type, *shape))
@@ -596,6 +599,7 @@ def create_tensors(
             (
                 fmha.attn_bias.BlockDiagonalMask,
                 fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+                fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
             ),
         ):
             query, key, value = [
@@ -1992,13 +1996,10 @@ def test_decoder(
 
 
 @sm80_or_better_only
-@pytest.mark.skipif(
-    fmha.triton_splitk.FwOp_S2.OPERATOR is None, reason="splitK disabled"
-)
 @pytest.mark.parametrize(
     "op,dequant,dtype",
     [
-        (fmha.triton_splitk.FwOp_S2, False, "bf16"),
+        (fmha.triton_splitk.FwOp_S1, False, "bf16"),
         (fmha.triton_splitk.FwOp_S2, False, "f16"),
         (fmha.triton_splitk.FwOp_S2, True, "bf16"),
         (
@@ -2022,9 +2023,6 @@ def test_triton_splitk_decoder(
     bsz: int,
     dtype: str,
 ) -> None:
-    if dequant:
-        pytest.skip("dequant is not supported")
-
     # We omit dequant with f16: it needs a very high tol
     test_decoder(
         op,
@@ -2046,7 +2044,7 @@ def test_triton_splitk_decoder(
 @pytest.mark.parametrize("n_heads", [16])
 @pytest.mark.parametrize("d", [128, 256])
 @pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1), (32, 1), (4096, 8)])
-def test_splitk_decoder(
+def test_ck_splitk_decoder(
     op,
     kv_heads: Optional[int],
     n_heads: int,
@@ -2064,6 +2062,42 @@ def test_splitk_decoder(
         bsz=bsz,
         dtype=dtype,
         d=d,
+    )
+
+
+@sm80_or_better_only
+@pytest.mark.parametrize(
+    "op",
+    [
+        fmha.triton_splitk.FwOp_S1,
+        fmha.triton_splitk.FwOp_S2,
+    ],
+    ids=lambda op: f"splitk{op.SPLIT_K}",
+)
+@pytest.mark.parametrize("multiquery", [True, False], ids=lambda x: "mq" if x else "")
+# n_heads=1 => it's ambiguous whether can count as multiquery
+@pytest.mark.parametrize("padding, bsz", [(32, 8), (44, 1)])
+@pytest.mark.parametrize("dtype", ["f16", "bf16"])
+@pytest.mark.parametrize("n_heads, num_queries", [(2, 4), (2, 5), (6, 7), (20, 3)])
+def test_triton_splitk_decoder_manyqueries(
+    op,
+    multiquery: bool,
+    n_heads: int,
+    padding: int,
+    bsz: int,
+    dtype: str,
+    num_queries: int,
+) -> None:
+    kv_heads = 1 if multiquery else None
+    test_decoder(
+        op,
+        kv_heads=kv_heads,
+        n_heads=n_heads,
+        padding=padding,
+        bsz=bsz,
+        dtype=dtype,
+        num_queries=num_queries,
+        dequant=False,
     )
 
 
@@ -2493,7 +2527,7 @@ def test_forward_splitk(
 
 
 @cuda_only
-@pytest.mark.parametrize("op", [fmha.triton_splitk.FwOp])
+@pytest.mark.parametrize("op", [fmha.triton_splitk.FwOp, fmha.flash.FwOp])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize(
     "B_Mkv_H_K",
@@ -2731,6 +2765,388 @@ def test_cutlassB_iter_order(
         )[5]
         num_actual = mask_pooled[query_start // block_queries].sum().item()
         assert num_parallel_blocks == num_actual
+
+
+@sm80_or_better_only
+@pytest.mark.parametrize("B", [1, 5, 128])
+@pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
+@pytest.mark.parametrize(
+    "op",
+    [
+        fmha.triton_splitk.FwOp,
+        fmha.triton_splitk.FwOp_S8,
+        fmha.triton_splitk.FwOp_Map[48],
+    ],
+)
+@pytest.mark.parametrize("num_quant_groups", [0, 1, 8])
+@pytest.mark.parametrize("page_size", [64, 128, 256])
+def test_paged_attention(
+    B, MAX_T: int, num_quant_groups: bool, page_size: int, op: Type[AttentionFwOpBase]
+):
+    paged_attention_run_inner(B, MAX_T, num_quant_groups, page_size, op, bench=False)
+
+
+def paged_attention_run_inner(
+    B: int,
+    MAX_T: int,
+    num_quant_groups: bool,
+    page_size: int,
+    op: Type[AttentionFwOpBase],
+    bench: bool,
+) -> None:
+    import triton
+
+    torch.manual_seed(10)
+    TEST_WARMUP_MS = 500
+    TEST_RUN_MS = 5000
+
+    N_H_L = 8
+    N_KVH_L = 1
+    D_H = 128
+    D_H_KV = D_H // 8 + num_quant_groups if num_quant_groups else D_H
+    kv_seqlens = torch.randint(low=1, high=MAX_T + 1, size=(B,)).tolist()
+
+    attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+        q_seqlen=[1] * B,
+        kv_padding=MAX_T,
+        kv_seqlen=kv_seqlens,
+    )
+
+    q = torch.randn((B, 1, N_H_L, D_H), dtype=torch.bfloat16, device="cuda")
+    if num_quant_groups:
+        # Using high=64 below, because with 256 both paged and non-paged paths
+        # will produce NaNs - probably some quantization coeffitions are NaNs
+        # after the bitwise cast.
+        cache_k = torch.randint(
+            0, 64, (B, MAX_T, N_KVH_L, D_H_KV * 4), dtype=torch.uint8, device="cuda"
+        )
+        cache_k = cache_k.view(dtype=torch.int32)
+        cache_v = torch.randint(
+            0, 64, (B, MAX_T, N_KVH_L, D_H_KV * 4), dtype=torch.uint8, device="cuda"
+        )
+        cache_v = cache_v.view(dtype=torch.int32)
+
+        op = type(
+            f"{op.__name__}_{num_quant_groups}",
+            (op,),
+            {"NUM_GROUPS": num_quant_groups},
+        )
+    else:
+        cache_k = torch.randn(
+            (B, MAX_T, N_KVH_L, D_H), dtype=torch.bfloat16, device="cuda"
+        )
+        cache_v = torch.randn_like(cache_k)
+
+    axq = q.view(1, B * 1, N_H_L, D_H)
+    axk = cache_k.view(1, B * MAX_T, N_KVH_L, D_H_KV).expand(
+        1, B * MAX_T, N_H_L, D_H_KV
+    )
+    axv = cache_v.view(1, B * MAX_T, N_KVH_L, D_H_KV).expand(
+        1, B * MAX_T, N_H_L, D_H_KV
+    )
+
+    k_cache_size_usual = axk.numel()
+
+    # First, create "wasteful" K/V cache, where every block in logical cache has a physical representation,
+    # even if there's nothing stored there
+
+    # Paged attention requires k.shape[1] and v.shape[1] to be divisible by page_size, so pad
+    padded_per_row_len = ((MAX_T + page_size - 1) // page_size) * page_size
+    block_tables = torch.arange(
+        B * padded_per_row_len // page_size, device="cuda", dtype=torch.int32
+    ).reshape(B, -1)
+
+    shape_padded = (B, padded_per_row_len, N_KVH_L, D_H_KV)
+    axk_padded = torch.empty(shape_padded, device=axk.device, dtype=axk.dtype)
+    axv_padded = torch.empty(shape_padded, device=axv.device, dtype=axv.dtype)
+    axk_padded[:, :MAX_T] = axk.view(B, -1, N_H_L, D_H_KV)[:, :, :1, :]
+    axv_padded[:, :MAX_T] = axv.view(B, -1, N_H_L, D_H_KV)[:, :, :1, :]
+
+    axk_padded = axk_padded.view(1, B * padded_per_row_len, N_KVH_L, D_H_KV)
+    axv_padded = axv_padded.view(1, B * padded_per_row_len, N_KVH_L, D_H_KV)
+
+    axk_padded = axk_padded.expand(-1, -1, N_H_L, -1)
+    axv_padded = axv_padded.expand(-1, -1, N_H_L, -1)
+
+    attn_bias_paged = attn_bias.make_paged(
+        block_tables=block_tables, page_size=page_size
+    )
+
+    y_usual = fmha.memory_efficient_attention_forward(
+        axq,
+        axk,
+        axv,
+        attn_bias,
+        op=op,
+    )
+    if bench:
+        g = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(g):
+            y_usual = fmha.memory_efficient_attention_forward(
+                axq,
+                axk,
+                axv,
+                attn_bias,
+                op=op,
+            )
+        t_ms = triton.testing.do_bench(
+            lambda g=g: g.replay(),
+            warmup=TEST_WARMUP_MS,
+            rep=TEST_RUN_MS,
+        )
+        logger.info(f"Non-paged attention took {t_ms * 1e3:.2f}us")
+
+    y_wasteful = fmha.memory_efficient_attention_forward(
+        axq,
+        axk_padded,
+        axv_padded,
+        attn_bias_paged,
+        op=op,
+    )
+    if bench:
+        g = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(g):
+            y_wasteful = fmha.memory_efficient_attention_forward(
+                axq,
+                axk_padded,
+                axv_padded,
+                attn_bias_paged,
+                op=op,
+            )
+        t_ms = triton.testing.do_bench(
+            lambda g=g: g.replay(),
+            warmup=TEST_WARMUP_MS,
+            rep=TEST_RUN_MS,
+        )
+        logger.info(f"Paged attention with wasteful K/V-cache took {t_ms * 1e3:.2f}us")
+
+    torch.testing.assert_close(
+        y_wasteful,
+        y_usual,
+        atol=1.0e-2,
+        rtol=1.0e-2,
+    )
+
+    # Now let's create a "packed" K/V cache, where only meaniningful logical blocks are mapped to physical blocks
+    (block_tables, packed_cache_k, packed_cache_v) = pack_kv_cache(
+        cache_k,
+        cache_v,
+        kv_seqlens,
+        page_size,
+    )
+    attn_bias_paged = attn_bias.make_paged(
+        block_tables=block_tables, page_size=page_size
+    )
+    axk = packed_cache_k.view(1, -1, N_KVH_L, D_H_KV).expand(1, -1, N_H_L, D_H_KV)
+    axv = packed_cache_v.view(1, -1, N_KVH_L, D_H_KV).expand(1, -1, N_H_L, D_H_KV)
+
+    k_cache_size_packed = axk.numel()
+
+    y_packed = fmha.memory_efficient_attention_forward(
+        axq,
+        axk,
+        axv,
+        attn_bias_paged,
+        op=op,
+    )
+
+    logger.info(
+        f"KV-cache size reduced by {(100 * (1 - k_cache_size_packed/k_cache_size_usual)):.2f}%"
+    )
+
+    torch.testing.assert_close(y_wasteful, y_packed)
+
+    # Let's swap two blocks, and adjust two corresponding entries in the block table. The result shouldn't change
+    i, j = 0, axk.shape[1] // page_size - 1
+
+    axk = axk[:, :, :1, :]
+    axv = axv[:, :, :1, :]
+
+    vals_i = axk[:, i * page_size : (i + 1) * page_size, :, :].clone()
+    vals_j = axk[:, j * page_size : (j + 1) * page_size, :, :].clone()
+    axk[:, i * page_size : (i + 1) * page_size, :, :] = vals_j
+    axk[:, j * page_size : (j + 1) * page_size, :, :] = vals_i
+
+    vals_i = axv[:, i * page_size : (i + 1) * page_size, :, :].clone()
+    vals_j = axv[:, j * page_size : (j + 1) * page_size, :, :].clone()
+    axv[:, i * page_size : (i + 1) * page_size, :, :] = vals_j
+    axv[:, j * page_size : (j + 1) * page_size, :, :] = vals_i
+
+    axk = axk.expand(-1, -1, N_H_L, -1)
+    axv = axv.expand(-1, -1, N_H_L, -1)
+
+    where_i = block_tables == i
+    where_j = block_tables == j
+    block_tables.masked_fill_(where_i, j)
+    block_tables.masked_fill_(where_j, i)
+
+    y_swapped = fmha.memory_efficient_attention_forward(
+        axq,
+        axk,
+        axv,
+        attn_bias_paged,
+        op=op,
+    )
+    if bench:
+        g = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(g):
+            y_swapped = fmha.memory_efficient_attention_forward(
+                axq,
+                axk,
+                axv,
+                attn_bias_paged,
+                op=op,
+            )
+        t_ms = triton.testing.do_bench(
+            lambda g=g: g.replay(),
+            warmup=TEST_WARMUP_MS,
+            rep=TEST_RUN_MS,
+        )
+        logger.info(f"Paged attention with packed K/V-cache took {t_ms * 1e3:.2f}us")
+
+    torch.testing.assert_close(y_swapped, y_packed)
+
+
+@sm80_or_better_only
+def test_merging_attentions_decoding():
+    """
+    Compute decoding attention on chunks of K/V and merge them together.
+    Compare with computing attention on the whole K/V.
+    """
+
+    MAX_T = 8192
+    B = 128
+    N_KVH_L = 1
+    N_H_L = 8
+    D_H = 128
+    dtype = torch.bfloat16
+
+    num_chunks = 10
+
+    chunk_starts = sorted(
+        torch.randint(low=1, high=MAX_T // 2, size=(num_chunks,)).tolist()
+    )
+    chunk_starts[0] = 0
+    chunk_starts.append(MAX_T)
+
+    # We construct sequances so that even the last chunk has a non-empty part of every sequence.
+    # Otherwise the corresponding LSE will be -inf and that'll propagate to the whole sum.
+    # It is possible to teach the kernel to ignore infinite LSEs, but in practical use cases
+    # of merging attention, e.g. a batch of sequences with a common prefix, this condition should be satisfied.
+    k_lens = torch.randint(low=chunk_starts[-2] + 1, high=MAX_T, size=(B,)).tolist()
+    q_lens = [1 for _ in k_lens]
+    B_T = sum(q_lens)
+
+    q = torch.randn((1, B_T, N_H_L, D_H), dtype=dtype, device="cuda")
+    k = torch.randn((B, MAX_T, N_KVH_L, D_H), dtype=dtype, device="cuda")
+    v = torch.randn_like(k)
+
+    # Compute per-chunk attention
+    chunks_output = []
+    for i in range(num_chunks):
+        chunk_start, chunk_end = chunk_starts[i], chunk_starts[i + 1]
+        k_chunk = k[:, chunk_start:chunk_end, ...]
+        v_chunk = v[:, chunk_start:chunk_end, ...]
+        axk = k_chunk.reshape(1, -1, N_KVH_L, D_H).expand(1, -1, N_H_L, D_H)
+        axv = v_chunk.reshape(1, -1, N_KVH_L, D_H).expand(1, -1, N_H_L, D_H)
+
+        attn_bias = (
+            fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+                q_seqlen=q_lens,
+                kv_padding=chunk_end - chunk_start,
+                kv_seqlen=[max(min(x, chunk_end) - chunk_start, 0) for x in k_lens],
+            )
+        )
+
+        attn_chunk, lse_chunk = fmha.memory_efficient_attention_forward_requires_grad(
+            q,
+            axk,
+            axv,
+            attn_bias,
+        )
+        attn_chunk = attn_chunk.reshape(B, -1, N_H_L, D_H)
+        chunks_output.append((attn_chunk, lse_chunk))
+
+    # Merge attention from all chunks
+    attn_split = torch.stack([attn_chunk for attn_chunk, _ in chunks_output])
+    lse_split = torch.stack([lse_chunk for _, lse_chunk in chunks_output])
+    attn_out, lse_out = fmha.merge_attentions(
+        attn_split.permute(0, 1, 3, 2, 4), lse_split
+    )
+
+    # Compute attention on the full K/V
+    attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+        q_seqlen=q_lens,
+        kv_padding=MAX_T,
+        kv_seqlen=k_lens,
+    )
+    axk = k.view(1, -1, N_KVH_L, D_H).expand(1, -1, N_H_L, D_H)
+    axv = v.view(1, -1, N_KVH_L, D_H).expand(1, -1, N_H_L, D_H)
+    attn_full, lse_full = fmha.memory_efficient_attention_forward_requires_grad(
+        q,
+        axk,
+        axv,
+        attn_bias,
+    )
+
+    attn_out = attn_out.reshape(1, B_T, N_H_L, D_H)
+    torch.testing.assert_close(lse_out, lse_full, rtol=1e-3, atol=1e-3)
+    torch.testing.assert_close(attn_out, attn_full, rtol=1e-3, atol=1e-3)
+
+
+@sm80_or_better_only
+@pytest.mark.parametrize("bmghk", (False, True))
+def test_merging_attentions_against_ref(bmghk: bool):
+    split_k = 16
+    B = 12
+    M = 137
+    G = 2 if bmghk else 1
+    N_H_L = 8
+    D_H = 128
+    dtype = torch.float32
+
+    attn_split = torch.randn([split_k, B, N_H_L, G, M, D_H], dtype=dtype, device="cuda")
+    lse_split = torch.randn([split_k, B, N_H_L, G, M], dtype=dtype, device="cuda")
+
+    if not bmghk:
+        attn_split = attn_split[:, :, :, 0, :, :]
+        lse_split = lse_split[:, :, :, 0, :]
+
+    attn_out, lse_out = fmha.merge_attentions(attn_split, lse_split)
+
+    attn_out_ref, lse_out_ref = _merge_attentions_ref(attn_split, lse_split)
+
+    torch.testing.assert_close(lse_out, lse_out_ref, rtol=1e-4, atol=1e-4)
+    torch.testing.assert_close(attn_out, attn_out_ref, rtol=1e-4, atol=1e-4)
+
+
+def _merge_attentions_ref(attn_split, lse_split):
+    """
+    attn_split: [split_k, B, H, G, M_ceil, Kq]
+    lse_split: [split_k, B, H, G, M]
+    """
+    is_bmghk = len(attn_split.shape) == 6
+    if not is_bmghk:
+        attn_split = attn_split.unsqueeze(3)
+        lse_split = lse_split.unsqueeze(3)
+
+    lse_split = lse_split.unsqueeze(5)  # [split_k, B, M, G, H, 1]
+
+    lse_max, _ = torch.max(lse_split, dim=0, keepdim=True)  # [1, B, M, G, H, 1]
+    sumexp_normalized = torch.exp(lse_split - lse_max)  # [split_k, B, M, G, H, 1]
+    denominator = sumexp_normalized.sum(dim=0)  # [B, M, G, H, 1]
+    numerator = (sumexp_normalized * attn_split).sum(dim=0)  # [B, M, G, H, K]
+
+    attn_out = numerator / denominator  # [B, M_ceil, G, H, Kq]
+    lse_out = (lse_max.squeeze(0) + torch.log(denominator)).squeeze(
+        4
+    )  # [B, M_ceil, G, H]
+
+    if not is_bmghk:
+        attn_out = attn_out.squeeze(2)
+        lse_out = lse_out.squeeze(2)
+
+    return attn_out, lse_out
 
 
 # end of file

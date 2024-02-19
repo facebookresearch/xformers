@@ -31,7 +31,9 @@ def catch_oor(fn):
     return fn_and_catch_oor
 
 
-_devices = ["cpu", "cuda"] if torch.cuda.is_available() and torch.version.cuda else ["cpu"]
+_devices = (
+    ["cpu", "cuda"] if torch.cuda.is_available() and torch.version.cuda else ["cpu"]
+)
 
 
 def test_core_attention():

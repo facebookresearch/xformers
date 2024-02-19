@@ -6,7 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.25] - TBD
 ### Added
+- New merge_attentions function
 ### Improved
+- fMHA: Updated Flash-Attention to v2.5.2: this has a performance improvement for multiquery.
+- fMHA: triton_splitk changed and expanded. Now amalgamates using LSE. Can autotune, supports causal with a small number of queries - not just 1. Experimental support for paged attention.
 ### Removed
 
 ## [0.0.24] - 2024-01-31

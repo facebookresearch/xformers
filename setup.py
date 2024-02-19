@@ -203,12 +203,13 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     sources = ["csrc/flash_attn/flash_api.cpp"]
     for f in glob.glob(os.path.join(flash_root, "csrc", "flash_attn", "src", "*.cu")):
         sources.append(str(Path(f).relative_to(flash_root)))
+    common_extra_compile_args = ["-DFLASHATTENTION_DISABLE_ALIBI"]
     return [
         CUDAExtension(
             name="xformers._C_flashattention",
             sources=[os.path.join(flash_root, path) for path in sources],
             extra_compile_args={
-                **extra_compile_args,
+                "cxx": extra_compile_args.get("cxx", []) + common_extra_compile_args,
                 "nvcc": extra_compile_args.get("nvcc", [])
                 + [
                     "-O3",
@@ -224,6 +225,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                 ]
                 + nvcc_archs_flags
                 + nvcc_windows_flags
+                + common_extra_compile_args
                 + get_extra_nvcc_flags_for_build_type(cuda_version),
             },
             include_dirs=[
@@ -454,7 +456,6 @@ class BuildExtensionWithExtraFiles(BuildExtension):
 
 
 if __name__ == "__main__":
-
     if os.getenv("BUILD_VERSION"):  # In CI
         version = os.getenv("BUILD_VERSION", "0.0.0")
     else:

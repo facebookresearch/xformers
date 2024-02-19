@@ -428,6 +428,68 @@ def _memory_efficient_attention_backward(
     return grads
 
 
+def merge_attentions(
+    attn_split: torch.Tensor, lse_split: torch.Tensor, write_lse: bool = True
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    """
+    Combine attention output computed on different parts of K/V for the same
+    query to get attention on the whole K/V. See https://arxiv.org/abs/2402.05099
+    The result is equal to
+        Out_full = (Out1 * exp(LSE1) + Out2 * exp(LSE2) + ...) / (exp(LSE1) + exp(LSE2) + ...)
+        LSE_full = log(exp(LSE1) + exp(LSE2) + ...)
+    Attention inputs are in BH(G)MK format, stacked along dim 0. Attention output also is in BH(G)MK.
+    Args:
+        attn_split: [split_k, B, H, G, M, Kq] or [split_k, B, H, M, Kq]
+        lse_split: [split_k, B, H, G, M] or [split_k, B, H, M]
+    Res:
+        attn_out: [B, H, G, M, K] or [B, H, M, K]
+        lse_out: [B, H, G, M] or [B, H, M]
+    """
+
+    assert (
+        attn_split.ndim == lse_split.ndim + 1
+    ), f"{attn_split.shape=} {lse_split.shape=}"
+
+    is_bmhk = attn_split.ndim == 5
+    if is_bmhk:
+        attn_split = attn_split.unsqueeze(3)
+        lse_split = lse_split.unsqueeze(3)
+
+    split_k, B, H, G, M_ceil, Kq = attn_split.shape
+    split_k1, B1, H1, G1, M = lse_split.shape
+    assert (
+        B == B1 and G == G1 and H == H1 and split_k == split_k1 and M_ceil >= M
+    ), f"{attn_split.shape=} {lse_split.shape=}"
+
+    attn_split = attn_split.permute(1, 2, 3, 0, 4, 5).view(
+        B, H * G, split_k, M_ceil, Kq
+    )
+    lse_split = lse_split.permute(1, 2, 3, 0, 4).view(B, H * G, split_k, M)
+
+    attn_out = torch.empty(
+        B, H, G, M, Kq, device=attn_split.device, dtype=attn_split.dtype
+    )
+    if write_lse:
+        lse_out = torch.empty(
+            B * H * G, M, device=attn_split.device, dtype=torch.float32
+        )
+    else:
+        lse_out = None
+
+    triton_splitk.merge_attentions(
+        attn_out.permute(0, 3, 2, 1, 4), lse_out, attn_split, lse_split
+    )
+    if lse_out is not None:
+        lse_out = lse_out.view(B, H, G, M)
+
+    if is_bmhk:
+        attn_out = attn_out[:, :, 0]
+        if lse_out is not None:
+            lse_out = lse_out[:, :, 0]
+
+    return attn_out, lse_out
+
+
 ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
     cutlass.FwOp if torch.version.cuda else ck.FwOp,
     flash.FwOp,

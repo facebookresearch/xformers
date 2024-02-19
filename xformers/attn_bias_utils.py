@@ -150,7 +150,10 @@ def create_attn_bias(
         if bias_type is fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask:
             block_diag = block_diag.make_causal_from_bottomright()
         return block_diag
-    if bias_type == fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask:
+    if bias_type in [
+        fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+    ]:
         assert fmt in ["BMHK", "BMGHK"]
         q, k = _rand_seqlens_padded_k(r, batch_size, q_len, kv_len)
         g_block_diag = (
@@ -160,6 +163,15 @@ def create_attn_bias(
                 kv_seqlen=k,
             )
         )
+        if bias_type == fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask:
+            page_size = r.choice([64, 128, 256])
+            pages_per_row = (kv_len + page_size - 1) // page_size
+            block_tables = torch.randperm(
+                batch_size * pages_per_row, device=device
+            ).reshape(batch_size, pages_per_row)
+            return g_block_diag.make_paged(
+                block_tables=block_tables, page_size=page_size
+            )
         return g_block_diag
     if bias_type == fmha.attn_bias.LocalAttentionFromBottomRightMask:
         return bias_type(
