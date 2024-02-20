@@ -22,10 +22,6 @@ from xformers.components.attention import (
     build_attention,
 )
 
-disable_on_rocm = pytest.mark.skipif(
-    not not torch.version.hip, reason="could not be done on ROCM"
-)
-
 DEVICES = (
     [torch.device("cpu")] if not torch.cuda.is_available() else [torch.device("cuda")]
 )
@@ -95,7 +91,6 @@ def _get_multihead(
     return multi_head
 
 
-@disable_on_rocm
 @pytest.mark.parametrize("attn_dropout", [0.0, 0.3])
 @pytest.mark.parametrize("residual_dropout", [0.0, 0.1])
 @pytest.mark.parametrize("causal", [True, False])
@@ -112,6 +107,13 @@ def test_order_invariance(
     causal: bool,
     device: torch.device,
 ):
+    if (
+        torch.version.hip
+        and device == torch.device("cuda")
+        and attention_name == "local"
+    ):
+        # Backend calls into Sputnik library which isn't built on ROCm
+        device = torch.device("cpu")
 
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
@@ -166,7 +168,6 @@ def test_order_invariance(
                 _ = multi_head(inputs, inputs_shuffled, inputs)
 
 
-@disable_on_rocm
 @pytest.mark.parametrize("heads", [1, 4])
 @pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
 @pytest.mark.parametrize("device", DEVICES)
@@ -210,7 +211,6 @@ def test_kqv_ordering(
     assert torch.allclose(res_false[0, :, :], res_false[1, :, :])
 
 
-@disable_on_rocm
 @pytest.mark.parametrize("heads", [1, 4])
 @pytest.mark.parametrize("attention_name", ["scaled_dot_product"])
 @pytest.mark.parametrize("device", DEVICES)

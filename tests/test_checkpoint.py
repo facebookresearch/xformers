@@ -20,9 +20,6 @@ from xformers.checkpoint import (
 )
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-disable_on_rocm = pytest.mark.skipif(
-    not not torch.version.hip, reason="could not be done on ROCM"
-)
 _devices = ["cpu"]
 cuda_cap = (0, 0)
 
@@ -39,7 +36,6 @@ def _all_policy(func, *args, **kwargs):
     return True
 
 
-@disable_on_rocm
 @pytest.mark.skipif(torch.__version__ < "2.2", reason="Only new PyTorch supported")
 @pytest.mark.parametrize("policy_fn", [None, [], _relu_policy, _all_policy])
 @pytest.mark.parametrize("input_requires_grad", [True, False])

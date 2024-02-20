@@ -125,6 +125,23 @@ def get_cuda_version(cuda_dir) -> int:
     return bare_metal_major * 100 + bare_metal_minor
 
 
+def get_hip_version(rocm_dir) -> str:
+    hipcc_bin = "hipcc" if rocm_dir is None else os.path.join(rocm_dir, "bin", "hipcc")
+    try:
+        raw_output = subprocess.check_output(
+            [hipcc_bin, "--version"], universal_newlines=True
+        )
+    except Exception as e:
+        print(
+            f"hip installation not found: {e} ROCM_PATH={os.environ.get('ROCM_PATH')}"
+        )
+        return None
+    for line in raw_output.split("\n"):
+        if "HIP version" in line:
+            return line.split()[-1]
+    return None
+
+
 def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     # XXX: Not supported on windows for cuda<12
     # https://github.com/Dao-AILab/flash-attention/issues/345
@@ -186,12 +203,13 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     sources = ["csrc/flash_attn/flash_api.cpp"]
     for f in glob.glob(os.path.join(flash_root, "csrc", "flash_attn", "src", "*.cu")):
         sources.append(str(Path(f).relative_to(flash_root)))
+    common_extra_compile_args = ["-DFLASHATTENTION_DISABLE_ALIBI"]
     return [
         CUDAExtension(
             name="xformers._C_flashattention",
             sources=[os.path.join(flash_root, path) for path in sources],
             extra_compile_args={
-                **extra_compile_args,
+                "cxx": extra_compile_args.get("cxx", []) + common_extra_compile_args,
                 "nvcc": extra_compile_args.get("nvcc", [])
                 + [
                     "-O3",
@@ -207,6 +225,7 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                 ]
                 + nvcc_archs_flags
                 + nvcc_windows_flags
+                + common_extra_compile_args
                 + get_extra_nvcc_flags_for_build_type(cuda_version),
             },
             include_dirs=[
@@ -229,118 +248,19 @@ def rename_cpp_cu(cpp_files):
 def get_extensions():
     extensions_dir = os.path.join("xformers", "csrc")
 
-    sources = glob.glob(
-        os.path.join(extensions_dir, "attention", "*.cpp"), recursive=False
-    )
-    sources += glob.glob(
-        os.path.join(extensions_dir, "attention", "autograd", "**", "*.cpp"),
+    sources = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
+    source_cuda = glob.glob(os.path.join(extensions_dir, "**", "*.cu"), recursive=True)
+    source_hip = glob.glob(
+        os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cpp"),
         recursive=True,
     )
-    sources += glob.glob(
-        os.path.join(extensions_dir, "attention", "cpu", "**", "*.cpp"), recursive=True
+    source_hip_generated = glob.glob(
+        os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cu"),
+        recursive=True,
     )
-    sources += glob.glob(
-        os.path.join(extensions_dir, "indexing", "**", "*.cpp"), recursive=True
-    )
-    sources += glob.glob(
-        os.path.join(extensions_dir, "swiglu", "**", "*.cpp"), recursive=True
-    )
-
-    # avoid the temporary .cu file under xformers/csrc/attention/hip_fmha are included
-    source_cuda = glob.glob(os.path.join(extensions_dir, "*.cu"), recursive=False)
-    source_cuda += glob.glob(
-        os.path.join(extensions_dir, "attention", "cuda", "**", "*.cu"), recursive=True
-    )
-    source_cuda += glob.glob(
-        os.path.join(extensions_dir, "indexing", "**", "*.cu"), recursive=True
-    )
-    source_cuda += glob.glob(
-        os.path.join(extensions_dir, "swiglu", "**", "*.cu"), recursive=True
-    )
-
-    source_hip = glob.glob(
-        os.path.join(extensions_dir, "attention", "hip_fmha", "ck_fmha_test.cpp"),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir, "attention", "hip_fmha", "attention_forward_decoder.cpp"
-        ),
-        recursive=False,
-    )
-
-    source_hip_decoder = [
-        *glob.glob(
-            os.path.join(
-                extensions_dir, "attention", "hip_fmha", "attention_forward_decoder.cpp"
-            ),
-            recursive=False,
-        ),
-        *glob.glob(
-            os.path.join(
-                extensions_dir, "attention", "hip_fmha", "attention_forward_splitk.cpp"
-            ),
-            recursive=False,
-        ),
-    ]
-
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "attention_forward_generic_ck_tiled.cpp",
-        ),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "ck_tiled_fmha_batched_infer_*.cpp",
-        ),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "ck_tiled_fmha_grouped_infer_*.cpp",
-        ),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "ck_tiled_fmha_batched_forward_*.cpp",
-        ),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "ck_tiled_fmha_grouped_forward_*.cpp",
-        ),
-        recursive=False,
-    )
-    source_hip += glob.glob(
-        os.path.join(
-            extensions_dir,
-            "attention",
-            "hip_fmha",
-            "instances",
-            "ck_tiled_fmha_*.cpp",
-        ),
-        recursive=False,
-    )
-
-    source_hip += source_hip_decoder
+    # avoid the temporary .cu files generated under xformers/csrc/attention/hip_fmha
+    source_cuda = list(set(source_cuda) - set(source_hip_generated))
+    sources = list(set(sources) - set(source_hip))
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
@@ -366,6 +286,7 @@ def get_extensions():
     include_dirs = [extensions_dir]
     ext_modules = []
     cuda_version = None
+    hip_version = None
     flash_version = "0.0.0"
 
     if (
@@ -422,6 +343,9 @@ def get_extensions():
         ]
     elif torch.cuda.is_available() and torch.version.hip:
         rename_cpp_cu(source_hip)
+        rocm_home = os.getenv("ROCM_PATH")
+        hip_version = get_hip_version(rocm_home)
+
         source_hip_cu = []
         for ff in source_hip:
             source_hip_cu += [ff.replace(".cpp", ".cu")]
@@ -467,6 +391,7 @@ def get_extensions():
     return ext_modules, {
         "version": {
             "cuda": cuda_version,
+            "hip": hip_version,
             "torch": torch.__version__,
             "python": platform.python_version(),
             "flash": flash_version,
@@ -475,6 +400,7 @@ def get_extensions():
             k: os.environ.get(k)
             for k in [
                 "TORCH_CUDA_ARCH_LIST",
+                "PYTORCH_ROCM_ARCH",
                 "XFORMERS_BUILD_TYPE",
                 "XFORMERS_ENABLE_DEBUG_ASSERTIONS",
                 "NVCC_FLAGS",
@@ -530,7 +456,6 @@ class BuildExtensionWithExtraFiles(BuildExtension):
 
 
 if __name__ == "__main__":
-
     if os.getenv("BUILD_VERSION"):  # In CI
         version = os.getenv("BUILD_VERSION", "0.0.0")
     else:

@@ -44,6 +44,12 @@ jobs:
           path: "."
           fetch-depth: 0 # for tags
 
+      # inspired by https://github.com/jlumbroso/free-disk-space/blob/main/action.yml
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/dotnet || true
+
       - name: Setup twine config
         if: inputs.pypirc
         run: |
