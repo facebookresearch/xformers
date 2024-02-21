@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import sys
-from typing import Any, Type
+from typing import Any, Dict, Type
 
 import torch
 from torch.utils import benchmark
@@ -127,7 +127,7 @@ class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
         return attn @ v
 
 
-BENCHMARKS: dict[str, Type[AttentionDecodingFlashDecoding]] = {
+BENCHMARKS: Dict[str, Type[AttentionDecodingFlashDecoding]] = {
     "pytorch": AttentionDecodingPyTorchRepeat,
 }
 
