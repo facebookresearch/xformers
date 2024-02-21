@@ -622,22 +622,22 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator {
                     KV_M_MAX,
                     compute_t>
               : Q_size_k_alignment_necessary == 2
-                  ? efficient_attention_forward_decoder_splitk_ck_kernel<
-                        scalar_t,
-                        /* vec_size */ 2,
-                        n_loop_unroll,
-                        n_loop_unroll_tail,
-                        KV_M_MAX,
-                        compute_t>
-                  : Q_size_k_alignment_necessary == 1
-                      ? efficient_attention_forward_decoder_splitk_ck_kernel<
-                            scalar_t,
-                            /* vec_size */ 1,
-                            n_loop_unroll,
-                            n_loop_unroll_tail,
-                            KV_M_MAX,
-                            compute_t>
-                      : nullptr,
+              ? efficient_attention_forward_decoder_splitk_ck_kernel<
+                    scalar_t,
+                    /* vec_size */ 2,
+                    n_loop_unroll,
+                    n_loop_unroll_tail,
+                    KV_M_MAX,
+                    compute_t>
+              : Q_size_k_alignment_necessary == 1
+              ? efficient_attention_forward_decoder_splitk_ck_kernel<
+                    scalar_t,
+                    /* vec_size */ 1,
+                    n_loop_unroll,
+                    n_loop_unroll_tail,
+                    KV_M_MAX,
+                    compute_t>
+              : nullptr,
           arg.grid_dim,
           arg.block_dim,
           arg.lds_bytes,

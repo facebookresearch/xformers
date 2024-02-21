@@ -91,7 +91,8 @@ at::Tensor& efficient_attention_forward_decoder_splitk_ck_out_impl(
   dim3 blocks(B * H * M * G, split_k);
   dim3 threads(ThreadsPerWavefront, WavefrontsPerBlock);
 
-  int32_t smem_softmax = kMaxKVSequenceLength * sizeof(compute_t) + WavefrontsPerBlock * sizeof(compute_t);
+  int32_t smem_softmax = kMaxKVSequenceLength * sizeof(compute_t) +
+      WavefrontsPerBlock * sizeof(compute_t);
   int32_t smem_output = kMaxHeadDimension * sizeof(compute_t) *
       threads.y; // 4 * threadsPerBlock * sizeof(float) == sizeof(O[b][0][h][:])
   const size_t lds_bytes = max(smem_softmax, smem_output);
@@ -106,7 +107,12 @@ at::Tensor& efficient_attention_forward_decoder_splitk_ck_out_impl(
       [&] {
         using ck_data_t = c10_to_data_t<scalar_t>::type;
         using device_op_t =
-            ck::tensor_operation::device::FMHADecoderSplitKDeviceOp<ck_data_t, kMaxKVSequenceLength, kLoopUnroll, kLoopUnrollTail, compute_t>;
+            ck::tensor_operation::device::FMHADecoderSplitKDeviceOp<
+                ck_data_t,
+                kMaxKVSequenceLength,
+                kLoopUnroll,
+                kLoopUnrollTail,
+                compute_t>;
         auto op = device_op_t{};
 
         auto XQ_acc =
@@ -549,22 +555,22 @@ struct FMHADecoderSplitAttentionDeviceOp : public BaseOperator {
                     kMaxKVSequenceLength,
                     compute_t>
               : Q_size_k_alignment_necessary == 2
-                  ? efficient_attention_forward_decoder_splitk_ck_kernel<
-                        scalar_t,
-                        2,
-                        kLoopUnroll,
-                        kLoopUnrollTail,
-                        kMaxKVSequenceLength,
-                        compute_t>
-                  : Q_size_k_alignment_necessary == 1
-                      ? efficient_attention_forward_decoder_splitk_ck_kernel<
-                            scalar_t,
-                            1,
-                            kLoopUnroll,
-                            kLoopUnrollTail,
-                            kMaxKVSequenceLength,
-                            compute_t>
-                      : nullptr,
+              ? efficient_attention_forward_decoder_splitk_ck_kernel<
+                    scalar_t,
+                    2,
+                    kLoopUnroll,
+                    kLoopUnrollTail,
+                    kMaxKVSequenceLength,
+                    compute_t>
+              : Q_size_k_alignment_necessary == 1
+              ? efficient_attention_forward_decoder_splitk_ck_kernel<
+                    scalar_t,
+                    1,
+                    kLoopUnroll,
+                    kLoopUnrollTail,
+                    kMaxKVSequenceLength,
+                    compute_t>
+              : nullptr,
           arg.grid_dim,
           arg.block_dim,
           arg.lds_bytes,
@@ -783,9 +789,11 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> split_attention_hip(
   dim3 blocks(B * H * M * G, split_k);
   dim3 threads(kThreadsPerWavefront, wavefronts_per_block);
 
-  int32_t smem_softmax = kMaxKVSequenceLength * sizeof(float) + threads.y * sizeof(float);
+  int32_t smem_softmax =
+      kMaxKVSequenceLength * sizeof(float) + threads.y * sizeof(float);
   int32_t smem_output = kMaxHeadDimension * sizeof(float) *
-      wavefronts_per_block; // 4 * threadsPerBlock * sizeof(float) == sizeof(O[b][0][h][:])
+      wavefronts_per_block; // 4 * threadsPerBlock * sizeof(float) ==
+                            // sizeof(O[b][0][h][:])
   const size_t lds_bytes = max(smem_softmax, smem_output);
   auto stream = at::cuda::getCurrentHIPStream().stream();
 
