@@ -127,7 +127,7 @@ class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
         return attn @ v
 
 
-BENCHMARKS : dict[str, Type[AttentionDecodingFlashDecoding]] = {
+BENCHMARKS: dict[str, Type[AttentionDecodingFlashDecoding]] = {
     "pytorch": AttentionDecodingPyTorchRepeat,
 }
 
