@@ -357,6 +357,10 @@ def get_extensions():
         ]
 
         include_dirs += [
+            Path(this_dir) / "third_party" / "composable_kernel_tiled" / "example" / "91_tile_program" / "xformers_fmha"
+        ]
+
+        include_dirs += [
             Path(this_dir) / "third_party" / "composable_kernel_tiled" / "include"
         ]
 
