@@ -21,7 +21,6 @@
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_problem.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_async.hpp>
-#include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qs_ks_vs.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
 #include <ck/tile_program/tile/tile_fmha_traits.hpp>
 
@@ -105,7 +104,7 @@ struct batched_forward_causalmask_attnbias_dispatched {
                   FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
               using FmhaPipeline =
-                  ck::tile_program::block::BlockFmhaPipelineQSKSVS<
+                  ck::tile_program::block::BlockFmhaPipelineQRKSVS<
                       FmhaPipelineProblem>;
               using FmhaKernel = FmhaFwdKernel<
                   FmhaTilePartitioner,
