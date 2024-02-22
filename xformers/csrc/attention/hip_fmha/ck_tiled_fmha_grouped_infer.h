@@ -38,7 +38,7 @@ template <
     typename scalar_t,
     bool has_causal_mask,
     bool has_attn_bias,
-    ck::index_t HDim>
+    ck::index_t MaxK>
 struct grouped_infer_causalmask_attnbias_dispatched {
   using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
       typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
@@ -57,7 +57,7 @@ struct grouped_infer_causalmask_attnbias_dispatched {
           typename FmhaFwdTypeConfig<scalar_t>::PDataType,
           typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
           typename FmhaFwdTypeConfig<scalar_t>::ODataType,
-          FmhaFwdShape<HDim>,
+          FmhaFwdShape<MaxK>,
           true, // kIsGroupMode
           FmhaMask,
           FmhaTraits>;
@@ -71,10 +71,10 @@ struct grouped_infer_causalmask_attnbias_dispatched {
       using FmhaMask = ck::tile_program::block::
           GenericAttentionMask<has_masking, USE_LOCAL_ATTENTION>;
 
-      using FmhaShape = FmhaFwdShape<HDim>;
+      using FmhaShape = FmhaFwdShape<MaxK>;
       using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
       constexpr ck::index_t occupancy =
-          (HDim == 64) ? 3 : ((HDim == 256) ? 1 : 2);
+          (MaxK == 64) ? 3 : ((MaxK == 256) ? 1 : 2);
 
       constexpr bool kPadSeqLenQ = true;
       constexpr bool kPadSeqLenK = true;
@@ -82,7 +82,7 @@ struct grouped_infer_causalmask_attnbias_dispatched {
       bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
       bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
 
-      if constexpr (HDim == 256) {
+      if constexpr (MaxK == 256) {
         BOOL_SWITCH_2(
             pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
               using FmhaTraits = ck::tile_program::TileFmhaTraits<
@@ -187,7 +187,7 @@ template <
     typename scalar_t,
     bool has_causal_mask,
     bool has_attn_bias,
-    ck::index_t HDim>
+    ck::index_t MaxK>
 void run_grouped_infer_causalmask_attnbias_dispatched(
     GroupedForwardParams& param,
     hipStream_t stream) {
@@ -195,5 +195,5 @@ void run_grouped_infer_causalmask_attnbias_dispatched(
       scalar_t,
       has_causal_mask,
       has_attn_bias,
-      HDim>::Run(param, stream);
+      MaxK>::Run(param, stream);
 };

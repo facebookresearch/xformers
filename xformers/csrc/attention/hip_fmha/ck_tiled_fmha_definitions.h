@@ -47,7 +47,7 @@ struct FmhaFwdTypeConfig<ck::bhalf_t> {
   using ODataType = ck::bhalf_t;
 };
 
-template <ck::index_t HDim>
+template <ck::index_t MaxK>
 struct FmhaFwdBlockTile;
 
 template <>
@@ -75,7 +75,7 @@ using FmhaFwdWarpTile = ck::Sequence<32, 32, 16>;
 
 static constexpr bool IsVLayoutRowMajor = true;
 
-template <ck::index_t HDim>
+template <ck::index_t MaxK>
 struct FmhaFwdShape;
 
 template <>
