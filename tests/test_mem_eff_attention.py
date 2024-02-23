@@ -1569,6 +1569,10 @@ def test_decoder(
     # kv_heads > 1: BMGHK
     if dtype == "bf16" and compute_capability < (8, 0):
         raise pytest.skip("BF16 is only supported on SM80+")
+    import triton
+
+    if dequant and triton.__version__[:4] < "3.0.":
+        raise pytest.skip("dequant needs triton updates")
     dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
     torch.manual_seed(1)
     d = 128
@@ -2127,8 +2131,10 @@ def test_forward_splitk(
 
 
 @cuda_only
-@pytest.mark.parametrize("op", [fmha.triton_splitk.FwOp, fmha.flash.FwOp])
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize(
+    "op", [fmha.triton_splitk.FwOp, fmha.flash.FwOp], ids=lambda op: op.NAME
+)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16], ids=str)
 @pytest.mark.parametrize(
     "B_Mkv_H_K",
     [
@@ -2367,11 +2373,12 @@ def test_cutlassB_iter_order(
         fmha.triton_splitk.FwOp_S8,
         fmha.triton_splitk.FwOp_Map[48],
     ],
+    ids=lambda op: op.NAME,
 )
 @pytest.mark.parametrize("num_quant_groups", [0, 1, 8])
 @pytest.mark.parametrize("page_size", [64, 128, 256])
 def test_paged_attention(
-    B, MAX_T: int, num_quant_groups: bool, page_size: int, op: Type[AttentionFwOpBase]
+    B, MAX_T: int, num_quant_groups: int, page_size: int, op: Type[AttentionFwOpBase]
 ):
     paged_attention_run_inner(B, MAX_T, num_quant_groups, page_size, op, bench=False)
 
@@ -2379,7 +2386,7 @@ def test_paged_attention(
 def paged_attention_run_inner(
     B: int,
     MAX_T: int,
-    num_quant_groups: bool,
+    num_quant_groups: int,
     page_size: int,
     op: Type[AttentionFwOpBase],
     bench: bool,
@@ -2404,6 +2411,9 @@ def paged_attention_run_inner(
 
     q = torch.randn((B, 1, N_H_L, D_H), dtype=torch.bfloat16, device="cuda")
     if num_quant_groups:
+        if triton.__version__[:4] < "3.0.":
+            raise pytest.skip("dequant needs triton updates")
+
         # Using high=64 below, because with 256 both paged and non-paged paths
         # will produce NaNs - probably some quantization coeffitions are NaNs
         # after the bitwise cast.
