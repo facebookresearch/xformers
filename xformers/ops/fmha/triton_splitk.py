@@ -406,13 +406,13 @@ if TYPE_CHECKING or _has_triton21():
                 + (start_m * BLOCK_M + tl.arange(0, BLOCK_M)) * stride_lsek_m
             )
             mask = start_m * BLOCK_M + tl.arange(0, BLOCK_M) < N_CTX_Q
-            lse_dtype = LSE_splitk.dtype.element_ty  # Can be float64 to improve numerics
+            # Can be float64 to improve numerics
+            lse_dtype = LSE_splitk.dtype.element_ty
             tl.store(
                 LSE_splitk_ptr,
                 (tl.math.log2(l_i.to(lse_dtype)) + m_i.to(lse_dtype)) / 1.44269504,
                 mask=mask,
             )
-
 
     def gen_config(
         block_m: int,
@@ -430,7 +430,6 @@ if TYPE_CHECKING or _has_triton21():
             num_stages=stages,
             num_warps=warps,
         )
-
 
     def _get_splitk_kernel(num_groups):
         """
@@ -452,7 +451,6 @@ if TYPE_CHECKING or _has_triton21():
         )(_fwd_kernel_splitK_unrolled)
         return kernel
 
-
     @functools.lru_cache(None)
     def autotune_kernel(kernel: Callable):
         BLOCK_M_VALUES = [16, 32]
@@ -473,7 +471,6 @@ if TYPE_CHECKING or _has_triton21():
             key=AUTOTUNER_KEY,
         )(kernel)
         return kernel
-
 
     # This object contains forward kernels wrapped into autotuner for different number
     # of quantization groups.
@@ -500,7 +497,6 @@ if TYPE_CHECKING or _has_triton21():
             cache: Dict[Tuple[int], triton.Config], num_groups: int
         ) -> None:
             _fwd_kernel_splitK_autotune[num_groups].cache = cache
-
 
     @triton.jit
     def load_dequantize_k_v_group(
@@ -550,7 +546,6 @@ if TYPE_CHECKING or _has_triton21():
             k = tl.trans(k_t)
         return k, v
 
-
     @triton.jit
     def cast_uint32_to_half2(scale_shift):
         """Extract two float16 packed into one int32"""
@@ -559,7 +554,6 @@ if TYPE_CHECKING or _has_triton21():
         scale = scale.to(tl.uint16).to(tl.float16, bitcast=True)
         shift = shift.to(tl.uint16).to(tl.float16, bitcast=True)
         return scale, shift
-
 
     @triton.jit
     def dequantize(
@@ -592,7 +586,6 @@ if TYPE_CHECKING or _has_triton21():
 
         dequant = quant_offset * scale_512 + shift
         return dequant
-
 
     @triton.jit
     def _splitK_reduce(
