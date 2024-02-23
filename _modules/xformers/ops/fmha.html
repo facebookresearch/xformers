@@ -363,14 +363,18 @@
 
 <span class="sd">    .. code-block:: python</span>
 
-<span class="sd">        scale = 1 / query.shape[-1] ** 0.5</span>
+<span class="sd">        scale = 1.0 / query.shape[-1] ** 0.5</span>
 <span class="sd">        query = query * scale</span>
+<span class="sd">        query = query.transpose(1, 2) </span>
+<span class="sd">        key = key.transpose(1, 2)</span>
+<span class="sd">        value = value.transpose(1, 2)</span>
 <span class="sd">        attn = query @ key.transpose(-2, -1)</span>
 <span class="sd">        if attn_bias is not None:</span>
 <span class="sd">            attn = attn + attn_bias</span>
 <span class="sd">        attn = attn.softmax(-1)</span>
-<span class="sd">        attn = F.dropout(attn, p)</span>
-<span class="sd">        return attn @ value</span>
+<span class="sd">        attn = F.dropout(attn, p) </span>
+<span class="sd">        attn = attn @ value</span>
+<span class="sd">        return attn.transpose(1, 2)</span>
 
 <span class="sd">    :Examples:</span>
 
