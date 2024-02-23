@@ -391,7 +391,9 @@ if TYPE_CHECKING or _has_triton21():
         for i in range(len(acc)):  # noqa: F821
             # If for the current batch element there are no tokens in the current split-k chunk (because
             # seqlen is too short), l_i will be 0, so we need to make sure attention is filled with zeros and not NaNs.
-            attn_out = tl.where(l_i[:, None] == 0, 0.0, acc[i] / l_i[:, None])  # noqa: F821
+            attn_out = tl.where(
+                l_i[:, None] == 0, 0.0, acc[i] / l_i[:, None]  # noqa: F821
+            )
             tl.store(
                 tl.advance(O_block_ptr, (0, i * D_PER_GROUP)),
                 attn_out.to(Out_splitK.dtype.element_ty),  # noqa: F821
@@ -666,6 +668,10 @@ if TYPE_CHECKING or _has_triton21():
         if WRITE_LSE:
             l_ptrs = LSE + off_zhg * stride_lse_zhg + off_m * stride_lse_m
             tl.store(l_ptrs, (lse_max + tl.math.log2(sumexp_normalized) / 1.44269504))
+
+else:
+    _fwd_kernel_splitK = None
+    _splitK_reduce = None
 
 
 @register_operator
