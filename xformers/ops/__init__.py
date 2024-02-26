@@ -25,6 +25,7 @@ from .fmha import (
     memory_efficient_attention_forward_requires_grad,
 )
 from .indexing import index_select_cat, scaled_index_add
+from .ipc import init_ipc
 from .modpar_layers import ColumnParallelLinear, RowParallelLinear
 from .rmsnorm import RMSNorm
 from .rope_padded import rope_padded
@@ -97,6 +98,8 @@ __all__ = [
     # indexing
     "index_select_cat",
     "scaled_index_add",
+    # ipc
+    "init_ipc",
     # modpar_layers
     "ColumnParallelLinear",
     "RowParallelLinear",

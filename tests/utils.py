@@ -34,7 +34,7 @@ def assert_allclose(
         f"{msg}: "
         f"out={out.flatten()[max_pos]} and ref={ref.flatten()[max_pos]} (diff={max_diff} > 0)"
         f" at {max_location} of shape {tuple(out.shape)} / atol={atol}, rtol={rtol}"
-        f"/ total failing elements: {num_different}, percentage={percentage}"
+        f"/ total failing elements: {num_different} ({percentage*100:.3}%)"
     )
 
 
