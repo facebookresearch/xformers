@@ -60,14 +60,14 @@ flake8 --config .flake8
 mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ --exclude stubs/ .
 ```
 
-* or you can just install [pre-commit](https://pre-commit.com/), which will make sure that all of the above is run automatically anytime you commit 
-in that case, you would need to 
+* or you can just install [pre-commit](https://pre-commit.com/), which will make sure that all of the above is run automatically anytime you commit
+in that case, you would need to
 ```bash
-pip install pre-commit 
+pip install pre-commit
 ```
 then (in the xformers repository, just once)
 ```bash
-pre-commit install 
+pre-commit install
 ```
 
 After these steps each of your commits will run the same linting and formatting routines as the xformers continuous integration, which greatly helps getting your PRs all green !

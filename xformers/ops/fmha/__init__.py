@@ -144,14 +144,14 @@ def memory_efficient_attention(
 
         scale = 1.0 / query.shape[-1] ** 0.5
         query = query * scale
-        query = query.transpose(1, 2) 
+        query = query.transpose(1, 2)
         key = key.transpose(1, 2)
         value = value.transpose(1, 2)
         attn = query @ key.transpose(-2, -1)
         if attn_bias is not None:
             attn = attn + attn_bias
         attn = attn.softmax(-1)
-        attn = F.dropout(attn, p) 
+        attn = F.dropout(attn, p)
         attn = attn @ value
         return attn.transpose(1, 2)
 
