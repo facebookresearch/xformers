@@ -72,8 +72,9 @@ struct grouped_forward_causalmask_attnbias_dispatched {
 
       using FmhaShape = FmhaFwdShape<MaxK>;
       using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
-      constexpr ck::index_t occupancy =
-          (MaxK == 64) ? 3 : (MaxK == 256) ? 1 : 2;
+      constexpr ck::index_t occupancy = (MaxK == 64) ? 3
+          : (MaxK == 256)                            ? 1
+                                                     : 2;
 
       constexpr bool kPadSeqLenQ = true;
       constexpr bool kPadSeqLenK = true;
