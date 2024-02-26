@@ -7,7 +7,7 @@ Example runs:
 $ python -m generate --ckpt_dir models/CodeLlama-7b-Instruct/
 loaded SentencePiece model: #words: 32016 - bos id: 1 - eos id: 2
 loaded model in 12.36 seconds
-> [INST]abc[/INST] 
+> [INST]abc[/INST]
 I'm not sure I understand what you are saying with "abc". Could you explain?
 ---------------
 > [INST]can you write a hello world program in C#[/INST]

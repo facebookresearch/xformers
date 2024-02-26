@@ -3,10 +3,6 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-
-import concurrent.futures
-import json
-import multiprocessing.connection
 import os
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union, overload
 
@@ -16,6 +12,7 @@ import torch.multiprocessing.reductions
 
 from .. import _is_triton_available
 from .common import BaseOperator, get_xformers_operator, register_operator
+from .ipc import init_ipc
 
 if _is_triton_available():
     from ._triton.sequence_parallel_fused_kernels import (
@@ -59,90 +56,6 @@ class Memset32bAsync(BaseOperator):
     OPERATOR = get_xformers_operator("cuda_memset_32b_async")
     OPERATOR_CATEGORY = "sequence_parallel_fused"
     NAME = "cuda_memset_32b_async"
-
-
-# We could just send tensors directly on mp.Connections, since PyTorch installs
-# the necessary reductions to make it work. However, in the receiving process,
-# PyTorch "mounts" the tensor in the CUDA context for the GPU with the **SAME
-# INDEX** as on the sender. This works if all processes use CUDA_VISIBLE_DEVICES
-# to limit themselves to a single GPU (which thus has index 0 everywhere) but in
-# all other cases it's a mess. Hence we use our own reductions (which wrap the
-# ones from PyTorch) to use the right devices.
-
-
-def _serialize_cuda_tensor(tensor, device):
-    assert tensor.device == device
-    assert device.type == "cuda"
-    func, args = torch.multiprocessing.reductions.reduce_tensor(tensor)
-    assert func is torch.multiprocessing.reductions.rebuild_cuda_tensor
-    assert args[6] == device.index
-    return args
-
-
-def _deserialize_cuda_tensor(args, device):
-    return torch.multiprocessing.reductions.rebuild_cuda_tensor(
-        *args[:6], device.index, *args[7:]
-    )
-
-
-# We need all processes to exchange a few strings with their addresses (in order
-# to be able to connect to each other). The solution for this kind of things in
-# PyTorch is a Store (TCPStore or FileStore) but we cannot create one ourselves
-# (we don't know which addr/port/file to use, since the default one is already
-# being used by PyTorch's global store) nor can we extract one from the
-# ProcessGroup (since there's no API to do so). We thus resort to using the PG
-# itself to exchange data, which is overkill (we need to store the pickled data
-# into tensors and send it to the GPU). On top of that, it introduces one more
-# catch: it doesn't work in inference mode because of something about modifying
-# tensors inplace. I couldn't find a way to temporarily disable inference mode
-# (although it's supposed to be possible) however inference mode is thread-local
-# so we can dodge it by offloading the collective call to another thread. I hate
-# all this so much.
-
-
-def _exchange_addresses(
-    listeners: List[multiprocessing.connection.Listener],
-    group: dist.ProcessGroup,
-    device: torch.device,
-) -> List[List[str]]:
-    rank = group.rank()
-    world_size = group.size()
-    my_addresses: List[str] = []
-    for listener in listeners:
-        addr = listener.address
-        # The address could be a tuple if the listener weren't a UNIX socket
-        if isinstance(addr, bytes):
-            # Shouldn't be bytes, according to docs and typeshed, but...
-            # https://github.com/python/typeshed/issues/10054
-            addr = addr.decode("utf-8")
-        assert isinstance(addr, str)
-        my_addresses.append(addr)
-    if world_size == 1:
-        return [my_addresses]
-    # In fact, we can retrieve the store from the ProcessGroup, but only using
-    # a private API. Hence we catch whatever exception and fall back in case.
-    try:
-        _, store = torch.distributed.distributed_c10d._world.pg_map.get(
-            group, (None, None)
-        )
-        assert store is not None
-        store.set(f"xformers_exchange_addresses_{rank}", json.dumps(my_addresses))
-        all_addresses = [
-            json.loads(store.get(f"xformers_exchange_addresses_{i}"))
-            for i in range(world_size)
-        ]
-    except Exception:
-        all_addresses = [[""] * (world_size - 1)] * world_size
-        with concurrent.futures.ThreadPoolExecutor(
-            initializer=torch.cuda.set_device, initargs=(device,)
-        ) as e:
-            e.submit(
-                dist.all_gather_object,
-                object_list=all_addresses,
-                obj=my_addresses,
-                group=group,
-            ).result()
-    return all_addresses
 
 
 def _is_fp8_dtype(dt: torch.dtype):
@@ -207,31 +120,7 @@ class _FusedSequenceParallel:
         self.num_stripes = num_stripes
         self.my_device_capability = torch.cuda.get_device_capability(self.my_device)
 
-        # Open connections to all other processes. We exchange addresses via
-        # NCCL since we don't have access to a Store.
-        listeners = [
-            multiprocessing.connection.Listener(family="AF_UNIX", address="", backlog=1)
-            for _ in range(self.world_size - 1)
-        ]
-        # If any process is late, all other ones will block here
-        all_addresses = _exchange_addresses(listeners, group, self.my_device)
-        self.outgoing_conns = [
-            None
-            if r == self.my_rank
-            else multiprocessing.connection.Client(
-                family="AF_UNIX",
-                # Mypy wants it to be str, but it actually can also be bytes
-                # https://github.com/python/typeshed/issues/10054
-                address=all_addresses[r][(r - self.my_rank) % self.world_size - 1],
-            )
-            for r in range(self.world_size)
-        ]
-        self.incoming_conns = [
-            None
-            if r == self.my_rank
-            else listeners[(self.my_rank - r) % self.world_size - 1].accept()
-            for r in range(self.world_size)
-        ]
+        self.p2p_comms = init_ipc(group, self.my_device)
 
         self.next_stripe = 0
         self.next_seq_nums = [1] * self.num_stripes
@@ -253,34 +142,19 @@ class _FusedSequenceParallel:
         )
 
         # Send my handles to buddies
-        for rank, (in_conn, out_conn) in enumerate(
-            zip(self.incoming_conns, self.outgoing_conns)
-        ):
-            if in_conn is not None:
-                in_conn.send(
-                    _serialize_cuda_tensor(
-                        self.num_writes_into_my_staging[rank], self.my_device
-                    )
-                )
-            if out_conn is not None:
-                out_conn.send(
-                    _serialize_cuda_tensor(
-                        self.num_reads_from_buddys_staging[rank], self.my_device
-                    )
-                )
+        for rank, conn in enumerate(self.p2p_comms):
+            if conn is not None:
+                conn.send(self.num_writes_into_my_staging[rank])
+                conn.send(self.num_reads_from_buddys_staging[rank])
 
         # Open buddies' inboxes as my outboxes
         self.num_writes_into_buddys_staging = [
-            torch.empty((0,), device=self.my_device)
-            if out_conn is None
-            else _deserialize_cuda_tensor(out_conn.recv(), self.my_device)
-            for out_conn in self.outgoing_conns
+            torch.empty((0,), device=self.my_device) if conn is None else conn.recv()
+            for conn in self.p2p_comms
         ]
         self.num_reads_from_my_staging = [
-            torch.empty((0,), device=self.my_device)
-            if in_conn is None
-            else _deserialize_cuda_tensor(in_conn.recv(), self.my_device)
-            for in_conn in self.incoming_conns
+            torch.empty((0,), device=self.my_device) if conn is None else conn.recv()
+            for conn in self.p2p_comms
         ]
 
         self.second_stream = torch.cuda.Stream()
@@ -309,16 +183,14 @@ class _FusedSequenceParallel:
             )
             if random_init:
                 self.staging.normal_()
-            for rank, in_conn in enumerate(self.incoming_conns):
-                if in_conn is not None:
-                    in_conn.send(
-                        _serialize_cuda_tensor(self.staging[:, rank], self.my_device)
-                    )
+            for rank, conn in enumerate(self.p2p_comms):
+                if conn is not None:
+                    conn.send(self.staging[:, rank])
             self.buddys_staging = [
                 torch.empty((0,), device=self.my_device)
-                if out_conn is None
-                else _deserialize_cuda_tensor(out_conn.recv(), self.my_device)
-                for rank, out_conn in enumerate(self.outgoing_conns)
+                if conn is None
+                else conn.recv()
+                for rank, conn in enumerate(self.p2p_comms)
             ]
 
     def _should_use_triton(self, _triton: bool):
