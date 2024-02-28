@@ -571,92 +571,6 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
     )
 
 
-@rocm_only
-@pytest.mark.parametrize("hdim_k,hdim_v", [(64, 64), (128, 128)])
-@pytest.mark.parametrize("nhead_q,nhead_kv", [(8, 1), (8, 2), (12, 4), (4, 4)])
-@pytest.mark.parametrize("seqlen_q,seqlen_kv", [(100, 128), (128, 100), (200, 1000)])
-@pytest.mark.parametrize("batches", [100, 64, 1])
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize(
-    "attn_bias_type", [type(None), torch.Tensor, fmha.attn_bias.LowerTriangularMask]
-)
-@pytest.mark.parametrize("op", [fmha.ck.FwOp])
-def test_mqa_forward(
-    op,
-    attn_bias_type,
-    dtype,
-    batches: int,
-    seqlen_kv: int,
-    seqlen_q: int,
-    nhead_kv: int,
-    nhead_q: int,
-    hdim_v: int,
-    hdim_k: int,
-):
-    B = batches
-    M = seqlen_q
-    N = seqlen_kv
-    Hq = nhead_q
-    Hkv = nhead_kv
-    K = hdim_k
-    Kv = hdim_v
-    nhead_ratio_qk = Hq // Hkv
-
-    device = torch.device("cuda")
-
-    torch.manual_seed(B * M + N * K + Hq * Hkv + Kv)
-
-    scale = 3
-    query = torch.randn((B, M, Hq, K), device=device, dtype=dtype).mul_(scale)
-    key = torch.randn((B, N, Hkv, K), device=device, dtype=dtype).mul_(scale)
-    value = torch.randn((B, N, Hkv, Kv), device=device, dtype=dtype).mul_(scale)
-
-    attn_bias = None
-    if attn_bias_type is not None:
-        attn_bias = create_attn_bias(
-            attn_bias_type,
-            batch_size=B,
-            num_heads=Hq,
-            num_heads_groups=nhead_ratio_qk,
-            q_len=M,
-            kv_len=N,
-            dtype=dtype,
-            device=device,
-            requires_grad=False,
-            fmt="BMHK",
-            op=op,
-        )
-
-    inputs = fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias)
-    reasons = op.not_supported_reasons(inputs)
-    if reasons:
-        err_msg = f"{op.NAME}: unsupported ({'/'.join(reasons)})"
-        # Ensure we free memory to avoid OOMs
-        del query, key, value, attn_bias, inputs
-        assert False, err_msg
-
-    out = xformers.ops.memory_efficient_attention_forward(
-        query, key, value, attn_bias, op=op
-    )
-    assert not out.isnan().any(), ("Output has NaNs", attn_bias)
-    out2 = xformers.ops.memory_efficient_attention_forward(
-        query, key, value, attn_bias, op=op
-    )
-    assert torch.allclose(out, out2, atol=0.0, rtol=0.0), (
-        "Non-deterministic behavior",
-        attn_bias,
-    )
-
-    ref = ref_attention_mqa(query, key, value, attn_bias)
-    assert out.shape == ref.shape, out.shape
-    assert_allclose(
-        out.float(),
-        ref,
-        atol=op.ERROR_ATOL[dtype],
-        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
-    )
-
-
 @cuda_only
 @pytest.mark.parametrize("k_len", [5, 6, 32])
 @pytest.mark.parametrize("batch_size", [1, 4])
@@ -2328,7 +2242,7 @@ def test_forward_splitk(
 
 @cuda_only
 @pytest.mark.parametrize(
-    "op", [fmha.triton_splitk.FwOp, fmha.flash.FwOp], ids=lambda op: op.NAME
+    "op", [fmha.triton_splitk.FwOp, fmha.flash.FwOp, fmha.ck.FwOp], ids=lambda op: op.NAME
 )
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16], ids=str)
 @pytest.mark.parametrize(
