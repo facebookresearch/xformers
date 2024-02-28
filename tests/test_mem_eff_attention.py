@@ -320,47 +320,6 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
     return out.permute((0, 2, 1, 3))
 
 
-# this interface assumes the tensor is in BMHK, but q and k/v might have different number of heads
-def ref_attention_mqa(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
-    assert q.ndim == 4
-
-    B, M, Hq, K = q.shape
-    _, N, Hkv, Kv = v.shape
-    nhead_ratio_qk = Hq // Hkv
-
-    def attn_bias_head(head: int):
-        if isinstance(attn_bias, torch.Tensor):
-            assert attn_bias.ndim == 4
-            _, H, _, _ = attn_bias.shape
-            assert H == Hq
-            bias_bghmn = attn_bias.reshape(B, Hkv, nhead_ratio_qk, M, N)
-            return bias_bghmn[:, :, head]
-        if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
-            assert attn_bias._bias.ndim == 4
-            _, H, _, _ = attn_bias._bias.shape
-            assert H == Hq
-            bias_bghmn = attn_bias._bias.reshape(B, Hkv, nhead_ratio_qk, M, N)
-            return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
-                bias_bghmn[:, :, head]
-            )
-        return attn_bias
-
-    q_bmghk = q.reshape((B, M, Hkv, nhead_ratio_qk, K))
-
-    return torch.stack(
-        [
-            ref_attention_bmhk(
-                q_bmghk[:, :, :, h],
-                k,
-                v,
-                attn_bias=attn_bias_head(h),
-            )
-            for h in range(q_bmghk.shape[3])
-        ],
-        dim=3,
-    ).reshape((B, M, Hq, Kv))
-
-
 def _rand_partition(r: random.Random, total: int, n: int) -> List[int]:
     # returns list of n nonnegative integers summing to total
     idx = {0, total}
