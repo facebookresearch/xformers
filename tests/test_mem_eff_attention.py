@@ -2242,7 +2242,9 @@ def test_forward_splitk(
 
 @cuda_only
 @pytest.mark.parametrize(
-    "op", [fmha.triton_splitk.FwOp, fmha.flash.FwOp, fmha.ck.FwOp], ids=lambda op: op.NAME
+    "op",
+    [fmha.triton_splitk.FwOp, fmha.flash.FwOp, fmha.ck.FwOp],
+    ids=lambda op: op.NAME,
 )
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16], ids=str)
 @pytest.mark.parametrize(
