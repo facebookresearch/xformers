@@ -209,7 +209,7 @@ class AttentionDecodingSplitInt4KV(AttentionDecodingFlashDecoding):
 
 BENCHMARKS = {
     "pytorch": AttentionDecodingPyTorchRepeat,
-    # "flash-decoding": AttentionDecodingFlashDecoding,
+    "flash-decoding": AttentionDecodingFlashDecoding,
     "triton_splitK": AttentionDecodingSplitKV,
     "triton_int4KV" : AttentionDecodingSplitInt4KV,
 }
