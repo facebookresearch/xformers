@@ -625,6 +625,25 @@
             <span class="p">)</span>
 
 
+<span class="k">def</span> <span class="nf">_post_process_lse</span><span class="p">(</span>
+    <span class="n">lse</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">original_query_shape</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">lse</span>
+    <span class="n">q_seqinfo</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">q_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span> <span class="o">*</span> <span class="n">B</span> <span class="o">!=</span> <span class="n">original_query_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+        <span class="c1"># Heterogeneous batch. We can&#39;t fix it.</span>
+        <span class="k">return</span> <span class="n">lse</span>
+
+    <span class="c1"># reshape from (B, G*H, max_seqlen) to (1, G*H, B*max_seqlen)</span>
+    <span class="c1"># Unfortunately this flatten is not just a view.</span>
+    <span class="n">lse_hkm</span> <span class="o">=</span> <span class="n">lse</span><span class="o">.</span><span class="n">permute</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">start_dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)[</span><span class="kc">None</span><span class="p">]</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">original_query_shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">lse_hkm</span><span class="o">.</span><span class="n">unflatten</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">original_query_shape</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="mi">4</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">lse_hkm</span>
+
+
 <div class="viewcode-block" id="FwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.flash.FwOp">[docs]</a><span class="nd">@register_operator</span>
 <span class="k">class</span> <span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Operator that computes memory-efficient attention using \</span>
@@ -672,6 +691,8 @@
         <span class="bp">cls</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]]:</span>
         <span class="n">return_softmax</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">original_query_shape</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span>
+
         <span class="n">out_shape</span> <span class="o">=</span> <span class="p">[</span>
             <span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
@@ -712,7 +733,11 @@
                 <span class="n">device</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
                 <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="n">ctx</span> <span class="o">=</span> <span class="n">Context</span><span class="p">(</span><span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="o">=</span><span class="n">softmax_lse</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">needs_gradient</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="n">Context</span><span class="p">(</span>
+            <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="o">=</span><span class="n">_post_process_lse</span><span class="p">(</span><span class="n">softmax_lse</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">original_query_shape</span><span class="p">)</span>
+        <span class="p">)</span>
         <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
             <span class="n">ctx</span><span class="o">.</span><span class="n">op_bw</span> <span class="o">=</span> <span class="n">BwOp</span>
             <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span> <span class="o">=</span> <span class="n">rng_state</span>
