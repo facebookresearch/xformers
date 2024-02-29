@@ -122,6 +122,7 @@ def memory_efficient_attention(
     scale: Optional[float] = None,
     *,
     op: Optional[AttentionOp] = None,
+    output_dtype: Optional[torch.dtype] = None,
 ) -> torch.Tensor:
     """Implements the memory-efficient attention mechanism following
     `"Self-Attention Does Not Need O(n^2) Memory" <http://arxiv.org/abs/2112.05682>`_.
@@ -226,7 +227,13 @@ def memory_efficient_attention(
     """
     return _memory_efficient_attention(
         Inputs(
-            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+            query=query,
+            key=key,
+            value=value,
+            p=p,
+            attn_bias=attn_bias,
+            scale=scale,
+            output_dtype=output_dtype,
         ),
         op=op,
     )
@@ -241,13 +248,20 @@ def memory_efficient_attention_forward(
     scale: Optional[float] = None,
     *,
     op: Optional[Type[AttentionFwOpBase]] = None,
+    output_dtype: Optional[torch.dtype] = None,
 ) -> torch.Tensor:
     """
     Calculates the forward pass of :attr:`xformers.ops.memory_efficient_attention`.
     """
     return _memory_efficient_attention_forward(
         Inputs(
-            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+            query=query,
+            key=key,
+            value=value,
+            p=p,
+            attn_bias=attn_bias,
+            scale=scale,
+            output_dtype=output_dtype,
         ),
         op=op,
     )
@@ -262,6 +276,7 @@ def memory_efficient_attention_forward_requires_grad(
     scale: Optional[float] = None,
     *,
     op: Optional[Type[AttentionFwOpBase]] = None,
+    output_dtype: Optional[torch.dtype] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later.
@@ -275,7 +290,13 @@ def memory_efficient_attention_forward_requires_grad(
         )
     out, ctx = _memory_efficient_attention_forward_requires_grad(
         Inputs(
-            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+            query=query,
+            key=key,
+            value=value,
+            p=p,
+            attn_bias=attn_bias,
+            scale=scale,
+            output_dtype=output_dtype,
         ),
         op=op,
     )
@@ -463,7 +484,7 @@ def merge_attentions(
     )
     if write_lse:
         lse_out = torch.empty(
-            B * H * G, M, device=attn_split.device, dtype=torch.float32
+            B * H * G, M, device=attn_split.device, dtype=lse_split.dtype
         )
     else:
         lse_out = None

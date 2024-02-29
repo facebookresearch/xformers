@@ -123,6 +123,9 @@ if TYPE_CHECKING or _has_triton21():
         Set IS_SPLITK=False to indicate the MHA result should be written directly.
         No metadata will be written.
         """
+        internal_dtype = (
+            tl.float64 if Out_splitK.dtype.element_ty is tl.float64 else tl.float32
+        )
         tl.static_assert(
             (PACKED_PER_VAL == 1 and tl.constexpr(K.dtype.element_ty != tl.int32))
             or (PACKED_PER_VAL == 8 and tl.constexpr(K.dtype.element_ty == tl.int32)),
@@ -239,7 +242,9 @@ if TYPE_CHECKING or _has_triton21():
         acc: "VAR_ARGS_ARRAY"  # noqa: F821
 
         for i in range(len(acc)):  # noqa: F821
-            acc[i] = tl.zeros([BLOCK_M, D_PER_GROUP], dtype=tl.float32)  # noqa: F821
+            acc[i] = tl.zeros(  # noqa: F821
+                [BLOCK_M, D_PER_GROUP], dtype=internal_dtype
+            )
         # scale sm_scale by log_2(e) and use
         # 2^x instead of exp in the loop because CSE and LICM
         # don't work as expected with `exp` in the loop
@@ -718,6 +723,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_BMGHK = True
+    SUPPORTS_OUTPUT_DTYPE = True
     NAME = "triton_splitKF"
 
     SPLIT_K: Optional[int] = None
@@ -818,6 +824,7 @@ class FwOp(AttentionFwOpBase):
     def apply(
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
+        output_dtype = inp.get_output_dtype()
         attn_bias = inp.attn_bias
         seq_len = None
         q, k, v = inp.get_qkv_in_bmghk()
@@ -905,24 +912,30 @@ class FwOp(AttentionFwOpBase):
         M_ceil = (M + cls.MAX_BLOCK_M - 1) // cls.MAX_BLOCK_M * cls.MAX_BLOCK_M
         IS_SPLITK = split_k > 1  # or cls.autotune?
         if IS_SPLITK:
+            o_splitk_dtype = (
+                torch.float64 if output_dtype == torch.float64 else torch.float32
+            )
             o_splitk = torch.empty(
                 [B, G * H, split_k, M_ceil, Kq],
-                dtype=torch.float32,
+                dtype=o_splitk_dtype,
                 device=q.device,
             )
         else:
             o_splitk = torch.empty(
                 [B, split_k, M, G * H, Kq],
-                dtype=q.dtype,
+                dtype=output_dtype,
                 device=q.device,
             ).permute(0, 3, 1, 2, 4)
         lse, lse_splitk = None, None
+        # LSE may need higher precision than output
+        output_f64_lse = output_dtype in (torch.float32, torch.float64)
         if IS_SPLITK and needs_gradient:
-            lse = torch.empty((B * G * H, M), device=q.device, dtype=torch.float32)
+            lse_dtype = torch.float64 if output_f64_lse else torch.float32
+            lse = torch.empty((B * G * H, M), device=q.device, dtype=lse_dtype)
         if IS_SPLITK or needs_gradient:
             lse_splitk = torch.empty(
                 [B, G * H, split_k, M],
-                dtype=torch.float64 if IS_SPLITK else torch.float32,
+                dtype=torch.float64 if IS_SPLITK or output_f64_lse else torch.float32,
                 device=q.device,
             )
 
@@ -1002,11 +1015,11 @@ class FwOp(AttentionFwOpBase):
             return out, Context(out=out, lse=lse)
 
         if mqa_swap_seqlen_head:
-            out = torch.empty((B, G, M, 1, Kq), device=q.device, dtype=q.dtype).permute(
-                0, 2, 1, 3, 4
-            )
+            out = torch.empty(
+                (B, G, M, 1, Kq), device=q.device, dtype=output_dtype
+            ).permute(0, 2, 1, 3, 4)
         else:
-            out = torch.empty((B, M, G, H, Kq), device=q.device, dtype=q.dtype)
+            out = torch.empty((B, M, G, H, Kq), device=q.device, dtype=output_dtype)
 
         # Merge attention and LSE outputs from different split-k chunks
         assert lse_splitk is not None

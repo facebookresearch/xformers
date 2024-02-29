@@ -52,6 +52,7 @@ class Inputs:
     attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None
     p: float = 0.0
     scale: Optional[float] = None
+    output_dtype: Optional[torch.dtype] = None
 
     @property
     def device(self) -> torch.device:
@@ -203,6 +204,11 @@ class Inputs:
                 "yourself before calling `memory_efficient_attention` if you need to"
             )
 
+    def get_output_dtype(self) -> torch.dtype:
+        if self.output_dtype is None:
+            return self.query.dtype
+        return self.output_dtype
+
 
 @dataclass
 class Context:
@@ -257,6 +263,7 @@ class AttentionOpBase(BaseOperator):
     SUPPORTS_DROPOUT: bool
     SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
+    SUPPORTS_OUTPUT_DTYPE: bool = False
     IS_DETERMINISTIC: bool = True
     SUPPORTS_BMGHK: bool = False
     NAME: str
@@ -312,6 +319,9 @@ class AttentionOpBase(BaseOperator):
             reasons.append(f"dtype={dtype} (supported: {cls.SUPPORTED_DTYPES})")
         if type(d.attn_bias) not in cls.SUPPORTED_ATTN_BIAS_TYPES:
             reasons.append(f"attn_bias type is {type(d.attn_bias)}")
+        if not cls.SUPPORTS_OUTPUT_DTYPE:
+            if d.output_dtype is not None and d.output_dtype is not dtype:
+                reasons.append("Custom output dtype not supported")
         if (d.p != 0.0) and not cls.SUPPORTS_DROPOUT:
             reasons.append("dropout > 0.0")
         if d.scale is not None and not cls.SUPPORTS_CUSTOM_SCALE:

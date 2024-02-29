@@ -2612,7 +2612,7 @@ def paged_attention_run_inner(
 @pytest.mark.parametrize(
     "dtype,op",
     [
-        (torch.bfloat16, fmha.triton_splitk.FwOp),
+        (torch.bfloat16, fmha.triton_splitk.FwOp_S1),
         # Cutlass's LSE is not consistent
         # (torch.float32, fmha.cutlass.FwOp),
         (torch.bfloat16, fmha.flash.FwOp),
@@ -2634,6 +2634,7 @@ def test_merge_attentions_decoding(
     D_H = 128
     G = 2 if bmghk else 1
     torch.manual_seed(1)
+    output_dtype = torch.float32 if op.SUPPORTS_OUTPUT_DTYPE else None
 
     num_chunks = 10
 
@@ -2686,6 +2687,7 @@ def test_merge_attentions_decoding(
             axv,
             attn_bias,
             op=op,
+            output_dtype=output_dtype,
         )
         if bmghk:
             assert attn_chunk.shape == (1, B_T, G, N_H_L, D_H)
@@ -2699,6 +2701,7 @@ def test_merge_attentions_decoding(
     attn_split = torch.stack([attn_chunk for attn_chunk, _ in chunks_output])
     lse_split = torch.stack([lse_chunk for _, lse_chunk in chunks_output])
     attn_out, lse_out = fmha.merge_attentions(attn_split, lse_split)
+    assert lse_out is not None
 
     # Compute attention on the full K/V
     attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
@@ -2717,12 +2720,17 @@ def test_merge_attentions_decoding(
         axv,
         attn_bias,
         op=op,
+        output_dtype=output_dtype,
     )
 
-    atol = op.ERROR_ATOL[dtype] * (10 if op is fmha.triton_splitk.FwOp else 1)
+    atol = op.ERROR_ATOL[dtype]
     rtol = op.ERROR_RTOL[dtype] * 2
-    assert_allclose(lse_out, lse_full, rtol=rtol * 2, atol=atol, msg="lse")
-    assert_allclose(attn_out, attn_full, rtol=rtol, atol=atol, msg="out")
+    assert_allclose(
+        lse_out.to(lse_full.dtype), lse_full, rtol=rtol * 2, atol=atol, msg="lse"
+    )
+    assert_allclose(
+        attn_out.to(attn_full.dtype), attn_full, rtol=rtol, atol=atol, msg="out"
+    )
 
 
 @sm80_or_better_only
