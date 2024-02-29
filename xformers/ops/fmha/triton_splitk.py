@@ -837,6 +837,7 @@ class FwOp(AttentionFwOpBase):
             attn_bias.k_seqinfo.to(inp.query.device)  # type: ignore
             attn_bias.q_seqinfo.to(inp.query.device)  # type: ignore
             seq_len = attn_bias.k_seqinfo.seqlen  # type: ignore
+            assert q.shape[0] == 1
             B = len(seq_len)
             G, Hq, Kq = q.shape[-3:]
             Kkv = v.shape[-1]
@@ -984,6 +985,8 @@ class FwOp(AttentionFwOpBase):
             if needs_gradient:
                 assert lse_splitk is not None
                 lse = lse_splitk[:, :, 0].view(B, G, -1, Mq)
+                if attn_bias is not None:
+                    lse = lse.permute(1, 2, 0, 3).reshape(1, G, H, B * Mq)
             else:
                 lse = None
 
@@ -1007,9 +1010,12 @@ class FwOp(AttentionFwOpBase):
 
         # Merge attention and LSE outputs from different split-k chunks
         assert lse_splitk is not None
-        merge_attentions(out, lse, o_splitk, lse_splitk)
+        merge_attentions(out, lse, o_splitk[:, :, :, :M], lse_splitk)
         if lse is not None:
             lse = lse.reshape([B, G, H, M])
+            if attn_bias is not None:
+                lse = lse.permute(1, 2, 0, 3).reshape(1, G, H, B * M)
+
         if mqa_swap_seqlen_head:
             out = out.reshape(B, -1, Mq, G, Kq).permute(0, 2, 3, 1, 4)
             # This is a copy iff Mq, G and Hq are all > 1.
@@ -1067,26 +1073,33 @@ def merge_attentions(
     B, M, G, H, Kq = attn_out.shape
     if lse_out is not None:
         B_H_G, M1 = lse_out.shape
-    B1, H_G, split_k, M_ceil, Kq1 = attn_split.shape
-    B2, H_G1, split_k1, M2 = lse_split.shape
+    B1, H_G, split_k, M2, Kq1 = attn_split.shape
+    B2, H_G1, split_k1, M3 = lse_split.shape
 
     assert (
-        B == B1 == B2 and G * H == H_G == H_G1 and M <= M_ceil and M == M2 and Kq == Kq1
+        B == B1 == B2 and G * H == H_G == H_G1 and M == M2 == M3 and Kq == Kq1
     ), f"Incompatible shapes: {attn_out.shape=}, {attn_split.shape=}, {lse_split.shape=}"
+    assert (
+        split_k == split_k1
+    ), f"Incompatible shapes: {attn_split.shape=}, {lse_split.shape=}"
     if lse_out is not None:
         assert (
             B * G * H == B_H_G and M == M1
         ), f"Incompatible shapes: {attn_out.shape=}, {lse_out.shape=}"
 
+    # TODO: avoid this copy in more cases
+    attn_split_ = attn_split.flatten(end_dim=1)
+    lse_split_ = lse_split.flatten(end_dim=1)
+
     grid = (B * G * H, M, 1)
     _splitK_reduce[grid](
-        attn_split,
-        lse_split,
+        attn_split_,
+        lse_split_,
         attn_out,
         lse_out,
         split_k=split_k,
-        **_strides(attn_split.flatten(end_dim=1), "osk_zhg", "osk_s", "osk_m", "osk_k"),
-        **_strides(lse_split.flatten(end_dim=1), "lsek_zhg", "lsek_s", "lsek_m"),
+        **_strides(attn_split_, "osk_zhg", "osk_s", "osk_m", "osk_k"),
+        **_strides(lse_split_, "lsek_zhg", "lsek_s", "lsek_m"),
         **_strides(attn_out, "oz", "om", "og", "oh", "ok"),
         **_strides(lse_out, "lse_zhg", "lse_m"),
         BLOCK_SIZE=attn_out.shape[-1],

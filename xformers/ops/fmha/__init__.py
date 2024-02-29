@@ -428,12 +428,15 @@ def merge_attentions(
         Out_full = (Out1 * exp(LSE1) + Out2 * exp(LSE2) + ...) / (exp(LSE1) + exp(LSE2) + ...)
         LSE_full = log(exp(LSE1) + exp(LSE2) + ...)
     Attention inputs are in BH(G)MK format, stacked along dim 0. Attention output also is in BH(G)MK.
+
     Args:
-        attn_split: [split_k, B, H, G, M, Kq] or [split_k, B, H, M, Kq]
-        lse_split: [split_k, B, H, G, M] or [split_k, B, H, M]
-    Res:
-        attn_out: [B, H, G, M, K] or [B, H, M, K]
-        lse_out: [B, H, G, M] or [B, H, M]
+        attn_split: [split_k, B, M, G, H, Kq] or [split_k, B, M, H, Kq]
+        lse_split: [split_k, B, G, H, M] or [split_k, B, H, M]
+
+    Returns:
+        attn_out: [B, M, G, H, Kq] or [B, M, H, Kq]
+        lse_out: [B, G, H, M] or [B, H, M] if write_lse
+                 or None otherwise
     """
 
     assert (
@@ -443,21 +446,20 @@ def merge_attentions(
     is_bmhk = attn_split.ndim == 5
     if is_bmhk:
         attn_split = attn_split.unsqueeze(3)
-        lse_split = lse_split.unsqueeze(3)
+        lse_split = lse_split.unsqueeze(2)
 
-    split_k, B, H, G, M_ceil, Kq = attn_split.shape
-    split_k1, B1, H1, G1, M = lse_split.shape
-    assert (
-        B == B1 and G == G1 and H == H1 and split_k == split_k1 and M_ceil >= M
-    ), f"{attn_split.shape=} {lse_split.shape=}"
-
-    attn_split = attn_split.permute(1, 2, 3, 0, 4, 5).view(
-        B, H * G, split_k, M_ceil, Kq
+    split_k, B, M, G, H, Kq = attn_split.shape
+    split_k1, B1, G1, H1, M1 = lse_split.shape
+    assert B == B1 and G == G1 and H == H1 and split_k == split_k1 and M == M, (
+        f"{attn_split.shape=} {lse_split.shape=} "
+        f"{B}/{B1}, {G}/{G1}, {H}/{H1}, {split_k}/{split_k1}, {M}/{M}"
     )
-    lse_split = lse_split.permute(1, 2, 3, 0, 4).view(B, H * G, split_k, M)
+
+    attn_split = attn_split.permute(1, 3, 4, 0, 2, 5).reshape(B, G * H, split_k, M, Kq)
+    lse_split = lse_split.permute(1, 2, 3, 0, 4).reshape(B, G * H, split_k, M)
 
     attn_out = torch.empty(
-        B, H, G, M, Kq, device=attn_split.device, dtype=attn_split.dtype
+        B, M, G, H, Kq, device=attn_split.device, dtype=attn_split.dtype
     )
     if write_lse:
         lse_out = torch.empty(
@@ -467,15 +469,15 @@ def merge_attentions(
         lse_out = None
 
     triton_splitk.merge_attentions(
-        attn_out.permute(0, 3, 2, 1, 4), lse_out, attn_split, lse_split
+        attn_out.permute(0, 1, 3, 2, 4), lse_out, attn_split, lse_split
     )
     if lse_out is not None:
-        lse_out = lse_out.view(B, H, G, M)
+        lse_out = lse_out.view(B, G, H, M)
 
     if is_bmhk:
         attn_out = attn_out[:, :, 0]
         if lse_out is not None:
-            lse_out = lse_out[:, :, 0]
+            lse_out = lse_out[:, 0]
 
     return attn_out, lse_out
 
