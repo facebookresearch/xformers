@@ -2688,6 +2688,7 @@ def paged_attention_run_inner(
     torch.testing.assert_close(y_swapped, y_packed)
 
 
+@disable_on_rocm
 @sm80_or_better_only
 @pytest.mark.parametrize(
     "op",
@@ -2748,7 +2749,7 @@ def test_merge_attentions_nobias(
         assert lse is None
 
 
-@sm80_or_better_only
+@disable_on_rocm
 @sm80_or_better_only
 @pytest.mark.parametrize(
     "dtype,op",
