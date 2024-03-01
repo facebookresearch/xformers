@@ -53,6 +53,7 @@ class Inputs:
     p: float = 0.0
     scale: Optional[float] = None
     output_dtype: Optional[torch.dtype] = None
+    is_partial: bool = False
 
     @property
     def device(self) -> torch.device:
@@ -206,6 +207,8 @@ class Inputs:
 
     def get_output_dtype(self) -> torch.dtype:
         if self.output_dtype is None:
+            if self.is_partial and self.query.dtype is not torch.float64:
+                return torch.float32
             return self.query.dtype
         return self.output_dtype
 
@@ -264,6 +267,7 @@ class AttentionOpBase(BaseOperator):
     SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
     SUPPORTS_OUTPUT_DTYPE: bool = False
+    SUPPORTS_PARTIAL: bool = False
     IS_DETERMINISTIC: bool = True
     SUPPORTS_BMGHK: bool = False
     NAME: str
@@ -322,6 +326,8 @@ class AttentionOpBase(BaseOperator):
         if not cls.SUPPORTS_OUTPUT_DTYPE:
             if d.output_dtype is not None and d.output_dtype is not dtype:
                 reasons.append("Custom output dtype not supported")
+        if d.is_partial and not cls.SUPPORTS_PARTIAL:
+            reasons.append("Partial attention not supported")
         if (d.p != 0.0) and not cls.SUPPORTS_DROPOUT:
             reasons.append("dropout > 0.0")
         if d.scale is not None and not cls.SUPPORTS_CUSTOM_SCALE:

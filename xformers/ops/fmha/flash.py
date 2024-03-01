@@ -403,9 +403,12 @@ def _check_strides_for_bmghk(x: torch.Tensor, name: str, reasons: List[str]) -> 
 
 
 def _post_process_lse(
-    lse: torch.Tensor, inp: Inputs, original_query_shape
+    lse: torch.Tensor, inp: Inputs, original_query_shape: Tuple[int, ...]
 ) -> torch.Tensor:
     if not isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
+        if inp.is_partial and inp.attn_bias is None and len(original_query_shape) == 5:
+            # [B, GH, M] => [B, G, H, M]
+            return lse.unflatten(1, original_query_shape[2:4])
         return lse
     q_seqinfo = inp.attn_bias.q_seqinfo
     B = len(q_seqinfo.seqstart_py) - 1
@@ -450,6 +453,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
     SUPPORTS_BMGHK = True
+    SUPPORTS_PARTIAL = True
     NAME = f"flshattF@{FLASH_VERSION}"
     VERSION = FLASH_VERSION
 
@@ -461,6 +465,13 @@ class FwOp(AttentionFwOpBase):
         _check_strides_for_bmghk(d.query, "query", reasons)
         _check_strides_for_bmghk(d.key, "key", reasons)
         _check_strides_for_bmghk(d.value, "value", reasons)
+        if d.is_partial and isinstance(
+            d.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask
+        ):
+            q_seqinfo = d.attn_bias.q_seqinfo
+            if q_seqinfo.min_seqlen != q_seqinfo.max_seqlen:
+                # Flash provides padded LSE which we don't handle.
+                reasons.append("partial attention with heterogeneous queries")
         return reasons
 
     @classmethod

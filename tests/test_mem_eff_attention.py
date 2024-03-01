@@ -2608,6 +2608,66 @@ def paged_attention_run_inner(
 
 
 @sm80_or_better_only
+@pytest.mark.parametrize(
+    "op",
+    [
+        fmha.triton_splitk.FwOp,
+        fmha.flash.FwOp,
+        None,
+    ],
+    ids=lambda op: "None" if op is None else op.NAME,
+)
+@pytest.mark.parametrize("G,H", [(1, 11), (7, 1), (1, 1), (7, 11), (None, 11)])
+@pytest.mark.parametrize(
+    "write_lse", (False, True), ids=lambda x: "write_lse" if x else ""
+)
+def test_merge_attentions_nobias(
+    write_lse: bool, op: Type[AttentionFwOpBase], G: Optional[int], H: int
+):
+    """
+    Merging the same attention twice shouldn't change anything.
+    This also tests the shape of the lse output of each permitted op.
+    """
+    B, M, Mq, K = 13, 5, 3, 128
+    if op is None or torch.bfloat16 in op.SUPPORTED_DTYPES:
+        dtype = torch.bfloat16
+    else:
+        dtype = next(iter(op.SUPPORTED_DTYPES))
+    if G is None:
+        q = 3 * torch.rand(B, Mq, H, K, dtype=dtype, device="cuda")
+        k = (3 * torch.rand(B, M, 1, K, dtype=dtype, device="cuda")).expand(B, M, H, K)
+        v = (3 * torch.rand(B, M, 1, K, dtype=dtype, device="cuda")).expand(B, M, H, K)
+    else:
+        q = 3 * torch.rand(B, Mq, G, H, K, dtype=dtype, device="cuda")
+        k = (3 * torch.rand(B, M, G, 1, K, dtype=dtype, device="cuda")).expand(
+            B, M, G, H, K
+        )
+        v = (3 * torch.rand(B, M, G, 1, K, dtype=dtype, device="cuda")).expand(
+            B, M, G, H, K
+        )
+    out1, lse1 = fmha.memory_efficient_attention_partial(q, k, v, op=op)
+    assert out1.shape == q.shape
+    M_ceil = lse1.shape[-1]
+    assert M_ceil >= Mq
+    assert lse1.shape == (B, H, M_ceil) if G is None else (B, G, H, M_ceil)
+    lse1 = lse1[..., :Mq]
+
+    out, lse = fmha.merge_attentions(
+        torch.stack([out1, out1]), torch.stack([lse1, lse1]), write_lse=write_lse
+    )
+    assert out.shape == out1.shape
+    assert_allclose(out1, out, rtol=1e-3, atol=1e-3, msg="out")
+    if write_lse:
+        assert lse is not None
+        assert lse.shape[:-1] == lse1.shape[:-1]
+        assert_allclose(
+            lse1[..., :Mq] + math.log(2), lse[..., :Mq], rtol=1e-3, atol=1e-3, msg="lse"
+        )
+    else:
+        assert lse is None
+
+
+@sm80_or_better_only
 @sm80_or_better_only
 @pytest.mark.parametrize(
     "dtype,op",
@@ -2681,7 +2741,7 @@ def test_merge_attentions_decoding(
             )
         )
 
-        attn_chunk, lse_chunk = fmha.memory_efficient_attention_forward_requires_grad(
+        attn_chunk, lse_chunk = fmha.memory_efficient_attention_partial(
             q,
             axk,
             axv,
@@ -2700,7 +2760,7 @@ def test_merge_attentions_decoding(
     # Merge attention from all chunks
     attn_split = torch.stack([attn_chunk for attn_chunk, _ in chunks_output])
     lse_split = torch.stack([lse_chunk for _, lse_chunk in chunks_output])
-    attn_out, lse_out = fmha.merge_attentions(attn_split, lse_split)
+    attn_out, lse_out = fmha.merge_attentions(attn_split, lse_split, output_dtype=dtype)
     assert lse_out is not None
 
     # Compute attention on the full K/V

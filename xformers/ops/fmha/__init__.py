@@ -8,7 +8,12 @@ from typing import Any, Optional, Sequence, Tuple, Type, Union
 import torch
 
 from . import attn_bias, cutlass, decoder, flash, small_k, triton, triton_splitk
-from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
+from .attn_bias import (
+    AttentionBias,
+    BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    BlockDiagonalMask,
+    LowerTriangularMask,
+)
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -439,8 +444,52 @@ def _memory_efficient_attention_backward(
     return grads
 
 
+def memory_efficient_attention_partial(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
+    p: float = 0.0,
+    scale: Optional[float] = None,
+    *,
+    op: Optional[Type[AttentionFwOpBase]] = None,
+    output_dtype: Optional[torch.dtype] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Returns a tuple (output, lse), where `output` is the attention and  `lse`
+    is a least squared error. The cat'ed outputs of calls to this with the same query
+    and separate keys and values can be merged with merge_attentions to obtain
+    the attention of the queries against the disjoint union of the keys and values.
+    """
+    if p != 0.0:
+        raise NotImplementedError("dropout is not supported.")
+    if not isinstance(
+        attn_bias, (type(None), BlockDiagonalCausalWithOffsetPaddedKeysMask)
+    ):
+        raise ValueError(
+            "only BlockDiagonalCausalWithOffsetPaddedKeysMask and no bias supported"
+        )
+    out, ctx = _memory_efficient_attention_forward_requires_grad(
+        Inputs(
+            query=query,
+            key=key,
+            value=value,
+            p=p,
+            attn_bias=attn_bias,
+            scale=scale,
+            output_dtype=output_dtype,
+            is_partial=True,
+        ),
+        op=op,
+    )
+    return out, ctx.lse
+
+
 def merge_attentions(
-    attn_split: torch.Tensor, lse_split: torch.Tensor, write_lse: bool = True
+    attn_split: torch.Tensor,
+    lse_split: torch.Tensor,
+    write_lse: bool = True,
+    output_dtype: Optional[torch.dtype] = None,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """
     Combine attention output computed on different parts of K/V for the same
@@ -453,6 +502,7 @@ def merge_attentions(
     Args:
         attn_split: [split_k, B, M, G, H, Kq] or [split_k, B, M, H, Kq]
         lse_split: [split_k, B, G, H, M] or [split_k, B, H, M]
+        out_dype: dtype of attn_out
 
     Returns:
         attn_out: [B, M, G, H, Kq] or [B, M, H, Kq]
@@ -480,7 +530,13 @@ def merge_attentions(
     lse_split = lse_split.permute(1, 2, 3, 0, 4).reshape(B, G * H, split_k, M)
 
     attn_out = torch.empty(
-        B, M, G, H, Kq, device=attn_split.device, dtype=attn_split.dtype
+        B,
+        M,
+        G,
+        H,
+        Kq,
+        device=attn_split.device,
+        dtype=attn_split.dtype if output_dtype is None else output_dtype,
     )
     if write_lse:
         lse_out = torch.empty(

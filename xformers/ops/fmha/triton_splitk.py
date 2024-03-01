@@ -668,6 +668,9 @@ if TYPE_CHECKING or _has_triton21():
             + stride_om * off_m
             + tl.arange(0, BLOCK_SIZE)
         )
+        if acc.dtype is tl.float64 and Out.dtype.element_ty is not tl.float64:
+            # must avoid direct cast f64->f16
+            acc = acc.to(tl.float32)
         tl.store(Out_ptr, acc)
 
         if WRITE_LSE:
@@ -724,6 +727,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_BMGHK = True
     SUPPORTS_OUTPUT_DTYPE = True
+    SUPPORTS_PARTIAL = True
     NAME = "triton_splitKF"
 
     SPLIT_K: Optional[int] = None
