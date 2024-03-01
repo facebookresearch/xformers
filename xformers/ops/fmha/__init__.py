@@ -19,7 +19,12 @@ from . import (
     triton,
     triton_splitk,
 )
-from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
+from .attn_bias import (
+    AttentionBias,
+    BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    BlockDiagonalMask,
+    LowerTriangularMask,
+)
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -136,6 +141,7 @@ def memory_efficient_attention(
     scale: Optional[float] = None,
     *,
     op: Optional[AttentionOp] = None,
+    output_dtype: Optional[torch.dtype] = None,
 ) -> torch.Tensor:
     """Implements the memory-efficient attention mechanism following
     `"Self-Attention Does Not Need O(n^2) Memory" <http://arxiv.org/abs/2112.05682>`_.
@@ -240,7 +246,13 @@ def memory_efficient_attention(
     """
     return _memory_efficient_attention(
         Inputs(
-            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+            query=query,
+            key=key,
+            value=value,
+            p=p,
+            attn_bias=attn_bias,
+            scale=scale,
+            output_dtype=output_dtype,
         ),
         op=op,
     )
@@ -255,13 +267,20 @@ def memory_efficient_attention_forward(
     scale: Optional[float] = None,
     *,
     op: Optional[Type[AttentionFwOpBase]] = None,
+    output_dtype: Optional[torch.dtype] = None,
 ) -> torch.Tensor:
     """
     Calculates the forward pass of :attr:`xformers.ops.memory_efficient_attention`.
     """
     return _memory_efficient_attention_forward(
         Inputs(
-            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+            query=query,
+            key=key,
+            value=value,
+            p=p,
+            attn_bias=attn_bias,
+            scale=scale,
+            output_dtype=output_dtype,
         ),
         op=op,
     )
@@ -276,6 +295,7 @@ def memory_efficient_attention_forward_requires_grad(
     scale: Optional[float] = None,
     *,
     op: Optional[Type[AttentionFwOpBase]] = None,
+    output_dtype: Optional[torch.dtype] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Returns a tuple (output, lse), where `lse` can be used to compute the backward pass later.
@@ -289,7 +309,13 @@ def memory_efficient_attention_forward_requires_grad(
         )
     out, ctx = _memory_efficient_attention_forward_requires_grad(
         Inputs(
-            query=query, key=key, value=value, p=p, attn_bias=attn_bias, scale=scale
+            query=query,
+            key=key,
+            value=value,
+            p=p,
+            attn_bias=attn_bias,
+            scale=scale,
+            output_dtype=output_dtype,
         ),
         op=op,
     )
@@ -432,8 +458,52 @@ def _memory_efficient_attention_backward(
     return grads
 
 
+def memory_efficient_attention_partial(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
+    p: float = 0.0,
+    scale: Optional[float] = None,
+    *,
+    op: Optional[Type[AttentionFwOpBase]] = None,
+    output_dtype: Optional[torch.dtype] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Returns a tuple (output, lse), where `output` is the attention and  `lse`
+    is a least squared error. The cat'ed outputs of calls to this with the same query
+    and separate keys and values can be merged with merge_attentions to obtain
+    the attention of the queries against the disjoint union of the keys and values.
+    """
+    if p != 0.0:
+        raise NotImplementedError("dropout is not supported.")
+    if not isinstance(
+        attn_bias, (type(None), BlockDiagonalCausalWithOffsetPaddedKeysMask)
+    ):
+        raise ValueError(
+            "only BlockDiagonalCausalWithOffsetPaddedKeysMask and no bias supported"
+        )
+    out, ctx = _memory_efficient_attention_forward_requires_grad(
+        Inputs(
+            query=query,
+            key=key,
+            value=value,
+            p=p,
+            attn_bias=attn_bias,
+            scale=scale,
+            output_dtype=output_dtype,
+            is_partial=True,
+        ),
+        op=op,
+    )
+    return out, ctx.lse
+
+
 def merge_attentions(
-    attn_split: torch.Tensor, lse_split: torch.Tensor, write_lse: bool = True
+    attn_split: torch.Tensor,
+    lse_split: torch.Tensor,
+    write_lse: bool = True,
+    output_dtype: Optional[torch.dtype] = None,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """
     Combine attention output computed on different parts of K/V for the same
@@ -442,12 +512,16 @@ def merge_attentions(
         Out_full = (Out1 * exp(LSE1) + Out2 * exp(LSE2) + ...) / (exp(LSE1) + exp(LSE2) + ...)
         LSE_full = log(exp(LSE1) + exp(LSE2) + ...)
     Attention inputs are in BH(G)MK format, stacked along dim 0. Attention output also is in BH(G)MK.
+
     Args:
-        attn_split: [split_k, B, H, G, M, Kq] or [split_k, B, H, M, Kq]
-        lse_split: [split_k, B, H, G, M] or [split_k, B, H, M]
-    Res:
-        attn_out: [B, H, G, M, K] or [B, H, M, K]
-        lse_out: [B, H, G, M] or [B, H, M]
+        attn_split: [split_k, B, M, G, H, Kq] or [split_k, B, M, H, Kq]
+        lse_split: [split_k, B, G, H, M] or [split_k, B, H, M]
+        out_dype: dtype of attn_out
+
+    Returns:
+        attn_out: [B, M, G, H, Kq] or [B, M, H, Kq]
+        lse_out: [B, G, H, M] or [B, H, M] if write_lse
+                 or None otherwise
     """
 
     assert (
@@ -457,39 +531,44 @@ def merge_attentions(
     is_bmhk = attn_split.ndim == 5
     if is_bmhk:
         attn_split = attn_split.unsqueeze(3)
-        lse_split = lse_split.unsqueeze(3)
+        lse_split = lse_split.unsqueeze(2)
 
-    split_k, B, H, G, M_ceil, Kq = attn_split.shape
-    split_k1, B1, H1, G1, M = lse_split.shape
-    assert (
-        B == B1 and G == G1 and H == H1 and split_k == split_k1 and M_ceil >= M
-    ), f"{attn_split.shape=} {lse_split.shape=}"
-
-    attn_split = attn_split.permute(1, 2, 3, 0, 4, 5).view(
-        B, H * G, split_k, M_ceil, Kq
+    split_k, B, M, G, H, Kq = attn_split.shape
+    split_k1, B1, G1, H1, M1 = lse_split.shape
+    assert B == B1 and G == G1 and H == H1 and split_k == split_k1 and M == M, (
+        f"{attn_split.shape=} {lse_split.shape=} "
+        f"{B}/{B1}, {G}/{G1}, {H}/{H1}, {split_k}/{split_k1}, {M}/{M}"
     )
-    lse_split = lse_split.permute(1, 2, 3, 0, 4).view(B, H * G, split_k, M)
+
+    attn_split = attn_split.permute(1, 3, 4, 0, 2, 5).reshape(B, G * H, split_k, M, Kq)
+    lse_split = lse_split.permute(1, 2, 3, 0, 4).reshape(B, G * H, split_k, M)
 
     attn_out = torch.empty(
-        B, H, G, M, Kq, device=attn_split.device, dtype=attn_split.dtype
+        B,
+        M,
+        G,
+        H,
+        Kq,
+        device=attn_split.device,
+        dtype=attn_split.dtype if output_dtype is None else output_dtype,
     )
     if write_lse:
         lse_out = torch.empty(
-            B * H * G, M, device=attn_split.device, dtype=torch.float32
+            B * H * G, M, device=attn_split.device, dtype=lse_split.dtype
         )
     else:
         lse_out = None
 
     triton_splitk.merge_attentions(
-        attn_out.permute(0, 3, 2, 1, 4), lse_out, attn_split, lse_split
+        attn_out.permute(0, 1, 3, 2, 4), lse_out, attn_split, lse_split
     )
     if lse_out is not None:
-        lse_out = lse_out.view(B, H, G, M)
+        lse_out = lse_out.view(B, G, H, M)
 
     if is_bmhk:
         attn_out = attn_out[:, :, 0]
         if lse_out is not None:
-            lse_out = lse_out[:, :, 0]
+            lse_out = lse_out[:, 0]
 
     return attn_out, lse_out
 
