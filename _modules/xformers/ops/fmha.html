@@ -229,7 +229,12 @@
 <span class="kn">import</span> <span class="nn">torch</span>
 
 <span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">attn_bias</span><span class="p">,</span> <span class="n">cutlass</span><span class="p">,</span> <span class="n">decoder</span><span class="p">,</span> <span class="n">flash</span><span class="p">,</span> <span class="n">small_k</span><span class="p">,</span> <span class="n">triton</span><span class="p">,</span> <span class="n">triton_splitk</span>
-<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="n">AttentionBias</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">,</span> <span class="n">LowerTriangularMask</span>
+<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AttentionBias</span><span class="p">,</span>
+    <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalMask</span><span class="p">,</span>
+    <span class="n">LowerTriangularMask</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBwOpBase</span><span class="p">,</span>
     <span class="n">AttentionFwOpBase</span><span class="p">,</span>
@@ -660,8 +665,52 @@
     <span class="k">return</span> <span class="n">grads</span>
 
 
+<span class="k">def</span> <span class="nf">memory_efficient_attention_partial</span><span class="p">(</span>
+    <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">p</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">scale</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">output_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a tuple (output, lse), where `output` is the attention and  `lse`</span>
+<span class="sd">    is a least squared error. The cat&#39;ed outputs of calls to this with the same query</span>
+<span class="sd">    and separate keys and values can be merged with merge_attentions to obtain</span>
+<span class="sd">    the attention of the queries against the disjoint union of the keys and values.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;dropout is not supported.&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
+        <span class="n">attn_bias</span><span class="p">,</span> <span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">)</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;only BlockDiagonalCausalWithOffsetPaddedKeysMask and no bias supported&quot;</span>
+        <span class="p">)</span>
+    <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span> <span class="o">=</span> <span class="n">_memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
+        <span class="n">Inputs</span><span class="p">(</span>
+            <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
+            <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">p</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
+            <span class="n">attn_bias</span><span class="o">=</span><span class="n">attn_bias</span><span class="p">,</span>
+            <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
+            <span class="n">output_dtype</span><span class="o">=</span><span class="n">output_dtype</span><span class="p">,</span>
+            <span class="n">is_partial</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span>
+
+
 <span class="k">def</span> <span class="nf">merge_attentions</span><span class="p">(</span>
-    <span class="n">attn_split</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">lse_split</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">write_lse</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">attn_split</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">lse_split</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">write_lse</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">output_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Combine attention output computed on different parts of K/V for the same</span>
@@ -674,6 +723,7 @@
 <span class="sd">    Args:</span>
 <span class="sd">        attn_split: [split_k, B, M, G, H, Kq] or [split_k, B, M, H, Kq]</span>
 <span class="sd">        lse_split: [split_k, B, G, H, M] or [split_k, B, H, M]</span>
+<span class="sd">        out_dype: dtype of attn_out</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">        attn_out: [B, M, G, H, Kq] or [B, M, H, Kq]</span>
@@ -701,7 +751,13 @@
     <span class="n">lse_split</span> <span class="o">=</span> <span class="n">lse_split</span><span class="o">.</span><span class="n">permute</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">G</span> <span class="o">*</span> <span class="n">H</span><span class="p">,</span> <span class="n">split_k</span><span class="p">,</span> <span class="n">M</span><span class="p">)</span>
 
     <span class="n">attn_out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
-        <span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="n">G</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">Kq</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">attn_split</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">attn_split</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="n">B</span><span class="p">,</span>
+        <span class="n">M</span><span class="p">,</span>
+        <span class="n">G</span><span class="p">,</span>
+        <span class="n">H</span><span class="p">,</span>
+        <span class="n">Kq</span><span class="p">,</span>
+        <span class="n">device</span><span class="o">=</span><span class="n">attn_split</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+        <span class="n">dtype</span><span class="o">=</span><span class="n">attn_split</span><span class="o">.</span><span class="n">dtype</span> <span class="k">if</span> <span class="n">output_dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">output_dtype</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">write_lse</span><span class="p">:</span>
         <span class="n">lse_out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
