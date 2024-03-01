@@ -164,7 +164,9 @@ if TYPE_CHECKING or _has_triton21():
             # Align boundaries of split-k chunk to page boundaries
             # In the last chunk, shift hi to the right, in the other chunks, shift it to the left
             is_last_chunk = splitk_idx == tl.num_programs(2) - 1
-            shift = PAGE_SIZE - 1 if is_last_chunk else 0
+            shift = 0
+            if is_last_chunk:
+                shift = PAGE_SIZE - 1
             lo = (chunk_lo // PAGE_SIZE) * PAGE_SIZE
             hi = ((chunk_hi + shift) // PAGE_SIZE) * PAGE_SIZE
             hi = tl.minimum(hi, kv_len)
