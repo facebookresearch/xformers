@@ -1,0 +1,901 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!-->
+<html class="no-js" lang="en">
+<!--<![endif]-->
+
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>xformers.ops.fmha.ck | xFormers 0.0.25 documentation</title>
+  
+  <script src="../../../../_static/js/ga.js"></script>
+  <script src="../../../../_static/js/redirect.js"></script>
+  
+  <link rel="shortcut icon" href="../../../../_static/images/favicon.png" />
+  
+  
+  <link rel="canonical" href="https://facebookresearch.github.io/xformers_modules/xformers/ops/fmha/ck.html" />
+  
+  <meta property="og:title" content="xformers.ops.fmha.ck | xFormers 0.0.25 documentation">
+  <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
+  <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
+  <!--<meta property="twitter:image" content="https://mmf.sh/img/logo.png">-->
+  <meta name="twitter:image:alt" content="Image for xFormers">
+  <meta name="twitter:card" content="summary_large_image">
+  
+
+  
+  
+  
+
+  
+
+  <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="../../../../_static/css/customize.css" type="text/css" />
+  <link rel="index" title="Index" href="../../../../genindex.html" />
+  <link rel="search" title="Search" href="../../../../search.html" /> 
+
+  
+  <script src="../../../../_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="../../../../_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../../_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../../_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../../_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../../_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../../../../_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://github.com/facebookresearch/xformers"><img
+          src="../../../../_static/logo.png" style="padding-right: 90px;" width="280px" height="53px"></a>
+
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers"> xFormers Github</a>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+
+  </div>
+</div>
+
+
+<body class="pytorch-body">
+
+   
+
+  
+
+  <div class="table-of-contents-link-wrapper">
+    <span>Table of Contents</span>
+    <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+  </div>
+
+  <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+    <div class="pytorch-side-scroll">
+      <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+        <div class="pytorch-left-menu-search">
+          
+
+          
+          
+          
+          
+
+          
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        
+        
+        
+        
+        
+        <p class="caption" role="heading"><span class="caption-text">Index</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../what_is_xformers.html">What is xFormers?</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../components/index.html">API Reference</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../tutorials/index.html">Tutorials</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../custom_parts/index.html">Custom parts reference</a></li>
+</ul>
+
+        
+        
+      </div>
+    </div>
+  </nav>
+
+  <div class="pytorch-container">
+    <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+      <div class="pytorch-breadcrumbs-wrapper">
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="../../../../index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+          <li><a href="../../../index.html">Module code</a> &gt;</li>
+        
+          <li><a href="../fmha.html">xformers.ops.fmha</a> &gt;</li>
+        
+      <li>xformers.ops.fmha.ck</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+      </div>
+
+      <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+        Shortcuts
+      </div>
+    </div>
+
+    <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+      <div class="pytorch-content-left">
+
+        
+        
+          <div class="rst-content">
+            
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+                
+  <h1>Source code for xformers.ops.fmha.ck</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># This source code is licensed under the BSD license found in the</span>
+<span class="c1"># LICENSE file in the root directory of this source tree.</span>
+
+
+<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">replace</span>
+<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="kn">import</span> <span class="nn">torch</span>
+
+<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_xformers_operator</span><span class="p">,</span> <span class="n">register_operator</span>
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">attn_bias</span>
+<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AttentionBias</span><span class="p">,</span>
+    <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalMask</span><span class="p">,</span>
+    <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
+    <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
+    <span class="n">LowerTriangularMask</span><span class="p">,</span>
+    <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AttentionBwOpBase</span><span class="p">,</span>
+    <span class="n">AttentionFwOpBase</span><span class="p">,</span>
+    <span class="n">Context</span><span class="p">,</span>
+    <span class="n">Gradients</span><span class="p">,</span>
+    <span class="n">Inputs</span><span class="p">,</span>
+    <span class="n">_attn_bias_apply</span><span class="p">,</span>
+    <span class="n">check_lastdim_alignment_stride1</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_minimum_gemm_alignment</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+    <span class="k">return</span> <span class="mi">1</span>
+
+
+<span class="k">def</span> <span class="nf">_get_seqlen_info</span><span class="p">(</span>
+    <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="nb">int</span><span class="p">]:</span>
+    <span class="n">attn_bias</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+        <span class="n">attn_bias</span><span class="p">,</span> <span class="p">(</span><span class="n">BlockDiagonalMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">)</span>
+    <span class="p">):</span>
+        <span class="n">seqstart_k</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart</span>
+        <span class="n">seqstart_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart</span>
+        <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">seqstart_k</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">seqstart_q</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">seqstart_k</span><span class="p">,</span>
+        <span class="n">seqstart_q</span><span class="p">,</span>
+        <span class="n">max_seqlen_q</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_get_tensor_bias</span><span class="p">(</span>
+    <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">attn_bias</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">_bias</span>
+    <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="k">def</span> <span class="nf">_check_bias_alignment</span><span class="p">(</span>
+    <span class="n">reasons</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">attn_bias_tensor</span> <span class="o">=</span> <span class="n">_get_tensor_bias</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">attn_bias_tensor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">alignment</span> <span class="o">=</span> <span class="mi">128</span> <span class="o">//</span> <span class="n">torch</span><span class="o">.</span><span class="n">finfo</span><span class="p">(</span><span class="n">attn_bias_tensor</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span><span class="o">.</span><span class="n">bits</span>
+        <span class="n">show_padding_hint</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">attn_bias_tensor</span><span class="o">.</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">attn_bias_tensor</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="o">%</span> <span class="n">alignment</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;attn_bias.stride(-2) % </span><span class="si">{</span><span class="n">alignment</span><span class="si">}</span><span class="s2"> != 0 (attn_bias.stride() = </span><span class="si">{</span><span class="n">attn_bias_tensor</span><span class="o">.</span><span class="n">stride</span><span class="p">()</span><span class="si">}</span><span class="s2">)&quot;</span>
+                <span class="p">)</span>
+                <span class="n">show_padding_hint</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">show_padding_hint</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+<span class="w">                </span><span class="sd">&quot;&quot;&quot;\</span>
+<span class="sd">HINT: To use an `attn_bias` with a sequence length that is not a multiple of 8, \</span>
+<span class="sd">you need to ensure memory is aligned by slicing a bigger tensor. \</span>
+<span class="sd">Example: use `attn_bias = torch.zeros([1, 1, 5, 8])[:,:,:,:5]` instead of `torch.zeros([1, 1, 5, 5])`&quot;&quot;&quot;</span>
+            <span class="p">)</span>
+        <span class="c1"># We can have stride=0 sometimes if dimension=1</span>
+        <span class="k">if</span> <span class="n">attn_bias_tensor</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;attn_bias.stride(-1) &gt; 1 (attn_bias.stride() = </span><span class="si">{</span><span class="n">attn_bias_tensor</span><span class="o">.</span><span class="n">stride</span><span class="p">()</span><span class="si">}</span><span class="s2">) - &quot;</span>
+                <span class="s2">&quot;you should call `.contiguous()` on the bias&quot;</span>
+            <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_check_large_shapes</span><span class="p">(</span><span class="n">reasons</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;CK kernel throws &quot;Memory access fault by GPU node-2&quot; when B * T &gt;= 2**20, might be some index overflow.</span>
+<span class="sd">    To reproduce, remove this function and run benchmark_mem_eff_attention with ParlAI model shape (256, 4096, 16, 64).</span>
+<span class="sd">    This needs further debugging, for now let&#39;s not support such shapes.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">b_t_limit</span> <span class="o">=</span> <span class="mi">1024</span><span class="o">**</span><span class="mi">2</span>
+    <span class="n">q_too_large</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">b_t_limit</span>
+    <span class="n">k_too_large</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">b_t_limit</span>
+    <span class="n">v_too_large</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">b_t_limit</span>
+    <span class="k">if</span> <span class="n">q_too_large</span> <span class="ow">or</span> <span class="n">k_too_large</span> <span class="ow">or</span> <span class="n">v_too_large</span><span class="p">:</span>
+        <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s2">&quot;Input is too large: product of first two dimensions of q/k/v must be &lt; 2**20&quot;</span>
+        <span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">_CustomMaskType</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    (Matches CustomMaskType in C++.)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">NoCustomMask</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">CausalFromTopLeft</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">CausalFromBottomRight</span> <span class="o">=</span> <span class="mi">2</span>
+
+
+<span class="k">def</span> <span class="nf">_custom_mask_type</span><span class="p">(</span><span class="n">bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+        <span class="n">bias</span><span class="p">,</span>
+        <span class="p">(</span>
+            <span class="n">LowerTriangularMask</span><span class="p">,</span>
+            <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+            <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">_CustomMaskType</span><span class="o">.</span><span class="n">CausalFromTopLeft</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+        <span class="n">bias</span><span class="p">,</span>
+        <span class="p">(</span>
+            <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
+            <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
+            <span class="n">attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
+            <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+            <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">_CustomMaskType</span><span class="o">.</span><span class="n">CausalFromBottomRight</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">_CustomMaskType</span><span class="o">.</span><span class="n">NoCustomMask</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="FwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.ck.FwOp">[docs]</a><span class="nd">@register_operator</span>
+<span class="k">class</span> <span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;xFormers&#39; MHA kernel based on Composable Kernel.&quot;&quot;&quot;</span>
+
+    <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">get_xformers_operator</span><span class="p">(</span><span class="s2">&quot;efficient_attention_forward_ck&quot;</span><span class="p">)</span>
+    <span class="n">SUPPORTED_DEVICES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;cuda&quot;</span><span class="p">}</span>
+    <span class="n">SUPPORTED_DTYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">}</span>
+    <span class="n">SUPPORTED_MAX_K</span> <span class="o">=</span> <span class="mi">256</span>
+
+    <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">LowerTriangularMask</span><span class="p">,</span>
+        <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
+        <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
+        <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">,</span>
+        <span class="n">BlockDiagonalMask</span><span class="p">,</span>
+        <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+        <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+        <span class="n">attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
+        <span class="n">attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
+        <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">SUPPORTS_BMGHK</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;ckF&quot;</span>
+
+    <span class="n">ERROR_ATOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">3e-4</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">4e-3</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">2.8e-2</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">ERROR_RTOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">2e-5</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">4e-4</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">2e-2</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">_TEST_K</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="mi">32</span><span class="p">,</span>  <span class="c1"># 64x64 kernel</span>
+        <span class="mi">128</span><span class="p">,</span>  <span class="c1"># 64x128 kernel</span>
+        <span class="mi">256</span><span class="p">,</span>  <span class="c1"># 64x128 with accumulation in gmem</span>
+    <span class="p">]</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">apply</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]]:</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Unsupported attn_bias type&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">apply_bmhk</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="o">=</span><span class="n">needs_gradient</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">5</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;query has shape </span><span class="si">{</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">ctx</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># XXX: Hackfix for BMGHK with H=1</span>
+        <span class="c1"># In that case we don&#39;t want to run G different streams because it adds</span>
+        <span class="c1"># some overhead</span>
+        <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">5</span> <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">slice_op</span> <span class="o">=</span> <span class="n">partial</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">squeeze</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+            <span class="n">inp</span> <span class="o">=</span> <span class="n">replace</span><span class="p">(</span>
+                <span class="n">inp</span><span class="p">,</span>
+                <span class="n">query</span><span class="o">=</span><span class="n">slice_op</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">),</span>
+                <span class="n">key</span><span class="o">=</span><span class="n">slice_op</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">),</span>
+                <span class="n">value</span><span class="o">=</span><span class="n">slice_op</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">),</span>
+                <span class="n">attn_bias</span><span class="o">=</span><span class="n">_attn_bias_apply</span><span class="p">(</span>
+                    <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">partial</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">squeeze</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+                <span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">apply_bmhk</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="o">=</span><span class="n">needs_gradient</span><span class="p">)</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">ctx</span> <span class="o">=</span> <span class="n">replace</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">lse</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span>
+
+        <span class="c1"># Workaround until this is properly implemented in C++</span>
+        <span class="c1"># run each head group in a different stream</span>
+        <span class="n">n_groups</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">main_stream</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">()</span>
+        <span class="n">streams</span> <span class="o">=</span> <span class="p">[</span><span class="n">main_stream</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Stream</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_groups</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="n">outs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">group</span><span class="p">,</span> <span class="n">stream</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">streams</span><span class="p">):</span>
+            <span class="n">stream</span><span class="o">.</span><span class="n">wait_stream</span><span class="p">(</span><span class="n">main_stream</span><span class="p">)</span>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span><span class="n">stream</span><span class="p">):</span>
+                <span class="n">query</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">group</span><span class="p">]</span>
+                <span class="n">key</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">group</span><span class="p">]</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">group</span><span class="p">]</span>
+                <span class="n">bias</span> <span class="o">=</span> <span class="n">_attn_bias_apply</span><span class="p">(</span>
+                    <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">partial</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">select</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">group</span><span class="p">)</span>
+                <span class="p">)</span>
+                <span class="n">outs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="bp">cls</span><span class="o">.</span><span class="n">apply_bmhk</span><span class="p">(</span>
+                        <span class="n">replace</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">=</span><span class="n">bias</span><span class="p">),</span>
+                        <span class="n">needs_gradient</span><span class="o">=</span><span class="n">needs_gradient</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">streams</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+            <span class="n">main_stream</span><span class="o">.</span><span class="n">wait_stream</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">o</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">outs</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">needs_gradient</span><span class="p">:</span>
+            <span class="n">ctx</span> <span class="o">=</span> <span class="n">Context</span><span class="p">(</span>
+                <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">,</span>
+                <span class="n">lse</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">o</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">lse</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">outs</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span>  <span class="c1"># type: ignore</span>
+                <span class="n">op_bw</span><span class="o">=</span><span class="n">outs</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">op_bw</span><span class="p">,</span>  <span class="c1"># type: ignore</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">apply_bmhk</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]]:</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Unsupported attn_bias type&quot;</span><span class="p">)</span>
+        <span class="n">seqstart_k</span><span class="p">,</span> <span class="n">seqstart_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">_get_seqlen_info</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+        <span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">rng_seed</span><span class="p">,</span> <span class="n">rng_offset</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span><span class="p">(</span>
+            <span class="n">query</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span>
+            <span class="n">key</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">attn_bias</span><span class="o">=</span><span class="n">_get_tensor_bias</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
+            <span class="n">seqstart_q</span><span class="o">=</span><span class="n">seqstart_q</span><span class="p">,</span>
+            <span class="n">seqstart_k</span><span class="o">=</span><span class="n">seqstart_k</span><span class="p">,</span>
+            <span class="n">max_seqlen_q</span><span class="o">=</span><span class="n">max_seqlen_q</span><span class="p">,</span>
+            <span class="n">dropout_p</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
+            <span class="n">compute_logsumexp</span><span class="o">=</span><span class="n">needs_gradient</span><span class="p">,</span>
+            <span class="n">custom_mask_type</span><span class="o">=</span><span class="n">_custom_mask_type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
+            <span class="n">scale</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">scale</span><span class="p">,</span>
+            <span class="n">seqlen_k</span><span class="o">=</span><span class="p">(</span>
+                <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqlen</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+                    <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span>
+                <span class="p">)</span>
+                <span class="k">else</span> <span class="kc">None</span>
+            <span class="p">),</span>
+            <span class="n">window_size</span><span class="o">=</span><span class="p">(</span>
+                <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">_window_size</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+                    <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
+                    <span class="p">(</span>
+                        <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
+                        <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
+                        <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
+                    <span class="p">),</span>
+                <span class="p">)</span>
+                <span class="k">else</span> <span class="kc">None</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+
+        <span class="n">ctx</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">needs_gradient</span><span class="p">:</span>
+            <span class="n">ctx</span> <span class="o">=</span> <span class="n">Context</span><span class="p">(</span>
+                <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">,</span>
+                <span class="n">lse</span><span class="o">=</span><span class="n">lse</span><span class="p">,</span>
+                <span class="c1"># cutlass forward is only compatible with cutlass backward if</span>
+                <span class="c1"># dropout is used (because of the way RNG states are passed and the</span>
+                <span class="c1"># way random numbers are generated during backward)</span>
+                <span class="n">op_bw</span><span class="o">=</span><span class="n">BwOp</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span> <span class="o">!=</span> <span class="mi">0</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span>
+                    <span class="p">[</span><span class="n">rng_seed</span><span class="p">,</span> <span class="n">rng_offset</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span>
+                <span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">FwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+        <span class="n">matmul_alignment_mn</span> <span class="o">=</span> <span class="n">_minimum_gemm_alignment</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+        <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">matmul_alignment_mn</span><span class="p">)</span>
+        <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">matmul_alignment_mn</span><span class="p">)</span>
+        <span class="n">_check_bias_alignment</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span>
+        <span class="n">_check_large_shapes</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
+        <span class="n">requires_grad</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">d</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">requires_grad</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">requires_grad</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;Gradience is currently not supported by ck-tiled!&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">reasons</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="c1"># type: ignore</span>
+    <span class="k">def</span> <span class="nf">operator_flop</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">q</span><span class="p">,</span>
+        <span class="n">k</span><span class="p">,</span>
+        <span class="n">v</span><span class="p">,</span>
+        <span class="n">b</span><span class="p">,</span>
+        <span class="n">seqstart_q</span><span class="p">,</span>
+        <span class="n">seqstart_k</span><span class="p">,</span>
+        <span class="n">max_seqlen_q_</span><span class="p">,</span>
+        <span class="n">compute_lse</span><span class="p">,</span>
+        <span class="n">custom_mask_type</span><span class="p">,</span>
+        <span class="o">*</span><span class="n">a</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">attn_operator_flop</span><span class="p">(</span>
+            <span class="n">q</span><span class="p">,</span>
+            <span class="n">k</span><span class="p">,</span>
+            <span class="n">v</span><span class="p">,</span>
+            <span class="n">causal</span><span class="o">=</span><span class="n">custom_mask_type</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="n">seqstart_k</span><span class="o">=</span><span class="n">seqstart_k</span><span class="p">,</span>
+            <span class="n">seqstart_q</span><span class="o">=</span><span class="n">seqstart_q</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.ck.BwOp">[docs]</a><span class="nd">@register_operator</span>
+<span class="k">class</span> <span class="nc">BwOp</span><span class="p">(</span><span class="n">AttentionBwOpBase</span><span class="p">):</span>
+    <span class="vm">__doc__</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="vm">__doc__</span>
+
+    <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">get_xformers_operator</span><span class="p">(</span><span class="s2">&quot;efficient_attention_backward_ck&quot;</span><span class="p">)</span>
+    <span class="n">SUPPORTED_DEVICES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_DEVICES</span>
+    <span class="n">SUPPORTED_DTYPES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span>
+    <span class="n">SUPPORTED_MAX_K</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_MAX_K</span>
+    <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">LowerTriangularMask</span><span class="p">,</span>
+        <span class="c1"># LowerTriangularFromBottomRightMask,</span>
+        <span class="c1"># TODO: Still some infs/nans in the BW pass for</span>
+        <span class="c1"># local + causal</span>
+        <span class="c1"># LowerTriangularFromBottomRightLocalAttentionMask,</span>
+        <span class="c1"># TODO: Fix handling of gradient through the fMHA autograd function</span>
+        <span class="c1"># LowerTriangularMaskWithTensorBias,</span>
+        <span class="n">BlockDiagonalMask</span><span class="p">,</span>
+        <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+        <span class="n">attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
+        <span class="c1"># attn_bias.BlockDiagonalCausalLocalAttentionMask,</span>
+    <span class="p">}</span>
+    <span class="n">SUPPORTS_ATTN_BIAS_GRAD</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DROPOUT</span>
+    <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_CUSTOM_SCALE</span>
+    <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;ckB&quot;</span>
+
+    <span class="n">_TEST_K</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="mi">32</span><span class="p">,</span>  <span class="c1"># 64x64 kernel</span>
+        <span class="mi">128</span><span class="p">,</span>  <span class="c1"># 64x128/128x128 kernel</span>
+        <span class="mi">256</span><span class="p">,</span>  <span class="c1"># 64x128 with accumulation in gmem</span>
+    <span class="p">]</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">BwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+        <span class="n">matmul_alignment_mn</span> <span class="o">=</span> <span class="n">_minimum_gemm_alignment</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+
+        <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">matmul_alignment_mn</span><span class="p">)</span>
+        <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;key&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">matmul_alignment_mn</span><span class="p">)</span>
+        <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">matmul_alignment_mn</span><span class="p">)</span>
+        <span class="n">_check_bias_alignment</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span>
+        <span class="n">attn_bias_tensor</span> <span class="o">=</span> <span class="n">_get_tensor_bias</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span>
+
+        <span class="c1"># Backprop of gradient through broadcasted bias is not supported</span>
+        <span class="k">if</span> <span class="n">attn_bias_tensor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">attn_bias_tensor</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">:</span>
+            <span class="c1"># Don&#39;t forget that inputs are either in BMK or BMHK!</span>
+            <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">attn_bias_tensor</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+                <span class="n">expected_bias_shape</span> <span class="o">=</span> <span class="p">(</span><span class="o">*</span><span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">],</span> <span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># bias is B H Mq Mk</span>
+                <span class="n">expected_bias_shape</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">4</span> <span class="k">else</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">attn_bias_tensor</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="n">expected_bias_shape</span><span class="p">:</span>
+                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="s2">&quot;Broadcasting the `attn_bias` tensor is not supported &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;(shape: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">attn_bias_tensor</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;/ expected: </span><span class="si">{</span><span class="n">expected_bias_shape</span><span class="si">}</span><span class="s2">)&quot;</span>
+                <span class="p">)</span>
+        <span class="n">_check_large_shapes</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
+
+        <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;Backward is currently not supported by ck-tiled!&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">reasons</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">apply</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Gradients</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">BwOp</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Unsupported attn_bias type&quot;</span><span class="p">)</span>
+
+        <span class="n">seqstart_k</span><span class="p">,</span> <span class="n">seqstart_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span> <span class="o">=</span> <span class="n">_get_seqlen_info</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+        <span class="n">dtype</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">dtype</span>
+
+        <span class="n">rng_seed</span> <span class="o">=</span> <span class="n">rng_offset</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span> <span class="ow">is</span> <span class="kc">None</span>
+                <span class="ow">or</span> <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">int64</span>
+                <span class="ow">or</span> <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cpu&quot;</span>
+                <span class="ow">or</span> <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,)</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid rng_state: </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">rng_seed</span><span class="p">,</span> <span class="n">rng_offset</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+        <span class="p">(</span><span class="n">grad_q</span><span class="p">,</span> <span class="n">grad_k</span><span class="p">,</span> <span class="n">grad_v</span><span class="p">,</span> <span class="n">grad_bias</span><span class="p">)</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span><span class="p">(</span>
+            <span class="n">grad</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="p">),</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">attn_bias</span><span class="o">=</span><span class="n">_get_tensor_bias</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
+            <span class="n">seqstart_q</span><span class="o">=</span><span class="n">seqstart_q</span><span class="p">,</span>
+            <span class="n">seqstart_k</span><span class="o">=</span><span class="n">seqstart_k</span><span class="p">,</span>
+            <span class="n">max_seqlen_q</span><span class="o">=</span><span class="n">max_seqlen_q</span><span class="p">,</span>
+            <span class="n">seqlen_k</span><span class="o">=</span><span class="p">(</span>
+                <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqlen</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+                    <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span>
+                <span class="p">)</span>
+                <span class="k">else</span> <span class="kc">None</span>
+            <span class="p">),</span>
+            <span class="n">logsumexp</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="p">,</span>
+            <span class="n">output</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">out</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="p">),</span>
+            <span class="n">dropout_p</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
+            <span class="c1"># if not using dropout, seed and offset are irrelevant but still expected</span>
+            <span class="c1"># in function signature so just pass 0</span>
+            <span class="c1"># seed and offset could be None if a different FW op other than cutlass</span>
+            <span class="c1"># was used.</span>
+            <span class="n">rng_seed</span><span class="o">=</span><span class="n">rng_seed</span><span class="p">,</span>
+            <span class="n">rng_offset</span><span class="o">=</span><span class="n">rng_offset</span><span class="p">,</span>
+            <span class="n">custom_mask_type</span><span class="o">=</span><span class="n">_custom_mask_type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
+            <span class="n">scale</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">scale</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># c++/CUDA implementation returns an uninitialized tensor if bias doesn&#39;t</span>
+        <span class="c1"># require grad</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">requires_grad</span>
+        <span class="p">):</span>
+            <span class="n">grad_bias</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="n">Gradients</span><span class="p">(</span><span class="n">dq</span><span class="o">=</span><span class="n">grad_q</span><span class="p">,</span> <span class="n">dk</span><span class="o">=</span><span class="n">grad_k</span><span class="p">,</span> <span class="n">dv</span><span class="o">=</span><span class="n">grad_v</span><span class="p">,</span> <span class="n">db</span><span class="o">=</span><span class="n">grad_bias</span><span class="p">)</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="c1"># type: ignore</span>
+    <span class="k">def</span> <span class="nf">operator_flop</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">dO</span><span class="p">,</span>
+        <span class="n">q</span><span class="p">,</span>
+        <span class="n">k</span><span class="p">,</span>
+        <span class="n">v</span><span class="p">,</span>
+        <span class="n">b</span><span class="p">,</span>
+        <span class="n">cu_seqlens_q</span><span class="p">,</span>
+        <span class="n">cu_seqlens_k</span><span class="p">,</span>
+        <span class="n">max_seqlen_q</span><span class="p">,</span>
+        <span class="n">max_seqlen_k</span><span class="p">,</span>
+        <span class="n">logsumexp</span><span class="p">,</span>
+        <span class="n">output</span><span class="p">,</span>
+        <span class="n">dropout_p</span><span class="p">,</span>
+        <span class="n">rng_seed</span><span class="p">,</span>
+        <span class="n">rng_offset</span><span class="p">,</span>
+        <span class="n">custom_mask_type</span><span class="p">,</span>
+        <span class="n">scale</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">attn_operator_flop</span><span class="p">(</span>
+            <span class="n">q</span><span class="p">,</span>
+            <span class="n">k</span><span class="p">,</span>
+            <span class="n">v</span><span class="p">,</span>
+            <span class="n">seqstart_q</span><span class="o">=</span><span class="n">cu_seqlens_q</span><span class="p">,</span>
+            <span class="n">seqstart_k</span><span class="o">=</span><span class="n">cu_seqlens_k</span><span class="p">,</span>
+            <span class="n">causal</span><span class="o">=</span><span class="n">custom_mask_type</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</pre></div>
+
+              </article>
+              
+            </div>
+            <footer>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright Copyright © 2021 Meta Platforms, Inc.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+        </div>
+
+        <!-- <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              
+            </div>
+          </div>
+        </div> -->
+    </section>
+  </div>
+
+  
+
+
+  
+
+  
+  <script type="text/javascript" id="documentation_options" data-url_root="../../../../"
+    src="../../../../_static/documentation_options.js"></script>
+  <script data-url_root="../../../../" id="documentation_options" src="../../../../_static/documentation_options.js"></script>
+  <script src="../../../../_static/jquery.js"></script>
+  <script src="../../../../_static/underscore.js"></script>
+  <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+  <script src="../../../../_static/doctools.js"></script>
+  
+
+  
+
+  <script type="text/javascript" src="../../../../_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="../../../../_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="../../../../_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+  <!-- Begin Footer -->
+
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://github.com/facebookresearch/xformers" class="footer-logo"></a>
+      </div>
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://github.com/facebookresearch/xformers">fairscale</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="">Resources</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers">Docs</a></li>
+            <li><a href="https://github.com/facebookresearch/xformers/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://opensource.facebook.com/legal/terms">Terms of Use</a></li>
+            <li><a href="https://opensource.facebook.com/legal/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    </div>
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../../../../_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://github.com/facebookresearch/xformers" aria-label="fairscale"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://github.com/facebookresearch/xformers/blob/master/README.md">Get Started</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Docs</a>
+          </li>
+
+          <li>
+            <a href="https://github.com/facebookresearch/xformers">Github</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="../../../../_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function () {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function (e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+
+</html>

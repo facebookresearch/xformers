@@ -283,7 +283,7 @@ and we don’t attempt to make it fast. Only use for debugging/testing.</p>
 <li><p><a class="reference internal" href="#xformers.ops.fmha.flash.FwOp" title="xformers.ops.fmha.flash.FwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.flash.FwOp</span></code></a></p></li>
 <li><p><a class="reference internal" href="#xformers.ops.fmha.flash.BwOp" title="xformers.ops.fmha.flash.BwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.flash.BwOp</span></code></a></p></li>
 <li><p><a class="reference internal" href="#xformers.ops.fmha.triton.FwOp" title="xformers.ops.fmha.triton.FwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.triton.FwOp</span></code></a></p></li>
-<li><p><a class="reference internal" href="#xformers.ops.fmha.triton.BwOp" title="xformers.ops.fmha.triton.BwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.triton.BwOp</span></code></a></p></li>
+<li><p><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.triton.BwOp</span></code></p></li>
 <li><p><a class="reference internal" href="#xformers.ops.fmha.small_k.FwOp" title="xformers.ops.fmha.small_k.FwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.small_k.FwOp</span></code></a></p></li>
 <li><p><a class="reference internal" href="#xformers.ops.fmha.small_k.BwOp" title="xformers.ops.fmha.small_k.BwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.small_k.BwOp</span></code></a></p></li>
 </ul>
@@ -433,16 +433,15 @@ and GPUs as old as P100 (Sm60)</p>
 <dd><p>Operator that computes memory-efficient attention using         <a class="reference external" href="https://github.com/HazyResearch/flash-attention">Flash-Attention</a>         implementation.</p>
 </dd></dl>
 
-<span class="target" id="module-xformers.ops.fmha.triton"></span><dl class="py class">
+<span class="target" id="module-xformers.ops.fmha.triton"></span><p>Triton Flash Attention 2
+Based on
+<a class="reference external" href="https://github.com/openai/triton/blob/293b7fd592a1602f2305c1bd0bc978bbd97337d6/python/tutorials/06-fused-attention.py">https://github.com/openai/triton/blob/293b7fd592a1602f2305c1bd0bc978bbd97337d6/python/tutorials/06-fused-attention.py</a>  # noqa: E501
+<a class="reference external" href="https://github.com/openai/triton/blob/293b7fd592a1602f2305c1bd0bc978bbd97337d6/python/triton/ops/flash_attention.py">https://github.com/openai/triton/blob/293b7fd592a1602f2305c1bd0bc978bbd97337d6/python/triton/ops/flash_attention.py</a>  # noqa: E501
+<a class="reference external" href="https://github.com/Dao-AILab/flash-attention/blob/dd9a6fa45a9b90ff954d2b3f3f44241b9216190e/flash_attn/flash_attn_triton.py">https://github.com/Dao-AILab/flash-attention/blob/dd9a6fa45a9b90ff954d2b3f3f44241b9216190e/flash_attn/flash_attn_triton.py</a>  # noqa: E501
+<a class="reference external" href="https://github.com/ROCmSoftwarePlatform/triton/blob/670ae8054da008424097989a5b6e3816aa601e07/python/perf-kernels/06-fused-attention-transV.py">https://github.com/ROCmSoftwarePlatform/triton/blob/670ae8054da008424097989a5b6e3816aa601e07/python/perf-kernels/06-fused-attention-transV.py</a>  # noqa: E501</p>
+<dl class="py class">
 <dt class="sig sig-object py" id="xformers.ops.fmha.triton.FwOp">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.triton.</span></span><span class="sig-name descname"><span class="pre">FwOp</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/triton.html#FwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.triton.FwOp" title="Permalink to this definition">¶</a></dt>
-<dd><p>Operator that computes memory-efficient attention using         <a class="reference external" href="https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attn_triton.py">Tri Dao’s</a>         implementation, based on
-<a class="reference external" href="https://github.com/openai/triton/blob/master/python/tutorials/06-fused-attention.py">Phil Tillet’s code</a></p>
-</dd></dl>
-
-<dl class="py class">
-<dt class="sig sig-object py" id="xformers.ops.fmha.triton.BwOp">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.triton.</span></span><span class="sig-name descname"><span class="pre">BwOp</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/triton.html#BwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.triton.BwOp" title="Permalink to this definition">¶</a></dt>
 <dd><p>Operator that computes memory-efficient attention using         <a class="reference external" href="https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attn_triton.py">Tri Dao’s</a>         implementation, based on
 <a class="reference external" href="https://github.com/openai/triton/blob/master/python/tutorials/06-fused-attention.py">Phil Tillet’s code</a></p>
 </dd></dl>
@@ -471,7 +470,26 @@ Only supports contiguous inputs in BMK format, so an extra reshape         or co
 </dl>
 </dd></dl>
 
-</section>
+<span class="target" id="module-xformers.ops.fmha.ck"></span><dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.fmha.ck.FwOp">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.ck.</span></span><span class="sig-name descname"><span class="pre">FwOp</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/ck.html#FwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.ck.FwOp" title="Permalink to this definition">¶</a></dt>
+<dd><p>xFormers’ MHA kernel based on Composable Kernel.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.fmha.ck.BwOp">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.ck.</span></span><span class="sig-name descname"><span class="pre">BwOp</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/ck.html#BwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.ck.BwOp" title="Permalink to this definition">¶</a></dt>
+<dd><p>xFormers’ MHA kernel based on Composable Kernel.</p>
+</dd></dl>
+
+<span class="target" id="module-xformers.ops.fmha.ck_decoder"></span><dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.fmha.ck_decoder.FwOp">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.ck_decoder.</span></span><span class="sig-name descname"><span class="pre">FwOp</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/ck_decoder.html#FwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.ck_decoder.FwOp" title="Permalink to this definition">¶</a></dt>
+<dd><p>An operator optimized for K=256 (so the contiguous dim fits into registers).
+Tested to work on MI250x.</p>
+</dd></dl>
+
+<span class="target" id="module-xformers.ops.fmha.ck_splitk"></span></section>
 <section id="module-xformers.ops.fmha.attn_bias">
 <span id="attention-biases"></span><h3>Attention biases<a class="headerlink" href="#module-xformers.ops.fmha.attn_bias" title="Permalink to this heading">¶</a></h3>
 <dl class="py class">
@@ -553,10 +571,10 @@ tensor([[1., 1., 1., 1., 0.],
 <dt class="field-odd">Illustration</dt>
 <dd class="field-odd"><p></p></dd>
 </dl>
-<figure class="align-default" id="id4">
+<figure class="align-default" id="id2">
 <a class="reference internal image-reference" href="../_images/local_attn.png"><img alt="../_images/local_attn.png" src="../_images/local_attn.png" style="width: 240px;" /></a>
 <figcaption>
-<p><span class="caption-text">The total window size is <span class="math notranslate nohighlight">\(window\_left + 1 + window\_right\)</span></span><a class="headerlink" href="#id4" title="Permalink to this image">¶</a></p>
+<p><span class="caption-text">The total window size is <span class="math notranslate nohighlight">\(window\_left + 1 + window\_right\)</span></span><a class="headerlink" href="#id2" title="Permalink to this image">¶</a></p>
 </figcaption>
 </figure>
 </dd></dl>
@@ -590,12 +608,12 @@ it is a triangular mask shifted so that the last query can attend to
 the last key.
 In other words, a query Q cannot attend to a key which is nearer the
 final key than Q is to the final query.</p>
-<figure class="align-default" id="id5">
+<figure class="align-default" id="id3">
 <img alt="../_images/causal_bottom_right.png" src="../_images/causal_bottom_right.png" />
 <figcaption>
 <p><span class="caption-text">The difference between <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularMask" title="xformers.ops.fmha.attn_bias.LowerTriangularMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularMask</span></code></a> (left) and
 <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask" title="xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularFromBottomRightMask</span></code></a> (right). They become
-equivalent if the number of queries equals the number of keys.</span><a class="headerlink" href="#id5" title="Permalink to this image">¶</a></p>
+equivalent if the number of queries equals the number of keys.</span><a class="headerlink" href="#id3" title="Permalink to this image">¶</a></p>
 </figcaption>
 </figure>
 <dl class="py method">
@@ -619,11 +637,11 @@ whose distance to the final key is either of:</p>
 <li><p>less than X (i.e. “causal attention”, same as <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask" title="xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularFromBottomRightMask</span></code></a>)</p></li>
 <li><p>greater than X + window_size (i.e. “local attention”)</p></li>
 </ul>
-<figure class="align-default" id="id6">
+<figure class="align-default" id="id4">
 <img alt="../_images/causal_bottom_right_local.png" src="../_images/causal_bottom_right_local.png" />
 <figcaption>
 <p><span class="caption-text">The mask from <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightLocalAttentionMask" title="xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightLocalAttentionMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularFromBottomRightLocalAttentionMask</span></code></a>.
-The green area is calculated, and the grey area is masked out.</span><a class="headerlink" href="#id6" title="Permalink to this image">¶</a></p>
+The green area is calculated, and the grey area is masked out.</span><a class="headerlink" href="#id4" title="Permalink to this image">¶</a></p>
 </figcaption>
 </figure>
 </dd></dl>
@@ -643,11 +661,11 @@ The green area is calculated, and the grey area is masked out.</span><a class="h
 argument to <a class="reference internal" href="#xformers.ops.memory_efficient_attention" title="xformers.ops.memory_efficient_attention"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.memory_efficient_attention</span></code></a>.</p>
 <p>Queries and Keys are each divided into the same number of blocks.
 Queries in block i only attend to keys in block i.</p>
-<figure class="align-default" id="id7">
+<figure class="align-default" id="id5">
 <img alt="../_images/block_diag_bias.png" src="../_images/block_diag_bias.png" />
 <figcaption>
 <p><span class="caption-text">This bias can be used to handle a batch of sequences of
-different lengths, via <a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list" title="xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BlockDiagonalMask.from_tensor_list</span></code></a></span><a class="headerlink" href="#id7" title="Permalink to this image">¶</a></p>
+different lengths, via <a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list" title="xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BlockDiagonalMask.from_tensor_list</span></code></a></span><a class="headerlink" href="#id5" title="Permalink to this image">¶</a></p>
 </figcaption>
 </figure>
 <dl class="field-list simple">
@@ -704,11 +722,11 @@ different lengths, via <a class="reference internal" href="#xformers.ops.fmha.at
 <em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_tensor_list</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tensors</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Sequence" title="(in Python v3.6)"><span class="pre">Sequence</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (2.1.0a0+gitbe0b12e ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3.6/library/typing.html#typing.Tuple" title="(in Python v3.6)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask" title="xformers.ops.fmha.attn_bias.BlockDiagonalMask"><span class="pre">BlockDiagonalMask</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (2.1.0a0+gitbe0b12e ))"><span class="pre">Tensor</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#BlockDiagonalMask.from_tensor_list"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list" title="Permalink to this definition">¶</a></dt>
 <dd><p>Creates a <a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask" title="xformers.ops.fmha.attn_bias.BlockDiagonalMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BlockDiagonalMask</span></code></a> from a list of tensors, and returns the tensors
 concatenated on the sequence length dimension</p>
-<figure class="align-default" id="id8">
+<figure class="align-default" id="id6">
 <img alt="../_images/block_diag_cat_split.png" src="../_images/block_diag_cat_split.png" />
 <figcaption>
 <p><span class="caption-text">See also <a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalMask.split" title="xformers.ops.fmha.attn_bias.BlockDiagonalMask.split"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BlockDiagonalMask.split</span></code></a> to split the returned
-<code class="xref py py-attr docutils literal notranslate"><span class="pre">torch.Tensor</span></code> back to a list of tensors of varying sequence length</span><a class="headerlink" href="#id8" title="Permalink to this image">¶</a></p>
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">torch.Tensor</span></code> back to a list of tensors of varying sequence length</span><a class="headerlink" href="#id6" title="Permalink to this image">¶</a></p>
 </figcaption>
 </figure>
 <dl class="field-list simple">

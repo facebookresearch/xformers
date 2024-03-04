@@ -310,14 +310,14 @@
 </li>
       <li><a href="components/position_embedding.html#xformers.components.positional_embedding.build_positional_embedding">build_positional_embedding() (in module xformers.components.positional_embedding)</a>
 </li>
-      <li><a href="components/ops.html#xformers.ops.fmha.cutlass.BwOp">BwOp (class in xformers.ops.fmha.cutlass)</a>
+      <li><a href="components/ops.html#xformers.ops.fmha.ck.BwOp">BwOp (class in xformers.ops.fmha.ck)</a>
 
       <ul>
+        <li><a href="components/ops.html#xformers.ops.fmha.cutlass.BwOp">(class in xformers.ops.fmha.cutlass)</a>
+</li>
         <li><a href="components/ops.html#xformers.ops.fmha.flash.BwOp">(class in xformers.ops.fmha.flash)</a>
 </li>
         <li><a href="components/ops.html#xformers.ops.fmha.small_k.BwOp">(class in xformers.ops.fmha.small_k)</a>
-</li>
-        <li><a href="components/ops.html#xformers.ops.fmha.triton.BwOp">(class in xformers.ops.fmha.triton)</a>
 </li>
       </ul></li>
   </ul></td>
@@ -404,9 +404,13 @@
       </ul></li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list">from_tensor_list() (xformers.ops.fmha.attn_bias.BlockDiagonalMask class method)</a>
 </li>
-      <li><a href="components/ops.html#xformers.ops.fmha.cutlass.FwOp">FwOp (class in xformers.ops.fmha.cutlass)</a>
+      <li><a href="components/ops.html#xformers.ops.fmha.ck.FwOp">FwOp (class in xformers.ops.fmha.ck)</a>
 
       <ul>
+        <li><a href="components/ops.html#xformers.ops.fmha.ck_decoder.FwOp">(class in xformers.ops.fmha.ck_decoder)</a>
+</li>
+        <li><a href="components/ops.html#xformers.ops.fmha.cutlass.FwOp">(class in xformers.ops.fmha.cutlass)</a>
+</li>
         <li><a href="components/ops.html#xformers.ops.fmha.flash.FwOp">(class in xformers.ops.fmha.flash)</a>
 </li>
         <li><a href="components/ops.html#xformers.ops.fmha.small_k.FwOp">(class in xformers.ops.fmha.small_k)</a>
@@ -498,12 +502,12 @@
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.memory_efficient_attention_backward">memory_efficient_attention_backward() (in module xformers.ops.fmha)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/ops.html#xformers.ops.fmha.memory_efficient_attention_forward">memory_efficient_attention_forward() (in module xformers.ops.fmha)</a>
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.memory_efficient_attention_forward_requires_grad">memory_efficient_attention_forward_requires_grad() (in module xformers.ops.fmha)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/feedforward.html#xformers.components.feedforward.MLP">MLP (class in xformers.components.feedforward)</a>
 </li>
       <li>
@@ -521,6 +525,12 @@
         <li><a href="components/ops.html#module-xformers.ops.fmha">xformers.ops.fmha</a>
 </li>
         <li><a href="components/ops.html#module-xformers.ops.fmha.attn_bias">xformers.ops.fmha.attn_bias</a>
+</li>
+        <li><a href="components/ops.html#module-xformers.ops.fmha.ck">xformers.ops.fmha.ck</a>
+</li>
+        <li><a href="components/ops.html#module-xformers.ops.fmha.ck_decoder">xformers.ops.fmha.ck_decoder</a>
+</li>
+        <li><a href="components/ops.html#module-xformers.ops.fmha.ck_splitk">xformers.ops.fmha.ck_splitk</a>
 </li>
         <li><a href="components/ops.html#module-xformers.ops.fmha.cutlass">xformers.ops.fmha.cutlass</a>
 </li>
@@ -691,8 +701,29 @@
         <li><a href="components/ops.html#module-xformers.ops.fmha.attn_bias">module</a>
 </li>
       </ul></li>
+      <li>
+    xformers.ops.fmha.ck
+
+      <ul>
+        <li><a href="components/ops.html#module-xformers.ops.fmha.ck">module</a>
+</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    xformers.ops.fmha.ck_decoder
+
+      <ul>
+        <li><a href="components/ops.html#module-xformers.ops.fmha.ck_decoder">module</a>
+</li>
+      </ul></li>
+      <li>
+    xformers.ops.fmha.ck_splitk
+
+      <ul>
+        <li><a href="components/ops.html#module-xformers.ops.fmha.ck_splitk">module</a>
+</li>
+      </ul></li>
       <li>
     xformers.ops.fmha.cutlass
 

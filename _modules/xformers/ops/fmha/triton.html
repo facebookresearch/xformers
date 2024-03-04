@@ -226,63 +226,441 @@
 <span class="c1"># This source code is licensed under the BSD license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Triton Flash Attention 2</span>
+<span class="sd">Based on</span>
+<span class="sd">https://github.com/openai/triton/blob/293b7fd592a1602f2305c1bd0bc978bbd97337d6/python/tutorials/06-fused-attention.py  # noqa: E501</span>
+<span class="sd">https://github.com/openai/triton/blob/293b7fd592a1602f2305c1bd0bc978bbd97337d6/python/triton/ops/flash_attention.py  # noqa: E501</span>
+<span class="sd">https://github.com/Dao-AILab/flash-attention/blob/dd9a6fa45a9b90ff954d2b3f3f44241b9216190e/flash_attn/flash_attn_triton.py  # noqa: E501</span>
+<span class="sd">https://github.com/ROCmSoftwarePlatform/triton/blob/670ae8054da008424097989a5b6e3816aa601e07/python/perf-kernels/06-fused-attention-transV.py  # noqa: E501</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">replace</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">...</span> <span class="kn">import</span> <span class="n">_is_triton_available</span>
+<span class="kn">from</span> <span class="nn">xformers</span> <span class="kn">import</span> <span class="n">_is_triton_available</span>
+
 <span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">register_operator</span>
-
-<span class="c1"># This implementation needs pre-MLIR triton</span>
-<span class="c1"># The BW pass is not stable/well tested</span>
-<span class="c1"># And also does not have the latest improvements</span>
-<span class="k">if</span> <span class="n">TYPE_CHECKING</span> <span class="ow">or</span> <span class="p">(</span><span class="kc">False</span> <span class="ow">and</span> <span class="n">_is_triton_available</span><span class="p">()):</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="kn">from</span> <span class="nn">flash_attn.flash_attn_triton</span> <span class="kn">import</span> <span class="p">(</span>
-            <span class="n">_flash_attn_backward</span><span class="p">,</span>
-            <span class="n">_flash_attn_forward</span><span class="p">,</span>
-        <span class="p">)</span>
-    <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-        <span class="kn">import</span> <span class="nn">importlib</span>
-        <span class="kn">import</span> <span class="nn">pathlib</span>
-        <span class="kn">import</span> <span class="nn">sys</span>
-        <span class="kn">import</span> <span class="nn">types</span>
-
-        <span class="k">def</span> <span class="nf">import_module_from_path</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">types</span><span class="o">.</span><span class="n">ModuleType</span><span class="p">:</span>
-<span class="w">            </span><span class="sd">&quot;&quot;&quot;Import a module from the given path, w/o __init__.py&quot;&quot;&quot;</span>
-            <span class="n">module_path</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
-            <span class="n">module_name</span> <span class="o">=</span> <span class="n">module_path</span><span class="o">.</span><span class="n">stem</span>  <span class="c1"># &#39;path/x.py&#39; -&gt; &#39;x&#39;</span>
-            <span class="n">spec</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">spec_from_file_location</span><span class="p">(</span><span class="n">module_name</span><span class="p">,</span> <span class="n">module_path</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
-            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="n">importlib</span><span class="o">.</span><span class="n">machinery</span><span class="o">.</span><span class="n">ModuleSpec</span><span class="p">)</span>
-            <span class="n">module</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">module_from_spec</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
-            <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="n">module_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">module</span>
-            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">loader</span><span class="p">,</span> <span class="n">importlib</span><span class="o">.</span><span class="n">abc</span><span class="o">.</span><span class="n">Loader</span><span class="p">)</span>
-            <span class="n">spec</span><span class="o">.</span><span class="n">loader</span><span class="o">.</span><span class="n">exec_module</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">module</span>
-
-        <span class="n">flash_attn</span> <span class="o">=</span> <span class="n">import_module_from_path</span><span class="p">(</span>
-            <span class="s2">&quot;third_party/flash-attention/flash_attn/flash_attn_triton.py&quot;</span>
-        <span class="p">)</span>
-        <span class="n">_flash_attn_backward</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">_flash_attn_backward</span>
-        <span class="n">_flash_attn_forward</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">_flash_attn_forward</span>
-
-    <span class="n">triton_flash_backward</span> <span class="o">=</span> <span class="n">_flash_attn_backward</span>
-    <span class="n">triton_flash_forward</span> <span class="o">=</span> <span class="n">_flash_attn_forward</span>
-<span class="k">else</span><span class="p">:</span>
-    <span class="n">triton_flash_backward</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">triton_flash_forward</span> <span class="o">=</span> <span class="kc">None</span>
-
-<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="n">LowerTriangularMask</span>
-<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">AttentionBwOpBase</span><span class="p">,</span>
-    <span class="n">AttentionFwOpBase</span><span class="p">,</span>
-    <span class="n">Context</span><span class="p">,</span>
-    <span class="n">Gradients</span><span class="p">,</span>
-    <span class="n">Inputs</span><span class="p">,</span>
-    <span class="n">check_lastdim_alignment_stride1</span><span class="p">,</span>
+<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+    <span class="n">LowerTriangularMask</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="n">AttentionFwOpBase</span><span class="p">,</span> <span class="n">Context</span><span class="p">,</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">check_lastdim_alignment_stride1</span>
+
+<span class="k">if</span> <span class="n">_is_triton_available</span><span class="p">():</span>
+    <span class="kn">import</span> <span class="nn">triton</span>
+    <span class="kn">import</span> <span class="nn">triton.language</span> <span class="k">as</span> <span class="nn">tl</span>
+
+    <span class="nd">@triton</span><span class="o">.</span><span class="n">jit</span>
+    <span class="k">def</span> <span class="nf">_fwd_kernel_triton_flash_inner</span><span class="p">(</span>
+        <span class="n">acc</span><span class="p">,</span>
+        <span class="n">l_i</span><span class="p">,</span>
+        <span class="n">m_i</span><span class="p">,</span>
+        <span class="n">q</span><span class="p">,</span>
+        <span class="n">K_block_ptr</span><span class="p">,</span>
+        <span class="n">V_block_ptr</span><span class="p">,</span>
+        <span class="n">q_seq_start</span><span class="p">,</span>
+        <span class="n">lo</span><span class="p">,</span>
+        <span class="n">hi</span><span class="p">,</span>
+        <span class="n">start_m</span><span class="p">,</span>
+        <span class="n">qk_scale</span><span class="p">,</span>
+        <span class="n">kv_len</span><span class="p">,</span>
+        <span class="n">offs_m</span><span class="p">,</span>
+        <span class="n">offs_n</span><span class="p">,</span>
+        <span class="n">BLOCK_M</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">BLOCK_N</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">IS_CAUSAL</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">BOUNDS_CHECKS_N</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">CAST_BEFORE_MATMUL</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">ALLOW_TF32</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">STAGE</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">pre_load_v</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="n">BOUNDS_CHECKS_STAGE</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span> <span class="o">=</span> <span class="n">BOUNDS_CHECKS_N</span> <span class="ow">and</span> <span class="n">STAGE</span> <span class="o">==</span> <span class="mi">2</span>
+        <span class="c1"># Doesn&#39;t seem to make a difference</span>
+        <span class="k">if</span> <span class="n">STAGE</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">lo</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lo</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">multiple_of</span><span class="p">(</span><span class="n">lo</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">)</span>
+            <span class="n">K_block_ptr</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">advance</span><span class="p">(</span><span class="n">K_block_ptr</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">lo</span><span class="p">))</span>
+            <span class="n">V_block_ptr</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">advance</span><span class="p">(</span><span class="n">V_block_ptr</span><span class="p">,</span> <span class="p">(</span><span class="n">lo</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+
+        <span class="c1"># loop over k, v and update accumulator</span>
+        <span class="k">for</span> <span class="n">start_n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">):</span>
+            <span class="n">start_n</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">multiple_of</span><span class="p">(</span>
+                <span class="n">start_n</span><span class="p">,</span> <span class="n">BLOCK_N</span>
+            <span class="p">)</span>  <span class="c1"># doesn&#39;t seem to make a difference</span>
+            <span class="c1"># -- load k, v --</span>
+            <span class="n">k</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">K_block_ptr</span><span class="p">,</span> <span class="n">boundary_check</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,)</span> <span class="k">if</span> <span class="n">BOUNDS_CHECKS_STAGE</span> <span class="k">else</span> <span class="p">())</span>
+            <span class="c1"># Moving masking here seems to introduce num errors,</span>
+            <span class="c1"># e.g. in test_forward[tritonflashattF-cuda-torch.bfloat16-NoneType-1-256-15-1-32-32-False-BMHK]</span>
+            <span class="c1"># if BOUNDS_CHECKS_N or USE_SEQ_LEN:</span>
+            <span class="c1">#     k = tl.where(hi - tl.arange(0, BLOCK_N) &gt; start_n, k, float(&quot;-inf&quot;))</span>
+            <span class="k">if</span> <span class="n">pre_load_v</span><span class="p">:</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span>
+                    <span class="n">V_block_ptr</span><span class="p">,</span> <span class="n">boundary_check</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,)</span> <span class="k">if</span> <span class="n">BOUNDS_CHECKS_STAGE</span> <span class="k">else</span> <span class="p">()</span>
+                <span class="p">)</span>
+            <span class="c1"># -- compute qk ---</span>
+            <span class="n">qk</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">BLOCK_M</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tl</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="n">qk</span> <span class="o">+=</span> <span class="n">tl</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="n">k</span><span class="p">,</span> <span class="n">allow_tf32</span><span class="o">=</span><span class="n">ALLOW_TF32</span><span class="p">)</span> <span class="o">*</span> <span class="n">qk_scale</span>
+            <span class="k">if</span> <span class="n">CAST_BEFORE_MATMUL</span><span class="p">:</span>
+                <span class="n">k</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">tl</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">STAGE</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">IS_CAUSAL</span><span class="p">:</span>
+                    <span class="c1"># For some reason this is faster than start_n &lt;= q_seq_start + offs_m[:, None] - offs_n[None, :]</span>
+                    <span class="n">qk</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+                        <span class="n">q_seq_start</span> <span class="o">+</span> <span class="n">offs_m</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="n">start_n</span> <span class="o">+</span> <span class="n">offs_n</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]),</span>
+                        <span class="n">qk</span><span class="p">,</span>
+                        <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;-inf&quot;</span><span class="p">),</span>
+                    <span class="p">)</span>
+                <span class="k">if</span> <span class="n">BOUNDS_CHECKS_N</span><span class="p">:</span>
+                    <span class="n">qk</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+                        <span class="n">tl</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">hi</span> <span class="o">-</span> <span class="n">start_n</span><span class="p">,</span> <span class="n">qk</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;-inf&quot;</span><span class="p">)</span>
+                    <span class="p">)</span>
+
+            <span class="c1"># -- compute scaling constant ---</span>
+            <span class="n">m_i_new</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">m_i</span><span class="p">,</span> <span class="n">tl</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">qk</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="n">qk</span> <span class="o">=</span> <span class="n">qk</span> <span class="o">-</span> <span class="n">m_i_new</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>
+            <span class="n">alpha</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">exp2</span><span class="p">(</span><span class="n">m_i</span> <span class="o">-</span> <span class="n">m_i_new</span><span class="p">)</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">exp2</span><span class="p">(</span><span class="n">qk</span><span class="p">)</span>
+
+            <span class="c1"># -- scale and update acc --</span>
+            <span class="n">acc</span> <span class="o">*=</span> <span class="n">alpha</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">pre_load_v</span><span class="p">:</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span>
+                    <span class="n">V_block_ptr</span><span class="p">,</span> <span class="n">boundary_check</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,)</span> <span class="k">if</span> <span class="n">BOUNDS_CHECKS_STAGE</span> <span class="k">else</span> <span class="p">()</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">CAST_BEFORE_MATMUL</span><span class="p">:</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">tl</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="n">acc</span> <span class="o">+=</span> <span class="n">tl</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="n">v</span><span class="p">,</span> <span class="n">allow_tf32</span><span class="o">=</span><span class="n">ALLOW_TF32</span><span class="p">)</span>
+            <span class="c1"># -- update m_i and l_i --</span>
+            <span class="n">l_i</span> <span class="o">=</span> <span class="n">l_i</span> <span class="o">*</span> <span class="n">alpha</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">m_i</span> <span class="o">=</span> <span class="n">m_i_new</span>
+            <span class="c1"># update pointers</span>
+            <span class="n">K_block_ptr</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">advance</span><span class="p">(</span><span class="n">K_block_ptr</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">))</span>
+            <span class="n">V_block_ptr</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">advance</span><span class="p">(</span><span class="n">V_block_ptr</span><span class="p">,</span> <span class="p">(</span><span class="n">BLOCK_N</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">acc</span><span class="p">,</span> <span class="n">l_i</span><span class="p">,</span> <span class="n">m_i</span>
+
+    <span class="nd">@triton</span><span class="o">.</span><span class="n">jit</span>
+    <span class="k">def</span> <span class="nf">_fwd_kernel_triton_flash</span><span class="p">(</span>
+        <span class="n">Q</span><span class="p">,</span>
+        <span class="n">K</span><span class="p">,</span>
+        <span class="n">V</span><span class="p">,</span>
+        <span class="n">sm_scale</span><span class="p">,</span>
+        <span class="n">L</span><span class="p">,</span>
+        <span class="n">Out</span><span class="p">,</span>
+        <span class="n">Seq_len</span><span class="p">,</span>
+        <span class="n">Seq_pos_q</span><span class="p">,</span>
+        <span class="n">stride_qz</span><span class="p">,</span>
+        <span class="n">stride_qh</span><span class="p">,</span>
+        <span class="n">stride_qm</span><span class="p">,</span>
+        <span class="n">stride_qk</span><span class="p">,</span>
+        <span class="n">stride_kz</span><span class="p">,</span>
+        <span class="n">stride_kh</span><span class="p">,</span>
+        <span class="n">stride_kn</span><span class="p">,</span>
+        <span class="n">stride_kk</span><span class="p">,</span>
+        <span class="n">stride_vz</span><span class="p">,</span>
+        <span class="n">stride_vh</span><span class="p">,</span>
+        <span class="n">stride_vk</span><span class="p">,</span>
+        <span class="n">stride_vn</span><span class="p">,</span>
+        <span class="n">stride_oz</span><span class="p">,</span>
+        <span class="n">stride_oh</span><span class="p">,</span>
+        <span class="n">stride_om</span><span class="p">,</span>
+        <span class="n">stride_on</span><span class="p">,</span>
+        <span class="n">Z</span><span class="p">,</span>
+        <span class="n">H</span><span class="p">,</span>
+        <span class="n">N_CTX</span><span class="p">,</span>
+        <span class="n">Mkv</span><span class="p">,</span>
+        <span class="n">BLOCK_M</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">BLOCK_DMODEL</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">BLOCK_N</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">IS_CAUSAL</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">BOUNDS_CHECKS_N</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">BOUNDS_CHECKS_M</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">ALLOW_TF32</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">CAST_BEFORE_MATMUL</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">USE_SEQ_LEN_KV</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">USE_SEQ_POS_Q</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+        <span class="n">IS_KV_PADDED</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>  <span class="c1"># Switch between padded and non-padded block-diagonal causal masks</span>
+        <span class="n">pre_load_v</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>  <span class="c1"># TODO: understand if that matters</span>
+    <span class="p">):</span>
+        <span class="n">start_m</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">program_id</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">tl</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="n">off_hz</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">program_id</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">tl</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+
+        <span class="n">tl</span><span class="o">.</span><span class="n">static_assert</span><span class="p">((</span><span class="n">IS_KV_PADDED</span> <span class="ow">and</span> <span class="n">USE_SEQ_POS_Q</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">IS_KV_PADDED</span><span class="p">)</span>
+
+        <span class="n">off_z</span> <span class="o">=</span> <span class="n">off_hz</span> <span class="o">//</span> <span class="n">H</span>
+        <span class="n">off_h</span> <span class="o">=</span> <span class="n">off_hz</span> <span class="o">%</span> <span class="n">H</span>
+        <span class="k">if</span> <span class="n">USE_SEQ_POS_Q</span><span class="p">:</span>
+            <span class="n">seqpos</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">Seq_pos_q</span> <span class="o">+</span> <span class="n">off_z</span><span class="p">)</span>
+            <span class="n">seqpos_next</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">Seq_pos_q</span> <span class="o">+</span> <span class="n">off_z</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">q_len</span> <span class="o">=</span> <span class="n">seqpos_next</span> <span class="o">-</span> <span class="n">seqpos</span>
+            <span class="n">q_offset</span> <span class="o">=</span> <span class="n">seqpos</span> <span class="o">*</span> <span class="n">stride_qm</span> <span class="o">+</span> <span class="n">off_h</span> <span class="o">*</span> <span class="n">stride_qh</span>
+            <span class="n">out_offset</span> <span class="o">=</span> <span class="n">seqpos</span> <span class="o">*</span> <span class="n">stride_om</span> <span class="o">+</span> <span class="n">off_h</span> <span class="o">*</span> <span class="n">stride_oh</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">IS_KV_PADDED</span><span class="p">:</span>
+                <span class="c1"># BlockDiagonalCausalMask, no padding, use same sequence positions as for Q</span>
+                <span class="n">kv_offset</span> <span class="o">=</span> <span class="n">seqpos</span> <span class="o">*</span> <span class="n">stride_kn</span> <span class="o">+</span> <span class="n">off_h</span> <span class="o">*</span> <span class="n">stride_kh</span>
+                <span class="n">kv_len</span> <span class="o">=</span> <span class="n">q_len</span>
+                <span class="n">q_seq_start</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># BlockDiagonalCausalWithOffsetPaddedKeysMask</span>
+                <span class="n">kv_offset</span> <span class="o">=</span> <span class="n">off_z</span> <span class="o">*</span> <span class="n">stride_kz</span> <span class="o">+</span> <span class="n">off_h</span> <span class="o">*</span> <span class="n">stride_kh</span>
+                <span class="k">if</span> <span class="n">USE_SEQ_LEN_KV</span><span class="p">:</span>
+                    <span class="n">kv_len</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">Seq_len</span> <span class="o">+</span> <span class="n">off_z</span><span class="p">)</span>
+                    <span class="n">q_seq_start</span> <span class="o">=</span> <span class="n">kv_len</span> <span class="o">-</span> <span class="n">q_len</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># if no variable K/V seqlens are provided, assume full length</span>
+                    <span class="n">kv_len</span> <span class="o">=</span> <span class="n">Mkv</span>
+                    <span class="n">q_seq_start</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># No mask or simple causal mask</span>
+            <span class="n">q_len</span> <span class="o">=</span> <span class="n">N_CTX</span>
+            <span class="n">q_offset</span> <span class="o">=</span> <span class="n">off_z</span> <span class="o">*</span> <span class="n">stride_qz</span> <span class="o">+</span> <span class="n">off_h</span> <span class="o">*</span> <span class="n">stride_qh</span>
+            <span class="n">out_offset</span> <span class="o">=</span> <span class="n">off_z</span> <span class="o">*</span> <span class="n">stride_oz</span> <span class="o">+</span> <span class="n">off_h</span> <span class="o">*</span> <span class="n">stride_oh</span>
+
+            <span class="n">kv_len</span> <span class="o">=</span> <span class="n">Mkv</span>
+            <span class="n">q_seq_start</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="n">kv_offset</span> <span class="o">=</span> <span class="n">off_z</span> <span class="o">*</span> <span class="n">stride_kz</span> <span class="o">+</span> <span class="n">off_h</span> <span class="o">*</span> <span class="n">stride_kh</span>
+
+        <span class="n">Q_block_ptr</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">make_block_ptr</span><span class="p">(</span>
+            <span class="n">base</span><span class="o">=</span><span class="n">Q</span> <span class="o">+</span> <span class="n">q_offset</span><span class="p">,</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">q_len</span><span class="p">,</span> <span class="n">BLOCK_DMODEL</span><span class="p">),</span>
+            <span class="n">strides</span><span class="o">=</span><span class="p">(</span><span class="n">stride_qm</span><span class="p">,</span> <span class="n">stride_qk</span><span class="p">),</span>
+            <span class="n">offsets</span><span class="o">=</span><span class="p">(</span><span class="n">start_m</span> <span class="o">*</span> <span class="n">BLOCK_M</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="n">block_shape</span><span class="o">=</span><span class="p">(</span><span class="n">BLOCK_M</span><span class="p">,</span> <span class="n">BLOCK_DMODEL</span><span class="p">),</span>
+            <span class="n">order</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">K_block_ptr</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">make_block_ptr</span><span class="p">(</span>
+            <span class="n">base</span><span class="o">=</span><span class="n">K</span> <span class="o">+</span> <span class="n">kv_offset</span><span class="p">,</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">BLOCK_DMODEL</span><span class="p">,</span> <span class="n">kv_len</span><span class="p">),</span>
+            <span class="n">strides</span><span class="o">=</span><span class="p">(</span><span class="n">stride_kk</span><span class="p">,</span> <span class="n">stride_kn</span><span class="p">),</span>
+            <span class="n">offsets</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="n">block_shape</span><span class="o">=</span><span class="p">(</span><span class="n">BLOCK_DMODEL</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">),</span>
+            <span class="n">order</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">V_block_ptr</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">make_block_ptr</span><span class="p">(</span>
+            <span class="n">base</span><span class="o">=</span><span class="n">V</span> <span class="o">+</span> <span class="n">kv_offset</span><span class="p">,</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">kv_len</span><span class="p">,</span> <span class="n">BLOCK_DMODEL</span><span class="p">),</span>
+            <span class="n">strides</span><span class="o">=</span><span class="p">(</span><span class="n">stride_vk</span><span class="p">,</span> <span class="n">stride_vn</span><span class="p">),</span>
+            <span class="n">offsets</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="n">block_shape</span><span class="o">=</span><span class="p">(</span><span class="n">BLOCK_N</span><span class="p">,</span> <span class="n">BLOCK_DMODEL</span><span class="p">),</span>
+            <span class="n">order</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="c1"># initialize offsets</span>
+        <span class="n">offs_m</span> <span class="o">=</span> <span class="n">start_m</span> <span class="o">*</span> <span class="n">BLOCK_M</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">BLOCK_M</span><span class="p">)</span>  <span class="c1"># For Q</span>
+        <span class="n">offs_n</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">)</span>  <span class="c1"># For K/V</span>
+        <span class="c1"># initialize pointer to m and l</span>
+        <span class="n">m_i</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">BLOCK_M</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tl</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;inf&quot;</span><span class="p">)</span>
+        <span class="n">l_i</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">BLOCK_M</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tl</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="o">+</span> <span class="mf">1.0</span>
+        <span class="n">acc</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">BLOCK_M</span><span class="p">,</span> <span class="n">BLOCK_DMODEL</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tl</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="c1"># scale sm_scale by log_2(e) and use</span>
+        <span class="c1"># 2^x instead of exp in the loop because CSE and LICM</span>
+        <span class="c1"># don&#39;t work as expected with `exp` in the loop</span>
+        <span class="n">qk_scale</span> <span class="o">=</span> <span class="n">sm_scale</span> <span class="o">*</span> <span class="mf">1.44269504</span>
+        <span class="c1"># load q: it will stay in SRAM throughout on NV GPUs but in VGPRs on AMD GPUs</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span>
+            <span class="n">Q_block_ptr</span><span class="p">,</span> <span class="n">boundary_check</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,)</span> <span class="k">if</span> <span class="n">BOUNDS_CHECKS_M</span> <span class="ow">or</span> <span class="n">USE_SEQ_POS_Q</span> <span class="k">else</span> <span class="p">()</span>
+        <span class="p">)</span>
+
+        <span class="c1"># The loop over K/V sequence blocks is divided into two stages:</span>
+        <span class="c1"># Stage 1: (many) blocks which don&#39;t need boundary conditions checks - not touching sequence end or diagonal</span>
+        <span class="c1"># Stage 2: (few) blocks which need boundary conditions checks</span>
+        <span class="c1"># Following https://github.com/openai/triton/blob/293b7fd592a1602f2305c1bd0bc978bbd97337d6/python/tutorials/06-fused-attention.py  # noqa: E501</span>
+
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Iteration doesn&#39;t need masking if</span>
+<span class="sd">            - 1) block doesn&#39;t cross the diagonal: max(kv_pos) &lt;= min(q_pos)</span>
+<span class="sd">            - 2) block doesn&#39;t cross the end of the sequence: max(kv_pos) &lt; kv_len</span>
+<span class="sd">        Find maximum start_n for which condition 1 is satisifed.</span>
+<span class="sd">        Remember that</span>
+<span class="sd">            q_pos = q_seq_start + offs_m[:, None]</span>
+<span class="sd">            kv_pos = start_n + offs_n[None, :]</span>
+<span class="sd">            offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)</span>
+<span class="sd">            offs_n = tl.arange(0, BLOCK_N)</span>
+<span class="sd">        min(q_pos) = q_seq_start + start_m * BLOCK_M</span>
+<span class="sd">        max(kv_pos) = start_n + BLOCK_N - 1</span>
+<span class="sd">        So the condition becomes</span>
+<span class="sd">            q_seq_start + start_m * BLOCK_M &gt;= start_n + BLOCK_N - 1</span>
+<span class="sd">        So:</span>
+<span class="sd">        1) start_n &lt;= q_seq_start + start_m * BLOCK_M - BLOCK_N + 1</span>
+<span class="sd">        2) start_n &lt;= kv_len - BLOCK_N</span>
+
+<span class="sd">        So the last allowed start_n without masking is min(q_seq_start + start_m * BLOCK_M + 1, kv_len) - BLOCK_N</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Second stage can only be skipped if no mask is used and K/V length is divisible by the tile size</span>
+        <span class="n">TWO_STAGES</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span> <span class="o">=</span> <span class="n">BOUNDS_CHECKS_N</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="n">IS_CAUSAL</span> <span class="ow">or</span> <span class="p">(</span><span class="n">USE_SEQ_LEN_KV</span> <span class="ow">or</span> <span class="p">(</span><span class="n">USE_SEQ_POS_Q</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">IS_KV_PADDED</span><span class="p">))</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">TWO_STAGES</span><span class="p">:</span>
+            <span class="c1"># Border between two stages</span>
+            <span class="n">hi_stage_1</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">q_seq_start</span> <span class="o">+</span> <span class="n">start_m</span> <span class="o">*</span> <span class="n">BLOCK_M</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">kv_len</span><span class="p">)</span> <span class="o">-</span> <span class="n">BLOCK_N</span>
+            <span class="n">hi_stage_1</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">hi_stage_1</span> <span class="o">//</span> <span class="n">BLOCK_N</span>
+            <span class="p">)</span> <span class="o">*</span> <span class="n">BLOCK_N</span>  <span class="c1"># Don&#39;t understand why it doesn&#39;t work without this</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">hi_stage_1</span> <span class="o">=</span> <span class="n">kv_len</span>
+
+        <span class="c1"># Stage 1 - no boundary conditions</span>
+        <span class="n">acc</span><span class="p">,</span> <span class="n">l_i</span><span class="p">,</span> <span class="n">m_i</span> <span class="o">=</span> <span class="n">_fwd_kernel_triton_flash_inner</span><span class="p">(</span>
+            <span class="n">acc</span><span class="p">,</span>
+            <span class="n">l_i</span><span class="p">,</span>
+            <span class="n">m_i</span><span class="p">,</span>
+            <span class="n">q</span><span class="p">,</span>
+            <span class="n">K_block_ptr</span><span class="p">,</span>
+            <span class="n">V_block_ptr</span><span class="p">,</span>
+            <span class="n">q_seq_start</span><span class="p">,</span>
+            <span class="mi">0</span><span class="p">,</span>
+            <span class="n">hi_stage_1</span><span class="p">,</span>
+            <span class="n">start_m</span><span class="p">,</span>
+            <span class="n">qk_scale</span><span class="p">,</span>
+            <span class="n">kv_len</span><span class="p">,</span>
+            <span class="n">offs_m</span><span class="p">,</span>
+            <span class="n">offs_n</span><span class="p">,</span>
+            <span class="n">BLOCK_M</span><span class="p">,</span>
+            <span class="n">BLOCK_N</span><span class="p">,</span>
+            <span class="n">IS_CAUSAL</span><span class="p">,</span>
+            <span class="n">BOUNDS_CHECKS_N</span><span class="p">,</span>
+            <span class="n">CAST_BEFORE_MATMUL</span><span class="p">,</span>
+            <span class="n">ALLOW_TF32</span><span class="p">,</span>
+            <span class="n">STAGE</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">pre_load_v</span><span class="o">=</span><span class="n">pre_load_v</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">TWO_STAGES</span><span class="p">:</span>
+            <span class="n">hi</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">tl</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">kv_len</span><span class="p">,</span> <span class="n">q_seq_start</span> <span class="o">+</span> <span class="p">(</span><span class="n">start_m</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">BLOCK_M</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">IS_CAUSAL</span>
+                <span class="k">else</span> <span class="n">kv_len</span>
+            <span class="p">)</span>
+            <span class="c1"># Do we need this barrier?</span>
+            <span class="c1"># tl.debug_barrier()</span>
+            <span class="c1"># Stage 2 - with boundary conditions</span>
+            <span class="n">acc</span><span class="p">,</span> <span class="n">l_i</span><span class="p">,</span> <span class="n">m_i</span> <span class="o">=</span> <span class="n">_fwd_kernel_triton_flash_inner</span><span class="p">(</span>
+                <span class="n">acc</span><span class="p">,</span>
+                <span class="n">l_i</span><span class="p">,</span>
+                <span class="n">m_i</span><span class="p">,</span>
+                <span class="n">q</span><span class="p">,</span>
+                <span class="n">K_block_ptr</span><span class="p">,</span>
+                <span class="n">V_block_ptr</span><span class="p">,</span>
+                <span class="n">q_seq_start</span><span class="p">,</span>
+                <span class="n">hi_stage_1</span><span class="p">,</span>
+                <span class="n">hi</span><span class="p">,</span>
+                <span class="n">start_m</span><span class="p">,</span>
+                <span class="n">qk_scale</span><span class="p">,</span>
+                <span class="n">kv_len</span><span class="p">,</span>
+                <span class="n">offs_m</span><span class="p">,</span>
+                <span class="n">offs_n</span><span class="p">,</span>
+                <span class="n">BLOCK_M</span><span class="p">,</span>
+                <span class="n">BLOCK_N</span><span class="p">,</span>
+                <span class="n">IS_CAUSAL</span><span class="p">,</span>
+                <span class="n">BOUNDS_CHECKS_N</span><span class="p">,</span>
+                <span class="n">CAST_BEFORE_MATMUL</span><span class="p">,</span>
+                <span class="n">ALLOW_TF32</span><span class="p">,</span>
+                <span class="n">STAGE</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                <span class="n">pre_load_v</span><span class="o">=</span><span class="n">pre_load_v</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># write back l and m</span>
+        <span class="n">acc1</span> <span class="o">=</span> <span class="n">acc</span> <span class="o">/</span> <span class="n">l_i</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">l_ptrs</span> <span class="o">=</span> <span class="n">L</span> <span class="o">+</span> <span class="n">off_hz</span> <span class="o">*</span> <span class="n">N_CTX</span> <span class="o">+</span> <span class="n">offs_m</span>
+        <span class="c1"># Save LSE, converting from log2 to natural logarithm</span>
+        <span class="n">l_mask</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">start_m</span> <span class="o">*</span> <span class="n">BLOCK_M</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">BLOCK_M</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">q_len</span>
+            <span class="k">if</span> <span class="n">BOUNDS_CHECKS_M</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="n">tl</span><span class="o">.</span><span class="n">store</span><span class="p">(</span><span class="n">l_ptrs</span><span class="p">,</span> <span class="p">(</span><span class="n">m_i</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">log2</span><span class="p">(</span><span class="n">l_i</span><span class="p">))</span> <span class="o">/</span> <span class="mf">1.44269504</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="n">l_mask</span><span class="p">)</span>
+        <span class="c1"># write back O</span>
+        <span class="n">O_block_ptr</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">make_block_ptr</span><span class="p">(</span>
+            <span class="n">base</span><span class="o">=</span><span class="n">Out</span> <span class="o">+</span> <span class="n">out_offset</span><span class="p">,</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">q_len</span><span class="p">,</span> <span class="n">BLOCK_DMODEL</span><span class="p">),</span>
+            <span class="n">strides</span><span class="o">=</span><span class="p">(</span><span class="n">stride_om</span><span class="p">,</span> <span class="n">stride_on</span><span class="p">),</span>
+            <span class="n">offsets</span><span class="o">=</span><span class="p">(</span><span class="n">start_m</span> <span class="o">*</span> <span class="n">BLOCK_M</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="n">block_shape</span><span class="o">=</span><span class="p">(</span><span class="n">BLOCK_M</span><span class="p">,</span> <span class="n">BLOCK_DMODEL</span><span class="p">),</span>
+            <span class="n">order</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">tl</span><span class="o">.</span><span class="n">store</span><span class="p">(</span>
+            <span class="n">O_block_ptr</span><span class="p">,</span>
+            <span class="n">acc1</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">Out</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">element_ty</span><span class="p">),</span>
+            <span class="n">boundary_check</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,)</span> <span class="k">if</span> <span class="n">BOUNDS_CHECKS_M</span> <span class="ow">or</span> <span class="n">USE_SEQ_POS_Q</span> <span class="k">else</span> <span class="p">(),</span>
+        <span class="p">)</span>
+
+    <span class="n">_autotuner_config_amd_full</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">triton</span><span class="o">.</span><span class="n">Config</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">&quot;BLOCK_M&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;BLOCK_N&quot;</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">&quot;waves_per_eu&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;pre_load_v&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+            <span class="n">num_stages</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">num_warps</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">triton</span><span class="o">.</span><span class="n">Config</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">&quot;BLOCK_M&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;BLOCK_N&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;waves_per_eu&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;pre_load_v&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+            <span class="n">num_stages</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">num_warps</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">triton</span><span class="o">.</span><span class="n">Config</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">&quot;BLOCK_M&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;BLOCK_N&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;waves_per_eu&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;pre_load_v&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+            <span class="n">num_stages</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">num_warps</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">triton</span><span class="o">.</span><span class="n">Config</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">&quot;BLOCK_M&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;BLOCK_N&quot;</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">&quot;waves_per_eu&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;pre_load_v&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+            <span class="n">num_stages</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">num_warps</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+        <span class="p">),</span>  <span class="c1"># d64-False</span>
+        <span class="n">triton</span><span class="o">.</span><span class="n">Config</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">&quot;BLOCK_M&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;BLOCK_N&quot;</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">&quot;waves_per_eu&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;pre_load_v&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+            <span class="n">num_stages</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">num_warps</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+        <span class="p">),</span>  <span class="c1"># d64-True</span>
+    <span class="p">]</span>
+
+    <span class="n">_autotuner_config_amd_dummy</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">triton</span><span class="o">.</span><span class="n">Config</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">&quot;BLOCK_M&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;BLOCK_N&quot;</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">&quot;waves_per_eu&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;pre_load_v&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+            <span class="n">num_stages</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">num_warps</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">]</span>
+
+    <span class="n">_autotuner_config_nvidia_dummy</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">triton</span><span class="o">.</span><span class="n">Config</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">&quot;BLOCK_M&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;BLOCK_N&quot;</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">&quot;pre_load_v&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+            <span class="n">num_stages</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">num_warps</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">autotune_kernel</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">autotune</span><span class="p">):</span>
+
+        <span class="n">kernel</span> <span class="o">=</span> <span class="n">triton</span><span class="o">.</span><span class="n">heuristics</span><span class="p">(</span>
+            <span class="n">values</span><span class="o">=</span><span class="p">{</span>
+                <span class="s2">&quot;BOUNDS_CHECKS_N&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">args</span><span class="p">:</span> <span class="p">((</span><span class="n">args</span><span class="p">[</span><span class="s2">&quot;Mkv&quot;</span><span class="p">]</span> <span class="o">%</span> <span class="n">args</span><span class="p">[</span><span class="s2">&quot;BLOCK_N&quot;</span><span class="p">])</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="s2">&quot;USE_SEQ_POS_Q&quot;</span><span class="p">]</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">args</span><span class="p">[</span><span class="s2">&quot;IS_KV_PADDED&quot;</span><span class="p">]),</span>
+                <span class="s2">&quot;BOUNDS_CHECKS_M&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">args</span><span class="p">:</span> <span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="s2">&quot;N_CTX&quot;</span><span class="p">]</span> <span class="o">%</span> <span class="n">args</span><span class="p">[</span><span class="s2">&quot;BLOCK_M&quot;</span><span class="p">])</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="p">)(</span><span class="n">kernel</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">cuda</span><span class="p">:</span>
+            <span class="n">configs</span> <span class="o">=</span> <span class="n">_autotuner_config_nvidia_dummy</span>
+        <span class="k">elif</span> <span class="n">autotune</span><span class="p">:</span>
+            <span class="n">configs</span> <span class="o">=</span> <span class="n">_autotuner_config_amd_full</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">configs</span> <span class="o">=</span> <span class="n">_autotuner_config_amd_dummy</span>
+
+        <span class="n">kernel</span> <span class="o">=</span> <span class="n">triton</span><span class="o">.</span><span class="n">autotune</span><span class="p">(</span>
+            <span class="n">configs</span><span class="o">=</span><span class="n">configs</span><span class="p">,</span>
+            <span class="n">key</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Z&quot;</span><span class="p">,</span> <span class="s2">&quot;H&quot;</span><span class="p">,</span> <span class="s2">&quot;N_CTX&quot;</span><span class="p">,</span> <span class="s2">&quot;IS_CAUSAL&quot;</span><span class="p">,</span> <span class="s2">&quot;BLOCK_DMODEL&quot;</span><span class="p">],</span>
+        <span class="p">)(</span><span class="n">kernel</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">kernel</span>
+
+    <span class="n">_fwd_kernel_triton_flash_maybe_autotuned</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="kc">True</span><span class="p">:</span> <span class="n">autotune_kernel</span><span class="p">(</span><span class="n">_fwd_kernel_triton_flash</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+        <span class="kc">False</span><span class="p">:</span> <span class="n">autotune_kernel</span><span class="p">(</span><span class="n">_fwd_kernel_triton_flash</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+    <span class="p">}</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="n">_fwd_kernel_triton_flash</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_fwd_kernel_triton_flash_maybe_autotuned</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
 
 
 <span class="k">def</span> <span class="nf">_prepare_inputs</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Inputs</span><span class="p">:</span>
@@ -308,7 +686,7 @@
 <span class="sd">        `Phil Tillet&#39;s code &lt;https://github.com/openai/triton/blob/master/python/tutorials/06-fused-attention.py&gt;`_</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">triton_flash_forward</span>
+    <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">_fwd_kernel_triton_flash</span>
     <span class="n">SUPPORTED_DEVICES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;cuda&quot;</span><span class="p">}</span>
     <span class="n">CUDA_MINIMUM_COMPUTE_CAPABILITY</span> <span class="o">=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
     <span class="n">SUPPORTED_DTYPES</span> <span class="o">=</span> <span class="p">{</span><span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">}</span>
@@ -316,12 +694,35 @@
     <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
         <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
         <span class="n">LowerTriangularMask</span><span class="p">,</span>
-        <span class="c1"># TODO: backwards accuracy is failing for a few cases, perhaps we want to disable this for now.</span>
-        <span class="c1"># torch.Tensor,</span>
+        <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+        <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
     <span class="p">}</span>
     <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;tritonflashattF&quot;</span>
+
+    <span class="c1"># Off by default to avoid slowing down tests.</span>
+    <span class="c1"># Needs to be turned on explicitly in benchmarks, in prod, and in a small number of tests</span>
+    <span class="n">AUTOTUNE</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="n">ERROR_ATOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">2e-2</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">2e-2</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">ERROR_RTOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">2e-2</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">2e-2</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">shape_not_supported_reasons</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span> <span class="n">Mq</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Mkv</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">K</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Kv</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">shape_not_supported_reasons</span><span class="p">(</span><span class="n">Mq</span><span class="p">,</span> <span class="n">Mkv</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">Kv</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">K</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="mi">32</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">128</span><span class="p">}:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Embed dim </span><span class="si">{</span><span class="n">K</span><span class="si">}</span><span class="s2"> not supported&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
@@ -329,20 +730,52 @@
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;key&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;triton is not available&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+            <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
+            <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+        <span class="p">):</span>
+            <span class="c1"># Support padded causal block-diagonal mask if the distance between each two consecutive key starts</span>
+            <span class="c1"># is equal to the padding (key lengths can vary)</span>
+            <span class="n">batch_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">B_T</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span>
+                <span class="mi">1</span>
+            <span class="p">]</span>  <span class="c1"># For these mask types the shapes of Q/K/V are (1, B_T, H, K)</span>
+            <span class="k">if</span> <span class="n">B_T</span> <span class="o">%</span> <span class="n">batch_size</span><span class="p">:</span>
+                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;K/V should be padded, but batch size </span><span class="si">{</span><span class="n">batch_size</span><span class="si">}</span><span class="s2"> doesn&#39;t divide B*T=</span><span class="si">{</span><span class="n">B_T</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">kv_maxlen</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">padding</span>
+                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">seqstart</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">seqstart</span> <span class="o">!=</span> <span class="n">i</span> <span class="o">*</span> <span class="n">kv_maxlen</span><span class="p">:</span>
+                        <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                            <span class="s2">&quot;Variable K/V start positions are not supported, they should be determined &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;by kv_maxlen/padding: </span><span class="si">{</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="si">=}</span><span class="s2"> </span><span class="si">{</span><span class="n">kv_maxlen</span><span class="si">=}</span><span class="s2"> </span><span class="si">{</span><span class="n">batch_size</span><span class="si">=}</span><span class="s2">&quot;</span>
+                        <span class="p">)</span>
+                        <span class="k">break</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+            <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
+            <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
+        <span class="p">):</span>
+            <span class="c1"># Support padded causal block-diagonal mask if for each batch element number of queries is equal</span>
+            <span class="c1"># to the number of key/values, i.e. each block is square</span>
+            <span class="k">for</span> <span class="n">q_pos</span><span class="p">,</span> <span class="n">kv_pos</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+                <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span>
+            <span class="p">):</span>
+                <span class="k">if</span> <span class="n">q_pos</span> <span class="o">!=</span> <span class="n">kv_pos</span><span class="p">:</span>
+                    <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Position starts of Q and K/V should be the same, but got </span><span class="si">{</span><span class="n">q_pos</span><span class="si">}</span><span class="s2"> != </span><span class="si">{</span><span class="n">kv_pos</span><span class="si">}</span><span class="s2">&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="si">=}</span><span class="s2">, </span><span class="si">{</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="si">=}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span> <span class="ow">and</span> <span class="n">torch</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">cuda</span><span class="p">:</span>
             <span class="c1"># Has only been tested on 8.0 / 9.0.</span>
             <span class="c1"># Fails on 7.5 with illegal memory access</span>
             <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
                 <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="s2">&quot;requires GPU with sm80 minimum compute capacity, e.g., A100/H100/L4&quot;</span>
                 <span class="p">)</span>
-        <span class="k">if</span> <span class="n">_is_triton_available</span><span class="p">():</span>
-            <span class="kn">import</span> <span class="nn">triton</span>
-
-            <span class="k">if</span> <span class="n">triton</span><span class="o">.</span><span class="n">__version__</span> <span class="o">&gt;</span> <span class="s2">&quot;2.0.0&quot;</span><span class="p">:</span>
-                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;Only work on pre-MLIR triton for now&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
@@ -350,78 +783,104 @@
         <span class="bp">cls</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]]:</span>
         <span class="n">inp</span> <span class="o">=</span> <span class="n">_prepare_inputs</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+        <span class="n">attn_bias</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span>
+        <span class="n">seq_len_kv</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">seqstart_q</span> <span class="o">=</span> <span class="kc">None</span>
 
-        <span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="n">softmax_scale</span> <span class="o">=</span> <span class="n">triton_flash_forward</span><span class="p">(</span>
-            <span class="n">q</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span>
-            <span class="n">k</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
-            <span class="n">v</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-            <span class="n">bias</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="n">softmax_scale</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">scale_float</span><span class="p">,</span>
-            <span class="n">causal</span><span class="o">=</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">LowerTriangularMask</span><span class="p">),</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span>
+        <span class="n">k</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+            <span class="n">attn_bias</span><span class="p">,</span>
+            <span class="p">(</span><span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">),</span>
+        <span class="p">):</span>
+            <span class="c1"># q ~ [1, B*T, H, K]</span>
+            <span class="c1"># TODO: do we really need to do this cast? seems fishy but</span>
+            <span class="c1"># I just copied it from the split-k kernel</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span>
+                <span class="n">attn_bias</span><span class="p">,</span>
+                <span class="p">(</span><span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">seqstart_q</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart</span>
+            <span class="n">B</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">seqstart_q</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">H</span><span class="p">,</span> <span class="n">Kq</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:]</span>
+            <span class="n">H2</span><span class="p">,</span> <span class="n">Kkv</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:]</span>
+
+            <span class="n">Mq</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">):</span>
+                <span class="n">seq_len_kv</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqlen</span>
+                <span class="c1"># assume kv has been padded</span>
+                <span class="n">k</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">H2</span><span class="p">,</span> <span class="n">Kkv</span><span class="p">)</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">H2</span><span class="p">,</span> <span class="n">Kkv</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">B</span><span class="p">,</span> <span class="n">Mq</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span>
+
+        <span class="c1"># Coded for BHMK format</span>
+        <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">q</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+            <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+            <span class="n">v</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
         <span class="p">)</span>
-        <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">Context</span><span class="p">(</span><span class="n">lse</span><span class="o">=</span><span class="n">lse</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">)</span></div>
 
+        <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
 
-<div class="viewcode-block" id="BwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.triton.BwOp">[docs]</a><span class="nd">@register_operator</span>
-<span class="k">class</span> <span class="nc">BwOp</span><span class="p">(</span><span class="n">AttentionBwOpBase</span><span class="p">):</span>
-    <span class="vm">__doc__</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="vm">__doc__</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">Mkv</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">shape</span>
 
-    <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">triton_flash_backward</span>
-    <span class="n">SUPPORTED_DEVICES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_DEVICES</span>
-    <span class="n">CUDA_MINIMUM_COMPUTE_CAPABILITY</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">CUDA_MINIMUM_COMPUTE_CAPABILITY</span>
-    <span class="n">SUPPORTED_DTYPES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span>
-    <span class="n">SUPPORTED_MAX_K</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_MAX_K</span>
-    <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span>
-    <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DROPOUT</span>
-    <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_CUSTOM_SCALE</span>
-    <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span>
-    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;tritonflashattB&quot;</span>
+        <span class="n">sm_scale</span> <span class="o">=</span> <span class="n">K</span><span class="o">**-</span><span class="mf">0.5</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">scale</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">inp</span><span class="o">.</span><span class="n">scale</span>
+        <span class="n">L</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">B</span> <span class="o">*</span> <span class="n">H</span><span class="p">,</span> <span class="n">Mq</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">q</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="n">is_causal</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">use_seq_len_kv</span> <span class="o">=</span> <span class="n">seq_len_kv</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">use_seq_pos_q</span> <span class="o">=</span> <span class="n">seqstart_q</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">is_kv_padded</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span>
+            <span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span>
+        <span class="p">)</span>
 
-    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-        <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">BwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
-        <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
-        <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;key&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
-        <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;triton is not available&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
-                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;requires A100 GPU&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">_is_triton_available</span><span class="p">():</span>
-            <span class="kn">import</span> <span class="nn">triton</span>
+        <span class="n">grid</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">META</span><span class="p">:</span> <span class="p">(</span><span class="n">triton</span><span class="o">.</span><span class="n">cdiv</span><span class="p">(</span><span class="n">Mq</span><span class="p">,</span> <span class="n">META</span><span class="p">[</span><span class="s2">&quot;BLOCK_M&quot;</span><span class="p">]),</span> <span class="n">B</span> <span class="o">*</span> <span class="n">H</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>  <span class="c1"># noqa: E731</span>
+        <span class="n">kernel</span> <span class="o">=</span> <span class="n">_fwd_kernel_triton_flash_maybe_autotuned</span><span class="p">[</span><span class="bp">cls</span><span class="o">.</span><span class="n">AUTOTUNE</span><span class="p">]</span>
+        <span class="n">kernel</span><span class="p">[</span><span class="n">grid</span><span class="p">](</span>
+            <span class="n">q</span><span class="p">,</span>
+            <span class="n">k</span><span class="p">,</span>
+            <span class="n">v</span><span class="p">,</span>
+            <span class="n">sm_scale</span><span class="p">,</span>
+            <span class="n">L</span><span class="p">,</span>
+            <span class="n">out</span><span class="p">,</span>
+            <span class="n">seq_len_kv</span><span class="p">,</span>
+            <span class="n">seqstart_q</span><span class="p">,</span>
+            <span class="n">q</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+            <span class="n">q</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span>
+            <span class="n">q</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>
+            <span class="n">q</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span>
+            <span class="n">k</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+            <span class="n">k</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span>
+            <span class="n">k</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>
+            <span class="n">k</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span>
+            <span class="n">v</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+            <span class="n">v</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span>
+            <span class="n">v</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>
+            <span class="n">v</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span>
+            <span class="n">B</span><span class="p">,</span>
+            <span class="n">H</span><span class="p">,</span>
+            <span class="n">Mq</span><span class="p">,</span>
+            <span class="n">Mkv</span><span class="p">,</span>
+            <span class="n">BLOCK_DMODEL</span><span class="o">=</span><span class="n">K</span><span class="p">,</span>
+            <span class="n">IS_CAUSAL</span><span class="o">=</span><span class="n">is_causal</span><span class="p">,</span>
+            <span class="n">USE_SEQ_LEN_KV</span><span class="o">=</span><span class="n">use_seq_len_kv</span><span class="p">,</span>
+            <span class="n">USE_SEQ_POS_Q</span><span class="o">=</span><span class="n">use_seq_pos_q</span><span class="p">,</span>
+            <span class="n">IS_KV_PADDED</span><span class="o">=</span><span class="n">is_kv_padded</span><span class="p">,</span>
+            <span class="n">ALLOW_TF32</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">matmul</span><span class="o">.</span><span class="n">allow_tf32</span><span class="p">,</span>
+            <span class="n">CAST_BEFORE_MATMUL</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
 
-            <span class="k">if</span> <span class="n">triton</span><span class="o">.</span><span class="n">__version__</span> <span class="o">&gt;</span> <span class="s2">&quot;2.0.0&quot;</span><span class="p">:</span>
-                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;Only work on pre-MLIR triton for now&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">reasons</span>
-
-    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">apply</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Gradients</span><span class="p">:</span>
-        <span class="n">inp</span> <span class="o">=</span> <span class="n">_prepare_inputs</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
-
-        <span class="c1"># Triton&#39;s autotune causes the Tensor._version to change, and so Pytorch autograd</span>
-        <span class="c1"># does a memcpy. To avoid this we run in inference_mode, which doesn&#39;t track the version.</span>
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">inference_mode</span><span class="p">():</span>
-            <span class="n">grads</span> <span class="o">=</span> <span class="n">Gradients</span><span class="p">(</span>
-                <span class="n">dq</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">),</span>
-                <span class="n">dk</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">),</span>
-                <span class="n">dv</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">),</span>
-            <span class="p">)</span>
-            <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span><span class="p">(</span>
-                <span class="n">grad</span><span class="p">,</span>
-                <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span>
-                <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
-                <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-                <span class="n">ctx</span><span class="o">.</span><span class="n">out</span><span class="p">,</span>
-                <span class="n">ctx</span><span class="o">.</span><span class="n">get_padded_lse</span><span class="p">(</span><span class="mi">128</span><span class="p">),</span>
-                <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="p">,</span>
-                <span class="n">grads</span><span class="o">.</span><span class="n">dk</span><span class="p">,</span>
-                <span class="n">grads</span><span class="o">.</span><span class="n">dv</span><span class="p">,</span>
-                <span class="n">bias</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-                <span class="n">softmax_scale</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">scale_float</span><span class="p">,</span>
-                <span class="n">causal</span><span class="o">=</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">LowerTriangularMask</span><span class="p">),</span>
-            <span class="p">)</span>
-        <span class="k">return</span> <span class="n">grads</span></div>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">L</span> <span class="o">=</span> <span class="n">L</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">Mq</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">Context</span><span class="p">(</span><span class="n">lse</span><span class="o">=</span><span class="n">L</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">)</span></div>
 </pre></div>
 
               </article>
