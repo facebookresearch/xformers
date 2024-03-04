@@ -16,8 +16,13 @@ from xformers.components.attention.core import (
     _sparse_bmm,
 )
 
-cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-_devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+cuda_only = pytest.mark.skipif(
+    not torch.cuda.is_available() or not torch.version.cuda, reason="requires CUDA"
+)
+
+_devices = (
+    ["cpu", "cuda"] if torch.cuda.is_available() and torch.version.cuda else ["cpu"]
+)
 
 
 def _baseline_matmul_with_sparse_mask(

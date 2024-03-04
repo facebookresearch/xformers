@@ -22,11 +22,23 @@ Available implementations
     :member-order: bysource
 
 .. automodule:: xformers.ops.fmha.triton
-    :members: FwOp, BwOp
+    :members: FwOp
     :member-order: bysource
 
 .. automodule:: xformers.ops.fmha.small_k
     :members: FwOp, BwOp
+    :member-order: bysource
+
+.. automodule:: xformers.ops.fmha.ck
+    :members: FwOp, BwOp
+    :member-order: bysource
+
+.. automodule:: xformers.ops.fmha.ck_decoder
+    :members: FwOp
+    :member-order: bysource
+
+.. automodule:: xformers.ops.fmha.ck_splitk
+    :members: FwOp
     :member-order: bysource
 
 Attention biases

@@ -111,7 +111,11 @@ def test_checkpoint_with_grad(policy_fn, input_requires_grad, grad_mode):
     "op",
     [
         xformers.ops.MemoryEfficientAttentionFlashAttentionOp,
-        xformers.ops.MemoryEfficientAttentionCutlassOp,
+        (
+            xformers.ops.MemoryEfficientAttentionCutlassOp
+            if torch.version.cuda
+            else xformers.ops.MemoryEfficientAttentionCkOp
+        ),
     ],
 )
 def test_checkpoint_attention(policy_fn, input_requires_grad, device, autocast, op):
@@ -120,6 +124,15 @@ def test_checkpoint_attention(policy_fn, input_requires_grad, device, autocast, 
         or op[1].CUDA_MINIMUM_COMPUTE_CAPABILITY > cuda_cap
     ):
         pytest.skip("skipping operator not supported in this arch")
+
+    if (
+        op is xformers.ops.MemoryEfficientAttentionFlashAttentionOp
+        and torch.version.hip
+    ):
+        pytest.skip("FlashAttentionOp is not supported on ROCM!")
+
+    if op is xformers.ops.MemoryEfficientAttentionCkOp:
+        pytest.skip("Gradience is currently not supported by ck-tiled!")
 
     class Attn(nn.Module):
         def forward(self, x):

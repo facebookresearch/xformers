@@ -60,3 +60,13 @@ outputs
 xformers/_flash_attn
 xformers/version.py
 xformers/cpp_lib.json
+
+## temporary files
+xformers/csrc/attention/hip_fmha/*.cu
+xformers/csrc/attention/hip_fmha/*.hip
+xformers/csrc/attention/hip_fmha/*_hip.h
+xformers/csrc/attention/hip_fmha/instances/*.cu
+xformers/csrc/attention/hip_fmha/instances/*.hip
+xformers/csrc/attention/hip_fmha/instances_tiled/*.cu
+xformers/csrc/attention/hip_fmha/instances_tiled/*.hip
+

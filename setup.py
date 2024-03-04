@@ -125,6 +125,23 @@ def get_cuda_version(cuda_dir) -> int:
     return bare_metal_major * 100 + bare_metal_minor
 
 
+def get_hip_version(rocm_dir) -> str:
+    hipcc_bin = "hipcc" if rocm_dir is None else os.path.join(rocm_dir, "bin", "hipcc")
+    try:
+        raw_output = subprocess.check_output(
+            [hipcc_bin, "--version"], universal_newlines=True
+        )
+    except Exception as e:
+        print(
+            f"hip installation not found: {e} ROCM_PATH={os.environ.get('ROCM_PATH')}"
+        )
+        return None
+    for line in raw_output.split("\n"):
+        if "HIP version" in line:
+            return line.split()[-1]
+    return None
+
+
 def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     # XXX: Not supported on windows for cuda<12
     # https://github.com/Dao-AILab/flash-attention/issues/345
@@ -223,11 +240,27 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     ]
 
 
+def rename_cpp_cu(cpp_files):
+    for entry in cpp_files:
+        shutil.copy(entry, os.path.splitext(entry)[0] + ".cu")
+
+
 def get_extensions():
     extensions_dir = os.path.join("xformers", "csrc")
 
     sources = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
     source_cuda = glob.glob(os.path.join(extensions_dir, "**", "*.cu"), recursive=True)
+    source_hip = glob.glob(
+        os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cpp"),
+        recursive=True,
+    )
+    source_hip_generated = glob.glob(
+        os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cu"),
+        recursive=True,
+    )
+    # avoid the temporary .cu files generated under xformers/csrc/attention/hip_fmha
+    source_cuda = list(set(source_cuda) - set(source_hip_generated))
+    sources = list(set(sources) - set(source_hip))
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
@@ -253,6 +286,7 @@ def get_extensions():
     include_dirs = [extensions_dir]
     ext_modules = []
     cuda_version = None
+    hip_version = None
     flash_version = "0.0.0"
 
     if (
@@ -294,6 +328,7 @@ def get_extensions():
         flash_extensions = get_flash_attention_extensions(
             cuda_version=cuda_version, extra_compile_args=extra_compile_args
         )
+
         if flash_extensions:
             flash_version = get_flash_version()
         ext_modules += flash_extensions
@@ -306,6 +341,51 @@ def get_extensions():
             "--ptxas-options=-O2",
             "--ptxas-options=-allow-expensive-optimizations=true",
         ]
+    elif torch.cuda.is_available() and torch.version.hip:
+        rename_cpp_cu(source_hip)
+        rocm_home = os.getenv("ROCM_PATH")
+        hip_version = get_hip_version(rocm_home)
+
+        source_hip_cu = []
+        for ff in source_hip:
+            source_hip_cu += [ff.replace(".cpp", ".cu")]
+
+        extension = CUDAExtension
+        sources += source_hip_cu
+        include_dirs += [
+            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_fmha"
+        ]
+
+        include_dirs += [
+            Path(this_dir)
+            / "third_party"
+            / "composable_kernel_tiled"
+            / "example"
+            / "91_tile_program"
+            / "xformers_fmha"
+        ]
+
+        include_dirs += [
+            Path(this_dir) / "third_party" / "composable_kernel_tiled" / "include"
+        ]
+
+        generator_flag = []
+
+        cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
+        extra_compile_args = {
+            "cxx": ["-O3", "-std=c++17"] + generator_flag,
+            "nvcc": [
+                "-O3",
+                "-std=c++17",
+                f"--offload-arch={os.getenv('HIP_ARCHITECTURES', 'native')}",
+                "-U__CUDA_NO_HALF_OPERATORS__",
+                "-U__CUDA_NO_HALF_CONVERSIONS__",
+                "-DCK_FMHA_FWD_FAST_EXP2=1",
+                "-fgpu-flush-denormals-to-zero",
+            ]
+            + generator_flag
+            + cc_flag,
+        }
 
     ext_modules.append(
         extension(
@@ -320,6 +400,7 @@ def get_extensions():
     return ext_modules, {
         "version": {
             "cuda": cuda_version,
+            "hip": hip_version,
             "torch": torch.__version__,
             "python": platform.python_version(),
             "flash": flash_version,
@@ -328,6 +409,7 @@ def get_extensions():
             k: os.environ.get(k)
             for k in [
                 "TORCH_CUDA_ARCH_LIST",
+                "PYTORCH_ROCM_ARCH",
                 "XFORMERS_BUILD_TYPE",
                 "XFORMERS_ENABLE_DEBUG_ASSERTIONS",
                 "NVCC_FLAGS",

@@ -29,6 +29,10 @@ torch_compile_tests = pytest.mark.skipif(
     torch.__version__ < "2.2.0.dev20231122", reason="requires PyTorch 2.2+"
 )
 
+disable_on_rocm = pytest.mark.skipif(
+    not not torch.version.hip, reason="could not be done on ROCM"
+)
+
 
 def assert_allclose(
     # The output of the tested function
@@ -135,6 +139,7 @@ def create_module_cached(**kwargs) -> xsw.SwiGLU:
     return xsw.SwiGLU(**kwargs)
 
 
+@disable_on_rocm
 @pytest.mark.parametrize("autocast", [False, True], ids=["regular", "autocast"])
 @pytest.mark.parametrize("op", _ops, ids=[x.NAME for x in _ops])
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])

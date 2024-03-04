@@ -458,8 +458,9 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
             seqlen <= padding for seqlen in seqlens
         ), f"Seqlens {seqlens} Padding {padding}"
         seqstart_py = list(range(0, len(seqlens) * padding + 1, padding))
+        seqlen = torch.tensor(seqlens, dtype=torch.int32)
         return cls(
-            seqlen=torch.tensor(seqlens, dtype=torch.int32),
+            seqlen=seqlen,
             seqlen_py=seqlens,
             max_seqlen=max(seqlens),
             min_seqlen=min(seqlens),

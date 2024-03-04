@@ -12,7 +12,9 @@ from xformers.ops import masked_matmul
 from xformers.sparse import BlockSparseTensor, SparseCSRTensor
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-_devices = ["cpu", "cuda:0"] if torch.cuda.is_available() else ["cpu"]
+_devices = (
+    ["cpu", "cuda:0"] if torch.cuda.is_available() and torch.version.cuda else ["cpu"]
+)
 _tensor_types = [BlockSparseTensor, SparseCSRTensor]
 
 

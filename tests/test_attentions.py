@@ -107,6 +107,13 @@ def test_order_invariance(
     causal: bool,
     device: torch.device,
 ):
+    if (
+        torch.version.hip
+        and device == torch.device("cuda")
+        and attention_name == "local"
+    ):
+        # Backend calls into Sputnik library which isn't built on ROCm
+        device = torch.device("cpu")
 
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)

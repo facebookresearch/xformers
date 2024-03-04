@@ -31,7 +31,9 @@ def catch_oor(fn):
     return fn_and_catch_oor
 
 
-_devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+_devices = (
+    ["cpu", "cuda"] if torch.cuda.is_available() and torch.version.cuda else ["cpu"]
+)
 
 
 def test_core_attention():
@@ -144,6 +146,7 @@ def test_amp_attention_sparsecs(device):
 @pytest.mark.skipif(
     not _is_blocksparse_available, reason="Blocksparse is not available"
 )
+@pytest.mark.skipif(not torch.version.cuda, reason="Sparse ops not supported on ROCm")
 @pytest.mark.parametrize("device", ["cuda"])
 @pytest.mark.parametrize("data_type", [torch.float16, torch.float32])
 @catch_oor

@@ -3,8 +3,8 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-
-from typing import Any
+import sys
+from typing import Any, Dict, Type
 
 import torch
 from torch.utils import benchmark
@@ -17,11 +17,9 @@ device = torch.device("cuda")
 
 
 CASES = [
-    dict(B=max(1, 2 ** (16 - i)), Mq=1, Mkv=2**i, Hq=16, Hkv=1, K=128)
+    dict(B=max(1, 2 ** (16 - i)), Mq=1, Mkv=2**i, Hq=16, Hkv=hkv, K=128)
     for i in range(8, 18)
-] + [
-    dict(B=max(1, 2 ** (16 - i)), Mq=1, Mkv=2**i, Hq=16, Hkv=2, K=128)
-    for i in range(8, 18)
+    for hkv in (1, 2)
 ]
 
 
@@ -96,11 +94,26 @@ class AttentionDecodingFlashDecoding:
             self.v = self.v[:, :, 0]
 
     def fw(self) -> None:
-        xops.memory_efficient_attention_forward(self.q, self.k, self.v, op=self.OP)
+        try:
+            xops.memory_efficient_attention_forward(self.q, self.k, self.v, op=self.OP)
+        except (RuntimeError, ValueError) as e:
+            print(f"Runtime error: {e}")
+
+
+class AttentionDecodingCK(AttentionDecodingFlashDecoding):
+    OP = xops.fmha.ck.FwOp
+
+
+class AttentionDecodingCKDecoder(AttentionDecodingFlashDecoding):
+    OP = xops.fmha.ck_decoder.FwOp
 
 
 class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
     OP = xops.fmha.triton_splitk.FwOp
+
+
+class AttentionDecodingCKSplitKV(AttentionDecodingFlashDecoding):
+    OP = xops.fmha.ck_splitk.FwOp
 
 
 class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
@@ -114,12 +127,25 @@ class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
         return attn @ v
 
 
-BENCHMARKS = {
+BENCHMARKS: Dict[str, Type[AttentionDecodingFlashDecoding]] = {
     "pytorch": AttentionDecodingPyTorchRepeat,
-    "flash-decoding": AttentionDecodingFlashDecoding,
-    "triton_splitK": AttentionDecodingSplitKV,
 }
 
+if torch.version.cuda:
+    BENCHMARKS["flash-decoding"] = AttentionDecodingFlashDecoding
+
+if torch.version.hip:
+    BENCHMARKS.update(
+        {
+            "ck": AttentionDecodingCK,
+            "ck-decoder": AttentionDecodingCKDecoder,
+            "ck_splitK": AttentionDecodingCKSplitKV,
+        }
+    )
+
+
+if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
+    BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
 
 try:
     import flash_attn

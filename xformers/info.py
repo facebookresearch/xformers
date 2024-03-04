@@ -49,6 +49,7 @@ def print_info():
     if build_info is not None:
         features["build.info"] = "available"
         features["build.cuda_version"] = build_info.cuda_version
+        features["build.hip_version"] = build_info.hip_version
         features["build.python_version"] = build_info.python_version
         features["build.torch_version"] = build_info.torch_version
         for k, v in build_info.build_env.items():
