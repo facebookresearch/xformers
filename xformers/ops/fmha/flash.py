@@ -47,14 +47,15 @@ try:
         from flash_attn.flash_attn_interface import flash_attn_cuda as _C_flashattention
 
         FLASH_VERSION = flash_attn.__version__
-        WANTED_FLASH_VERSION = (2, 5, 2)
+        FLASH_VER_MIN = (2, 5, 2)
+        FLASH_VER_LAST = (2, 5, 6)  # last supported, inclusive
         flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
         if (
-            flash_ver_parsed != WANTED_FLASH_VERSION
-            and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1"
-        ):
+            flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
+        ) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
             raise ImportError(
-                f"Requires Flash attention {WANTED_FLASH_VERSION} for varlen_fwd api "
+                f"Requires Flash-Attention version >={'.'.join([str(i) for i in FLASH_VER_MIN])},"
+                f"<={'.'.join([str(i) for i in FLASH_VER_LAST])} "
                 f"but got {FLASH_VERSION}."
             )
 
@@ -577,7 +578,7 @@ class BwOp(AttentionBwOpBase):
     NAME = f"flshattB@{FLASH_VERSION}"
     VERSION = FLASH_VERSION
 
-    MAX_HEADDIM_SM8x = 192
+    MAX_HEADDIM_DROPOUT_SM8x = 224
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
@@ -589,12 +590,13 @@ class BwOp(AttentionBwOpBase):
             device_capability = torch.cuda.get_device_capability(d.device)
             is_sm80_or_sm90 = device_capability in [(8, 0), (9, 0)]
             if (
-                max(d.key.shape[-1], d.query.shape[-1]) > cls.MAX_HEADDIM_SM8x
+                max(d.key.shape[-1], d.query.shape[-1]) > cls.MAX_HEADDIM_DROPOUT_SM8x
                 and not is_sm80_or_sm90
+                and d.p != 0.0
             ):
                 reasons.append(
                     "requires a GPU with compute capability 8.0 "
-                    f"(A100) or 9.0 (H100) for 'query.shape[-1] > {cls.MAX_HEADDIM_SM8x}'"
+                    f"(A100) or 9.0 (H100) for dropout when 'query.shape[-1] > {cls.MAX_HEADDIM_DROPOUT_SM8x}'"
                 )
         return reasons
 

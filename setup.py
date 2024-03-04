@@ -188,10 +188,6 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     if not nvcc_archs_flags:
         return []
 
-    nvcc_windows_flags = []
-    if platform.system() == "Windows":
-        nvcc_windows_flags = ["-Xcompiler", "/permissive-"]
-
     flash_root = os.path.join(this_dir, "third_party", "flash-attention")
     cutlass_inc = os.path.join(flash_root, "csrc", "cutlass", "include")
     if not os.path.exists(flash_root) or not os.path.exists(cutlass_inc):
@@ -224,7 +220,6 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                     "--ptxas-options=-v",
                 ]
                 + nvcc_archs_flags
-                + nvcc_windows_flags
                 + common_extra_compile_args
                 + get_extra_nvcc_flags_for_build_type(cuda_version),
             },
