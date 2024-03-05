@@ -238,7 +238,13 @@ def test_optimize_runtime_with_given_memory(max_memory, optimal_soln):
     memory = torch.tensor([x[2] for x in data], dtype=torch.float64)
 
     out = _optimize_runtime_with_given_memory(
-        memory, runtimes, max_memory, view_like_ops, inplace_ops, rand_ops
+        memory,
+        runtimes,
+        max_memory,
+        view_like_ops,
+        inplace_ops,
+        rand_ops,
+        force_store_random=False,
     )
     torch.testing.assert_close(optimal_soln, out)
 
