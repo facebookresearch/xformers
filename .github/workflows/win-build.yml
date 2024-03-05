@@ -3,8 +3,8 @@ name: win-build
 on:
   pull_request:
     paths:
+      - "third_party/**"
       - "xformers/csrc/**"
-      - "third-party/**"
       - ".github/workflows/win-build.yml"
       - "setup.py"
       - "requirements*.txt"

@@ -47,14 +47,15 @@ try:
         from flash_attn.flash_attn_interface import flash_attn_cuda as _C_flashattention
 
         FLASH_VERSION = flash_attn.__version__
-        WANTED_FLASH_VERSION = (2, 5, 2)
+        FLASH_VER_MIN = (2, 5, 2)
+        FLASH_VER_LAST = (2, 5, 6)  # last supported, inclusive
         flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
         if (
-            flash_ver_parsed != WANTED_FLASH_VERSION
-            and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1"
-        ):
+            flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
+        ) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
             raise ImportError(
-                f"Requires Flash attention {WANTED_FLASH_VERSION} for varlen_fwd api "
+                f"Requires Flash-Attention version >={'.'.join([str(i) for i in FLASH_VER_MIN])},"
+                f"<={'.'.join([str(i) for i in FLASH_VER_LAST])} "
                 f"but got {FLASH_VERSION}."
             )
 
@@ -402,6 +403,28 @@ def _check_strides_for_bmghk(x: torch.Tensor, name: str, reasons: List[str]) -> 
             )
 
 
+def _post_process_lse(
+    lse: torch.Tensor, inp: Inputs, original_query_shape: Tuple[int, ...]
+) -> torch.Tensor:
+    if not isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
+        if inp.is_partial and inp.attn_bias is None and len(original_query_shape) == 5:
+            # [B, GH, M] => [B, G, H, M]
+            return lse.unflatten(1, original_query_shape[2:4])
+        return lse
+    q_seqinfo = inp.attn_bias.q_seqinfo
+    B = len(q_seqinfo.seqstart_py) - 1
+    if q_seqinfo.max_seqlen * B != original_query_shape[1]:
+        # Heterogeneous batch. We can't fix it.
+        return lse
+
+    # reshape from (B, G*H, max_seqlen) to (1, G*H, B*max_seqlen)
+    # Unfortunately this flatten is not just a view.
+    lse_hkm = lse.permute(1, 0, 2).flatten(start_dim=1)[None]
+    if len(original_query_shape) == 5:
+        return lse_hkm.unflatten(1, original_query_shape[2:4])
+    return lse_hkm
+
+
 @register_operator
 class FwOp(AttentionFwOpBase):
     """Operator that computes memory-efficient attention using \
@@ -431,6 +454,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
     SUPPORTS_BMGHK = True
+    SUPPORTS_PARTIAL = True
     NAME = f"flshattF@{FLASH_VERSION}"
     VERSION = FLASH_VERSION
 
@@ -442,6 +466,13 @@ class FwOp(AttentionFwOpBase):
         _check_strides_for_bmghk(d.query, "query", reasons)
         _check_strides_for_bmghk(d.key, "key", reasons)
         _check_strides_for_bmghk(d.value, "value", reasons)
+        if d.is_partial and isinstance(
+            d.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask
+        ):
+            q_seqinfo = d.attn_bias.q_seqinfo
+            if q_seqinfo.min_seqlen != q_seqinfo.max_seqlen:
+                # Flash provides padded LSE which we don't handle.
+                reasons.append("partial attention with heterogeneous queries")
         return reasons
 
     @classmethod
@@ -449,6 +480,8 @@ class FwOp(AttentionFwOpBase):
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         return_softmax = False
+        original_query_shape = inp.query.shape
+
         out_shape = [
             *inp.query.shape[:-1],
             inp.value.shape[-1],
@@ -489,7 +522,11 @@ class FwOp(AttentionFwOpBase):
                 device=inp.query.device,
                 dtype=torch.float32,
             )
-        ctx = Context(out=out, lse=softmax_lse)
+        if not needs_gradient:
+            return out, None
+        ctx = Context(
+            out=out, lse=_post_process_lse(softmax_lse, inp, original_query_shape)
+        )
         if inp.p != 0.0:
             ctx.op_bw = BwOp
             ctx.rng_state = rng_state
@@ -541,7 +578,7 @@ class BwOp(AttentionBwOpBase):
     NAME = f"flshattB@{FLASH_VERSION}"
     VERSION = FLASH_VERSION
 
-    MAX_HEADDIM_SM8x = 192
+    MAX_HEADDIM_DROPOUT_SM8x = 224
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
@@ -553,12 +590,13 @@ class BwOp(AttentionBwOpBase):
             device_capability = torch.cuda.get_device_capability(d.device)
             is_sm80_or_sm90 = device_capability in [(8, 0), (9, 0)]
             if (
-                max(d.key.shape[-1], d.query.shape[-1]) > cls.MAX_HEADDIM_SM8x
+                max(d.key.shape[-1], d.query.shape[-1]) > cls.MAX_HEADDIM_DROPOUT_SM8x
                 and not is_sm80_or_sm90
+                and d.p != 0.0
             ):
                 reasons.append(
                     "requires a GPU with compute capability 8.0 "
-                    f"(A100) or 9.0 (H100) for 'query.shape[-1] > {cls.MAX_HEADDIM_SM8x}'"
+                    f"(A100) or 9.0 (H100) for dropout when 'query.shape[-1] > {cls.MAX_HEADDIM_DROPOUT_SM8x}'"
                 )
         return reasons
 

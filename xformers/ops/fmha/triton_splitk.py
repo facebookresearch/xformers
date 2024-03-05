@@ -122,6 +122,9 @@ if TYPE_CHECKING or _has_triton21():
         Set IS_SPLITK=False to indicate the MHA result should be written directly.
         No metadata will be written.
         """
+        internal_dtype = (
+            tl.float64 if Out_splitK.dtype.element_ty is tl.float64 else tl.float32
+        )
         tl.static_assert(
             (PACKED_PER_VAL == 1 and tl.constexpr(K.dtype.element_ty != tl.int32))
             or (PACKED_PER_VAL == 8 and tl.constexpr(K.dtype.element_ty == tl.int32)),
@@ -164,7 +167,9 @@ if TYPE_CHECKING or _has_triton21():
             # Align boundaries of split-k chunk to page boundaries
             # In the last chunk, shift hi to the right, in the other chunks, shift it to the left
             is_last_chunk = splitk_idx == tl.num_programs(2) - 1
-            shift = PAGE_SIZE - 1 if is_last_chunk else 0
+            shift = 0
+            if is_last_chunk:
+                shift = PAGE_SIZE - 1
             lo = (chunk_lo // PAGE_SIZE) * PAGE_SIZE
             hi = ((chunk_hi + shift) // PAGE_SIZE) * PAGE_SIZE
             hi = tl.minimum(hi, kv_len)
@@ -238,7 +243,9 @@ if TYPE_CHECKING or _has_triton21():
         acc: "VAR_ARGS_ARRAY"  # noqa: F821
 
         for i in range(len(acc)):  # noqa: F821
-            acc[i] = tl.zeros([BLOCK_M, D_PER_GROUP], dtype=tl.float32)  # noqa: F821
+            acc[i] = tl.zeros(  # noqa: F821
+                [BLOCK_M, D_PER_GROUP], dtype=internal_dtype
+            )
         # scale sm_scale by log_2(e) and use
         # 2^x instead of exp in the loop because CSE and LICM
         # don't work as expected with `exp` in the loop
@@ -662,6 +669,9 @@ if TYPE_CHECKING or _has_triton21():
             + stride_om * off_m
             + tl.arange(0, BLOCK_SIZE)
         )
+        if acc.dtype is tl.float64 and Out.dtype.element_ty is not tl.float64:
+            # must avoid direct cast f64->f16
+            acc = acc.to(tl.float32)
         tl.store(Out_ptr, acc)
 
         if WRITE_LSE:
@@ -728,6 +738,8 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_BMGHK = True
+    SUPPORTS_OUTPUT_DTYPE = True
+    SUPPORTS_PARTIAL = True
     NAME = "triton_splitKF"
 
     SPLIT_K: Optional[int] = None
@@ -831,6 +843,7 @@ class FwOp(AttentionFwOpBase):
     def apply(
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
+        output_dtype = inp.get_output_dtype()
         attn_bias = inp.attn_bias
         seq_len = None
         q, k, v = inp.get_qkv_in_bmghk()
@@ -850,6 +863,7 @@ class FwOp(AttentionFwOpBase):
             attn_bias.k_seqinfo.to(inp.query.device)  # type: ignore
             attn_bias.q_seqinfo.to(inp.query.device)  # type: ignore
             seq_len = attn_bias.k_seqinfo.seqlen  # type: ignore
+            assert q.shape[0] == 1
             B = len(seq_len)
             G, Hq, Kq = q.shape[-3:]
             Kkv = v.shape[-1]
@@ -917,24 +931,30 @@ class FwOp(AttentionFwOpBase):
         M_ceil = (M + cls.MAX_BLOCK_M - 1) // cls.MAX_BLOCK_M * cls.MAX_BLOCK_M
         IS_SPLITK = split_k > 1  # or cls.autotune?
         if IS_SPLITK:
+            o_splitk_dtype = (
+                torch.float64 if output_dtype == torch.float64 else torch.float32
+            )
             o_splitk = torch.empty(
                 [B, G * H, split_k, M_ceil, Kq],
-                dtype=torch.float32,
+                dtype=o_splitk_dtype,
                 device=q.device,
             )
         else:
             o_splitk = torch.empty(
                 [B, split_k, M, G * H, Kq],
-                dtype=q.dtype,
+                dtype=output_dtype,
                 device=q.device,
             ).permute(0, 3, 1, 2, 4)
         lse, lse_splitk = None, None
+        # LSE may need higher precision than output
+        output_f64_lse = output_dtype in (torch.float32, torch.float64)
         if IS_SPLITK and needs_gradient:
-            lse = torch.empty((B * G * H, M), device=q.device, dtype=torch.float32)
+            lse_dtype = torch.float64 if output_f64_lse else torch.float32
+            lse = torch.empty((B * G * H, M), device=q.device, dtype=lse_dtype)
         if IS_SPLITK or needs_gradient:
             lse_splitk = torch.empty(
                 [B, G * H, split_k, M],
-                dtype=torch.float64 if IS_SPLITK else torch.float32,
+                dtype=torch.float64 if IS_SPLITK or output_f64_lse else torch.float32,
                 device=q.device,
             )
 
@@ -997,6 +1017,8 @@ class FwOp(AttentionFwOpBase):
             if needs_gradient:
                 assert lse_splitk is not None
                 lse = lse_splitk[:, :, 0].view(B, G, -1, Mq)
+                if attn_bias is not None:
+                    lse = lse.permute(1, 2, 0, 3).reshape(1, G, H, B * Mq)
             else:
                 lse = None
 
@@ -1012,17 +1034,20 @@ class FwOp(AttentionFwOpBase):
             return out, Context(out=out, lse=lse)
 
         if mqa_swap_seqlen_head:
-            out = torch.empty((B, G, M, 1, Kq), device=q.device, dtype=q.dtype).permute(
-                0, 2, 1, 3, 4
-            )
+            out = torch.empty(
+                (B, G, M, 1, Kq), device=q.device, dtype=output_dtype
+            ).permute(0, 2, 1, 3, 4)
         else:
-            out = torch.empty((B, M, G, H, Kq), device=q.device, dtype=q.dtype)
+            out = torch.empty((B, M, G, H, Kq), device=q.device, dtype=output_dtype)
 
         # Merge attention and LSE outputs from different split-k chunks
         assert lse_splitk is not None
-        merge_attentions(out, lse, o_splitk, lse_splitk)
+        merge_attentions(out, lse, o_splitk[:, :, :, :M], lse_splitk)
         if lse is not None:
             lse = lse.reshape([B, G, H, M])
+            if attn_bias is not None:
+                lse = lse.permute(1, 2, 0, 3).reshape(1, G, H, B * M)
+
         if mqa_swap_seqlen_head:
             out = out.reshape(B, -1, Mq, G, Kq).permute(0, 2, 3, 1, 4)
             # This is a copy iff Mq, G and Hq are all > 1.
@@ -1080,26 +1105,33 @@ def merge_attentions(
     B, M, G, H, Kq = attn_out.shape
     if lse_out is not None:
         B_H_G, M1 = lse_out.shape
-    B1, H_G, split_k, M_ceil, Kq1 = attn_split.shape
-    B2, H_G1, split_k1, M2 = lse_split.shape
+    B1, H_G, split_k, M2, Kq1 = attn_split.shape
+    B2, H_G1, split_k1, M3 = lse_split.shape
 
     assert (
-        B == B1 == B2 and G * H == H_G == H_G1 and M <= M_ceil and M == M2 and Kq == Kq1
+        B == B1 == B2 and G * H == H_G == H_G1 and M == M2 == M3 and Kq == Kq1
     ), f"Incompatible shapes: {attn_out.shape=}, {attn_split.shape=}, {lse_split.shape=}"
+    assert (
+        split_k == split_k1
+    ), f"Incompatible shapes: {attn_split.shape=}, {lse_split.shape=}"
     if lse_out is not None:
         assert (
             B * G * H == B_H_G and M == M1
         ), f"Incompatible shapes: {attn_out.shape=}, {lse_out.shape=}"
 
+    # TODO: avoid this copy in more cases
+    attn_split_ = attn_split.flatten(end_dim=1)
+    lse_split_ = lse_split.flatten(end_dim=1)
+
     grid = (B * G * H, M, 1)
     _splitK_reduce[grid](
-        attn_split,
-        lse_split,
+        attn_split_,
+        lse_split_,
         attn_out,
         lse_out,
         split_k=split_k,
-        **_strides(attn_split.flatten(end_dim=1), "osk_zhg", "osk_s", "osk_m", "osk_k"),
-        **_strides(lse_split.flatten(end_dim=1), "lsek_zhg", "lsek_s", "lsek_m"),
+        **_strides(attn_split_, "osk_zhg", "osk_s", "osk_m", "osk_k"),
+        **_strides(lse_split_, "lsek_zhg", "lsek_s", "lsek_m"),
         **_strides(attn_out, "oz", "om", "og", "oh", "ok"),
         **_strides(lse_out, "lse_zhg", "lse_m"),
         BLOCK_SIZE=attn_out.shape[-1],
