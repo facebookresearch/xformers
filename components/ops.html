@@ -282,7 +282,7 @@ and we don’t attempt to make it fast. Only use for debugging/testing.</p>
 <li><p><a class="reference internal" href="#xformers.ops.fmha.cutlass.BwOp" title="xformers.ops.fmha.cutlass.BwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.cutlass.BwOp</span></code></a></p></li>
 <li><p><a class="reference internal" href="#xformers.ops.fmha.flash.FwOp" title="xformers.ops.fmha.flash.FwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.flash.FwOp</span></code></a></p></li>
 <li><p><a class="reference internal" href="#xformers.ops.fmha.flash.BwOp" title="xformers.ops.fmha.flash.BwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.flash.BwOp</span></code></a></p></li>
-<li><p><a class="reference internal" href="#xformers.ops.fmha.triton.FwOp" title="xformers.ops.fmha.triton.FwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.triton.FwOp</span></code></a></p></li>
+<li><p><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.triton.FwOp</span></code></p></li>
 <li><p><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.triton.BwOp</span></code></p></li>
 <li><p><a class="reference internal" href="#xformers.ops.fmha.small_k.FwOp" title="xformers.ops.fmha.small_k.FwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.small_k.FwOp</span></code></a></p></li>
 <li><p><a class="reference internal" href="#xformers.ops.fmha.small_k.BwOp" title="xformers.ops.fmha.small_k.BwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.small_k.BwOp</span></code></a></p></li>
@@ -431,19 +431,6 @@ and GPUs as old as P100 (Sm60)</p>
 <dt class="sig sig-object py" id="xformers.ops.fmha.flash.BwOp">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.flash.</span></span><span class="sig-name descname"><span class="pre">BwOp</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/flash.html#BwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.flash.BwOp" title="Permalink to this definition">¶</a></dt>
 <dd><p>Operator that computes memory-efficient attention using         <a class="reference external" href="https://github.com/HazyResearch/flash-attention">Flash-Attention</a>         implementation.</p>
-</dd></dl>
-
-<span class="target" id="module-xformers.ops.fmha.triton"></span><p>Triton Flash Attention 2
-Based on
-<a class="reference external" href="https://github.com/openai/triton/blob/293b7fd592a1602f2305c1bd0bc978bbd97337d6/python/tutorials/06-fused-attention.py">https://github.com/openai/triton/blob/293b7fd592a1602f2305c1bd0bc978bbd97337d6/python/tutorials/06-fused-attention.py</a>  # noqa: E501
-<a class="reference external" href="https://github.com/openai/triton/blob/293b7fd592a1602f2305c1bd0bc978bbd97337d6/python/triton/ops/flash_attention.py">https://github.com/openai/triton/blob/293b7fd592a1602f2305c1bd0bc978bbd97337d6/python/triton/ops/flash_attention.py</a>  # noqa: E501
-<a class="reference external" href="https://github.com/Dao-AILab/flash-attention/blob/dd9a6fa45a9b90ff954d2b3f3f44241b9216190e/flash_attn/flash_attn_triton.py">https://github.com/Dao-AILab/flash-attention/blob/dd9a6fa45a9b90ff954d2b3f3f44241b9216190e/flash_attn/flash_attn_triton.py</a>  # noqa: E501
-<a class="reference external" href="https://github.com/ROCmSoftwarePlatform/triton/blob/670ae8054da008424097989a5b6e3816aa601e07/python/perf-kernels/06-fused-attention-transV.py">https://github.com/ROCmSoftwarePlatform/triton/blob/670ae8054da008424097989a5b6e3816aa601e07/python/perf-kernels/06-fused-attention-transV.py</a>  # noqa: E501</p>
-<dl class="py class">
-<dt class="sig sig-object py" id="xformers.ops.fmha.triton.FwOp">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.triton.</span></span><span class="sig-name descname"><span class="pre">FwOp</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/triton.html#FwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.triton.FwOp" title="Permalink to this definition">¶</a></dt>
-<dd><p>Operator that computes memory-efficient attention using         <a class="reference external" href="https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attn_triton.py">Tri Dao’s</a>         implementation, based on
-<a class="reference external" href="https://github.com/openai/triton/blob/master/python/tutorials/06-fused-attention.py">Phil Tillet’s code</a></p>
 </dd></dl>
 
 <span class="target" id="module-xformers.ops.fmha.small_k"></span><dl class="py class">
