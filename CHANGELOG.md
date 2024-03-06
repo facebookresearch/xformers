@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fMHA: triton_splitk changed and expanded. Now amalgamates using LSE. Can autotune, supports causal with a small number of queries - not just 1. Experimental support for paged attention.
 - `rope_padded`: Fixed CUDA error with many queries (more than 65k)
 ### Removed
+- fMHA: Removed triton operator (`fmha.triton.*`, `xformers.ops.MemoryEfficientAttentionTritonFwdFlashBwOp`, `xformers.ops.TritonFlashAttentionOp`), as it has correctness issues under some conditions, and is slower than other implementations.
 
 ## [0.0.24] - 2024-01-31
 Pre-built binary wheels require PyTorch 2.2.0

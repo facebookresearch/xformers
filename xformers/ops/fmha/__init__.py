@@ -16,7 +16,6 @@ from . import (
     decoder,
     flash,
     small_k,
-    triton,
     triton_splitk,
 )
 from .attn_bias import (
@@ -41,10 +40,8 @@ from .dispatch import _dispatch_bw, _dispatch_fw, _ensure_op_supports_or_raise
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
 MemoryEfficientAttentionDecoderOp = (decoder.FwOp, cutlass.BwOp)
-MemoryEfficientAttentionTritonFwdFlashBwOp = (triton.FwOp, flash.BwOp)
 MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
 MemoryEfficientAttentionOp = (small_k.FwOp, small_k.BwOp)
-TritonFlashAttentionOp = (triton.FwOp, cutlass.BwOp if torch.version.cuda else ck.BwOp)
 MemoryEfficientAttentionCkOp = (ck.FwOp, ck.BwOp)
 MemoryEfficientAttentionCkDecoderOp = (ck_decoder.FwOp, ck.BwOp)
 MemoryEfficientAttentionSplitKCkOp = (ck_splitk.FwOp, ck.BwOp)
@@ -576,7 +573,6 @@ def merge_attentions(
 ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
     cutlass.FwOp if torch.version.cuda else ck.FwOp,
     flash.FwOp,
-    triton.FwOp,
     small_k.FwOp,
     triton_splitk.FwOp,
 ]
@@ -594,11 +590,9 @@ __all__ = [
     "AttentionOpDispatch",
     "LowerTriangularMask",
     "MemoryEfficientAttentionCutlassFwdFlashBwOp",
-    "MemoryEfficientAttentionTritonFwdFlashBwOp",
     "MemoryEfficientAttentionCutlassOp",
     "MemoryEfficientAttentionFlashAttentionOp",
     "MemoryEfficientAttentionOp",
-    "TritonFlashAttentionOp",
     "memory_efficient_attention",
     "MemoryEfficientAttentionCkOp",
     "MemoryEfficientAttentionCkDecoderOp",
