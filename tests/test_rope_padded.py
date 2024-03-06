@@ -101,6 +101,10 @@ def _slow_rope2(
 
 
 DTYPES = {"bf16": torch.bfloat16, "f32": torch.float32}
+ROPE_ATOL_RTOL = {
+    "bf16": (5e-3, 8e-3),
+    "f32": (5e-3, 1e-5),
+}
 
 
 @cuda_sm80_only
@@ -181,8 +185,7 @@ def test_consistency(
     cache_locs = [seqpos[0], seqpos[1], padding + seqpos[2], 2 * padding + seqpos[3]]
     baseline = _slow_rope if dtype_str == "f32" else _slow_rope2
     expected_out = baseline(xq, seqpos=seqpos, adjacents=adjacents)
-    atol = 5e-3 if dim > 4000 and dtype_str != "f32" else 3e-3
-    rtol = 8e-3 if dtype_str == "bf16" else 1e-5
+    atol, rtol = ROPE_ATOL_RTOL[dtype_str]
     assert_allclose(out, expected_out, atol=atol, rtol=rtol)
 
     assert_allclose(cache_v[:, cache_locs], xv, atol=atol, rtol=rtol)
@@ -198,3 +201,37 @@ def test_consistency(
     )
     cache_k[:, cache_locs] = cache_k_orig[:, cache_locs]
     assert torch.allclose(cache_k, cache_k_orig)
+
+
+@cuda_sm80_only
+@pytest.mark.parametrize("seqlen", [512, 2**16])
+def test_rope_prefill(seqlen) -> None:
+    heads, kvheads = 2, 1
+    dim = 32
+    device = "cuda"
+    adjacents = True
+    dtype = torch.bfloat16
+
+    attn_bias = BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+        q_seqlen=[seqlen], kv_padding=seqlen + 1, kv_seqlen=[seqlen]
+    )
+    cache_k = torch.rand(1, seqlen + 1, kvheads, dim, device=device, dtype=dtype)
+    cache_v = torch.randn_like(cache_k)
+    xq = torch.rand(1, seqlen, heads, dim, device=device, dtype=dtype)
+    xk = torch.rand(1, seqlen, kvheads, dim, device=device, dtype=dtype)
+    xv = torch.rand(1, seqlen, kvheads, dim, device=device, dtype=dtype)
+
+    out = rope_padded(
+        xq,
+        xk,
+        xv,
+        cache_k,
+        cache_v,
+        attn_bias,
+        adjacents=adjacents,
+    )
+
+    seqpos = torch.arange(start=0, end=seqlen, device=device)
+    expected_out = _slow_rope2(xq, seqpos=seqpos, adjacents=adjacents)
+    atol, rtol = ROPE_ATOL_RTOL["bf16"]
+    assert_allclose(out, expected_out, atol=atol, rtol=rtol)

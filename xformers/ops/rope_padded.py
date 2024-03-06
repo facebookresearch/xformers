@@ -107,9 +107,13 @@ def rope_padded(
         bsz, q_len, n_q_heads, dim = xq.shape
         assert q_len == n_total_queries
         if xk_shape != (1, n_total_queries, expected_kv_heads, dim):
-            raise ValueError("unexpected k shape")
+            raise ValueError(
+                f"unexpected k shape {xk_shape}: expected {(1, n_total_queries, expected_kv_heads, dim)}"
+            )
         if xv.shape != (1, n_total_queries, expected_kv_heads, dim):
-            raise ValueError("unexpected v shape")
+            raise ValueError(
+                f"unexpected v shape {xv.shape}: expected {(1, n_total_queries, expected_kv_heads, dim)}"
+            )
         if cache_k_shape != (1, cache_length, expected_cache_heads, dim):
             raise ValueError("unexpected cache_k shape")
         if cache_v.shape != (1, cache_length, expected_cache_heads, dim):
@@ -121,13 +125,23 @@ def rope_padded(
         bsz, q_len, n_groups, n_q_heads, dim = xq.shape
         assert q_len == n_total_queries
         if xk_shape != (1, n_total_queries, n_groups, expected_kv_heads, dim):
-            raise ValueError("unexpected k shape")
+            raise ValueError(
+                f"unexpected k shape {xk_shape}: expected {(1, n_total_queries, n_groups, expected_kv_heads, dim)}"
+            )
         if xv.shape != (1, n_total_queries, n_groups, expected_kv_heads, dim):
-            raise ValueError("unexpected v shape")
+            raise ValueError(
+                f"unexpected v shape {xv.shape}: expected {(1, n_total_queries, n_groups, expected_kv_heads, dim)}"
+            )
         if cache_k_shape != (1, cache_length, n_groups, expected_cache_heads, dim):
-            raise ValueError("unexpected cache_k shape")
+            raise ValueError(
+                f"unexpected cache_k shape {cache_k_shape}: "
+                f"expected {(1, cache_length, n_groups, expected_cache_heads, dim)}"
+            )
         if cache_v.shape != (1, cache_length, n_groups, expected_cache_heads, dim):
-            raise ValueError("unexpected cache_v shape")
+            raise ValueError(
+                f"unexpected cache_v shape {cache_v.shape}: "
+                f"expected {(1, cache_length, n_groups, expected_cache_heads, dim)}"
+            )
         out_q_stride = (
             0,
             n_q_heads * dim * n_groups,
@@ -184,7 +198,7 @@ def rope_padded(
     # experiment with the order of dims here.
     with torch.cuda.device(xq.device):
         _rope_padded_kernel[
-            (logical_bsz, attn_bias.q_seqinfo.max_seqlen, n_total_heads * n_groups)
+            (attn_bias.q_seqinfo.max_seqlen, logical_bsz, n_total_heads * n_groups)
         ](
             xq,
             xk,

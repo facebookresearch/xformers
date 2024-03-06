@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Improved
 - fMHA: Updated Flash-Attention to v2.5.6: this has a performance improvement for multiquery.
 - fMHA: triton_splitk changed and expanded. Now amalgamates using LSE. Can autotune, supports causal with a small number of queries - not just 1. Experimental support for paged attention.
+- `rope_padded`: Fixed CUDA error with many queries (more than 65k)
 ### Removed
 
 ## [0.0.24] - 2024-01-31

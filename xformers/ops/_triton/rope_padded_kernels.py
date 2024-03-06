@@ -88,8 +88,8 @@ def _rope_padded_kernel(
     Output is to out_q (same shape as xq), an xk-shaped part
     of cache_k and an xv-shaped part of cache_v
     """
-    batch_elt = tl.program_id(0)
-    query_pos_in_batch_elt = tl.program_id(1)
+    query_pos_in_batch_elt = tl.program_id(0)
+    batch_elt = tl.program_id(1)
     group_head_idx = tl.program_id(2)
     group_idx = group_head_idx % n_groups
     head_idx = group_head_idx // n_groups
