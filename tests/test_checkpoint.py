@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from contextlib import nullcontext
 from copy import deepcopy
 
 import pytest
@@ -329,6 +330,7 @@ def test_optimal_checkpoint_policy(
 
 @pytest.mark.skipif(torch.__version__ < "2.3", reason="Only new PyTorch supported")
 @cuda_only
+@pytest.mark.parametrize("no_grad", [False, True])
 @pytest.mark.parametrize("device", ["cuda"])
 @pytest.mark.parametrize("memory_budget", [0, 0.1, 0.3, 1.0])
 @pytest.mark.parametrize("inplace", [False])
@@ -336,7 +338,9 @@ def test_optimal_checkpoint_policy(
 @torch._dynamo.config.patch(  # type: ignore
     "_experimental_support_context_fn_in_torch_utils_checkpoint", True
 )
-def test_selective_checkpoint_wrapper_compile(device, memory_budget, inplace, random):
+def test_selective_checkpoint_wrapper_compile(
+    device, no_grad, memory_budget, inplace, random
+):
     torch.manual_seed(42)
     dtype = torch.float16
     modules = _get_model_blocks(
@@ -352,17 +356,25 @@ def test_selective_checkpoint_wrapper_compile(device, memory_budget, inplace, ra
 
     grad = torch.rand_like(inputs)
 
-    torch.manual_seed(42)
-    out = model(inputs.clone())
-    out.backward(grad)
+    context = torch.no_grad() if no_grad else nullcontext()
 
-    torch.manual_seed(42)
-    out_ref = model_ref(inputs.clone())
-    out_ref.backward(grad)
+    with context:
+        torch.manual_seed(42)
+        out = model(inputs.clone())
+        if not no_grad:
+            out.backward(grad)
+
+        torch.manual_seed(42)
+        out_ref = model_ref(inputs.clone())
+        if not no_grad:
+            out_ref.backward(grad)
 
     atol = 3e-4
     rtol = 1e-3
     torch.testing.assert_close(out, out_ref, atol=atol, rtol=rtol)
+
+    if no_grad:
+        return
 
     for p, p_ref in zip(model.parameters(), model_ref.parameters()):
         atol = 4e-4

@@ -7,7 +7,6 @@
 import functools
 import time
 from collections import defaultdict
-from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import astuple, dataclass
 from typing import Any, Callable, ContextManager, Dict, List, Optional, Tuple
@@ -124,6 +123,13 @@ class CachedTorchDispatchMode(_CachedTorchDispatchMode):
         return func(*args, **kwargs)
 
 
+class NullTorchDispatchMode(TorchDispatchMode):
+    def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+        if kwargs is None:
+            kwargs = {}
+        return func(*args, **kwargs)
+
+
 def selective_checkpoint_context_fn(policy_fn=None):
     """An activation checkpoint context_fn for selectively deciding what to
     store and what to recompute. Accepts a custom policy.
@@ -149,7 +155,7 @@ def selective_checkpoint_context_fn(policy_fn=None):
     if torch.is_grad_enabled():
         caching_mode = _CachingTorchDispatchMode(deepcopy(policy_fn), temp_storage)
     else:
-        caching_mode = nullcontext()
+        caching_mode = NullTorchDispatchMode()
     cached_mode = CachedTorchDispatchMode(deepcopy(policy_fn), temp_storage)
 
     return caching_mode, cached_mode
@@ -466,6 +472,11 @@ class SelectiveCheckpointWrapper(ActivationWrapper):
             raise ValueError("Need to specify either policy_fn or memory_budget")
         self.memory_budget = memory_budget
         self.policy_fn = policy_fn
+
+        # TODO: this should be enabled by default in PyTorch
+        torch._dynamo.config._experimental_support_context_fn_in_torch_utils_checkpoint = (
+            True
+        )
 
     @torch.compiler.disable
     def _get_policy_fn(self, *args, **kwargs):
