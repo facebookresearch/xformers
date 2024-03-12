@@ -229,7 +229,18 @@
 
 <span class="kn">import</span> <span class="nn">math</span>
 <span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">Any</span><span class="p">,</span>
+    <span class="n">ClassVar</span><span class="p">,</span>
+    <span class="n">Iterable</span><span class="p">,</span>
+    <span class="n">List</span><span class="p">,</span>
+    <span class="n">Optional</span><span class="p">,</span>
+    <span class="n">Sequence</span><span class="p">,</span>
+    <span class="n">Tuple</span><span class="p">,</span>
+    <span class="n">Type</span><span class="p">,</span>
+    <span class="n">Union</span><span class="p">,</span>
+    <span class="n">cast</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
@@ -698,6 +709,92 @@
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;_PaddedSeqLenInfo.split&quot;</span><span class="p">)</span>
 
 
+<span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">_GappySeqInfo</span><span class="p">(</span><span class="n">_SeqLenInfo</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    (Internal)  Represents the division of a dimension into blocks which are</span>
+<span class="sd">    anywhere. Each just has a start and a length. The final start is the total</span>
+<span class="sd">    length of the dimension.</span>
+
+<span class="sd">    For example, to represent a dimension of length 14 like follows with</span>
+<span class="sd">    three occupied lengths of</span>
+<span class="sd">    6, 3 and 1, use `from_seqlens_padded([0, 7, 12, 14], [6, 3, 1])`.</span>
+
+<span class="sd">    The layout along the dimension is</span>
+
+<span class="sd">     0 ─►  block 0</span>
+<span class="sd">           block 0</span>
+<span class="sd">           block 0</span>
+<span class="sd">           block 0</span>
+<span class="sd">     4 ─►  block 0</span>
+<span class="sd">           block 0</span>
+<span class="sd">           &lt;space&gt;</span>
+<span class="sd">           block 1</span>
+<span class="sd">     8 ─►  block 1</span>
+<span class="sd">           block 1</span>
+<span class="sd">           &lt;space&gt;</span>
+<span class="sd">           &lt;space&gt;</span>
+<span class="sd">     12 ─► block 2</span>
+<span class="sd">           &lt;space&gt;</span>
+
+<span class="sd">    The members will be:</span>
+<span class="sd">        max_seqlen: 6</span>
+<span class="sd">        min_seqlen: 1</span>
+<span class="sd">        seqstart_py: [0, 7, 12, 14]</span>
+<span class="sd">        seqstart: torch.IntTensor([0, 7, 12, 14])</span>
+<span class="sd">        seqlen_py: [6, 3 1]</span>
+<span class="sd">        seqlen: torch.IntTensor([6, 3, 1])</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">seqlen</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="n">seqlen_py</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+    <span class="c1"># From parent: seqstart[i] contains the start position</span>
+    <span class="c1"># of the i-th sequence</span>
+    <span class="c1"># seqstart: torch.Tensor</span>
+
+    <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seqlen_py</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+
+    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">seqlen</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">seqlen</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">intervals</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">_</span><span class="p">),</span> <span class="n">length</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">seqlen_py</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="n">start</span><span class="p">,</span> <span class="n">start</span> <span class="o">+</span> <span class="n">length</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">seqlens</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="s2">&quot;_SeqLenInfo&quot;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">from_seqlens_gappy</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span> <span class="n">seqstarts</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="n">seqlens</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;_GappySeqInfo&quot;</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">seqlens</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
+        <span class="n">seqstart_py</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">seqstarts</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">seqlens</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No elements&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">seqstarts</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">seqlens</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;len(seqstarts) </span><span class="si">{</span><span class="n">seqstarts</span><span class="si">}</span><span class="s2"> should be 1 + len(seqlens) </span><span class="si">{</span><span class="n">seqlens</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">seqlen</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seqlens</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">seqlen</span><span class="o">=</span><span class="n">seqlen</span><span class="p">,</span>
+            <span class="n">seqlen_py</span><span class="o">=</span><span class="n">seqlens</span><span class="p">,</span>
+            <span class="n">max_seqlen</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="n">seqlens</span><span class="p">),</span>
+            <span class="n">min_seqlen</span><span class="o">=</span><span class="nb">min</span><span class="p">(</span><span class="n">seqlens</span><span class="p">),</span>
+            <span class="n">seqstart</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seqstart_py</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
+            <span class="n">seqstart_py</span><span class="o">=</span><span class="n">seqstart_py</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">split</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">batch_sizes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;_PaddedSeqLenInfo.split&quot;</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="BlockDiagonalMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -990,8 +1087,96 @@
         <span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="BlockDiagonalPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">BlockDiagonalPaddedKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`,</span>
+<span class="sd">    except we support padding for k/v</span>
+
+<span class="sd">    The keys and values are divided into blocks which are padded out to</span>
+<span class="sd">    the same total length.</span>
+<span class="sd">    For example, if there is space for 12 keys, for three blocks of</span>
+<span class="sd">    max length 4, but we only want to use the first 2, 3 and 2</span>
+<span class="sd">    of each block, use `kv_padding=4` and `kv_seqlens=[2, 3, 2]`.</span>
+<span class="sd">    The queries are divided into blocks, without padding, of lengths given by</span>
+<span class="sd">    q_seqlen.</span>
+
+<span class="sd">    A query Q in block i cannot attend to a key which is not in block i,</span>
+<span class="sd">    nor one which is not in use (i.e. in the padded area).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">q_seqinfo</span><span class="p">:</span> <span class="n">_SeqLenInfo</span>
+    <span class="n">k_seqinfo</span><span class="p">:</span> <span class="n">_PaddedSeqLenInfo</span>
+
+<div class="viewcode-block" id="BlockDiagonalPaddedKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalPaddedKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Materialize the attention bias - for debugging &amp; testing&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;k shapes wrong&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;q shapes wrong&quot;</span><span class="p">)</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">mask</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="o">-</span><span class="n">math</span><span class="o">.</span><span class="n">inf</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">((</span><span class="n">q_start</span><span class="p">,</span> <span class="n">q_end</span><span class="p">),</span> <span class="p">(</span><span class="n">k_start</span><span class="p">,</span> <span class="n">k_end</span><span class="p">))</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span>
+            <span class="nb">zip</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span>
+            <span class="p">)</span>
+        <span class="p">):</span>
+            <span class="n">mask</span><span class="p">[</span><span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_start</span><span class="p">:</span><span class="n">k_end</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span> <span class="o">-</span> <span class="mi">2</span><span class="p">):</span>
+            <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="BlockDiagonalPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+        <span class="n">kv_padding</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">kv_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+        <span class="n">causal_diagonal</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalPaddedKeysMask&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a :attr:`BlockDiagonalPaddedKeysMask` from a list of tensor</span>
+<span class="sd">        lengths for query and key/value.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            q_seqlen (Sequence[int]): List or tensor of sequence lengths for query tensors</span>
+<span class="sd">            kv_padding (int): Padding for k/v - also an upperbound on each individual key length</span>
+<span class="sd">            kv_seqlen (Sequence[int]): List or tensor of sequence lengths for key/value.</span>
+<span class="sd">            causal_diagonal: unused, for BC only</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            BlockDiagonalPaddedKeysMask</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">kv_seqlen</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">kv_seqlen</span><span class="p">),</span> <span class="p">(</span>
+            <span class="n">q_seqlen</span><span class="p">,</span>
+            <span class="n">kv_seqlen</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">q_seqinfo</span> <span class="o">=</span> <span class="n">_SeqLenInfo</span><span class="o">.</span><span class="n">from_seqlens</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">)</span>
+        <span class="n">k_seqinfo</span> <span class="o">=</span> <span class="n">_PaddedSeqLenInfo</span><span class="o">.</span><span class="n">from_seqlens_padded</span><span class="p">(</span><span class="n">kv_seqlen</span><span class="p">,</span> <span class="n">kv_padding</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">make_paged</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">block_tables</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">paged_type</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="s2">&quot;PagedBlockDiagonalPaddedKeysMask&quot;</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AttentionBias</span><span class="p">:</span>
+        <span class="n">paged_bias</span> <span class="o">=</span> <span class="n">paged_type</span><span class="p">(</span>
+            <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
+            <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="p">,</span>
+            <span class="n">block_tables</span><span class="o">=</span><span class="n">block_tables</span><span class="p">,</span>
+            <span class="n">page_size</span><span class="o">=</span><span class="n">page_size</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">paged_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">padding</span> <span class="o">=</span> <span class="n">block_tables</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">page_size</span>
+        <span class="k">return</span> <span class="n">paged_bias</span></div>
+
+
 <div class="viewcode-block" id="BlockDiagonalCausalWithOffsetPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalWithOffsetPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`,</span>
 <span class="sd">    except an offset on causality is allowed for each block and we support padding for k/v</span>
@@ -1010,8 +1195,6 @@
 <span class="sd">    than Q is to the final query in block i.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">q_seqinfo</span><span class="p">:</span> <span class="n">_SeqLenInfo</span>
-    <span class="n">k_seqinfo</span><span class="p">:</span> <span class="n">_PaddedSeqLenInfo</span>
     <span class="n">causal_diagonal</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># unused. Exists for BC only.</span>
 
     <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
@@ -1077,23 +1260,13 @@
         <span class="p">)</span>
         <span class="n">q_seqinfo</span> <span class="o">=</span> <span class="n">_SeqLenInfo</span><span class="o">.</span><span class="n">from_seqlens</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">)</span>
         <span class="n">k_seqinfo</span> <span class="o">=</span> <span class="n">_PaddedSeqLenInfo</span><span class="o">.</span><span class="n">from_seqlens_padded</span><span class="p">(</span><span class="n">kv_seqlen</span><span class="p">,</span> <span class="n">kv_padding</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">)</span></div>
-
-    <span class="k">def</span> <span class="nf">make_paged</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">block_tables</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-        <span class="n">paged_bias</span> <span class="o">=</span> <span class="n">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span>
-            <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
-            <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="p">,</span>
-            <span class="n">block_tables</span><span class="o">=</span><span class="n">block_tables</span><span class="p">,</span>
-            <span class="n">page_size</span><span class="o">=</span><span class="n">page_size</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="n">paged_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">padding</span> <span class="o">=</span> <span class="n">block_tables</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">page_size</span>
-        <span class="k">return</span> <span class="n">paged_bias</span></div>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="PagedBlockDiagonalCausalWithOffsetPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">PagedBlockDiagonalPaddedKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Same as BlockDiagonalCausalWithOffsetPaddedKeysMask, but for paged attention.</span>
+<span class="sd">    Same as BlockDiagonalPaddedKeysMask, but for paged attention.</span>
 <span class="sd">    block_tables has shape [batch_size, max_num_pages] and K/V have shape</span>
 <span class="sd">    [1, max_num_pages * page_size, num_heads, head_dim]</span>
 <span class="sd">    or [1, max_num_pages * page_size, num_groups, num_heads, head_dim]</span>
@@ -1104,7 +1277,11 @@
     <span class="n">block_tables</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span>
 
-<div class="viewcode-block" id="PagedBlockDiagonalCausalWithOffsetPaddedKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+    <span class="n">_UNPAGED_TYPE</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span>
+        <span class="n">Type</span><span class="p">[</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">]</span>
+    <span class="p">]</span> <span class="o">=</span> <span class="n">BlockDiagonalPaddedKeysMask</span>
+
+<div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalPaddedKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1115,8 +1292,7 @@
         <span class="c1"># copy them to their places in the physical mask, using block tables</span>
 
         <span class="n">max_row_len</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
-        <span class="n">logical_input_len</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">max_row_len</span>
-        <span class="n">bias_nonpaged</span> <span class="o">=</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span>
+        <span class="n">bias_nonpaged</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_UNPAGED_TYPE</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">_PaddedSeqLenInfo</span><span class="o">.</span><span class="n">from_seqlens_padded</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqlen_py</span><span class="p">,</span> <span class="n">max_row_len</span>
@@ -1124,36 +1300,35 @@
         <span class="p">)</span>
         <span class="n">mask_nonpaged</span> <span class="o">=</span> <span class="n">bias_nonpaged</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
 
+        <span class="n">n_used_blocks</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">max_physical_len</span> <span class="o">=</span> <span class="n">n_used_blocks</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
         <span class="n">mask_paged</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
-            <span class="n">mask_nonpaged</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="n">logical_input_len</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span>
+            <span class="n">mask_nonpaged</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="n">max_physical_len</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span>
         <span class="p">)</span>
         <span class="n">mask_paged</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="o">-</span><span class="n">math</span><span class="o">.</span><span class="n">inf</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">b</span><span class="p">,</span> <span class="p">(</span><span class="n">q_start</span><span class="p">,</span> <span class="n">q_end</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">intervals</span><span class="p">()):</span>
             <span class="k">for</span> <span class="n">logical_page_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
-                <span class="n">physical_page_idx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="p">[</span><span class="n">b</span><span class="p">][</span><span class="n">logical_page_idx</span><span class="p">]</span>
-                <span class="n">k_logical_start</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">b</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">logical_page_idx</span>
-                <span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
-                <span class="n">k_logical_end</span> <span class="o">=</span> <span class="n">k_logical_start</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
-                <span class="n">k_physical_start</span><span class="p">,</span> <span class="n">k_physical_end</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">physical_page_idx</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span>
-                    <span class="p">(</span><span class="n">physical_page_idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span>
+                <span class="n">physical_page_idx</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
+                    <span class="nb">int</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="p">[</span><span class="n">b</span><span class="p">][</span><span class="n">logical_page_idx</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
                 <span class="p">)</span>
+                <span class="n">k_logical_start</span> <span class="o">=</span> <span class="n">b</span> <span class="o">*</span> <span class="n">max_row_len</span> <span class="o">+</span> <span class="n">logical_page_idx</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
+                <span class="n">k_logical_end</span> <span class="o">=</span> <span class="n">k_logical_start</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
+                <span class="n">k_physical_start</span> <span class="o">=</span> <span class="n">physical_page_idx</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
+                <span class="n">k_physical_end</span> <span class="o">=</span> <span class="n">k_physical_start</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
                 <span class="n">mask_paged</span><span class="p">[</span>
                     <span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_physical_start</span><span class="p">:</span><span class="n">k_physical_end</span>
                 <span class="p">]</span> <span class="o">=</span> <span class="n">mask_nonpaged</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_logical_start</span><span class="p">:</span><span class="n">k_logical_end</span><span class="p">]</span>
-
         <span class="k">return</span> <span class="n">mask_paged</span></div>
 
-<div class="viewcode-block" id="PagedBlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">kv_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">block_tables</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PagedBlockDiagonalCausalWithOffsetPaddedKeysMask&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a :attr:`BlockDiagonalCausalWithOffsetPaddedKeysMask` from a list of tensor</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PagedBlockDiagonalPaddedKeysMask&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a :attr:`PagedBlockDiagonalPaddedKeysMask` from a list of tensor</span>
 <span class="sd">        lengths for query and key/value.</span>
 
 <span class="sd">        Args:</span>
@@ -1162,9 +1337,9 @@
 <span class="sd">            kv_seqlen (Sequence[int]): List or tensor of sequence lengths for key/value.</span>
 <span class="sd">            causal_diagonal: unused, for BC only</span>
 <span class="sd">        Returns:</span>
-<span class="sd">            BlockDiagonalCausalWithOffsetPaddedKeysMask</span>
+<span class="sd">            PagedBlockDiagonalPaddedKeysMask</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">assert</span> <span class="n">kv_seqlen</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">kv_seqlen</span><span class="p">),</span> <span class="p">(</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">kv_seqlen</span><span class="p">),</span> <span class="p">(</span>
             <span class="n">q_seqlen</span><span class="p">,</span>
             <span class="n">kv_seqlen</span><span class="p">,</span>
         <span class="p">)</span>
@@ -1178,6 +1353,124 @@
             <span class="n">block_tables</span><span class="o">=</span><span class="n">block_tables</span><span class="p">,</span>
             <span class="n">page_size</span><span class="o">=</span><span class="n">page_size</span><span class="p">,</span>
         <span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="PagedBlockDiagonalCausalWithOffsetPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span>
+    <span class="n">PagedBlockDiagonalPaddedKeysMask</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Same as BlockDiagonalCausalWithOffsetPaddedKeysMask, but for paged attention.</span>
+<span class="sd">    block_tables has shape [batch_size, max_num_pages] and K/V have shape</span>
+<span class="sd">    [1, max_num_pages * page_size, num_heads, head_dim]</span>
+<span class="sd">    or [1, max_num_pages * page_size, num_groups, num_heads, head_dim]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">_UNPAGED_TYPE</span> <span class="o">=</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span></div>
+
+
+<div class="viewcode-block" id="BlockDiagonalGappyKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalGappyKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">BlockDiagonalGappyKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`,</span>
+<span class="sd">    except k/v is gappy.</span>
+
+<span class="sd">    A query Q in block i only attends to a key which is in block i.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">q_seqinfo</span><span class="p">:</span> <span class="n">_SeqLenInfo</span>
+    <span class="n">k_seqinfo</span><span class="p">:</span> <span class="n">_GappySeqInfo</span>
+
+<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Materialize the attention bias - for debugging &amp; testing&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;k shapes wrong&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;q shapes wrong&quot;</span><span class="p">)</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">mask</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="o">-</span><span class="n">math</span><span class="o">.</span><span class="n">inf</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">((</span><span class="n">q_start</span><span class="p">,</span> <span class="n">q_end</span><span class="p">),</span> <span class="p">(</span><span class="n">k_start</span><span class="p">,</span> <span class="n">k_end</span><span class="p">))</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span>
+            <span class="nb">zip</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span>
+            <span class="p">)</span>
+        <span class="p">):</span>
+            <span class="n">mask</span><span class="p">[</span><span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_start</span><span class="p">:</span><span class="n">k_end</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span> <span class="o">-</span> <span class="mi">2</span><span class="p">):</span>
+            <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalGappyKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+        <span class="n">kv_seqstarts</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+        <span class="n">kv_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalGappyKeysMask&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a :attr:`BlockDiagonalPaddedKeysMask` from a list of tensor</span>
+<span class="sd">        lengths for query and key/value.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            q_seqlen (Sequence[int]): List or tensor of sequence lengths for query tensors</span>
+<span class="sd">            kv_padding (int): Padding for k/v - also an upperbound on each individual key length</span>
+<span class="sd">            kv_seqlen (Sequence[int]): List or tensor of sequence lengths for key/value.</span>
+<span class="sd">            causal_diagonal: unused, for BC only</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            BlockDiagonalGappyKeysMask</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">kv_seqlen</span><span class="p">),</span> <span class="p">(</span>
+            <span class="n">q_seqlen</span><span class="p">,</span>
+            <span class="n">kv_seqlen</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">q_seqinfo</span> <span class="o">=</span> <span class="n">_SeqLenInfo</span><span class="o">.</span><span class="n">from_seqlens</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">)</span>
+        <span class="n">k_seqinfo</span> <span class="o">=</span> <span class="n">_GappySeqInfo</span><span class="o">.</span><span class="n">from_seqlens_gappy</span><span class="p">(</span><span class="n">kv_seqstarts</span><span class="p">,</span> <span class="n">kv_seqlen</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetGappyKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalWithOffsetGappyKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">BlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">(</span><span class="n">BlockDiagonalGappyKeysMask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`,</span>
+<span class="sd">    except k/v is gappy.</span>
+
+<span class="sd">    A query Q in block i cannot attend to a key which is not in block i,</span>
+<span class="sd">    nor one which is nearer to the final key in block i</span>
+<span class="sd">    than Q is to the final query in block i.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalWithOffsetGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Materialize the attention bias - for debugging &amp; testing&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;k shapes wrong&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;q shapes wrong&quot;</span><span class="p">)</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">mask</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="o">-</span><span class="n">math</span><span class="o">.</span><span class="n">inf</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">((</span><span class="n">q_start</span><span class="p">,</span> <span class="n">q_end</span><span class="p">),</span> <span class="p">(</span><span class="n">k_start</span><span class="p">,</span> <span class="n">k_end</span><span class="p">))</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span>
+            <span class="nb">zip</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span>
+            <span class="p">)</span>
+        <span class="p">):</span>
+            <span class="n">mask</span><span class="p">[</span>
+                <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_start</span><span class="p">:</span><span class="n">k_end</span>
+            <span class="p">]</span> <span class="o">=</span> <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">()</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span>
+                <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">q_end</span> <span class="o">-</span> <span class="n">q_start</span><span class="p">,</span> <span class="n">k_end</span> <span class="o">-</span> <span class="n">k_start</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span>
+            <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span> <span class="o">-</span> <span class="mi">2</span><span class="p">):</span>
+            <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span></div></div>
 
 
 <div class="viewcode-block" id="BlockDiagonalCausalLocalAttentionMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalLocalAttentionMask">[docs]</a><span class="nd">@dataclass</span>
