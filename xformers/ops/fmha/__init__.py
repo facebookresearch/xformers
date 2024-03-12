@@ -20,10 +20,12 @@ from . import (
 )
 from .attn_bias import (
     AttentionBias,
-    BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    BlockDiagonalGappyKeysMask,
     BlockDiagonalMask,
+    BlockDiagonalPaddedKeysMask,
     LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
+    PagedBlockDiagonalPaddedKeysMask,
 )
 from .common import (
     AttentionBwOpBase,
@@ -479,7 +481,9 @@ def memory_efficient_attention_partial(
         attn_bias,
         (
             type(None),
-            BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            BlockDiagonalGappyKeysMask,
+            BlockDiagonalPaddedKeysMask,
+            PagedBlockDiagonalPaddedKeysMask,
             LowerTriangularFromBottomRightMask,
             LowerTriangularMask,
         ),
@@ -544,8 +548,8 @@ def merge_attentions(
         f"{B}/{B1}, {G}/{G1}, {H}/{H1}, {split_k}/{split_k1}, {M}/{M}"
     )
 
-    attn_split = attn_split.permute(1, 3, 4, 0, 2, 5).reshape(B, G * H, split_k, M, Kq)
-    lse_split = lse_split.permute(1, 2, 3, 0, 4).reshape(B, G * H, split_k, M)
+    attn_split = attn_split.permute(1, 3, 4, 0, 2, 5)
+    lse_split = lse_split.permute(1, 2, 3, 0, 4)
 
     attn_out = torch.empty(
         B,
@@ -558,16 +562,12 @@ def merge_attentions(
     )
     if write_lse:
         lse_out = torch.empty(
-            B * H * G, M, device=attn_split.device, dtype=lse_split.dtype
+            B, G, H, M, device=attn_split.device, dtype=lse_split.dtype
         )
     else:
         lse_out = None
 
-    triton_splitk.merge_attentions(
-        attn_out.permute(0, 1, 3, 2, 4), lse_out, attn_split, lse_split
-    )
-    if lse_out is not None:
-        lse_out = lse_out.view(B, G, H, M)
+    triton_splitk.merge_attentions(attn_out, lse_out, attn_split, lse_split)
 
     if is_bmhk:
         attn_out = attn_out[:, :, 0]

@@ -6,7 +6,18 @@
 
 import math
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    ClassVar,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+    cast,
+)
 
 import torch
 
@@ -476,6 +487,92 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
 
 
 @dataclass
+class _GappySeqInfo(_SeqLenInfo):
+    """
+    (Internal)  Represents the division of a dimension into blocks which are
+    anywhere. Each just has a start and a length. The final start is the total
+    length of the dimension.
+
+    For example, to represent a dimension of length 14 like follows with
+    three occupied lengths of
+    6, 3 and 1, use `from_seqlens_padded([0, 7, 12, 14], [6, 3, 1])`.
+
+    The layout along the dimension is
+
+     0 ─►  block 0
+           block 0
+           block 0
+           block 0
+     4 ─►  block 0
+           block 0
+           <space>
+           block 1
+     8 ─►  block 1
+           block 1
+           <space>
+           <space>
+     12 ─► block 2
+           <space>
+
+    The members will be:
+        max_seqlen: 6
+        min_seqlen: 1
+        seqstart_py: [0, 7, 12, 14]
+        seqstart: torch.IntTensor([0, 7, 12, 14])
+        seqlen_py: [6, 3 1]
+        seqlen: torch.IntTensor([6, 3, 1])
+    """
+
+    seqlen: torch.Tensor
+    seqlen_py: Sequence[int]
+    # From parent: seqstart[i] contains the start position
+    # of the i-th sequence
+    # seqstart: torch.Tensor
+
+    def __post_init__(self) -> None:
+        assert len(self.seqstart_py) == len(self.seqlen_py) + 1
+
+    def to(self, device: torch.device) -> None:
+        self.seqlen = self.seqlen.to(device, non_blocking=True)
+        super().to(device)
+
+    def intervals(self) -> Iterable[Tuple[int, int]]:
+        for (start, _), length in zip(super().intervals(), self.seqlen_py):
+            yield start, start + length
+
+    @classmethod
+    def from_seqlens(cls, seqlens: Iterable[int]) -> "_SeqLenInfo":
+        raise NotImplementedError()
+
+    @classmethod
+    def from_seqlens_gappy(
+        cls, seqstarts: Sequence[int], seqlens: Sequence[int]
+    ) -> "_GappySeqInfo":
+        assert not isinstance(seqlens, torch.Tensor)
+        seqstart_py = list(seqstarts)
+        if len(seqlens) == 0:
+            raise ValueError("No elements")
+        if len(seqstarts) - len(seqlens) != 1:
+            raise ValueError(
+                f"len(seqstarts) {seqstarts} should be 1 + len(seqlens) {seqlens}"
+            )
+        seqlen = torch.tensor(seqlens, dtype=torch.int32)
+        return cls(
+            seqlen=seqlen,
+            seqlen_py=seqlens,
+            max_seqlen=max(seqlens),
+            min_seqlen=min(seqlens),
+            seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
+            seqstart_py=seqstart_py,
+        )
+
+    def split(
+        self, x: torch.Tensor, batch_sizes: Optional[Sequence[int]] = None
+    ) -> List[torch.Tensor]:
+        raise NotImplementedError("_PaddedSeqLenInfo.split")
+
+
+@dataclass
 class BlockDiagonalMask(AttentionBias):
     """
     A block-diagonal mask that can be passed as ``attn_bias``
@@ -768,7 +865,95 @@ class BlockDiagonalCausalFromBottomRightMask(BlockDiagonalMask):
 
 
 @dataclass
-class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
+class BlockDiagonalPaddedKeysMask(AttentionBias):
+    """
+    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`,
+    except we support padding for k/v
+
+    The keys and values are divided into blocks which are padded out to
+    the same total length.
+    For example, if there is space for 12 keys, for three blocks of
+    max length 4, but we only want to use the first 2, 3 and 2
+    of each block, use `kv_padding=4` and `kv_seqlens=[2, 3, 2]`.
+    The queries are divided into blocks, without padding, of lengths given by
+    q_seqlen.
+
+    A query Q in block i cannot attend to a key which is not in block i,
+    nor one which is not in use (i.e. in the padded area).
+    """
+
+    q_seqinfo: _SeqLenInfo
+    k_seqinfo: _PaddedSeqLenInfo
+
+    def materialize(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        """Materialize the attention bias - for debugging & testing"""
+        if shape[-1] != self.k_seqinfo.seqstart_py[-1]:
+            raise ValueError("k shapes wrong")
+        if shape[-2] != self.q_seqinfo.seqstart_py[-1]:
+            raise ValueError("q shapes wrong")
+        mask = torch.empty(shape[-2:], dtype=dtype, device=device)
+        mask.fill_(-math.inf)
+        for i, ((q_start, q_end), (k_start, k_end)) in enumerate(
+            zip(
+                self.q_seqinfo.intervals(),
+                self.k_seqinfo.intervals(),
+            )
+        ):
+            mask[q_start:q_end, k_start:k_end] = 0
+        for _ in range(len(shape) - 2):
+            mask = mask.unsqueeze(0)
+        return mask.expand(shape)
+
+    @classmethod
+    def from_seqlens(
+        cls,
+        q_seqlen: Sequence[int],
+        kv_padding: int,
+        kv_seqlen: Sequence[int],
+        causal_diagonal: Any = None,
+    ) -> "BlockDiagonalPaddedKeysMask":
+        """Creates a :attr:`BlockDiagonalPaddedKeysMask` from a list of tensor
+        lengths for query and key/value.
+
+        Args:
+            q_seqlen (Sequence[int]): List or tensor of sequence lengths for query tensors
+            kv_padding (int): Padding for k/v - also an upperbound on each individual key length
+            kv_seqlen (Sequence[int]): List or tensor of sequence lengths for key/value.
+            causal_diagonal: unused, for BC only
+        Returns:
+            BlockDiagonalPaddedKeysMask
+        """
+        assert kv_seqlen is None or len(q_seqlen) == len(kv_seqlen), (
+            q_seqlen,
+            kv_seqlen,
+        )
+        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
+        k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(kv_seqlen, kv_padding)
+        return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo)
+
+    def make_paged(
+        self,
+        block_tables: torch.Tensor,
+        page_size: int,
+        paged_type: Type["PagedBlockDiagonalPaddedKeysMask"],
+    ) -> AttentionBias:
+        paged_bias = paged_type(
+            q_seqinfo=self.q_seqinfo,
+            k_seqinfo=self.k_seqinfo,
+            block_tables=block_tables,
+            page_size=page_size,
+        )
+        paged_bias.k_seqinfo.padding = block_tables.shape[1] * page_size
+        return paged_bias
+
+
+@dataclass
+class BlockDiagonalCausalWithOffsetPaddedKeysMask(BlockDiagonalPaddedKeysMask):
     """
     Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`,
     except an offset on causality is allowed for each block and we support padding for k/v
@@ -787,8 +972,6 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
     than Q is to the final query in block i.
     """
 
-    q_seqinfo: _SeqLenInfo
-    k_seqinfo: _PaddedSeqLenInfo
     causal_diagonal: Any = None  # unused. Exists for BC only.
 
     def _create_block_mask(
@@ -856,21 +1039,11 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(kv_seqlen, kv_padding)
         return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo)
 
-    def make_paged(self, block_tables: torch.Tensor, page_size: int):
-        paged_bias = PagedBlockDiagonalCausalWithOffsetPaddedKeysMask(
-            q_seqinfo=self.q_seqinfo,
-            k_seqinfo=self.k_seqinfo,
-            block_tables=block_tables,
-            page_size=page_size,
-        )
-        paged_bias.k_seqinfo.padding = block_tables.shape[1] * page_size
-        return paged_bias
-
 
 @dataclass
-class PagedBlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
+class PagedBlockDiagonalPaddedKeysMask(AttentionBias):
     """
-    Same as BlockDiagonalCausalWithOffsetPaddedKeysMask, but for paged attention.
+    Same as BlockDiagonalPaddedKeysMask, but for paged attention.
     block_tables has shape [batch_size, max_num_pages] and K/V have shape
     [1, max_num_pages * page_size, num_heads, head_dim]
     or [1, max_num_pages * page_size, num_groups, num_heads, head_dim]
@@ -880,6 +1053,10 @@ class PagedBlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
     k_seqinfo: _PaddedSeqLenInfo
     block_tables: torch.Tensor
     page_size: int
+
+    _UNPAGED_TYPE: ClassVar[
+        Type[BlockDiagonalPaddedKeysMask]
+    ] = BlockDiagonalPaddedKeysMask
 
     def materialize(
         self,
@@ -892,8 +1069,7 @@ class PagedBlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         # copy them to their places in the physical mask, using block tables
 
         max_row_len = self.block_tables.shape[1] * self.page_size
-        logical_input_len = self.block_tables.shape[0] * max_row_len
-        bias_nonpaged = BlockDiagonalCausalWithOffsetPaddedKeysMask(
+        bias_nonpaged = self._UNPAGED_TYPE(
             q_seqinfo=self.q_seqinfo,
             k_seqinfo=_PaddedSeqLenInfo.from_seqlens_padded(
                 self.k_seqinfo.seqlen_py, max_row_len
@@ -901,25 +1077,24 @@ class PagedBlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         )
         mask_nonpaged = bias_nonpaged.materialize(shape, dtype, device)
 
+        n_used_blocks = cast(int, self.block_tables.max().item() + 1)
+        max_physical_len = n_used_blocks * self.page_size
         mask_paged = torch.empty(
-            mask_nonpaged.shape[:-1] + (logical_input_len,), dtype=dtype, device=device
+            mask_nonpaged.shape[:-1] + (max_physical_len,), dtype=dtype, device=device
         )
         mask_paged.fill_(-math.inf)
         for b, (q_start, q_end) in enumerate(self.q_seqinfo.intervals()):
             for logical_page_idx in range(self.block_tables.shape[1]):
-                physical_page_idx = self.block_tables[b][logical_page_idx]
-                k_logical_start = (
-                    b * self.block_tables.shape[1] + logical_page_idx
-                ) * self.page_size
-                k_logical_end = k_logical_start + self.page_size
-                k_physical_start, k_physical_end = (
-                    physical_page_idx * self.page_size,
-                    (physical_page_idx + 1) * self.page_size,
+                physical_page_idx = cast(
+                    int, self.block_tables[b][logical_page_idx].item()
                 )
+                k_logical_start = b * max_row_len + logical_page_idx * self.page_size
+                k_logical_end = k_logical_start + self.page_size
+                k_physical_start = physical_page_idx * self.page_size
+                k_physical_end = k_physical_start + self.page_size
                 mask_paged[
                     ..., q_start:q_end, k_physical_start:k_physical_end
                 ] = mask_nonpaged[..., q_start:q_end, k_logical_start:k_logical_end]
-
         return mask_paged
 
     @classmethod
@@ -929,8 +1104,8 @@ class PagedBlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
         kv_seqlen: Sequence[int],
         block_tables: torch.Tensor,
         page_size: int,
-    ) -> "PagedBlockDiagonalCausalWithOffsetPaddedKeysMask":
-        """Creates a :attr:`BlockDiagonalCausalWithOffsetPaddedKeysMask` from a list of tensor
+    ) -> "PagedBlockDiagonalPaddedKeysMask":
+        """Creates a :attr:`PagedBlockDiagonalPaddedKeysMask` from a list of tensor
         lengths for query and key/value.
 
         Args:
@@ -939,9 +1114,9 @@ class PagedBlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
             kv_seqlen (Sequence[int]): List or tensor of sequence lengths for key/value.
             causal_diagonal: unused, for BC only
         Returns:
-            BlockDiagonalCausalWithOffsetPaddedKeysMask
+            PagedBlockDiagonalPaddedKeysMask
         """
-        assert kv_seqlen is None or len(q_seqlen) == len(kv_seqlen), (
+        assert len(q_seqlen) == len(kv_seqlen), (
             q_seqlen,
             kv_seqlen,
         )
@@ -955,6 +1130,124 @@ class PagedBlockDiagonalCausalWithOffsetPaddedKeysMask(AttentionBias):
             block_tables=block_tables,
             page_size=page_size,
         )
+
+
+@dataclass
+class PagedBlockDiagonalCausalWithOffsetPaddedKeysMask(
+    PagedBlockDiagonalPaddedKeysMask
+):
+    """
+    Same as BlockDiagonalCausalWithOffsetPaddedKeysMask, but for paged attention.
+    block_tables has shape [batch_size, max_num_pages] and K/V have shape
+    [1, max_num_pages * page_size, num_heads, head_dim]
+    or [1, max_num_pages * page_size, num_groups, num_heads, head_dim]
+    """
+
+    _UNPAGED_TYPE = BlockDiagonalCausalWithOffsetPaddedKeysMask
+
+
+@dataclass
+class BlockDiagonalGappyKeysMask(AttentionBias):
+    """
+    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`,
+    except k/v is gappy.
+
+    A query Q in block i only attends to a key which is in block i.
+    """
+
+    q_seqinfo: _SeqLenInfo
+    k_seqinfo: _GappySeqInfo
+
+    def materialize(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        """Materialize the attention bias - for debugging & testing"""
+        if shape[-1] != self.k_seqinfo.seqstart_py[-1]:
+            raise ValueError("k shapes wrong")
+        if shape[-2] != self.q_seqinfo.seqstart_py[-1]:
+            raise ValueError("q shapes wrong")
+        mask = torch.empty(shape[-2:], dtype=dtype, device=device)
+        mask.fill_(-math.inf)
+        for i, ((q_start, q_end), (k_start, k_end)) in enumerate(
+            zip(
+                self.q_seqinfo.intervals(),
+                self.k_seqinfo.intervals(),
+            )
+        ):
+            mask[q_start:q_end, k_start:k_end] = 0
+        for _ in range(len(shape) - 2):
+            mask = mask.unsqueeze(0)
+        return mask.expand(shape)
+
+    @classmethod
+    def from_seqlens(
+        cls,
+        q_seqlen: Sequence[int],
+        kv_seqstarts: Sequence[int],
+        kv_seqlen: Sequence[int],
+    ) -> "BlockDiagonalGappyKeysMask":
+        """Creates a :attr:`BlockDiagonalPaddedKeysMask` from a list of tensor
+        lengths for query and key/value.
+
+        Args:
+            q_seqlen (Sequence[int]): List or tensor of sequence lengths for query tensors
+            kv_padding (int): Padding for k/v - also an upperbound on each individual key length
+            kv_seqlen (Sequence[int]): List or tensor of sequence lengths for key/value.
+            causal_diagonal: unused, for BC only
+        Returns:
+            BlockDiagonalGappyKeysMask
+        """
+        assert len(q_seqlen) == len(kv_seqlen), (
+            q_seqlen,
+            kv_seqlen,
+        )
+        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
+        k_seqinfo = _GappySeqInfo.from_seqlens_gappy(kv_seqstarts, kv_seqlen)
+        return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo)
+
+
+@dataclass
+class BlockDiagonalCausalWithOffsetGappyKeysMask(BlockDiagonalGappyKeysMask):
+    """
+    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`,
+    except k/v is gappy.
+
+    A query Q in block i cannot attend to a key which is not in block i,
+    nor one which is nearer to the final key in block i
+    than Q is to the final query in block i.
+    """
+
+    def materialize(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        """Materialize the attention bias - for debugging & testing"""
+        if shape[-1] != self.k_seqinfo.seqstart_py[-1]:
+            raise ValueError("k shapes wrong")
+        if shape[-2] != self.q_seqinfo.seqstart_py[-1]:
+            raise ValueError("q shapes wrong")
+        mask = torch.empty(shape[-2:], dtype=dtype, device=device)
+        mask.fill_(-math.inf)
+        for i, ((q_start, q_end), (k_start, k_end)) in enumerate(
+            zip(
+                self.q_seqinfo.intervals(),
+                self.k_seqinfo.intervals(),
+            )
+        ):
+            mask[
+                q_start:q_end, k_start:k_end
+            ] = LowerTriangularFromBottomRightMask().materialize(
+                shape=(q_end - q_start, k_end - k_start), dtype=dtype, device=device
+            )
+
+        for _ in range(len(shape) - 2):
+            mask = mask.unsqueeze(0)
+        return mask.expand(shape)
 
 
 @dataclass

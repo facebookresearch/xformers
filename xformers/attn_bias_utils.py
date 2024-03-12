@@ -39,6 +39,7 @@ def create_attn_bias(
     requires_grad: bool,
     fmt: str,
     op: Type[AttentionOpBase],
+    page_size: Optional[int] = None,
 ):
     if bias_type is None or isinstance(None, bias_type):
         return None
@@ -151,28 +152,49 @@ def create_attn_bias(
             block_diag = block_diag.make_causal_from_bottomright()
         return block_diag
     if bias_type in [
+        fmha.attn_bias.BlockDiagonalPaddedKeysMask,
         fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
         fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
     ]:
         assert fmt in ["BMHK", "BMGHK"]
         q, k = _rand_seqlens_padded_k(r, batch_size, q_len, kv_len)
-        g_block_diag = (
-            fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
-                q_seqlen=q,
-                kv_padding=kv_len,
-                kv_seqlen=k,
-            )
+        block_diag_type = (
+            bias_type._UNPAGED_TYPE
+            if issubclass(bias_type, fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask)
+            else bias_type
         )
-        if bias_type == fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask:
-            page_size = r.choice([64, 128, 256])
+        g_block_diag = block_diag_type.from_seqlens(
+            q_seqlen=q,
+            kv_padding=kv_len,
+            kv_seqlen=k,
+        )
+        if issubclass(bias_type, fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask):
+            assert page_size is not None
             pages_per_row = (kv_len + page_size - 1) // page_size
             block_tables = torch.randperm(
-                batch_size * pages_per_row, device=device
+                batch_size * pages_per_row, device=device, dtype=torch.int32
             ).reshape(batch_size, pages_per_row)
             return g_block_diag.make_paged(
-                block_tables=block_tables, page_size=page_size
+                block_tables=block_tables, page_size=page_size, paged_type=bias_type
             )
         return g_block_diag
+    if bias_type in [
+        fmha.attn_bias.BlockDiagonalCausalWithOffsetGappyKeysMask,
+        fmha.attn_bias.BlockDiagonalGappyKeysMask,
+    ]:
+        assert fmt in ["BMHK", "BMGHK"]
+        max_q_minus_k = (
+            None if bias_type is fmha.attn_bias.BlockDiagonalGappyKeysMask else 0
+        )
+        q, k = _rand_seqlens(r, batch_size, q_len, kv_len, max_q_minus_k)
+        total_kv_len = kv_len * batch_size
+        starts = [r.randint(0, total_kv_len - ki) for ki in k] + [total_kv_len]
+        return fmha.attn_bias.BlockDiagonalGappyKeysMask.from_seqlens(
+            q_seqlen=q,
+            kv_seqstarts=starts,
+            kv_seqlen=k,
+        )
     if bias_type == fmha.attn_bias.LocalAttentionFromBottomRightMask:
         return bias_type(
             window_left=r.randint(0, 5),

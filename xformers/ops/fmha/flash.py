@@ -18,8 +18,11 @@ from .attn_bias import (
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
     BlockDiagonalCausalMask,
+    BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    BlockDiagonalGappyKeysMask,
     BlockDiagonalMask,
+    BlockDiagonalPaddedKeysMask,
     LocalAttentionFromBottomRightMask,
     LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
@@ -265,7 +268,13 @@ def _convert_input_format(
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
         max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
         seqused_k = None
-    elif isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
+    elif isinstance(
+        attn_bias,
+        (
+            BlockDiagonalGappyKeysMask,
+            BlockDiagonalPaddedKeysMask,
+        ),
+    ):
         attn_bias.k_seqinfo.seqstart = attn_bias.k_seqinfo.seqstart.to(
             inp.query.device, non_blocking=True
         )
@@ -338,6 +347,7 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
             BlockDiagonalCausalLocalAttentionMask,
             BlockDiagonalCausalFromBottomRightMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+            BlockDiagonalCausalWithOffsetGappyKeysMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
         ),
     )
@@ -406,7 +416,13 @@ def _check_strides_for_bmghk(x: torch.Tensor, name: str, reasons: List[str]) -> 
 def _post_process_lse(
     lse: torch.Tensor, inp: Inputs, original_query_shape: Tuple[int, ...]
 ) -> torch.Tensor:
-    if not isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
+    if not isinstance(
+        inp.attn_bias,
+        (
+            BlockDiagonalGappyKeysMask,
+            BlockDiagonalPaddedKeysMask,
+        ),
+    ):
         if inp.is_partial and len(original_query_shape) == 5:
             # [B, GH, M] => [B, G, H, M]
             return lse.unflatten(1, original_query_shape[2:4])
@@ -447,7 +463,10 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalLocalAttentionMask,
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
         BlockDiagonalCausalFromBottomRightMask,
+        BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        BlockDiagonalGappyKeysMask,
+        BlockDiagonalPaddedKeysMask,
         LocalAttentionFromBottomRightMask,
     }
     SUPPORTS_DROPOUT = True
@@ -467,7 +486,11 @@ class FwOp(AttentionFwOpBase):
         _check_strides_for_bmghk(d.key, "key", reasons)
         _check_strides_for_bmghk(d.value, "value", reasons)
         if d.is_partial and isinstance(
-            d.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask
+            d.attn_bias,
+            (
+                BlockDiagonalGappyKeysMask,
+                BlockDiagonalPaddedKeysMask,
+            ),
         ):
             q_seqinfo = d.attn_bias.q_seqinfo
             if q_seqinfo.min_seqlen != q_seqinfo.max_seqlen:
@@ -568,7 +591,12 @@ class BwOp(AttentionBwOpBase):
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
     SUPPORTED_ATTN_BIAS_TYPES = FwOp.SUPPORTED_ATTN_BIAS_TYPES.difference(
-        {BlockDiagonalCausalWithOffsetPaddedKeysMask}
+        {
+            BlockDiagonalCausalWithOffsetGappyKeysMask,
+            BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            BlockDiagonalGappyKeysMask,
+            BlockDiagonalPaddedKeysMask,
+        }
     )
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
