@@ -407,7 +407,7 @@ def _post_process_lse(
     lse: torch.Tensor, inp: Inputs, original_query_shape: Tuple[int, ...]
 ) -> torch.Tensor:
     if not isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask):
-        if inp.is_partial and inp.attn_bias is None and len(original_query_shape) == 5:
+        if inp.is_partial and len(original_query_shape) == 5:
             # [B, GH, M] => [B, G, H, M]
             return lse.unflatten(1, original_query_shape[2:4])
         return lse

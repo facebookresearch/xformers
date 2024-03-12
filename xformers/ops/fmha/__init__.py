@@ -22,6 +22,7 @@ from .attn_bias import (
     AttentionBias,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalMask,
+    LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
 )
 from .common import (
@@ -475,10 +476,16 @@ def memory_efficient_attention_partial(
     if p != 0.0:
         raise NotImplementedError("dropout is not supported.")
     if not isinstance(
-        attn_bias, (type(None), BlockDiagonalCausalWithOffsetPaddedKeysMask)
+        attn_bias,
+        (
+            type(None),
+            BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            LowerTriangularFromBottomRightMask,
+            LowerTriangularMask,
+        ),
     ):
         raise ValueError(
-            "only BlockDiagonalCausalWithOffsetPaddedKeysMask and no bias supported"
+            f"{type(attn_bias)} is not supported in memory_efficient_attention_partial."
         )
     out, ctx = _memory_efficient_attention_forward_requires_grad(
         Inputs(
