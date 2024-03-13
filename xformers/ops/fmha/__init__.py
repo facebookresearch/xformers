@@ -16,14 +16,16 @@ from . import (
     decoder,
     flash,
     small_k,
-    triton,
     triton_splitk,
 )
 from .attn_bias import (
     AttentionBias,
-    BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    BlockDiagonalGappyKeysMask,
     BlockDiagonalMask,
+    BlockDiagonalPaddedKeysMask,
+    LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
+    PagedBlockDiagonalPaddedKeysMask,
 )
 from .common import (
     AttentionBwOpBase,
@@ -41,10 +43,8 @@ from .dispatch import _dispatch_bw, _dispatch_fw, _ensure_op_supports_or_raise
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
 MemoryEfficientAttentionDecoderOp = (decoder.FwOp, cutlass.BwOp)
-MemoryEfficientAttentionTritonFwdFlashBwOp = (triton.FwOp, flash.BwOp)
 MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
 MemoryEfficientAttentionOp = (small_k.FwOp, small_k.BwOp)
-TritonFlashAttentionOp = (triton.FwOp, cutlass.BwOp if torch.version.cuda else ck.BwOp)
 MemoryEfficientAttentionCkOp = (ck.FwOp, ck.BwOp)
 MemoryEfficientAttentionCkDecoderOp = (ck_decoder.FwOp, ck.BwOp)
 MemoryEfficientAttentionSplitKCkOp = (ck_splitk.FwOp, ck.BwOp)
@@ -478,10 +478,18 @@ def memory_efficient_attention_partial(
     if p != 0.0:
         raise NotImplementedError("dropout is not supported.")
     if not isinstance(
-        attn_bias, (type(None), BlockDiagonalCausalWithOffsetPaddedKeysMask)
+        attn_bias,
+        (
+            type(None),
+            BlockDiagonalGappyKeysMask,
+            BlockDiagonalPaddedKeysMask,
+            PagedBlockDiagonalPaddedKeysMask,
+            LowerTriangularFromBottomRightMask,
+            LowerTriangularMask,
+        ),
     ):
         raise ValueError(
-            "only BlockDiagonalCausalWithOffsetPaddedKeysMask and no bias supported"
+            f"{type(attn_bias)} is not supported in memory_efficient_attention_partial."
         )
     out, ctx = _memory_efficient_attention_forward_requires_grad(
         Inputs(
@@ -540,8 +548,8 @@ def merge_attentions(
         f"{B}/{B1}, {G}/{G1}, {H}/{H1}, {split_k}/{split_k1}, {M}/{M}"
     )
 
-    attn_split = attn_split.permute(1, 3, 4, 0, 2, 5).reshape(B, G * H, split_k, M, Kq)
-    lse_split = lse_split.permute(1, 2, 3, 0, 4).reshape(B, G * H, split_k, M)
+    attn_split = attn_split.permute(1, 3, 4, 0, 2, 5)
+    lse_split = lse_split.permute(1, 2, 3, 0, 4)
 
     attn_out = torch.empty(
         B,
@@ -554,16 +562,12 @@ def merge_attentions(
     )
     if write_lse:
         lse_out = torch.empty(
-            B * H * G, M, device=attn_split.device, dtype=lse_split.dtype
+            B, G, H, M, device=attn_split.device, dtype=lse_split.dtype
         )
     else:
         lse_out = None
 
-    triton_splitk.merge_attentions(
-        attn_out.permute(0, 1, 3, 2, 4), lse_out, attn_split, lse_split
-    )
-    if lse_out is not None:
-        lse_out = lse_out.view(B, G, H, M)
+    triton_splitk.merge_attentions(attn_out, lse_out, attn_split, lse_split)
 
     if is_bmhk:
         attn_out = attn_out[:, :, 0]
@@ -576,7 +580,6 @@ def merge_attentions(
 ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
     cutlass.FwOp if torch.version.cuda else ck.FwOp,
     flash.FwOp,
-    triton.FwOp,
     small_k.FwOp,
     triton_splitk.FwOp,
 ]
@@ -594,11 +597,9 @@ __all__ = [
     "AttentionOpDispatch",
     "LowerTriangularMask",
     "MemoryEfficientAttentionCutlassFwdFlashBwOp",
-    "MemoryEfficientAttentionTritonFwdFlashBwOp",
     "MemoryEfficientAttentionCutlassOp",
     "MemoryEfficientAttentionFlashAttentionOp",
     "MemoryEfficientAttentionOp",
-    "TritonFlashAttentionOp",
     "memory_efficient_attention",
     "MemoryEfficientAttentionCkOp",
     "MemoryEfficientAttentionCkDecoderOp",

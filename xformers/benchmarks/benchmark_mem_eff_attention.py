@@ -103,22 +103,10 @@ SHAPES = [
 ]
 
 
-class TritonFlashAttentionFwAutotuned(xformers.ops.fmha.triton.FwOp):
-    AUTOTUNE = True
-
-
 OPS = [
     (xformers.ops.fmha.cutlass.FwOp, xformers.ops.fmha.cutlass.BwOp),
     (xformers.ops.fmha.flash.FwOp, xformers.ops.fmha.flash.BwOp),
     (xformers.ops.fmha.ck.FwOp, xformers.ops.fmha.ck.BwOp),
-    (
-        TritonFlashAttentionFwAutotuned,
-        (
-            xformers.ops.fmha.cutlass.BwOp
-            if torch.version.cuda
-            else xformers.ops.fmha.ck.BwOp
-        ),
-    ),
 ]
 
 

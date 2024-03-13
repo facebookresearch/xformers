@@ -19,20 +19,9 @@ from . import (
     decoder,
     flash,
     small_k,
-    triton,
     triton_splitk,
 )
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
-
-
-def _is_cutlass_fwd_faster_than_flash(inp: Inputs) -> bool:
-    return False
-
-
-def _is_triton_fwd_fastest(inp: Inputs) -> bool:
-    # TODO: fill out
-    return False
-
 
 T = TypeVar("T", Type[AttentionFwOpBase], Type[AttentionBwOpBase])
 
@@ -83,24 +72,16 @@ def _dispatch_fw_priority_list(
         priority_list_ops = deque(
             [
                 flash.FwOp,
-                triton.FwOp,
                 cutlass.FwOp,
                 small_k.FwOp,
             ]
         )
-        if _is_cutlass_fwd_faster_than_flash(inp):
-            priority_list_ops.remove(cutlass.FwOp)
-            priority_list_ops.appendleft(cutlass.FwOp)
     else:
         priority_list_ops = deque(
             [
-                triton.FwOp,
                 ck.FwOp,
             ]
         )
-    if _is_triton_fwd_fastest(inp):
-        priority_list_ops.remove(triton.FwOp)
-        priority_list_ops.appendleft(triton.FwOp)
     if not needs_gradient:
         mqa_or_gqa = (
             inp.key.ndim > 3 and inp.key.stride(-2) == 0 and inp.key.shape[-2] > 1

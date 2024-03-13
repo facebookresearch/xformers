@@ -134,10 +134,6 @@ SHAPES = [
 OPS = [
     xformers.ops.fmha.ck.FwOp,
     xformers.ops.fmha.flash.FwOp,
-    # TODO: Triton is not stable: it can trigger Illegal Memory Accesses
-    # and its performance varies a lot between runs.
-    #
-    # xformers.ops.fmha.triton.FwOp,
 ]
 
 

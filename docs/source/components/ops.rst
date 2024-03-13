@@ -21,10 +21,6 @@ Available implementations
     :members: FwOp, BwOp
     :member-order: bysource
 
-.. automodule:: xformers.ops.fmha.triton
-    :members: FwOp
-    :member-order: bysource
-
 .. automodule:: xformers.ops.fmha.small_k
     :members: FwOp, BwOp
     :member-order: bysource
