@@ -4,9 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.25] - TBD
+## [0.0.26] - TBD
 ### Added
-- New merge_attentions function
+### Improved
+### Removed
+
+## [0.0.25] - 2024-03-14
+Pre-built binary wheels require PyTorch 2.2.1
+### Added
+- New `merge_attentions` function
 ### Improved
 - fMHA: Updated Flash-Attention to v2.5.6: this has a performance improvement for multiquery.
 - fMHA: triton_splitk changed and expanded. Now amalgamates using LSE. Can autotune, supports causal with a small number of queries - not just 1. Experimental support for paged attention.
@@ -18,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.24] - 2024-01-31
 Pre-built binary wheels require PyTorch 2.2.0
 ### Added
-- Added components for model/sequence parallelism, as near-drop-in replacements for FairScale/Megatron Column&RowParallelLinear modules. They support fusing communication and computation for sequence parallelism, thus making the communication effectively free.
+- Added components for model/sequence parallelism, as near-drop-in replacements for FairScale/Megatron Column&RowParallelLinear modules. They support fusing communication and computation for sequence parallelism, thus making the communication effectively free. [Read more](https://twitter.com/d_haziza/status/1753030654118211593)
 - Added kernels for training models with 2:4-sparsity. We introduced a very fast kernel for converting a matrix A into 24-sparse format, which can be used during training to sparsify weights dynamically, activations etc... xFormers also provides an API that is compatible with torch-compile, see `xformers.ops.sparsify24`.
 ### Improved
 - Make selective activation checkpointing be compatible with torch.compile.
