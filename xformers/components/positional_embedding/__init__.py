@@ -72,11 +72,13 @@ register_positional_embedding: Callable[
 from .rotary import RotaryEmbedding  # noqa
 from .sine import SinePositionalEmbedding  # type: ignore  # noqa
 from .vocab import VocabEmbedding  # noqa
+from .bare_vocab import BareVocabEmbedding  # noqa
 
 __all__ = [
     "RotaryEmbedding",
     "SinePositionalEmbedding",
     "VocabEmbedding",
+    "BareVocabEmbedding",
     "build_positional_embedding",
     "register_positional_embedding",
 ]
