@@ -2235,6 +2235,7 @@ def test_forward_splitk(
     [
         (1, 2**16, 3, 128),
         (5, 53, 4, 64),
+        (7, 51, 4, 256),
     ],
 )
 def test_mqa_decoding(op: Type[fmha.AttentionFwOpBase], dtype, B_Mkv_H_K):
