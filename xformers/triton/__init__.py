@@ -12,6 +12,7 @@ if _triton_available:
         from .dropout import FusedDropoutBias, dropout  # noqa
         from .fused_linear_layer import FusedLinear  # noqa
         from .layer_norm import FusedLayerNorm, layer_norm  # noqa
+        from .rms_norm import FusedRMSNorm # noqa
         from .softmax import log_softmax, softmax  # noqa
 
         __all__ = [
@@ -21,6 +22,7 @@ if _triton_available:
             "FusedDropoutBias",
             "FusedLinear",
             "FusedLayerNorm",
+            "FusedRMSNorm",
             "layer_norm",
         ]
     except ImportError:
