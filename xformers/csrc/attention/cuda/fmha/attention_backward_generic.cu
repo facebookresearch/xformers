@@ -153,7 +153,6 @@ mem_efficient_attention_backward_cutlass(
   at::Tensor workspace;
 
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
-  at::PhiloxCudaState rng_engine_inputs(rng_seed, rng_offset);
 
   cudaDeviceProp* p = at::cuda::getDeviceProperties(query.device().index());
   const int computeCapability = p->major * 10 + p->minor;
@@ -311,8 +310,9 @@ mem_efficient_attention_backward_cutlass(
     }
 
     if (use_dropout) {
-      p.rng_engine_inputs = rng_engine_inputs;
       p.dropout_prob = dropout_p;
+      p.dropout_rng_seed = rng_seed;
+      p.dropout_rng_offset = rng_offset;
     }
 
     // Heuristic for finding optimal number of splits
