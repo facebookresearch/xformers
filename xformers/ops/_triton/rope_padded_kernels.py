@@ -5,10 +5,13 @@
 import triton  # type: ignore
 import triton.language as tl  # type: ignore
 
-if hasattr(tl, "libdevice"):
-    tl_math = tl.libdevice
-else:
-    tl_math = tl.math
+try:
+    from triton.language.extra.cuda.libdevice import pow
+except ImportError:
+    try:
+        from triton.language.math import pow
+    except ImportError:
+        from triton.language.libdevice import pow
 
 
 @triton.jit
@@ -170,7 +173,7 @@ def _rope_padded_kernel(
         re_x = tl.load(x_in + cols_re, mask=mask)
         im_x = tl.load(x_in + cols_im, mask=mask)
         # freqs = seq_pos / (theta ** (powers / dim))
-        freqs = seq_pos * tl_math.pow(theta, powers / (-dim))
+        freqs = seq_pos * pow(theta, powers / (-dim))
         sines = tl.sin(freqs)
         cosines = tl.cos(freqs)
         re_out = re_x * cosines - im_x * sines
