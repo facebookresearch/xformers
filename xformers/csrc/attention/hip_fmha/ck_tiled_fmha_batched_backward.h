@@ -52,8 +52,8 @@ struct batched_backward_causalmask_attnbias_dispatched {
           typename FmhaBwdTypeConfig<scalar_t>::LSEDataType,
           typename FmhaBwdTypeConfig<scalar_t>::AccDataType,
           typename FmhaBwdTypeConfig<scalar_t>::DDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::RandValOutputDataType,
           typename FmhaBwdTypeConfig<scalar_t>::BiasDataType,
+          typename FmhaBwdTypeConfig<scalar_t>::RandValOutputDataType,
           typename FmhaBwdTypeConfig<scalar_t>::ODataType,
           typename FmhaBwdTypeConfig<scalar_t>::OGradDataType,
           typename FmhaBwdTypeConfig<scalar_t>::QGradDataType,
@@ -180,6 +180,7 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.out_ptr,
           param.grad_out_ptr,
           param.dot_out_ptr,
+          1.0f - param.dropout_prob,
           param.M,
           param.Kv,
           param.grad_out_strides[1], // stride_do
@@ -219,14 +220,16 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.logsumexp_ptr,
           param.grad_out_ptr,
           param.dot_out_ptr,
+          nullptr, // rand_val_ptr
           param.grad_q_ptr,
           param.grad_k_ptr,
           param.grad_v_ptr,
           param.grad_bias_ptr,
           param.M, // seqlen_q
           param.N, // seqlen_k
-          param.Hq, // nhead_q
-          param.Hkv, // nhead_v
+          param.K,
+          param.Kv,
+          param.Hq,
           param.Hq / param.Hkv,
           param.scale,
           param.q_strides[1], // q, k, v, bias, do, o, dk, dv, dbias seq-dim
@@ -234,6 +237,7 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.k_strides[1],
           param.v_strides[1],
           param.attn_bias_strides[2],
+          0, // stride_randval
           param.grad_out_strides[1],
           param.grad_k_strides[1],
           param.grad_v_strides[1],
@@ -244,6 +248,7 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.k_strides[2],
           param.v_strides[2],
           param.attn_bias_strides[1],
+          0, // nhead_stride_randval
           param.grad_out_strides[2],
           param.lsed_strides[1],
           param.attn_bias_strides[1], // assume grad_bias has same strides as
@@ -253,6 +258,7 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.k_strides[0],
           param.v_strides[0],
           param.attn_bias_strides[0],
+          0, // batch_stride_randval
           param.grad_out_strides[0],
           param.lsed_strides[0], // lse/dot is in BHM contiguous layout
           param.grad_k_strides[0],
@@ -260,7 +266,10 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.attn_bias_strides[0], // assume grad_bias has same strides as
                                       // bias
           static_cast<CausalMaskType>(param.custom_mask_type),
-          param.window_size);
+          param.window_size,
+          param.dropout_prob, // dropout ratio
+          false, // is_store_randval
+          {param.philox_seed, param.philox_offset});
     }();
 
     dim3 kGridSize = FmhaBwdKernel::GridSize(param.B, param.Hq, param.N);
