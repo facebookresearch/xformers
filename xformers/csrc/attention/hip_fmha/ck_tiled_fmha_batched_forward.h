@@ -23,7 +23,6 @@
 #include "ck_tiled_bool_switch.h"
 #include "ck_tiled_fmha_fwd_setting.h"
 #include "ck_tiled_fmha_params.h"
-#include "ck_tiled_headdim_switch.h"
 
 #include "ck_tiled_fmha_definitions.hpp"
 #include "ck_tiled_fmha_forward_kernel.hpp"
@@ -36,7 +35,7 @@ template <
     bool has_attn_bias,
     ck::index_t MaxK>
 struct batched_forward_causalmask_attnbias_dispatched {
-  using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
+  using FmhaFwdEpilogue_ = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
       typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
       typename FmhaFwdTypeConfig<scalar_t>::ODataType>>;
 
@@ -64,111 +63,118 @@ struct batched_forward_causalmask_attnbias_dispatched {
 
     BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
       constexpr bool has_masking = has_causal_mask || USE_LOCAL_ATTENTION;
+      const bool has_dropout = (param.dropout_prob > 0.0f);
 
       using FmhaMask = ck::tile_program::block::
           GenericAttentionMask<has_masking, USE_LOCAL_ATTENTION>;
 
-      using FmhaShape = FmhaFwdShape<MaxK>;
-      using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
+      using FmhaFwdShape_ = FmhaFwdShape<MaxK>;
+      using FmhaFwdTilePartitioner_ = FmhaFwdTilePartitioner<FmhaFwdShape_>;
       constexpr ck::index_t occupancy =
           (MaxK == 64) ? 3 : ((MaxK == 256) ? 1 : 2);
 
-      bool pad_seqlen_q = !(param.M % FmhaShape::kM0 == 0);
-      bool pad_seqlen_k = !(param.N % FmhaShape::kN0 == 0);
-      bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
-      bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
+      const bool pad_seqlen_q = !(param.M % FmhaFwdShape_::kM0 == 0);
+      const bool pad_seqlen_k = !(param.N % FmhaFwdShape_::kN0 == 0);
+      const bool pad_headdim_q =
+          !(param.K % FmhaFwdShape_::kK0BlockLength == 0);
+      const bool pad_headdim_v = !(param.Kv % FmhaFwdShape_::kN1 == 0);
+
+      // usually headdim_q and headdim_v are same, consider them together to
+      // determine whether to do padding saving some compiling time
+      bool pad_headdim = (pad_headdim_q || pad_headdim_v);
 
       if constexpr (MaxK == 256) {
         BOOL_SWITCH_4(
+            has_dropout,
+            kHasDropout,
             pad_seqlen_q,
             kPadSeqLenQ,
             pad_seqlen_k,
             kPadSeqLenK,
-            pad_headdim_q,
-            kPadHeadDimQ,
-            pad_headdim_v,
-            kPadHeadDimV,
+            pad_headdim,
+            kPadHeadDim,
             [&] {
-              using FmhaTraits = ck::tile_program::TileFmhaTraits<
+              using FmhaFwdTraits_ = ck::tile_program::TileFmhaTraits<
                   kPadSeqLenQ,
                   kPadSeqLenK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV,
+                  kPadHeadDim, // kPadHeadDimQ
+                  kPadHeadDim, // kPadHeadDimV
                   has_attn_bias,
                   true, // kStoreLSE
-                  false, // kHadDropout, to be changed
+                  kHasDropout,
                   occupancy>;
 
               using FmhaPipelineProblem =
-                  FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+                  FmhaPipelineProblemTemp<FmhaFwdTraits_, FmhaMask>;
 
-              using FmhaPipeline =
+              using FmhaFwdPipeline_ =
                   ck::tile_program::block::BlockFmhaPipelineQRKSVS<
                       FmhaPipelineProblem>;
-              using FmhaKernel = FmhaFwdKernel<
-                  FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
 
-              RunWithKernel<FmhaKernel>(param, stream);
+              using FmhaFwdKernel_ = FmhaFwdKernel<
+                  FmhaFwdTilePartitioner_,
+                  FmhaFwdPipeline_,
+                  FmhaFwdEpilogue_>;
+
+              RunWithKernel<FmhaFwdKernel_>(param, stream);
             });
       } else {
         BOOL_SWITCH_4(
+            has_dropout,
+            kHasDropout,
             pad_seqlen_q,
             kPadSeqLenQ,
             pad_seqlen_k,
             kPadSeqLenK,
-            pad_headdim_q,
-            kPadHeadDimQ,
-            pad_headdim_v,
-            kPadHeadDimV,
+            pad_headdim,
+            kPadHeadDim,
             [&] {
-              using FmhaTraits = ck::tile_program::TileFmhaTraits<
+              using FmhaFwdTraits_ = ck::tile_program::TileFmhaTraits<
                   kPadSeqLenQ,
                   kPadSeqLenK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV,
+                  kPadHeadDim, // kPadHeadDimQ
+                  kPadHeadDim, // kPadHeadDimV
                   has_attn_bias,
                   true, // kStoreLSE
-                  false, // kHadDropout, to be changed
+                  kHasDropout,
                   occupancy>;
 
               using FmhaPipelineProblem =
-                  FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+                  FmhaPipelineProblemTemp<FmhaFwdTraits_, FmhaMask>;
 
               constexpr bool no_any_padding =
-                  !(kPadSeqLenQ || kPadSeqLenK || kPadHeadDimQ || kPadHeadDimV);
+                  !(kPadSeqLenQ || kPadSeqLenK || kPadHeadDim);
 
               if constexpr (no_any_padding) {
-                using FmhaPipeline =
+                using FmhaFwdPipeline_ =
                     ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
                         FmhaPipelineProblem>;
-                using FmhaKernel = FmhaFwdKernel<
-                    FmhaTilePartitioner,
-                    FmhaPipeline,
-                    FmhaEpilogue>;
+                using FmhaFwdKernel_ = FmhaFwdKernel<
+                    FmhaFwdTilePartitioner_,
+                    FmhaFwdPipeline_,
+                    FmhaFwdEpilogue_>;
 
-                RunWithKernel<FmhaKernel>(param, stream);
+                RunWithKernel<FmhaFwdKernel_>(param, stream);
               } else {
-                using FmhaPipeline =
+                using FmhaFwdPipeline_ =
                     ck::tile_program::block::BlockFmhaPipelineQRKSVS<
                         FmhaPipelineProblem>;
-                using FmhaKernel = FmhaFwdKernel<
-                    FmhaTilePartitioner,
-                    FmhaPipeline,
-                    FmhaEpilogue>;
+                using FmhaFwdKernel_ = FmhaFwdKernel<
+                    FmhaFwdTilePartitioner_,
+                    FmhaFwdPipeline_,
+                    FmhaFwdEpilogue_>;
 
-                RunWithKernel<FmhaKernel>(param, stream);
+                RunWithKernel<FmhaFwdKernel_>(param, stream);
               };
             });
       };
     });
   };
 
-  template <typename FmhaKernel>
+  template <typename FmhaFwdKernel>
   static void RunWithKernel(BatchedForwardParams& param, hipStream_t stream) {
     const auto kargs = [&] {
-      return FmhaKernel::MakeKargs(
+      return FmhaFwdKernel::MakeKargs(
           param.q_ptr,
           param.k_ptr,
           param.v_ptr,
@@ -196,7 +202,7 @@ struct batched_forward_causalmask_attnbias_dispatched {
           param.v_strides[2],
           param.attn_bias_strides[1],
           0, // nhead_randval
-          param.M, // nhead_stride_lse
+          param.lse_strides[1], // nhead_stride_lse
           param.out_strides[2],
           param.q_strides[0], // q, k, v, bias, randval, lse, out tensor
                               // batch-dim stride
@@ -204,7 +210,7 @@ struct batched_forward_causalmask_attnbias_dispatched {
           param.v_strides[0],
           param.attn_bias_strides[0],
           0, // batch_stride_randval
-          param.Hq * param.M, // batch_stride_lse
+          param.lse_strides[0], // batch_stride_lse
           param.out_strides[0],
           static_cast<CausalMaskType>(param.custom_mask_type),
           param.window_size,
@@ -215,13 +221,14 @@ struct batched_forward_causalmask_attnbias_dispatched {
           {param.philox_seed, param.philox_offset});
     }();
 
-    dim3 kGridSize = FmhaKernel::GridSize(param.B, param.Hq, param.M, param.Kv);
-    constexpr dim3 kBlockSize = FmhaKernel::BlockSize();
-    constexpr ck::index_t kBlockPerCu = FmhaKernel::kBlockPerCu;
+    dim3 kGridSize =
+        FmhaFwdKernel::GridSize(param.B, param.Hq, param.M, param.Kv);
+    constexpr dim3 kBlockSize = FmhaFwdKernel::BlockSize();
+    constexpr ck::index_t kBlockPerCu = FmhaFwdKernel::kBlockPerCu;
 
     (void)launch_kernel<kBlockSize.x, kBlockPerCu>(
         StreamConfig{stream, false},
-        FmhaKernel{},
+        FmhaFwdKernel{},
         kGridSize,
         kBlockSize,
         0,

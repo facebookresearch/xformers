@@ -555,22 +555,22 @@ struct FMHADecoderSplitAttentionDeviceOp : public BaseOperator {
                     kMaxKVSequenceLength,
                     compute_t>
               : Q_size_k_alignment_necessary == 2
-              ? efficient_attention_forward_decoder_splitk_ck_kernel<
-                    scalar_t,
-                    2,
-                    kLoopUnroll,
-                    kLoopUnrollTail,
-                    kMaxKVSequenceLength,
-                    compute_t>
-              : Q_size_k_alignment_necessary == 1
-              ? efficient_attention_forward_decoder_splitk_ck_kernel<
-                    scalar_t,
-                    1,
-                    kLoopUnroll,
-                    kLoopUnrollTail,
-                    kMaxKVSequenceLength,
-                    compute_t>
-              : nullptr,
+                  ? efficient_attention_forward_decoder_splitk_ck_kernel<
+                        scalar_t,
+                        2,
+                        kLoopUnroll,
+                        kLoopUnrollTail,
+                        kMaxKVSequenceLength,
+                        compute_t>
+                  : Q_size_k_alignment_necessary == 1
+                      ? efficient_attention_forward_decoder_splitk_ck_kernel<
+                            scalar_t,
+                            1,
+                            kLoopUnroll,
+                            kLoopUnrollTail,
+                            kMaxKVSequenceLength,
+                            compute_t>
+                      : nullptr,
           arg.grid_dim,
           arg.block_dim,
           arg.lds_bytes,
@@ -728,14 +728,14 @@ struct FMHADecoderSplitReduceDeviceOp : public BaseOperator {
                     scalar_t,
                     4>
               : O_size_k_alignment_necessary == 2
-              ? efficient_attention_forward_decoder_splitk_reduce_ck_kernel<
-                    scalar_t,
-                    2>
-              : O_size_k_alignment_necessary == 1
-              ? efficient_attention_forward_decoder_splitk_reduce_ck_kernel<
-                    scalar_t,
-                    1>
-              : nullptr,
+                  ? efficient_attention_forward_decoder_splitk_reduce_ck_kernel<
+                        scalar_t,
+                        2>
+                  : O_size_k_alignment_necessary == 1
+                      ? efficient_attention_forward_decoder_splitk_reduce_ck_kernel<
+                            scalar_t,
+                            1>
+                      : nullptr,
           reduce_gridsize,
           reduce_blocksize,
           reduce_lds_bytes,
@@ -1114,9 +1114,9 @@ int main(int argc, char** argv) {
     const int32_t batch_size = std::stoi(args[1]);
     const int32_t nq_heads = std::stoi(args[2]);
     const int32_t nkv_heads = std::stoi(args[3]);
-    const auto dtype = (args[4] == "f32") ? torch::kFloat32
-        : (args[4] == "f16")              ? torch::kFloat16
-                                          : torch::kBFloat16;
+    const auto dtype = (args[4] == "f32")
+        ? torch::kFloat32
+        : (args[4] == "f16") ? torch::kFloat16 : torch::kBFloat16;
     const int32_t n_wavefronts_per_block = std::stoi(args[5]);
 
     auto [Q, K, V, seq] =

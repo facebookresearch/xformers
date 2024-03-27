@@ -10,6 +10,7 @@
 
 #include "ck_tiled_bool_switch.h"
 #include "ck_tiled_fmha_batched_forward.h"
+#include "ck_tiled_headdim_switch.h"
 
 // clang-format off
 extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::half_t, false, true, 32>(
