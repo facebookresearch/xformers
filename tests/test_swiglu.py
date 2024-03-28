@@ -15,7 +15,8 @@ import torch
 import xformers
 import xformers.ops.swiglu_op as xsw
 
-torch.backends.cuda.matmul.allow_tf32 = False
+from .utils import disable_tf32
+
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 if torch.cuda.is_available():
     _devices = ["cuda"]
@@ -139,6 +140,7 @@ def create_module_cached(**kwargs) -> xsw.SwiGLU:
     return xsw.SwiGLU(**kwargs)
 
 
+@disable_tf32
 @disable_on_rocm
 @pytest.mark.parametrize("autocast", [False, True], ids=["regular", "autocast"])
 @pytest.mark.parametrize("op", _ops, ids=[x.NAME for x in _ops])
@@ -342,6 +344,7 @@ def test_swiglu_compile(
         )
 
 
+@disable_tf32
 @torch.inference_mode()
 @torch_compile_tests
 @cuda_sm80_only
@@ -382,6 +385,7 @@ def test_dual_gemm_silu_identity_mul_compile(dtype, device, bias) -> None:
         )
 
 
+@disable_tf32
 @torch.inference_mode()
 @cuda_sm80_only
 @torch_compile_tests
@@ -414,6 +418,7 @@ def test_gemm_fused_operand_sum_compile(dtype, device) -> None:
         )
 
 
+@disable_tf32
 @torch.inference_mode()
 @torch_compile_tests
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
@@ -443,6 +448,7 @@ def test_silu_bw_fused_compile(dtype, device) -> None:
         )
 
 
+@disable_tf32
 @cuda_only
 @cuda_sm80_only
 def test_autocast_silu_bw_fused_compile() -> None:

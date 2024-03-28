@@ -765,7 +765,7 @@ class FwOp(AttentionFwOpBase):
         torch.half,
         torch.bfloat16,
     }  # Those are dtypes of Q. In the quantized case K/V has dtype int32
-    SUPPORTED_MAX_K = 128
+    SUPPORTED_MAX_K = 256
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
@@ -802,7 +802,7 @@ class FwOp(AttentionFwOpBase):
         cls, Mq: int, Mkv: int, K: int, Kv: int
     ) -> List[str]:
         reasons = super().shape_not_supported_reasons(Mq, Mkv, K, Kv)
-        if K not in {16, 32, 64, 128}:
+        if K not in {16, 32, 64, 128, 256}:
             reasons.append(f"Embed dim {K} not supported")
         return reasons
 

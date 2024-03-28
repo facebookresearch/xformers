@@ -12,11 +12,12 @@ import xformers.ops
 from xformers.ops import fmha
 
 from .test_mem_eff_attention import ref_attention
-from .utils import assert_allclose
+from .utils import assert_allclose, disable_tf32
 
 torch.backends.cuda.matmul.allow_tf32 = False
 
 
+@disable_tf32
 def ref_attention_splitk_bmhk(
     q, k, v, attn_bias, scale=None, split_k=None, dtype=None
 ) -> torch.Tensor:
@@ -40,6 +41,7 @@ def ref_attention_splitk_bmhk(
     return out.permute((0, 2, 1, 3))
 
 
+@disable_tf32
 def ref_attention_splitk(
     q, k, v, attn_bias, scale=None, split_k=2, dtype=None
 ) -> torch.Tensor:

@@ -3,10 +3,33 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+from functools import wraps
 from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
+
+
+def disable_tf32(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        cuda, cudnn = (
+            torch.backends.cuda.matmul.allow_tf32,
+            torch.backends.cudnn.allow_tf32,
+        )
+        torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32 = (
+            False,
+            False,
+        )
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32 = (
+                cuda,
+                cudnn,
+            )
+
+    return wrapped
 
 
 def assert_allclose(

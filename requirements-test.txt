@@ -18,6 +18,7 @@ pytest == 7.2.0
 pytest-cov == 2.10.0
 pytest-mpi == 0.4
 pytest-timeout == 1.4.2
+pytest-random-order == 1.1.1
 git+https://github.com/rwightman/pytorch-image-models@v0.4.5#egg=timm
 
 # Dependency for factory
