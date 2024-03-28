@@ -82,12 +82,11 @@ efficient_attention_backward_ck(
   TORCH_CHECK(query.size(3) == key.size(3));
   TORCH_CHECK(value.size(3) == grad_out.size(3));
 
-  // CK-FlashAttn requires out, grad_out to have same shapes
   TORCH_CHECK(out.sizes() == grad_out.sizes());
 
   // last dim is contiguous, device is CUDA
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(out);
-  CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(grad_out);
+  // CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(grad_out);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(query);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
@@ -295,7 +294,7 @@ efficient_attention_backward_ck(
       if (bias_requires_grad)
         p.grad_bias_ptr = grad_bias.data_ptr();
     } else {
-      p.has_attn_bias = true;
+      p.has_attn_bias = false;
       p.attn_bias_ptr = nullptr;
       p.grad_bias_ptr = nullptr;
     }

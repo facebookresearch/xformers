@@ -185,12 +185,13 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.Kv,
           param.grad_out_strides[1], // stride_do
           param.out_strides[1], // stride_o
-          param.out_strides[2], // nhead_stride_do
+          param.grad_out_strides[2], // nhead_stride_do
           param.out_strides[2], // nhead_stride_o
           param.lsed_strides[1], // nhead_stride_d
-          param.out_strides[0], // batch_stride_do
+          param.grad_out_strides[0], // batch_stride_do
           param.out_strides[0], // batch_stride_o
-          param.lsed_strides[0]); // batch_stride_d
+          param.lsed_strides[0], // batch_stride_d
+          param.grad_out_strides[3]); // hdim_stride_do
     }();
 
     dim3 kGridSize =
@@ -232,7 +233,7 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.Hq,
           param.Hq / param.Hkv,
           param.scale,
-          param.q_strides[1], // q, k, v, bias, do, o, dk, dv, dbias seq-dim
+          param.q_strides[1], // q, k, v, bias, do, dk, dv, dbias seq-dim
                               // stride
           param.k_strides[1],
           param.v_strides[1],
@@ -243,7 +244,7 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.grad_v_strides[1],
           param.attn_bias_strides[2], // assume grad_bias has same strides as
                                       // bias
-          param.q_strides[2], // q, k, v, bias, do, o, lse/dot, dbias
+          param.q_strides[2], // q, k, v, bias, do, lse/dot, dbias
                               // nhead-dim strides
           param.k_strides[2],
           param.v_strides[2],
@@ -253,7 +254,7 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.lsed_strides[1],
           param.attn_bias_strides[1], // assume grad_bias has same strides as
                                       // bias
-          param.q_strides[0], // q, k, v, bias, do, o, lse/dot, dk, dv, dbias,
+          param.q_strides[0], // q, k, v, bias, do, lse/dot, dk, dv, dbias,
                               // batch-dim strides
           param.k_strides[0],
           param.v_strides[0],
@@ -265,6 +266,7 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.grad_v_strides[0],
           param.attn_bias_strides[0], // assume grad_bias has same strides as
                                       // bias
+          param.grad_out_strides[3], // hdim_stride_do
           static_cast<CausalMaskType>(param.custom_mask_type),
           param.window_size,
           param.dropout_prob, // dropout ratio
