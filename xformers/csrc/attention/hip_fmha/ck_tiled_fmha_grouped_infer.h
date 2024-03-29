@@ -78,59 +78,29 @@ struct grouped_infer_causalmask_attnbias_dispatched {
       bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
       bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
 
-      if constexpr (MaxK == 256) {
-        BOOL_SWITCH_2(
-            pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
-              using FmhaTraits = ck::tile_program::TileFmhaTraits<
-                  kPadSeqLenQ,
-                  kPadSeqLenK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV,
-                  has_attn_bias,
-                  false, // kStoreLSE
-                  false, // kHasDropout
-                  occupancy>;
+      BOOL_SWITCH_2(
+          pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
+            using FmhaTraits = ck::tile_program::TileFmhaTraits<
+                kPadSeqLenQ,
+                kPadSeqLenK,
+                kPadHeadDimQ,
+                kPadHeadDimV,
+                has_attn_bias,
+                false, // kStoreLSE
+                false, // kHasDropout
+                occupancy>;
 
-              using FmhaPipelineProblem =
-                  FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+            using FmhaPipelineProblem =
+                FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-              using FmhaPipeline =
-                  ck::tile_program::block::BlockFmhaPipelineQRKSVS<
-                      FmhaPipelineProblem>;
-              using FmhaKernel = FmhaFwdKernel<
-                  FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
+            using FmhaPipeline =
+                ck::tile_program::block::BlockFmhaPipelineQRKSVS<
+                    FmhaPipelineProblem>;
+            using FmhaKernel =
+                FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
-              RunWithKernel<FmhaKernel>(param, stream);
-            });
-      } else {
-        BOOL_SWITCH_2(
-            pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
-              using FmhaTraits = ck::tile_program::TileFmhaTraits<
-                  kPadSeqLenQ,
-                  kPadSeqLenK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV,
-                  has_attn_bias,
-                  false, // kStoreLSE
-                  false, // kHasDropout
-                  occupancy>;
-
-              using FmhaPipelineProblem =
-                  FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
-
-              using FmhaPipeline =
-                  ck::tile_program::block::BlockFmhaPipelineQRKSVS<
-                      FmhaPipelineProblem>;
-              using FmhaKernel = FmhaFwdKernel<
-                  FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
-
-              RunWithKernel<FmhaKernel>(param, stream);
-            });
-      };
+            RunWithKernel<FmhaKernel>(param, stream);
+          });
     });
   };
 
