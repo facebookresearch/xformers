@@ -47,6 +47,8 @@ def _get_seqlen_info(
     if isinstance(
         attn_bias, (BlockDiagonalMask, BlockDiagonalCausalWithOffsetPaddedKeysMask)
     ):
+        attn_bias.k_seqinfo.to(inp.query.device)
+        attn_bias.q_seqinfo.to(inp.query.device)
         seqstart_k = attn_bias.k_seqinfo.seqstart
         seqstart_q = attn_bias.q_seqinfo.seqstart
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
