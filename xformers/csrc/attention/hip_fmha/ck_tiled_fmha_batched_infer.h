@@ -73,12 +73,15 @@ struct batched_infer_causalmask_attnbias_dispatched {
       constexpr ck::index_t occupancy =
           (MaxK == 64) ? 3 : ((MaxK == 256) ? 1 : 2);
 
-      bool pad_seqlen_q = !(param.M % FmhaShape::kM0 == 0);
-      bool pad_seqlen_k = !(param.N % FmhaShape::kN0 == 0);
-      bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
-      bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
+      const bool pad_seqlen_q = !(param.M % FmhaShape::kM0 == 0);
+      const bool pad_seqlen_k = !(param.N % FmhaShape::kN0 == 0);
+      const bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
+      const bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
 
-      if constexpr (MaxK == 256) {
+      const bool use_async_pipeline =
+          ((param.K % 8 == 0) && (param.Kv % 8 == 0) && (MaxK <= 128));
+
+      if (!use_async_pipeline) {
         BOOL_SWITCH_4(
             pad_seqlen_q,
             kPadSeqLenQ,
@@ -113,54 +116,27 @@ struct batched_infer_causalmask_attnbias_dispatched {
               RunWithKernel<FmhaKernel>(param, stream);
             });
       } else {
-        BOOL_SWITCH_4(
-            pad_seqlen_q,
-            kPadSeqLenQ,
-            pad_seqlen_k,
-            kPadSeqLenK,
-            pad_headdim_q,
-            kPadHeadDimQ,
-            pad_headdim_v,
-            kPadHeadDimV,
-            [&] {
-              using FmhaTraits = ck::tile_program::TileFmhaTraits<
-                  kPadSeqLenQ,
-                  kPadSeqLenK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV,
-                  has_attn_bias,
-                  false, // kStoreLSE
-                  false, // kHasDropout
-                  occupancy>;
+        BOOL_SWITCH(pad_seqlen_k, kPadSeqLenK, [&] {
+          using FmhaTraits = ck::tile_program::TileFmhaTraits<
+              true, // kPadSeqLenQ,
+              kPadSeqLenK,
+              true, // kPadHeadDimQ,
+              true, // kPadHeadDimV,
+              has_attn_bias,
+              false, // kStoreLSE
+              false, // kHasDropout
+              occupancy>;
 
-              using FmhaPipelineProblem =
-                  FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+          using FmhaPipelineProblem =
+              FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-              constexpr bool no_any_padding =
-                  !(kPadSeqLenQ || kPadSeqLenK || kPadHeadDimQ || kPadHeadDimV);
+          using FmhaPipeline = ck::tile_program::block::BlockFmhaPipelineQRKSVS<
+              FmhaPipelineProblem>;
+          using FmhaKernel =
+              FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
-              if constexpr (no_any_padding) {
-                using FmhaPipeline =
-                    ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
-                        FmhaPipelineProblem>;
-                using FmhaKernel = FmhaFwdKernel<
-                    FmhaTilePartitioner,
-                    FmhaPipeline,
-                    FmhaEpilogue>;
-
-                RunWithKernel<FmhaKernel>(param, stream);
-              } else {
-                using FmhaPipeline =
-                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<
-                        FmhaPipelineProblem>;
-                using FmhaKernel = FmhaFwdKernel<
-                    FmhaTilePartitioner,
-                    FmhaPipeline,
-                    FmhaEpilogue>;
-
-                RunWithKernel<FmhaKernel>(param, stream);
-              };
-            });
+          RunWithKernel<FmhaKernel>(param, stream);
+        });
       };
     });
   };

@@ -81,9 +81,12 @@ struct batched_forward_causalmask_attnbias_dispatched {
 
       // usually headdim_q and headdim_v are same, consider them together to
       // determine whether to do padding saving some compiling time
-      bool pad_headdim = (pad_headdim_q || pad_headdim_v);
+      const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
 
-      if constexpr (MaxK == 256) {
+      const bool use_async_pipeline =
+          ((param.K % 8 == 0) && (param.Kv % 8 == 0) && (MaxK <= 128));
+
+      if (!use_async_pipeline) {
         BOOL_SWITCH_4(
             has_dropout,
             kHasDropout,
@@ -119,54 +122,30 @@ struct batched_forward_causalmask_attnbias_dispatched {
               RunWithKernel<FmhaFwdKernel_>(param, stream);
             });
       } else {
-        BOOL_SWITCH_4(
-            has_dropout,
-            kHasDropout,
-            pad_seqlen_q,
-            kPadSeqLenQ,
-            pad_seqlen_k,
-            kPadSeqLenK,
-            pad_headdim,
-            kPadHeadDim,
-            [&] {
-              using FmhaFwdTraits_ = ck::tile_program::TileFmhaTraits<
-                  kPadSeqLenQ,
-                  kPadSeqLenK,
-                  kPadHeadDim, // kPadHeadDimQ
-                  kPadHeadDim, // kPadHeadDimV
-                  has_attn_bias,
-                  true, // kStoreLSE
-                  kHasDropout,
-                  occupancy>;
+        BOOL_SWITCH_2(has_dropout, kHasDropout, pad_seqlen_k, kPadSeqLenK, [&] {
+          using FmhaFwdTraits_ = ck::tile_program::TileFmhaTraits<
+              true, // kPadSeqLenQ,
+              kPadSeqLenK,
+              true, // kPadHeadDimQ
+              true, // kPadHeadDimV
+              has_attn_bias,
+              true, // kStoreLSE
+              kHasDropout,
+              occupancy>;
 
-              using FmhaPipelineProblem =
-                  FmhaPipelineProblemTemp<FmhaFwdTraits_, FmhaMask>;
+          using FmhaPipelineProblem =
+              FmhaPipelineProblemTemp<FmhaFwdTraits_, FmhaMask>;
 
-              constexpr bool no_any_padding =
-                  !(kPadSeqLenQ || kPadSeqLenK || kPadHeadDim);
+          using FmhaFwdPipeline_ =
+              ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
+                  FmhaPipelineProblem>;
+          using FmhaFwdKernel_ = FmhaFwdKernel<
+              FmhaFwdTilePartitioner_,
+              FmhaFwdPipeline_,
+              FmhaFwdEpilogue_>;
 
-              if constexpr (no_any_padding) {
-                using FmhaFwdPipeline_ =
-                    ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
-                        FmhaPipelineProblem>;
-                using FmhaFwdKernel_ = FmhaFwdKernel<
-                    FmhaFwdTilePartitioner_,
-                    FmhaFwdPipeline_,
-                    FmhaFwdEpilogue_>;
-
-                RunWithKernel<FmhaFwdKernel_>(param, stream);
-              } else {
-                using FmhaFwdPipeline_ =
-                    ck::tile_program::block::BlockFmhaPipelineQRKSVS<
-                        FmhaPipelineProblem>;
-                using FmhaFwdKernel_ = FmhaFwdKernel<
-                    FmhaFwdTilePartitioner_,
-                    FmhaFwdPipeline_,
-                    FmhaFwdEpilogue_>;
-
-                RunWithKernel<FmhaFwdKernel_>(param, stream);
-              };
-            });
+          RunWithKernel<FmhaFwdKernel_>(param, stream);
+        });
       };
     });
   };
