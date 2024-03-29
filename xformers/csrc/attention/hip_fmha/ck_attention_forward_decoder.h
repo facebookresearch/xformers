@@ -6,7 +6,7 @@
  */
 #pragma once
 
-#include <ck/host_utility/kernel_launch_hip.hpp>
+#include <ck/host_utility/kernel_launch.hpp>
 #include <ck/stream_config.hpp>
 #include <ck/tensor_operation/gpu/device/device_base.hpp>
 #include <ck/utility/data_type.hpp>
