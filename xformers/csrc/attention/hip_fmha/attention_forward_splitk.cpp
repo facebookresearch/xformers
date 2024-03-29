@@ -159,7 +159,7 @@ at::Tensor& efficient_attention_forward_decoder_splitk_ck_out_impl(
             lds_bytes);
 
         auto invoker = device_op_t::Invoker{};
-        (void)invoker.Run(arg, {stream});
+        (void)invoker.Run(&arg, {stream});
       });
 
   return O;

@@ -377,6 +377,8 @@ def get_extensions():
                 "-U__CUDA_NO_HALF_CONVERSIONS__",
                 "-DCK_FMHA_FWD_FAST_EXP2=1",
                 "-fgpu-flush-denormals-to-zero",
+                "-Werror",
+                "-Woverloaded-virtual",
             ]
             + generator_flag
             + cc_flag,
