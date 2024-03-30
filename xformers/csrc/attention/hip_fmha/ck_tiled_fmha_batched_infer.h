@@ -130,7 +130,7 @@ struct batched_infer_causalmask_attnbias_dispatched {
           using FmhaPipelineProblem =
               FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-          using FmhaPipeline = ck::tile_program::block::BlockFmhaPipelineQRKSVS<
+          using FmhaPipeline = ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
               FmhaPipelineProblem>;
           using FmhaKernel =
               FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
