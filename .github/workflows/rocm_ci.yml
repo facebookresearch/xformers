@@ -3,6 +3,12 @@ name: ROCM_CI
 on: 
   pull_request:
     types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'     
+        required: true
+        default: 'warning'
 
 jobs:
   build:
