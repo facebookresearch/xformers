@@ -71,7 +71,7 @@ jobs:
         pytest -rpfs ./_xformers/tests/test_mem_eff_attention.py | tee test_mem_eff_attention.log
     
     - name: Archive logs
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: test results
         path: test_mem_eff_attention.log
