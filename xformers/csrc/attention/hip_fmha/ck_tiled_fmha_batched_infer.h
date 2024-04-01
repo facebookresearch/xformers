@@ -36,10 +36,6 @@ template <
     bool has_attn_bias,
     ck::index_t MaxK>
 struct batched_infer_causalmask_attnbias_dispatched {
-  using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
-      typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
-      typename FmhaFwdTypeConfig<scalar_t>::ODataType>>;
-
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp =
       ck::tile_program::block::BlockFmhaPipelineProblem<
@@ -108,6 +104,13 @@ struct batched_infer_causalmask_attnbias_dispatched {
               using FmhaPipeline =
                   ck::tile_program::block::BlockFmhaPipelineQRKSVS<
                       FmhaPipelineProblem>;
+
+              using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
+                  typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
+                  typename FmhaFwdTypeConfig<scalar_t>::ODataType,
+                  kPadSeqLenQ,
+                  kPadHeadDimV>>;
+
               using FmhaKernel = FmhaFwdKernel<
                   FmhaTilePartitioner,
                   FmhaPipeline,
@@ -130,8 +133,16 @@ struct batched_infer_causalmask_attnbias_dispatched {
           using FmhaPipelineProblem =
               FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-          using FmhaPipeline = ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
-              FmhaPipelineProblem>;
+          using FmhaPipeline =
+              ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
+                  FmhaPipelineProblem>;
+
+          using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
+              typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
+              typename FmhaFwdTypeConfig<scalar_t>::ODataType,
+              true,
+              true>>;
+
           using FmhaKernel =
               FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
