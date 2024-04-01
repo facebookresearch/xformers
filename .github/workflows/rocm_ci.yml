@@ -7,7 +7,7 @@ on:
 jobs:
   build:
     if: contains(github.event.label.name, 'rocm')
-    runs-on: rocm
+    runs-on: self-hosted
 
     steps:
     - uses: actions/checkout@v2
