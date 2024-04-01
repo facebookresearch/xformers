@@ -12,7 +12,6 @@ on:
 
 jobs:
   build:
-    if: contains(github.event.label.name, 'rocm')
     runs-on: self-hosted
 
     steps:
