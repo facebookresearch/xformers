@@ -35,10 +35,6 @@ template <
     bool has_attn_bias,
     ck::index_t MaxK>
 struct grouped_infer_causalmask_attnbias_dispatched {
-  using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
-      typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
-      typename FmhaFwdTypeConfig<scalar_t>::ODataType>>;
-
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp =
       ck::tile_program::block::BlockFmhaPipelineProblem<
@@ -96,6 +92,13 @@ struct grouped_infer_causalmask_attnbias_dispatched {
             using FmhaPipeline =
                 ck::tile_program::block::BlockFmhaPipelineQRKSVS<
                     FmhaPipelineProblem>;
+
+            using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
+                typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
+                typename FmhaFwdTypeConfig<scalar_t>::ODataType,
+                kPadSeqLenQ,
+                kPadHeadDimV>>;
+
             using FmhaKernel =
                 FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
