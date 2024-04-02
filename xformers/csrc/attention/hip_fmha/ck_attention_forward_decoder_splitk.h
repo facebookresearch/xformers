@@ -586,9 +586,12 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator {
 
   struct Invoker : public BaseInvoker {
     using Argument = DeviceOp::Argument;
-    float Run(
-        const Argument& arg,
-        const StreamConfig& stream_config = StreamConfig{}) {
+    virtual float Run(
+        const BaseArgument* base_arg,
+        const StreamConfig& stream_config = StreamConfig{}) override {
+      // copy so it's alive while being used
+      auto arg = *dynamic_cast<const Argument*>(base_arg);
+
       auto threads_per_wavefront = arg.block_dim.x;
       auto Q_size_k_alignment_necessary = 0;
 
