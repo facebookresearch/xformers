@@ -130,10 +130,12 @@ at::Tensor sparse24_apply_dense_output(
   auto roundedy = cutlass::round_up(input.size(1), kWarpY);
 
   Params p;
-  p.input = (uint16_t const*)input.data_ptr();
   p.input_dim0 = input.size(0);
   p.input_dim1 = input.size(1);
-  p.threads_masks = (uint64_t const*)threads_masks.data_ptr();
+  if (!kIsMeta) {
+    p.input = (uint16_t const*)input.data_ptr();
+    p.threads_masks = (uint64_t const*)threads_masks.data_ptr();
+  }
 
   TORCH_CHECK(threads_masks.dim() == 3);
   TORCH_CHECK(
@@ -147,10 +149,10 @@ at::Tensor sparse24_apply_dense_output(
 
   at::Tensor output = at::empty({p.input_dim0, p.input_dim1}, input.options());
   TORCH_INTERNAL_ASSERT(output.stride(-1) == 1, "expected RowMajor?");
-  p.output = (uint16_t*)output.data_ptr();
   if (kIsMeta) {
     return output;
   }
+  p.output = (uint16_t*)output.data_ptr();
 
   bool inputRowMajor = input.stride(-1) == 1;
   bool outputRowMajor = output.stride(-1) == 1;

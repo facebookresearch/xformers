@@ -52,17 +52,19 @@ std::
       at::empty({roundedy, cutlass::ceil_div(roundedx, 2)}, input.options());
 
   typename KT::Params p;
-  p.input = (Element const*)input.data_ptr();
   p.input_s0 = input.stride(0);
   p.input_dim0 = input.size(0);
   p.input_dim1 = input.size(1);
 
-  p.packed = (Element*)packed.data_ptr();
   p.packed_stride = packed.stride(0);
-  p.packed_trans = (Element*)packed_trans.data_ptr();
   p.packed_trans_stride = packed_trans.stride(0);
 
-  p.threads_masks = (uint64_t*)threads_masks.data_ptr();
+  if (!kIsMeta) {
+    p.input = (Element const*)input.data_ptr();
+    p.packed = (Element*)packed.data_ptr();
+    p.packed_trans = (Element*)packed_trans.data_ptr();
+    p.threads_masks = (uint64_t*)threads_masks.data_ptr();
+  }
 
   TORCH_CHECK(threads_masks.dim() == 3);
   TORCH_CHECK(
