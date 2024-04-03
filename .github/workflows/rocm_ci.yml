@@ -9,6 +9,8 @@ on:
         description: 'Log level'     
         required: true
         default: 'warning'
+  schedule:
+    - cron: "15 1 * * *"
 
 jobs:
   build:
