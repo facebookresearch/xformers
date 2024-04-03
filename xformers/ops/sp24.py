@@ -85,7 +85,9 @@ class Sp24GemmCusplt(BaseOperator):
 
 def _has_cusparseLt() -> bool:
     available = _cusplt_version >= (0, 4, 0)
-    if available and _cusplt_version < (0, 5, 0):
+    if not available:
+        return False
+    if _cusplt_version < (0, 5, 0):
         # Version 0.5.0 has much better perf because it can fuse the
         # transpose within the GEMM epilogue
         warnings.warn(
@@ -93,6 +95,14 @@ def _has_cusparseLt() -> bool:
             f"but you get better performance with v0.5.0+ if "
             f"you replace the .so file ({_get_cusparselt_lib()})"
         )
+
+    # Sm90 added in 6.0
+    compute_capability = (0, 0)
+    if torch.cuda.is_available():
+        compute_capability = torch.cuda.get_device_capability("cuda")
+    if _cusplt_version < (6, 0, 0):
+        if compute_capability >= (9, 0):
+            return False
     return available
 
 

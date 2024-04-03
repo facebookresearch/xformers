@@ -26,8 +26,9 @@ if torch.cuda.is_available():
 torch_compile_tests = pytest.mark.skipif(
     torch.__version__ < "2.2.0.dev20231122", reason="requires PyTorch 2.2+"
 )
-cuda_sm80_only = pytest.mark.skipif(
-    compute_capability < (8, 0), reason="requires sm80+"
+requires_sp24 = pytest.mark.skipif(compute_capability < (8, 0), reason="requires sm80+")
+requires_sp24_gemm = pytest.mark.skipif(
+    compute_capability != (8, 0), reason="requires sm80"
 )
 parametrize_dtype = pytest.mark.parametrize(
     "dtype", [torch.float16, torch.bfloat16], ids=["f16", "bf16"]
@@ -67,7 +68,7 @@ def test_sparse24_largest_mask_2d() -> None:
     ]
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 @parametrize_backend
 def test_autocast(dtype, backend: str) -> None:
@@ -89,7 +90,7 @@ def test_autocast(dtype, backend: str) -> None:
     assert_allclose(y, y_ac, "gemm", **atol_rtol_kw[dtype])
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 def test_sparse24_causal1122(dtype) -> None:
     inp = torch.tensor(
@@ -109,7 +110,7 @@ def test_sparse24_causal1122(dtype) -> None:
     ]
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 @parametrize_backend
 def test_sparse24_largest_abs_values_greedy(dtype, backend) -> None:
@@ -286,7 +287,7 @@ def test_pack_tensor_according_to_mask() -> None:
     assert line_packed == line_packed_expected
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 def test_sp24_gemm(dtype) -> None:
     M, N, K = 32, 32, 64
@@ -361,7 +362,7 @@ def test_pack_meta_shuffle(transpose: bool) -> None:
     expect_match(1, 1, 3)  # T5
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 @parametrize_backend
 def test_pack_both_ways_meta_correctness(dtype, backend) -> None:
@@ -386,7 +387,7 @@ def test_pack_both_ways_meta_correctness(dtype, backend) -> None:
     assert_allclose(ref_gemm, pack_gemm, msg="sp24 GEMM", **atol_rtol_kw[dtype])
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 def test_pack_both_ways_id(dtype) -> None:
     N = 512
@@ -502,7 +503,7 @@ def test_sp24_api_different_pattern_transposed(dtype) -> None:
     assert torch.allclose(sxt2.packed_t, sxt.packed_t)
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 @parametrize_backend
 def test_sp24_transpose_invariant(dtype, backend) -> None:
@@ -543,7 +544,7 @@ def test_sp24_transpose_invariant(dtype, backend) -> None:
     assert_allclose(a_t_s._sp24_to_dense().t(), a)
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 def test_sp24_matmuls(dtype) -> None:
     M, N, K = 64, 256, 1024
@@ -564,7 +565,7 @@ def test_sp24_matmuls(dtype) -> None:
     )
 
 
-@cuda_sm80_only
+@requires_sp24
 def test_sp24_matmuls_mat_vec() -> None:
     a = torch.randn([64, 128], device="cuda", dtype=torch.float16)
     b = torch.randn([128], device="cuda", dtype=torch.float16)
@@ -575,7 +576,7 @@ def test_sp24_matmuls_mat_vec() -> None:
         assert_allclose(a_s @ b, (a * a_m) @ b, msg="sp@dense", **atol_rtol_kw[a.dtype])
 
 
-@cuda_sm80_only
+@requires_sp24
 def test_sp24_matmuls_bmm() -> None:
     a = torch.randn([64, 128], device="cuda", dtype=torch.float16)
     b = torch.randn([5, 6, 128], device="cuda", dtype=torch.float16)
@@ -591,7 +592,7 @@ def sparsify24_dense(tensor: torch.Tensor):
     return m * tensor
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 @pytest.mark.parametrize("act", [F.gelu, F.relu])
 def test_sp24_api_mlp_act24_correctness(dtype, act) -> None:
@@ -640,7 +641,7 @@ def test_sp24_api_mlp_act24_correctness(dtype, act) -> None:
         assert_allclose(grad_calc, grad_ref, msg=grad_name, **atol_rtol_kw[dtype])
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 def test_sp24_api_swiglu_correctness(dtype) -> None:
     B, in_ft, hid_ft, out_ft = 256, 2048, 6144 // 2, 2048
@@ -695,7 +696,7 @@ def test_sp24_api_swiglu_correctness(dtype) -> None:
         assert_allclose(grad_calc, grad_ref, msg=grad_name, **atol_rtol_kw[dtype])
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 @pytest.mark.parametrize("M", [1, 8, 26, 31, 32, 48, 63])
 def test_not_aligned(dtype, M):
@@ -708,7 +709,7 @@ def test_not_aligned(dtype, M):
     assert_allclose(As @ B, A @ B, msg="not aligned", **atol_rtol_kw[dtype])
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 @pytest.mark.parametrize("input_rowmajor", [True, False])
 def test_sparsify24_like_dense(dtype, input_rowmajor):
@@ -724,7 +725,7 @@ def test_sparsify24_like_dense(dtype, input_rowmajor):
     )
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_dtype
 @parametrize_backend
 def test_sparsify24_weights(dtype, backend):
@@ -769,7 +770,7 @@ def _workaround_cusparselt_internal_error() -> None:
     out.backward(out)
 
 
-@cuda_sm80_only
+@requires_sp24
 @parametrize_dtype
 @pytest.mark.skipif(not sp24._has_cusparseLt(), reason="requires cusparselt")
 @pytest.mark.parametrize("bias", [False, True], ids=["", "bias"])
@@ -837,7 +838,7 @@ def test_linearw24(dtype, bias: bool, aligned: bool, amp: bool) -> None:
         )
 
 
-@cuda_sm80_only
+@requires_sp24
 @pytest.mark.skipif(not sp24._has_cusparseLt(), reason="requires cusparselt")
 def test_wrong_alignment_error_message() -> None:
     A = torch.randn([128, 128], device="cuda", dtype=torch.float16)
@@ -847,7 +848,7 @@ def test_wrong_alignment_error_message() -> None:
         A @ B
 
 
-@cuda_sm80_only
+@requires_sp24
 @pytest.mark.skipif(not sp24._has_cusparseLt(), reason="requires cusparselt")
 def test_min_alignment() -> None:
     A = torch.randn([128, 128], device="cuda", dtype=torch.float16)
@@ -856,7 +857,7 @@ def test_min_alignment() -> None:
     assert_allclose(A @ B, A._sp24_to_dense() @ B, "output", **atol_rtol_kw[A.dtype])
 
 
-@cuda_sm80_only
+@requires_sp24
 @pytest.mark.skipif(not sp24._has_cusparseLt(), reason="requires cusparselt")
 def test_wrong_dtype_error_message() -> None:
     A = torch.randn([128, 128], device="cuda", dtype=torch.float16)
@@ -866,7 +867,7 @@ def test_wrong_dtype_error_message() -> None:
         A @ B
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_backend
 @pytest.mark.parametrize("with_bias", [False, True])
 def test_linear_dispatch_inference_mode(backend: str, with_bias: bool) -> None:
@@ -906,7 +907,7 @@ def test_sp24_meta() -> None:
 
 
 @torch_compile_tests
-@cuda_sm80_only
+@requires_sp24_gemm
 @parametrize_backend
 def test_sp24_compile(backend) -> None:
     x = torch.randn([1024, 512], device="cuda", dtype=torch.float16, requires_grad=True)
@@ -949,7 +950,7 @@ class _TransformerFFN(nn.Module):
         return x
 
 
-@cuda_sm80_only
+@requires_sp24_gemm
 @torch_compile_tests
 @pytest.mark.skipif(not sp24._has_cusparseLt(), reason="requires cusparselt")
 def test_linearw24_block_compile() -> None:
@@ -986,7 +987,7 @@ def test_linearw24_block_compile() -> None:
         assert_allclose(param_c.grad, param_ref.grad, param_name, **atol_rtol_kw[dtype])
 
 
-@cuda_sm80_only
+@requires_sp24
 @pytest.mark.skipif(not sp24._has_cusparseLt(), reason="requires cusparselt")
 def test_sp24_ste():
     x = torch.randn([512, 512], dtype=torch.float16, device="cuda", requires_grad=True)
