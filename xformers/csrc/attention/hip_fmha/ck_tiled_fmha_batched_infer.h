@@ -77,78 +77,79 @@ struct batched_infer_causalmask_attnbias_dispatched {
       const bool use_async_pipeline =
           ((param.K % 8 == 0) && (param.Kv % 8 == 0) && (MaxK <= 128));
 
-      if (!use_async_pipeline) {
-        BOOL_SWITCH_4(
-            pad_seqlen_q,
-            kPadSeqLenQ,
-            pad_seqlen_k,
-            kPadSeqLenK,
-            pad_headdim_q,
-            kPadHeadDimQ,
-            pad_headdim_v,
-            kPadHeadDimV,
-            [&] {
-              using FmhaTraits = ck::tile_program::TileFmhaTraits<
-                  kPadSeqLenQ,
-                  kPadSeqLenK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV,
-                  has_attn_bias,
-                  false, // kStoreLSE
-                  false, // kHasDropout
-                  occupancy>;
+      /*     if (!use_async_pipeline) { */
+      BOOL_SWITCH_4(
+          pad_seqlen_q,
+          kPadSeqLenQ,
+          pad_seqlen_k,
+          kPadSeqLenK,
+          pad_headdim_q,
+          kPadHeadDimQ,
+          pad_headdim_v,
+          kPadHeadDimV,
+          [&] {
+            using FmhaTraits = ck::tile_program::TileFmhaTraits<
+                kPadSeqLenQ,
+                kPadSeqLenK,
+                kPadHeadDimQ,
+                kPadHeadDimV,
+                has_attn_bias,
+                false, // kStoreLSE
+                false, // kHasDropout
+                occupancy>;
 
-              using FmhaPipelineProblem =
-                  FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+            using FmhaPipelineProblem =
+                FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-              using FmhaPipeline =
-                  ck::tile_program::block::BlockFmhaPipelineQRKSVS<
-                      FmhaPipelineProblem>;
+            using FmhaPipeline =
+                ck::tile_program::block::BlockFmhaPipelineQRKSVS<
+                    FmhaPipelineProblem>;
 
-              using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
-                  typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
-                  typename FmhaFwdTypeConfig<scalar_t>::ODataType,
-                  kPadSeqLenQ,
-                  kPadHeadDimV>>;
+            using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
+                typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
+                typename FmhaFwdTypeConfig<scalar_t>::ODataType,
+                kPadSeqLenQ,
+                kPadHeadDimV>>;
 
-              using FmhaKernel = FmhaFwdKernel<
-                  FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
+            using FmhaKernel =
+                FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
-              RunWithKernel<FmhaKernel>(param, stream);
-            });
-      } else {
-        BOOL_SWITCH(pad_seqlen_k, kPadSeqLenK, [&] {
-          using FmhaTraits = ck::tile_program::TileFmhaTraits<
-              true, // kPadSeqLenQ,
-              kPadSeqLenK,
-              true, // kPadHeadDimQ,
-              true, // kPadHeadDimV,
-              has_attn_bias,
-              false, // kStoreLSE
-              false, // kHasDropout
-              occupancy>;
+            RunWithKernel<FmhaKernel>(param, stream);
+          });
+      /*
+            } else {
+              BOOL_SWITCH(pad_seqlen_k, kPadSeqLenK, [&] {
+                using FmhaTraits = ck::tile_program::TileFmhaTraits<
+                    true, // kPadSeqLenQ,
+                    kPadSeqLenK,
+                    true, // kPadHeadDimQ,
+                    true, // kPadHeadDimV,
+                    has_attn_bias,
+                    false, // kStoreLSE
+                    false, // kHasDropout
+                    occupancy>;
 
-          using FmhaPipelineProblem =
-              FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+                using FmhaPipelineProblem =
+                    FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-          using FmhaPipeline =
-              ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
-                  FmhaPipelineProblem>;
+                using FmhaPipeline =
+                    ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
+                        FmhaPipelineProblem>;
 
-          using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
-              typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
-              typename FmhaFwdTypeConfig<scalar_t>::ODataType,
-              true,
-              true>>;
+                using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
+                    typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
+                    typename FmhaFwdTypeConfig<scalar_t>::ODataType,
+                    true,
+                    true>>;
 
-          using FmhaKernel =
-              FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+                using FmhaKernel =
+                    FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline,
+         FmhaEpilogue>;
 
-          RunWithKernel<FmhaKernel>(param, stream);
-        });
-      };
+                RunWithKernel<FmhaKernel>(param, stream);
+              });
+            };
+      */
     });
   };
 
