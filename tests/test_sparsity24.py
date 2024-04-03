@@ -984,3 +984,13 @@ def test_linearw24_block_compile() -> None:
     ]:
         assert param_ref.grad is not None and param_c.grad is not None, param_name
         assert_allclose(param_c.grad, param_ref.grad, param_name, **atol_rtol_kw[dtype])
+
+
+@cuda_sm80_only
+@pytest.mark.skipif(not sp24._has_cusparseLt(), reason="requires cusparselt")
+def test_sp24_ste():
+    x = torch.randn([512, 512], dtype=torch.float16, device="cuda", requires_grad=True)
+    grad = torch.randn_like(x)
+    spX = sp24.sparsify24(x, gradient=sp24.GRADIENT_STE)
+    spX.backward(grad)
+    assert_allclose(x.grad, grad, "grad")

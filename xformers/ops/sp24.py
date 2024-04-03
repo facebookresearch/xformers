@@ -471,6 +471,7 @@ if torch.__version__ >= "2.1.0":
 
 GRADIENT_SP24 = "24sparse"
 GRADIENT_DENSE = "24dense"
+GRADIENT_STE = "ste"  # Straight-Through Estimator
 
 BACKEND_CUTLASS = "cutlass"
 BACKEND_CUSPARSELT = "cusparselt"
@@ -479,10 +480,10 @@ BACKEND_CUSPARSELT = "cusparselt"
 class _Sparsify24Func(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x: torch.Tensor, algo: str, gradient: str, backend: str):  # type: ignore[override]
-        if gradient not in [GRADIENT_SP24, GRADIENT_DENSE]:
+        if gradient not in [GRADIENT_SP24, GRADIENT_DENSE, GRADIENT_STE]:
             raise ValueError(
                 f"Invalid gradient type: '{gradient}'. "
-                f"Expected '{GRADIENT_SP24}' or '{GRADIENT_DENSE}'"
+                f"Expected '{GRADIENT_SP24}' or '{GRADIENT_DENSE}' or '{GRADIENT_STE}"
             )
         if not isinstance(x, Sparse24Tensor):
             (packed, meta, packed_t, meta_t, threads_masks) = SparsifyBothWays.OPERATOR(
@@ -515,7 +516,7 @@ class _Sparsify24Func(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_out: torch.Tensor):  # type: ignore[override]
-        if isinstance(grad_out, Sparse24Tensor):
+        if isinstance(grad_out, Sparse24Tensor) or ctx.gradient == GRADIENT_STE:
             return grad_out, None, None, None
         assert not isinstance(grad_out, Sparse24Tensor)
         assert grad_out.dtype == ctx.dtype
