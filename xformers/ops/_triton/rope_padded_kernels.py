@@ -26,6 +26,8 @@ def _rope_padded_kernel(
     seqstartk,
     seqlenk,
     theta,
+    first_seqpos,
+    seqpos,
     k_start: tl.constexpr,
     v_start: tl.constexpr,
     n_groups,
@@ -51,6 +53,7 @@ def _rope_padded_kernel(
     stride_outqM,
     stride_outqG,
     stride_outqH,
+    stride_seqpos,
     internal_dtype: tl.constexpr,
     # If True, seqstartq and seqstartk are not used but rather we
     # assume that every batch element has the same number of
@@ -130,7 +133,12 @@ def _rope_padded_kernel(
     )
 
     cache_pos = end_of_batch_elt_cache - (end_query_pos - query_pos)
-    seq_pos = cache_pos - cache_start
+    if seqpos is not None:
+        seq_pos = tl.load(seqpos + query_pos * stride_seqpos)
+    else:
+        seq_pos = cache_pos - cache_start
+        if first_seqpos is not None:
+            seq_pos += tl.load(first_seqpos + batch_elt * stride_seqpos)
     cache_k += (
         (head_idx - k_start) * stride_cachekH
         + cache_pos * stride_cachekM

@@ -235,3 +235,49 @@ def test_rope_prefill(seqlen) -> None:
     expected_out = _slow_rope2(xq, seqpos=seqpos, adjacents=adjacents)
     atol, rtol = ROPE_ATOL_RTOL["bf16"]
     assert_allclose(out, expected_out, atol=atol, rtol=rtol)
+
+
+@cuda_sm80_only
+def test_rope_seqpos() -> None:
+    heads, kvheads = 2, 1
+    dim = 32
+    device = "cuda"
+    adjacents = True
+    dtype = torch.bfloat16
+    seqlen = 723
+
+    attn_bias = BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+        q_seqlen=[seqlen], kv_padding=seqlen + 1, kv_seqlen=[seqlen]
+    )
+    cache_k = torch.rand(1, seqlen + 1, kvheads, dim, device=device, dtype=dtype)
+    cache_v = torch.randn_like(cache_k)
+    xq = torch.rand(1, seqlen, heads, dim, device=device, dtype=dtype)
+    xk = torch.rand(1, seqlen, kvheads, dim, device=device, dtype=dtype)
+    xv = torch.rand(1, seqlen, kvheads, dim, device=device, dtype=dtype)
+
+    def inner(seqpos, *, first_seqpos_input=None, seqpos_input=None):
+        out = rope_padded(
+            xq,
+            xk,
+            xv,
+            cache_k,
+            cache_v,
+            attn_bias,
+            adjacents=adjacents,
+            first_seqpos=first_seqpos_input,
+            seqpos=seqpos_input,
+        )
+
+        expected_out = _slow_rope2(xq, seqpos=seqpos, adjacents=adjacents)
+        atol, rtol = ROPE_ATOL_RTOL["bf16"]
+        assert_allclose(out, expected_out, atol=atol, rtol=rtol)
+
+    inner(torch.arange(start=0, end=seqlen, device=device))
+    inner(
+        torch.arange(start=4, end=seqlen + 4, device=device),
+        first_seqpos_input=torch.tensor([4], device=device),
+    )
+    custom_seqpos = torch.arange(start=0, end=seqlen, device=device)
+    custom_seqpos[231] = 934
+    custom_seqpos[423] = 134
+    inner(custom_seqpos, seqpos_input=custom_seqpos)
