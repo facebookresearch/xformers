@@ -32,8 +32,8 @@ jobs:
         python:
           - "3.9"
           - "3.10"
-          - "3.11"
-          - "3.12"
+          # - "3.11"
+          # - "3.12"
         config:
           - torch_version: "2.2.2"
             torch_channel: "pytorch"
