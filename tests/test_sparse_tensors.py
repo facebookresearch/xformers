@@ -11,6 +11,8 @@ import xformers  # noqa: F401
 from xformers.ops import masked_matmul
 from xformers.sparse import BlockSparseTensor, SparseCSRTensor
 
+from .utils import disable_tf32
+
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = (
     ["cpu", "cuda:0"] if torch.cuda.is_available() and torch.version.cuda else ["cpu"]
@@ -103,6 +105,7 @@ def test_sparse_binary_ops(func, device):
     assert torch.allclose(res, res_gt)
 
 
+@disable_tf32
 @pytest.mark.parametrize("tensor_type", _tensor_types)
 @pytest.mark.parametrize("device", _devices)
 def test_masked_matmul(tensor_type, device):
@@ -155,6 +158,7 @@ def test_masked_matmul(tensor_type, device):
     assert torch.allclose(b.grad, bb.grad, atol=atol)
 
 
+@disable_tf32
 @pytest.mark.parametrize("tensor_type", _tensor_types)
 @pytest.mark.parametrize("device", _devices)
 def test_bmm(tensor_type, device):
@@ -204,6 +208,7 @@ def test_bmm(tensor_type, device):
     ), f"{torch.max(torch.abs(a_grad-a_sparse.grad.to_dense()))}"
 
 
+@disable_tf32
 @pytest.mark.parametrize("tensor_type", _tensor_types)
 @pytest.mark.parametrize("device", _devices)
 def test_sparse_softmax(tensor_type, device):
