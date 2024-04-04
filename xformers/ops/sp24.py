@@ -531,7 +531,7 @@ class _Sparsify24Func(torch.autograd.Function):
         assert not isinstance(grad_out, Sparse24Tensor)
         assert grad_out.dtype == ctx.dtype
         if ctx.gradient == GRADIENT_SP24:
-            packed, packed_t = SparsifyApply.OPERATOR(grad_out, ctx.threads_masks)
+            packed, _, packed_t, _ = SparsifyApply.OPERATOR(grad_out, ctx.threads_masks)
             grad_in: torch.Tensor = Sparse24TensorCutlass(
                 grad_out.shape,
                 packed,
@@ -573,7 +573,7 @@ class _Sparsify24LikeFunc(torch.autograd.Function):
         if out_dense:
             assert ctx.threads_masks.is_contiguous()
             return SparsifyApplyDenseOutput.OPERATOR(x, ctx.threads_masks)
-        packed, packed_t = SparsifyApply.OPERATOR(x, ctx.threads_masks)
+        packed, _, packed_t, _ = SparsifyApply.OPERATOR(x, ctx.threads_masks)
         return Sparse24TensorCutlass(
             x.shape,
             packed,
@@ -590,7 +590,7 @@ class _Sparsify24LikeFunc(torch.autograd.Function):
             return grad_out, None, None
         assert not isinstance(grad_out, Sparse24Tensor)
         assert grad_out.dtype == ctx.dtype
-        packed, packed_t = SparsifyApply.OPERATOR(grad_out, ctx.threads_masks)
+        packed, _, packed_t, _ = SparsifyApply.OPERATOR(grad_out, ctx.threads_masks)
         return (
             Sparse24TensorCutlass(
                 grad_out.shape,

@@ -2,6 +2,7 @@
 #include <ATen/Tensor.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
+#include "sparse24_metadata.h"
 #include "sparse24_pack.h"
 
 using namespace xformers::sp24;
@@ -16,11 +17,13 @@ __global__ void __launch_bounds__(32 /* num_threads */)
 
 // Apply a 2:4 sparsify pattern computed with
 // `sparse24_sparsify_both_ways_kernel` to another Tensor
-template <bool kIsMeta, typename Element>
+template <typename Element, typename MetadataFormat, bool kIsMeta>
 std::
     tuple<
         at::Tensor, // packed
-        at::Tensor // packed_trans
+        at::Tensor, // packed_meta_reordered
+        at::Tensor, // packed_trans
+        at::Tensor // packed_trans_meta_reordered
         >
     sparse24_apply_typed(
         at::Tensor input, // Tensor to sparsify
@@ -44,12 +47,15 @@ std::
   TORCH_CHECK(input.stride(0) % 8 == 0);
   TORCH_CHECK(input.size(1) % 32 == 0, "Wrong alignment shape[1]");
 
-  auto roundedx = cutlass::round_up(input.size(0), kWarpX);
-  auto roundedy = cutlass::round_up(input.size(1), kWarpY);
-  at::Tensor packed =
-      at::empty({roundedx, cutlass::ceil_div(roundedy, 2)}, input.options());
-  at::Tensor packed_trans =
-      at::empty({roundedy, cutlass::ceil_div(roundedx, 2)}, input.options());
+  auto rows = input.size(0);
+  auto cols = input.size(1);
+
+  auto [compressed, packed, packed_meta_reordered] =
+      MetadataFormat::create_compressed_representation(
+          rows, cols, input, false);
+  auto [compressed_trans, packed_trans, packed_trans_meta_reordered] =
+      MetadataFormat::create_compressed_representation(
+          cols, rows, input, false);
 
   typename KT::Params p;
   p.input_s0 = input.stride(0);
@@ -85,26 +91,33 @@ std::
            at::cuda::getCurrentCUDAStream()>>>(p);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
   }
-  return std::make_tuple(packed, packed_trans);
+  return std::make_tuple(
+      compressed,
+      packed_meta_reordered,
+      compressed_trans,
+      packed_trans_meta_reordered);
 }
 
 template <bool kIsMeta>
 std::
     tuple<
         at::Tensor, // packed
-        at::Tensor // packed_trans
+        at::Tensor, // packed_meta_reordered
+        at::Tensor, // packed_trans
+        at::Tensor // packed_trans_meta_reordered
         >
     sparse24_apply(
         at::Tensor input, // Tensor to sparsify
         at::Tensor threads_masks // Returned by `sparse24_sparsify_both_ways`
     ) {
   if (input.scalar_type() == at::ScalarType::Half) {
-    return sparse24_apply_typed<kIsMeta, cutlass::half_t>(input, threads_masks);
+    return sparse24_apply_typed<cutlass::half_t, MetadataCutlass, kIsMeta>(
+        input, threads_masks);
   } else {
     TORCH_CHECK(
         input.scalar_type() == at::ScalarType::Half ||
         input.scalar_type() == at::ScalarType::BFloat16);
-    return sparse24_apply_typed<kIsMeta, cutlass::bfloat16_t>(
+    return sparse24_apply_typed<cutlass::bfloat16_t, MetadataCutlass, kIsMeta>(
         input, threads_masks);
   }
 }

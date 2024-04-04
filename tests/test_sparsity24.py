@@ -461,7 +461,7 @@ def test_sp24_apply(dtype) -> None:
         meta_t,
         threads_masks,
     ) = torch.ops.xformers.sparse24_sparsify_both_ways(x)
-    packed2, packed_t2 = torch.ops.xformers.sparse24_apply(x, threads_masks)
+    packed2, _, packed_t2, _ = torch.ops.xformers.sparse24_apply(x, threads_masks)
     assert torch.allclose(packed, packed2)
     assert torch.allclose(packed_t, packed_t2)
 
