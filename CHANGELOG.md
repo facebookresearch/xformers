@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.26] - TBD
 ### Added
 - [2:4 sparsity] Added support for Straight-Through Estimator for `sparsify24` gradient (`GRADIENT_STE`)
+- [2:4 sparsity] `sparsify24_like` now supports the cuSparseLt backend, and the STE gradient
 ### Improved
 ### Removed
 

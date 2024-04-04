@@ -108,17 +108,29 @@ std::
         >
     sparse24_apply(
         at::Tensor input, // Tensor to sparsify
-        at::Tensor threads_masks // Returned by `sparse24_sparsify_both_ways`
-    ) {
+        at::Tensor threads_masks, // Returned by `sparse24_sparsify_both_ways`
+        std::string backend) {
+  auto runTyped = [&](auto type) {
+    using ElementT = decltype(type);
+    if (backend == "cusparselt") {
+      return sparse24_apply_typed<ElementT, MetadataCuSparseLt, kIsMeta>(
+          input, threads_masks);
+    } else {
+      TORCH_CHECK(
+          backend == "cutlass",
+          "backend argument only supports `cutlass` or `cusparselt`");
+      return sparse24_apply_typed<ElementT, MetadataCutlass, kIsMeta>(
+          input, threads_masks);
+    }
+  };
+
   if (input.scalar_type() == at::ScalarType::Half) {
-    return sparse24_apply_typed<cutlass::half_t, MetadataCutlass, kIsMeta>(
-        input, threads_masks);
+    return runTyped(cutlass::half_t());
   } else {
     TORCH_CHECK(
         input.scalar_type() == at::ScalarType::Half ||
         input.scalar_type() == at::ScalarType::BFloat16);
-    return sparse24_apply_typed<cutlass::bfloat16_t, MetadataCutlass, kIsMeta>(
-        input, threads_masks);
+    return runTyped(cutlass::bfloat16_t());
   }
 }
 

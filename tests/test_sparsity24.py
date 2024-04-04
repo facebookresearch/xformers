@@ -489,7 +489,7 @@ def test_sp24_api_different_pattern(dtype) -> None:
 def test_sp24_api_different_pattern_transposed(dtype) -> None:
     N = 256
     x = torch.randn([N, N], dtype=dtype, device="cuda")
-    sx = sp24.sparsify24(x)
+    sx = sp24.sparsify24(x, backend=sp24.BACKEND_CUTLASS)
     sxt = sx.t()
     assert isinstance(sxt, sp24.Sparse24Tensor)
     # Can't add with different sparsity pattern
@@ -711,15 +711,16 @@ def test_not_aligned(dtype, M):
 
 @requires_sp24_gemm
 @parametrize_dtype
+@parametrize_backend
 @pytest.mark.parametrize("input_rowmajor", [True, False])
-def test_sparsify24_like_dense(dtype, input_rowmajor):
+def test_sparsify24_like_dense(dtype, input_rowmajor, backend):
     M, N = 128, 256
     if input_rowmajor:
         x = torch.randn([M, N], dtype=dtype, device="cuda")
     else:
         x = torch.randn([N, M], dtype=dtype, device="cuda").t()
-    sx = sp24.sparsify24(x.contiguous())
-    sx_like = sp24.sparsify24_like(x, pattern=sx, out_dense=True)
+    sx = sp24.sparsify24(x.contiguous(), backend=backend)
+    sx_like = sp24.sparsify24_like(x, pattern=sx, backend="dense")
     assert_allclose(
         sx_like, sx._sp24_to_dense(), msg="sp24_like", **atol_rtol_kw[dtype]
     )
