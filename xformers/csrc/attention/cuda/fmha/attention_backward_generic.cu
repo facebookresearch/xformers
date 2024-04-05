@@ -21,40 +21,59 @@
 #include "kernel_backward.h"
 #include "pytorch_utils.h"
 
+#define USE_MEM_EFF_ATTENTION
+
 namespace {
+using namespace at;
+
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor>
 mem_efficient_attention_backward_cutlass(
     const at::Tensor& grad_out_,
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
-    const c10::optional<at::Tensor>& bias, // additive attention bias
+    const c10::optional<at::Tensor>& kernel_bias, // additive attention bias
+    const at::Tensor& out,
     // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
     // position of the first query token for batch $b
-    const c10::optional<at::Tensor>& cu_seqlens_q,
+    const c10::optional<at::Tensor>& cu_seqlens_q_dummy,
     // (Mode 1MHK only) [b+1]: cu_seqlens_k[b] contains the
     // position of the first key token for batch $b
-    const c10::optional<at::Tensor>& cu_seqlens_k,
+    const c10::optional<at::Tensor>& cu_seqlens_k_dummy,
     // (Mode 1MHK only) Maximum sequence length across batches
     int64_t max_seqlen_q,
     // (Mode 1MHK only) Maximum sequence length across batches
     int64_t max_seqlen_k,
     const at::Tensor& logsumexp,
-    const at::Tensor& out,
     double dropout_p, // dropout probability
-    int64_t rng_seed, // seed using for generating random numbers for dropout
-    int64_t rng_offset, // offset into random number sequence
+    const at::Tensor&
+        philox_seed, // seed using for generating random numbers for dropout
+    const at::Tensor& philox_offset, // offset into random number sequence
     int64_t custom_mask_type,
+    const bool bias_requires_grad,
     const c10::optional<double> scale,
-    // how many parallel blocks across the keys dimension. Use `-1` to
-    // determine automatically
-    int64_t num_splits_key,
+    c10::optional<int64_t> num_splits_key,
     const c10::optional<int64_t> window_size) {
-#ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD
-  TORCH_CHECK(
-      false,
-      "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_BACKWARD");
-#else
+#if defined(USE_MEM_EFF_ATTENTION)
+  if (!grad_out_.defined()) {
+    return std::make_tuple(Tensor{}, Tensor{}, Tensor{}, Tensor{});
+  }
+  // This path is used when we directly call _efficient_attention_forward
+  // from python.
+  // This is needed because SaveVariable automatically converts
+  // c10::optional to undefined tensor
+  c10::optional<Tensor> bias, cu_seqlens_q, cu_seqlens_k;
+  bias = kernel_bias.has_value() && !kernel_bias->defined() ? c10::nullopt
+                                                            : kernel_bias;
+  cu_seqlens_q =
+      cu_seqlens_q_dummy.has_value() && !cu_seqlens_q_dummy->defined()
+      ? c10::nullopt
+      : cu_seqlens_q_dummy;
+  cu_seqlens_k =
+      cu_seqlens_k_dummy.has_value() && !cu_seqlens_k_dummy->defined()
+      ? c10::nullopt
+      : cu_seqlens_k_dummy;
+
   // ndim
   TORCH_CHECK(query.dim() == grad_out_.dim());
   TORCH_CHECK(query.dim() == key.dim());
@@ -100,7 +119,7 @@ mem_efficient_attention_backward_cutlass(
     TORCH_CHECK(cu_seqlens_q->size(0) == cu_seqlens_k->size(0));
     TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
     TORCH_CHECK(max_seqlen_q > 0, "max_seqlen_q required with `cu_seqlens_q`");
-    TORCH_CHECK(max_seqlen_k > 0, "max_seqlen_q required with `cu_seqlens_q`");
+    TORCH_CHECK(max_seqlen_k > 0, "max_seqlen_k required with `cu_seqlens_k`");
     TORCH_CHECK(
         max_seqlen_k <= key.size(1), "Invalid max_seqlen_k:", max_seqlen_k);
     TORCH_CHECK(
@@ -119,8 +138,6 @@ mem_efficient_attention_backward_cutlass(
   int64_t nH = query.size(2);
   int64_t K = query.size(3);
   int64_t Kv = value.size(3);
-
-  const bool bias_requires_grad = bias.has_value() && bias->requires_grad();
 
   at::Tensor grad_q, grad_k, grad_v, grad_bias;
   if (query.size(1) == key.size(1) && query.size(3) == value.size(3) &&
@@ -153,7 +170,21 @@ mem_efficient_attention_backward_cutlass(
   at::Tensor workspace;
 
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
-  at::PhiloxCudaState rng_engine_inputs(rng_seed, rng_offset);
+
+  // See Note [Seed and Offset Device]
+  at::PhiloxCudaState rng_engine_inputs;
+  if (use_dropout) {
+    if (at::cuda::currentStreamCaptureStatus() ==
+        at::cuda::CaptureStatus::None) {
+      rng_engine_inputs = at::PhiloxCudaState(
+          *philox_seed.data_ptr<int64_t>(), *philox_offset.data_ptr<int64_t>());
+    } else { // dropout + capture
+      rng_engine_inputs = at::PhiloxCudaState(
+          philox_seed.data_ptr<int64_t>(),
+          philox_offset.data_ptr<int64_t>(),
+          0);
+    }
+  }
 
   cudaDeviceProp* p = at::cuda::getDeviceProperties(query.device().index());
   const int computeCapability = p->major * 10 + p->minor;
@@ -319,8 +350,9 @@ mem_efficient_attention_backward_cutlass(
     auto parallelism_without_split_key =
         p.getBlocksGrid().x * p.getBlocksGrid().y * p.getBlocksGrid().z;
     p.num_splits_key = cutlass::ceil_div(p.num_keys, Kernel::kBlockSizeJ);
-    if (num_splits_key > 0) {
-      p.num_splits_key = std::min<int64_t>(p.num_splits_key, num_splits_key);
+    if (num_splits_key.has_value()) {
+      p.num_splits_key =
+          std::min<int64_t>(p.num_splits_key, num_splits_key.value());
     } else {
       // Keys splitting heuristic
 
@@ -341,11 +373,19 @@ mem_efficient_attention_backward_cutlass(
     if (!Kernel::kEnableSplitKeys || p.num_splits_key < 1) {
       p.num_splits_key = 1;
     }
-    if (at::globalContext().deterministicAlgorithms()) {
-      XFORMERS_CHECK(
-          num_splits_key <= 1,
-          "Using `num_splits_key > 1` makes the algorithm non-deterministic, and pytorch's deterministic mode is enabled");
-      p.num_splits_key = 1;
+
+    auto& ctx = at::globalContext();
+    if (ctx.deterministicAlgorithms()) {
+      if (ctx.deterministicAlgorithmsWarnOnly()) {
+        TORCH_WARN_ONCE(
+            "Memory Efficient attention defaults to a non-deterministic algorithm. ",
+            "To explicitly enable determinism call torch.use_deterministic_algorithms(True, warn_only=False).");
+      } else {
+        TORCH_CHECK(
+            num_splits_key.value_or(1) <= 1,
+            "Using `num_splits_key > 1` makes the algorithm non-deterministic, and pytorch's deterministic mode is enabled");
+        p.num_splits_key = 1;
+      }
     }
     int64_t size_bytes = p.workspace_size();
     if (size_bytes) {
@@ -371,7 +411,7 @@ mem_efficient_attention_backward_cutlass(
       // https://docs.nvidia.com/cuda/cuda-c-programming-guide/#features-and-technical-specifications-technical-specifications-per-compute-capability
       auto err = cudaFuncSetAttribute(
           kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
-      XFORMERS_CHECK(
+      TORCH_CHECK(
           err != cudaErrorInvalidValue,
           "This GPU does not have enough shared-memory (kernel requires ",
           smem_bytes / 1024,
@@ -407,8 +447,14 @@ mem_efficient_attention_backward_cutlass(
                  }));
   TORCH_CHECK(kernel_launched, "cutlassB: no kernel found to launch!");
   AT_CUDA_CHECK(cudaGetLastError());
-  return std::make_tuple(grad_q, grad_k, grad_v, grad_bias);
+  return std::make_tuple(
+      std::move(grad_q),
+      std::move(grad_k),
+      std::move(grad_v),
+      std::move(grad_bias));
 #endif
+  TORCH_CHECK(false, "USE_MEM_EFF_ATTENTION was not enabled for build.")
+  return std::make_tuple(Tensor{}, Tensor{}, Tensor{}, Tensor{});
 }
 
 bool has_cutlassB_kernel_for(

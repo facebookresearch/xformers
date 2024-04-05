@@ -217,8 +217,10 @@ class Inputs:
 class Context:
     lse: torch.Tensor
     out: torch.Tensor
+    # NOTE: If `rng_state` is set, `op_bw` should be set as well
+    # as the randomness is backend-dependant
     op_bw: Optional[Type["AttentionBwOpBase"]] = None
-    rng_state: Optional[torch.Tensor] = None
+    rng_state: Optional[Any] = None
 
     def get_padded_lse(self, pad_to: int, force_pad_inf: bool = False) -> torch.Tensor:
         pad_amount = (pad_to - (self.lse.shape[2] % pad_to)) % pad_to

@@ -262,17 +262,18 @@ class FwOp(AttentionFwOpBase):
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
-        seqstart_k, seqstart_q, max_seqlen_q, _ = _get_seqlen_info(inp)
-        out, lse, rng_seed, rng_offset = cls.OPERATOR(
+        seqstart_k, seqstart_q, max_seqlen_q, max_seqlen_k = _get_seqlen_info(inp)
+        out, lse, rng_seed, rng_offset, _, _ = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
             value=inp.value,
-            attn_bias=_get_tensor_bias(inp.attn_bias),
-            seqstart_q=seqstart_q,
-            seqstart_k=seqstart_k,
+            bias=_get_tensor_bias(inp.attn_bias),
+            cu_seqlens_q=seqstart_q,
+            cu_seqlens_k=seqstart_k,
             max_seqlen_q=max_seqlen_q,
+            max_seqlen_k=max_seqlen_k,
             dropout_p=inp.p,
-            compute_logsumexp=needs_gradient,
+            compute_log_sumexp=needs_gradient,
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
             seqlen_k=inp.attn_bias.k_seqinfo.seqlen
@@ -291,18 +292,13 @@ class FwOp(AttentionFwOpBase):
         )
         ctx: Optional[Context] = None
         if needs_gradient:
-            ctx = Context(
-                out=out,
-                lse=lse,
+            ctx = Context(out=out, lse=lse)
+            if inp.p != 0:
                 # cutlass forward is only compatible with cutlass backward if
                 # dropout is used (because of the way RNG states are passed and the
                 # way random numbers are generated during backward)
-                op_bw=BwOp if inp.p != 0 else None,
-            )
-            if inp.p != 0:
-                ctx.rng_state = torch.tensor(
-                    [rng_seed, rng_offset], dtype=torch.int64, device="cpu"
-                )
+                ctx.rng_state = (rng_seed, rng_offset)
+                ctx.op_bw = BwOp
         return out, ctx
 
     @classmethod
@@ -414,16 +410,11 @@ class BwOp(AttentionBwOpBase):
         seqstart_k, seqstart_q, max_seqlen_q, max_seqlen_k = _get_seqlen_info(inp)
         dtype = inp.query.dtype
 
-        rng_seed = rng_offset = 0
+        rng_seed = rng_offset = torch.Tensor()
         if inp.p != 0.0:
-            if (
-                ctx.rng_state is None
-                or ctx.rng_state.dtype != torch.int64
-                or ctx.rng_state.device.type != "cpu"
-                or ctx.rng_state.shape != (2,)
-            ):
-                raise NotImplementedError(f"Invalid rng_state: {ctx.rng_state}")
-            rng_seed, rng_offset = ctx.rng_state.tolist()
+            assert ctx.rng_state is not None
+            rng_seed, rng_offset = ctx.rng_state
+        tensor_bias = _get_tensor_bias(inp.attn_bias)
 
         force_pad_inf = torch.cuda.get_device_capability(inp.query.device) == (7, 5)
         (grad_q, grad_k, grad_v, grad_bias) = cls.OPERATOR(
@@ -431,20 +422,23 @@ class BwOp(AttentionBwOpBase):
             inp.query,
             inp.key,
             inp.value,
-            _get_tensor_bias(inp.attn_bias),
+            bias=tensor_bias,
+            bias_requires_grad=tensor_bias.requires_grad
+            if tensor_bias is not None
+            else False,
             cu_seqlens_q=seqstart_q,
             cu_seqlens_k=seqstart_k,
             max_seqlen_q=max_seqlen_q,
             max_seqlen_k=max_seqlen_k,
             logsumexp=ctx.get_padded_lse(32, force_pad_inf=force_pad_inf),
-            output=ctx.out.to(dtype),
+            out=ctx.out.to(dtype),
             dropout_p=inp.p,
             # if not using dropout, seed and offset are irrelevant but still expected
             # in function signature so just pass 0
             # seed and offset could be None if a different FW op other than cutlass
             # was used.
-            rng_seed=rng_seed,
-            rng_offset=rng_offset,
+            philox_seed=rng_seed,
+            philox_offset=rng_offset,
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
             num_splits_key=-1,  # Let C++ determine it
