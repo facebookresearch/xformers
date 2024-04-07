@@ -172,7 +172,7 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     }
 
-    SUPPORTS_DROPOUT = False
+    SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
     SUPPORTS_BMGHK = True

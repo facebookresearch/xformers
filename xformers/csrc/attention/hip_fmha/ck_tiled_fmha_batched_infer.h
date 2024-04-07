@@ -60,6 +60,7 @@ struct batched_infer_causalmask_attnbias_dispatched {
 
     BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
       constexpr bool has_masking = has_causal_mask || USE_LOCAL_ATTENTION;
+      const bool has_dropout = (param.dropout_prob > 0.0f);
 
       using FmhaMask = ck::tile_program::block::
           GenericAttentionMask<has_masking, USE_LOCAL_ATTENTION>;
@@ -74,28 +75,32 @@ struct batched_infer_causalmask_attnbias_dispatched {
       const bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
       const bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
 
+      // usually headdim_q and headdim_v are same, consider them together to
+      // determine whether to do padding saving some compiling time
+      const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
+
       const bool use_async_pipeline =
           ((param.K % 8 == 0) && (param.Kv % 8 == 0) && (MaxK <= 128));
 
       /*     if (!use_async_pipeline) { */
       BOOL_SWITCH_4(
+          has_dropout,
+          kHasDropout,
           pad_seqlen_q,
           kPadSeqLenQ,
           pad_seqlen_k,
           kPadSeqLenK,
-          pad_headdim_q,
-          kPadHeadDimQ,
-          pad_headdim_v,
-          kPadHeadDimV,
+          pad_headdim,
+          kPadHeadDim,
           [&] {
             using FmhaTraits = ck::tile_program::TileFmhaTraits<
                 kPadSeqLenQ,
                 kPadSeqLenK,
-                kPadHeadDimQ,
-                kPadHeadDimV,
+                kPadHeadDim, // kPadHeadDimQ,
+                kPadHeadDim, // kPadHeadDimV,
                 has_attn_bias,
                 false, // kStoreLSE
-                false, // kHasDropout
+                kHasDropout,
                 occupancy>;
 
             using FmhaPipelineProblem =
@@ -109,7 +114,7 @@ struct batched_infer_causalmask_attnbias_dispatched {
                 typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
                 typename FmhaFwdTypeConfig<scalar_t>::ODataType,
                 kPadSeqLenQ,
-                kPadHeadDimV>>;
+                kPadHeadDim>>;
 
             using FmhaKernel =
                 FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
@@ -126,7 +131,7 @@ struct batched_infer_causalmask_attnbias_dispatched {
                     true, // kPadHeadDimV,
                     has_attn_bias,
                     false, // kStoreLSE
-                    false, // kHasDropout
+                    kHasDropout,
                     occupancy>;
 
                 using FmhaPipelineProblem =
@@ -198,7 +203,7 @@ struct batched_infer_causalmask_attnbias_dispatched {
           param.window_size,
           1.0f, // descale_qk, not used
           1.0f, // descale_sv, not used
-          0.0f, // p_dropout
+          param.dropout_prob, // dropout ratio
           false, // is_store_randval
           {0, 0});
     }();

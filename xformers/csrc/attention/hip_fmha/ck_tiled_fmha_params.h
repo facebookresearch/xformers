@@ -43,7 +43,6 @@ struct BatchedInferParams {
 };
 
 struct BatchedForwardParams : public BatchedInferParams {
-  bool use_dropout;
   bool compute_logsumexp;
 
   float dropout_prob;

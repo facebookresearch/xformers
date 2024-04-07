@@ -59,6 +59,7 @@ struct grouped_infer_causalmask_attnbias_dispatched {
 
     BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
       constexpr bool has_masking = has_causal_mask || USE_LOCAL_ATTENTION;
+      const bool has_dropout = (param.dropout_prob > 0.0f);
 
       using FmhaMask = ck::tile_program::block::
           GenericAttentionMask<has_masking, USE_LOCAL_ATTENTION>;
@@ -74,8 +75,14 @@ struct grouped_infer_causalmask_attnbias_dispatched {
       bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
       bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
 
-      BOOL_SWITCH_2(
-          pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
+      BOOL_SWITCH_3(
+          has_dropout,
+          kHasDropout,
+          pad_headdim_q,
+          kPadHeadDimQ,
+          pad_headdim_v,
+          kPadHeadDimV,
+          [&] {
             using FmhaTraits = ck::tile_program::TileFmhaTraits<
                 kPadSeqLenQ,
                 kPadSeqLenK,
@@ -83,7 +90,7 @@ struct grouped_infer_causalmask_attnbias_dispatched {
                 kPadHeadDimV,
                 has_attn_bias,
                 false, // kStoreLSE
-                false, // kHasDropout
+                kHasDropout,
                 occupancy>;
 
             using FmhaPipelineProblem =
@@ -145,7 +152,7 @@ struct grouped_infer_causalmask_attnbias_dispatched {
           param.window_size,
           1.0f, // descale_qk, not used
           1.0f, // descale_sv, not used
-          0.0f, // p_dropout
+          param.dropout_prob,
           false, // is_store_randval
           {0, 0});
     }();

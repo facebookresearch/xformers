@@ -201,13 +201,12 @@ efficient_attention_forward_ck(
     p.window_size =
         window_size.has_value() ? (*window_size > 0 ? *window_size : 0) : 0;
 
-    p.use_dropout = use_dropout;
     p.philox_seed = philox_seed;
     p.philox_offset = philox_offset;
     p.compute_logsumexp = compute_logsumexp;
 
     // the following parameters are only used by training forward
-    if (p.use_dropout) {
+    if (use_dropout) {
       p.dropout_prob = static_cast<float>(dropout_p);
     } else
       p.dropout_prob = 0.0f;
@@ -335,13 +334,12 @@ efficient_attention_forward_ck(
     } else
       p.seqlen_k_dev_ptr = nullptr;
 
-    p.use_dropout = use_dropout;
     p.philox_seed = philox_seed;
     p.philox_offset = philox_offset;
     p.compute_logsumexp = compute_logsumexp;
 
     // the following parameters are only used by training forward
-    if (p.use_dropout) {
+    if (use_dropout) {
       p.dropout_prob = static_cast<float>(dropout_p);
     } else
       p.dropout_prob = 0.0f;
@@ -367,8 +365,7 @@ efficient_attention_forward_ck(
 
     set_batched_forward_params(batched_forward_params);
 
-    if (!batched_forward_params.use_dropout &&
-        !batched_forward_params.compute_logsumexp) {
+    if (!batched_forward_params.compute_logsumexp) {
       if (inDataType == at::ScalarType::Half) {
         batched_infer_fp16(batched_forward_params, stream);
       } else if (inDataType == at::ScalarType::BFloat16) {
@@ -388,8 +385,7 @@ efficient_attention_forward_ck(
 
     set_grouped_forward_params(grouped_forward_params);
 
-    if (!grouped_forward_params.use_dropout &&
-        !grouped_forward_params.compute_logsumexp) {
+    if (!grouped_forward_params.compute_logsumexp) {
       if (inDataType == at::ScalarType::Half) {
         grouped_infer_fp16(grouped_forward_params, stream);
       } else if (inDataType == at::ScalarType::BFloat16) {

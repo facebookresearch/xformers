@@ -203,7 +203,7 @@ struct batched_forward_causalmask_attnbias_dispatched {
           param.window_size,
           1.0f, // descale_qk, not used
           1.0f, // descale_sv, not used
-          param.use_dropout ? param.dropout_prob : 0.0f, // dropout ratio
+          param.dropout_prob, // dropout ratio
           false, // is_store_randval
           {param.philox_seed, param.philox_offset});
     }();
