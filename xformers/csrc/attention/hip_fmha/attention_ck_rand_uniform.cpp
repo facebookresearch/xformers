@@ -54,11 +54,12 @@ at::Tensor rand_uniform_int(
   at::Tensor randvals;
 
   randvals = at::empty(
-      {B, num_heads, M, N}, out_pattern.options().dtype(at::ScalarType::Int));
+      {B, num_heads, M, N}, out_pattern.options().dtype(at::ScalarType::Byte));
 
   {
+    // only work for batched mode
     using FmhaRandUniformKernel_ =
-        FmhaRandUniformKernel<128, 64, 32, int32_t, false>;
+        FmhaRandUniformKernel<128, 64, 32, uint8_t, false>;
 
     const auto kargs = FmhaRandUniformKernel_::MakeKargs(
         randvals.data_ptr(),
