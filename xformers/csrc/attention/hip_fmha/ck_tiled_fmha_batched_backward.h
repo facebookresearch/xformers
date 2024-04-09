@@ -121,8 +121,8 @@ struct batched_backward_causalmask_attnbias_dispatched {
 
         const bool pad_seqlen_q = !(param.M % FmhaBwdShape_::kM0 == 0);
         const bool pad_seqlen_k = !(param.N % FmhaBwdShape_::kN0 == 0);
-        const bool pad_headdim_q = !(param.K % FmhaBwdShape_::kK0 == 0);
-        const bool pad_headdim_v = !(param.Kv % FmhaBwdShape_::kK2 == 0);
+        const bool pad_headdim_q = !(param.K % FmhaBwdShape_::kQKHeaddim == 0);
+        const bool pad_headdim_v = !(param.Kv % FmhaBwdShape_::kVHeaddim == 0);
 
         // usually headdim_q and headdim_v are same, consider them together
         // to determine whether to do padding saving some compiling time

@@ -120,8 +120,8 @@ struct grouped_backward_causalmask_attnbias_dispatched {
         constexpr bool kPadSeqLenQ = true;
         constexpr bool kPadSeqLenK = true;
 
-        const bool pad_headdim_q = !(param.K % FmhaBwdShape_::kK0 == 0);
-        const bool pad_headdim_v = !(param.Kv % FmhaBwdShape_::kK2 == 0);
+        const bool pad_headdim_q = !(param.K % FmhaBwdShape_::kQKHeaddim == 0);
+        const bool pad_headdim_v = !(param.Kv % FmhaBwdShape_::kVHeaddim == 0);
 
         // usually headdim_q and headdim_v are same, consider them together
         // to determine whether to do padding saving some compiling time
