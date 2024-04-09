@@ -121,16 +121,12 @@ struct batched_backward_causalmask_attnbias_dispatched {
 
         const bool pad_seqlen_q = !(param.M % FmhaBwdShape_::kM0 == 0);
         const bool pad_seqlen_k = !(param.N % FmhaBwdShape_::kN0 == 0);
-        // const bool pad_headdim_q = !(param.K % FmhaBwdShape_::kK0 == 0);
+        const bool pad_headdim_q = !(param.K % FmhaBwdShape_::kK0 == 0);
         const bool pad_headdim_v = !(param.Kv % FmhaBwdShape_::kK2 == 0);
 
         // usually headdim_q and headdim_v are same, consider them together
         // to determine whether to do padding saving some compiling time
-        // bool pad_headdim = (pad_headdim_q || pad_headdim_v);
-
-        // currently headdim padding is not supported due to some atomic_add
-        // issue with bhalf_t
-        constexpr bool kPadHeadDimQ = false;
+        const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
 
         BOOL_SWITCH_4(
             has_dropout,
@@ -139,14 +135,14 @@ struct batched_backward_causalmask_attnbias_dispatched {
             kPadSeqLenQ,
             pad_seqlen_k,
             kPadSeqLenK,
-            pad_headdim_v,
-            kPadHeadDimV,
+            pad_headdim,
+            kPadHeadDim,
             [&] {
               using FmhaBwdTraits_ = ck::tile_program::TileFmhaTraits<
                   kPadSeqLenQ,
                   kPadSeqLenK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV,
+                  kPadHeadDim, // kPadHeadDimQ,
+                  kPadHeadDim, // kPadHeadDimV,
                   has_attn_bias,
                   false, // kStoreLSE
                   kHasDropout,
