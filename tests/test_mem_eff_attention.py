@@ -2984,4 +2984,43 @@ def _merge_attentions_ref(attn_split, lse_split):
     return attn_out, lse_out
 
 
+@sm80_or_better_only
+def test_memeff_compile() -> None:
+    torch.manual_seed(0)
+    dtype = torch.float16
+    B, M, H, K = 1, 256, 2, 64
+    q, k, v = [
+        3 * torch.randn([B, M, H, K], device="cuda", dtype=dtype) for _ in range(3)
+    ]
+    grad = torch.randn_like(q)
+    q.requires_grad_(True)
+    k.requires_grad_(True)
+    v.requires_grad_(True)
+
+    # Eager reference
+    out_ref = fmha.memory_efficient_attention(q, k, v)
+    out_ref.backward(grad)
+    dq_ref, dk_ref, dv_ref = q.grad, k.grad, v.grad
+    q.grad, k.grad, v.grad = None, None, None
+
+    # Compiled version
+    fmha_c = torch.compile(
+        fmha.memory_efficient_attention, fullgraph=True, dynamic=False
+    )
+    out = fmha_c(q, k, v)
+    out.backward(grad)
+
+    assert_allclose(
+        out,
+        out_ref,
+        "out",
+        atol=fmha.flash.FwOp.ERROR_ATOL[dtype],
+        rtol=fmha.flash.FwOp.ERROR_RTOL[dtype],
+    )
+    atol, rtol = fmha.flash.BwOp.ERROR_ATOL[dtype], fmha.flash.BwOp.ERROR_RTOL[dtype]
+    assert_allclose(q.grad, dq_ref, "dq", atol=atol, rtol=rtol)
+    assert_allclose(k.grad, dk_ref, "dk", atol=atol, rtol=rtol)
+    assert_allclose(v.grad, dv_ref, "dv", atol=atol, rtol=rtol)
+
+
 # end of file

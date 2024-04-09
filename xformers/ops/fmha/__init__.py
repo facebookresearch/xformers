@@ -50,6 +50,12 @@ MemoryEfficientAttentionCkDecoderOp = (ck_decoder.FwOp, ck.BwOp)
 MemoryEfficientAttentionSplitKCkOp = (ck_splitk.FwOp, ck.BwOp)
 
 
+def _deserialize_bias(attn_bias_ctx, attn_bias_tensor: Optional[torch.Tensor]) -> Any:
+    if attn_bias_tensor is None:
+        return attn_bias_ctx
+    return attn_bias_tensor
+
+
 class _fMHA(torch.autograd.Function):
     @staticmethod
     # type: ignore
@@ -87,9 +93,28 @@ class _fMHA(torch.autograd.Function):
                     f"can only run with op_bw={op_ctx.op_bw.NAME}. Please set op_bw=None."
                 )
             op_bw = op_ctx.op_bw
+        if op_bw is None and (
+            inp.query.requires_grad or inp.key.requires_grad or inp.value.requires_grad
+        ):
+            # NOTE: We need to check tensor strides to decide which operator we run in the BW pass.
+            # Unfortunately, PyTorch only allows to call this function during the FW pass, so
+            # we decide the operator to use now.
+            op_bw = _dispatch_bw(inp)
         ctx.op_fw = op_fw
         ctx.op_bw = op_bw
         ctx.p = inp.p
+        # This allows to create gradients from a single storage,
+        # to avoid a "cat" in the BW pass.
+        # The heuristic is approximative, but:
+        # (1) It's not a big issue to create a shared storage
+        # (2) The heuristic needs to pass `torch.compile`
+        #  (this is also why we run it in the FW pass, the BW pass is stricter)
+        ctx.qkv_share_storage = (
+            inp.query.shape[0] == inp.key.shape[0]
+            and inp.query.shape[-1] == inp.value.shape[-1]
+            and inp.query.stride(-2)
+            == (inp.key.shape[-1] + inp.query.shape[-1] + inp.value.shape[-1])
+        )
 
         ctx.scale = inp.scale
         ctx.attn_bias_ctx = attn_bias_ctx
@@ -97,16 +122,8 @@ class _fMHA(torch.autograd.Function):
         return out
 
     @staticmethod
-    def deserialize_bias(
-        attn_bias_ctx, attn_bias_tensor: Optional[torch.Tensor]
-    ) -> Any:
-        if attn_bias_tensor is None:
-            return attn_bias_ctx
-        return attn_bias_tensor
-
-    @classmethod
     @torch.autograd.function.once_differentiable
-    def backward(cls, ctx, grad):
+    def backward(ctx, grad):
         # Re-create context
         query, key, value, out, lse = ctx.saved_tensors
         attn_bias_tensor = ctx.attn_bias_tensor
@@ -115,7 +132,7 @@ class _fMHA(torch.autograd.Function):
             query=query,
             key=key,
             value=value,
-            attn_bias=cls.deserialize_bias(ctx.attn_bias_ctx, attn_bias_tensor),
+            attn_bias=_deserialize_bias(ctx.attn_bias_ctx, attn_bias_tensor),
             p=ctx.p,
             scale=ctx.scale,
         )
@@ -125,7 +142,11 @@ class _fMHA(torch.autograd.Function):
             rng_state=rng_state,
         )
         grads = _memory_efficient_attention_backward(
-            ctx=op_ctx, inp=inp, grad=grad, op=ctx.op_bw
+            ctx=op_ctx,
+            inp=inp,
+            grad=grad,
+            op=ctx.op_bw,
+            _skip_op_checks=True,
         )
         return (None, grads.dq, grads.dk, grads.dv, grads.db) + (None,) * (
             ctx.n_args - 2
@@ -402,7 +423,12 @@ def _memory_efficient_attention_forward_requires_grad(
 
 
 def _memory_efficient_attention_backward(
-    ctx: Context, inp: Inputs, grad: torch.Tensor, op: Optional[Type[AttentionBwOpBase]]
+    ctx: Context,
+    inp: Inputs,
+    grad: torch.Tensor,
+    op: Optional[Type[AttentionBwOpBase]],
+    *,
+    _skip_op_checks: bool = False,
 ) -> Gradients:
     """Warning: grad/ctx.out is potentially in BMK format"""
     inp.validate_inputs()
@@ -447,7 +473,7 @@ def _memory_efficient_attention_backward(
 
     if op is None:
         op = _dispatch_bw(inp)
-    else:
+    elif not _skip_op_checks:
         _ensure_op_supports_or_raise(
             ValueError, "memory_efficient_attention_backward", op, inp
         )

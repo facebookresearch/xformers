@@ -5,13 +5,12 @@
 
 
 import os
-from dataclasses import replace
 from itertools import zip_longest
-from typing import Any, List, Optional, Set, Tuple, Union
+from typing import Any, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
 
-from ..common import _get_storage_base, get_operator, register_operator
+from ..common import get_operator, register_operator
 from .attn_bias import (
     AttentionBias,
     BlockDiagonalCausalFromBottomRightMask,
@@ -63,26 +62,27 @@ try:
             )
 
     # create library so that flash-attn goes through the PyTorch Dispatcher
-    _flash_lib = torch.library.Library("xformers_flash", "DEF")
-
-    _flash_lib.define(
-        "flash_fwd(Tensor query, Tensor key, Tensor value, "
+    torch.library.define(
+        "xformers_flash::flash_fwd",
+        "(Tensor query, Tensor key, Tensor value, "
         "Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, Tensor? seqused_k, "
         "int max_seqlen_q, int max_seqlen_k, "
         "float p, float softmax_scale, "
         "bool is_causal, int window_left, "
-        "int window_right, bool return_softmax) -> (Tensor, Tensor, Tensor)"
+        "int window_right, bool return_softmax) -> (Tensor, Tensor, Tensor)",
     )
 
-    _flash_lib.define(
-        "flash_bwd(Tensor dout, Tensor query, Tensor key, Tensor value, "
-        "Tensor out, Tensor softmax_lse_, Tensor dq, Tensor dk, Tensor dv, "
+    torch.library.define(
+        "xformers_flash::flash_bwd",
+        "(bool grads_share_storage, Tensor dout, Tensor query, Tensor key, Tensor value, "
+        "Tensor out, Tensor softmax_lse_, "
         "Tensor cu_seqlens_q, Tensor cu_seqlens_k, "
         "int max_seqlen_q, int max_seqlen_k, "
         "float p, float softmax_scale, bool is_causal, "
-        "int window_left, int window_right, Tensor rng_state) -> (Tensor, Tensor, Tensor)"
+        "int window_left, int window_right, Tensor rng_state) -> (Tensor dq, Tensor dk, Tensor dv)",
     )
 
+    @torch.library.impl("xformers_flash::flash_fwd", "default")
     def _flash_fwd(
         query,
         key,
@@ -99,6 +99,8 @@ try:
         window_right,
         return_softmax,
     ):
+        if query.__class__.__name__ == "FakeTensor":
+            breakpoint()
         if cu_seq_lens_q is None:
             assert cu_seq_lens_k is None
             assert seqused_k is None
@@ -157,16 +159,29 @@ try:
             )
         return out, softmax_lse, rng_state
 
+    @torch.library.impl_abstract("xformers_flash::flash_fwd")
+    def _flash_fwd_abstract(
+        query,
+        key,
+        value,
+        *args,
+        **kwargs,
+    ):
+        B, M, H, K = query.shape
+        out = torch.empty_like(query)
+        softmax_lse = torch.empty([B, H, M], device=query.device, dtype=torch.float32)
+        rng_state = torch.empty([2], device=query.device, dtype=torch.int64)
+        return out, softmax_lse, rng_state
+
+    @torch.library.impl("xformers_flash::flash_bwd", "default")
     def _flash_bwd(
+        grads_share_storage,
         grad,
         query,
         key,
         value,
         out,
         lse,
-        dq,
-        dk,
-        dv,
         cu_seq_lens_q,
         cu_seq_lens_k,
         max_seq_len_q,
@@ -178,6 +193,7 @@ try:
         window_right,
         rng_state,
     ):
+        dq, dk, dv = _create_dq_dk_dv(grads_share_storage, query, key, value)
         if cu_seq_lens_k is None:
             assert cu_seq_lens_q is None
             _C_flashattention.bwd(
@@ -228,8 +244,33 @@ try:
             )
         return dq, dk, dv
 
-    _flash_lib.impl("flash_fwd", _flash_fwd, "CUDA")
-    _flash_lib.impl("flash_bwd", _flash_bwd, "CUDA")
+    @torch.library.impl_abstract("xformers_flash::flash_bwd")
+    def _flash_bwd_abstract(
+        grads_share_storage,
+        grad,
+        query,
+        key,
+        value,
+        *args,
+        **kwargs,
+    ):
+        return _create_dq_dk_dv(grads_share_storage, query, key, value)
+
+    def _create_dq_dk_dv(
+        grads_share_storage: bool, query, key, value
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # Create dq,dk,dv
+        # If Q/K/V come from a single QKV tensor, let's put the gradient in the
+        # right strides, so we can avoid a `cat`
+        if grads_share_storage:
+            chunk = torch.empty(
+                (*query.shape[0:-2], 3, query.shape[-2], query.shape[-1]),
+                dtype=query.dtype,
+                device=query.device,
+            )
+            return chunk.select(-3, 0), chunk.select(-3, 1), chunk.select(-3, 2)
+        return torch.empty_like(query), torch.empty_like(key), torch.empty_like(value)
+
 except ImportError:
     pass
 
@@ -318,7 +359,7 @@ def _convert_input_format(
         key = fold(key)
         value = fold(value)
     # Optimize for MHA
-    if key.ndim == 4 and key.stride(2) == 0 and value.stride(2) == 0 and supports_mqa:
+    if supports_mqa and key.ndim == 4 and key.stride(2) == 0 and value.stride(2) == 0:
         key = key[:, :, :1]
         value = value[:, :, :1]
     # Initially we have `query.shape = [batch, seqlen, num_heads, head_dim_q]`
@@ -327,11 +368,15 @@ def _convert_input_format(
         query = query.reshape([batch * seqlen_q, -1, head_dim_q])
         key = key.reshape([batch * seqlen_kv, -1, head_dim_q])
         value = value.reshape([batch * seqlen_kv, -1, head_dim_v])
-    new_inp = replace(
-        inp,
+    new_inp = Inputs(
         query=query,
         key=key,
         value=value,
+        attn_bias=inp.attn_bias,
+        p=inp.p,
+        scale=inp.scale,
+        output_dtype=inp.output_dtype,
+        is_partial=inp.is_partial,
     )
     return new_inp, cu_seqlen_q, max_seqlen_q, cu_seqlen_k, max_seqlen_k, seqused_k
 
@@ -453,7 +498,7 @@ class FwOp(AttentionFwOpBase):
     CUDA_MINIMUM_COMPUTE_CAPABILITY = (8, 0)
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 256
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         LowerTriangularMask,
         LowerTriangularFromBottomRightMask,
@@ -468,7 +513,7 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalGappyKeysMask,
         BlockDiagonalPaddedKeysMask,
         LocalAttentionFromBottomRightMask,
-    }
+    )
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
@@ -590,13 +635,15 @@ class BwOp(AttentionBwOpBase):
     CUDA_MINIMUM_COMPUTE_CAPABILITY = FwOp.CUDA_MINIMUM_COMPUTE_CAPABILITY
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
-    SUPPORTED_ATTN_BIAS_TYPES = FwOp.SUPPORTED_ATTN_BIAS_TYPES.difference(
-        {
-            BlockDiagonalCausalWithOffsetGappyKeysMask,
-            BlockDiagonalCausalWithOffsetPaddedKeysMask,
-            BlockDiagonalGappyKeysMask,
-            BlockDiagonalPaddedKeysMask,
-        }
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = tuple(
+        set(FwOp.SUPPORTED_ATTN_BIAS_TYPES).difference(
+            {
+                BlockDiagonalCausalWithOffsetGappyKeysMask,
+                BlockDiagonalCausalWithOffsetPaddedKeysMask,
+                BlockDiagonalGappyKeysMask,
+                BlockDiagonalPaddedKeysMask,
+            }
+        )
     )
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
@@ -639,7 +686,7 @@ class BwOp(AttentionBwOpBase):
             max_seqlen_k,
             seqused_k,
         ) = _convert_input_format(inp, supports_mqa=False)
-        assert ctx.lse.is_contiguous()
+        # assert ctx.lse.is_contiguous()
         assert seqused_k is None
         ctx_lse = ctx.lse
         assert ctx_lse.shape[2] >= max_seqlen_q
@@ -649,68 +696,42 @@ class BwOp(AttentionBwOpBase):
             *inp.query.shape[:-1],
             inp.value.shape[-1],
         ]
+        assert grad.dtype in cls.SUPPORTED_DTYPES
 
-        # Create dq,dk,dv
-        # If Q/K/V come from a single QKV tensor, let's put the gradient in the
-        # right strides, so we can avoid a `cat`
-        if (
-            inp.query.shape[0] == inp.key.shape[0]
-            and inp.query.shape[-1] == inp.value.shape[-1]
-            and _get_storage_base(inp.query) == _get_storage_base(inp.key)
-            and _get_storage_base(inp.query) == _get_storage_base(inp.value)
-        ):
-            # Create one big contiguous chunk
-            # This is because q, k and v usually come from a single
-            # output of a linear layer that is chunked.
-            # Creating the gradients with the right layout saves us
-            # a `torch.cat` call in the backward pass
-            chunk = torch.empty(
-                (*inp.query.shape[0:-2], 3, inp.query.shape[-2], inp.query.shape[-1]),
-                dtype=inp.query.dtype,
-                device=inp.device,
-            )
+        if inp.query.numel() and inp.key.numel():
+            win_left, win_right = _window_size(inp.attn_bias)
             grads = Gradients(
-                dq=chunk.select(-3, 0),
-                dk=chunk.select(-3, 1),
-                dv=chunk.select(-3, 2),
+                *cls.OPERATOR(
+                    ctx.qkv_share_storage,
+                    grad.reshape(kernel_out_shape).contiguous(),
+                    inp.query,
+                    inp.key,
+                    inp.value,
+                    ctx.out.reshape(kernel_out_shape),
+                    ctx_lse,
+                    cu_seqlens_q,
+                    cu_seqlens_k,
+                    max_seqlen_q,
+                    max_seqlen_k,
+                    inp.p,
+                    inp.scale_float,
+                    _is_causal(inp.attn_bias),
+                    window_left=win_left,
+                    window_right=win_right,
+                    rng_state=ctx.rng_state if inp.p > 0.0 else None,
+                )
             )
         else:
             grads = Gradients(
-                dq=torch.empty_like(inp.query),
-                dk=torch.empty_like(inp.key),
-                dv=torch.empty_like(inp.value),
+                dq=torch.zeros_like(inp.query),
+                dk=torch.zeros_like(inp.key),
+                dv=torch.zeros_like(inp.value),
             )
-
-        assert grad.dtype in cls.SUPPORTED_DTYPES
-
         if grads.dq.numel() == 0:
             grads.dk.zero_()
             grads.dv.zero_()
         if grads.dv.numel() == 0:
             grads.dq.zero_()
-        if grads.dq.numel() and grads.dk.numel():
-            win_left, win_right = _window_size(inp.attn_bias)
-            cls.OPERATOR(
-                grad.reshape(kernel_out_shape).contiguous(),
-                inp.query,
-                inp.key,
-                inp.value,
-                ctx.out.reshape(kernel_out_shape),
-                ctx_lse,
-                grads.dq,
-                grads.dk,
-                grads.dv,
-                cu_seqlens_q,
-                cu_seqlens_k,
-                max_seqlen_q,
-                max_seqlen_k,
-                inp.p,
-                inp.scale_float,
-                _is_causal(inp.attn_bias),
-                window_left=win_left,
-                window_right=win_right,
-                rng_state=ctx.rng_state,
-            )
         grads.dq = grads.dq.reshape(dq_shape)
         grads.dk = grads.dk.reshape(dk_shape)
         grads.dv = grads.dv.reshape(dv_shape)

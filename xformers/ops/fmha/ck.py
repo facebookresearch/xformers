@@ -7,7 +7,7 @@
 from dataclasses import replace
 from enum import Enum
 from functools import partial
-from typing import Any, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 import torch
 
@@ -158,7 +158,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 256
 
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         torch.Tensor,
         LowerTriangularMask,
@@ -171,7 +171,7 @@ class FwOp(AttentionFwOpBase):
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
         attn_bias.BlockDiagonalCausalLocalAttentionMask,
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
-    }
+    )
 
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
@@ -364,7 +364,7 @@ class BwOp(AttentionBwOpBase):
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         torch.Tensor,
         LowerTriangularMask,
@@ -378,7 +378,7 @@ class BwOp(AttentionBwOpBase):
         BlockDiagonalCausalMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
         # attn_bias.BlockDiagonalCausalLocalAttentionMask,
-    }
+    )
     SUPPORTS_ATTN_BIAS_GRAD = True
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE

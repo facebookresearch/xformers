@@ -5,7 +5,17 @@
 
 import functools
 import sys
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple, Type
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Type,
+)
 
 import torch
 
@@ -904,7 +914,7 @@ class FwOp(AttentionFwOpBase):
         torch.bfloat16,
     }  # Those are dtypes of Q. In the quantized case K/V has dtype int32
     SUPPORTED_MAX_K = 512
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         torch.Tensor,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
@@ -913,7 +923,7 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalPaddedKeysMask,
         PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
         PagedBlockDiagonalPaddedKeysMask,
-    }
+    )
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_BMGHK = True

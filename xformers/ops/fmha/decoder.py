@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, Iterable, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -30,7 +30,9 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DTYPES = {torch.bfloat16, torch.half, torch.float32}
     CUDA_MINIMUM_COMPUTE_CAPABILITY = (7, 0)
     SUPPORTED_MAX_K: float = 128
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {BlockDiagonalCausalWithOffsetPaddedKeysMask}
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
+        BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    )
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_BMGHK = True

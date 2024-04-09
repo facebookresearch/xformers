@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - [2:4 sparsity] Added support for Straight-Through Estimator for `sparsify24` gradient (`GRADIENT_STE`)
 - [2:4 sparsity] `sparsify24_like` now supports the cuSparseLt backend, and the STE gradient
+- Basic support for `torch.compile` for the `memory_efficient_attention` operator. Currently only supports Flash-Attention, and without any bias provided. We want to expand this coverage progressively.
 ### Improved
 - merge_attentions no longer needs inputs to be stacked.
 - fMHA: triton_splitk now supports additive bias

@@ -6,7 +6,18 @@
 import math
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, List, Mapping, Optional, Set, Tuple, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    Union,
+)
 
 import torch
 
@@ -221,6 +232,7 @@ class Context:
     # as the randomness is backend-dependant
     op_bw: Optional[Type["AttentionBwOpBase"]] = None
     rng_state: Optional[Any] = None
+    qkv_share_storage: bool = False
 
     def get_padded_lse(self, pad_to: int, force_pad_inf: bool = False) -> torch.Tensor:
         pad_amount = (pad_to - (self.lse.shape[2] % pad_to)) % pad_to
@@ -264,7 +276,7 @@ class AttentionOpBase(BaseOperator):
     CUDA_MINIMUM_COMPUTE_CAPABILITY: Tuple[int, int] = (5, 0)
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None)}
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (type(None),)
     SUPPORTS_DROPOUT: bool
     SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
