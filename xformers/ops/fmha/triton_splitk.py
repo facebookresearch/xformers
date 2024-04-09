@@ -11,6 +11,7 @@ import torch
 
 from ..common import _has_triton21, register_operator
 from .attn_bias import (
+    AttentionBias,
     BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalGappyKeysMask,
@@ -57,6 +58,7 @@ if TYPE_CHECKING or _has_triton21():
         block_tables,
         Seq_len,
         Seq_starts,
+        additive_bias,
         stride_qz,
         stride_qm,
         stride_qg,
@@ -85,6 +87,11 @@ if TYPE_CHECKING or _has_triton21():
         stride_lsek_m,
         stride_blocktablesz,
         stride_blocktablesl,
+        stride_bias_b,
+        stride_bias_g,
+        stride_bias_h,
+        stride_bias_qm,
+        stride_bias_km,
         kv_cache_blocks_per_row: tl.constexpr,
         Z: tl.constexpr,
         N_CTX_Q: tl.constexpr,  # The number of queries
@@ -108,6 +115,7 @@ if TYPE_CHECKING or _has_triton21():
         USE_PAGED_ATTENTION: tl.constexpr,
         PAGE_SIZE: tl.constexpr,
         WRITE_LSE: tl.constexpr,
+        HAS_ADDITIVE_BIAS: tl.constexpr,
     ):
         """This kernel can accept non-quantized or int4-quantized keys/values.
         PACKED_PER_VAL determines the quantization type:
@@ -174,9 +182,7 @@ if TYPE_CHECKING or _has_triton21():
             # Align boundaries of split-k chunk to block boundaries
             # In the last chunk, shift hi to the right, in the other chunks, shift it to the left
             is_last_chunk = splitk_idx == tl.num_programs(2) - 1
-            shift = 0
-            if is_last_chunk:
-                shift = BLOCK_N - 1
+            shift = BLOCK_N - 1 if is_last_chunk else 0
             lo = (chunk_lo // BLOCK_N) * BLOCK_N
             hi = ((chunk_hi + shift) // BLOCK_N) * BLOCK_N
             hi = tl.minimum(hi, kv_len)
@@ -235,6 +241,19 @@ if TYPE_CHECKING or _has_triton21():
             else:
                 K_scale_shift_block_ptr = None
                 V_scale_shift_block_ptr = None
+
+            if HAS_ADDITIVE_BIAS:
+                additive_bias_block_ptr = tl.make_block_ptr(
+                    base=additive_bias
+                    + off_z * stride_bias_b
+                    + off_g * stride_bias_g
+                    + off_h * stride_bias_h,
+                    shape=(N_CTX_Q, hi),
+                    strides=(stride_bias_qm, stride_bias_km),
+                    offsets=(start_m * BLOCK_M, lo),
+                    block_shape=(BLOCK_M, BLOCK_N),
+                    order=(0, 1),
+                )
 
         Q_block_ptr = tl.make_block_ptr(
             base=Q + off_h * stride_qh + off_z * stride_qz + off_g * stride_qg,
@@ -360,6 +379,16 @@ if TYPE_CHECKING or _has_triton21():
                 qk += tl.dot(q[i], k[i])  # noqa: F821
             qk *= qk_scale
 
+            if HAS_ADDITIVE_BIAS:
+                loaded_bias = tl.load(
+                    additive_bias_block_ptr,
+                    boundary_check=(0, 1) if BOUNDS_CHECKS_N else (0,),
+                )
+                qk += loaded_bias * 1.44269504
+                additive_bias_block_ptr = tl.advance(
+                    additive_bias_block_ptr, (0, BLOCK_N)
+                )
+
             # TODO: This is slow, and only needed at the last iteration.
             # Maybe we can unroll the last iteration instead?
             if BOUNDS_CHECKS_N:
@@ -477,7 +506,8 @@ if TYPE_CHECKING or _has_triton21():
     def autotune_kernel(kernel: Callable):
         BLOCK_M_VALUES = [16, 32]
         BLOCK_N_VALUES = [32, 64, 128]
-        STAGES_VALUES = [1, 2, 3]
+        # On AMD num_stages has to be 0 or 1, but 0 sometimes produces NaN or incorrect results.
+        STAGES_VALUES = [1] if torch.version.hip else [1, 2, 3]
         WARPS_VALUES = [1, 2, 4]
 
         TRITON_CONFIGS = [
@@ -616,6 +646,7 @@ if TYPE_CHECKING or _has_triton21():
         Out,  # [B, H, M, K]
         LSE,  # [B, H, M]
         split_k: tl.constexpr,
+        splitK_pow2: tl.constexpr,
         stride_osk_z,
         stride_osk_g,
         stride_osk_h,
@@ -641,12 +672,11 @@ if TYPE_CHECKING or _has_triton21():
         G: tl.constexpr,
         WRITE_LSE: tl.constexpr,
     ):
-        # grid = (M, B, G * H)
-        off_m = tl.program_id(0).to(tl.int64)
-        off_z = tl.program_id(1).to(tl.int64)
-        off_gh = tl.program_id(2).to(tl.int64)
-        off_g = off_gh % G
-        off_h = off_gh // G
+        off_zhg = tl.program_id(0).to(tl.int64)
+        off_z = off_zhg // (H * G)
+        off_h = (off_zhg // G) % H
+        off_g = off_zhg % G
+        off_m = tl.program_id(1)
 
         Out_splitK_ptr = (
             Out_splitK
@@ -654,7 +684,8 @@ if TYPE_CHECKING or _has_triton21():
             + stride_osk_g * off_g
             + stride_osk_h * off_h
             + stride_osk_m * off_m
-            + tl.arange(0, BLOCK_SIZE)
+            + tl.arange(0, BLOCK_SIZE)[None, :]
+            + stride_osk_s * tl.arange(0, splitK_pow2)[:, None]
         )
 
         LSE_splitK_ptr0 = (
@@ -663,31 +694,34 @@ if TYPE_CHECKING or _has_triton21():
             + stride_lsek_g * off_g
             + stride_lsek_h * off_h
             + stride_lsek_m * off_m
+            + stride_lsek_s * tl.arange(0, splitK_pow2)
         )
-        LSE_splitK_ptr = LSE_splitK_ptr0
-        lse_max = tl.load(LSE_splitK_ptr)
-        for split_k_idx in tl.static_range(1, split_k):
-            LSE_splitK_ptr = LSE_splitK_ptr + stride_lsek_s
-            lse_splitk = tl.load(LSE_splitK_ptr)
-            lse_max = tl.maximum(lse_max, lse_splitk)
 
-        sumexp_normalized = 0.0
-        numerator_normalized = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
-        LSE_splitK_ptr = LSE_splitK_ptr0
-        for split_k_idx in tl.static_range(0, split_k):
+        if splitK_pow2 > split_k:
+            mask_1d = tl.arange(0, splitK_pow2) < split_k
+            mask_2d = mask_1d[:, None]
+            lse_splitk = tl.load(LSE_splitK_ptr0, mask=mask_1d, other=float("-inf"))
+            lse_max = tl.max(lse_splitk)
+            out_splitk = tl.load(
+                Out_splitK_ptr, mask=mask_2d, other=0
+            )  # (split_k, BLOCK_SIZE)
+            lse_splitk = tl.load(
+                LSE_splitK_ptr0, mask=mask_1d, other=float("-inf")
+            )  # (split_k,)
+        else:
+            lse_splitk = tl.load(LSE_splitK_ptr0)
+            lse_max = tl.max(lse_splitk)
             out_splitk = tl.load(Out_splitK_ptr)
-            lse_splitk = tl.load(LSE_splitK_ptr)
-            # Compute denominator
-            sumexp_normalized_splitk = tl.math.exp2(
-                (lse_splitk - lse_max).to(tl.float32) * 1.44269504
-            )
-            sumexp_normalized += sumexp_normalized_splitk
+            lse_splitk = tl.load(LSE_splitK_ptr0)
 
-            # Compute numerator
-            numerator_normalized += out_splitk * sumexp_normalized_splitk
-            LSE_splitK_ptr = LSE_splitK_ptr + stride_lsek_s
-            Out_splitK_ptr = Out_splitK_ptr + stride_osk_s
-
+        sumexp_normalized_splitk = tl.math.exp2(
+            (lse_splitk - lse_max).to(tl.float32) * 1.44269504
+        )  # (split_k,)
+        sumexp_normalized = tl.sum(sumexp_normalized_splitk, axis=0)  # scalar
+        # Compute numerator
+        numerator_normalized = tl.sum(
+            out_splitk * sumexp_normalized_splitk[:, None], axis=0
+        )
         acc = numerator_normalized / sumexp_normalized
 
         Out_ptr = (
@@ -712,6 +746,110 @@ if TYPE_CHECKING or _has_triton21():
                 + off_m * stride_lse_m
             )
             tl.store(l_ptrs, (lse_max + tl.math.log2(sumexp_normalized) / 1.44269504))
+
+    @triton.jit
+    def _splitK_reduce_varargs(
+        Out_splitK: "VAR_ARGS_ARRAY",  # list of [B, G, H, Mq, K];
+        LSE_splitK: "VAR_ARGS_ARRAY",  # list of [B, G, H, Mq]
+        Out,  # [B, G, H, M, K]
+        LSE,  # [B, G, H, M]
+        stride_osk_z: "VAR_ARGS_ARRAY",
+        stride_osk_g: "VAR_ARGS_ARRAY",
+        stride_osk_h: "VAR_ARGS_ARRAY",
+        stride_osk_m: "VAR_ARGS_ARRAY",
+        stride_osk_k: "VAR_ARGS_ARRAY",
+        stride_lsek_z: "VAR_ARGS_ARRAY",
+        stride_lsek_g: "VAR_ARGS_ARRAY",
+        stride_lsek_h: "VAR_ARGS_ARRAY",
+        stride_lsek_m: "VAR_ARGS_ARRAY",
+        stride_oz,
+        stride_og,
+        stride_oh,
+        stride_om,
+        stride_ok,
+        stride_lse_z,
+        stride_lse_g,
+        stride_lse_h,
+        stride_lse_m,
+        BLOCK_SIZE: tl.constexpr,
+        H: tl.constexpr,
+        G: tl.constexpr,
+        WRITE_LSE: tl.constexpr,
+    ):
+        """
+        This version of reduce kernel takes attention and LSE of chunks as lists of tensors,
+        as opposed to _splitK_reduce, which takes each as a stacked tensor.
+        """
+        off_zhg = tl.program_id(0).to(tl.int64)
+        off_z = off_zhg // (H * G)
+        off_h = (off_zhg // G) % H
+        off_g = off_zhg % G
+        off_m = tl.program_id(1)
+
+        out_splitk_offset: "VAR_ARGS_ARRAY"  # noqa: F821
+        for i in range(len(Out_splitK)):
+            out_splitk_offset[i] = (  # noqa: F821
+                stride_osk_z[i] * off_z  # type: ignore # noqa: F821
+                + stride_osk_g[i] * off_g
+                + stride_osk_h[i] * off_h
+                + stride_osk_m[i] * off_m
+                + tl.arange(0, BLOCK_SIZE)
+            )
+        lse_splitk_offset: "VAR_ARGS_ARRAY"  # noqa: F821
+        for i in range(len(Out_splitK)):
+            lse_splitk_offset[i] = (  # noqa: F821
+                stride_lsek_z[i] * off_z  # type: ignore # noqa: F821
+                + stride_lsek_g[i] * off_g
+                + stride_lsek_h[i] * off_h
+                + stride_lsek_m[i] * off_m
+            )
+
+        lse_max = float("-inf")
+        for split_k_idx in range(len(Out_splitK)):  # type: ignore # noqa: F821
+            LSE_splitK_ptr = LSE_splitK[split_k_idx] + lse_splitk_offset[split_k_idx]  # type: ignore # noqa: F821
+            lse_splitk = tl.load(LSE_splitK_ptr)
+            lse_max = tl.maximum(lse_max, lse_splitk)
+
+        sumexp_normalized = 0.0
+        numerator_normalized = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
+
+        for split_k_idx in range(len(Out_splitK)):  # type: ignore # noqa: F821
+            out_splitk = tl.load(Out_splitK[split_k_idx] + out_splitk_offset[split_k_idx])  # type: ignore # noqa: F821
+            lse_splitk = tl.load(LSE_splitK[split_k_idx] + lse_splitk_offset[split_k_idx])  # type: ignore # noqa: F821
+            # Compute denominator
+            sumexp_normalized_splitk = tl.math.exp2(
+                (lse_splitk - lse_max).to(tl.float32) * 1.44269504
+            )
+            sumexp_normalized += sumexp_normalized_splitk
+
+            # Compute numerator
+            numerator_normalized += out_splitk * sumexp_normalized_splitk
+
+        acc = numerator_normalized / sumexp_normalized
+
+        Out_ptr = (
+            Out
+            + stride_oz * off_z
+            + stride_oh * off_h
+            + stride_og * off_g
+            + stride_om * off_m
+            + tl.arange(0, BLOCK_SIZE)
+        )
+        if acc.dtype is tl.float64 and Out.dtype.element_ty is not tl.float64:
+            # must avoid direct cast f64->f16
+            acc = acc.to(tl.float32)
+        tl.store(Out_ptr, acc)
+
+        if WRITE_LSE:
+            l_ptrs = (
+                LSE
+                + off_z * stride_lse_z
+                + off_g * stride_lse_g
+                + off_h * stride_lse_h
+                + off_m * stride_lse_m
+            )
+            to_store = lse_max + tl.math.log2(sumexp_normalized) / 1.44269504
+            tl.store(l_ptrs, to_store)
 
 else:
     _fwd_kernel_splitK = None
@@ -765,9 +903,10 @@ class FwOp(AttentionFwOpBase):
         torch.half,
         torch.bfloat16,
     }  # Those are dtypes of Q. In the quantized case K/V has dtype int32
-    SUPPORTED_MAX_K = 256
+    SUPPORTED_MAX_K = 512
     SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
         type(None),
+        torch.Tensor,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
         BlockDiagonalGappyKeysMask,
         BlockDiagonalCausalWithOffsetGappyKeysMask,
@@ -794,6 +933,8 @@ class FwOp(AttentionFwOpBase):
     # values used when autotune=False
     BLOCK_M: int = 16
     BLOCK_N: int = 64
+    # On AMD these two values are overwritten depending on input shapes, see the code just before the kernel launch
+    # This might change once we get autotuning working on AMD
     NUM_STAGES: int = 1
     NUM_WARPS: int = 2
 
@@ -802,8 +943,12 @@ class FwOp(AttentionFwOpBase):
         cls, Mq: int, Mkv: int, K: int, Kv: int
     ) -> List[str]:
         reasons = super().shape_not_supported_reasons(Mq, Mkv, K, Kv)
-        if K not in {16, 32, 64, 128, 256}:
+        if K not in {16, 32, 64, 128, 256, 512}:
             reasons.append(f"Embed dim {K} not supported")
+        if Mkv == 0:
+            # Other ops support this; but here, triton compilation
+            # crashes on A100
+            reasons.append("Query length is 0")
         return reasons
 
     @classmethod
@@ -839,7 +984,7 @@ class FwOp(AttentionFwOpBase):
             q_len = seqinfo.min_seqlen
             if q_len != seqinfo.max_seqlen:
                 reasons.append("Variable query len is not supported.")
-        if q_len > 16:
+        if q_len > 16 and isinstance(d.attn_bias, AttentionBias):
             # 16 is the minimum BLOCK_M which gets used
             # XXX I don't really understand why this is needed.
             reasons.append("Query length should not be larger than 16")
@@ -861,17 +1006,33 @@ class FwOp(AttentionFwOpBase):
                     f"but got {page_size=}, {cls.BLOCK_N=}."
                 )
 
+        if isinstance(d.attn_bias, torch.Tensor):
+            if d.attn_bias.ndim not in (4, 5):
+                reasons.append(
+                    "Additive attention bias has to have shape (B, G, H, Mq, Mkv) "
+                    f"or (B, H, Mq, Mkv), but got {d.attn_bias.shape}."
+                )
+
         return reasons
 
     @classmethod
-    def get_split_k(cls, B: int, H: int, Mk: int) -> int:
+    def get_split_k(cls, B: int, G: int, H: int, Mk: int) -> int:
         """Heuristic for the number of splits"""
         bh = max(B * H, 1)  # NOTE: Handle B*h=0 case
         split_k = max(Mk, 1024) // bh
-        max_chunk_size = 64 if Mk <= 512 and bh <= 64 else 128
-        while split_k > 0 and Mk / split_k < max_chunk_size:
+        if torch.version.hip:
+            max_chunk_size = 64
+            split_k_stop_val = min(Mk / max_chunk_size, 1024 / (B * G * H))
+            split_k_upper_bound = 512
+        else:
+            max_chunk_size = 64 if Mk <= 512 and bh <= 64 else 128
+            split_k_stop_val = Mk / max_chunk_size
+            split_k_upper_bound = 64
+
+        while split_k > split_k_stop_val:
             split_k = split_k // 2
-        split_k = min(split_k, 64)
+
+        split_k = min(split_k, split_k_upper_bound)
         split_k = max(split_k, 1)
         return split_k
 
@@ -880,7 +1041,12 @@ class FwOp(AttentionFwOpBase):
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         output_dtype = inp.get_output_dtype()
-        attn_bias = inp.attn_bias
+        if isinstance(inp.attn_bias, torch.Tensor):
+            attn_bias_tensor = inp.attn_bias
+            attn_bias = None
+        else:
+            attn_bias_tensor = None
+            attn_bias = inp.attn_bias
         seq_len = None
         seq_starts = None
         q, k, v = inp.get_qkv_in_bmghk()
@@ -927,9 +1093,18 @@ class FwOp(AttentionFwOpBase):
         else:
             B, Mq, G, Hq, Kq = q.shape
 
+        if attn_bias_tensor is not None and attn_bias_tensor.ndim == 4:
+            # (B, H, Mq, Mkv) -> (B, G, H, Mq, Mkv)
+            attn_bias_tensor = attn_bias_tensor.unsqueeze(1)
+
         # In the case of MQA/GQA, we make q have sequence length (H * Mq) and only one "head".
         mqa_swap_seqlen_head = False
-        if k.shape[3] > 1 and k.stride(3) == 0 and v.stride(3) == 0:
+        if (
+            k.shape[3] > 1
+            and k.stride(3) == 0
+            and v.stride(3) == 0
+            and attn_bias_tensor is None
+        ):
             mqa_swap_seqlen_head = True
             # This is a copy iff Mq, G and H are all > 1.
             # The idea is Hq,Mq are reshaped to (M=Hq*Mq, H=1)
@@ -963,7 +1138,7 @@ class FwOp(AttentionFwOpBase):
             split_k = cls.SPLIT_K
         else:
             # Use heuristics
-            split_k = cls.get_split_k(B, H, Mk)
+            split_k = cls.get_split_k(B, G, H, Mk)
 
         # M_ceil = M rounded up to a multiple of MAX_BLOCK_M
         M_ceil = (M + cls.MAX_BLOCK_M - 1) // cls.MAX_BLOCK_M * cls.MAX_BLOCK_M
@@ -1006,11 +1181,25 @@ class FwOp(AttentionFwOpBase):
             extra_args = {}
         else:
             kernel = _get_splitk_kernel(num_groups)
+
+            # TODO: remove this when autotuning on AMD is working
+            num_warps = cls.NUM_WARPS
+            num_stages = cls.NUM_STAGES
+            if torch.version.hip:
+                if B == 1:
+                    num_warps = 4
+                    num_stages = 1  # TODO num_stages = 0 gives better perf on AMD, but sometimes produces NaNs
+                elif B <= 4 and split_k <= 128:
+                    num_warps = 2
+                    num_stages = 1
+                else:
+                    num_warps = 1
+                    num_stages = 1
             extra_args = {
                 "BLOCK_M": cls.BLOCK_M,
                 "BLOCK_N": cls.BLOCK_N,
-                "num_warps": cls.NUM_WARPS,
-                "num_stages": cls.NUM_STAGES,
+                "num_warps": num_warps,
+                "num_stages": num_stages,
             }
         kernel[grid](
             Q=q,
@@ -1022,12 +1211,16 @@ class FwOp(AttentionFwOpBase):
             block_tables=block_tables,
             Seq_len=seq_len,
             Seq_starts=seq_starts,
+            additive_bias=attn_bias_tensor,
             **_strides(q, "qz", "qm", "qg", "qh", "qk"),
             **_strides(k, "kz", "kn", "kg", "kh", "kk"),
             **_strides(v, "vz", "vn", "vg", "vh", "vk"),
             **_strides(o_splitk, "osk_z", "osk_g", "osk_h", "osk_s", "osk_m", "osk_k"),
             **_strides(lse_splitk, "lsek_z", "lsek_g", "lsek_h", "lsek_s", "lsek_m"),
             **_strides(block_tables, "blocktablesz", "blocktablesl"),
+            **_strides(
+                attn_bias_tensor, "bias_b", "bias_g", "bias_h", "bias_qm", "bias_km"
+            ),
             kv_cache_blocks_per_row=kv_cache_blocks_per_row,
             Z=B,
             H=H,
@@ -1045,11 +1238,12 @@ class FwOp(AttentionFwOpBase):
             USE_PAGED_ATTENTION=is_paged,
             PAGE_SIZE=page_size,
             WRITE_LSE=IS_SPLITK or needs_gradient,
+            HAS_ADDITIVE_BIAS=attn_bias_tensor is not None,
             **extra_args,
         )
         if not IS_SPLITK:
             out = o_splitk[:, :, :, 0]  # B, G, H, M, Kq
-            out = out.view(B, G, -1, Mq, Kq)  # B, G, Hq, Mq, Kq
+            out = out.view(B, G, Hq, Mq, Kq)
             # This is a copy iff mqa_swap_seqlen_head and Mq, G and Hq are all > 1.
             out = out.permute(0, 3, 1, 2, 4).contiguous()
             if needs_gradient:
@@ -1174,15 +1368,16 @@ def merge_attentions(
             B == B3 and G == G3 and H == H3 and M == M3
         ), f"Incompatible shapes: {attn_out.shape=}, {lse_out.shape=}"
 
-    grid = (M, B, G * H)
-    if max(grid[1], grid[2]) > 2**16:
-        raise ValueError(f"Problem size too big: {grid}")
+    num_warps = 4 if B * G * H < 32 or torch.version.hip else 2
+    splitK_pow2 = triton.next_power_of_2(split_k)
+    grid = (B * G * H, M, 1)
     _splitK_reduce[grid](
         attn_split,
         lse_split,
         attn_out,
         lse_out,
         split_k=split_k,
+        splitK_pow2=splitK_pow2,
         **_strides(attn_split, "osk_z", "osk_g", "osk_h", "osk_s", "osk_m", "osk_k"),
         **_strides(lse_split, "lsek_z", "lsek_g", "lsek_h", "lsek_s", "lsek_m"),
         **_strides(attn_out, "oz", "om", "og", "oh", "ok"),
@@ -1191,7 +1386,74 @@ def merge_attentions(
         G=G,
         H=H,
         WRITE_LSE=lse_out is not None,
-        num_warps=2 if B * G * H >= 32 else 4,
+        num_warps=num_warps,
+    )
+
+
+def merge_attentions_varargs(
+    attn_out: torch.Tensor,
+    lse_out: Optional[torch.Tensor],
+    attn_split: List[torch.Tensor],
+    lse_split: List[torch.Tensor],
+):
+    B, M, G, H, Kq = attn_out.shape
+    if lse_out is not None:
+        B3, G3, H3, M3 = lse_out.shape
+    B1, G1, H1, M1, Kq1 = attn_split[0].shape
+    B2, G2, H2, M2 = lse_split[0].shape
+
+    assert (
+        B == B1 == B2
+        and G == G1 == G2
+        and H == H1 == H2
+        and M == M1 == M2
+        and Kq == Kq1
+    ), f"Incompatible shapes: {attn_out.shape=}, {attn_split[0].shape=}, {lse_split[0].shape=}"
+    if lse_out is not None:
+        assert (
+            B == B3 and G == G3 and H == H3 and M == M3
+        ), f"Incompatible shapes: {attn_out.shape=}, {lse_out.shape=}"
+
+    attn_split_strides = {}
+    lse_split_strides = {}
+    for i in range(len(attn_split)):
+        attn_split_strides.update(
+            _strides(
+                attn_split[i],
+                "osk_z" + str(i),
+                "osk_g" + str(i),
+                "osk_h" + str(i),
+                "osk_m" + str(i),
+                "osk_k" + str(i),
+            )
+        )
+        lse_split_strides.update(
+            _strides(
+                lse_split[i],
+                "lsek_z" + str(i),
+                "lsek_g" + str(i),
+                "lsek_h" + str(i),
+                "lsek_m" + str(i),
+            )
+        )
+
+    num_warps = 4 if B * G * H < 32 or torch.version.hip else 2
+    grid = (B * G * H, M, 1)
+    reduce_kernel = unroll_varargs(_splitK_reduce_varargs, N=len(attn_split))
+    reduce_kernel[grid](
+        *attn_split,
+        *lse_split,
+        Out=attn_out,
+        LSE=lse_out,
+        **attn_split_strides,
+        **lse_split_strides,
+        **_strides(attn_out, "oz", "om", "og", "oh", "ok"),
+        **_strides(lse_out, "lse_z", "lse_g", "lse_h", "lse_m"),
+        BLOCK_SIZE=attn_out.shape[-1],
+        G=G,
+        H=H,
+        WRITE_LSE=lse_out is not None,
+        num_warps=num_warps,
     )
 
 

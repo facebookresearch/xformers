@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [2:4 sparsity] Added support for Straight-Through Estimator for `sparsify24` gradient (`GRADIENT_STE`)
 - [2:4 sparsity] `sparsify24_like` now supports the cuSparseLt backend, and the STE gradient
 ### Improved
+- merge_attentions no longer needs inputs to be stacked.
+- fMHA: triton_splitk now supports additive bias
+- fMHA: benchmark cleanup
 ### Removed
 
 ## [0.0.25.post1] - 2024-03-29
@@ -18,6 +21,7 @@ Pre-built binary wheels require PyTorch 2.2.2
 Pre-built binary wheels require PyTorch 2.2.1
 ### Added
 - New `merge_attentions` function
+- fMHA: New gappy attention biases.
 ### Improved
 - fMHA: Updated Flash-Attention to v2.5.6: this has a performance improvement for multiquery.
 - fMHA: triton_splitk changed and expanded. Now amalgamates using LSE. Can autotune, supports causal with a small number of queries - not just 1. Experimental support for paged attention.

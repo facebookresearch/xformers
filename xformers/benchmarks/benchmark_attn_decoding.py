@@ -3,68 +3,53 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+# Run with --omit-baselines to skip slow baselines.
+# See other CLI arguments in benchmark_main_helper in utils.py.
+
 import sys
 from typing import Any, Dict, Type
 
 import torch
-from torch.utils import benchmark
-from utils import benchmark_main_helper2
 
 import xformers.ops as xops
+from xformers.attn_bias_utils import create_attn_bias
+from xformers.benchmarks.utils import NotSupportedInputError, benchmark_main_helper2
 
 min_run_time = 0.5
 device = torch.device("cuda")
 
 
 CASES = [
-    dict(B=max(1, 2 ** (16 - i)), Mq=1, Mkv=2**i, Hq=16, Hkv=hkv, K=128)
+    dict(
+        B=max(1, 2 ** (16 - i)),
+        Mq=1,
+        Mkv=2**i,
+        Hq=16,
+        Hkv=hkv,
+        K=128,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    )
     for i in range(8, 18)
     for hkv in (1, 2)
 ]
 
 
-def _setup_test(
-    functions, fw: bool = False, bw: bool = False, cuda_graph: bool = True, **kwargs
-):
-    for k, benchmark_cls in functions.items():
-        benchmark_object = benchmark_cls(**kwargs, bw=bw)
-        label = benchmark_object.label
-        label += "fw" if fw else ""
-        label += "bw" if bw else ""
-
-        def run_one():
-            if fw:
-                benchmark_object.fw()
-            if bw:
-                benchmark_object.bw()
-
-        if cuda_graph:
-            run_one()
-            g = torch.cuda.CUDAGraph()
-            with torch.cuda.graph(g):
-                run_one()
-
-            def run_one():
-                g.replay()
-
-        yield benchmark.Timer(
-            stmt="fn()",
-            globals={
-                "fn": run_one,
-            },
-            label=label,
-            description=k,
-            sub_label=benchmark_object.sub_label,
-        )
-
-
-class AttentionDecodingFlashDecoding:
-    OP: Any = xops.fmha.flash.FwOp
+class AttentionDecodingBase:
+    OP: Any = None
 
     def __init__(
-        self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+        self,
+        B: int,
+        Mq: int,
+        Mkv: int,
+        Hq: int,
+        Hkv: int,
+        K: int,
+        bw: bool,
+        attn_bias_type,
     ) -> None:
         dtype = torch.float16
+        torch.manual_seed(10)
         self.sub_label = (
             f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
             f"{((B * Mkv * Hkv * K * 2) + (B * Mq * Hq * K) + (B * Mq * Hq * K)) * 2}"
@@ -93,30 +78,70 @@ class AttentionDecodingFlashDecoding:
             self.k = self.k[:, :, 0]
             self.v = self.v[:, :, 0]
 
+        self.attn_bias = create_attn_bias(
+            attn_bias_type,
+            batch_size=B,
+            num_heads=Hq,
+            num_heads_groups=Hq // Hkv,
+            q_len=Mq,
+            kv_len=Mkv,
+            dtype=dtype,
+            device=device,
+            requires_grad=False,
+            fmt="BMHK",
+            op=self.OP,
+        )
+
+        if isinstance(
+            self.attn_bias,
+            xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        ):
+            self.q = self.q.view(1, -1, *self.q.shape[2:])
+            self.k = self.k.view(1, -1, *self.k.shape[2:])
+            self.v = self.v.view(1, -1, *self.v.shape[2:])
+
+        if hasattr(self.OP, "not_supported_reasons"):
+            inp = xops.fmha.Inputs(
+                query=self.q, key=self.k, value=self.v, attn_bias=self.attn_bias
+            )
+            not_supported_reasons = self.OP.not_supported_reasons(inp)
+            if not_supported_reasons:
+                raise NotSupportedInputError(not_supported_reasons)
+
     def fw(self) -> None:
         try:
-            xops.memory_efficient_attention_forward(self.q, self.k, self.v, op=self.OP)
+            xops.memory_efficient_attention_forward(
+                self.q, self.k, self.v, op=self.OP, attn_bias=self.attn_bias
+            )
         except (RuntimeError, ValueError) as e:
             print(f"Runtime error: {e}")
 
 
-class AttentionDecodingCK(AttentionDecodingFlashDecoding):
+class AttentionDecodingDecoder(AttentionDecodingBase):
+    OP = xops.fmha.decoder.FwOp
+
+
+class AttentionDecodingCUTLASS(AttentionDecodingBase):
+    OP = xops.fmha.cutlass.FwOp
+
+
+class AttentionDecodingCK(AttentionDecodingBase):
     OP = xops.fmha.ck.FwOp
 
 
-class AttentionDecodingCKDecoder(AttentionDecodingFlashDecoding):
+class AttentionDecodingCKDecoder(AttentionDecodingBase):
     OP = xops.fmha.ck_decoder.FwOp
 
 
-class AttentionDecodingSplitKV(AttentionDecodingFlashDecoding):
+class AttentionDecodingSplitKV(AttentionDecodingBase):
     OP = xops.fmha.triton_splitk.FwOp
 
 
-class AttentionDecodingCKSplitKV(AttentionDecodingFlashDecoding):
+class AttentionDecodingCKSplitKV(AttentionDecodingBase):
     OP = xops.fmha.ck_splitk.FwOp
 
 
-class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
+class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
     def fw(self) -> None:
         B, Mq, Mkv, Hq, Hkv, K = self.shapes
         scale = 1 / K**0.5
@@ -127,12 +152,13 @@ class AttentionDecodingPyTorchRepeat(AttentionDecodingFlashDecoding):
         return attn @ v
 
 
-BENCHMARKS: Dict[str, Type[AttentionDecodingFlashDecoding]] = {
+BENCHMARKS: Dict[str, Type[AttentionDecodingBase]] = {
     "pytorch": AttentionDecodingPyTorchRepeat,
 }
 
 if torch.version.cuda:
-    BENCHMARKS["flash-decoding"] = AttentionDecodingFlashDecoding
+    BENCHMARKS["decoder"] = AttentionDecodingDecoder
+    BENCHMARKS["cutlass"] = AttentionDecodingCUTLASS
 
 if torch.version.hip:
     BENCHMARKS.update(
@@ -150,7 +176,7 @@ if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
 try:
     import flash_attn
 
-    class AttentionDecodingFlashAttention(AttentionDecodingFlashDecoding):
+    class AttentionDecodingFlashAttention(AttentionDecodingBase):
         def fw(self) -> None:
             q, k, v = self.q, self.k, self.v
             if q.ndim == 5:

@@ -22,14 +22,15 @@ from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
 from xformers.ops.fmha.common import AttentionFwOpBase, AttentionOpBase
 from xformers.ops.fmha.dispatch import _dispatch_fw_priority_list
 
-from .utils import assert_allclose, disable_tf32, pack_kv_cache
-
-cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
-rocm_only = pytest.mark.skipif(
-    not torch.cuda.is_available() or not torch.version.hip, reason="requires ROCM"
-)
-disable_on_rocm = pytest.mark.skipif(
-    not not torch.version.hip, reason="could not be done on ROCM"
+from .utils import (
+    assert_allclose,
+    cuda_only,
+    disable_on_rocm,
+    disable_tf32,
+    pack_kv_cache,
+    ref_attention_bmhk_for_test,
+    ref_attention_for_test,
+    rocm_only,
 )
 
 compute_capability = (0, 0)
@@ -243,84 +244,6 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
     "opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv",
     **_generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(ALL_BW_OPS, max_shapes_per_op=1),
 )
-
-
-@disable_tf32
-def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
-    if q.ndim == 5:
-
-        def attn_bias_group(group: int):
-            if isinstance(attn_bias, torch.Tensor):
-                return attn_bias[:, group]
-            if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
-                return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
-                    attn_bias._bias[:, group]
-                )
-            return attn_bias
-
-        return torch.stack(
-            [
-                ref_attention_bmhk(
-                    q[:, :, g],
-                    k[:, :, g],
-                    v[:, :, g],
-                    scale=scale,
-                    attn_bias=attn_bias_group(g),
-                )
-                for g in range(q.shape[2])
-            ],
-            dim=2,
-        )
-    if q.ndim == 4:
-        assert p == 0.0
-        return ref_attention_bmhk(q, k, v, scale=scale, attn_bias=attn_bias)
-    q = q.float()
-    k = k.float()
-    v = v.float()
-
-    scale = scale if scale is not None else (1 / q.shape[-1] ** 0.5)
-    q = q * scale
-
-    attn = q @ k.transpose(-2, -1)
-    if attn_bias is not None:
-        if isinstance(attn_bias, xformers.ops.AttentionBias):
-            # Always create in B,H,Mq,Mk format
-            attn_bias_tensor = attn_bias.materialize(
-                (q.shape[0], 1, q.shape[1], k.shape[1]),
-                device=q.device,
-                dtype=torch.float32,
-            )
-        else:
-            attn_bias_tensor = attn_bias
-        if attn_bias_tensor.ndim == 4:
-            assert q.shape[0] == attn_bias_tensor.shape[0] * attn_bias_tensor.shape[1]
-            attn_bias_tensor = attn_bias_tensor.reshape(
-                [-1, *attn_bias_tensor.shape[2:]]
-            )
-        attn = attn + attn_bias_tensor.float()
-    attn = attn.softmax(-1)
-    if drop_mask is not None:
-        attn = attn * (drop_mask / (1 - p))
-    return attn @ v
-
-
-def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
-    assert q.ndim == 4
-
-    def T(t):
-        return t.permute((0, 2, 1, 3)).reshape(
-            [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
-        )
-
-    if isinstance(attn_bias, xformers.ops.AttentionBias):
-        attn_bias = attn_bias.materialize(
-            (q.shape[0], q.shape[2], q.shape[1], k.shape[1]),
-            device=q.device,
-            dtype=torch.float32,
-        ).reshape([q.shape[0] * q.shape[2], q.shape[1], k.shape[1]])
-    out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale)
-    out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
-    return out.permute((0, 2, 1, 3))
 
 
 def _rand_partition(r: random.Random, total: int, n: int) -> List[int]:
@@ -545,7 +468,7 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
         attn_bias,
     )
 
-    ref = ref_attention(query, key, value, attn_bias)
+    ref = ref_attention_for_test(query, key, value, attn_bias)
     assert out.shape == ref.shape, out.shape
     assert_allclose(
         out.float(),
@@ -755,7 +678,7 @@ def test_backward(
         if attn_bias_grad is not None:
             grads.append(attn_bias_grad)
 
-    ref = ref_attention(query, key, value, attn_bias, scale=scale)
+    ref = ref_attention_for_test(query, key, value, attn_bias, scale=scale)
     ref.backward(grad_out)
 
     assert_allclose(
@@ -885,7 +808,7 @@ def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
 
     torch.manual_seed(seed)
     mask = _get_drop_mask(op, batch_size, q_len, kv_len, p, device)
-    ref = ref_attention(query, key, value, attn_bias, mask, p)
+    ref = ref_attention_for_test(query, key, value, attn_bias, mask, p)
     assert_allclose(out, ref, atol=2e-4), f"{(out - ref).abs().max()}"
 
     num_trials = 1000
@@ -940,7 +863,7 @@ def _test_dropout_backward(q_len, kv_len, batch_size, k, p, op, dtype):
     torch.manual_seed(seed)
     mask = _get_drop_mask(op, batch_size, q_len, kv_len, p, device)
 
-    ref = ref_attention(query, key, value, None, mask, p)
+    ref = ref_attention_for_test(query, key, value, None, mask, p)
     ref.backward(grad_out)
 
     atol, rtol = (
@@ -1032,7 +955,7 @@ def test_memory_efficient_attention_full_block_masked(q_len, kv_len, batch_size,
     out = xformers.ops.memory_efficient_attention(
         query, key, value, attn_bias, op=(op_fw, op_bw)
     )
-    ref = ref_attention(query, key, value, attn_bias)
+    ref = ref_attention_for_test(query, key, value, attn_bias)
 
     assert_allclose(
         out, ref, atol=op_fw.ERROR_ATOL[query.dtype], rtol=op_fw.ERROR_RTOL[query.dtype]
@@ -1055,7 +978,7 @@ def test_memory_efficient_attention_full_block_masked(q_len, kv_len, batch_size,
     key.grad = None
     value.grad = None
 
-    ref = ref_attention(query, key, value, attn_bias)
+    ref = ref_attention_for_test(query, key, value, attn_bias)
     ref.backward(grad_out)
 
     atol = op_bw.ERROR_ATOL[query.dtype]
@@ -1143,7 +1066,7 @@ def test_cuda_streams(
     # assert torch.allclose(query2_main_stream, query), "Need to increase sleep time"
     del query2_main_stream
 
-    ref = ref_attention(query, key, value)
+    ref = ref_attention_for_test(query, key, value)
     assert out.shape == ref.shape, out.shape
 
     assert_allclose(
@@ -1205,7 +1128,7 @@ def test_custom_scale(opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
     grad_q, grad_k, grad_v = query.grad, key.grad, value.grad
     query.grad = key.grad = value.grad = None
 
-    ref = ref_attention(query * s, key, value, attn_bias, None, p, scale)
+    ref = ref_attention_for_test(query * s, key, value, attn_bias, None, p, scale)
     ref.backward(grad_out)
     ref_grad_q, ref_grad_k, ref_grad_v = query.grad, key.grad, value.grad
     query.grad = key.grad = value.grad = None
@@ -1688,7 +1611,7 @@ def test_decoder(
         k = dequant_cache(k)
         v = dequant_cache(v)
 
-    ref_output = ref_attention(q, k, v, attn_bias)
+    ref_output = ref_attention_for_test(q, k, v, attn_bias)
 
     assert_allclose(
         decoder_output.to(ref_output.dtype),
@@ -1905,7 +1828,7 @@ class TestAttnBias:
         out = fmha.memory_efficient_attention(
             q, k, v, attn_bias=bias_padded, op=(op, None)
         ).float()
-        ref_out = ref_attention_bmhk(q, k, v, bias)
+        ref_out = ref_attention_bmhk_for_test(q, k, v, bias)
         assert_allclose(
             out, ref_out, atol=op.ERROR_ATOL[dtype], rtol=op.ERROR_RTOL[dtype]
         )
@@ -1921,7 +1844,7 @@ class TestAttnBias:
             out = fmha.memory_efficient_attention(
                 q, k, v, attn_bias=bias, op=(op, None)
             ).float()
-            ref_out = ref_attention_bmhk(q, k, v, bias)
+            ref_out = ref_attention_bmhk_for_test(q, k, v, bias)
             assert_allclose(
                 out, ref_out, atol=op.ERROR_ATOL[dtype], rtol=op.ERROR_RTOL[dtype]
             )
@@ -2055,7 +1978,7 @@ def test_backward_gqa(opBW):
     value = value[:, :, :1].expand(-1, -1, H, -1)
     key.requires_grad_(True)
     out = fmha.memory_efficient_attention(query, key, value, attn_bias=attn_bias)
-    out_ref = ref_attention_bmhk(query, key, value, attn_bias=attn_bias)
+    out_ref = ref_attention_bmhk_for_test(query, key, value, attn_bias=attn_bias)
     assert_allclose(
         out.float(),
         out_ref.float(),
@@ -2089,7 +2012,7 @@ def test_forward_gqa_one_group(opFW):
         assert supported == supported_bmhk
         pytest.skip("not supported")
     out = fmha.memory_efficient_attention_forward(q, k, v, op=opFW)
-    ref = ref_attention(q, k, v)
+    ref = ref_attention_for_test(q, k, v)
     assert_allclose(
         out.float(),
         ref,
@@ -2255,7 +2178,7 @@ def test_mqa_decoding(op: Type[fmha.AttentionFwOpBase], dtype, B_Mkv_H_K):
     if skip_reasons := op.not_supported_reasons(fmha.Inputs(q, k, v)):
         pytest.skip("; ".join(skip_reasons))
     out = fmha.memory_efficient_attention_forward(q, k, v, op=op)
-    ref = ref_attention(q, k, v)
+    ref = ref_attention_for_test(q, k, v)
     assert_allclose(
         out.float(),
         ref,
@@ -2298,6 +2221,8 @@ def test_empty_tensors_empty_kv(
         fmt="BMHK",
     )
     opFW = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
+    if opFW == fmha.triton_splitk.FwOp:
+        pytest.skip("triton_splitk doesn't support empty kv")
 
     if torch.version.hip:
         pytest.skip("backward pass/gradience is not yet supported by ck-tiled fmha!")
@@ -2737,8 +2662,15 @@ def paged_attention_run_inner(
 @pytest.mark.parametrize(
     "write_lse", (False, True), ids=lambda x: "write_lse" if x else ""
 )
+@pytest.mark.parametrize(
+    "stack_inputs", (False, True), ids=lambda x: "stack_inputs" if x else ""
+)
 def test_merge_attentions_nobias(
-    write_lse: bool, op: Type[AttentionFwOpBase], G: Optional[int], H: int
+    write_lse: bool,
+    stack_inputs: bool,
+    op: Type[AttentionFwOpBase],
+    G: Optional[int],
+    H: int,
 ):
     """
     Merging the same attention twice shouldn't change anything.
@@ -2768,9 +2700,11 @@ def test_merge_attentions_nobias(
     assert lse1.shape == (B, H, M_ceil) if G is None else (B, G, H, M_ceil)
     lse1 = lse1[..., :Mq]
 
-    out, lse = fmha.merge_attentions(
-        torch.stack([out1, out1]), torch.stack([lse1, lse1]), write_lse=write_lse
-    )
+    attn_chunks = [out1, out1]
+    lse_chunks = [lse1, lse1]
+    attn_chunks_ = torch.stack(attn_chunks) if stack_inputs else attn_chunks
+    lse_chunks_ = torch.stack(lse_chunks) if stack_inputs else lse_chunks
+    out, lse = fmha.merge_attentions(attn_chunks_, lse_chunks_, write_lse=write_lse)  # type: ignore
     assert out.shape == out1.shape
     assert_allclose(out1, out, rtol=1e-3, atol=1e-3, msg="out")
     if write_lse:
@@ -2860,8 +2794,15 @@ def test_partial_paged(
 )
 @pytest.mark.parametrize("num_queries", [1, 2])
 @pytest.mark.parametrize("bmghk", [True, False], ids=lambda x: "bmghk" if x else "")
+@pytest.mark.parametrize(
+    "stack_inputs", (False, True), ids=lambda x: "stack_inputs" if x else ""
+)
 def test_merge_attentions_decoding(
-    dtype: torch.dtype, op: Type[AttentionFwOpBase], num_queries: int, bmghk: bool
+    dtype: torch.dtype,
+    op: Type[AttentionFwOpBase],
+    num_queries: int,
+    bmghk: bool,
+    stack_inputs: bool,
 ):
     """
     Compute decoding attention on chunks of K/V and merge them together.
@@ -2938,9 +2879,14 @@ def test_merge_attentions_decoding(
         chunks_output.append((attn_chunk, lse_chunk))
 
     # Merge attention from all chunks
-    attn_split = torch.stack([attn_chunk for attn_chunk, _ in chunks_output])
-    lse_split = torch.stack([lse_chunk for _, lse_chunk in chunks_output])
-    attn_out, lse_out = fmha.merge_attentions(attn_split, lse_split, output_dtype=dtype)
+    attn_split = [attn_chunk for attn_chunk, _ in chunks_output]
+    lse_split = [lse_chunk for _, lse_chunk in chunks_output]
+    attn_split_ = torch.stack(attn_split) if stack_inputs else attn_split
+    lse_split_ = torch.stack(lse_split) if stack_inputs else lse_split
+
+    attn_out, lse_out = fmha.merge_attentions(
+        attn_split_, lse_split_, output_dtype=dtype  # type: ignore
+    )
     assert lse_out is not None
 
     # Compute attention on the full K/V
@@ -2983,7 +2929,10 @@ def test_merge_attentions_decoding(
 
 @sm80_or_better_only
 @pytest.mark.parametrize("bmghk", (False, True))
-def test_merge_attentions_against_ref(bmghk: bool):
+@pytest.mark.parametrize(
+    "stack_inputs", (False, True), ids=lambda x: "stack_inputs" if x else ""
+)
+def test_merge_attentions_against_ref(bmghk: bool, stack_inputs: bool):
     split_k = 16
     B = 12
     M = 137
@@ -2998,10 +2947,10 @@ def test_merge_attentions_against_ref(bmghk: bool):
     if not bmghk:
         attn_split = attn_split[:, :, :, 0]
         lse_split = lse_split[:, :, 0]
-
-    attn_out, lse_out = fmha.merge_attentions(attn_split, lse_split)
-
     attn_out_ref, lse_out_ref = _merge_attentions_ref(attn_split, lse_split)
+    attn_split_ = attn_split if stack_inputs else attn_split.unbind(0)
+    lse_split_ = lse_split if stack_inputs else lse_split.unbind(0)
+    attn_out, lse_out = fmha.merge_attentions(attn_split_, lse_split_)  # type: ignore
 
     torch.testing.assert_close(lse_out, lse_out_ref, rtol=1e-4, atol=1e-4)
     torch.testing.assert_close(attn_out, attn_out_ref, rtol=1e-4, atol=1e-4)

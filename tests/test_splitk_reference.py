@@ -11,10 +11,7 @@ import torch
 import xformers.ops
 from xformers.ops import fmha
 
-from .test_mem_eff_attention import ref_attention
-from .utils import assert_allclose, disable_tf32
-
-torch.backends.cuda.matmul.allow_tf32 = False
+from .utils import assert_allclose, disable_tf32, ref_attention_for_test
 
 
 @disable_tf32
@@ -215,7 +212,7 @@ def test_splitk_reference(
         causal_diagonal=causal_diagonal,
         kv_padding=padding,
     )
-    ref_out = ref_attention(q, k, v, attn_bias)
+    ref_out = ref_attention_for_test(q, k, v, attn_bias)
     splitk_out = ref_attention_splitk(q, k, v, attn_bias, None, split_k=split_k)
     assert_allclose(
         ref_out,
