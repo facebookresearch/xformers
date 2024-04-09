@@ -271,6 +271,12 @@
 <span class="n">MemoryEfficientAttentionSplitKCkOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">ck_splitk</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">ck</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
 
 
+<span class="k">def</span> <span class="nf">_deserialize_bias</span><span class="p">(</span><span class="n">attn_bias_ctx</span><span class="p">,</span> <span class="n">attn_bias_tensor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">attn_bias_tensor</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">attn_bias_ctx</span>
+    <span class="k">return</span> <span class="n">attn_bias_tensor</span>
+
+
 <span class="k">class</span> <span class="nc">_fMHA</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
     <span class="nd">@staticmethod</span>
     <span class="c1"># type: ignore</span>
@@ -308,9 +314,28 @@
                     <span class="sa">f</span><span class="s2">&quot;can only run with op_bw=</span><span class="si">{</span><span class="n">op_ctx</span><span class="o">.</span><span class="n">op_bw</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2">. Please set op_bw=None.&quot;</span>
                 <span class="p">)</span>
             <span class="n">op_bw</span> <span class="o">=</span> <span class="n">op_ctx</span><span class="o">.</span><span class="n">op_bw</span>
+        <span class="k">if</span> <span class="n">op_bw</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">requires_grad</span>
+        <span class="p">):</span>
+            <span class="c1"># NOTE: We need to check tensor strides to decide which operator we run in the BW pass.</span>
+            <span class="c1"># Unfortunately, PyTorch only allows to call this function during the FW pass, so</span>
+            <span class="c1"># we decide the operator to use now.</span>
+            <span class="n">op_bw</span> <span class="o">=</span> <span class="n">_dispatch_bw</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">op_fw</span> <span class="o">=</span> <span class="n">op_fw</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">op_bw</span> <span class="o">=</span> <span class="n">op_bw</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">p</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span>
+        <span class="c1"># This allows to create gradients from a single storage,</span>
+        <span class="c1"># to avoid a &quot;cat&quot; in the BW pass.</span>
+        <span class="c1"># The heuristic is approximative, but:</span>
+        <span class="c1"># (1) It&#39;s not a big issue to create a shared storage</span>
+        <span class="c1"># (2) The heuristic needs to pass `torch.compile`</span>
+        <span class="c1">#  (this is also why we run it in the FW pass, the BW pass is stricter)</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">qkv_share_storage</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">)</span>
+            <span class="o">==</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="p">)</span>
 
         <span class="n">ctx</span><span class="o">.</span><span class="n">scale</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">scale</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">attn_bias_ctx</span> <span class="o">=</span> <span class="n">attn_bias_ctx</span>
@@ -318,16 +343,8 @@
         <span class="k">return</span> <span class="n">out</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">deserialize_bias</span><span class="p">(</span>
-        <span class="n">attn_bias_ctx</span><span class="p">,</span> <span class="n">attn_bias_tensor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">attn_bias_tensor</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">attn_bias_ctx</span>
-        <span class="k">return</span> <span class="n">attn_bias_tensor</span>
-
-    <span class="nd">@classmethod</span>
     <span class="nd">@torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">function</span><span class="o">.</span><span class="n">once_differentiable</span>
-    <span class="k">def</span> <span class="nf">backward</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">grad</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">grad</span><span class="p">):</span>
         <span class="c1"># Re-create context</span>
         <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">lse</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
         <span class="n">attn_bias_tensor</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">attn_bias_tensor</span>
@@ -336,7 +353,7 @@
             <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
             <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
             <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
-            <span class="n">attn_bias</span><span class="o">=</span><span class="bp">cls</span><span class="o">.</span><span class="n">deserialize_bias</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">attn_bias_ctx</span><span class="p">,</span> <span class="n">attn_bias_tensor</span><span class="p">),</span>
+            <span class="n">attn_bias</span><span class="o">=</span><span class="n">_deserialize_bias</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">attn_bias_ctx</span><span class="p">,</span> <span class="n">attn_bias_tensor</span><span class="p">),</span>
             <span class="n">p</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
             <span class="n">scale</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">scale</span><span class="p">,</span>
         <span class="p">)</span>
@@ -346,7 +363,11 @@
             <span class="n">rng_state</span><span class="o">=</span><span class="n">rng_state</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">grads</span> <span class="o">=</span> <span class="n">_memory_efficient_attention_backward</span><span class="p">(</span>
-            <span class="n">ctx</span><span class="o">=</span><span class="n">op_ctx</span><span class="p">,</span> <span class="n">inp</span><span class="o">=</span><span class="n">inp</span><span class="p">,</span> <span class="n">grad</span><span class="o">=</span><span class="n">grad</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">op_bw</span>
+            <span class="n">ctx</span><span class="o">=</span><span class="n">op_ctx</span><span class="p">,</span>
+            <span class="n">inp</span><span class="o">=</span><span class="n">inp</span><span class="p">,</span>
+            <span class="n">grad</span><span class="o">=</span><span class="n">grad</span><span class="p">,</span>
+            <span class="n">op</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">op_bw</span><span class="p">,</span>
+            <span class="n">_skip_op_checks</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dk</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dv</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">db</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="kc">None</span><span class="p">,)</span> <span class="o">*</span> <span class="p">(</span>
             <span class="n">ctx</span><span class="o">.</span><span class="n">n_args</span> <span class="o">-</span> <span class="mi">2</span>
@@ -623,7 +644,12 @@
 
 
 <span class="k">def</span> <span class="nf">_memory_efficient_attention_backward</span><span class="p">(</span>
-    <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]]</span>
+    <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span>
+    <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span>
+    <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">_skip_op_checks</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Gradients</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Warning: grad/ctx.out is potentially in BMK format&quot;&quot;&quot;</span>
     <span class="n">inp</span><span class="o">.</span><span class="n">validate_inputs</span><span class="p">()</span>
@@ -668,7 +694,7 @@
 
     <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">op</span> <span class="o">=</span> <span class="n">_dispatch_bw</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">_skip_op_checks</span><span class="p">:</span>
         <span class="n">_ensure_op_supports_or_raise</span><span class="p">(</span>
             <span class="ne">ValueError</span><span class="p">,</span> <span class="s2">&quot;memory_efficient_attention_backward&quot;</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">inp</span>
         <span class="p">)</span>

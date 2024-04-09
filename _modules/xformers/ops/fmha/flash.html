@@ -228,13 +228,12 @@
 
 
 <span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">replace</span>
 <span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">zip_longest</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">_get_storage_base</span><span class="p">,</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
+<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
 <span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBias</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
@@ -286,26 +285,27 @@
             <span class="p">)</span>
 
     <span class="c1"># create library so that flash-attn goes through the PyTorch Dispatcher</span>
-    <span class="n">_flash_lib</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">Library</span><span class="p">(</span><span class="s2">&quot;xformers_flash&quot;</span><span class="p">,</span> <span class="s2">&quot;DEF&quot;</span><span class="p">)</span>
-
-    <span class="n">_flash_lib</span><span class="o">.</span><span class="n">define</span><span class="p">(</span>
-        <span class="s2">&quot;flash_fwd(Tensor query, Tensor key, Tensor value, &quot;</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">define</span><span class="p">(</span>
+        <span class="s2">&quot;xformers_flash::flash_fwd&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;(Tensor query, Tensor key, Tensor value, &quot;</span>
         <span class="s2">&quot;Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, Tensor? seqused_k, &quot;</span>
         <span class="s2">&quot;int max_seqlen_q, int max_seqlen_k, &quot;</span>
         <span class="s2">&quot;float p, float softmax_scale, &quot;</span>
         <span class="s2">&quot;bool is_causal, int window_left, &quot;</span>
-        <span class="s2">&quot;int window_right, bool return_softmax) -&gt; (Tensor, Tensor, Tensor)&quot;</span>
+        <span class="s2">&quot;int window_right, bool return_softmax) -&gt; (Tensor, Tensor, Tensor)&quot;</span><span class="p">,</span>
     <span class="p">)</span>
 
-    <span class="n">_flash_lib</span><span class="o">.</span><span class="n">define</span><span class="p">(</span>
-        <span class="s2">&quot;flash_bwd(Tensor dout, Tensor query, Tensor key, Tensor value, &quot;</span>
-        <span class="s2">&quot;Tensor out, Tensor softmax_lse_, Tensor dq, Tensor dk, Tensor dv, &quot;</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">define</span><span class="p">(</span>
+        <span class="s2">&quot;xformers_flash::flash_bwd&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;(bool grads_share_storage, Tensor dout, Tensor query, Tensor key, Tensor value, &quot;</span>
+        <span class="s2">&quot;Tensor out, Tensor softmax_lse_, &quot;</span>
         <span class="s2">&quot;Tensor cu_seqlens_q, Tensor cu_seqlens_k, &quot;</span>
         <span class="s2">&quot;int max_seqlen_q, int max_seqlen_k, &quot;</span>
         <span class="s2">&quot;float p, float softmax_scale, bool is_causal, &quot;</span>
-        <span class="s2">&quot;int window_left, int window_right, Tensor rng_state) -&gt; (Tensor, Tensor, Tensor)&quot;</span>
+        <span class="s2">&quot;int window_left, int window_right, Tensor rng_state) -&gt; (Tensor dq, Tensor dk, Tensor dv)&quot;</span><span class="p">,</span>
     <span class="p">)</span>
 
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">impl</span><span class="p">(</span><span class="s2">&quot;xformers_flash::flash_fwd&quot;</span><span class="p">,</span> <span class="s2">&quot;default&quot;</span><span class="p">)</span>
     <span class="k">def</span> <span class="nf">_flash_fwd</span><span class="p">(</span>
         <span class="n">query</span><span class="p">,</span>
         <span class="n">key</span><span class="p">,</span>
@@ -322,6 +322,8 @@
         <span class="n">window_right</span><span class="p">,</span>
         <span class="n">return_softmax</span><span class="p">,</span>
     <span class="p">):</span>
+        <span class="k">if</span> <span class="n">query</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;FakeTensor&quot;</span><span class="p">:</span>
+            <span class="nb">breakpoint</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">cu_seq_lens_q</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">assert</span> <span class="n">cu_seq_lens_k</span> <span class="ow">is</span> <span class="kc">None</span>
             <span class="k">assert</span> <span class="n">seqused_k</span> <span class="ow">is</span> <span class="kc">None</span>
@@ -380,16 +382,29 @@
             <span class="p">)</span>
         <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">rng_state</span>
 
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">impl_abstract</span><span class="p">(</span><span class="s2">&quot;xformers_flash::flash_fwd&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_flash_fwd_abstract</span><span class="p">(</span>
+        <span class="n">query</span><span class="p">,</span>
+        <span class="n">key</span><span class="p">,</span>
+        <span class="n">value</span><span class="p">,</span>
+        <span class="o">*</span><span class="n">args</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+        <span class="n">softmax_lse</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">([</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">M</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="n">rng_state</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">([</span><span class="mi">2</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">rng_state</span>
+
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">impl</span><span class="p">(</span><span class="s2">&quot;xformers_flash::flash_bwd&quot;</span><span class="p">,</span> <span class="s2">&quot;default&quot;</span><span class="p">)</span>
     <span class="k">def</span> <span class="nf">_flash_bwd</span><span class="p">(</span>
+        <span class="n">grads_share_storage</span><span class="p">,</span>
         <span class="n">grad</span><span class="p">,</span>
         <span class="n">query</span><span class="p">,</span>
         <span class="n">key</span><span class="p">,</span>
         <span class="n">value</span><span class="p">,</span>
         <span class="n">out</span><span class="p">,</span>
         <span class="n">lse</span><span class="p">,</span>
-        <span class="n">dq</span><span class="p">,</span>
-        <span class="n">dk</span><span class="p">,</span>
-        <span class="n">dv</span><span class="p">,</span>
         <span class="n">cu_seq_lens_q</span><span class="p">,</span>
         <span class="n">cu_seq_lens_k</span><span class="p">,</span>
         <span class="n">max_seq_len_q</span><span class="p">,</span>
@@ -401,6 +416,7 @@
         <span class="n">window_right</span><span class="p">,</span>
         <span class="n">rng_state</span><span class="p">,</span>
     <span class="p">):</span>
+        <span class="n">dq</span><span class="p">,</span> <span class="n">dk</span><span class="p">,</span> <span class="n">dv</span> <span class="o">=</span> <span class="n">_create_dq_dk_dv</span><span class="p">(</span><span class="n">grads_share_storage</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">cu_seq_lens_k</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">assert</span> <span class="n">cu_seq_lens_q</span> <span class="ow">is</span> <span class="kc">None</span>
             <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">bwd</span><span class="p">(</span>
@@ -451,8 +467,33 @@
             <span class="p">)</span>
         <span class="k">return</span> <span class="n">dq</span><span class="p">,</span> <span class="n">dk</span><span class="p">,</span> <span class="n">dv</span>
 
-    <span class="n">_flash_lib</span><span class="o">.</span><span class="n">impl</span><span class="p">(</span><span class="s2">&quot;flash_fwd&quot;</span><span class="p">,</span> <span class="n">_flash_fwd</span><span class="p">,</span> <span class="s2">&quot;CUDA&quot;</span><span class="p">)</span>
-    <span class="n">_flash_lib</span><span class="o">.</span><span class="n">impl</span><span class="p">(</span><span class="s2">&quot;flash_bwd&quot;</span><span class="p">,</span> <span class="n">_flash_bwd</span><span class="p">,</span> <span class="s2">&quot;CUDA&quot;</span><span class="p">)</span>
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">impl_abstract</span><span class="p">(</span><span class="s2">&quot;xformers_flash::flash_bwd&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_flash_bwd_abstract</span><span class="p">(</span>
+        <span class="n">grads_share_storage</span><span class="p">,</span>
+        <span class="n">grad</span><span class="p">,</span>
+        <span class="n">query</span><span class="p">,</span>
+        <span class="n">key</span><span class="p">,</span>
+        <span class="n">value</span><span class="p">,</span>
+        <span class="o">*</span><span class="n">args</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="n">_create_dq_dk_dv</span><span class="p">(</span><span class="n">grads_share_storage</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_create_dq_dk_dv</span><span class="p">(</span>
+        <span class="n">grads_share_storage</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+        <span class="c1"># Create dq,dk,dv</span>
+        <span class="c1"># If Q/K/V come from a single QKV tensor, let&#39;s put the gradient in the</span>
+        <span class="c1"># right strides, so we can avoid a `cat`</span>
+        <span class="k">if</span> <span class="n">grads_share_storage</span><span class="p">:</span>
+            <span class="n">chunk</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+                <span class="p">(</span><span class="o">*</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">],</span> <span class="mi">3</span><span class="p">,</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">],</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">query</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">key</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
 <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
     <span class="k">pass</span>
 
@@ -541,7 +582,7 @@
         <span class="n">key</span> <span class="o">=</span> <span class="n">fold</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
         <span class="n">value</span> <span class="o">=</span> <span class="n">fold</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
     <span class="c1"># Optimize for MHA</span>
-    <span class="k">if</span> <span class="n">key</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">4</span> <span class="ow">and</span> <span class="n">key</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">supports_mqa</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">supports_mqa</span> <span class="ow">and</span> <span class="n">key</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">4</span> <span class="ow">and</span> <span class="n">key</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="n">key</span> <span class="o">=</span> <span class="n">key</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="mi">1</span><span class="p">]</span>
         <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="mi">1</span><span class="p">]</span>
     <span class="c1"># Initially we have `query.shape = [batch, seqlen, num_heads, head_dim_q]`</span>
@@ -550,11 +591,15 @@
         <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_q</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">])</span>
         <span class="n">key</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">])</span>
         <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_v</span><span class="p">])</span>
-    <span class="n">new_inp</span> <span class="o">=</span> <span class="n">replace</span><span class="p">(</span>
-        <span class="n">inp</span><span class="p">,</span>
+    <span class="n">new_inp</span> <span class="o">=</span> <span class="n">Inputs</span><span class="p">(</span>
         <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
         <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
         <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
+        <span class="n">attn_bias</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
+        <span class="n">p</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
+        <span class="n">scale</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">scale</span><span class="p">,</span>
+        <span class="n">output_dtype</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">,</span>
+        <span class="n">is_partial</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">is_partial</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="k">return</span> <span class="n">new_inp</span><span class="p">,</span> <span class="n">cu_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">cu_seqlen_k</span><span class="p">,</span> <span class="n">max_seqlen_k</span><span class="p">,</span> <span class="n">seqused_k</span>
 
@@ -676,7 +721,7 @@
     <span class="n">CUDA_MINIMUM_COMPUTE_CAPABILITY</span> <span class="o">=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
     <span class="n">SUPPORTED_DTYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">}</span>
     <span class="n">SUPPORTED_MAX_K</span> <span class="o">=</span> <span class="mi">256</span>
-    <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
         <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
         <span class="n">LowerTriangularMask</span><span class="p">,</span>
         <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
@@ -691,7 +736,7 @@
         <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
         <span class="n">LocalAttentionFromBottomRightMask</span><span class="p">,</span>
-    <span class="p">}</span>
+    <span class="p">)</span>
     <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="kc">False</span>
@@ -813,13 +858,15 @@
     <span class="n">CUDA_MINIMUM_COMPUTE_CAPABILITY</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">CUDA_MINIMUM_COMPUTE_CAPABILITY</span>
     <span class="n">SUPPORTED_DTYPES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span>
     <span class="n">SUPPORTED_MAX_K</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_MAX_K</span>
-    <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="o">.</span><span class="n">difference</span><span class="p">(</span>
-        <span class="p">{</span>
-            <span class="n">BlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">,</span>
-            <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
-            <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
-            <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-        <span class="p">}</span>
+    <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+        <span class="nb">set</span><span class="p">(</span><span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">)</span><span class="o">.</span><span class="n">difference</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="n">BlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">,</span>
+                <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+                <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
+                <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
     <span class="p">)</span>
     <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DROPOUT</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_CUSTOM_SCALE</span>
@@ -862,7 +909,7 @@
             <span class="n">max_seqlen_k</span><span class="p">,</span>
             <span class="n">seqused_k</span><span class="p">,</span>
         <span class="p">)</span> <span class="o">=</span> <span class="n">_convert_input_format</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">supports_mqa</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">()</span>
+        <span class="c1"># assert ctx.lse.is_contiguous()</span>
         <span class="k">assert</span> <span class="n">seqused_k</span> <span class="ow">is</span> <span class="kc">None</span>
         <span class="n">ctx_lse</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span>
         <span class="k">assert</span> <span class="n">ctx_lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">max_seqlen_q</span>
@@ -872,68 +919,42 @@
             <span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
         <span class="p">]</span>
+        <span class="k">assert</span> <span class="n">grad</span><span class="o">.</span><span class="n">dtype</span> <span class="ow">in</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span>
 
-        <span class="c1"># Create dq,dk,dv</span>
-        <span class="c1"># If Q/K/V come from a single QKV tensor, let&#39;s put the gradient in the</span>
-        <span class="c1"># right strides, so we can avoid a `cat`</span>
-        <span class="k">if</span> <span class="p">(</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-            <span class="ow">and</span> <span class="n">_get_storage_base</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">)</span> <span class="o">==</span> <span class="n">_get_storage_base</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">)</span>
-            <span class="ow">and</span> <span class="n">_get_storage_base</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">)</span> <span class="o">==</span> <span class="n">_get_storage_base</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
-        <span class="p">):</span>
-            <span class="c1"># Create one big contiguous chunk</span>
-            <span class="c1"># This is because q, k and v usually come from a single</span>
-            <span class="c1"># output of a linear layer that is chunked.</span>
-            <span class="c1"># Creating the gradients with the right layout saves us</span>
-            <span class="c1"># a `torch.cat` call in the backward pass</span>
-            <span class="n">chunk</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
-                <span class="p">(</span><span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">],</span> <span class="mi">3</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">],</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
-                <span class="n">dtype</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
-                <span class="n">device</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
-            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">numel</span><span class="p">():</span>
+            <span class="n">win_left</span><span class="p">,</span> <span class="n">win_right</span> <span class="o">=</span> <span class="n">_window_size</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span>
             <span class="n">grads</span> <span class="o">=</span> <span class="n">Gradients</span><span class="p">(</span>
-                <span class="n">dq</span><span class="o">=</span><span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
-                <span class="n">dk</span><span class="o">=</span><span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
-                <span class="n">dv</span><span class="o">=</span><span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="o">*</span><span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span><span class="p">(</span>
+                    <span class="n">ctx</span><span class="o">.</span><span class="n">qkv_share_storage</span><span class="p">,</span>
+                    <span class="n">grad</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">kernel_out_shape</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
+                    <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span>
+                    <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
+                    <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+                    <span class="n">ctx</span><span class="o">.</span><span class="n">out</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">kernel_out_shape</span><span class="p">),</span>
+                    <span class="n">ctx_lse</span><span class="p">,</span>
+                    <span class="n">cu_seqlens_q</span><span class="p">,</span>
+                    <span class="n">cu_seqlens_k</span><span class="p">,</span>
+                    <span class="n">max_seqlen_q</span><span class="p">,</span>
+                    <span class="n">max_seqlen_k</span><span class="p">,</span>
+                    <span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
+                    <span class="n">inp</span><span class="o">.</span><span class="n">scale_float</span><span class="p">,</span>
+                    <span class="n">_is_causal</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
+                    <span class="n">window_left</span><span class="o">=</span><span class="n">win_left</span><span class="p">,</span>
+                    <span class="n">window_right</span><span class="o">=</span><span class="n">win_right</span><span class="p">,</span>
+                    <span class="n">rng_state</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="p">)</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">grads</span> <span class="o">=</span> <span class="n">Gradients</span><span class="p">(</span>
-                <span class="n">dq</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">),</span>
-                <span class="n">dk</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">),</span>
-                <span class="n">dv</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">),</span>
+                <span class="n">dq</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">),</span>
+                <span class="n">dk</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">),</span>
+                <span class="n">dv</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">),</span>
             <span class="p">)</span>
-
-        <span class="k">assert</span> <span class="n">grad</span><span class="o">.</span><span class="n">dtype</span> <span class="ow">in</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span>
-
         <span class="k">if</span> <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">grads</span><span class="o">.</span><span class="n">dk</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
             <span class="n">grads</span><span class="o">.</span><span class="n">dv</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">grads</span><span class="o">.</span><span class="n">dv</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="ow">and</span> <span class="n">grads</span><span class="o">.</span><span class="n">dk</span><span class="o">.</span><span class="n">numel</span><span class="p">():</span>
-            <span class="n">win_left</span><span class="p">,</span> <span class="n">win_right</span> <span class="o">=</span> <span class="n">_window_size</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span>
-            <span class="bp">cls</span><span class="o">.</span><span class="n">OPERATOR</span><span class="p">(</span>
-                <span class="n">grad</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">kernel_out_shape</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
-                <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span>
-                <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
-                <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-                <span class="n">ctx</span><span class="o">.</span><span class="n">out</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">kernel_out_shape</span><span class="p">),</span>
-                <span class="n">ctx_lse</span><span class="p">,</span>
-                <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="p">,</span>
-                <span class="n">grads</span><span class="o">.</span><span class="n">dk</span><span class="p">,</span>
-                <span class="n">grads</span><span class="o">.</span><span class="n">dv</span><span class="p">,</span>
-                <span class="n">cu_seqlens_q</span><span class="p">,</span>
-                <span class="n">cu_seqlens_k</span><span class="p">,</span>
-                <span class="n">max_seqlen_q</span><span class="p">,</span>
-                <span class="n">max_seqlen_k</span><span class="p">,</span>
-                <span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
-                <span class="n">inp</span><span class="o">.</span><span class="n">scale_float</span><span class="p">,</span>
-                <span class="n">_is_causal</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">),</span>
-                <span class="n">window_left</span><span class="o">=</span><span class="n">win_left</span><span class="p">,</span>
-                <span class="n">window_right</span><span class="o">=</span><span class="n">win_right</span><span class="p">,</span>
-                <span class="n">rng_state</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span><span class="p">,</span>
-            <span class="p">)</span>
         <span class="n">grads</span><span class="o">.</span><span class="n">dq</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">dq_shape</span><span class="p">)</span>
         <span class="n">grads</span><span class="o">.</span><span class="n">dk</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">dk</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">dk_shape</span><span class="p">)</span>
         <span class="n">grads</span><span class="o">.</span><span class="n">dv</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">dv</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">dv_shape</span><span class="p">)</span>
