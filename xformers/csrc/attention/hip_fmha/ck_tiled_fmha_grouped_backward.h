@@ -120,40 +120,39 @@ struct grouped_backward_causalmask_attnbias_dispatched {
         constexpr bool kPadSeqLenQ = true;
         constexpr bool kPadSeqLenK = true;
 
-        // const bool pad_headdim_q = !(param.K % FmhaBwdShape_::kK0 == 0);
+        const bool pad_headdim_q = !(param.K % FmhaBwdShape_::kK0 == 0);
         const bool pad_headdim_v = !(param.Kv % FmhaBwdShape_::kK2 == 0);
 
-        // currently headdim padding is not supported due to some atomic_add
-        // issue with bhalf_t
-        constexpr bool kPadHeadDimQ = false;
+        // usually headdim_q and headdim_v are same, consider them together
+        // to determine whether to do padding saving some compiling time
+        const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
 
-        BOOL_SWITCH_2(
-            has_dropout, kHasDropout, pad_headdim_v, kPadHeadDimV, [&] {
-              using FmhaBwdTraits_ = ck::tile_program::TileFmhaTraits<
-                  kPadSeqLenQ,
-                  kPadSeqLenK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV,
-                  has_attn_bias,
-                  false, // kStoreLSE
-                  kHasDropout,
-                  occupancy>;
+        BOOL_SWITCH_2(has_dropout, kHasDropout, pad_headdim, kPadHeadDim, [&] {
+          using FmhaBwdTraits_ = ck::tile_program::TileFmhaTraits<
+              kPadSeqLenQ,
+              kPadSeqLenK,
+              kPadHeadDim, // kPadHeadDimQ,
+              kPadHeadDim, // kPadHeadDimV,
+              has_attn_bias,
+              false, // kStoreLSE
+              kHasDropout,
+              occupancy>;
 
-              using FmhaBwdPipelineProblem =
-                  FmhaBwdPipelineProblemTemp<FmhaBwdTraits_, FmhaMask>;
+          using FmhaBwdPipelineProblem =
+              FmhaBwdPipelineProblemTemp<FmhaBwdTraits_, FmhaMask>;
 
-              using FmhaBwdPipeline_ = typename ck::tile_program::block::
-                  BlockFmhaBwdPipelineDispatcher<
-                      FmhaBwdLoadStrategy_,
-                      FmhaBwdPipelineProblem>::BlockPipeline;
+          using FmhaBwdPipeline_ =
+              typename ck::tile_program::block::BlockFmhaBwdPipelineDispatcher<
+                  FmhaBwdLoadStrategy_,
+                  FmhaBwdPipelineProblem>::BlockPipeline;
 
-              using FmhaBwdKernel_ = FmhaBwdKernel<
-                  FmhaBwdTilePartitioner_,
-                  FmhaBwdPipeline_,
-                  FmhaBwdEpilogue_>;
+          using FmhaBwdKernel_ = FmhaBwdKernel<
+              FmhaBwdTilePartitioner_,
+              FmhaBwdPipeline_,
+              FmhaBwdEpilogue_>;
 
-              RunWithBwdKernel<FmhaBwdKernel_>(param, stream);
-            });
+          RunWithBwdKernel<FmhaBwdKernel_>(param, stream);
+        });
       });
     };
   }
