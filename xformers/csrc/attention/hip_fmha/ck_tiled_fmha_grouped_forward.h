@@ -150,6 +150,7 @@ struct grouped_forward_causalmask_attnbias_dispatched {
           0, // nhead_stride_randval
           param.lse_strides[1],
           param.out_strides[1],
+          param.lse_strides[0], // batch_stride_lse
           static_cast<CausalMaskType>(param.custom_mask_type),
           param.window_size,
           1.0f, // descale_qk, not used

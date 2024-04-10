@@ -148,6 +148,7 @@ struct grouped_infer_causalmask_attnbias_dispatched {
           0, // nhead_stride_randval
           0, // nhead_stride_lse
           param.out_strides[1],
+          0, // batch_stride_lse
           static_cast<CausalMaskType>(param.custom_mask_type),
           param.window_size,
           1.0f, // descale_qk, not used
