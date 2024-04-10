@@ -173,9 +173,13 @@ efficient_attention_backward_ck(
 
   // even it is an output, the grad_bias is required to use the same data-type
   // as bias in CK-FlashAttn
-  if (bias_requires_grad)
+  if (bias_requires_grad) {
     grad_bias =
         at::empty_strided(bias->sizes(), bias->strides(), bias->options());
+    // cleaning is needed since masked tile does no outputting in our
+    // implementation
+    grad_bias.fill_(0);
+  }
 
   bool is_mqa_gqa = (Hq > Hkv);
 
