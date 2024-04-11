@@ -12,4 +12,5 @@ template void run_grouped_backward_causalmask_attnbias_dispatched<
     ck::bhalf_t,
     true,
     false,
+    false,
     64>(GroupedBackwardParams& param, hipStream_t stream);

@@ -33,6 +33,7 @@ template <
     typename scalar_t,
     bool has_causal_mask,
     bool has_attn_bias,
+    bool has_bias_grad,
     ck::index_t MaxK>
 struct batched_backward_causalmask_attnbias_dispatched {
   using FmhaBwdEpilogue_ = FmhaBwdEpilogue<FmhaBwdEpilogueProblem<
@@ -144,6 +145,7 @@ struct batched_backward_causalmask_attnbias_dispatched {
                   kPadHeadDim, // kPadHeadDimQ,
                   kPadHeadDim, // kPadHeadDimV,
                   has_attn_bias,
+                  has_bias_grad,
                   false, // kStoreLSE
                   kHasDropout,
                   occupancy>;
@@ -288,6 +290,7 @@ template <
     typename scalar_t,
     bool has_causal_mask,
     bool has_attn_bias,
+    bool has_bias_grad,
     ck::index_t MaxK>
 void run_batched_backward_causalmask_attnbias_dispatched(
     BatchedBackwardParams& param,
@@ -296,5 +299,6 @@ void run_batched_backward_causalmask_attnbias_dispatched(
       scalar_t,
       has_causal_mask,
       has_attn_bias,
+      has_bias_grad,
       MaxK>::Run(param, stream);
 };

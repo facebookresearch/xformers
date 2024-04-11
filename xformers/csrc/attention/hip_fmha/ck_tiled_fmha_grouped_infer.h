@@ -89,6 +89,7 @@ struct grouped_infer_causalmask_attnbias_dispatched {
                 kPadHeadDimQ,
                 kPadHeadDimV,
                 has_attn_bias,
+                false, // kHasBiasGrad place-holder
                 false, // kStoreLSE
                 kHasDropout,
                 occupancy>;

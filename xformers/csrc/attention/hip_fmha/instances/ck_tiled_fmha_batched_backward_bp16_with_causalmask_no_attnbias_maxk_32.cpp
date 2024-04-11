@@ -12,4 +12,5 @@ template void run_batched_backward_causalmask_attnbias_dispatched<
     ck::bhalf_t,
     true,
     false,
+    false,
     32>(BatchedBackwardParams& param, hipStream_t stream);

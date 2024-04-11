@@ -99,6 +99,7 @@ struct batched_infer_causalmask_attnbias_dispatched {
                 kPadHeadDim, // kPadHeadDimQ,
                 kPadHeadDim, // kPadHeadDimV,
                 has_attn_bias,
+                false, // kHasBiasGrad place-holder
                 false, // kStoreLSE
                 kHasDropout,
                 occupancy>;

@@ -13,51 +13,74 @@
 #include "ck_tiled_headdim_switch.h"
 
 // clang-format off
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, 32>(
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, true, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, 32>(
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 32>(
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, 32>(
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, true, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, 64>(
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, 64>(
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
 
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, 128>(
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, true, 64>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, 128>(
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, false, 64>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 128>(
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, false, 64>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, 128>(
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, true, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, false, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, false, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, true, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, false, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, false, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, true, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, false, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, false, 128>(
     GroupedBackwardParams& param, hipStream_t stream);
 // clang-format on
 
 void grouped_backward_bp16(GroupedBackwardParams& param, hipStream_t stream) {
-  BOOL_SWITCH(param.has_attn_bias, HAS_ATTN_BIAS, [&] {
-    FMHA_BWD_HEADDIM_SWITCH(param.K, param.Kv, MaxK, [&] {
-      if (param.custom_mask_type == 0)
-        run_grouped_backward_causalmask_attnbias_dispatched<
-            ck::bhalf_t,
-            false,
-            HAS_ATTN_BIAS,
-            MaxK>(param, stream);
-      else if (param.custom_mask_type == 1 || param.custom_mask_type == 2)
-        run_grouped_backward_causalmask_attnbias_dispatched<
-            ck::bhalf_t,
-            true,
-            HAS_ATTN_BIAS,
-            MaxK>(param, stream);
-      else
-        throw std::runtime_error("Invalid custom_mask_type value");
-    });
-  });
+  BOOL_SWITCH_2(
+      param.has_attn_bias,
+      HAS_ATTN_BIAS,
+      param.bias_has_grad,
+      HAS_BIAS_GRAD,
+      [&] {
+        if constexpr (HAS_ATTN_BIAS || !HAS_BIAS_GRAD) {
+          FMHA_BWD_HEADDIM_SWITCH(param.K, param.Kv, MaxK, [&] {
+            if (param.custom_mask_type == 0)
+              run_grouped_backward_causalmask_attnbias_dispatched<
+                  ck::bhalf_t,
+                  false,
+                  HAS_ATTN_BIAS,
+                  HAS_BIAS_GRAD,
+                  MaxK>(param, stream);
+            else if (param.custom_mask_type == 1 || param.custom_mask_type == 2)
+              run_grouped_backward_causalmask_attnbias_dispatched<
+                  ck::bhalf_t,
+                  true,
+                  HAS_ATTN_BIAS,
+                  HAS_BIAS_GRAD,
+                  MaxK>(param, stream);
+            else
+              throw std::runtime_error("Invalid custom_mask_type value");
+          });
+        } else
+          throw std::runtime_error(
+              "bias_has_grad should be false when has_attn_bias is false!");
+      });
 };
