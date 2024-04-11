@@ -188,8 +188,7 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.lsed_strides[1], // nhead_stride_d
           param.grad_out_strides[0], // batch_stride_do
           param.out_strides[0], // batch_stride_o
-          param.lsed_strides[0], // batch_stride_d
-          param.grad_out_strides[3]); // hdim_stride_do
+          param.lsed_strides[0]); // batch_stride_d
     }();
 
     dim3 kGridSize =
@@ -264,7 +263,6 @@ struct batched_backward_causalmask_attnbias_dispatched {
           param.grad_v_strides[0],
           param.attn_bias_strides[0], // assume grad_bias has same strides as
                                       // bias
-          param.grad_out_strides[3], // hdim_stride_do
           static_cast<CausalMaskType>(param.custom_mask_type),
           param.window_size,
           param.dropout_prob, // dropout ratio
