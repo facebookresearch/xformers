@@ -156,7 +156,7 @@ struct grouped_infer_causalmask_attnbias_dispatched {
           1.0f, // descale_sv, not used
           param.dropout_prob,
           false, // is_store_randval
-          {0, 0});
+          {param.philox_seed, param.philox_offset});
     }();
 
     dim3 kGridSize = FmhaKernel::GridSize(

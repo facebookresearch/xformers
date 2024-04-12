@@ -206,7 +206,7 @@ struct batched_infer_causalmask_attnbias_dispatched {
           1.0f, // descale_sv, not used
           param.dropout_prob, // dropout ratio
           false, // is_store_randval
-          {0, 0});
+          {param.philox_seed, param.philox_offset});
     }();
 
     dim3 kGridSize = FmhaKernel::GridSize(param.B, param.Hq, param.M, param.Kv);
