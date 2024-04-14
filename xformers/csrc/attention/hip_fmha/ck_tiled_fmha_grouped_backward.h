@@ -29,37 +29,37 @@
 #include "ck_tiled_fmha_bwd_tile_partitioner.hpp"
 
 template <
-    typename scalar_t,
-    bool has_causal_mask,
-    bool has_attn_bias,
-    bool has_bias_grad,
+    typename ScalarType,
+    bool kHasCausalMask,
+    bool kHasBias,
+    bool kHasBiasGrad,
     ck::index_t MaxK>
 struct grouped_backward_causalmask_attnbias_dispatched {
   using FmhaBwdEpilogue_ = FmhaBwdEpilogue<FmhaBwdEpilogueProblem<
-      typename FmhaBwdTypeConfig<scalar_t>::AccDataType,
-      typename FmhaBwdTypeConfig<scalar_t>::KGradDataType,
-      typename FmhaBwdTypeConfig<scalar_t>::VGradDataType>>;
+      typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
+      typename FmhaBwdTypeConfig<ScalarType>::KGradDataType,
+      typename FmhaBwdTypeConfig<ScalarType>::VGradDataType>>;
 
   using FmhaBwdLoadStrategy_ = typename FmhaBwdLoadStrategy<MaxK>::type;
 
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaBwdPipelineProblemTemp =
       ck::tile_program::block::BlockFmhaBwdPipelineProblem<
-          typename FmhaBwdTypeConfig<scalar_t>::QDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::KDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::VDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::GemmDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::LSEDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::AccDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::DDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::BiasDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::RandValOutputDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::ODataType,
-          typename FmhaBwdTypeConfig<scalar_t>::OGradDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::QGradDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::KGradDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::VGradDataType,
-          typename FmhaBwdTypeConfig<scalar_t>::BiasGradDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::QDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::KDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::VDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::GemmDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::LSEDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::DDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::BiasDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::RandValOutputDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::ODataType,
+          typename FmhaBwdTypeConfig<ScalarType>::OGradDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::QGradDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::KGradDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::VGradDataType,
+          typename FmhaBwdTypeConfig<ScalarType>::BiasGradDataType,
           FmhaBwdShape<MaxK>,
           true, // kIsGroupMode
           FmhaMask,
@@ -83,9 +83,9 @@ struct grouped_backward_causalmask_attnbias_dispatched {
 
             using FmhaBwdOGradDotOPipelineProblem =
                 ck::tile_program::block::BlockFmhaBwdOGradDotOPipelineProblem<
-                    typename FmhaBwdTypeConfig<scalar_t>::ODataType,
-                    typename FmhaBwdTypeConfig<scalar_t>::OGradDataType,
-                    typename FmhaBwdTypeConfig<scalar_t>::DDataType,
+                    typename FmhaBwdTypeConfig<ScalarType>::ODataType,
+                    typename FmhaBwdTypeConfig<ScalarType>::OGradDataType,
+                    typename FmhaBwdTypeConfig<ScalarType>::DDataType,
                     kBlockSize,
                     FmhaBwdShape<MaxK>::kVHeaddim,
                     true, // kIsGroupMode
@@ -108,7 +108,7 @@ struct grouped_backward_causalmask_attnbias_dispatched {
 
       BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
         constexpr ck::index_t occupancy = 1;
-        constexpr bool has_masking = has_causal_mask || USE_LOCAL_ATTENTION;
+        constexpr bool has_masking = kHasCausalMask || USE_LOCAL_ATTENTION;
         const bool has_dropout = (param.dropout_prob > 0.0f);
 
         using FmhaMask =
@@ -134,8 +134,8 @@ struct grouped_backward_causalmask_attnbias_dispatched {
               kPadSeqLenK,
               kPadHeadDim, // kPadHeadDimQ,
               kPadHeadDim, // kPadHeadDimV,
-              has_attn_bias,
-              has_bias_grad,
+              kHasBias,
+              kHasBiasGrad,
               false, // kStoreLSE
               kHasDropout,
               occupancy>;
@@ -266,18 +266,18 @@ struct grouped_backward_causalmask_attnbias_dispatched {
 };
 
 template <
-    typename scalar_t,
-    bool has_causal_mask,
-    bool has_attn_bias,
-    bool has_bias_grad,
+    typename ScalarType,
+    bool kHasCausalMask,
+    bool kHasBias,
+    bool kHasBiasGrad,
     ck::index_t MaxK>
 void run_grouped_backward_causalmask_attnbias_dispatched(
     GroupedBackwardParams& param,
     hipStream_t stream) {
   grouped_backward_causalmask_attnbias_dispatched<
-      scalar_t,
-      has_causal_mask,
-      has_attn_bias,
-      has_bias_grad,
+      ScalarType,
+      kHasCausalMask,
+      kHasBias,
+      kHasBiasGrad,
       MaxK>::Run(param, stream);
 };

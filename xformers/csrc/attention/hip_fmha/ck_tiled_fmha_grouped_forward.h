@@ -28,25 +28,25 @@
 #include "ck_tiled_fmha_fwd_tile_partitioner.hpp"
 
 template <
-    typename scalar_t,
-    bool has_causal_mask,
-    bool has_attn_bias,
+    typename ScalarType,
+    bool kHasCausalMask,
+    bool kHasBias,
     ck::index_t MaxK>
 struct grouped_forward_causalmask_attnbias_dispatched {
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp =
       ck::tile_program::block::BlockFmhaPipelineProblem<
-          typename FmhaFwdTypeConfig<scalar_t>::QDataType,
-          typename FmhaFwdTypeConfig<scalar_t>::KDataType,
-          typename FmhaFwdTypeConfig<scalar_t>::VDataType,
-          typename FmhaFwdTypeConfig<scalar_t>::SaccDataType,
-          typename FmhaFwdTypeConfig<scalar_t>::SMPLComputeDataType,
-          typename FmhaFwdTypeConfig<scalar_t>::BiasDataType,
-          typename FmhaFwdTypeConfig<scalar_t>::RandValOutputDataType,
-          typename FmhaFwdTypeConfig<scalar_t>::LSEDataType,
-          typename FmhaFwdTypeConfig<scalar_t>::PDataType,
-          typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
-          typename FmhaFwdTypeConfig<scalar_t>::ODataType,
+          typename FmhaFwdTypeConfig<ScalarType>::QDataType,
+          typename FmhaFwdTypeConfig<ScalarType>::KDataType,
+          typename FmhaFwdTypeConfig<ScalarType>::VDataType,
+          typename FmhaFwdTypeConfig<ScalarType>::SaccDataType,
+          typename FmhaFwdTypeConfig<ScalarType>::SMPLComputeDataType,
+          typename FmhaFwdTypeConfig<ScalarType>::BiasDataType,
+          typename FmhaFwdTypeConfig<ScalarType>::RandValOutputDataType,
+          typename FmhaFwdTypeConfig<ScalarType>::LSEDataType,
+          typename FmhaFwdTypeConfig<ScalarType>::PDataType,
+          typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+          typename FmhaFwdTypeConfig<ScalarType>::ODataType,
           FmhaFwdShape<MaxK>,
           true, // kIsGroupMode
           FmhaMask,
@@ -56,7 +56,7 @@ struct grouped_forward_causalmask_attnbias_dispatched {
     const bool has_local_attention = (param.window_size > 0) ? true : false;
 
     BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
-      constexpr bool has_masking = has_causal_mask || USE_LOCAL_ATTENTION;
+      constexpr bool has_masking = kHasCausalMask || USE_LOCAL_ATTENTION;
       const bool has_dropout = (param.dropout_prob > 0.0f);
 
       using FmhaMask =
@@ -87,7 +87,7 @@ struct grouped_forward_causalmask_attnbias_dispatched {
                 kPadSeqLenK,
                 kPadHeadDimQ,
                 kPadHeadDimV,
-                has_attn_bias,
+                kHasBias,
                 false, // kHasBiasGrad place-holder
                 true, // kStoreLSE
                 kHasDropout,
@@ -101,8 +101,8 @@ struct grouped_forward_causalmask_attnbias_dispatched {
                     FmhaPipelineProblem>;
 
             using FmhaFwdEpilogue_ = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
-                typename FmhaFwdTypeConfig<scalar_t>::OaccDataType,
-                typename FmhaFwdTypeConfig<scalar_t>::ODataType,
+                typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                typename FmhaFwdTypeConfig<ScalarType>::ODataType,
                 kPadSeqLenQ,
                 kPadHeadDimV>>;
 
@@ -178,16 +178,16 @@ struct grouped_forward_causalmask_attnbias_dispatched {
 };
 
 template <
-    typename scalar_t,
-    bool has_causal_mask,
-    bool has_attn_bias,
+    typename ScalarType,
+    bool kHasCausalMask,
+    bool kHasBias,
     ck::index_t MaxK>
 void run_grouped_forward_causalmask_attnbias_dispatched(
     GroupedForwardParams& param,
     hipStream_t stream) {
   grouped_forward_causalmask_attnbias_dispatched<
-      scalar_t,
-      has_causal_mask,
-      has_attn_bias,
+      ScalarType,
+      kHasCausalMask,
+      kHasBias,
       MaxK>::Run(param, stream);
 };

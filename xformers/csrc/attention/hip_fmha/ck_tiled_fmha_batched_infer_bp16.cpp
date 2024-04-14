@@ -50,19 +50,19 @@ extern template void run_batched_infer_causalmask_attnbias_dispatched<ck::bhalf_
 // clang-format on
 
 void batched_infer_bp16(BatchedForwardParams& param, hipStream_t stream) {
-  BOOL_SWITCH(param.has_attn_bias, HAS_ATTN_BIAS, [&] {
+  BOOL_SWITCH(param.has_attn_bias, kHasBias, [&] {
     FMHA_FWD_HEADDIM_SWITCH(param.K, param.Kv, MaxK, [&] {
       if (param.custom_mask_type == 0)
         run_batched_infer_causalmask_attnbias_dispatched<
             ck::bhalf_t,
             false,
-            HAS_ATTN_BIAS,
+            kHasBias,
             MaxK>(param, stream);
       else if (param.custom_mask_type == 1 || param.custom_mask_type == 2)
         run_batched_infer_causalmask_attnbias_dispatched<
             ck::bhalf_t,
             true,
-            HAS_ATTN_BIAS,
+            kHasBias,
             MaxK>(param, stream);
       else
         throw std::runtime_error("Invalid custom_mask_type value");
