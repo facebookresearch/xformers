@@ -24,7 +24,6 @@
 #include "ck_tiled_fmha_params.h"
 #include "ck_tiled_headdim_switch.h"
 
-#include "ck_tiled_fmha_definitions.hpp"
 #include "ck_tiled_fmha_forward_kernel.hpp"
 #include "ck_tiled_fmha_fwd_epilogue.hpp"
 #include "ck_tiled_fmha_fwd_tile_partitioner.hpp"
@@ -61,8 +60,8 @@ struct grouped_infer_causalmask_attnbias_dispatched {
       constexpr bool has_masking = has_causal_mask || USE_LOCAL_ATTENTION;
       const bool has_dropout = (param.dropout_prob > 0.0f);
 
-      using FmhaMask = ck::tile_program::block::
-          GenericAttentionMask<has_masking, USE_LOCAL_ATTENTION>;
+      using FmhaMask =
+          ck::tile_program::block::SimplifiedGenericAttentionMask<has_masking>;
 
       using FmhaShape = FmhaFwdShape<MaxK>;
       using FmhaTilePartitioner = FmhaFwdTilePartitioner<FmhaShape>;
@@ -150,8 +149,10 @@ struct grouped_infer_causalmask_attnbias_dispatched {
           0, // nhead_stride_lse
           param.out_strides[1],
           0, // batch_stride_lse
-          static_cast<CausalMaskType>(param.custom_mask_type),
-          param.window_size,
+          (param.window_size > 0) ? param.window_size - 1
+                                  : -1, // window_left_size
+          (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
+          param.custom_mask_type,
           1.0f, // descale_qk, not used
           1.0f, // descale_sv, not used
           param.dropout_prob,

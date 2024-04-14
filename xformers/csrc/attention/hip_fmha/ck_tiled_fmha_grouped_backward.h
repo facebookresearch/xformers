@@ -27,7 +27,6 @@
 #include "ck_tiled_fmha_backward_kernel.hpp"
 #include "ck_tiled_fmha_bwd_epilogue.hpp"
 #include "ck_tiled_fmha_bwd_tile_partitioner.hpp"
-#include "ck_tiled_fmha_definitions.hpp"
 
 template <
     typename scalar_t,
@@ -112,8 +111,9 @@ struct grouped_backward_causalmask_attnbias_dispatched {
         constexpr bool has_masking = has_causal_mask || USE_LOCAL_ATTENTION;
         const bool has_dropout = (param.dropout_prob > 0.0f);
 
-        using FmhaMask = ck::tile_program::block::
-            GenericAttentionMask<has_masking, USE_LOCAL_ATTENTION>;
+        using FmhaMask =
+            ck::tile_program::block::SimplifiedGenericAttentionMask<
+                has_masking>;
 
         using FmhaBwdShape_ = FmhaBwdShape<MaxK>;
         using FmhaBwdTilePartitioner_ = FmhaBwdTilePartitioner<FmhaBwdShape_>;
@@ -241,8 +241,10 @@ struct grouped_backward_causalmask_attnbias_dispatched {
           param.attn_bias_strides[0], // assume grad_bias has same strides as
                                       // bias
           param.lsed_strides[0], // batch_stride_lse
-          static_cast<CausalMaskType>(param.custom_mask_type),
-          param.window_size,
+          (param.window_size > 0) ? param.window_size - 1
+                                  : -1, // window_left_size
+          (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
+          param.custom_mask_type,
           param.dropout_prob, // dropout ratio
           false, // is_store_randval
           {param.philox_seed, param.philox_offset});
