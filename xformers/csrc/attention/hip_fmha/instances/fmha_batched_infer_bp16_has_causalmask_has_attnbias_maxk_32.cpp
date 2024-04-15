@@ -8,7 +8,7 @@
 
 #include "ck_tiled_fmha_batched_infer.h"
 
-template void run_batched_infer_causalmask_attnbias_dispatched<
+template void run_batched_infer_causalmask_bias_dispatch<
     ck::bhalf_t,
     true,
     true,

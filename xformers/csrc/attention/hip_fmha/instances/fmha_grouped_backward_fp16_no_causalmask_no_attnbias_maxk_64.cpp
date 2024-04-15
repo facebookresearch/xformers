@@ -8,7 +8,7 @@
 
 #include "ck_tiled_fmha_grouped_backward.h"
 
-template void run_grouped_backward_causalmask_attnbias_dispatched<
+template void run_grouped_backward_causalmask_bias_dispatch<
     ck::half_t,
     false,
     false,

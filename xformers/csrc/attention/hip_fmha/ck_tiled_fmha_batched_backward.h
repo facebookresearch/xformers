@@ -34,7 +34,7 @@ template <
     bool kHasBias,
     bool kHasBiasGrad,
     ck::index_t MaxK>
-struct batched_backward_causalmask_attnbias_dispatched {
+struct batched_backward_causalmask_bias_dispatch {
   using FmhaBwdEpilogue_ = FmhaBwdEpilogue<FmhaBwdEpilogueProblem<
       typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
       typename FmhaBwdTypeConfig<ScalarType>::KGradDataType,
@@ -284,10 +284,10 @@ template <
     bool kHasBias,
     bool kHasBiasGrad,
     ck::index_t MaxK>
-void run_batched_backward_causalmask_attnbias_dispatched(
+void run_batched_backward_causalmask_bias_dispatch(
     BatchedBackwardParams& param,
     hipStream_t stream) {
-  batched_backward_causalmask_attnbias_dispatched<
+  batched_backward_causalmask_bias_dispatch<
       ScalarType,
       kHasCausalMask,
       kHasBias,

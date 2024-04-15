@@ -34,7 +34,7 @@ template <
     bool kHasCausalMask,
     bool kHasBias,
     ck::index_t MaxK>
-struct batched_infer_causalmask_attnbias_dispatched {
+struct batched_infer_causalmask_bias_dispatch {
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp =
       ck::tile_program::block::BlockFmhaPipelineProblem<
@@ -229,10 +229,10 @@ template <
     bool kHasCausalMask,
     bool kHasBias,
     ck::index_t MaxK>
-void run_batched_infer_causalmask_attnbias_dispatched(
+void run_batched_infer_causalmask_bias_dispatch(
     BatchedForwardParams& param,
     hipStream_t stream) {
-  batched_infer_causalmask_attnbias_dispatched<
+  batched_infer_causalmask_bias_dispatch<
       ScalarType,
       kHasCausalMask,
       kHasBias,

@@ -32,7 +32,7 @@ template <
     bool kHasCausalMask,
     bool kHasBias,
     ck::index_t MaxK>
-struct grouped_forward_causalmask_attnbias_dispatched {
+struct grouped_forward_causalmask_bias_dispatch {
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp =
       ck::tile_program::block::BlockFmhaPipelineProblem<
@@ -182,10 +182,10 @@ template <
     bool kHasCausalMask,
     bool kHasBias,
     ck::index_t MaxK>
-void run_grouped_forward_causalmask_attnbias_dispatched(
+void run_grouped_forward_causalmask_bias_dispatch(
     GroupedForwardParams& param,
     hipStream_t stream) {
-  grouped_forward_causalmask_attnbias_dispatched<
+  grouped_forward_causalmask_bias_dispatch<
       ScalarType,
       kHasCausalMask,
       kHasBias,

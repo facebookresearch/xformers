@@ -8,7 +8,7 @@
 
 #include "ck_tiled_fmha_batched_forward.h"
 
-template void run_batched_forward_causalmask_attnbias_dispatched<
+template void run_batched_forward_causalmask_bias_dispatch<
     ck::half_t,
     true,
     false,

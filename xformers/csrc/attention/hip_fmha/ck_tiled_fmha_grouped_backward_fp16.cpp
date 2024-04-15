@@ -13,43 +13,43 @@
 #include "ck_tiled_headdim_switch.h"
 
 // clang-format off
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, false, true, true, 32>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, false, true, true, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, false, true, false, 32>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, false, true, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, false, false, false, 32>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, false, false, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, true, true, true, 32>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, true, true, true, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, true, true, false, 32>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, true, true, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, true, false, false, 32>(
-    GroupedBackwardParams& param, hipStream_t stream);
-
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, false, true, true, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, false, true, false, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, false, false, false, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, true, true, true, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, true, true, false, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, true, false, false, 64>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, true, false, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
 
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, false, true, true, 128>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, false, true, true, 64>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, false, true, false, 128>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, false, true, false, 64>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, false, false, false, 128>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, false, false, false, 64>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, true, true, true, 128>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, true, true, true, 64>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, true, true, false, 128>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, true, true, false, 64>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_attnbias_dispatched<ck::half_t, true, false, false, 128>(
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, true, false, false, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, false, true, true, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, false, true, false, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, false, false, false, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, true, true, true, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, true, true, false, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dispatch<ck::half_t, true, false, false, 128>(
     GroupedBackwardParams& param, hipStream_t stream);
 // clang-format on
 
@@ -59,14 +59,14 @@ void grouped_backward_fp16(GroupedBackwardParams& param, hipStream_t stream) {
         if constexpr (kHasBias || !kHasBiasGrad) {
           FMHA_BWD_HEADDIM_SWITCH(param.K, param.Kv, MaxK, [&] {
             if (param.custom_mask_type == 0)
-              run_grouped_backward_causalmask_attnbias_dispatched<
+              run_grouped_backward_causalmask_bias_dispatch<
                   ck::half_t,
                   false,
                   kHasBias,
                   kHasBiasGrad,
                   MaxK>(param, stream);
             else if (param.custom_mask_type == 1 || param.custom_mask_type == 2)
-              run_grouped_backward_causalmask_attnbias_dispatched<
+              run_grouped_backward_causalmask_bias_dispatch<
                   ck::half_t,
                   true,
                   kHasBias,

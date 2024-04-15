@@ -8,7 +8,7 @@
 
 #include "ck_tiled_fmha_grouped_infer.h"
 
-template void run_grouped_infer_causalmask_attnbias_dispatched<
+template void run_grouped_infer_causalmask_bias_dispatch<
     ck::bhalf_t,
     false,
     false,

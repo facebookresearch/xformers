@@ -13,40 +13,40 @@
 #include "ck_tiled_headdim_switch.h"
 
 // clang-format off
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, 32>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, false, true, 32>(
     BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, 32>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, false, false, 32>(
     BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 32>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, true, true, 32>(
     BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, 32>(
-    BatchedForwardParams& param, hipStream_t stream);
-
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, 64>(
-    BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, 64>(
-    BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 64>(
-    BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, 64>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, true, false, 32>(
     BatchedForwardParams& param, hipStream_t stream);
 
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, 128>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, false, true, 64>(
     BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, 128>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, false, false, 64>(
     BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 128>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, true, true, 64>(
     BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, 128>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, true, false, 64>(
     BatchedForwardParams& param, hipStream_t stream);
 
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, false, true, 256>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, false, true, 128>(
     BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, false, false, 256>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, false, false, 128>(
     BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, true, true, 256>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, true, true, 128>(
     BatchedForwardParams& param, hipStream_t stream);
-extern template void run_batched_forward_causalmask_attnbias_dispatched<ck::bhalf_t, true, false, 256>(
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, true, false, 128>(
+    BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, false, true, 256>(
+    BatchedForwardParams& param, hipStream_t stream);
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, false, false, 256>(
+    BatchedForwardParams& param, hipStream_t stream);
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, true, true, 256>(
+    BatchedForwardParams& param, hipStream_t stream);
+extern template void run_batched_forward_causalmask_bias_dispatch<ck::bhalf_t, true, false, 256>(
     BatchedForwardParams& param, hipStream_t stream);
 // clang-format on
 
@@ -54,13 +54,13 @@ void batched_forward_bp16(BatchedForwardParams& param, hipStream_t stream) {
   BOOL_SWITCH(param.has_attn_bias, kHasBias, [&] {
     FMHA_FWD_HEADDIM_SWITCH(param.K, param.Kv, MaxK, [&] {
       if (param.custom_mask_type == 0)
-        run_batched_forward_causalmask_attnbias_dispatched<
+        run_batched_forward_causalmask_bias_dispatch<
             ck::bhalf_t,
             false,
             kHasBias,
             MaxK>(param, stream);
       else if (param.custom_mask_type == 1 || param.custom_mask_type == 2)
-        run_batched_forward_causalmask_attnbias_dispatched<
+        run_batched_forward_causalmask_bias_dispatch<
             ck::bhalf_t,
             true,
             kHasBias,

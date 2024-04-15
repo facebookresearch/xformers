@@ -12,40 +12,40 @@
 #include "ck_tiled_fmha_grouped_infer.h"
 
 // clang-format off
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, false, true, 32>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, false, true, 32>(
     GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, false, false, 32>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, false, false, 32>(
     GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, true, true, 32>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, true, true, 32>(
     GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, true, false, 32>(
-    GroupedForwardParams& param, hipStream_t stream);
-
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, false, true, 64>(
-    GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, false, false, 64>(
-    GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, true, true, 64>(
-    GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, true, false, 64>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, true, false, 32>(
     GroupedForwardParams& param, hipStream_t stream);
 
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, false, true, 128>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, false, true, 64>(
     GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, false, false, 128>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, false, false, 64>(
     GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, true, true, 128>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, true, true, 64>(
     GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, true, false, 128>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, true, false, 64>(
     GroupedForwardParams& param, hipStream_t stream);
 
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, false, true, 256>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, false, true, 128>(
     GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, false, false, 256>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, false, false, 128>(
     GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, true, true, 256>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, true, true, 128>(
     GroupedForwardParams& param, hipStream_t stream);
-extern template void run_grouped_infer_causalmask_attnbias_dispatched<ck::half_t, true, false, 256>(
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, true, false, 128>(
+    GroupedForwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, false, true, 256>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, false, false, 256>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, true, true, 256>(
+    GroupedForwardParams& param, hipStream_t stream);
+extern template void run_grouped_infer_causalmask_bias_dispatch<ck::half_t, true, false, 256>(
     GroupedForwardParams& param, hipStream_t stream);
 // clang-format on
 
@@ -53,13 +53,13 @@ void grouped_infer_fp16(GroupedForwardParams& param, hipStream_t stream) {
   BOOL_SWITCH(param.has_attn_bias, kHasBias, [&] {
     FMHA_FWD_HEADDIM_SWITCH(param.K, param.Kv, MaxK, [&] {
       if (param.custom_mask_type == 0)
-        run_grouped_infer_causalmask_attnbias_dispatched<
+        run_grouped_infer_causalmask_bias_dispatch<
             ck::half_t,
             false,
             kHasBias,
             MaxK>(param, stream);
       else if (param.custom_mask_type == 1 || param.custom_mask_type == 2)
-        run_grouped_infer_causalmask_attnbias_dispatched<
+        run_grouped_infer_causalmask_bias_dispatch<
             ck::half_t,
             true,
             kHasBias,
