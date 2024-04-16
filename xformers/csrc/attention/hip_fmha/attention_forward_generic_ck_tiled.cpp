@@ -346,8 +346,10 @@ efficient_attention_forward_ck(
       p.dropout_prob = 0.0f;
 
     if (p.compute_logsumexp) {
+      // align the access of logsumexp by each thread-group in cache-line size
+      int aligned_seqlen_q = (p.max_seqlen_q + 15) / 16 * 16;
       logsumexp = at::empty(
-          {p.num_batches, Hq, p.max_seqlen_q}, opts.dtype(at::kFloat));
+          {p.num_batches, Hq, aligned_seqlen_q}, opts.dtype(at::kFloat));
       p.logsumexp_ptr = logsumexp.data_ptr();
       p.lse_strides = {
           static_cast<int>(logsumexp.stride(0)),

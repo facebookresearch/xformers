@@ -207,7 +207,7 @@ efficient_attention_backward_ck(
 
     TORCH_CHECK(p.B == logsumexp.size(0));
     TORCH_CHECK(p.Hq == logsumexp.size(1));
-    TORCH_CHECK(p.M == logsumexp.size(2));
+    TORCH_CHECK(p.M <= logsumexp.size(2));
 
     if (scale.has_value()) {
       p.scale = float(*scale);
@@ -333,7 +333,7 @@ efficient_attention_backward_ck(
 
     TORCH_CHECK(p.num_batches == logsumexp.size(0));
     TORCH_CHECK(p.Hq == logsumexp.size(1));
-    TORCH_CHECK(p.max_seqlen_q == logsumexp.size(2));
+    TORCH_CHECK(p.max_seqlen_q <= logsumexp.size(2));
 
     if (scale.has_value())
       p.scale = float(*scale);
