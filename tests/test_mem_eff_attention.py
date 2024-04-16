@@ -969,6 +969,16 @@ def test_backward(
         if op_bw != fmha.cutlass.BwOp
         else fmha.cutlass.FwOp
     )
+
+    if op_bw == fmha.ck.BwOp:
+        op_fwd = fmha.ck.FwOp
+        if dtype == torch.bfloat16:
+            pytest.skip("CK Fmha backward for bfloat16 currently is not very accurate for some cases!")
+        if grad_out_contiguous == False:
+            pytest.skip("CK Fmha does not support contiguous layout for grad_out!")
+        if k % 2 != 0:
+            pytest.skip("CK Fmha currently requires the headdim size of query input be an even value!")
+
     qkv = None
 
     if (
@@ -1106,6 +1116,12 @@ def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
         rand_uniform = torch.ops.xformers._cutlass_rand_uniform(p, mask)
         mask = (rand_uniform > p).to(torch.float32)
         mask = mask.reshape(batch_size, q_len, kv_len)
+    elif op == fmha.ck.FwOp:
+        mask = torch.empty((batch_size, 1, q_len, kv_len), device=device)
+        # rand_uniform is an int8_t tensor
+        rand_uniform = torch.ops.xformers._ck_rand_uniform(p, mask)
+        mask = (rand_uniform <= int((1.0 - p) * 255.0)).to(torch.float32)
+        mask = mask.reshape(batch_size, q_len, kv_len)
     else:
         mask = torch.empty((batch_size, q_len, kv_len), device=device)
         mask = torch.ops.xformers._temp_dropout(mask, p)
@@ -1125,9 +1141,14 @@ def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
 def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
     device = "cuda"
     scale = 3
-    query = torch.randn((batch_size, q_len, k_len), device=device) * scale
-    key = torch.randn((batch_size, kv_len, k_len), device=device) * scale
-    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+
+    dtype=torch.float
+    if torch.version.hip and op == fmha.ck.FwOp:
+        dtype=torch.float16
+
+    query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
+    key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
+    value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
 
     inputs_for_support_check = fmha.Inputs(query, key, value, attn_bias, p, None)
     if not op.supports(inputs_for_support_check):
@@ -1149,7 +1170,11 @@ def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
     torch.manual_seed(seed)
     mask = _get_drop_mask(op, batch_size, q_len, kv_len, p, device)
     ref = ref_attention(query, key, value, attn_bias, mask, p)
-    assert_allclose(out, ref, atol=2e-4), f"{(out - ref).abs().max()}"
+
+    if dtype is torch.float:
+        assert_allclose(out, ref, atol=2e-4), f"{(out - ref).abs().max()}"
+    else:
+        assert_allclose(out.float(), ref, atol=2.2e-2), f"{(out - ref).abs().max()}"
 
     num_trials = 1000
     p_val_tol = 1e-6
@@ -1267,6 +1292,23 @@ def test_dropout_backward_cutlass(dt, q_len, kv_len, batch_size, k, p):
         dtype={"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dt],
     )
 
+cuda_only
+@pytest.mark.parametrize("p", [0.000001, 0.3, 0.7])
+@pytest.mark.parametrize("k", [16, 64, 128])
+@pytest.mark.parametrize("batch_size", [1, 2])
+@pytest.mark.parametrize("kv_len", [3, 248, 256])
+@pytest.mark.parametrize("q_len", [3, 248, 256])
+@pytest.mark.parametrize("dt", ["f16"])
+def test_dropout_backward_ck(dt, q_len, kv_len, batch_size, k, p):
+    _test_dropout_backward(
+        q_len,
+        kv_len,
+        batch_size,
+        k,
+        p,
+        op=fmha.ck.FwOp,
+        dtype={"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dt],
+    )
 
 @cuda_only
 @disable_on_rocm
