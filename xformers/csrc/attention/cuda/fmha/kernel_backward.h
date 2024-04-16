@@ -859,14 +859,14 @@ struct AttentionBackwardKernel {
       if (!kNeedsAccumGradK) {
         return 0;
       }
-      return num_splits_key * align_up(num_keys, (int32_t)kBlockSizeJ) *
+      return num_splits_key * kBlockSizeJ *
           align_up(head_dim, (int32_t)kBlockSizeI);
     }
     CUTLASS_HOST_DEVICE int64_t workspace_elements_gv() const {
       if (!kNeedsAccumGradV) {
         return 0;
       }
-      return num_splits_key * align_up(num_keys, (int32_t)kBlockSizeJ) *
+      return num_splits_key * kBlockSizeJ *
           align_up(head_dim_value, (int32_t)kBlockSizeI);
     }
     CUTLASS_HOST_DEVICE int64_t workspace_elements_gq() const {
