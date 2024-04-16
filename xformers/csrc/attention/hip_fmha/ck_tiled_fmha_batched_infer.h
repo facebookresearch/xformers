@@ -25,9 +25,9 @@
 #include "ck_tiled_fmha_params.h"
 #include "ck_tiled_headdim_switch.h"
 
-#include "ck_tiled_fmha_forward_kernel.hpp"
-#include "ck_tiled_fmha_fwd_epilogue.hpp"
-#include "ck_tiled_fmha_fwd_tile_partitioner.hpp"
+#include "fmha_fwd_kernel.hpp"
+#include "fmha_fwd_epilogue.hpp"
+#include "fmha_fwd_tile_partitioner.hpp"
 
 template <
     typename ScalarType,

@@ -16,7 +16,7 @@
 #include <ck/ck.hpp>
 #include <ck/host_utility/kernel_launch.hpp>
 
-#include "ck_tiled_fmha_rand_uniform_kernel.hpp"
+#include "fmha_rand_uniform_kernel.hpp"
 
 namespace {
 

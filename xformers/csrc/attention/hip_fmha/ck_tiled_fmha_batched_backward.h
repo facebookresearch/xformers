@@ -24,9 +24,9 @@
 #include "ck_tiled_fmha_bwd_setting.h"
 #include "ck_tiled_fmha_params.h"
 
-#include "ck_tiled_fmha_backward_kernel.hpp"
-#include "ck_tiled_fmha_bwd_epilogue.hpp"
-#include "ck_tiled_fmha_bwd_tile_partitioner.hpp"
+#include "fmha_bwd_kernel.hpp"
+#include "fmha_bwd_epilogue.hpp"
+#include "fmha_bwd_tile_partitioner.hpp"
 
 template <
     typename ScalarType,

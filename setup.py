@@ -357,7 +357,7 @@ def get_extensions():
             / "composable_kernel_tiled"
             / "example"
             / "91_tile_program"
-            / "xformers_fmha"
+            / "fmha"
         ]
 
         include_dirs += [
