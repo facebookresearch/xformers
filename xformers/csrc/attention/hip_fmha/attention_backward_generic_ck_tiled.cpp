@@ -122,6 +122,10 @@ efficient_attention_backward_ck(
   int64_t K = query.size(3);
   int64_t Kv = value.size(3);
 
+  if (K % 2 != 0)
+    throw std::runtime_error(
+        "Currently CK Fmha requires the headdim of query/key be an even value!");
+
   auto opts = query.options();
 
   at::Tensor grad_q, grad_k, grad_v, grad_bias;
