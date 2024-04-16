@@ -43,7 +43,8 @@ at::Tensor rand_uniform_int(
   at::PhiloxCudaState rng_engine_inputs;
   {
     std::lock_guard<std::mutex> lock(gen->mutex_);
-    rng_engine_inputs = gen->philox_cuda_state(B * num_heads * M * N);
+    rng_engine_inputs =
+        gen->philox_cuda_state((B + 3) * (num_heads + 1) * (M + 1) * (N + 1));
   }
 
   const auto seeds = at::cuda::philox::unpack(rng_engine_inputs);

@@ -132,7 +132,8 @@ efficient_attention_forward_ck(
     std::lock_guard<std::mutex> lock(gen->mutex_);
     // if using dropout, we produce 1 random number for each element of the
     // attention tensor
-    rng_engine_inputs = gen->philox_cuda_state(B * Hq * M * N);
+    rng_engine_inputs =
+        gen->philox_cuda_state((B + 3) * (Hq + 1) * (M + 1) * (N + 1));
 
     const auto seeds = at::cuda::philox::unpack(rng_engine_inputs);
 
