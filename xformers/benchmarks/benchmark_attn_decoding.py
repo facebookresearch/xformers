@@ -20,27 +20,27 @@ device = torch.device("cuda")
 
 
 CASES = [
-    # dict(
-    #     B=max(1, 2 ** (16 - i)),
-    #     Mq=1,
-    #     Mkv=2**i,
-    #     Hq=16,
-    #     Hkv=hkv,
-    #     K=128,
-    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    # )
-    # for i in range(8, 18)
-    # for hkv in (1, 2)
-] + [
     dict(
-        B=2,
+        B=max(1, 2 ** (16 - i)),
         Mq=1,
-        Mkv=8448,
-        Hq=8,
-        Hkv=1,
+        Mkv=2**i,
+        Hq=16,
+        Hkv=hkv,
         K=128,
         attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
     )
+    for i in range(8, 18)
+    for hkv in (1, 2)
+# ] + [
+#     dict(
+#         B=2,
+#         Mq=1,
+#         Mkv=8448,
+#         Hq=8,
+#         Hkv=1,
+#         K=128,
+#         attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+#     )
 ]
 
 
@@ -111,10 +111,10 @@ class AttentionDecodingBase:
         )
         self.k = torch.randn(
             [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
-        )
+        ).expand(-1, -1, -1, Hq // Hkv, -1)
         self.v = torch.randn(
             [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
-        )
+        ).expand(-1, -1, -1, Hq // Hkv, -1)
 
         if Hq == Hkv:
             self.q = self.q[:, :, :, 0]
@@ -166,124 +166,108 @@ class AttentionDecodingBase:
 
 class AttentionDecodingDecoder(AttentionDecodingBase):
     OP = xops.fmha.decoder.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
-        attn_bias_type,
-    ) -> None:
-        super(AttentionDecodingDecoder, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
-        if Hkv == 1:
-            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
-        else:
-            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingCUTLASS(AttentionDecodingBase):
     OP = xops.fmha.cutlass.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
-        attn_bias_type,
-    ) -> None:
-        super(AttentionDecodingCUTLASS, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
-        if Hkv == 1:
-            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
-        else:
-            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingCK(AttentionDecodingBase):
     OP = xops.fmha.ck.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
-        attn_bias_type,
-    ) -> None:
-        super(AttentionDecodingCK, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
-        if Hkv == 1:
-            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
-        else:
-            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingCKDecoder(AttentionDecodingBase):
     OP = xops.fmha.ck_decoder.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
-        attn_bias_type,
-    ) -> None:
-        super(AttentionDecodingCKDecoder, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
-        if Hkv == 1:
-            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
-        else:
-            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingSplitKV(AttentionDecodingBase):
     OP = xops.fmha.triton_splitk.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
-        attn_bias_type,
-    ) -> None:
-        super(AttentionDecodingSplitKV, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
-        if Hkv == 1:
-            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
-        else:
-            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingCKSplitKV(AttentionDecodingBase):
     OP = xops.fmha.ck_splitk.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
-        attn_bias_type,
-    ) -> None:
-        super(AttentionDecodingCKSplitKV, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
-        if Hkv == 1:
-            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
-        else:
-            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingSplitInt4KV(AttentionDecodingBase):
     OP = xops.fmha.triton_splitk.FwOp
     def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
+                 attn_bias_type
     ) -> None:
-        super(AttentionDecodingSplitInt4KV, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
-        # quantize to int data type
-        num_groups = 1
+        # super(AttentionDecodingSplitInt4KV, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw, attn_bias_type)
+        dtype = torch.float16
+        torch.manual_seed(10)
+        self.sub_label = (
+            f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
+            f"{((B * Mkv * Hkv * K * 2) + (B * Mq * Hq * K) + (B * Mq * Hq * K)) * 2}"
+        )
+        self.label = "attn_decoding"
+        self.shapes = (B, Mq, Mkv, Hq, Hkv, K)
+
+        assert Hkv <= Hq
+        assert Hq % Hkv == 0
+        self.q = torch.randn(
+            [B, Mq, Hkv, Hq // Hkv, K], device="cuda", dtype=dtype, requires_grad=bw
+        )
+        self.k = torch.randn(
+            [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
+        )
+        self.v = torch.randn(
+            [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
+        )
+
+        num_groups = 4
         self.k = (
             quantize_kv_int4(self.k, num_groups=num_groups)
             .contiguous()
             .view(torch.int32)
-        )
+        ).expand(-1, -1, -1, Hq // Hkv, -1)
         self.v = (
             quantize_kv_int4(self.v, num_groups=num_groups)
             .contiguous()
             .view(torch.int32)
-        )
-        if Hkv == 1:
-            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
-        else:
-            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
+        ).expand(-1, -1, -1, Hq // Hkv, -1)
 
+        if Hq == Hkv:
+            self.q = self.q[:, :, :, 0]
+            self.k = self.k[:, :, :, 0]
+            self.v = self.v[:, :, :, 0]
+        if Hkv == 1:
+            self.q = self.q[:, :, 0]
+            self.k = self.k[:, :, 0]
+            self.v = self.v[:, :, 0]
+
+        self.attn_bias = create_attn_bias(
+            attn_bias_type,
+            batch_size=B,
+            num_heads=Hq,
+            num_heads_groups=Hq // Hkv,
+            q_len=Mq,
+            kv_len=Mkv,
+            dtype=dtype,
+            device=device,
+            requires_grad=False,
+            fmt="BMHK",
+            op=self.OP,
+        )
+
+        if isinstance(
+            self.attn_bias,
+            xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        ):
+            self.q = self.q.view(1, -1, *self.q.shape[2:])
+            self.k = self.k.view(1, -1, *self.k.shape[2:])
+            self.v = self.v.view(1, -1, *self.v.shape[2:])
+
+        if hasattr(self.OP, "not_supported_reasons"):
+            inp = xops.fmha.Inputs(
+                query=self.q, key=self.k, value=self.v, attn_bias=self.attn_bias
+            )
+            not_supported_reasons = self.OP.not_supported_reasons(inp)
+            if not_supported_reasons:
+                raise NotSupportedInputError(not_supported_reasons)
+            
 
 class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
-    ) -> None:
-        super(AttentionDecodingPyTorchRepeat, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
-        if Hkv == 1:
-            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
-        else:
-            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
-            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
-
     def fw(self) -> None:
         B, Mq, Mkv, Hq, Hkv, K = self.shapes
         scale = 1 / K**0.5
@@ -302,14 +286,14 @@ if torch.version.cuda:
     BENCHMARKS["decoder"] = AttentionDecodingDecoder
     BENCHMARKS["cutlass"] = AttentionDecodingCUTLASS
 
-# if torch.version.hip:
-#     BENCHMARKS.update(
-#         {
-#             "ck": AttentionDecodingCK,
-#             "ck-decoder": AttentionDecodingCKDecoder,
-#             "ck_splitK": AttentionDecodingCKSplitKV,
-#         }
-#     )
+if torch.version.hip:
+    BENCHMARKS.update(
+        {
+            "ck": AttentionDecodingCK,
+            "ck-decoder": AttentionDecodingCKDecoder,
+            "ck_splitK": AttentionDecodingCKSplitKV,
+        }
+    )
 
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
