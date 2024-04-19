@@ -166,7 +166,8 @@ class AttentionDecodingBase:
 
 class AttentionDecodingDecoder(AttentionDecodingBase):
     OP = xops.fmha.decoder.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
+        attn_bias_type,
     ) -> None:
         super(AttentionDecodingDecoder, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
         if Hkv == 1:
@@ -179,7 +180,8 @@ class AttentionDecodingDecoder(AttentionDecodingBase):
 
 class AttentionDecodingCUTLASS(AttentionDecodingBase):
     OP = xops.fmha.cutlass.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
+        attn_bias_type,
     ) -> None:
         super(AttentionDecodingCUTLASS, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
         if Hkv == 1:
@@ -192,7 +194,8 @@ class AttentionDecodingCUTLASS(AttentionDecodingBase):
 
 class AttentionDecodingCK(AttentionDecodingBase):
     OP = xops.fmha.ck.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
+        attn_bias_type,
     ) -> None:
         super(AttentionDecodingCK, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
         if Hkv == 1:
@@ -205,7 +208,8 @@ class AttentionDecodingCK(AttentionDecodingBase):
 
 class AttentionDecodingCKDecoder(AttentionDecodingBase):
     OP = xops.fmha.ck_decoder.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
+        attn_bias_type,
     ) -> None:
         super(AttentionDecodingCKDecoder, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
         if Hkv == 1:
@@ -218,7 +222,8 @@ class AttentionDecodingCKDecoder(AttentionDecodingBase):
 
 class AttentionDecodingSplitKV(AttentionDecodingBase):
     OP = xops.fmha.triton_splitk.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
+        attn_bias_type,
     ) -> None:
         super(AttentionDecodingSplitKV, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
         if Hkv == 1:
@@ -231,7 +236,8 @@ class AttentionDecodingSplitKV(AttentionDecodingBase):
 
 class AttentionDecodingCKSplitKV(AttentionDecodingBase):
     OP = xops.fmha.ck_splitk.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
+        attn_bias_type,
     ) -> None:
         super(AttentionDecodingCKSplitKV, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
         if Hkv == 1:
@@ -244,7 +250,7 @@ class AttentionDecodingCKSplitKV(AttentionDecodingBase):
 
 class AttentionDecodingSplitInt4KV(AttentionDecodingBase):
     OP = xops.fmha.triton_splitk.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
     ) -> None:
         super(AttentionDecodingSplitInt4KV, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
         # quantize to int data type
@@ -268,7 +274,7 @@ class AttentionDecodingSplitInt4KV(AttentionDecodingBase):
 
 
 class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
     ) -> None:
         super(AttentionDecodingPyTorchRepeat, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
         if Hkv == 1:
@@ -296,14 +302,14 @@ if torch.version.cuda:
     BENCHMARKS["decoder"] = AttentionDecodingDecoder
     BENCHMARKS["cutlass"] = AttentionDecodingCUTLASS
 
-if torch.version.hip:
-    BENCHMARKS.update(
-        {
-            "ck": AttentionDecodingCK,
-            "ck-decoder": AttentionDecodingCKDecoder,
-            "ck_splitK": AttentionDecodingCKSplitKV,
-        }
-    )
+# if torch.version.hip:
+#     BENCHMARKS.update(
+#         {
+#             "ck": AttentionDecodingCK,
+#             "ck-decoder": AttentionDecodingCKDecoder,
+#             "ck_splitK": AttentionDecodingCKSplitKV,
+#         }
+#     )
 
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
