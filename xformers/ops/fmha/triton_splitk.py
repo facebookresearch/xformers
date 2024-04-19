@@ -637,7 +637,7 @@ if TYPE_CHECKING or _has_triton21():
             x_[:, :, None, :] >> offsets
         )  # (BLOCK_N, D // PACKED_PER_VAL, PACKED_PER_VAL)
 
-        quant_offset = tl.reshape(
+        quant_offset = tl.view(
             quant_offset, (BLOCK_N, BLOCK_DMODEL_PACKED * PACKED_PER_VAL)
         )
         # Trick - instead of converting int4 to float16 we view it as float16

@@ -31,16 +31,6 @@ CASES = [
     )
     for i in range(8, 18)
     for hkv in (1, 2)
-# ] + [
-#     dict(
-#         B=2,
-#         Mq=1,
-#         Mkv=8448,
-#         Hq=8,
-#         Hkv=1,
-#         K=128,
-#         attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-#     )
 ]
 
 
@@ -215,7 +205,7 @@ class AttentionDecodingSplitInt4KV(AttentionDecodingBase):
             [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
         )
 
-        num_groups = 4
+        num_groups = 1
         self.k = (
             quantize_kv_int4(self.k, num_groups=num_groups)
             .contiguous()
