@@ -20,18 +20,65 @@ device = torch.device("cuda")
 
 
 CASES = [
+    # dict(
+    #     B=max(1, 2 ** (16 - i)),
+    #     Mq=1,
+    #     Mkv=2**i,
+    #     Hq=16,
+    #     Hkv=hkv,
+    #     K=128,
+    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    # )
+    # for i in range(8, 18)
+    # for hkv in (1, 2)
+] + [
     dict(
-        B=max(1, 2 ** (16 - i)),
+        B=2,
         Mq=1,
-        Mkv=2**i,
-        Hq=16,
-        Hkv=hkv,
+        Mkv=8448,
+        Hq=8,
+        Hkv=1,
         K=128,
         attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
     )
-    for i in range(8, 18)
-    for hkv in (1, 2)
 ]
+
+
+def quantize_kv_int4(k: torch.Tensor, num_groups: int = 1) -> torch.Tensor:
+    """
+    Auxiliary int4 row quantization function used for benchmarking and tests.
+    Matches the behaviour of torch.ops.llama_cpp.dequantize_int4_cache -
+    quantization parameters (scale and offset) of each row along the last
+    dimension of the tensor are assumed to be packed into two float16 values
+    at the beginning of the row.
+    """
+    # Scale and shift are such that quantization linearly maps int4 values range [0..15]
+    # to input values range min(k)..max(k) individually for every row
+    k = k.reshape(*k.shape[:-1], num_groups, k.shape[-1] // num_groups)
+    # print(f"k_reshape = {k.shape}")
+    max_vals = torch.max(k, dim=-1, keepdim=True).values
+    min_vals = torch.min(k, dim=-1, keepdim=True).values
+    scale_k: torch.Tensor = (max_vals - min_vals) / 15
+    # print(f"scale_k_shape = {scale_k.shape}")
+
+    shift_k = torch.min(k, dim=-1, keepdim=True).values
+    scale_k = scale_k.to(torch.float16)
+    shift_k = shift_k.to(torch.float16)
+    in_bytes = ((k - shift_k.expand(k.shape)) / scale_k.expand(k.shape)) + 0.5
+    in_bytes = in_bytes.to(torch.uint8)
+    in_int4 = in_bytes & 0xF
+    in_int4_packed = in_int4[..., ::2] + (in_int4[..., 1::2] << 4)
+    scale_shift = torch.concat(
+        [scale_k.view(torch.uint8), shift_k.view(torch.uint8)], dim=-1
+    )
+    k_quant = torch.concat(
+        [
+            scale_shift.flatten(start_dim=-2),
+            in_int4_packed.flatten(start_dim=-2),
+        ],
+        dim=-1,
+    ).view(torch.int16)
+    return k_quant
 
 
 class AttentionDecodingBase:
@@ -64,10 +111,10 @@ class AttentionDecodingBase:
         )
         self.k = torch.randn(
             [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
-        ).expand(-1, -1, -1, Hq // Hkv, -1)
+        )
         self.v = torch.randn(
             [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
-        ).expand(-1, -1, -1, Hq // Hkv, -1)
+        )
 
         if Hq == Hkv:
             self.q = self.q[:, :, :, 0]
@@ -119,36 +166,125 @@ class AttentionDecodingBase:
 
 class AttentionDecodingDecoder(AttentionDecodingBase):
     OP = xops.fmha.decoder.FwOp
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    ) -> None:
+        super(AttentionDecodingDecoder, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
+        if Hkv == 1:
+            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
+        else:
+            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingCUTLASS(AttentionDecodingBase):
     OP = xops.fmha.cutlass.FwOp
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    ) -> None:
+        super(AttentionDecodingCUTLASS, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
+        if Hkv == 1:
+            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
+        else:
+            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingCK(AttentionDecodingBase):
     OP = xops.fmha.ck.FwOp
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    ) -> None:
+        super(AttentionDecodingCK, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
+        if Hkv == 1:
+            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
+        else:
+            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingCKDecoder(AttentionDecodingBase):
     OP = xops.fmha.ck_decoder.FwOp
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    ) -> None:
+        super(AttentionDecodingCKDecoder, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
+        if Hkv == 1:
+            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
+        else:
+            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingSplitKV(AttentionDecodingBase):
     OP = xops.fmha.triton_splitk.FwOp
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    ) -> None:
+        super(AttentionDecodingSplitKV, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
+        if Hkv == 1:
+            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
+        else:
+            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingCKSplitKV(AttentionDecodingBase):
     OP = xops.fmha.ck_splitk.FwOp
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    ) -> None:
+        super(AttentionDecodingCKSplitKV, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
+        if Hkv == 1:
+            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
+        else:
+            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
+
+
+class AttentionDecodingSplitInt4KV(AttentionDecodingBase):
+    OP = xops.fmha.triton_splitk.FwOp
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    ) -> None:
+        super(AttentionDecodingSplitInt4KV, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
+        # quantize to int data type
+        num_groups = 1
+        self.k = (
+            quantize_kv_int4(self.k, num_groups=num_groups)
+            .contiguous()
+            .view(torch.int32)
+        )
+        self.v = (
+            quantize_kv_int4(self.v, num_groups=num_groups)
+            .contiguous()
+            .view(torch.int32)
+        )
+        if Hkv == 1:
+            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
+        else:
+            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
 
 class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
+    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool
+    ) -> None:
+        super(AttentionDecodingPyTorchRepeat, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw)
+        if Hkv == 1:
+            self.k = self.k.expand(-1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, Hq // Hkv, -1)
+        else:
+            self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
+            self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
+
     def fw(self) -> None:
         B, Mq, Mkv, Hq, Hkv, K = self.shapes
         scale = 1 / K**0.5
         q = self.q.reshape([B, Mq, -1, K]).permute(0, 2, 1, 3)
         k = self.k.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
         v = self.v.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
-        attn = (q @ k.transpose(-1, -2)).softmax(-1) * scale
+        attn = (q @ k.transpose(-1, -2) * scale).softmax(-1)
         return attn @ v
 
 
@@ -172,6 +308,7 @@ if torch.version.hip:
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
+    BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:
     import flash_attn
