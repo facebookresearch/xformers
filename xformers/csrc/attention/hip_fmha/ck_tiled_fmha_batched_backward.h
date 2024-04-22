@@ -24,8 +24,8 @@
 #include "ck_tiled_fmha_bwd_setting.h"
 #include "ck_tiled_fmha_params.h"
 
-#include "fmha_bwd_kernel.hpp"
 #include "fmha_bwd_epilogue.hpp"
+#include "fmha_bwd_kernel.hpp"
 #include "fmha_bwd_tile_partitioner.hpp"
 
 template <
@@ -150,12 +150,12 @@ struct batched_backward_causalmask_bias_dispatch {
                   FmhaBwdLoadStrategy_,
                   FmhaBwdPipelineProblem>::BlockPipeline;
 
-          using FmhaBwdKernel_ = FmhaBwdKernel<
+          using FmhaBwdQKVGradKernel_ = FmhaBwdQKVGradKernel<
               FmhaBwdTilePartitioner_,
               FmhaBwdPipeline_,
               FmhaBwdEpilogue_>;
 
-          RunWithBwdKernel<FmhaBwdKernel_>(param, stream);
+          RunWithBwdQKVGradKernel<FmhaBwdQKVGradKernel_>(param, stream);
         });
       });
     };
@@ -197,12 +197,12 @@ struct batched_backward_causalmask_bias_dispatch {
         kargs);
   }
 
-  template <typename FmhaBwdKernel>
-  static void RunWithBwdKernel(
+  template <typename FmhaBwdQKVGradKernel>
+  static void RunWithBwdQKVGradKernel(
       BatchedBackwardParams& param,
       hipStream_t stream) {
     const auto kargs = [&] {
-      return FmhaBwdKernel::MakeKargs(
+      return FmhaBwdQKVGradKernel::MakeKargs(
           param.q_ptr,
           param.k_ptr,
           param.v_ptr,
@@ -264,13 +264,13 @@ struct batched_backward_causalmask_bias_dispatch {
           {param.philox_seed, param.philox_offset});
     }();
 
-    dim3 kGridSize = FmhaBwdKernel::GridSize(param.B, param.Hq, param.N);
-    constexpr dim3 kBlockSize = FmhaBwdKernel::BlockSize();
-    constexpr ck::index_t kBlockPerCu = FmhaBwdKernel::kBlockPerCu;
+    dim3 kGridSize = FmhaBwdQKVGradKernel::GridSize(param.B, param.Hq, param.N);
+    constexpr dim3 kBlockSize = FmhaBwdQKVGradKernel::BlockSize();
+    constexpr ck::index_t kBlockPerCu = FmhaBwdQKVGradKernel::kBlockPerCu;
 
     (void)launch_kernel<kBlockSize.x, kBlockPerCu>(
         StreamConfig{stream, false},
-        FmhaBwdKernel{},
+        FmhaBwdQKVGradKernel{},
         kGridSize,
         kBlockSize,
         0,
