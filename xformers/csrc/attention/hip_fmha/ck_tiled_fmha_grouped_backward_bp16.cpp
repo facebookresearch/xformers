@@ -13,68 +13,112 @@
 #include "ck_tiled_headdim_switch.h"
 
 // clang-format off
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, false, true, true, 32>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, true, true, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, false, true, false, 32>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, false, true, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, false, false, false, 32>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, false, false, true, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, true, true, true, 32>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, true, true, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, true, true, false, 32>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, false, true, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, true, false, false, 32>(
-    GroupedBackwardParams& param, hipStream_t stream);
-
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, false, true, true, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, false, true, false, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, false, false, false, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, true, true, true, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, true, true, false, 64>(
-    GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, true, false, false, 64>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, false, false, true, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
 
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, false, true, true, 128>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, true, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, false, true, false, 128>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, false, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, false, false, false, 128>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, false, false, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, true, true, true, 128>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, true, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, true, true, false, 128>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, false, false, 32>(
     GroupedBackwardParams& param, hipStream_t stream);
-extern template void run_grouped_backward_causalmask_bias_dispatch<ck::bhalf_t, true, false, false, 128>(
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, false, false, false, 32>(
+    GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, true, true, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, false, true, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, false, false, true, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, true, true, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, false, true, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, false, false, true, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, true, false, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, false, false, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, false, false, false, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, true, false, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, false, false, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, false, false, false, 64>(
+    GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, true, true, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, false, true, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, false, false, true, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, true, true, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, false, true, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, false, false, true, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, true, false, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, true, false, false, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, false, false, false, false, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, true, false, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, true, false, false, 128>(
+    GroupedBackwardParams& param, hipStream_t stream);
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<ck::bhalf_t, true, false, false, false, 128>(
     GroupedBackwardParams& param, hipStream_t stream);
 // clang-format on
 
 void grouped_backward_bp16(GroupedBackwardParams& param, hipStream_t stream) {
-  BOOL_SWITCH_2(
+  const bool has_dropout = (param.dropout_prob > 0.0f);
+  BOOL_SWITCH_3(
       param.has_attn_bias,
-      HAS_ATTN_BIAS,
+      kHasBias,
       param.bias_has_grad,
-      HAS_BIAS_GRAD,
+      kHasBiasGrad,
+      has_dropout,
+      kHasDropout,
       [&] {
-        if constexpr (HAS_ATTN_BIAS || !HAS_BIAS_GRAD) {
+        if constexpr (kHasBias || !kHasBiasGrad) {
           FMHA_BWD_HEADDIM_SWITCH(param.K, param.Kv, MaxK, [&] {
             if (param.custom_mask_type == 0)
-              run_grouped_backward_causalmask_bias_dispatch<
+              run_grouped_backward_causalmask_bias_dropout_dispatch<
                   ck::bhalf_t,
                   false,
-                  HAS_ATTN_BIAS,
-                  HAS_BIAS_GRAD,
+                  kHasBias,
+                  kHasBiasGrad,
+                  kHasDropout,
                   MaxK>(param, stream);
             else if (param.custom_mask_type == 1 || param.custom_mask_type == 2)
-              run_grouped_backward_causalmask_bias_dispatch<
+              run_grouped_backward_causalmask_bias_dropout_dispatch<
                   ck::bhalf_t,
                   true,
-                  HAS_ATTN_BIAS,
-                  HAS_BIAS_GRAD,
+                  kHasBias,
+                  kHasBiasGrad,
+                  kHasDropout,
                   MaxK>(param, stream);
             else
               throw std::runtime_error("Invalid custom_mask_type value");

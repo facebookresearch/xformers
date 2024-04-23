@@ -33,8 +33,9 @@ template <
     bool kHasCausalMask,
     bool kHasBias,
     bool kHasBiasGrad,
+    bool kHasDropout,
     ck::index_t MaxK>
-struct batched_backward_causalmask_bias_dispatch {
+struct batched_backward_causalmask_bias_dropout_dispatch {
   using FmhaBwdEpilogue_ = FmhaBwdEpilogue<FmhaBwdEpilogueProblem<
       typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
       typename FmhaBwdTypeConfig<ScalarType>::KGradDataType,
@@ -111,7 +112,6 @@ struct batched_backward_causalmask_bias_dispatch {
       BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
         constexpr ck::index_t occupancy = 1;
         constexpr bool has_masking = kHasCausalMask || USE_LOCAL_ATTENTION;
-        const bool has_dropout = (param.dropout_prob > 0.0f);
 
         using FmhaMask =
             ck::tile_program::block::SimplifiedGenericAttentionMask<
@@ -130,7 +130,7 @@ struct batched_backward_causalmask_bias_dispatch {
         // to determine whether to do padding saving some compiling time
         const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
 
-        BOOL_SWITCH_2(has_dropout, kHasDropout, pad_headdim, kPadHeadDim, [&] {
+        BOOL_SWITCH(pad_headdim, kPadHeadDim, [&] {
           using FmhaBwdTraits_ = ck::tile_program::TileFmhaTraits<
               kPadSeqLenQ,
               kPadSeqLenK,
@@ -283,14 +283,16 @@ template <
     bool kHasCausalMask,
     bool kHasBias,
     bool kHasBiasGrad,
+    bool kHasDropout,
     ck::index_t MaxK>
-void run_batched_backward_causalmask_bias_dispatch(
+void run_batched_backward_causalmask_bias_dropout_dispatch(
     BatchedBackwardParams& param,
     hipStream_t stream) {
-  batched_backward_causalmask_bias_dispatch<
+  batched_backward_causalmask_bias_dropout_dispatch<
       ScalarType,
       kHasCausalMask,
       kHasBias,
       kHasBiasGrad,
+      kHasDropout,
       MaxK>::Run(param, stream);
 };

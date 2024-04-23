@@ -33,8 +33,9 @@ template <
     bool kHasCausalMask,
     bool kHasBias,
     bool kHasBiasGrad,
+    bool kHasDropout,
     ck::index_t MaxK>
-struct grouped_backward_causalmask_bias_dispatch {
+struct grouped_backward_causalmask_bias_dropout_dispatch {
   using FmhaBwdEpilogue_ = FmhaBwdEpilogue<FmhaBwdEpilogueProblem<
       typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
       typename FmhaBwdTypeConfig<ScalarType>::KGradDataType,
@@ -128,7 +129,7 @@ struct grouped_backward_causalmask_bias_dispatch {
         // to determine whether to do padding saving some compiling time
         const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
 
-        BOOL_SWITCH_2(has_dropout, kHasDropout, pad_headdim, kPadHeadDim, [&] {
+        BOOL_SWITCH(pad_headdim, kPadHeadDim, [&] {
           using FmhaBwdTraits_ = ck::tile_program::TileFmhaTraits<
               kPadSeqLenQ,
               kPadSeqLenK,
@@ -270,14 +271,16 @@ template <
     bool kHasCausalMask,
     bool kHasBias,
     bool kHasBiasGrad,
+    bool kHasDropout,
     ck::index_t MaxK>
-void run_grouped_backward_causalmask_bias_dispatch(
+void run_grouped_backward_causalmask_bias_dropout_dispatch(
     GroupedBackwardParams& param,
     hipStream_t stream) {
-  grouped_backward_causalmask_bias_dispatch<
+  grouped_backward_causalmask_bias_dropout_dispatch<
       ScalarType,
       kHasCausalMask,
       kHasBias,
       kHasBiasGrad,
+      kHasDropout,
       MaxK>::Run(param, stream);
 };
