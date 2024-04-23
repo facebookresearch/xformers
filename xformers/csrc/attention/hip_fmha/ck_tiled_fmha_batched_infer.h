@@ -33,8 +33,9 @@ template <
     typename ScalarType,
     bool kHasCausalMask,
     bool kHasBias,
+    bool kHasDropout,
     ck::index_t MaxK>
-struct batched_infer_causalmask_bias_dispatch {
+struct batched_infer_causalmask_bias_dropout_dispatch {
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp =
       ck::tile_program::block::BlockFmhaPipelineProblem<
@@ -59,7 +60,6 @@ struct batched_infer_causalmask_bias_dispatch {
 
     BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
       constexpr bool has_masking = kHasCausalMask || USE_LOCAL_ATTENTION;
-      const bool has_dropout = (param.dropout_prob > 0.0f);
 
       using FmhaMask =
           ck::tile_program::block::SimplifiedGenericAttentionMask<has_masking>;
@@ -82,9 +82,7 @@ struct batched_infer_causalmask_bias_dispatch {
           ((param.K % 8 == 0) && (param.Kv % 8 == 0) && (MaxK <= 128));
 
       if (!use_async_pipeline) {
-        BOOL_SWITCH_4(
-            has_dropout,
-            kHasDropout,
+        BOOL_SWITCH_3(
             pad_seqlen_q,
             kPadSeqLenQ,
             pad_seqlen_k,
@@ -124,7 +122,7 @@ struct batched_infer_causalmask_bias_dispatch {
               RunWithKernel<FmhaKernel>(param, stream);
             });
       } else {
-        BOOL_SWITCH_2(has_dropout, kHasDropout, pad_seqlen_k, kPadSeqLenK, [&] {
+        BOOL_SWITCH(pad_seqlen_k, kPadSeqLenK, [&] {
           using FmhaTraits = ck::tile_program::TileFmhaTraits<
               true, // kPadSeqLenQ,
               kPadSeqLenK,
@@ -228,13 +226,15 @@ template <
     typename ScalarType,
     bool kHasCausalMask,
     bool kHasBias,
+    bool kHasDropout,
     ck::index_t MaxK>
-void run_batched_infer_causalmask_bias_dispatch(
+void run_batched_infer_causalmask_bias_dropout_dispatch(
     BatchedForwardParams& param,
     hipStream_t stream) {
-  batched_infer_causalmask_bias_dispatch<
+  batched_infer_causalmask_bias_dropout_dispatch<
       ScalarType,
       kHasCausalMask,
       kHasBias,
+      kHasDropout,
       MaxK>::Run(param, stream);
 };

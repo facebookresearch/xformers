@@ -24,16 +24,17 @@
 #include "ck_tiled_fmha_params.h"
 #include "ck_tiled_headdim_switch.h"
 
-#include "fmha_fwd_kernel.hpp"
 #include "fmha_fwd_epilogue.hpp"
+#include "fmha_fwd_kernel.hpp"
 #include "fmha_fwd_tile_partitioner.hpp"
 
 template <
     typename ScalarType,
     bool kHasCausalMask,
     bool kHasBias,
+    bool kHasDropout,
     ck::index_t MaxK>
-struct grouped_infer_causalmask_bias_dispatch {
+struct grouped_infer_causalmask_bias_dropout_dispatch {
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp =
       ck::tile_program::block::BlockFmhaPipelineProblem<
@@ -58,7 +59,6 @@ struct grouped_infer_causalmask_bias_dispatch {
 
     BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
       constexpr bool has_masking = kHasCausalMask || USE_LOCAL_ATTENTION;
-      const bool has_dropout = (param.dropout_prob > 0.0f);
 
       using FmhaMask =
           ck::tile_program::block::SimplifiedGenericAttentionMask<has_masking>;
@@ -74,14 +74,8 @@ struct grouped_infer_causalmask_bias_dispatch {
       bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
       bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
 
-      BOOL_SWITCH_3(
-          has_dropout,
-          kHasDropout,
-          pad_headdim_q,
-          kPadHeadDimQ,
-          pad_headdim_v,
-          kPadHeadDimV,
-          [&] {
+      BOOL_SWITCH_2(
+          pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
             using FmhaTraits = ck::tile_program::TileFmhaTraits<
                 kPadSeqLenQ,
                 kPadSeqLenK,
@@ -179,13 +173,15 @@ template <
     typename ScalarType,
     bool kHasCausalMask,
     bool kHasBias,
+    bool kHasDropout,
     ck::index_t MaxK>
-void run_grouped_infer_causalmask_bias_dispatch(
+void run_grouped_infer_causalmask_bias_dropout_dispatch(
     GroupedForwardParams& param,
     hipStream_t stream) {
-  grouped_infer_causalmask_bias_dispatch<
+  grouped_infer_causalmask_bias_dropout_dispatch<
       ScalarType,
       kHasCausalMask,
       kHasBias,
+      kHasDropout,
       MaxK>::Run(param, stream);
 };
