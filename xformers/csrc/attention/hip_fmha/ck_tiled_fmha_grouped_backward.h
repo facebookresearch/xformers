@@ -15,7 +15,6 @@
 
 #include <ck/tile_program/block_tile/block_masking.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_bwd_dot_do_o.hpp>
-#include <ck/tile_program/block_tile_pipeline/block_fmha_bwd_pipeline_dispatcher.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_bwd_pipeline_problem.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
 #include <ck/tile_program/tile/tile_fmha_traits.hpp>
@@ -40,8 +39,6 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
       typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
       typename FmhaBwdTypeConfig<ScalarType>::KGradDataType,
       typename FmhaBwdTypeConfig<ScalarType>::VGradDataType>>;
-
-  using FmhaBwdLoadStrategy_ = typename FmhaBwdLoadStrategy<MaxK>::type;
 
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaBwdPipelineProblemTemp =
@@ -144,17 +141,19 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
           using FmhaBwdPipelineProblem =
               FmhaBwdPipelineProblemTemp<FmhaBwdTraits_, FmhaMask>;
 
-          using FmhaBwdPipeline_ =
-              typename ck::tile_program::block::BlockFmhaBwdPipelineDispatcher<
-                  FmhaBwdLoadStrategy_,
-                  FmhaBwdPipelineProblem>::BlockPipeline;
+          constexpr auto FmhaBwdPipelineEnum_ =
+              FmhaBwdPipelineEnumSelector<MaxK>::value;
 
-          using FmhaBwdQKVGradKernel_ = FmhaBwdQKVGradKernel<
+          using FmhaBwdPipeline_ = typename FmhaBwdPipelineMaker<
+              FmhaBwdPipelineEnum_,
+              FmhaBwdPipelineProblem>::pipeline;
+
+          using FmhaBwdDQDKDVKernel_ = FmhaBwdDQDKDVKernel<
               FmhaBwdTilePartitioner_,
               FmhaBwdPipeline_,
               FmhaBwdEpilogue_>;
 
-          RunWithBwdQKVGradKernel<FmhaBwdQKVGradKernel_>(param, stream);
+          RunWithBwdDQDKDVKernel<FmhaBwdDQDKDVKernel_>(param, stream);
         });
       });
     };
@@ -194,12 +193,12 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
         kargs);
   }
 
-  template <typename FmhaBwdQKVGradKernel>
-  static void RunWithBwdQKVGradKernel(
+  template <typename FmhaBwdDQDKDVKernel>
+  static void RunWithBwdDQDKDVKernel(
       GroupedBackwardParams& param,
       hipStream_t stream) {
     const auto kargs = [&] {
-      return FmhaBwdQKVGradKernel::MakeKargs(
+      return FmhaBwdDQDKDVKernel::MakeKargs(
           param.q_ptr,
           param.k_ptr,
           param.v_ptr,
@@ -251,14 +250,14 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
           {param.philox_seed, param.philox_offset});
     }();
 
-    dim3 kGridSize = FmhaBwdQKVGradKernel::GridSize(
+    dim3 kGridSize = FmhaBwdDQDKDVKernel::GridSize(
         param.num_batches, param.Hq, param.max_seqlen_k);
-    constexpr dim3 kBlockSize = FmhaBwdQKVGradKernel::BlockSize();
-    constexpr ck::index_t kBlockPerCu = FmhaBwdQKVGradKernel::kBlockPerCu;
+    constexpr dim3 kBlockSize = FmhaBwdDQDKDVKernel::BlockSize();
+    constexpr ck::index_t kBlockPerCu = FmhaBwdDQDKDVKernel::kBlockPerCu;
 
     (void)launch_kernel<kBlockSize.x, kBlockPerCu>(
         StreamConfig{stream, false},
-        FmhaBwdQKVGradKernel{},
+        FmhaBwdDQDKDVKernel{},
         kGridSize,
         kBlockSize,
         0,

@@ -6,6 +6,10 @@
  */
 #pragma once
 
+#include <ck/tile_program/block_tile_pipeline/block_fmha_bwd_dq_dk_dv_pipeline_ks_kts_vr.hpp>
+#include <ck/tile_program/block_tile_pipeline/block_fmha_bwd_dq_dk_dv_pipeline_ks_vr.hpp>
+#include <ck/tile_program/block_tile_pipeline/block_fmha_bwd_dq_dk_dv_pipeline_qs_ks_vr_dos.hpp>
+#include <ck/tile_program/block_tile_pipeline/block_fmha_bwd_pipeline_enum.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
 
 template <typename DataType>
@@ -50,24 +54,6 @@ struct FmhaBwdTypeConfig<ck::bhalf_t> {
 };
 
 template <ck::index_t MaxK>
-struct FmhaBwdLoadStrategy;
-
-template <>
-struct FmhaBwdLoadStrategy<32> {
-  using type = ck::Sequence<true, false, true, false, true, true, false>;
-};
-
-template <>
-struct FmhaBwdLoadStrategy<64> {
-  using type = ck::Sequence<false, false, true, true, true, false, false>;
-};
-
-template <>
-struct FmhaBwdLoadStrategy<128> {
-  using type = ck::Sequence<false, false, true, false, true, false, false>;
-};
-
-template <ck::index_t MaxK>
 struct FmhaBwdBlockTile;
 
 template <>
@@ -96,7 +82,6 @@ struct FmhaBwdShape;
 template <>
 struct FmhaBwdShape<32> : ck::tile_program::TileFmhaBwdShape<
                               typename FmhaBwdBlockTile<32>::type,
-                              typename FmhaBwdLoadStrategy<32>::type,
                               FmhaBwdBlockWarps0,
                               FmhaBwdWarpTile,
                               FmhaBwdBlockWarps1,
@@ -111,7 +96,6 @@ struct FmhaBwdShape<32> : ck::tile_program::TileFmhaBwdShape<
 template <>
 struct FmhaBwdShape<64> : ck::tile_program::TileFmhaBwdShape<
                               typename FmhaBwdBlockTile<64>::type,
-                              typename FmhaBwdLoadStrategy<64>::type,
                               FmhaBwdBlockWarps0,
                               FmhaBwdWarpTile,
                               FmhaBwdBlockWarps1,
@@ -126,7 +110,6 @@ struct FmhaBwdShape<64> : ck::tile_program::TileFmhaBwdShape<
 template <>
 struct FmhaBwdShape<128> : ck::tile_program::TileFmhaBwdShape<
                                typename FmhaBwdBlockTile<128>::type,
-                               typename FmhaBwdLoadStrategy<128>::type,
                                FmhaBwdBlockWarps0,
                                FmhaBwdWarpTile,
                                FmhaBwdBlockWarps1,
@@ -137,3 +120,47 @@ struct FmhaBwdShape<128> : ck::tile_program::TileFmhaBwdShape<
                                FmhaBwdWarpTile,
                                FmhaBwdBlockWarps2,
                                FmhaBwdWarpTile> {};
+
+template <ck::index_t MaxK>
+struct FmhaBwdPipelineEnumSelector;
+
+template <>
+struct FmhaBwdPipelineEnumSelector<32> {
+  static constexpr ck::BlockFmhaBwdPipelineEnum value =
+      ck::BlockFmhaBwdPipelineEnum::QSKSVROGradS;
+};
+
+template <>
+struct FmhaBwdPipelineEnumSelector<64> {
+  static constexpr ck::BlockFmhaBwdPipelineEnum value =
+      ck::BlockFmhaBwdPipelineEnum::KSKTSVR;
+};
+
+template <>
+struct FmhaBwdPipelineEnumSelector<128> {
+  static constexpr ck::BlockFmhaBwdPipelineEnum value =
+      ck::BlockFmhaBwdPipelineEnum::KSVR;
+};
+
+template <ck::BlockFmhaBwdPipelineEnum value, typename problem>
+struct FmhaBwdPipelineMaker;
+
+template <typename problem>
+struct FmhaBwdPipelineMaker<
+    ck::BlockFmhaBwdPipelineEnum::QSKSVROGradS,
+    problem> {
+  using pipeline =
+      ck::tile_program::block::BlockFmhaBwdDQDKDVPipelineQSKSVROGradS<problem>;
+};
+
+template <typename problem>
+struct FmhaBwdPipelineMaker<ck::BlockFmhaBwdPipelineEnum::KSKTSVR, problem> {
+  using pipeline =
+      ck::tile_program::block::BlockFmhaBwdDQDKDVPipelineKSKTSVR<problem>;
+};
+
+template <typename problem>
+struct FmhaBwdPipelineMaker<ck::BlockFmhaBwdPipelineEnum::KSVR, problem> {
+  using pipeline =
+      ck::tile_program::block::BlockFmhaBwdDQDKDVPipelineKSVR<problem>;
+};
