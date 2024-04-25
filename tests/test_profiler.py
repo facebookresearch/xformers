@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import cast
+
 import pytest
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode, _get_current_dispatch_mode
@@ -116,23 +118,42 @@ def test_profiler_overhead(device_bs_mm) -> None:
     inp = torch.randn([bs, 1024], device=device)
     optim = torch.optim.Adam(model.parameters())
 
-    def one_step() -> None:
+    def one_step(model) -> None:
         model(inp).sum().backward()
         optim.step()
         optim.zero_grad()
 
     # Warmup
     for _ in range(2):
-        one_step()
+        one_step(model)
 
     # Run with profiler
     with xformers.profiler.profile(
         "test_profiler_overhead", module=model, schedule=TEST_SCHEDULE
     ):
         for _ in range(PROFILER_MAX_STEPS_OVERHEAD):
-            one_step()
+            one_step(model)
 
         assert not model._forward_hooks
         assert not model._forward_pre_hooks
         assert not model._backward_hooks
+        assert _get_current_dispatch_mode() is None
+
+    model_opt = torch.compile(model)
+    model_opt_casted = cast(torch.nn.Module, model_opt)
+
+    # Warmup
+    for _ in range(2):
+        one_step(model_opt_casted)
+
+    # Run with profiler
+    with xformers.profiler.profile(
+        "test_profiler_overhead", module=model_opt_casted, schedule=TEST_SCHEDULE
+    ):
+        for _ in range(PROFILER_MAX_STEPS_OVERHEAD):
+            one_step(model_opt_casted)
+
+        assert not model_opt_casted._forward_hooks
+        assert not model_opt_casted._forward_pre_hooks
+        assert not model_opt_casted._backward_hooks
         assert _get_current_dispatch_mode() is None
