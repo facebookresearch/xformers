@@ -6,5 +6,5 @@
 	url = https://github.com/Dao-AILab/flash-attention.git
 [submodule "third_party/composable_kernel_tiled"]
 	path = third_party/composable_kernel_tiled
-	url = https://github.com/ROCm/composable_kernel-internal.git
+	url = https://github.com/ROCm/composable_kernel.git
 	branch = ck_tile/opt_padding_fa_train
