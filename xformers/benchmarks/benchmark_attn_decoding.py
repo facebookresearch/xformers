@@ -180,8 +180,17 @@ class AttentionDecodingCKSplitKV(AttentionDecodingBase):
 
 class AttentionDecodingSplitInt4KV(AttentionDecodingBase):
     OP = xops.fmha.triton_splitk.FwOp
-    def __init__(self, B: int, Mq: int, Mkv: int, Hq: int, Hkv: int, K: int, bw: bool,
-                 attn_bias_type
+
+    def __init__(
+        self,
+        B: int,
+        Mq: int,
+        Mkv: int,
+        Hq: int,
+        Hkv: int,
+        K: int,
+        bw: bool,
+        attn_bias_type,
     ) -> None:
         # super(AttentionDecodingSplitInt4KV, self).__init__(B, Mq, Mkv, Hq, Hkv, K, bw, attn_bias_type)
         dtype = torch.float16
@@ -255,7 +264,7 @@ class AttentionDecodingSplitInt4KV(AttentionDecodingBase):
             not_supported_reasons = self.OP.not_supported_reasons(inp)
             if not_supported_reasons:
                 raise NotSupportedInputError(not_supported_reasons)
-            
+
 
 class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
     def fw(self) -> None:
