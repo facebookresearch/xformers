@@ -1172,7 +1172,10 @@ class FwOp(AttentionFwOpBase):
         split_k = max(Mk, 1024) // bh
         if torch.version.hip:
             max_chunk_size = 64
-            split_k_stop_val = min(Mk / max_chunk_size, 1024 / (B * G * H))
+            split_k_stop_val = 1024 / (B * G * H)
+            while split_k > 0 and Mk / (split_k - 1) < max_chunk_size:
+                split_k = split_k - 1
+
             split_k_upper_bound = 512
         else:
             max_chunk_size = 64 if Mk <= 512 and bh <= 64 else 128
