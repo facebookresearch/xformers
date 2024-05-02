@@ -14,23 +14,44 @@ on:
       - "v[0-9]+*"
 
 jobs:
+  target_determinator:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+    - id: set-matrix
+      shell: python
+      run: |
+        import os
+        import json
+        environ = os.environ
+
+        PY_VERSIONS = ['3.8', '3.9', '3.10', '3.11', '3.12']
+        if os.environ["GITHUB_EVENT_NAME"] == "pull_request":
+          print("pull-request: only keeping 2 python versions")
+          PY_VERSIONS = [PY_VERSIONS[0], PY_VERSIONS[-1]]
+
+        include = []
+        for os in ['8-core-ubuntu', 'windows-8-core']:
+          for python in PY_VERSIONS:
+            for torch_version in ['2.3.0']:
+              for cuda_short_version in ["118", "121"]:
+                include.append(dict(
+                  os=os,
+                  python=python,
+                  torch_version=torch_version,
+                  cuda_short_version=cuda_short_version,
+                ))
+                print(include[-1])
+        matrix = {'include': include}
+        print(json.dumps(matrix))
+        with open(environ["GITHUB_OUTPUT"], "a") as fd:
+          fd.write("matrix="+json.dumps(matrix))
   build:
+    needs: target_determinator
     strategy:
       fail-fast: false
-      matrix:
-        os:
-          - 8-core-ubuntu
-          - windows-8-core
-        python:
-          - "3.8"
-          - "3.9"
-          - "3.10"
-          - "3.11"
-        torch_version:
-          - "2.3.0"
-        cuda_short_version:
-          - "118"
-          - "121"
+      matrix: ${{ fromJson(needs.target_determinator.outputs.matrix) }}
 
     uses: ./.github/workflows/wheels_build.yml
     if: github.repository == 'facebookresearch/xformers' || github.event_name == 'pull_request'

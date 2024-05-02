@@ -569,9 +569,9 @@ def merge_attentions(
     concat_path = attn_is_concat and lse_is_concat
     if not concat_path:
         if attn_is_concat:
-            attn_split = cast(torch.Tensor, attn_split).unbind(0)
+            attn_split = attn_split.unbind(0)  # type: ignore
         if lse_is_concat:
-            lse_split = cast(torch.Tensor, lse_split).unbind(0)
+            lse_split = lse_split.unbind(0)  # type: ignore
 
     if concat_path:
         attn_split = cast(torch.Tensor, attn_split)
