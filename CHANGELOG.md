@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 ### Improved
 ### Removed
+- Removed support for PyTorch version older than 2.2.0
 
 ## [0.0.26] - 2024-04-29
 ### Added
@@ -18,7 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - merge_attentions no longer needs inputs to be stacked.
 - fMHA: triton_splitk now supports additive bias
 - fMHA: benchmark cleanup
-### Removed
 
 ## [0.0.25.post1] - 2024-03-29
 Pre-built binary wheels require PyTorch 2.2.2
