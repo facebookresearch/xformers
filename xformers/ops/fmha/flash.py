@@ -49,8 +49,8 @@ try:
         from flash_attn.flash_attn_interface import flash_attn_cuda as _C_flashattention
 
         FLASH_VERSION = flash_attn.__version__
-        FLASH_VER_MIN = (2, 5, 2)
-        FLASH_VER_LAST = (2, 5, 6)  # last supported, inclusive
+        FLASH_VER_MIN = (2, 5, 7)
+        FLASH_VER_LAST = (2, 5, 7)  # last supported, inclusive
         flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
         if (
             flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
@@ -145,6 +145,7 @@ try:
                 cu_seq_lens_q,
                 cu_seq_lens_k,
                 seqused_k,
+                None,  # block_table
                 None,  # alibi_slopes
                 max_seq_len_q,
                 max_seq_len_k,
