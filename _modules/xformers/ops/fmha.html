@@ -790,9 +790,9 @@
     <span class="n">concat_path</span> <span class="o">=</span> <span class="n">attn_is_concat</span> <span class="ow">and</span> <span class="n">lse_is_concat</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">concat_path</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">attn_is_concat</span><span class="p">:</span>
-            <span class="n">attn_split</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">attn_split</span><span class="p">)</span><span class="o">.</span><span class="n">unbind</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">attn_split</span> <span class="o">=</span> <span class="n">attn_split</span><span class="o">.</span><span class="n">unbind</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
         <span class="k">if</span> <span class="n">lse_is_concat</span><span class="p">:</span>
-            <span class="n">lse_split</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">lse_split</span><span class="p">)</span><span class="o">.</span><span class="n">unbind</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">lse_split</span> <span class="o">=</span> <span class="n">lse_split</span><span class="o">.</span><span class="n">unbind</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
 
     <span class="k">if</span> <span class="n">concat_path</span><span class="p">:</span>
         <span class="n">attn_split</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">attn_split</span><span class="p">)</span>
