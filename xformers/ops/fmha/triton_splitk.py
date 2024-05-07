@@ -1335,6 +1335,10 @@ class FwOp(AttentionFwOpBase):
             return triton.cdiv(M, META["BLOCK_M"]), B * G * H, split_k
 
         split_size = (Mk + split_k - 1) // split_k
+        
+        # align split_size to the multiple of 64
+        split_size = (split_size + 63) // 64 * 64
+
         use_seq_len = seq_len is not None
 
         num_groups = cls.NUM_GROUPS if PACKED_PER_VAL > 1 else 1
