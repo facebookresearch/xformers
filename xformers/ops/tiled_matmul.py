@@ -15,19 +15,12 @@ from typing_extensions import Annotated
 from .. import _is_triton_available
 from .common import Alias, make_pytorch_operator_for_dispatch_key
 
-if _is_triton_available():
-    from ._triton.tiled_matmul_kernels import _launch_triton_matmul
-
-    TRITON_IS_AVAILABLE = True
-else:
-    TRITON_IS_AVAILABLE = False
-
 
 # Copied over from the sequence parallel fused ops.
 def _should_use_triton(device: torch.device, dtype: torch.dtype) -> bool:
     if not int(os.getenv("XFORMERS_TILED_MATMUL_ENABLE_TRITON", "1")):
         return False
-    if not TRITON_IS_AVAILABLE:
+    if not _is_triton_available():
         return False
     device_capability = torch.cuda.get_device_capability(device)
     # Triton seems to be having issues on P100 and V100 GPUs, such as
@@ -155,6 +148,8 @@ def tiled_matmul_fwd(
         and n_tiles <= 3
         and _should_use_triton(a[0][0].device, a[0][0].dtype)
     ):
+        from ._triton.tiled_matmul_kernels import _launch_triton_matmul
+
         _launch_triton_matmul(a, b, c, ms, ns, ks)
     else:
         for tile_m in range(len(ms)):
