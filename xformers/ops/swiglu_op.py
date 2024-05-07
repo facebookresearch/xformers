@@ -188,7 +188,7 @@ class _ForwardToPythonAutogradFunc(SwiGLUOp):
     def supports(self, op: "SwiGLUOpDispatch") -> bool:
         # Let's disable autocast in bf16 until this issue is fixed
         # https://github.com/pytorch/pytorch/issues/87979
-        if op.dtype_autocast_gpu == torch.bfloat16:
+        if op.dtype_autocast_gpu == torch.bfloat16 and torch.__version__ < "2.0.0":
             return False
         return super().supports(op)
 
