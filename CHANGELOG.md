@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.27] - TBD
 ### Added
 ### Improved
+- fMHA: Fixed out-of-bounds reading for Split-K triton implementation
 ### Removed
 - Removed support for PyTorch version older than 2.2.0
 

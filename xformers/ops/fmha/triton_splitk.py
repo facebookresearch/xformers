@@ -504,10 +504,10 @@ if TYPE_CHECKING or _has_triton21():
         kernel = triton.heuristics(
             {
                 "BOUNDS_CHECKS_N": lambda args: (
-                    args["BLOCK_N_PER_SPLIT"] % args["BLOCK_N"]
+                    (args["BLOCK_N_PER_SPLIT"] % args["BLOCK_N"])
+                    or (args["N_CTX_K"] % args["BLOCK_N_PER_SPLIT"])
+                    or args["USE_SEQ_LEN"]
                 )
-                > 0
-                or args["USE_SEQ_LEN"]
             }
         )(_fwd_kernel_splitK_unrolled)
         return kernel

@@ -394,6 +394,16 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
     )
 
 
+def nanify_oob_seqlen(x: torch.Tensor) -> torch.Tensor:
+    align_to = 256
+    if x.shape[1] % align_to == 0:
+        return x
+    pad = [0, 0] * x.ndim
+    pad[-3] = align_to - (x.shape[1] % align_to)
+    x_pad = torch.nn.functional.pad(x, pad, value=math.nan)
+    return x_pad[:, : x.shape[1]]
+
+
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("packed", [False, True])
 @parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
@@ -461,8 +471,13 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
     )
     assert not out.isnan().any(), ("Output has NaNs", attn_bias)
     out2 = xformers.ops.memory_efficient_attention_forward(
-        query, key, value, attn_bias, op=op
+        nanify_oob_seqlen(query),
+        nanify_oob_seqlen(key),
+        nanify_oob_seqlen(value),
+        attn_bias,
+        op=op,
     )
+    assert not out2.isnan().any(), "Output has NaNs - most likely reading out-of-bounds"
     assert torch.allclose(out, out2, atol=0.0, rtol=0.0), (
         "Non-deterministic behavior",
         attn_bias,
