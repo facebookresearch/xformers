@@ -296,7 +296,7 @@ class xFormer(torch.nn.Module):
             if not self.decoders:
                 return memory
 
-        # If decoder: either use the encoder ouput, or just decode, both options are possible
+        # If decoder: either use the encoder output, or just decode, both options are possible
         if len(self.decoders) > 0:
             tgt = src.clone() if tgt is None else tgt
 

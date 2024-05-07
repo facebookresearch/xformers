@@ -156,7 +156,7 @@ class FwOp(AttentionFwOpBase):
     OPERATOR = get_xformers_operator("efficient_attention_forward_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
-    SUPPORTED_MAX_K = 256
+    SUPPORTED_MAX_K = 512
 
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
@@ -323,7 +323,6 @@ class FwOp(AttentionFwOpBase):
         check_lastdim_alignment_stride1(reasons, "query", d.query, matmul_alignment_mn)
         check_lastdim_alignment_stride1(reasons, "value", d.value, matmul_alignment_mn)
         _check_bias_alignment(reasons, d.attn_bias)
-        _check_large_shapes(reasons, d)
         requires_grad = (
             d.query.requires_grad or d.key.requires_grad or d.value.requires_grad
         )

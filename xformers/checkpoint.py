@@ -408,7 +408,7 @@ def _optimize_runtime_with_given_memory(
         A[i] = 1
         constraints.append(LinearConstraint(A=A, lb=0, ub=0))
 
-    # inplace ops should always be done in conjuction with its parent op
+    # inplace ops should always be done in conjunction with its parent op
     # i.e., if we recompute the parent op the inplace should also be
     # recomputed, and vice versa
     for op, op_parent in inplace_ops:

@@ -566,13 +566,24 @@ def merge_attentions(
 
     attn_is_concat = isinstance(attn_split, torch.Tensor)
     lse_is_concat = isinstance(lse_split, torch.Tensor)
-    concat_path = attn_is_concat and lse_is_concat
-    if not concat_path:
-        if attn_is_concat:
-            attn_split = attn_split.unbind(0)  # type: ignore
-        if lse_is_concat:
-            lse_split = lse_split.unbind(0)  # type: ignore
 
+    attn_requires_grad = (
+        attn_split.requires_grad  # type: ignore
+        if attn_is_concat
+        else any(x.requires_grad for x in attn_split)
+    )
+    lse_requires_grad = (
+        lse_split.requires_grad  # type: ignore
+        if lse_is_concat
+        else any(x.requires_grad for x in lse_split)
+    )
+    requires_grad = torch.is_grad_enabled() and (
+        attn_requires_grad or lse_requires_grad
+    )
+    if requires_grad and not write_lse:
+        raise ValueError("write_lse should be true if inputs require gradients.")
+
+    concat_path = attn_is_concat and lse_is_concat and not requires_grad
     if concat_path:
         attn_split = cast(torch.Tensor, attn_split)
         lse_split = cast(torch.Tensor, lse_split)
@@ -600,9 +611,11 @@ def merge_attentions(
         device = attn_split.device
         attn_dtype = attn_split.dtype
         lse_dtype = lse_split.dtype
-
-        merge_func: Any = triton_splitk.merge_attentions
     else:
+        if attn_is_concat:
+            attn_split = attn_split.unbind(0)  # type: ignore
+        if lse_is_concat:
+            lse_split = lse_split.unbind(0)  # type: ignore
         num_chunks = len(attn_split)
         if len(lse_split) != num_chunks:
             raise ValueError(
@@ -652,7 +665,6 @@ def merge_attentions(
         device = attn_split[0].device
         attn_dtype = attn_split[0].dtype
         lse_dtype = lse_split[0].dtype
-        merge_func = triton_splitk.merge_attentions_varargs
 
     attn_out = torch.empty(
         B,
@@ -662,13 +674,19 @@ def merge_attentions(
         Kq,
         device=device,
         dtype=output_dtype or attn_dtype,
+        requires_grad=requires_grad,
     )
     if write_lse:
-        lse_out = torch.empty(B, G, H, M, device=device, dtype=lse_dtype)
+        lse_out = torch.empty(
+            B, G, H, M, device=device, dtype=lse_dtype, requires_grad=requires_grad
+        )
     else:
         lse_out = None
 
-    merge_func(attn_out, lse_out, attn_split, lse_split)  # type: ignore
+    if concat_path:
+        triton_splitk.merge_attentions(attn_out, lse_out, attn_split, lse_split)  # type: ignore
+    else:
+        attn_out, lse_out = _MergeAttentions.apply(attn_out, lse_out, *attn_split, *lse_split)  # type: ignore
 
     if is_bmhk:
         attn_out = attn_out[:, :, 0]
@@ -676,6 +694,44 @@ def merge_attentions(
             lse_out = lse_out[:, 0]
 
     return attn_out, lse_out
+
+
+class _MergeAttentions(torch.autograd.Function):
+    @staticmethod
+    # type: ignore
+    def forward(
+        ctx, attn_out: torch.Tensor, lse_out: torch.Tensor, *inputs: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        num_chunks = len(inputs) // 2
+        attn_split, lse_split = inputs[:num_chunks], inputs[num_chunks:]
+
+        triton_splitk.merge_attentions_varargs(attn_out, lse_out, attn_split, lse_split)
+
+        ctx.save_for_backward(
+            attn_out,
+            lse_out,
+            *inputs,
+        )
+        return attn_out, lse_out
+
+    @staticmethod
+    # type: ignore
+    def backward(
+        ctx, grad_attn: torch.Tensor, grad_lse: torch.Tensor
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        out, lse, *inputs = ctx.saved_tensors
+        num_chunks = len(inputs) // 2
+        attn_split, lse_split = inputs[:num_chunks], inputs[num_chunks:]
+        dattn, dlse = triton_splitk.merge_attentions_varargs_backward(
+            attn_split,
+            lse_split,
+            out,
+            lse,
+            grad_attn,
+            grad_lse,
+        )
+        ret = [None, None] + dattn + dlse
+        return tuple(ret)
 
 
 ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [

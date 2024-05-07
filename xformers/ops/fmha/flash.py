@@ -26,6 +26,8 @@ from .attn_bias import (
     LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
+    PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+    PagedBlockDiagonalPaddedKeysMask,
 )
 from .common import (
     AttentionBwOpBase,
@@ -69,7 +71,7 @@ try:
         "int max_seqlen_q, int max_seqlen_k, "
         "float p, float softmax_scale, "
         "bool is_causal, int window_left, "
-        "int window_right, bool return_softmax) -> (Tensor, Tensor, Tensor)",
+        "int window_right, bool return_softmax, Tensor? block_tables) -> (Tensor, Tensor, Tensor)",
     )
 
     torch.library.define(
@@ -98,6 +100,7 @@ try:
         window_left,
         window_right,
         return_softmax,
+        block_tables,
     ):
         if query.__class__.__name__ == "FakeTensor":
             breakpoint()
@@ -145,7 +148,7 @@ try:
                 cu_seq_lens_q,
                 cu_seq_lens_k,
                 seqused_k,
-                None,  # block_table
+                block_tables,
                 None,  # alibi_slopes
                 max_seq_len_q,
                 max_seq_len_k,
@@ -315,6 +318,7 @@ def _convert_input_format(
         (
             BlockDiagonalGappyKeysMask,
             BlockDiagonalPaddedKeysMask,
+            PagedBlockDiagonalPaddedKeysMask,
         ),
     ):
         attn_bias.k_seqinfo.seqstart = attn_bias.k_seqinfo.seqstart.to(
@@ -369,6 +373,11 @@ def _convert_input_format(
         query = query.reshape([batch * seqlen_q, -1, head_dim_q])
         key = key.reshape([batch * seqlen_kv, -1, head_dim_q])
         value = value.reshape([batch * seqlen_kv, -1, head_dim_v])
+        if isinstance(attn_bias, PagedBlockDiagonalPaddedKeysMask):
+            num_pages = value.shape[0] // attn_bias.page_size
+            key = key.view(num_pages, attn_bias.page_size, *key.shape[1:])
+            value = value.view(num_pages, attn_bias.page_size, *value.shape[1:])
+
     new_inp = Inputs(
         query=query,
         key=key,
@@ -395,6 +404,7 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
             BlockDiagonalCausalWithOffsetGappyKeysMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
         ),
     )
 
@@ -467,6 +477,7 @@ def _post_process_lse(
         (
             BlockDiagonalGappyKeysMask,
             BlockDiagonalPaddedKeysMask,
+            PagedBlockDiagonalPaddedKeysMask,
         ),
     ):
         if inp.is_partial and len(original_query_shape) == 5:
@@ -514,6 +525,8 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalGappyKeysMask,
         BlockDiagonalPaddedKeysMask,
         LocalAttentionFromBottomRightMask,
+        PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+        PagedBlockDiagonalPaddedKeysMask,
     )
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
@@ -536,6 +549,7 @@ class FwOp(AttentionFwOpBase):
             (
                 BlockDiagonalGappyKeysMask,
                 BlockDiagonalPaddedKeysMask,
+                PagedBlockDiagonalPaddedKeysMask,
             ),
         ):
             q_seqinfo = d.attn_bias.q_seqinfo
@@ -566,6 +580,11 @@ class FwOp(AttentionFwOpBase):
         ) = _convert_input_format(inp, supports_mqa=True)
         if inp.query.numel() > 0 and inp.key.numel() > 0:
             win_left, win_right = _window_size(inp.attn_bias)
+            block_tables = (
+                inp.attn_bias.block_tables
+                if isinstance(inp.attn_bias, PagedBlockDiagonalPaddedKeysMask)
+                else None
+            )
             out, softmax_lse, rng_state = cls.OPERATOR(
                 inp.query,
                 inp.key,
@@ -581,6 +600,7 @@ class FwOp(AttentionFwOpBase):
                 window_left=win_left,
                 window_right=win_right,
                 return_softmax=return_softmax,
+                block_tables=block_tables,
             )
             out = out.reshape(out_shape)
         else:
@@ -643,6 +663,8 @@ class BwOp(AttentionBwOpBase):
                 BlockDiagonalCausalWithOffsetPaddedKeysMask,
                 BlockDiagonalGappyKeysMask,
                 BlockDiagonalPaddedKeysMask,
+                PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+                PagedBlockDiagonalPaddedKeysMask,
             }
         )
     )
