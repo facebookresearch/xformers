@@ -394,6 +394,16 @@ def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
     )
 
 
+def nanify_oob_seqlen(x: torch.Tensor) -> torch.Tensor:
+    align_to = 256
+    if x.shape[1] % align_to == 0:
+        return x
+    pad = [0, 0] * x.ndim
+    pad[-3] = align_to - (x.shape[1] % align_to)
+    x_pad = torch.nn.functional.pad(x, pad, value=math.nan)
+    return x_pad[:, : x.shape[1]]
+
+
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("packed", [False, True])
 @parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
@@ -461,8 +471,13 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
     )
     assert not out.isnan().any(), ("Output has NaNs", attn_bias)
     out2 = xformers.ops.memory_efficient_attention_forward(
-        query, key, value, attn_bias, op=op
+        nanify_oob_seqlen(query),
+        nanify_oob_seqlen(key),
+        nanify_oob_seqlen(value),
+        attn_bias,
+        op=op,
     )
+    assert not out2.isnan().any(), "Output has NaNs - most likely reading out-of-bounds"
     assert torch.allclose(out, out2, atol=0.0, rtol=0.0), (
         "Non-deterministic behavior",
         attn_bias,
@@ -2165,6 +2180,7 @@ def test_forward_splitk(
         (1, 2**16, 3, 128),
         (5, 53, 4, 64),
         (7, 51, 4, 256),
+        (3, 51, 2, 512),
     ],
 )
 def test_mqa_decoding(op: Type[fmha.AttentionFwOpBase], dtype, B_Mkv_H_K):
@@ -2417,6 +2433,14 @@ def test_cutlassB_iter_order(
 def test_paged_attention(
     B, MAX_T: int, num_quant_groups: int, page_size: int, op: Type[AttentionFwOpBase]
 ):
+    if op == fmha.flash.FwOp and page_size % 256 != 0:
+        # TODO: add smaller page sizes when https://github.com/Dao-AILab/flash-attention/pull/824 is merged
+        pytest.skip(
+            "Flash Attention with page size not divisible by 256 is not supported yet"
+        )
+    if op == fmha.flash.FwOp and num_quant_groups > 0:
+        pytest.skip("FA doesn't support quantization")
+
     paged_attention_run_inner(B, MAX_T, num_quant_groups, page_size, op, bench=False)
 
 
@@ -2725,6 +2749,7 @@ def test_merge_attentions_nobias(
         (torch.bfloat16, fmha.triton_splitk.FwOp_S1),
         # Cutlass's LSE is not consistent
         # (torch.float32, fmha.cutlass.FwOp),
+        (torch.bfloat16, fmha.flash.FwOp),
     ],
     ids=lambda o: f"{o.NAME}" if hasattr(o, "NAME") else str(o),
 )
@@ -2932,7 +2957,12 @@ def test_merge_attentions_decoding(
 @pytest.mark.parametrize(
     "stack_inputs", (False, True), ids=lambda x: "stack_inputs" if x else ""
 )
-def test_merge_attentions_against_ref(bmghk: bool, stack_inputs: bool):
+@pytest.mark.parametrize(
+    "grad_var", ("lse", "attn", None)
+)  # Gradient with respect to attention, LSE, or neither
+def test_merge_attentions_against_ref(
+    bmghk: bool, stack_inputs: bool, grad_var: Optional[str]
+):
     split_k = 16
     B = 12
     M = 137
@@ -2947,13 +2977,55 @@ def test_merge_attentions_against_ref(bmghk: bool, stack_inputs: bool):
     if not bmghk:
         attn_split = attn_split[:, :, :, 0]
         lse_split = lse_split[:, :, 0]
+
+    if grad_var is not None:
+        attn_split.requires_grad_(True)
+        lse_split.requires_grad_(True)
+
     attn_out_ref, lse_out_ref = _merge_attentions_ref(attn_split, lse_split)
-    attn_split_ = attn_split if stack_inputs else attn_split.unbind(0)
-    lse_split_ = lse_split if stack_inputs else lse_split.unbind(0)
-    attn_out, lse_out = fmha.merge_attentions(attn_split_, lse_split_)  # type: ignore
+    if grad_var is not None:
+        if grad_var == "attn":
+            out_grad = torch.randn_like(attn_out_ref)
+            attn_out_ref.backward(out_grad)
+        else:
+            out_grad = torch.randn_like(lse_out_ref)
+            lse_out_ref.backward(out_grad)
+
+        attn_grad_ref, lse_grad_ref = attn_split.grad, lse_split.grad
+
+        attn_split = attn_split.detach().unbind(0)  # type: ignore
+        lse_split = lse_split.detach().unbind(0)  # type: ignore
+
+        for x in attn_split + lse_split:
+            x.requires_grad_(True)
+            x.retain_grad()
+
+    attn_out, lse_out = fmha.merge_attentions(attn_split, lse_split)
 
     torch.testing.assert_close(lse_out, lse_out_ref, rtol=1e-4, atol=1e-4)
     torch.testing.assert_close(attn_out, attn_out_ref, rtol=1e-4, atol=1e-4)
+
+    if grad_var is not None:
+        if grad_var == "attn":
+            attn_out.backward(out_grad)
+        else:
+            assert lse_out is not None
+            lse_out.backward(out_grad)
+
+        attn_grads = [x.grad for x in attn_split]
+        lse_grads = [x.grad for x in lse_split]
+        attn_grad_concat = torch.stack(attn_grads, dim=0)
+        lse_grad_concat = torch.stack(lse_grads, dim=0)
+
+        if grad_var == "lse":
+            # LSE doesn't depend on attn_split, so when only gradient with respect to LSE is provided as input,
+            # the output gradient with respect to attn_split is zero.
+            # The reference implementation produced None instead of zero in this case
+            attn_grad_ref = torch.zeros_like(attn_grad_concat)
+        torch.testing.assert_close(lse_grad_concat, lse_grad_ref, rtol=1e-4, atol=1e-4)
+        torch.testing.assert_close(
+            attn_grad_concat, attn_grad_ref, rtol=1e-4, atol=1e-4
+        )
 
 
 def _merge_attentions_ref(attn_split, lse_split):

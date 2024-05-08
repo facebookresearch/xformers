@@ -42,7 +42,7 @@ class SimplicialEmbedding(torch.nn.Module):
             x.shape[-1] % self.L == 0
         ), f"The embedding dimension {x.shape[-1]} is not divisible by the chosen L parameter {self.L}"
 
-        # Seperate the input tensor into V chunks
+        # Separate the input tensor into V chunks
         B, C, E = x.shape
         V = E // self.L
 

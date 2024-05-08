@@ -13,6 +13,7 @@ from typing import (
     Iterable,
     List,
     Optional,
+    Sequence,
     Tuple,
     Type,
 )
@@ -503,11 +504,11 @@ if TYPE_CHECKING or _has_triton21():
         _fwd_kernel_splitK_unrolled = unroll_varargs(_fwd_kernel_splitK, N=num_groups)
         kernel = triton.heuristics(
             {
-                "BOUNDS_CHECKS_N": lambda args: (
-                    args["BLOCK_N_PER_SPLIT"] % args["BLOCK_N"]
+                "BOUNDS_CHECKS_N": lambda args: bool(
+                    (args["BLOCK_N_PER_SPLIT"] % args["BLOCK_N"])
+                    or (args["N_CTX_K"] % args["BLOCK_N_PER_SPLIT"])
+                    or args["USE_SEQ_LEN"]
                 )
-                > 0
-                or args["USE_SEQ_LEN"]
             }
         )(_fwd_kernel_splitK_unrolled)
         return kernel
@@ -860,6 +861,145 @@ if TYPE_CHECKING or _has_triton21():
             )
             to_store = lse_max + tl.math.log2(sumexp_normalized) / 1.44269504
             tl.store(l_ptrs, to_store)
+
+    @triton.jit
+    def _splitK_reduce_varargs_backward(
+        Out_splitK: "VAR_ARGS_ARRAY",  # list of [B, G, H, Mq, K];
+        LSE_splitK: "VAR_ARGS_ARRAY",  # list of [B, G, H, Mq]
+        Dout_splitK: "VAR_ARGS_ARRAY",  # gradients - same shape as the inputs themselves
+        DLSE_splitK: "VAR_ARGS_ARRAY",
+        Out,  # [B, G, H, M, K]
+        LSE,  # [B, G, H, M]
+        DOut,
+        DLSE,
+        # strides of chunked inputs: attention and LSE
+        stride_osk_z: "VAR_ARGS_ARRAY",
+        stride_osk_g: "VAR_ARGS_ARRAY",
+        stride_osk_h: "VAR_ARGS_ARRAY",
+        stride_osk_m: "VAR_ARGS_ARRAY",
+        stride_osk_k: "VAR_ARGS_ARRAY",
+        stride_lsek_z: "VAR_ARGS_ARRAY",
+        stride_lsek_g: "VAR_ARGS_ARRAY",
+        stride_lsek_h: "VAR_ARGS_ARRAY",
+        stride_lsek_m: "VAR_ARGS_ARRAY",
+        # strides of merged outputs: attention and LSE
+        stride_oz,
+        stride_og,
+        stride_oh,
+        stride_om,
+        stride_ok,
+        stride_lse_z,
+        stride_lse_g,
+        stride_lse_h,
+        stride_lse_m,
+        # strides of gradients
+        stride_doz,
+        stride_dog,
+        stride_doh,
+        stride_dom,
+        stride_dok,
+        stride_dlse_z,
+        stride_dlse_g,
+        stride_dlse_h,
+        stride_dlse_m,
+        BLOCK_SIZE: tl.constexpr,
+        H: tl.constexpr,
+        G: tl.constexpr,
+    ):
+        """
+        Backward for _splitK_reduce_varargs. Similar to forward, it takes
+        attention and LSE of chunks as lists of tensors,
+        and outputs the corresponding gradients in the same format.
+        """
+
+        off_zhg = tl.program_id(0).to(tl.int64)
+        off_z = off_zhg // (H * G)
+        off_h = (off_zhg // G) % H
+        off_g = off_zhg % G
+        off_m = tl.program_id(1)
+
+        # Compute offsets inside each attention/LSE chunk.
+        # Note that each chunk can have different strides, so offsets can also be different.
+        out_splitk_offset: "VAR_ARGS_ARRAY"  # noqa: F821
+        for i in range(len(Out_splitK)):
+            out_splitk_offset[i] = (  # type: ignore # noqa: F821
+                stride_osk_z[i] * off_z
+                + stride_osk_g[i] * off_g
+                + stride_osk_h[i] * off_h
+                + stride_osk_m[i] * off_m
+                + tl.arange(0, BLOCK_SIZE)
+            )
+        lse_splitk_offset: "VAR_ARGS_ARRAY"  # noqa: F821
+        for i in range(len(Out_splitK)):
+            lse_splitk_offset[i] = (  # type: ignore # noqa: F821
+                stride_lsek_z[i] * off_z
+                + stride_lsek_g[i] * off_g
+                + stride_lsek_h[i] * off_h
+                + stride_lsek_m[i] * off_m
+            )
+
+        lse_max = float("-inf")
+        for split_k_idx in range(len(Out_splitK)):  # type: ignore # noqa: F821
+            LSE_splitK_ptr = LSE_splitK[split_k_idx] + lse_splitk_offset[split_k_idx]  # type: ignore # noqa: F821
+            lse_splitk = tl.load(LSE_splitK_ptr)
+            lse_max = tl.maximum(lse_max, lse_splitk)
+
+        # Load attention and the corresponding gradient
+        offset_out = (
+            stride_oz * off_z
+            + stride_oh * off_h
+            + stride_og * off_g
+            + stride_om * off_m
+            + tl.arange(0, BLOCK_SIZE)
+        )
+        offset_dout = (
+            stride_doz * off_z
+            + stride_doh * off_h
+            + stride_dog * off_g
+            + stride_dom * off_m
+            + tl.arange(0, BLOCK_SIZE)
+        )
+        out = tl.load(Out + offset_out)
+        dattn = tl.load(DOut + offset_dout)
+
+        # Load LSE and the corresponding gradient
+        offset_lse = (
+            stride_lse_z * off_z
+            + stride_lse_h * off_h
+            + stride_lse_g * off_g
+            + stride_lse_m * off_m
+        )
+        offset_dlse = (
+            stride_dlse_z * off_z
+            + stride_dlse_h * off_h
+            + stride_dlse_g * off_g
+            + stride_dlse_m * off_m
+        )
+        lse = tl.load(LSE + offset_lse)
+        dlse = tl.load(DLSE + offset_dlse)
+
+        for split_k_idx in range(len(Out_splitK)):  # type: ignore # noqa: F821
+            # Load attention and LSE of chunks
+            out_splitk = tl.load(Out_splitK[split_k_idx] + out_splitk_offset[split_k_idx])  # type: ignore # noqa: F821
+            lse_splitk = tl.load(LSE_splitK[split_k_idx] + lse_splitk_offset[split_k_idx])  # type: ignore # noqa: F821
+
+            # Pointers to save gradients of attention and LSE of chunks
+            dout_splitk_ptr = Dout_splitK[split_k_idx] + out_splitk_offset[split_k_idx]  # type: ignore # noqa: F821
+            dlse_splitk_ptr = DLSE_splitK[split_k_idx] + lse_splitk_offset[split_k_idx]  # type: ignore # noqa: F821
+
+            # dX/dattn_i = dX/dattn * dattn/dattn_i + dX/dlse * dlse/dattn_i, and dlse/dattn_i == 0
+            dattn_dattn_i = tl.exp(lse_splitk - lse_max) / tl.exp(lse - lse_max)
+            dX_dattn_i = dattn_dattn_i * dattn
+            tl.store(dout_splitk_ptr, dX_dattn_i)
+
+            dattn_dlse_i = (out_splitk - out) * dattn_dattn_i
+
+            # dX/dlse_i = dX/dattn * dattn/dlse_i + dX/dlse * dlse/dlse_i
+            dlse_dlse_i = dattn_dattn_i
+            dX_dlse_i = dlse_dlse_i * dlse + tl.sum(
+                dattn_dlse_i * dattn
+            )  # Sum is over the hidden dimension
+            tl.store(dlse_splitk_ptr, dX_dlse_i)
 
 else:
     _fwd_kernel_splitK = None
@@ -1403,9 +1543,68 @@ def merge_attentions(
 def merge_attentions_varargs(
     attn_out: torch.Tensor,
     lse_out: Optional[torch.Tensor],
+    attn_split: Sequence[torch.Tensor],
+    lse_split: Sequence[torch.Tensor],
+):
+    kernel_args, grid = _prepare_reduce_kernel_params(
+        attn_out, lse_out, attn_split, lse_split
+    )
+    reduce_kernel = unroll_varargs(_splitK_reduce_varargs, N=len(attn_split))
+    reduce_kernel[grid](
+        *attn_split,
+        *lse_split,
+        Out=attn_out,
+        LSE=lse_out,
+        **kernel_args,
+        BLOCK_SIZE=attn_out.shape[-1],
+        WRITE_LSE=lse_out is not None,
+    )
+
+
+def merge_attentions_varargs_backward(
     attn_split: List[torch.Tensor],
     lse_split: List[torch.Tensor],
-):
+    attn_out: torch.Tensor,
+    lse_out: torch.Tensor,
+    grad_attn: torch.Tensor,
+    grad_lse: torch.Tensor,
+) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+
+    dattn_splitk = [torch.empty_like(x) for x in attn_split]
+    dlse_splitk = [torch.empty_like(x) for x in lse_split]
+
+    kernel_args, grid = _prepare_reduce_kernel_params(
+        attn_out, lse_out, attn_split, lse_split, grad_attn, grad_lse
+    )
+
+    reduce_kernel_backward = unroll_varargs(
+        _splitK_reduce_varargs_backward, N=len(attn_split)
+    )
+    reduce_kernel_backward[grid](
+        *attn_split,
+        *lse_split,
+        *dattn_splitk,
+        *dlse_splitk,
+        Out=attn_out,
+        LSE=lse_out,
+        DOut=grad_attn,
+        DLSE=grad_lse,
+        **kernel_args,
+        BLOCK_SIZE=attn_out.shape[-1],
+    )
+
+    return dattn_splitk, dlse_splitk
+
+
+def _prepare_reduce_kernel_params(
+    attn_out: torch.Tensor,
+    lse_out: Optional[torch.Tensor],
+    attn_split: Sequence[torch.Tensor],
+    lse_split: Sequence[torch.Tensor],
+    grad_attn: Optional[torch.Tensor] = None,
+    grad_lse: Optional[torch.Tensor] = None,
+) -> Tuple[Dict[str, int], Tuple[int, int, int]]:
+
     B, M, G, H, Kq = attn_out.shape
     if lse_out is not None:
         B3, G3, H3, M3 = lse_out.shape
@@ -1449,22 +1648,20 @@ def merge_attentions_varargs(
 
     num_warps = 4 if B * G * H < 32 or torch.version.hip else 2
     grid = (B * G * H, M, 1)
-    reduce_kernel = unroll_varargs(_splitK_reduce_varargs, N=len(attn_split))
-    reduce_kernel[grid](
-        *attn_split,
-        *lse_split,
-        Out=attn_out,
-        LSE=lse_out,
+
+    kernel_args = {
+        "G": G,
+        "H": H,
+        "num_warps": num_warps,
         **attn_split_strides,
         **lse_split_strides,
-        **_strides(attn_out, "oz", "om", "og", "oh", "ok"),
-        **_strides(lse_out, "lse_z", "lse_g", "lse_h", "lse_m"),
-        BLOCK_SIZE=attn_out.shape[-1],
-        G=G,
-        H=H,
-        WRITE_LSE=lse_out is not None,
-        num_warps=num_warps,
-    )
+    }
+    kernel_args.update(_strides(attn_out, "oz", "om", "og", "oh", "ok"))
+    kernel_args.update(_strides(lse_out, "lse_z", "lse_g", "lse_h", "lse_m"))
+    if grad_attn is not None:
+        kernel_args.update(_strides(grad_attn, "doz", "dom", "dog", "doh", "dok"))
+        kernel_args.update(_strides(grad_lse, "dlse_z", "dlse_g", "dlse_h", "dlse_m"))
+    return kernel_args, grid
 
 
 FwOp_Map = {
