@@ -76,7 +76,7 @@ struct batched_forward_causalmask_attnbias_dispatched {
           (MaxK == 64) ? 3 : ((MaxK == 256) ? 1 : 2);
 
       bool pad_seqlen_q = !(param.M % FmhaShape::kM0 == 0);
-      bool pad_seqlen_k = !(param.N % FmhaShape::kN0 == 0);
+      bool pad_seqlen_k = (param.N == 0) || !(param.N % FmhaShape::kN0 == 0);
       bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
       bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
 
