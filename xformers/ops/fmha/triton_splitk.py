@@ -1196,6 +1196,7 @@ class FwOp(AttentionFwOpBase):
 
         split_k = min(split_k, split_k_upper_bound)
         split_k = max(split_k, 1)
+        
         return split_k
 
     @classmethod
