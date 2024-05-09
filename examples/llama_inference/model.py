@@ -102,6 +102,7 @@ class Attention(nn.Module):
         x: torch.Tensor,
         cache: LayerCache,
         attn_bias: AttnBias,
+        position_index: Optional[torch.Tensor],
     ) -> torch.Tensor:
         # x.shape is (sum(seq_lens), dim)
         #
@@ -141,8 +142,10 @@ class Attention(nn.Module):
         output = fmha.memory_efficient_attention_forward(
             xq, cache_k, cache_v, attn_bias
         )
-
-        output = self.wo(output.reshape(output_shape))
+        output = output.reshape(output_shape)
+        if position_index is not None:
+            output = output[position_index]
+        output = self.wo(output)
         mp_utils.all_reduce(output)
 
         return output
@@ -204,7 +207,7 @@ class FeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, args: ModelArgs, layer_index: int):
         super().__init__()
 
         assert args.dim % args.n_heads == 0
@@ -218,6 +221,8 @@ class TransformerBlock(nn.Module):
         assert args.n_heads % n_kv_heads == 0
         assert args.n_heads % mp_size == 0
         assert n_kv_heads % mp_size == 0
+
+        self.is_last_layer = layer_index + 1 == args.n_layers
 
         self.attention = Attention(
             dim=args.dim,
@@ -241,11 +246,19 @@ class TransformerBlock(nn.Module):
         cache: LayerCache,
         attn_bias: AttnBias,
     ) -> torch.Tensor:
-        h = x + self.attention.forward(
+        position_index = None
+        if self.is_last_layer and attn_bias.q_seqinfo.max_seqlen > 1:
+            position_index = attn_bias.q_seqinfo.seqstart[1:] - 1
+
+        h = self.attention.forward(
             self.attention_norm(x),
             cache,
             attn_bias,
+            position_index=position_index,
         )
+        if position_index is not None:
+            x = x[position_index]
+        h = h + x
         out = h + self.feed_forward(self.ffn_norm(h))
         return out
 
@@ -264,8 +277,8 @@ class Transformer(nn.Module):
         )
 
         self.layers = nn.ModuleList()
-        for _ in range(args.n_layers):
-            self.layers.append(TransformerBlock(args))
+        for layer_index in range(args.n_layers):
+            self.layers.append(TransformerBlock(args, layer_index))
 
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 

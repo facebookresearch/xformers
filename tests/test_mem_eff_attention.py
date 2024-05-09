@@ -22,9 +22,8 @@ from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
 from xformers.ops.fmha.common import AttentionFwOpBase, AttentionOpBase
 from xformers.ops.fmha.dispatch import _dispatch_fw_priority_list
 
-from .utils import assert_allclose, pack_kv_cache
+from .utils import assert_allclose, disable_tf32, pack_kv_cache
 
-torch.backends.cuda.matmul.allow_tf32 = False
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 rocm_only = pytest.mark.skipif(
     not torch.cuda.is_available() or not torch.version.hip, reason="requires ROCM"
@@ -246,6 +245,7 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
 )
 
 
+@disable_tf32
 def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
     if q.ndim == 5:
 
@@ -849,6 +849,7 @@ def _block_diag_reshape_lse(
     return torch.cat(parts, dim=1).unsqueeze(1)
 
 
+@disable_tf32
 @parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
     (
@@ -927,6 +928,7 @@ def test_logsumexp_mqa(op):
     assert_allclose(lse[0, :, 0], ref_lse[:, 0], atol=2e-4)
 
 
+@disable_tf32
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("grad_out_contiguous", [False, True])
 @parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
@@ -1263,6 +1265,7 @@ def _test_dropout_backward(q_len, kv_len, batch_size, k, p, op, dtype):
 
 
 @cuda_only
+@disable_tf32
 @pytest.mark.parametrize("p", [0.3, 0.7])
 @pytest.mark.parametrize("k", [5, 6, 32])
 @pytest.mark.parametrize("batch_size", [1, 2])
@@ -1275,6 +1278,7 @@ def test_dropout_backward_small_k(q_len, kv_len, batch_size, k, p):
 
 
 @cuda_only
+@disable_tf32
 @pytest.mark.parametrize("p", [0.000001, 0.3, 0.7])
 @pytest.mark.parametrize("k", [16, 128, 256])
 @pytest.mark.parametrize("batch_size", [1, 2])
@@ -1311,6 +1315,7 @@ def test_dropout_backward_ck(dt, q_len, kv_len, batch_size, k, p):
     )
 
 @cuda_only
+@disable_tf32
 @disable_on_rocm
 @pytest.mark.parametrize("k_len", [32])
 @pytest.mark.parametrize("batch_size", [1])
@@ -1456,6 +1461,7 @@ def test_cuda_streams(
     )
 
 
+@disable_tf32
 @parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs
 def test_custom_scale(opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
     p = 0.0
@@ -2602,6 +2608,7 @@ def test_forward_splitk(
     [
         (1, 2**16, 3, 128),
         (5, 53, 4, 64),
+        (7, 51, 4, 256),
     ],
 )
 def test_mqa_decoding(op: Type[fmha.AttentionFwOpBase], dtype, B_Mkv_H_K):

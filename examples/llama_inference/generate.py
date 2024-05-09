@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import json
 import os
 import readline  # type: ignore # noqa
@@ -12,7 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional, Tuple, Union
 
-import fire
 import model as fast
 import mp_utils
 import sample_utils
@@ -161,8 +161,7 @@ class FastGen:
                 graph.replay()
 
             # output: (sum(token_lengths), vocab_size)
-            logits = output[q_seqstart[1:] - 1, :]
-            logits = logits.view(bs, self.model_args.vocab_size)
+            logits = output.view(bs, self.model_args.vocab_size)
 
             if self.gen_args.use_sampling:
                 temp = self.gen_args.temperature
@@ -222,7 +221,7 @@ def get_prompts(interactive: bool) -> Iterable[list[str]]:
         ]
 
 
-def main(ckpt_dir: str, interactive: bool = False, add_instruction_tags: bool = True):
+def main(ckpt_dir: str, interactive: bool, add_instruction_tags: bool):
     if "WORLD_SIZE" in os.environ:
         mp_size = int(os.environ["WORLD_SIZE"])
         local_rank = int(os.environ["LOCAL_RANK"])
@@ -255,4 +254,18 @@ def main(ckpt_dir: str, interactive: bool = False, add_instruction_tags: bool = 
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    parser = argparse.ArgumentParser("Llama inference")
+    parser.add_argument("ckpt_dir")
+    parser.add_argument(
+        "-i", "--interactive", action="store_true", help="ask for prompts"
+    )
+    parser.add_argument(
+        "--no-instruction-tags", action="store_true", help="do not add instruction tags"
+    )
+
+    args = parser.parse_args()
+    main(
+        ckpt_dir=args.ckpt_dir,
+        interactive=args.interactive,
+        add_instruction_tags=not args.no_instruction_tags,
+    )

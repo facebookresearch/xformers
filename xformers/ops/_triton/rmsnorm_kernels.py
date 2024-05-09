@@ -6,10 +6,13 @@ import torch
 import triton
 import triton.language as tl
 
-if hasattr(tl, "libdevice"):
-    tl_math = tl.libdevice
-else:
-    tl_math = tl.math
+try:
+    from triton.language.extra.cuda.libdevice import rsqrt
+except ImportError:
+    try:
+        from triton.language.math import rsqrt
+    except ImportError:
+        from triton.language.libdevice import rsqrt
 
 
 @triton.jit
@@ -34,7 +37,7 @@ def _rms_norm_kernel(
             x_ptr + cols, mask=cols < N_COLS, other=0.0, eviction_policy="evict_last"
         ).to(tl.float32)
         _mean += a * a
-    rstd = tl_math.rsqrt((tl.sum(_mean, axis=0) / N_COLS) + eps)
+    rstd = rsqrt((tl.sum(_mean, axis=0) / N_COLS) + eps)
     for offset in range(0, N_COLS, BLOCK_SIZE):
         cols = offset + tl.arange(0, BLOCK_SIZE)
         mask = cols < N_COLS
@@ -78,7 +81,7 @@ def _rms_norm_add_kernel(
         a = ax + ay
         tl.store(x_ptr + cols, a, mask=mask)
         _mean += a * a
-    rstd = tl_math.rsqrt((tl.sum(_mean, axis=0) / N_COLS) + eps)
+    rstd = rsqrt((tl.sum(_mean, axis=0) / N_COLS) + eps)
     for offset in range(0, N_COLS, BLOCK_SIZE):
         cols = offset + tl.arange(0, BLOCK_SIZE)
         mask = cols < N_COLS
