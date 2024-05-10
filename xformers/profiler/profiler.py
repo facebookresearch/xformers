@@ -174,8 +174,14 @@ class _Profiler:
             self.worker_name = "{}_{}".format(socket.gethostname(), str(os.getpid()))
 
         self.module = weakref.ref(module if module is not None else nn.Module())
+        self.init_schedule()
+
+    def init_schedule(self, offset: int = 0) -> None:
         self.profilers: List[_ProfilerState] = sorted(
-            [_ProfilerState(cls, begin, end) for cls, begin, end in schedule],
+            [
+                _ProfilerState(cls, begin + offset, end + offset)
+                for cls, begin, end in self.schedule
+            ],
             key=lambda x: x.iter_begin,
         )
         self.last_step = self.profilers[-1].iter_end if self.profilers else 0
@@ -268,6 +274,27 @@ class _Profiler:
             self.update_profilers_on_step()
         if self.done_steps == self.last_step:
             logger.info("xFormers profiler done. %s", self.format_summary())
+
+        # Check if we triggered a manual profile step
+        CHECK_TRIGGER_EVERY = 10
+        if (
+            self.done_steps > self.last_step
+            and (self.done_steps % CHECK_TRIGGER_EVERY) == 0
+        ):
+            try:
+                (self.output_dir / "trigger").unlink()
+                (
+                    self.output_dir
+                    / f"trigger.{self.done_steps + CHECK_TRIGGER_EVERY:09}"
+                ).write_text(self.worker_name)
+            except FileNotFoundError:
+                pass
+            step_trigger = self.output_dir / f"trigger.{self.done_steps:09}"
+            if step_trigger.exists():
+                logger.info(
+                    "xFormers profiler manually triggered at step %d", self.done_steps
+                )
+                self.init_schedule(offset=self.done_steps + 1)
 
     def format_summary(self) -> str:
         if len(self.summary) == 0:
