@@ -450,13 +450,8 @@ class DetectSlowOpsProfiler(DispatcherWithoutBrokenFuncs):
 
         return out
 
-    def __enter__(self):
-        self.main_profiler._install_hooks()
-        super().__enter__()
-
     def __exit__(self, exc_type, exc_val, exc_tb):
         super().__exit__(exc_type, exc_val, exc_tb)
-        self.main_profiler._remove_hooks()
         torch.cuda.synchronize()  # Wait for the events to be recorded
         for op in self.trace:
             op.finalize()

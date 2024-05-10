@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 ### Improved
 - fMHA: Fixed out-of-bounds reading for Split-K triton implementation
+- Profiler: fix bug with modules that take a single tuple as argument
 ### Removed
 - Removed support for PyTorch version older than 2.2.0
 
