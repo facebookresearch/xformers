@@ -3,13 +3,20 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast
+import math
+from contextlib import contextmanager
+from typing import Union, cast
 
 import pytest
 import torch
+import torch.nn as nn
+from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.utils._python_dispatch import TorchDispatchMode, _get_current_dispatch_mode
 
+import xformers.ops as xops
+import xformers.ops.fmha as fmha
 import xformers.profiler
+from xformers.profiler import profile_analyzer
 from xformers.profiler.slow_ops_profiler import GemmOpComputeFlops, flop_mapping
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
@@ -157,3 +164,105 @@ def test_profiler_overhead(device_bs_mm) -> None:
         assert not model_opt_casted._forward_pre_hooks
         assert not model_opt_casted._backward_hooks
         assert _get_current_dispatch_mode() is None
+
+
+@contextmanager
+def assert_flops(
+    error_msg: str,
+    *,
+    match: int = -1,
+    at_least: int = -1,
+    at_most: Union[int, float] = math.inf,
+    fw=True,
+    bw=True,
+):
+    try:
+        with torch.profiler.profile(
+            profile_memory=True,
+            record_shapes=True,
+            with_stack=True,
+            with_flops=True,
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+        ) as p:
+            yield
+    finally:
+        results = profile_analyzer.AnalyzedTrace.from_profile(
+            p.profiler.kineto_results.events()
+        )
+        total_flops = 0.0
+        if fw:
+            total_flops += sum(results.operations_per_dtype_fw.values())
+        if bw:
+            total_flops += sum(results.operations_per_dtype_bw.values())
+        if match != -1:
+            # Some tolerance
+            assert (
+                total_flops * 0.99 < match < total_flops * 1.01
+            ), f"{error_msg}: {total_flops} flops, expected {match}"
+        assert total_flops >= at_least, error_msg
+        assert total_flops <= at_most, error_msg
+
+
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.float64, torch.float, torch.bfloat16]
+)
+@cuda_only
+def test_analyze_prof(dtype) -> None:
+    B, N = 64, 128
+    w = torch.empty([128, 128], dtype=dtype, device="cuda", requires_grad=True)
+    x = torch.ones([B, 1, N, 128], dtype=dtype, device="cuda", requires_grad=True)
+    with assert_flops("Linear", match=2 * B * N * 128 * 128):
+        x = x @ w
+    with assert_flops("LinearBW", match=2 * B * N * 128 * 128 * 2, fw=False):
+        x.backward(x)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16])
+@pytest.mark.parametrize("enable_flash", [True, False], ids=["flash", "noFlash"])
+@pytest.mark.parametrize("causal", [True, False], ids=["causal", ""])
+@cuda_only
+def test_analyze_prof_sdpa(dtype, enable_flash: bool, causal: bool) -> None:
+    B, N = 64, 128
+    x = torch.ones([B, 1, N, 128], dtype=dtype, device="cuda", requires_grad=True)
+    fw_flops = 2 * 2 * B * N * N * 128
+    if causal:
+        fw_flops //= 2
+    with sdpa_kernel(
+        [SDPBackend.EFFICIENT_ATTENTION]
+        + ([SDPBackend.FLASH_ATTENTION] if enable_flash else [])
+    ):
+        with assert_flops("SDPA", match=fw_flops):
+            x = nn.functional.scaled_dot_product_attention(x, x, x, is_causal=causal)
+        with assert_flops("SDPA BW", match=fw_flops * 5 // 2):
+            x.backward(x)
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        (fmha.cutlass.FwOp, fmha.cutlass.BwOp),
+        (fmha.flash.FwOp, fmha.flash.BwOp),
+    ],
+    ids=["cutlass", "flash"],
+)
+@pytest.mark.parametrize("causal", [True, False], ids=["causal", ""])
+@cuda_only
+def test_analyze_prof_memeff(op, causal: bool) -> None:
+    dtype = torch.float16
+    B, N = 64, 128
+    x = torch.ones([B, 1, N, 128], dtype=dtype, device="cuda", requires_grad=True)
+    device_sm = torch.cuda.get_device_capability(x.device)
+    if device_sm < op[0].CUDA_MINIMUM_COMPUTE_CAPABILITY:
+        pytest.skip(f"Requires sm{op[0].CUDA_MINIMUM_COMPUTE_CAPABILITY}")
+    fw_flops = 2 * 2 * B * N * N * 128
+    bias = None
+    if causal:
+        bias = fmha.attn_bias.LowerTriangularMask()
+        fw_flops //= 2
+    with assert_flops("memory_efficient_attention", match=fw_flops):
+        y = xops.memory_efficient_attention(x, x, x, attn_bias=bias, op=op)
+    with assert_flops("memory_efficient_attention BW", match=fw_flops * 5 // 2):
+        y.backward(y)

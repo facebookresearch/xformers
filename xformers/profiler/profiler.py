@@ -8,15 +8,19 @@ import logging
 import os
 import queue
 import socket
+import time
 import weakref
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import torch.cuda.memory
 import torch.cuda.nvtx
 import torch.nn as nn
 import torch.profiler
+
+from .device_limits import get_device_limits
+from .profile_analyzer import AnalyzedTrace
 
 logger = logging.getLogger(__name__)
 
@@ -55,41 +59,75 @@ class PyTorchProfiler:
 
     def __init__(self, main_profiler: "_Profiler") -> None:
         self.main_profiler = main_profiler
-        activities_str = "_".join(a.name for a in self.ACTIVITIES)
-        trace_handler = torch.profiler.tensorboard_trace_handler(
-            dir_name=str(
-                main_profiler.output_dir
-                / f"profile_{activities_str}_{main_profiler.done_steps:06}"
-            ),
-            worker_name=main_profiler.worker_name,
-            use_gzip=True,
-        )
-        self.hta = torch.profiler.profile(
-            on_trace_ready=trace_handler,
+        self.pytorch_profiler = torch.profiler.profile(
+            on_trace_ready=self._on_trace,
             profile_memory=True,
             record_shapes=True,
             with_stack=True,
+            with_flops=True,
             activities=self.ACTIVITIES,
         )
-        self.done_steps = 0
+
+    def _on_trace(self, prof: torch.profiler.profiler.profile) -> None:
+        activities_str = "_".join(a.name for a in self.ACTIVITIES)
+        dir_name = str(
+            self.main_profiler.output_dir
+            / f"profile_{activities_str}_{self.main_profiler.done_steps:06}"
+        )
+        worker_name = self.main_profiler.worker_name
+        if worker_name == "":
+            worker_name = f"{socket.gethostname()}_{os.getpid()}"
+        os.makedirs(dir_name, exist_ok=True)
+        file_name = f"{worker_name}.{time.time_ns()}.pt.trace.json.gz"
+        prof.export_chrome_trace(os.path.join(dir_name, file_name))
+        try:
+            self._analyze_trace(prof)
+        except Exception as exc:
+            self.main_profiler.summary.append(("TraceAnalysis", "Error"))
+            logger.warn("Exception analyzing kineto trace", exc_info=exc)
+
+    def _analyze_trace(self, prof: torch.profiler.profiler.profile) -> None:
+        if prof.profiler is None or prof.profiler.kineto_results is None:
+            return
+        results = AnalyzedTrace.from_profile(prof.profiler.kineto_results.events())
+        limits = get_device_limits(torch.device("cuda"))
+        hw_flops: Dict[torch.dtype, float] = {}
+        if limits is not None:
+            for dtype, tflops in limits.gemm_tflops.items():
+                hw_flops[dtype] = tflops * (1000**4)
+        total_flops = 0.0
+        total_hfu = 0.0
+        total_mfu = 0.0
+        for dtype in results.operations_per_dtype_fw.keys():
+            total_flops += results.compute_num_ops(dtype) / results.total_time_s
+            total_hfu += results.compute_hfu(hw_flops)
+            total_mfu += results.compute_mfu(hw_flops)
+        s = self.main_profiler.summary
+        s.append(("Step time (ms)", f"{int(results.total_time_s * 1000)}"))
+        s.append(("TFlops", f"{total_flops / (1000**4):0.1f}"))
+        s.append(("HFU", f"{total_hfu:0.3f}"))
+        s.append(("MFU", f"{total_mfu:0.3f}"))
 
     def __enter__(self):
         torch.cuda.synchronize()
-        self.hta.__enter__()
+        self.pytorch_profiler.__enter__()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         torch.cuda.synchronize()
-        self.hta.__exit__(exc_type, exc_val, exc_tb)
+        self.pytorch_profiler.__exit__(exc_type, exc_val, exc_tb)
 
     def step(self) -> None:
-        self.hta.step()
-        self.done_steps += 1
+        self.pytorch_profiler.step()
 
 
 class PyTorchProfiler_CUDAOnly(PyTorchProfiler):
     # This profiler does not profile the CPU-side of things
     # so we expect it to have almost no overhead
     ACTIVITIES = [torch.profiler.ProfilerActivity.CUDA]
+
+    def _analyze_trace(self, prof: torch.profiler.profiler.profile) -> None:
+        # Can't analyze trace without CPU trace for operator shapes etc...
+        pass
 
 
 class MemSnapshotsProfiler:

@@ -395,6 +395,8 @@ class DetectSlowOpsProfiler(DispatcherWithoutBrokenFuncs):
                     device = a.device
                 dtypes.append(a.dtype)
         limits = get_device_limits(device)
+        if not limits:
+            return (math.inf, math.inf)
         dtypes = [dt for dt in dtypes if dt in limits.gemm_tflops]
         if not dtypes or device is None:
             return (math.inf, math.inf)

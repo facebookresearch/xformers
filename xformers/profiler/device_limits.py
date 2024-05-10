@@ -5,7 +5,7 @@
 
 import math
 from dataclasses import dataclass, field
-from typing import Mapping, Tuple
+from typing import Mapping, Optional, Tuple
 
 import torch
 
@@ -101,7 +101,7 @@ DEVICE_LIMITS: Tuple[DeviceLimit, ...] = (
 )
 
 
-def get_device_limits(device) -> DeviceLimit:
+def get_device_limits(device) -> Optional[DeviceLimit]:
     """Currently only implemented for GPUs"""
     if device is not None and device.type == "cuda":
         device_sm = torch.cuda.get_device_capability(device)
@@ -110,4 +110,4 @@ def get_device_limits(device) -> DeviceLimit:
             if lim.sm == device_sm:
                 if lim.name in device_name:
                     return lim
-    return DeviceLimit()
+    return None
