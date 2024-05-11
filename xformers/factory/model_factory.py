@@ -295,6 +295,9 @@ class xFormer(torch.nn.Module):
 
             if not self.decoders:
                 return memory
+        else:
+            # Decoder-only
+            memory = src
 
         # If decoder: either use the encoder output, or just decode, both options are possible
         if len(self.decoders) > 0:
@@ -303,7 +306,6 @@ class xFormer(torch.nn.Module):
             for decoder in self.decoders:
                 tgt = decoder(
                     target=tgt,
-                    # pyre-fixme[61]: `memory` is not always initialized here.
                     memory=memory,
                     input_mask=decoder_input_mask,
                 )
