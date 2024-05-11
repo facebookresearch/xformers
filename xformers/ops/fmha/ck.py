@@ -365,16 +365,14 @@ class BwOp(AttentionBwOpBase):
         type(None),
         torch.Tensor,
         LowerTriangularMask,
-        # LowerTriangularFromBottomRightMask,
-        # TODO: Still some infs/nans in the BW pass for
-        # local + causal
-        # LowerTriangularFromBottomRightLocalAttentionMask,
+        LowerTriangularFromBottomRightMask,
+        LowerTriangularFromBottomRightLocalAttentionMask,
         # TODO: Fix handling of gradient through the fMHA autograd function
         # LowerTriangularMaskWithTensorBias,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
-        # attn_bias.BlockDiagonalCausalLocalAttentionMask,
+        attn_bias.BlockDiagonalCausalLocalAttentionMask,
     }
     SUPPORTS_ATTN_BIAS_GRAD = True
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
