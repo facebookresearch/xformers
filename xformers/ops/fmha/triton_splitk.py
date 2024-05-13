@@ -1168,7 +1168,6 @@ class FwOp(AttentionFwOpBase):
     @classmethod
     def get_split_k(cls, B: int, G: int, H: int, Mk: int) -> int:
         """Heuristic for the number of splits"""
-        print(f"B = {B}, G = {G}, H = {H}, Mk = {Mk}")
         bh = max(B * H, 1)  # NOTE: Handle B*h=0 case
         split_k = max(Mk + bh - 1, 1024) // bh
         if torch.version.hip:
@@ -1185,9 +1184,6 @@ class FwOp(AttentionFwOpBase):
             chunk_size = split_size // max_chunk_size * max_chunk_size
             if chunk_size < split_size:
                 split_k += 1
-
-            # split_size = (split_size + max_chunk_size - 1) // max_chunk_size * max_chunk_size
-            # split_k = (Mk + split_size - 1) // split_size
 
             split_k_upper_bound = 512
         else:
@@ -1341,8 +1337,8 @@ class FwOp(AttentionFwOpBase):
 
         split_size = (Mk + split_k - 1) // split_k
         
-        # align split_size to the multiple of 64
-        split_size = (split_size + 63) // 64 * 64
+        # # align split_size to the multiple of 64
+        # split_size = (split_size + cls.BLOCK_N) // cls.BLOCK_N * cls.BLOCK_N
         print(f"split_k = {split_k}, split_size = {split_size}, num_tiles = {B * G * H * split_k}")
 
         use_seq_len = seq_len is not None
