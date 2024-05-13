@@ -23,7 +23,7 @@ device = torch.device("cuda")
 
 CASES = [
     # dict(
-    #     B=max(1, 2 ** (16 - i)),
+    #     B=max(1, 2 ** (16 - i) + 1),
     #     Mq=1,
     #     Mkv=2**i,
     #     Hq=16,
@@ -36,6 +36,7 @@ CASES = [
 ] + [
     # dict(B=i, Mq=1, Mkv=8448, Hq=8, Hkv=1, K=128, attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask) for i in [2, 4, 8, 16, 32, 64] 
     dict(B=i, Mq=1, Mkv=4097, Hq=8, Hkv=1, K=128, attn_bias_type=None) for i in [2, 4, 8, 16, 32, 64, 128]
+    # dict(B=i, Mq=1, Mkv=4161, Hq=8, Hkv=1, K=128, attn_bias_type=None) for i in [2, 4, 8, 16, 32, 64, 128]
 ]
 
 
@@ -296,19 +297,19 @@ if torch.version.cuda:
     BENCHMARKS["decoder"] = AttentionDecodingDecoder
     BENCHMARKS["cutlass"] = AttentionDecodingCUTLASS
 
-# if torch.version.hip:
-#     BENCHMARKS.update(
-#         {
-#             "ck": AttentionDecodingCK,
-#             "ck-decoder": AttentionDecodingCKDecoder,
-#             "ck_splitK": AttentionDecodingCKSplitKV,
-#         }
-#     )
+if torch.version.hip:
+    BENCHMARKS.update(
+        {
+            "ck": AttentionDecodingCK,
+            "ck-decoder": AttentionDecodingCKDecoder,
+            "ck_splitK": AttentionDecodingCKSplitKV,
+        }
+    )
 
 
-if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
+# if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
-    # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
+    BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:
     import flash_attn
@@ -334,6 +335,8 @@ except ImportError:
 def get_benchmark_names():
     decoder_names = list(BENCHMARKS.keys())
     decoder_names.remove("pytorch")
+    # decoder_names = ["ck-decoder", "ck_splitK", "ck", "triton_splitK", "triton_int4KV"]
+    decoder_names = ["triton_splitK"]
     return decoder_names
 
 # tests to verify correctness of each decoder implementation
@@ -347,8 +350,15 @@ def test_flash_attention_decoder(name, case):
     assert name in ["ck-decoder", "ck_splitK", "ck", "triton_splitK", "triton_int4KV"]
     decoder_output,ctx = decoder.OP.apply(baseline.get_inputs(), False)
     s = decoder_output.shape
-    if name in ["ck-decoder", "ck_splitK"]:
+    print(f"base_shape = {baseline_out.shape}, shape = {s}")
+    # if name in ["ck-decoder", "ck_splitK"]:
+    #     decoder_output = decoder_output.reshape([s[0], s[1], -1, s[4]])
+    if len(decoder_output.shape) == 5:
+        decoder_output = decoder_output.transpose(1, 0).contiguous()
+        s = decoder_output.shape
         decoder_output = decoder_output.reshape([s[0], s[1], -1, s[4]])
+        print(f"docode_out = {decoder_output.shape}")
+
     decoder_output = decoder_output.transpose(2, 1).contiguous()
 
     torch.testing.assert_close(decoder_output, baseline_out, atol=1e-3, rtol=0)
