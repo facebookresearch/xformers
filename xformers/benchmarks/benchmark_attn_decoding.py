@@ -15,22 +15,27 @@ import xformers.ops as xops
 from xformers.attn_bias_utils import create_attn_bias
 from xformers.benchmarks.utils import NotSupportedInputError, benchmark_main_helper2
 
+import pytest
+
 min_run_time = 0.5
 device = torch.device("cuda")
 
 
 CASES = [
-    dict(
-        B=max(1, 2 ** (16 - i)),
-        Mq=1,
-        Mkv=2**i,
-        Hq=16,
-        Hkv=hkv,
-        K=128,
-        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    )
-    for i in range(8, 18)
-    for hkv in (1, 2)
+    # dict(
+    #     B=max(1, 2 ** (16 - i)),
+    #     Mq=1,
+    #     Mkv=2**i,
+    #     Hq=16,
+    #     Hkv=hkv,
+    #     K=128,
+    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    # )
+    # for i in range(8, 18)
+    # for hkv in (1, 2)
+] + [
+    # dict(B=i, Mq=1, Mkv=8448, Hq=8, Hkv=1, K=128, attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask) for i in [2, 4, 8, 16, 32, 64] 
+    dict(B=i, Mq=1, Mkv=4161, Hq=8, Hkv=2, K=128, attn_bias_type=None) for i in [2, 4]
 ]
 
 
@@ -144,6 +149,12 @@ class AttentionDecodingBase:
             not_supported_reasons = self.OP.not_supported_reasons(inp)
             if not_supported_reasons:
                 raise NotSupportedInputError(not_supported_reasons)
+
+    def get_inputs(self):
+        inp = xops.fmha.Inputs(
+            query=self.q, key=self.k, value=self.v, attn_bias=self.attn_bias
+        )
+        return inp
 
     def fw(self) -> None:
         try:
@@ -320,10 +331,34 @@ except ImportError:
     pass
 
 
-benchmark_main_helper2(
-    "attn_decoding",
-    fw=True,
-    cases=CASES,
-    functions=BENCHMARKS,
-    min_run_time=min_run_time,
-)
+def get_benchmark_names():
+    decoder_names = list(BENCHMARKS.keys())
+    decoder_names.remove("pytorch")
+    return decoder_names
+
+# tests to verify correctness of each decoder implementation
+@pytest.mark.parametrize("name, case", [(name, case) for name in get_benchmark_names() for case in CASES])
+def test_flash_attention_decoder(name, case):
+    baseline = AttentionDecodingPyTorchRepeat(case["B"], case["Mq"], case["Mkv"], case["Hq"],
+                                                case["Hkv"], case["K"], False, case["attn_bias_type"])
+    baseline_out = baseline.fw()
+    decoder = BENCHMARKS[name]
+
+    assert name in ["ck-decoder", "ck_splitK", "ck", "triton_splitK", "triton_int4KV"]
+    decoder_output,ctx = decoder.OP.apply(baseline.get_inputs(), False)
+    s = decoder_output.shape
+    decoder_output = decoder_output.reshape([s[0], s[1], -1, s[4]])
+    decoder_output = decoder_output.transpose(2, 1).contiguous()
+
+    torch.testing.assert_close(decoder_output, baseline_out, atol=1e-3, rtol=0)
+
+# run benchmark performance
+if __name__ == "__main__":
+    benchmark_main_helper2(
+        "attn_decoding",
+        fw=True,
+        cases=CASES,
+        functions=BENCHMARKS,
+        min_run_time=min_run_time,
+    )
+
