@@ -29,7 +29,7 @@ CASES = [
         Hq=16,
         Hkv=hkv,
         K=128,
-        attn_bias_type=None,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
     )
     for i in range(8, 18)
     for hkv in (1, 2)
