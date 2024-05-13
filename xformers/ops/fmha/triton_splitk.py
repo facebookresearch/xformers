@@ -1181,9 +1181,13 @@ class FwOp(AttentionFwOpBase):
                 split_k = split_k // 2
 
             split_size = (Mk + split_k - 1) // split_k
+
             chunk_size = split_size // max_chunk_size * max_chunk_size
             if chunk_size < split_size:
                 split_k += 1
+
+            # split_size = (split_size + max_chunk_size - 1) // max_chunk_size * max_chunk_size
+            # split_k = (Mk + split_size - 1) // split_size
 
             split_k_upper_bound = 512
         else:
@@ -1339,6 +1343,7 @@ class FwOp(AttentionFwOpBase):
         
         # align split_size to the multiple of 64
         split_size = (split_size + 63) // 64 * 64
+        print(f"split_k = {split_k}, split_size = {split_size}, num_tiles = {B * G * H * split_k}")
 
         use_seq_len = seq_len is not None
 
