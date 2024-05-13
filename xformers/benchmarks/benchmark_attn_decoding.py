@@ -344,16 +344,18 @@ TEST_CASES = [
     dict(B=i, Mq=1, Mkv=4097, Hq=8, Hkv=1, K=128, attn_bias_type=None) for i in [2, 4, 8, 16, 32, 64, 128]
 ]
 
+
 def get_benchmark_names():
     decoder_names = list(BENCHMARKS.keys())
     decoder_names.remove("pytorch")
     return decoder_names
 
+
 # tests to verify correctness of each decoder implementation
 @pytest.mark.parametrize("name, case", [(name, case) for name in get_benchmark_names() for case in TEST_CASES])
 def test_flash_attention_decoder(name, case):
     baseline = AttentionDecodingPyTorchRepeat(case["B"], case["Mq"], case["Mkv"], case["Hq"],
-                                                case["Hkv"], case["K"], False, case["attn_bias_type"])
+                                              case["Hkv"], case["K"], False, case["attn_bias_type"])
     if name == "ck-decoder" and case["Mkv"] >= 2**14:
         pytest.skip("ck-decoder does not support Mkv >= 16K")
 
@@ -362,7 +364,7 @@ def test_flash_attention_decoder(name, case):
     decoder = BENCHMARKS[name]
 
     assert name in ["ck-decoder", "ck_splitK", "ck", "triton_splitK", "triton_int4KV"]
-    decoder_output,ctx = decoder.OP.apply(inputs, False)
+    decoder_output, ctx = decoder.OP.apply(inputs, False)
 
     q, k, v = inputs.get_qkv_in_bmghk()
     B, M, G, H, Kq = q.shape
@@ -377,6 +379,7 @@ def test_flash_attention_decoder(name, case):
     decoder_output = decoder_output.transpose(2, 1).contiguous()
     torch.testing.assert_close(decoder_output, baseline_out, atol=1e-2, rtol=0)
 
+
 # run benchmark performance
 if __name__ == "__main__":
     benchmark_main_helper2(
@@ -386,4 +389,3 @@ if __name__ == "__main__":
         functions=BENCHMARKS,
         min_run_time=min_run_time,
     )
-
