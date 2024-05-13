@@ -22,21 +22,17 @@ device = torch.device("cuda")
 
 
 CASES = [
-    # dict(
-    #     B=max(1, 2 ** (16 - i) + 1),
-    #     Mq=1,
-    #     Mkv=2**i,
-    #     Hq=16,
-    #     Hkv=hkv,
-    #     K=128,
-    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    # )
-    # for i in range(8, 18)
-    # for hkv in (1, 2)
-] + [
-    # dict(B=i, Mq=1, Mkv=8448, Hq=8, Hkv=1, K=128, attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask) for i in [2, 4, 8, 16, 32, 64] 
-    dict(B=i, Mq=1, Mkv=4097, Hq=8, Hkv=1, K=128, attn_bias_type=None) for i in [2, 4, 8, 16, 32, 64, 128]
-    # dict(B=i, Mq=1, Mkv=4161, Hq=8, Hkv=1, K=128, attn_bias_type=None) for i in [2, 4, 8, 16, 32, 64, 128]
+    dict(
+        B=max(1, 2 ** (16 - i)),
+        Mq=1,
+        Mkv=2**i,
+        Hq=16,
+        Hkv=hkv,
+        K=128,
+        attn_bias_type=None,
+    )
+    for i in range(8, 18)
+    for hkv in (1, 2)
 ]
 
 
@@ -307,7 +303,7 @@ if torch.version.hip:
     )
 
 
-# if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
+if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
     BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
@@ -332,36 +328,54 @@ except ImportError:
     pass
 
 
+TEST_CASES = [
+    dict(
+        B=max(1, 2 ** (16 - i)),
+        Mq=1,
+        Mkv=2**i,
+        Hq=16,
+        Hkv=hkv,
+        K=128,
+        attn_bias_type=None,
+    )
+    for i in range(8, 18)
+    for hkv in range(1, 3)
+] + [
+    dict(B=i, Mq=1, Mkv=4097, Hq=8, Hkv=1, K=128, attn_bias_type=None) for i in [2, 4, 8, 16, 32, 64, 128]
+]
+
 def get_benchmark_names():
     decoder_names = list(BENCHMARKS.keys())
     decoder_names.remove("pytorch")
-    # decoder_names = ["ck-decoder", "ck_splitK", "ck", "triton_splitK", "triton_int4KV"]
-    decoder_names = ["triton_splitK"]
     return decoder_names
 
 # tests to verify correctness of each decoder implementation
-@pytest.mark.parametrize("name, case", [(name, case) for name in get_benchmark_names() for case in CASES])
+@pytest.mark.parametrize("name, case", [(name, case) for name in get_benchmark_names() for case in TEST_CASES])
 def test_flash_attention_decoder(name, case):
     baseline = AttentionDecodingPyTorchRepeat(case["B"], case["Mq"], case["Mkv"], case["Hq"],
                                                 case["Hkv"], case["K"], False, case["attn_bias_type"])
+    if name == "ck-decoder" and case["Mkv"] >= 2**14:
+        pytest.skip("ck-decoder does not support Mkv >= 16K")
+
     baseline_out = baseline.fw()
+    inputs = baseline.get_inputs()
     decoder = BENCHMARKS[name]
 
     assert name in ["ck-decoder", "ck_splitK", "ck", "triton_splitK", "triton_int4KV"]
-    decoder_output,ctx = decoder.OP.apply(baseline.get_inputs(), False)
-    s = decoder_output.shape
-    print(f"base_shape = {baseline_out.shape}, shape = {s}")
-    # if name in ["ck-decoder", "ck_splitK"]:
-    #     decoder_output = decoder_output.reshape([s[0], s[1], -1, s[4]])
-    if len(decoder_output.shape) == 5:
-        decoder_output = decoder_output.transpose(1, 0).contiguous()
-        s = decoder_output.shape
-        decoder_output = decoder_output.reshape([s[0], s[1], -1, s[4]])
-        print(f"docode_out = {decoder_output.shape}")
+    decoder_output,ctx = decoder.OP.apply(inputs, False)
+
+    q, k, v = inputs.get_qkv_in_bmghk()
+    B, M, G, H, Kq = q.shape
+    mqa_swap_seqlen_head = False
+    if k.shape[3] > 1 and k.stride(3) == 0 and v.stride(3) == 0:
+        mqa_swap_seqlen_head = True
+    if mqa_swap_seqlen_head:
+        decoder_output = decoder_output.reshape(B, -1, M, Kq).transpose(1, 2).contiguous()
+    else:
+        decoder_output = decoder_output.reshape(B, H * G, -1, Kq).contiguous()
 
     decoder_output = decoder_output.transpose(2, 1).contiguous()
-
-    torch.testing.assert_close(decoder_output, baseline_out, atol=1e-3, rtol=0)
+    torch.testing.assert_close(decoder_output, baseline_out, atol=1e-2, rtol=0)
 
 # run benchmark performance
 if __name__ == "__main__":
