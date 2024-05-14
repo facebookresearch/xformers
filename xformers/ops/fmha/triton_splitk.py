@@ -1173,7 +1173,7 @@ class FwOp(AttentionFwOpBase):
             split_k = max(Mk + bh - 1, 1024) // bh
             max_chunk_size = 64
             split_k_stop_val = 1024 / (B * G * H)
-            while split_k > 0 and Mk / (split_k - 1) < max_chunk_size:
+            while split_k > 1 and Mk / (split_k - 1) < max_chunk_size:
                 split_k = split_k - 1
 
             while split_k > split_k_stop_val:
