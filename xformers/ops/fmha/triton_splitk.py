@@ -1169,8 +1169,8 @@ class FwOp(AttentionFwOpBase):
     def get_split_k(cls, B: int, G: int, H: int, Mk: int) -> int:
         """Heuristic for the number of splits"""
         bh = max(B * H, 1)  # NOTE: Handle B*h=0 case
-        split_k = max(Mk + bh - 1, 1024) // bh
         if torch.version.hip:
+            split_k = max(Mk + bh - 1, 1024) // bh
             max_chunk_size = 64
             split_k_stop_val = 1024 / (B * G * H)
             while split_k > 0 and Mk / (split_k - 1) < max_chunk_size:
@@ -1187,6 +1187,7 @@ class FwOp(AttentionFwOpBase):
 
             split_k_upper_bound = 512
         else:
+            split_k = max(Mk, 1024) // bh
             max_chunk_size = 64 if Mk <= 512 and bh <= 64 else 128
             split_k_stop_val = Mk / max_chunk_size
             split_k_upper_bound = 64
