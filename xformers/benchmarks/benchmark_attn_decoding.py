@@ -320,9 +320,9 @@ try:
                 v = v[:, :, :, 0]
             return flash_attn.flash_attn_func(q, k, v)
 
-    BENCHMARKS[
-        f"flash-attention@{flash_attn.__version__}"
-    ] = AttentionDecodingFlashAttention
+    BENCHMARKS[f"flash-attention@{flash_attn.__version__}"] = (
+        AttentionDecodingFlashAttention
+    )
 except ImportError:
     pass
 
@@ -340,7 +340,8 @@ TEST_CASES = [
     for i in range(8, 18)
     for hkv in range(1, 3)
 ] + [
-    dict(B=i, Mq=1, Mkv=4097, Hq=8, Hkv=1, K=128, attn_bias_type=None) for i in [2, 4, 8, 16, 32, 64, 128]
+    dict(B=i, Mq=1, Mkv=4097, Hq=8, Hkv=1, K=128, attn_bias_type=None)
+    for i in [2, 4, 8, 16, 32, 64, 128]
 ]
 
 
@@ -351,10 +352,21 @@ def get_benchmark_names():
 
 
 # tests to verify correctness of each decoder implementation
-@pytest.mark.parametrize("name, case", [(name, case) for name in get_benchmark_names() for case in TEST_CASES])
+@pytest.mark.parametrize(
+    "name, case",
+    [(name, case) for name in get_benchmark_names() for case in TEST_CASES],
+)
 def test_flash_attention_decoder(name, case):
-    baseline = AttentionDecodingPyTorchRepeat(case["B"], case["Mq"], case["Mkv"], case["Hq"],
-                                              case["Hkv"], case["K"], False, case["attn_bias_type"])
+    baseline = AttentionDecodingPyTorchRepeat(
+        case["B"],
+        case["Mq"],
+        case["Mkv"],
+        case["Hq"],
+        case["Hkv"],
+        case["K"],
+        False,
+        case["attn_bias_type"],
+    )
     if name == "ck-decoder" and case["Mkv"] >= 2**14:
         pytest.skip("ck-decoder does not support Mkv >= 16K")
 
@@ -371,7 +383,9 @@ def test_flash_attention_decoder(name, case):
     if k.shape[3] > 1 and k.stride(3) == 0 and v.stride(3) == 0:
         mqa_swap_seqlen_head = True
     if mqa_swap_seqlen_head:
-        decoder_output = decoder_output.reshape(B, -1, M, Kq).transpose(1, 2).contiguous()
+        decoder_output = (
+            decoder_output.reshape(B, -1, M, Kq).transpose(1, 2).contiguous()
+        )
     else:
         decoder_output = decoder_output.reshape(B, H * G, -1, Kq).contiguous()
 
