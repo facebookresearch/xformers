@@ -9,13 +9,12 @@
 import sys
 from typing import Any, Dict, Type
 
+import pytest
 import torch
 
 import xformers.ops as xops
 from xformers.attn_bias_utils import create_attn_bias
 from xformers.benchmarks.utils import NotSupportedInputError, benchmark_main_helper2
-
-import pytest
 
 min_run_time = 0.5
 device = torch.device("cuda")
