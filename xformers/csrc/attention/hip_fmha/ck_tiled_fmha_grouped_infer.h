@@ -16,6 +16,7 @@
 #include <ck/tile_program/block_tile/block_masking.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_problem.hpp>
 #include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs.hpp>
+#include <ck/tile_program/block_tile_pipeline/block_fmha_pipeline_qr_ks_vs_async.hpp>
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
 #include <ck/tile_program/tile/tile_fmha_traits.hpp>
 
@@ -73,38 +74,73 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
 
       bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
       bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
+      const bool use_async_pipeline =
+          ((param.K % 8 == 0) && (param.Kv % 8 == 0) && (MaxK <= 128));
 
-      BOOL_SWITCH_2(
-          pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
-            using FmhaTraits = ck::tile_program::TileFmhaTraits<
-                kPadSeqLenQ,
-                kPadSeqLenK,
-                kPadHeadDimQ,
-                kPadHeadDimV,
-                kHasBias,
-                false, // kHasBiasGrad place-holder
-                false, // kStoreLSE
-                kHasDropout,
-                occupancy>;
+      if (!use_async_pipeline) {
+        BOOL_SWITCH_2(
+            pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
+              using FmhaTraits = ck::tile_program::TileFmhaTraits<
+                  kPadSeqLenQ,
+                  kPadSeqLenK,
+                  kPadHeadDimQ,
+                  kPadHeadDimV,
+                  kHasBias,
+                  false, // kHasBiasGrad place-holder
+                  false, // kStoreLSE
+                  kHasDropout,
+                  occupancy>;
 
-            using FmhaPipelineProblem =
-                FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+              using FmhaPipelineProblem =
+                  FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-            using FmhaPipeline =
-                ck::tile_program::block::BlockFmhaPipelineQRKSVS<
-                    FmhaPipelineProblem>;
+              using FmhaPipeline =
+                  ck::tile_program::block::BlockFmhaPipelineQRKSVS<
+                      FmhaPipelineProblem>;
 
-            using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
-                typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-                typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-                kPadSeqLenQ,
-                kPadHeadDimV>>;
+              using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
+                  typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                  typename FmhaFwdTypeConfig<ScalarType>::ODataType,
+                  kPadSeqLenQ,
+                  kPadHeadDimV>>;
 
-            using FmhaKernel =
-                FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+              using FmhaKernel = FmhaFwdKernel<
+                  FmhaTilePartitioner,
+                  FmhaPipeline,
+                  FmhaEpilogue>;
 
-            RunWithKernel<FmhaKernel>(param, stream);
-          });
+              RunWithKernel<FmhaKernel>(param, stream);
+            });
+      } else {
+        using FmhaTraits = ck::tile_program::TileFmhaTraits<
+            kPadSeqLenQ,
+            kPadSeqLenK,
+            true,
+            true,
+            kHasBias,
+            false, // kHasBiasGrad place-holder
+            false, // kStoreLSE
+            kHasDropout,
+            occupancy>;
+
+        using FmhaPipelineProblem =
+            FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+
+        using FmhaPipeline =
+            ck::tile_program::block::BlockFmhaPipelineQRKSVSAsync<
+                FmhaPipelineProblem>;
+
+        using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
+            typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+            typename FmhaFwdTypeConfig<ScalarType>::ODataType,
+            kPadSeqLenQ,
+            true>>;
+
+        using FmhaKernel =
+            FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+        RunWithKernel<FmhaKernel>(param, stream);
+      }
     });
   };
 
