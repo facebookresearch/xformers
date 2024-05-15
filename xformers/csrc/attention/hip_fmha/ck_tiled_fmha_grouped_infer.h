@@ -113,10 +113,10 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
             });
       } else {
         using FmhaTraits = ck::tile_program::TileFmhaTraits<
-            kPadSeqLenQ,
+            true, // kPadSeqLenQ,
             kPadSeqLenK,
-            true,
-            true,
+            true, // kPadHeadDimQ,
+            true, // kPadHeadDimV,
             kHasBias,
             false, // kHasBiasGrad place-holder
             false, // kStoreLSE
@@ -133,7 +133,7 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
         using FmhaEpilogue = FmhaFwdEpilogue<FmhaFwdEpilogueProblem<
             typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
             typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-            kPadSeqLenQ,
+            true,
             true>>;
 
         using FmhaKernel =
