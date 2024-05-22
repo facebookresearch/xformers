@@ -102,7 +102,7 @@ install_dep: &install_dep
         conda install ninja
         echo "Ninja version $(ninja --version)"
 
-        conda install pytorch pytorch-cuda=11.8 -c pytorch -c nvidia -q
+        conda install pytorch pytorch-mutex==1.0=cuda pytorch-cuda=11.8 -c pytorch -c nvidia -q
 
         $CONDA_PYTHON -m pip install cmake
         $CONDA_PYTHON -m pip install -r requirements-benchmark.txt --progress-bar off
