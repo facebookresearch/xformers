@@ -34,7 +34,7 @@ runs:
         import datetime
         from pathlib import Path
 
-        CONDA_INSTALL_CMD = "conda create python=${{ inputs.python }} zlib pip ninja pytorch=${{ inputs.pytorch_version }} torchvision ccache=4.8 pytorch-cuda=${{ inputs.cuda }} -c ${{ inputs.pytorch_channel }} -c nvidia -c conda-forge -q -y"
+        CONDA_INSTALL_CMD = "conda create python=${{ inputs.python }} zlib pip ninja pytorch=${{ inputs.pytorch_version }} ccache=4.8 pytorch-cuda=${{ inputs.cuda }} -c ${{ inputs.pytorch_channel }} -c nvidia -c conda-forge -q -y"
 
         conda_env_key = CONDA_INSTALL_CMD
         for file in sorted(glob.glob("requirement*.txt")):
