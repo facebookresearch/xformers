@@ -47,6 +47,7 @@ runs:
         shared_dir = os.environ.get("GHRUNNER_SHARED_DIR", os.getcwd())
         env_path = os.path.join(shared_dir, "tmp", os.environ["GITHUB_RUN_ID"])
         final_env = Path(shared_dir) / f"env_{conda_env_hash}.txt"
+        pkg_dir = Path(shared_dir) / "pkgs"
         (Path(shared_dir) / f"env_{conda_env_hash}_content.txt").write_text(conda_env_key)
         CONDA_INSTALL_CMD += " -p " + env_path
         env_already_built = False
@@ -63,6 +64,7 @@ runs:
         with open(os.environ['GITHUB_ENV'], "r+") as fp:
             fp.write("CONDA_ENV_LINK=" + str(final_env) + "\n")
             fp.write("CONDA_PREFIX=" + env_path + "\n")
+            fp.write("CONDA_PKGS_DIRS=" + str(pkg_dir) + "\n")
             fp.write("CONDA_INSTALL_CMD=" + CONDA_INSTALL_CMD + "\n")
             fp.write("CONDA_ENV_HASH=" + conda_env_hash + "\n")
             fp.write("PY=" + os.path.join(env_path, "bin", "python") + "\n")
@@ -83,7 +85,7 @@ runs:
         set -ex
         conda config --set channel_priority strict
         # Retry if failed after removing downloaded packages cache
-        $CONDA_INSTALL_CMD || (rm -rf $HOME/.conda/pkgs && rm -rf $CONDA_PREFIX && $CONDA_INSTALL_CMD)
+        $CONDA_INSTALL_CMD || (rm -rf $CONDA_PKGS_DIRS && rm -rf $CONDA_PREFIX && $CONDA_INSTALL_CMD)
         $PY -m pip install cmake
         $PY -m pip install -r requirements-benchmark.txt --progress-bar off
     - name: Activate environment
