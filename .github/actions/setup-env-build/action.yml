@@ -34,7 +34,7 @@ runs:
         import datetime
         from pathlib import Path
 
-        CONDA_INSTALL_CMD = "conda create python=${{ inputs.python }} zlib pip ninja pytorch=${{ inputs.pytorch_version }} ccache=4.8 pytorch-cuda=${{ inputs.cuda }} -c ${{ inputs.pytorch_channel }} -c nvidia -c conda-forge -q -y"
+        CONDA_INSTALL_CMD = "micromamba create python=${{ inputs.python }} zlib pip ninja pytorch=${{ inputs.pytorch_version }} ccache=4.8 pytorch-cuda=${{ inputs.cuda }} -c ${{ inputs.pytorch_channel }} -c nvidia -c conda-forge -q -y"
 
         conda_env_key = CONDA_INSTALL_CMD
         for file in sorted(glob.glob("requirement*.txt")):
@@ -78,12 +78,18 @@ runs:
         echo "CONDA_INSTALL_CMD=$CONDA_INSTALL_CMD"
         echo "CONDA_ENV_HASH=$CONDA_ENV_HASH"
         echo "PY=$PY"
+    - name: Install micromamba
+      shell: bash -l {0}
+      run: |
+        set -ex
+        curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba
+        echo "eval \"\$($(pwd)/bin/micromamba shell hook --shell bash)\"" >> ~/.profile
     - name: Conda/pip setup
       shell: bash -l {0}
       if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
       run: |
         set -ex
-        conda config --set channel_priority strict
+        micromamba config set channel_priority strict
         # Retry if failed after removing downloaded packages cache
         $CONDA_INSTALL_CMD || (rm -rf $CONDA_PKGS_DIRS && rm -rf $CONDA_PREFIX && $CONDA_INSTALL_CMD)
         $PY -m pip install cmake
@@ -91,13 +97,7 @@ runs:
     - name: Activate environment
       shell: bash -l {0}
       run: |
-        echo "" > ~/.bashrc
-        conda init
-        echo "conda activate $CONDA_PREFIX" >> ~/.bashrc
-        # For some reason bash only reads from `.profile`
-        # but conda writes init script to `.bashrc`
-        cat ~/.bashrc >> ~/.profile
-        rm ~/.bashrc
+        echo "micromamba activate $CONDA_PREFIX" >> ~/.profile
         echo "==== .profile ====="
         cat ~/.profile
     - run: which python
