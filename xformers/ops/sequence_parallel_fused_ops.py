@@ -724,7 +724,7 @@ def fused_allgather_and_linear(
         for w, scale_weight, go in zip(weights, scales_weights, gathered_outputs):
             with torch.cuda.stream(stream_factory()):
                 if _is_fp8_dtype(w.dtype):
-                    output_amax = torch.empty(1, dtype=torch.float32, device=w.device)
+                    output_amax = torch.empty((), dtype=torch.float32, device=w.device)
                     torch._scaled_mm(
                         inputs[0],
                         w.t(),
@@ -939,7 +939,7 @@ def fused_linear_and_reducescatter(
         for w, scale_weight, o in zip(weights, scales_weights, outputs):
             with torch.cuda.stream(stream_factory()):
                 if _is_fp8_dtype(w.dtype):
-                    output_amax = torch.empty(1, dtype=torch.float32, device=o.device)
+                    output_amax = torch.empty((), dtype=torch.float32, device=o.device)
                     torch._scaled_mm(
                         gathered_input[dst_rank],
                         w.t(),
