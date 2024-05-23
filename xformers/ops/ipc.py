@@ -50,12 +50,16 @@ def _deserialize_cuda_tensor(args, device: torch.device) -> torch.Tensor:
 # so we can dodge it by offloading the collective call to another thread. I hate
 # all this so much.
 
+# Use a sequence number to create unique store keys for different invocations.
+_COUNTER = 0
+
 
 def _exchange_addresses(
     listeners: List[multiprocessing.connection.Listener],
     group: dist.ProcessGroup,
     device: torch.device,
 ) -> List[List[str]]:
+    global _COUNTER
     rank = group.rank()
     world_size = group.size()
     my_addresses: List[str] = []
@@ -77,11 +81,15 @@ def _exchange_addresses(
             group, (None, None)
         )
         assert store is not None
-        store.set(f"xformers_exchange_addresses_{rank}", json.dumps(my_addresses))
+        store.set(
+            f"xformers_exchange_addresses_{_COUNTER}_{rank}",
+            json.dumps(my_addresses),
+        )
         all_addresses = [
-            json.loads(store.get(f"xformers_exchange_addresses_{i}"))
+            json.loads(store.get(f"xformers_exchange_addresses_{_COUNTER}_{i}"))
             for i in range(world_size)
         ]
+        _COUNTER += 1
     except Exception:
         all_addresses = [[""] * (world_size - 1)] * world_size
         with concurrent.futures.ThreadPoolExecutor(

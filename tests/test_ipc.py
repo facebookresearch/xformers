@@ -65,3 +65,22 @@ def test_ipc() -> None:
         world_size=world_size,
         fn=inner_test_ipc,
     )
+
+
+# We had an issue where the second rendezvous in a single process would use the
+# same store keys as the first one, thus retrieve a stale address to connect to,
+# and fail.
+def inner_test_ipc_twice() -> None:
+    subgroup = torch.distributed.new_group()
+
+    init_ipc(subgroup)
+    init_ipc(subgroup)
+
+
+@cuda_sm70_only
+def test_ipc_twice() -> None:
+    world_size = 2
+    launch_subprocesses(
+        world_size=world_size,
+        fn=inner_test_ipc_twice,
+    )
